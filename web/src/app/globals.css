@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #B8945A;
+}
+
+html, body {
+  background: #FAF8F4;
+  color: #211F1C;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin warm scrollbars, matching the design files */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #DDD4C4; border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@layer utilities {
+  .letter-tightest { letter-spacing: -0.02em; }
+}
