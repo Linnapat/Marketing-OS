@@ -31,7 +31,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/content", label: "Content Calendar", icon: CalendarDays },
       { href: "/graphic", label: "Graphic Request", icon: Palette },
-      { href: "/kol", label: "KOL / Creator", icon: Star },
+      { href: "/kol", label: "KOL / Creator", icon: Star, ready: true },
       { href: "/requests", label: "Request Center", icon: Inbox },
       { href: "/approvals", label: "Approval Queue", icon: ClipboardCheck },
       { href: "/assets", label: "Asset Library", icon: FolderOpen },
