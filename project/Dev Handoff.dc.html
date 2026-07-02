@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{background:#FAF8F4;font-family:system-ui,-apple-system,sans-serif;margin:0}
+:root{--accent:#B8945A}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+pre{background:#1E1C18;color:#E8D5AA;border-radius:12px;padding:18px 20px;font-size:12.5px;line-height:1.7;overflow-x:auto;margin:0}
+code{font-family:'JetBrains Mono','Fira Code',monospace}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#FAF8F4;padding:32px 36px 80px;max-width:1100px;margin:0 auto">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:32px">
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px">Marketing OS · Developer Handoff</div>
+      <div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">From Prototype → Production</div>
+      <div style="font-size:14px;color:#9A9387">Tech stack · Data architecture · GitHub structure · Supabase schema</div>
+    </div>
+    <div style="background:#211F1C;border-radius:14px;padding:14px 20px;text-align:right">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:4px">Prepared</div>
+      <div style="font-size:13px;font-weight:700;color:#fff">July 2, 2026</div>
+      <div style="font-size:11.5px;color:#9A9387;margin-top:2px">TEPPEN Group · Marketing OS</div>
+    </div>
+  </div>
+
+  <!-- ═══ 1. RECOMMENDED STACK ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>🏗</span> Recommended Tech Stack</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+      <sc-for list="{{ stackCards }}" as="s" hint-placeholder-count="6">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px">
+          <div style="font-size:22px;margin-bottom:8px">{{ s.icon }}</div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:4px">{{ s.layer }}</div>
+          <div style="font-size:15px;font-weight:800;margin-bottom:6px">{{ s.name }}</div>
+          <div style="font-size:12px;color:#6b6258;line-height:1.5">{{ s.reason }}</div>
+          <div style="margin-top:10px"><span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:{{ s.confBg }};color:{{ s.confFg }}">{{ s.confidence }}</span></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ═══ 2. SUPABASE vs GOOGLE SHEETS ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>🗄</span> Data Storage Decision</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+      <!-- Supabase -->
+      <div style="background:#fff;border:2px solid #4E7A4E;border-radius:18px;padding:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:36px;height:36px;border-radius:10px;background:#EEF4EE;display:flex;align-items:center;justify-content:center;font-size:18px">🗃</div>
+          <div><div style="font-size:15px;font-weight:800">Supabase</div><div style="font-size:11.5px;color:#4E7A4E;font-weight:700">Primary database ✓</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <sc-for list="{{ supUses }}" as="u" hint-placeholder-count="8">
+            <div style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:#211F1C"><span style="color:#4E7A4E;font-weight:700;flex-shrink:0">✓</span>{{ u }}</div>
+          </sc-for>
+        </div>
+      </div>
+      <!-- Google Sheets -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:36px;height:36px;border-radius:10px;background:#EEF4EE;display:flex;align-items:center;justify-content:center;font-size:18px">📊</div>
+          <div><div style="font-size:15px;font-weight:800">Google Sheets</div><div style="font-size:11.5px;color:#9A9387;font-weight:700">Secondary / export only</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <sc-for list="{{ sheetUses }}" as="u" hint-placeholder-count="5">
+            <div style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:#211F1C"><span style="color:#B8945A;font-weight:700;flex-shrink:0">→</span>{{ u }}</div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <!-- Verdict -->
+    <div style="background:#211F1C;border-radius:14px;padding:18px 22px;color:#fff;display:flex;align-items:flex-start;gap:14px">
+      <span style="font-size:22px;flex-shrink:0">💡</span>
+      <div><div style="font-size:14px;font-weight:700;margin-bottom:5px;color:var(--accent)">Verdict</div><div style="font-size:13px;color:#E8D5AA;line-height:1.6">ใช้ <b style="color:#fff">Supabase</b> เป็น primary database สำหรับทุก module ที่มี relational data (campaigns, tasks, KOL, finance, approvals). ใช้ <b style="color:#fff">Google Sheets</b> เฉพาะสำหรับ export report ให้ finance team และ CMO dashboard ที่ต้องการ pivot แบบ Excel.</div></div>
+    </div>
+  </div>
+
+  <!-- ═══ 3. SUPABASE SCHEMA ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>📐</span> Supabase Core Tables</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <sc-for list="{{ schemaGroups }}" as="sg" hint-placeholder-count="6">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA">
+            <span style="font-size:16px">{{ sg.icon }}</span>
+            <div style="font-size:14px;font-weight:700">{{ sg.group }}</div>
+          </div>
+          <div style="padding:14px 20px;display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ sg.tables }}" as="t" hint-placeholder-count="4">
+              <div style="background:#FAF8F4;border:1px solid #F0EBE0;border-radius:10px;padding:10px 14px;min-width:180px">
+                <div style="font-size:12.5px;font-weight:700;color:#211F1C;font-family:monospace;margin-bottom:4px">{{ t.name }}</div>
+                <div style="font-size:11px;color:#9A9387;line-height:1.5">{{ t.fields }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ═══ 4. GITHUB STRUCTURE ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>🐙</span> GitHub Repository Structure</div>
+    <pre><code>marketing-os/
+├── apps/
+│   └── web/                     # Next.js 14 (App Router)
+│       ├── app/
+│       │   ├── (auth)/          # Login / onboarding
+│       │   ├── dashboard/       # Dashboard module
+│       │   ├── campaigns/       # Campaign module
+│       │   ├── graphic/         # Graphic Request module
+│       │   ├── kol/             # KOL / Creator module
+│       │   ├── finance/         # Finance module
+│       │   ├── my-tasks/        # My Tasks module
+│       │   ├── team-workload/   # Team Workload module
+│       │   ├── settings/        # Settings module
+│       │   └── api/             # API routes + webhooks
+│       ├── components/          # Shared UI components
+│       │   ├── ui/              # Base: Button, Badge, Card...
+│       │   ├── layout/          # Sidebar, Header, Nav
+│       │   └── modules/         # Module-specific components
+│       └── lib/
+│           ├── supabase/        # Client + server clients
+│           ├── hooks/           # useAuth, useCampaigns...
+│           └── types/           # TypeScript types (from DB)
+│
+├── supabase/
+│   ├── migrations/              # SQL migration files
+│   │   ├── 001_core.sql         # org, brands, users
+│   │   ├── 002_campaigns.sql    # campaigns, tasks
+│   │   ├── 003_kol.sql          # kol, deliverables
+│   │   ├── 004_graphic.sql      # graphic_requests, assets
+│   │   ├── 005_finance.sql      # budgets, expenses, vouchers
+│   │   ├── 006_approvals.sql    # approval_rules, queue
+│   │   └── 007_rls.sql          # Row-Level Security policies
+│   ├── seed.sql                 # Initial data (brands, users)
+│   └── types.ts                 # Generated TypeScript types
+│
+├── docs/
+│   ├── schema.md                # Data model documentation
+│   ├── modules.md               # Module feature list
+│   └── design/                  # .dc.html prototype files (this project)
+│
+└── .github/
+    └── workflows/
+        ├── deploy.yml           # Vercel auto-deploy on push
+        └── supabase-types.yml   # Regenerate DB types on migration</code></pre>
+  </div>
+
+  <!-- ═══ 5. RLS POLICY SUMMARY ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>🔐</span> Row-Level Security (RLS) Summary</div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:1.2fr 1fr 3fr;gap:0;border-bottom:1px solid #ECE6DA;padding:11px 20px;background:#FBF9F4;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9A9387;text-transform:uppercase">
+        <span>Role</span><span>Access scope</span><span>Policy example</span>
+      </div>
+      <sc-for list="{{ rlsRoles }}" as="r" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:1.2fr 1fr 3fr;gap:0;border-bottom:1px solid #F4EFE5;padding:12px 20px;align-items:start">
+          <div style="font-size:13px;font-weight:700">{{ r.role }}</div>
+          <span style="{{ r.scopeStyle }}">{{ r.scope }}</span>
+          <code style="font-size:11.5px;color:#6b6258;line-height:1.5">{{ r.policy }}</code>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ═══ 6. MIGRATION PLAN ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>🗺</span> Migration Plan: Prototype → Production</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ roadmap }}" as="rm" hint-placeholder-count="5">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:16px 20px;display:flex;align-items:flex-start;gap:16px">
+          <div style="width:36px;height:36px;border-radius:50%;background:{{ rm.phaseBg }};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:{{ rm.phaseFg }};flex-shrink:0">{{ rm.phase }}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:5px">
+              <div style="font-size:14.5px;font-weight:700">{{ rm.title }}</div>
+              <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#F0EBE0;color:#9A9387">{{ rm.duration }}</span>
+            </div>
+            <div style="font-size:12.5px;color:#6b6258;line-height:1.6">{{ rm.tasks }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ═══ 7. QUICK START SQL ═══ -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px"><span>⚡</span> Quick Start: Supabase Migration (001_core.sql)</div>
+    <pre><code>-- ── ORGANIZATION ──────────────────────────────────────────
+create table organizations (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  timezone    text default 'Asia/Bangkok',
+  currency    text default 'THB',
+  vat_rate    numeric default 7,
+  created_at  timestamptz default now()
+);
+
+-- ── BRANDS ─────────────────────────────────────────────────
+create table brands (
+  id          uuid primary key default gen_random_uuid(),
+  org_id      uuid references organizations(id),
+  name        text not null,
+  key         text unique not null,   -- 'teppen' | 'omakase' etc.
+  color       text,
+  brand_lead  uuid references auth.users(id),
+  is_active   boolean default true,
+  created_at  timestamptz default now()
+);
+
+-- ── CAMPAIGNS ──────────────────────────────────────────────
+create table campaigns (
+  id           uuid primary key default gen_random_uuid(),
+  brand_id     uuid references brands(id),
+  name         text not null,
+  type         text,   -- 'awareness' | 'promotion' | 'crm' etc.
+  status       text default 'draft',
+  budget       numeric,
+  spend        numeric default 0,
+  start_date   date,
+  end_date     date,
+  owner_id     uuid references auth.users(id),
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+-- ── KOL ────────────────────────────────────────────────────
+create table kol_creators (
+  id               uuid primary key default gen_random_uuid(),
+  campaign_id      uuid references campaigns(id),
+  brand_id         uuid references brands(id),
+  creator_name     text not null,
+  handle           text,
+  platform         text,
+  status           text default 'prospect',
+  fee              numeric,
+  expected_reach   integer,
+  actual_reach     integer,
+  post_due_date    date,
+  owner_id         uuid references auth.users(id),
+  pending_approver uuid references auth.users(id),
+  created_at       timestamptz default now()
+);
+
+-- ── APPROVALS ──────────────────────────────────────────────
+create table approval_queue (
+  id              uuid primary key default gen_random_uuid(),
+  module          text not null,   -- 'campaign'|'graphic'|'kol'|'budget'
+  record_id       uuid not null,
+  title           text not null,
+  requester_id    uuid references auth.users(id),
+  approver_id     uuid references auth.users(id),
+  status          text default 'pending',   -- pending|approved|rejected
+  requested_at    timestamptz default now(),
+  decided_at      timestamptz,
+  comment         text
+);
+
+-- ── ROW-LEVEL SECURITY ─────────────────────────────────────
+alter table campaigns enable row level security;
+
+create policy "brand_lead_sees_own_brand" on campaigns
+  for select using (
+    brand_id in (
+      select id from brands where brand_lead = auth.uid()
+    )
+    or exists (
+      select 1 from user_roles where user_id = auth.uid() and role = 'admin'
+    )
+  );</code></pre>
+  </div>
+
+  <!-- FOOTER NOTE -->
+  <div style="background:#FBF6ED;border:1px solid #E8D5AA;border-radius:14px;padding:18px 22px;display:flex;align-items:flex-start;gap:14px">
+    <span style="font-size:22px;flex-shrink:0">📎</span>
+    <div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:5px">Design reference files</div>
+      <div style="font-size:13px;color:#6b6258;line-height:1.6">ทุก module ที่ออกแบบ (Dashboard.dc.html, Campaign.dc.html, KOL.dc.html ฯลฯ) ใช้เป็น pixel-perfect reference สำหรับ dev team ได้เลย — component structure, data fields, status logic, และ approval flow ครบใน prototype แล้ว. ใส่ไฟล์ไว้ใน <code style="background:#F0EBE0;padding:1px 5px;border-radius:4px">docs/design/</code> ใน repo.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1100,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = {};
+
+  renderVals() {
+    const badge = (t,fg,bg)=>`font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:${bg};color:${fg}`;
+
+    const stackCards = [
+      { icon:'⚛️', layer:'Frontend',  name:'Next.js 14',   reason:'App Router + React Server Components. ทำงานกับ Supabase ได้ดีมาก, SEO friendly, deploy บน Vercel ได้ในคลิกเดียว.',           confidence:'แนะนำ', confBg:'#EEF4EE', confFg:'#4E7A4E' },
+      { icon:'🗃',  layer:'Database',  name:'Supabase',     reason:'PostgreSQL + Realtime + Auth + RLS built-in. ไม่ต้องเขียน backend เยอะ. Free tier พอสำหรับ MVP, scale ได้ตอน production.',    confidence:'แนะนำ', confBg:'#EEF4EE', confFg:'#4E7A4E' },
+      { icon:'🚀',  layer:'Deploy',    name:'Vercel',       reason:'Auto-deploy จาก GitHub push. Preview URL ทุก PR. Edge functions รองรับ Thailand latency ได้ดี.',                               confidence:'แนะนำ', confBg:'#EEF4EE', confFg:'#4E7A4E' },
+      { icon:'🎨',  layer:'UI',        name:'Tailwind CSS', reason:'Class-based styling ตรงกับ design system ที่ออกแบบไว้. Token สอดคล้องกับ ivory/gold palette ใน prototype.',                   confidence:'แนะนำ', confBg:'#EEF4EE', confFg:'#4E7A4E' },
+      { icon:'🔷',  layer:'Language',  name:'TypeScript',   reason:'Type safety สำคัญมากสำหรับ multi-module app. Supabase generate types จาก schema ได้อัตโนมัติ.',                               confidence:'จำเป็น', confBg:'#EEF1F8', confFg:'#3E5C9A' },
+      { icon:'📧',  layer:'Notify',    name:'Resend + LINE',reason:'Resend สำหรับ email notifications. LINE Notify API สำหรับ LINE group alerts ที่ team ใช้งานจริง.',                            confidence:'Phase 2', confBg:'#FBF8EE', confFg:'#C68A1E' },
+    ];
+
+    const supUses = [
+      'Campaigns, tasks, approvals (relational data)',
+      'KOL creators, deliverables, results',
+      'Graphic requests, assets, feedback',
+      'Finance: budgets, expenses, payment vouchers',
+      'User auth + role-based access (RLS)',
+      'Realtime notifications and approval updates',
+      'Settings: brands, teams, approval matrix, workflow',
+      'Audit log and comment threads',
+    ];
+
+    const sheetUses = [
+      'Monthly P&L export สำหรับ finance team ที่ชอบ Excel',
+      'CMO summary dashboard สำหรับ Google Data Studio',
+      'Import ข้อมูล KPI จาก POS / CRM ภายนอก',
+      'Budget tracking backup สำหรับ CFO',
+      'ไม่ควรใช้เป็น primary database — ข้อมูลจะไม่ consistent',
+    ];
+
+    const schemaGroups = [
+      {
+        icon:'🏢', group:'Core Structure',
+        tables:[
+          { name:'organizations',  fields:'id, name, timezone, currency, vat_rate' },
+          { name:'brands',         fields:'id, org_id, name, key, color, brand_lead, is_active' },
+          { name:'branches',       fields:'id, brand_id, name, manager_id, area, status' },
+          { name:'user_roles',     fields:'user_id, role, brand_access, branch_access' },
+        ],
+      },
+      {
+        icon:'🎯', group:'Campaign & Planning',
+        tables:[
+          { name:'campaigns',      fields:'id, brand_id, name, type, status, budget, spend, start_date, end_date, owner_id' },
+          { name:'campaign_tasks', fields:'id, campaign_id, title, module, status, priority, assignee_id, due_date, blocker' },
+          { name:'planner_items',  fields:'id, campaign_id, week, content_type, platform, status' },
+        ],
+      },
+      {
+        icon:'🌟', group:'KOL / Creator',
+        tables:[
+          { name:'kol_creators',    fields:'id, campaign_id, brand_id, creator_name, handle, platform, status, fee, post_due_date' },
+          { name:'kol_deliverables',fields:'id, kol_id, type, platform, quantity, due_date, draft_link, final_link, status' },
+          { name:'kol_results',     fields:'id, kol_id, reach, impression, engagement, cpv, roi, posted_date' },
+        ],
+      },
+      {
+        icon:'🎨', group:'Graphic / Creative',
+        tables:[
+          { name:'graphic_requests',fields:'id, campaign_id, brand_id, title, asset_type, stage, designer_id, due_date, brief_complete' },
+          { name:'graphic_assets',  fields:'id, request_id, version, asset_link, uploaded_by, is_latest, approval_status' },
+          { name:'graphic_feedback',fields:'id, request_id, asset_id, text, owner_id, status, resolved_at' },
+        ],
+      },
+      {
+        icon:'฿', group:'Finance',
+        tables:[
+          { name:'budget_requests', fields:'id, campaign_id, brand_id, amount, category, status, requester_id, approver_id' },
+          { name:'expenses',        fields:'id, campaign_id, brand_id, amount, vendor, receipt_url, status' },
+          { name:'payment_vouchers',fields:'id, expense_id, amount, payee, bank, status, approved_at' },
+        ],
+      },
+      {
+        icon:'✅', group:'Approval & Workflow',
+        tables:[
+          { name:'approval_queue',  fields:'id, module, record_id, title, requester_id, approver_id, status, requested_at' },
+          { name:'approval_rules',  fields:'id, module, condition, approver_role, sla_days, escalate_days, backup_id' },
+          { name:'comments',        fields:'id, module, record_id, text, owner_id, assigned_to, status, created_at' },
+          { name:'audit_log',       fields:'id, user_id, action, module, before_val, after_val, created_at' },
+        ],
+      },
+    ];
+
+    const rlsRoles = [
+      { role:'Admin / CMO',    scope:'All brands',   scopeStyle:badge('Admin','#B8945A','#FBF6ED'), policy:'No restriction — sees all rows.' },
+      { role:'Brand Lead',     scope:'Own brand',    scopeStyle:badge('Brand','#3E5C9A','#EEF1F8'), policy:'WHERE brand_id = user.brand_id' },
+      { role:'Designer',       scope:'Graphic only', scopeStyle:badge('Module','#C2691E','#FBF1E9'), policy:'graphic_requests WHERE assignee_id = auth.uid()' },
+      { role:'KOL Specialist', scope:'KOL module',   scopeStyle:badge('Module','#B5577E','#FBF0F5'), policy:'kol_creators WHERE owner_id = auth.uid() OR brand_id = user.brand_id' },
+      { role:'Finance',        scope:'Finance only', scopeStyle:badge('Module','#4E7A4E','#EEF4EE'), policy:'budget_requests, expenses, payment_vouchers — full access' },
+      { role:'Viewer',         scope:'Read only',    scopeStyle:badge('View','#9A9387','#F2F0EB'), policy:'SELECT only on campaigns, kol_creators — no INSERT/UPDATE' },
+    ];
+
+    const roadmap = [
+      { phase:'1', phaseBg:'#211F1C', phaseFg:'#B8945A', title:'Project setup + Auth', duration:'1 week',
+        tasks:'สร้าง Next.js project + Supabase project · run migration 001_core.sql · implement login/logout · set up Vercel deployment pipeline · test RLS with 2 roles (admin + brand lead)' },
+      { phase:'2', phaseBg:'#EEF1F8', phaseFg:'#3E5C9A', title:'Campaign + Dashboard modules', duration:'2–3 weeks',
+        tasks:'Campaign CRUD · campaign tasks · Dashboard KPIs from Supabase · brand filter · date filter · connect to real data from migration 002_campaigns.sql' },
+      { phase:'3', phaseBg:'#FBF0F5', phaseFg:'#B5577E', title:'KOL + Graphic modules', duration:'2–3 weeks',
+        tasks:'KOL creator CRUD · deliverables + results · graphic request flow · asset upload to Supabase Storage · feedback threads · migration 003_kol.sql + 004_graphic.sql' },
+      { phase:'4', phaseBg:'#EEF4EE', phaseFg:'#4E7A4E', title:'Finance + Approval workflow', duration:'2 weeks',
+        tasks:'Budget request flow · expense tracking · payment voucher · approval queue (realtime) · email/LINE notifications · migration 005_finance.sql + 006_approvals.sql' },
+      { phase:'5', phaseBg:'#FBF6ED', phaseFg:'#B8945A', title:'My Tasks + Settings + Polish', duration:'2 weeks',
+        tasks:'My Tasks live data · Team Workload from DB · Settings module (brands/users/approval matrix) · mobile responsive · performance optimization · UAT with team' },
+    ];
+
+    return { stackCards, supUses, sheetUses, schemaGroups, rlsRoles, roadmap };
+  }
+}
+</script>
+</body>
+</html>

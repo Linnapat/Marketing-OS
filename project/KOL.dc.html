@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+:root{--accent:#B8945A;--bg:#FAF8F4;}
+body{background:var(--bg);font-family:system-ui,-apple-system,sans-serif;}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#FAF8F4;padding:22px 24px 60px">
+
+<!-- ── HEADER ── -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+  <div>
+    <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">KOL / Creator</div>
+    <div style="font-size:12.5px;color:#9A9387;margin-top:3px">Creator management · Pipeline · Performance tracking</div>
+  </div>
+  <span onClick="{{ openRequest }}" style="font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap">+ Request KOL</span>
+</div>
+
+<!-- ── DATE FILTER BAR ── -->
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:12px 16px;margin-bottom:16px">
+  <div style="display:flex;gap:4px;background:#EFEAE0;border-radius:9px;padding:3px;flex-shrink:0">
+    <span onClick="{{ setGMonth }}" style="{{ gMonthBtn }}">Month</span>
+    <span onClick="{{ setGRange }}" style="{{ gRangeBtn }}">Range</span>
+  </div>
+  <sc-if value="{{ isGMonth }}" hint-placeholder-val="{{ true }}">
+    <span onClick="{{ gPrev }}" style="{{ navArrow }}">‹</span>
+    <select onChange="{{ onGMonth }}" style="{{ selectStyle }}"><sc-for list="{{ gMonthOptArr }}" as="o" hint-placeholder-count="12"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+    <select onChange="{{ onGYear }}" style="{{ selectStyle }}"><sc-for list="{{ gYearOptArr }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+    <span onClick="{{ gNext }}" style="{{ navArrow }}">›</span>
+  </sc-if>
+  <sc-if value="{{ isGRange }}" hint-placeholder-val="{{ false }}">
+    <input type="date" value="{{ dateStart }}" onChange="{{ onGStart }}" style="{{ dateInputStyle }}">
+    <span style="font-size:13px;color:#9A9387;font-weight:600">→</span>
+    <input type="date" value="{{ dateEnd }}" onChange="{{ onGEnd }}" style="{{ dateInputStyle }}">
+  </sc-if>
+  <span onClick="{{ gToday }}" style="{{ todayBtn }}">This month</span>
+  <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+    <div style="font-size:12.5px;font-weight:600;color:#9A9387">{{ gLabel }}</div>
+  </div>
+</div>
+
+<!-- ── TABS ── -->
+<div style="display:flex;gap:4px;background:#EFEAE0;border-radius:13px;padding:4px;margin-bottom:18px;overflow-x:auto">
+  <sc-for list="{{ kolTabs }}" as="t" hint-placeholder-count="3"><span onClick="{{ t.onClick }}" style="{{ t.style }}">{{ t.label }}</span></sc-for>
+</div>
+
+<!-- ── FILTER BAR ── -->
+<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <span style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.05em">BRAND</span>
+    <sc-for list="{{ brandFilters }}" as="f" hint-placeholder-count="5"><span onClick="{{ f.onClick }}" style="{{ f.style }}"><span style="{{ f.dot }}"></span>{{ f.label }}</span></sc-for>
+    <span style="width:1px;height:16px;background:#ECE6DA;display:inline-block;margin:0 4px"></span>
+    <span style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.05em">STAGE</span>
+    <sc-for list="{{ stageFilters }}" as="f" hint-placeholder-count="5"><span onClick="{{ f.onClick }}" style="{{ f.style }}">{{ f.label }}</span></sc-for>
+  </div>
+  <div style="display:flex;gap:6px">
+    <span style="font-size:11px;font-weight:700;padding:7px 12px;border-radius:8px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">↓ Export</span>
+  </div>
+</div>
+
+<!-- ══ CREATOR LIST VIEW ══ -->
+<sc-if value="{{ isKolList }}" hint-placeholder-val="{{ true }}">
+<div>
+
+  <!-- Dashboard KPI cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+    <div style="background:#211F1C;color:#fff;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent,#B8945A);font-weight:700;margin-bottom:6px">Active Creators</div><div style="font-size:26px;font-weight:700">{{ kpiActive }}</div></div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Waiting Review</div><div style="font-size:26px;font-weight:700;color:#C68A1E">{{ kpiWaitingReview }}</div></div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Open Comments</div><div style="font-size:26px;font-weight:700;color:#B33A2E">{{ kpiOpenComments }}</div></div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Total Fees</div><div style="font-size:26px;font-weight:700">{{ kpiFees }}</div></div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Expected Reach</div><div style="font-size:26px;font-weight:700">{{ kpiExpReach }}</div></div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Avg ROAS</div><div style="font-size:26px;font-weight:700;color:#4E7A4E">{{ kpiAvgRoas }}</div></div>
+  </div>
+
+  <!-- Needs Attention -->
+  <sc-if value="{{ hasAlerts }}" hint-placeholder-val="{{ false }}">
+  <div style="background:#FBF6ED;border:1px solid #E8D5AA;border-radius:16px;padding:14px 18px;margin-bottom:16px">
+    <div style="font-size:12px;font-weight:700;color:#C68A1E;margin-bottom:10px">⚠ Needs Attention · {{ alertCount }} KOLs</div>
+    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
+      <sc-for list="{{ alertItems }}" as="al" hint-placeholder-count="3">
+        <div style="flex-shrink:0;background:#fff;border:1px solid #E8D5AA;border-radius:12px;padding:12px 14px;min-width:200px;cursor:pointer" onClick="{{ al.onClick }}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="width:26px;height:26px;border-radius:50%;background:{{ al.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0">{{ al.init }}</div>
+            <div style="font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.name }}</div>
+          </div>
+          <div style="font-size:11.5px;font-weight:700;color:#C68A1E">{{ al.alertLabel }}</div>
+          <div style="font-size:11px;color:#9A9387;margin-top:2px">{{ al.campaign }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- Creator table -->
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+    <!-- Column headers -->
+    <div style="display:grid;grid-template-columns:1.8fr 0.7fr 1.2fr 1.2fr 1fr 0.8fr 0.6fr 0.7fr 1.2fr;gap:8px;padding:11px 18px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase">
+      <span>Creator</span><span>Platform</span><span>Campaign</span><span>Stage</span><span>Owner / Approver</span><span>Due Date</span><span>Fee</span><span>Comments</span><span>Status</span>
+    </div>
+    <sc-for list="{{ creators }}" as="k" hint-placeholder-count="6">
+      <div onClick="{{ k.onClick }}" style="border-bottom:1px solid #F4EFE5;cursor:pointer">
+        <div style="display:grid;grid-template-columns:1.8fr 0.7fr 1.2fr 1.2fr 1fr 0.8fr 0.7fr 0.6fr 1.2fr;gap:8px;padding:13px 18px;align-items:center">
+          <!-- Creator -->
+          <div style="display:flex;align-items:center;gap:9px;min-width:0">
+            <div style="width:32px;height:32px;border-radius:50%;flex-shrink:0;background:{{ k.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700">{{ k.init }}</div>
+            <div style="min-width:0">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ k.name }}</div>
+              <div style="font-size:11px;color:#9A9387">{{ k.handle }} · {{ k.kolType }}</div>
+            </div>
+          </div>
+          <!-- Platform -->
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="width:26px;height:26px;border-radius:7px;background:{{ k.platBg }};display:flex;align-items:center;justify-content:center;color:{{ k.platFg }};font-size:8.5px;font-weight:800;flex-shrink:0">{{ k.platIcon }}</span>
+          </div>
+          <!-- Campaign -->
+          <div style="min-width:0">
+            <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k.campaign }}</div>
+            <div style="font-size:11px;color:#9A9387">{{ k.brandName }} · {{ k.branch }}</div>
+          </div>
+          <!-- Stage mini stepper -->
+          <div>
+            <span style="{{ k.stageStyle }}">{{ k.status }}</span>
+            <div style="font-size:10.5px;color:#9A9387;margin-top:3px">Step {{ k.stageNum }}/{{ k.stageTot }}</div>
+          </div>
+          <!-- Owner / Approver -->
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#211F1C">{{ k.owner }}</div>
+            <div style="font-size:11px;color:#C68A1E">↑ {{ k.pendingApprover }}</div>
+          </div>
+          <!-- Due -->
+          <div style="font-size:12px;font-weight:600;color:{{ k.dueColor }}">{{ k.postDueDate }}</div>
+          <!-- Fee -->
+          <div style="font-size:12px;font-weight:600">{{ k.feeF }}</div>
+          <!-- Comments -->
+          <div>
+            <sc-if value="{{ k.hasComments }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:#FBF3F1;color:#B33A2E">{{ k.openComments }} open</span>
+            </sc-if>
+            <sc-if value="{{ k.noComments }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:11px;color:#C0B8AD">—</span>
+            </sc-if>
+          </div>
+          <!-- Status -->
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="{{ k.statusStyle }}">{{ k.status }}</span>
+            <sc-if value="{{ k.hasBlocker }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:10px;color:#B33A2E;font-weight:700">⚠ {{ k.blocker }}</span>
+            </sc-if>
+          </div>
+        </div>
+        <!-- Mini stage bar -->
+        <div style="padding:0 18px 10px;display:flex;align-items:center;gap:2px">
+          <sc-for list="{{ k.stageBar }}" as="sb" hint-placeholder-count="6">
+            <div style="flex:1;height:3px;border-radius:2px;background:{{ sb.bg }};margin-right:2px"></div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+</sc-if>
+
+<!-- ══ PIPELINE VIEW ══ -->
+<sc-if value="{{ isKolPipeline }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:10px">
+  <sc-for list="{{ pipelineCols }}" as="col" hint-placeholder-count="5">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;overflow:hidden">
+      <!-- Stage group header -->
+      <div style="display:flex;align-items:center;gap:12px;padding:11px 18px;background:#FBF9F4;border-bottom:1px solid #ECE6DA">
+        <span style="{{ col.stageStyle }}">{{ col.stage }}</span>
+        <span style="font-size:12px;color:#9A9387;font-weight:600">{{ col.count }} creator(s)</span>
+        <span style="font-size:11px;color:#9A9387;margin-left:auto">{{ col.totalFee }}</span>
+      </div>
+      <!-- Column headers -->
+      <div style="display:grid;grid-template-columns:1.8fr 0.7fr 1.2fr 1fr 0.8fr 0.7fr 0.6fr;gap:8px;padding:9px 18px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase;border-bottom:1px solid #F4EFE5">
+        <span>Creator</span><span>Platform</span><span>Campaign</span><span>Owner / Approver</span><span>Due</span><span>Fee</span><span>Comments</span>
+      </div>
+      <!-- Rows -->
+      <sc-for list="{{ col.kols }}" as="pk" hint-placeholder-count="2">
+        <div onClick="{{ pk.onClick }}" style="display:grid;grid-template-columns:1.8fr 0.7fr 1.2fr 1fr 0.8fr 0.7fr 0.6fr;gap:8px;padding:12px 18px;border-bottom:1px solid #F4EFE5;align-items:center;cursor:pointer">
+          <div style="display:flex;align-items:center;gap:9px;min-width:0">
+            <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:{{ pk.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700">{{ pk.init }}</div>
+            <div style="min-width:0">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ pk.name }}</div>
+              <div style="font-size:11px;color:#9A9387">{{ pk.handle }}</div>
+            </div>
+          </div>
+          <span style="width:26px;height:26px;border-radius:7px;background:{{ pk.platBg }};display:flex;align-items:center;justify-content:center;color:{{ pk.platFg }};font-size:8.5px;font-weight:800">{{ pk.platIcon }}</span>
+          <div style="min-width:0">
+            <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ pk.campaign }}</div>
+            <div style="font-size:11px;color:#9A9387">{{ pk.brandName }}</div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600">{{ pk.owner }}</div>
+            <div style="font-size:11px;color:#C68A1E">↑ {{ pk.pendingApprover }}</div>
+          </div>
+          <div style="font-size:12px;font-weight:600;color:{{ pk.dueColor }}">{{ pk.postDueDate }}</div>
+          <div style="font-size:12px;font-weight:600">{{ pk.feeF }}</div>
+          <div>
+            <sc-if value="{{ pk.hasComments }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:11px;font-weight:700;padding:3px 7px;border-radius:999px;background:#FBF3F1;color:#B33A2E">{{ pk.openComments }}</span>
+            </sc-if>
+            <sc-if value="{{ pk.noComments }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:11px;color:#C0B8AD">—</span>
+            </sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+
+<!-- ══ KOL PLAN VIEW ══ -->
+<sc-if value="{{ isKolPlan }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:16px">
+  <!-- Plan sub-tabs -->
+  <div style="display:flex;gap:8px">
+    <sc-for list="{{ planSubTabs }}" as="pt" hint-placeholder-count="2"><span onClick="{{ pt.onClick }}" style="{{ pt.style }}">{{ pt.label }}</span></sc-for>
+  </div>
+
+  <!-- CALENDAR VIEW -->
+  <sc-if value="{{ isKolPlanCal }}" hint-placeholder-val="{{ false }}">
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+    <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:15px;font-weight:700">{{ calMonthLabel }} · KOL Post Schedule</div>
+    </div>
+    <!-- Day headers -->
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid #ECE6DA">
+      <sc-for list="{{ calDayNames }}" as="dn" hint-placeholder-count="7">
+        <div style="padding:8px 6px;text-align:center;font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.04em;text-transform:uppercase;border-right:1px solid #F0EBE0">{{ dn }}</div>
+      </sc-for>
+    </div>
+    <!-- Calendar grid -->
+    <div style="display:grid;grid-template-columns:repeat(7,1fr)">
+      <sc-for list="{{ calCells }}" as="cell" hint-placeholder-count="42">
+        <div style="min-height:88px;padding:7px 8px;background:{{ cell.bg }};border-right:1px solid #F0EBE0;border-bottom:1px solid #F0EBE0;vertical-align:top">
+          <div style="font-size:12px;font-weight:{{ cell.hasKols ? '800' : '500' }};color:{{ cell.hasKols ? '#211F1C' : '#C0B8AD' }};margin-bottom:5px">{{ cell.dayNum }}</div>
+          <sc-for list="{{ cell.kols }}" as="ck" hint-placeholder-count="1">
+            <div onClick="{{ ck.onClick }}" style="display:flex;align-items:center;gap:5px;padding:4px 6px;border-radius:7px;background:{{ ck.color }}18;border:1px solid {{ ck.color }}44;margin-bottom:3px;cursor:pointer">
+              <div style="width:16px;height:16px;border-radius:50%;background:{{ ck.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:7px;font-weight:700;flex-shrink:0">{{ ck.init }}</div>
+              <div style="font-size:10.5px;font-weight:600;color:#211F1C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ ck.name }}</div>
+              <sc-if value="{{ ck.hasComments }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:700;color:#B33A2E">💬</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- DASHBOARD VIEW -->
+  <sc-if value="{{ isKolPlanDash }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;gap:16px">
+  <!-- Task dashboard -->
+  <div style="background:#211F1C;border-radius:18px;padding:20px 22px;color:#fff">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div><div style="font-size:15px;font-weight:700">Specialist Task Dashboard</div><div style="font-size:12px;color:#cabfa9;margin-top:2px">Deal progress · all active KOLs</div></div>
+      <div style="display:flex;align-items:baseline;gap:6px"><div style="font-size:28px;font-weight:800;color:var(--accent,#B8945A)">{{ tPct }}%</div><div style="font-size:12px;color:#cabfa9">on track</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-bottom:14px">
+      <div style="background:rgba(255,255,255,.07);border-radius:12px;padding:12px 14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#cabfa9;font-weight:700">Total</div><div style="font-size:22px;font-weight:700;margin-top:4px">{{ tTotal }}</div></div>
+      <div style="background:rgba(78,122,78,.22);border:1px solid rgba(78,122,78,.4);border-radius:12px;padding:12px 14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9de09d;font-weight:700">Done</div><div style="font-size:22px;font-weight:700;margin-top:4px;color:#9de09d">{{ tDone }}</div></div>
+      <div style="background:rgba(198,138,30,.18);border:1px solid rgba(198,138,30,.4);border-radius:12px;padding:12px 14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#e6c187;font-weight:700">In Progress</div><div style="font-size:22px;font-weight:700;margin-top:4px;color:#e6c187">{{ tInProgress }}</div></div>
+      <div style="background:rgba(179,58,46,.2);border:1px solid rgba(179,58,46,.4);border-radius:12px;padding:12px 14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#f0a89f;font-weight:700">Overdue</div><div style="font-size:22px;font-weight:700;margin-top:4px;color:#f0a89f">{{ tOverdue }}</div></div>
+    </div>
+    <div style="height:7px;background:rgba(255,255,255,.1);border-radius:5px;overflow:hidden"><div style="height:7px;border-radius:5px;background:var(--accent,#B8945A);width:{{ tPct }}%"></div></div>
+  </div>
+  <!-- Specialist breakdown -->
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+    <div style="padding:14px 20px;border-bottom:1px solid #ECE6DA;font-size:15px;font-weight:700">Specialist Performance</div>
+    <sc-for list="{{ specialists }}" as="sp" hint-placeholder-count="3">
+      <div style="display:flex;align-items:center;gap:16px;padding:15px 20px;border-bottom:1px solid #F4EFE5;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px;min-width:160px;flex:1">
+          <div style="width:38px;height:38px;border-radius:50%;flex-shrink:0;background:{{ sp.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700">{{ sp.init }}</div>
+          <div><div style="font-size:14px;font-weight:700">{{ sp.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ sp.kols }} KOLs managed</div></div>
+        </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+          <div style="text-align:center"><div style="font-size:10.5px;color:#9A9387;font-weight:600">Active</div><div style="font-size:16px;font-weight:700;color:#C68A1E">{{ sp.active }}</div></div>
+          <div style="text-align:center"><div style="font-size:10.5px;color:#9A9387;font-weight:600">Done</div><div style="font-size:16px;font-weight:700;color:#4E7A4E">{{ sp.done }}</div></div>
+          <div style="text-align:center"><div style="font-size:10.5px;color:#9A9387;font-weight:600">Waiting</div><div style="font-size:16px;font-weight:700;color:#C68A1E">{{ sp.waiting }}</div></div>
+          <div style="text-align:center"><div style="font-size:10.5px;color:#9A9387;font-weight:600">Comments</div><div style="font-size:16px;font-weight:700;color:{{ sp.commentColor }}">{{ sp.comments }}</div></div>
+        </div>
+        <div style="flex:1;min-width:120px">
+          <div style="height:6px;background:#F0EBE0;border-radius:4px;overflow:hidden"><div style="height:6px;border-radius:4px;width:{{ sp.pctW }};background:{{ sp.pctColor }}"></div></div>
+          <div style="font-size:11px;color:#9A9387;margin-top:4px;text-align:right">{{ sp.pct }}% complete</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <!-- Timeline groups -->
+  <sc-for list="{{ planGroups }}" as="grp" hint-placeholder-count="4">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:14px 18px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="font-size:13.5px;font-weight:700;color:{{ grp.labelColor }}">{{ grp.label }}</div>
+        <sc-if value="{{ grp.isToday }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:700;color:var(--accent,#B8945A);background:#f7efe1;border-radius:999px;padding:1px 8px">TODAY</span></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <sc-for list="{{ grp.tasks }}" as="t" hint-placeholder-count="2">
+          <div onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#FBF9F4;border-radius:11px;border:1px solid #F2EDE2;cursor:pointer">
+            <span style="width:6px;height:32px;border-radius:4px;flex-shrink:0;background:{{ t.brandColor }}"></span>
+            <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:{{ t.brandColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700">{{ t.init }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px">
+                <span style="font-size:13px;font-weight:700">{{ t.kol }}</span>
+                <span style="width:22px;height:22px;border-radius:6px;background:{{ t.platBg }};display:flex;align-items:center;justify-content:center;color:{{ t.platFg }};font-size:8.5px;font-weight:800;flex-shrink:0">{{ t.platIcon }}</span>
+                <sc-if value="{{ t.hasComments }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;color:#B33A2E;background:#FBF3F1;padding:2px 6px;border-radius:999px">{{ t.openComments }} 💬</span></sc-if>
+              </div>
+              <div style="font-size:11.5px;color:#9A9387">{{ t.campaign }} · {{ t.brand }}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <span style="{{ t.stageStyle }}">{{ t.stage }}</span>
+              <div style="font-size:11px;color:#9A9387;margin-top:4px">{{ t.owner }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-for>
+  </div>
+  </sc-if>
+
+</div>
+</sc-if>
+
+<!-- ── DRAWER OVERLAY ── -->
+<div onClick="{{ closeDrawer }}" style="position:fixed;inset:0;background:rgba(33,31,28,.3);z-index:98;display:{{ overlayDisplay }}"></div>
+
+<!-- ── KOL DETAIL DRAWER ── -->
+<div style="position:fixed;right:{{ drawerRight }};top:0;bottom:0;width:520px;background:#fff;z-index:99;box-shadow:-4px 0 32px rgba(33,31,28,.12);overflow-y:auto;transition:right .28s cubic-bezier(.32,.72,0,1);display:flex;flex-direction:column">
+
+  <!-- Drawer header -->
+  <div style="padding:18px 22px 0;border-bottom:1px solid #ECE6DA;flex-shrink:0">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px">
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <div style="width:34px;height:34px;border-radius:50%;background:{{ dkColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0">{{ dkInit }}</div>
+          <div>
+            <div style="font-size:16px;font-weight:800">{{ dkName }}</div>
+            <div style="font-size:12px;color:#9A9387">{{ dkHandle }} · {{ dkPlatform }}</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+          <span style="{{ dkStatusStyle }}">{{ dkStatus }}</span>
+          <span style="font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;background:#F0EDE6;color:#6b6258">{{ dkBrandName }}</span>
+          <span style="font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;background:#EEF1F8;color:#3E5C9A">{{ dkCampaign }}</span>
+        </div>
+        <div style="display:flex;gap:14px;margin-top:10px">
+          <div><span style="font-size:10.5px;color:#9A9387;font-weight:600">OWNER</span><div style="font-size:12.5px;font-weight:700">{{ dkOwner }}</div></div>
+          <div><span style="font-size:10.5px;color:#9A9387;font-weight:600">APPROVER</span><div style="font-size:12.5px;font-weight:700;color:#C68A1E">{{ dkApprover }}</div></div>
+          <div><span style="font-size:10.5px;color:#9A9387;font-weight:600">DUE</span><div style="font-size:12.5px;font-weight:700;color:{{ dkDueColor }}">{{ dkDue }}</div></div>
+        </div>
+      </div>
+      <span onClick="{{ closeDrawer }}" style="font-size:20px;color:#9A9387;cursor:pointer;flex-shrink:0;line-height:1;padding:4px">✕</span>
+    </div>
+    <!-- Drawer tabs -->
+    <div style="display:flex;gap:2px;overflow-x:auto;padding-bottom:1px">
+      <sc-for list="{{ drawerTabs }}" as="dt" hint-placeholder-count="7"><span onClick="{{ dt.onClick }}" style="{{ dt.style }}">{{ dt.label }}</span></sc-for>
+    </div>
+  </div>
+
+  <!-- Drawer content -->
+  <div style="flex:1;overflow-y:auto;padding:20px 22px">
+
+    <!-- PROFILE TAB -->
+    <sc-if value="{{ isDkProfile }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Creator Profile</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">KOL TYPE</div><div style="font-size:13px;font-weight:600">{{ dkKolType }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">FOLLOWERS</div><div style="font-size:13px;font-weight:600">{{ dkFollowers }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">AVG REACH</div><div style="font-size:13px;font-weight:600">{{ dkExpReach }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">AUDIENCE FIT</div><div style="font-size:13px;font-weight:600;color:#4E7A4E">{{ dkAudienceFit }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">CONTENT STYLE</div><div style="font-size:13px;font-weight:600">{{ dkContentStyle }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">PLATFORM</div><div style="font-size:13px;font-weight:600">{{ dkPlatform }}</div></div>
+        </div>
+      </div>
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:10px">Contact & History</div>
+        <div style="font-size:12.5px;color:#6b6258;margin-bottom:8px">{{ dkContact }}</div>
+        <div style="font-size:12px;color:#9A9387;font-style:italic">{{ dkPastCollab }}</div>
+      </div>
+      <!-- Pipeline stepper -->
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Pipeline Progress</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ dkStages }}" as="s" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:20px;height:20px;border-radius:50%;flex-shrink:0;background:{{ s.dotBg }};border:2px solid {{ s.dotBorder }};display:flex;align-items:center;justify-content:center">
+                <sc-if value="{{ s.done }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;color:#fff;font-weight:700">✓</span></sc-if>
+              </div>
+              <div style="flex:1">
+                <div style="font-size:12.5px;font-weight:{{ s.fw }};color:{{ s.textColor }}">{{ s.label }}</div>
+                <div style="font-size:11px;color:#9A9387">{{ s.date }}</div>
+              </div>
+              <sc-if value="{{ s.isCur }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;color:var(--accent,#B8945A);background:#f7efe1;padding:2px 8px;border-radius:999px">NOW</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- CAMPAIGN TAB -->
+    <sc-if value="{{ isDkCampaign }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Campaign Assignment</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">CAMPAIGN</div><div style="font-size:13px;font-weight:600">{{ dkCampaign }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">BRANCH</div><div style="font-size:13px;font-weight:600">{{ dkBranch }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">OBJECTIVE</div><div style="font-size:13px;font-weight:600">{{ dkObjective }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">POSTING PERIOD</div><div style="font-size:13px;font-weight:600">{{ dkPostingPeriod }}</div></div>
+        </div>
+      </div>
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:6px">TARGET AUDIENCE</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px">{{ dkTarget }}</div>
+        <div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:6px">KEY MESSAGE</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px">{{ dkKeyMsg }}</div>
+        <div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:6px">OFFER</div>
+        <div style="font-size:13px;font-weight:600">{{ dkOffer }}</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- DELIVERABLES TAB -->
+    <sc-if value="{{ isDkDeliverables }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ dkDeliverables }}" as="d" hint-placeholder-count="3">
+        <div style="background:#FBF9F4;border:1px solid #F0EBE0;border-radius:14px;padding:14px 16px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+            <div><div style="font-size:13px;font-weight:700">{{ d.type }}</div><div style="font-size:11.5px;color:#9A9387">{{ d.platform }} · ×{{ d.qty }} · Due {{ d.due }}</div></div>
+            <span style="{{ d.statusStyle }}">{{ d.status }}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+            <div><span style="color:#9A9387">Draft: </span><span style="font-weight:600;color:{{ d.draftColor }}">{{ d.draftLabel }}</span></div>
+            <div><span style="color:#9A9387">Post: </span><span style="font-weight:600;color:{{ d.postColor }}">{{ d.postLabel }}</span></div>
+            <div><span style="color:#9A9387">Owner: </span><span style="font-weight:600">{{ d.owner }}</span></div>
+            <div><span style="color:#9A9387">Approver: </span><span style="font-weight:600;color:#C68A1E">{{ d.pendingApprover }}</span></div>
+          </div>
+          <sc-if value="{{ d.hasComments }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:8px;font-size:11px;font-weight:700;color:#B33A2E">💬 {{ d.openComments }} open comment(s)</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- BRIEF & ASSETS TAB -->
+    <sc-if value="{{ isDkBrief }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <sc-for list="{{ dkLinks }}" as="lk" hint-placeholder-count="6">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#FBF9F4;border-radius:12px;border:1px solid #F0EBE0">
+          <div style="flex:1"><div style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.04em;text-transform:uppercase;margin-bottom:2px">{{ lk.label }}</div><div style="font-size:13px;font-weight:600;color:{{ lk.valueColor }}">{{ lk.value }}</div></div>
+          <sc-if value="{{ lk.hasLink }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;background:#211F1C;color:#fff;cursor:pointer">Open →</span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- CONTRACT & PAYMENT TAB -->
+    <sc-if value="{{ isDkContract }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Contract & Quotation</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:4px">CONTRACT</div><span style="{{ dkContractStyle }}">{{ dkContractStatus }}</span></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:4px">QUOTATION</div><span style="{{ dkQuoteStyle }}">{{ dkQuoteStatus }}</span></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:4px">INVOICE</div><span style="{{ dkInvoiceStyle }}">{{ dkInvoiceStatus }}</span></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:4px">PAYMENT</div><span style="{{ dkPayStyle }}">{{ dkPayStatus }}</span></div>
+        </div>
+      </div>
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Cost Breakdown</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between"><span style="font-size:13px;color:#6b6258">KOL Fee</span><span style="font-size:13px;font-weight:700">{{ dkFeeF }}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:13px;color:#6b6258">Food / Product Support</span><span style="font-size:13px;font-weight:700">{{ dkFoodCostF }}</span></div>
+          <div style="height:1px;background:#ECE6DA"></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:13px;font-weight:700">Total Cost</span><span style="font-size:15px;font-weight:800;color:var(--accent,#B8945A)">{{ dkTotalCostF }}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:#9A9387">Payment Due</span><span style="font-size:12px;font-weight:600">{{ dkPayDue }}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:#9A9387">Finance Request</span><span style="font-size:12px;font-weight:600;color:#3E5C9A">{{ dkFinReqId }}</span></div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- RESULTS TAB -->
+    <sc-if value="{{ isDkResults }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <sc-if value="{{ dkHasResult }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="background:#EEF4EE;border:1px solid #B5CEAF;border-radius:14px;padding:14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#4E7A4E;font-weight:700;margin-bottom:4px">Reach</div><div style="font-size:22px;font-weight:700">{{ dkActualReach }}</div></div>
+        <div style="background:#EEF4EE;border:1px solid #B5CEAF;border-radius:14px;padding:14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#4E7A4E;font-weight:700;margin-bottom:4px">Visits</div><div style="font-size:22px;font-weight:700">{{ dkVisits }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:4px">CPV</div><div style="font-size:22px;font-weight:700">{{ dkCpv }}</div></div>
+        <div style="background:#211F1C;border-radius:14px;padding:14px;color:#fff"><div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent,#B8945A);font-weight:700;margin-bottom:4px">ROAS</div><div style="font-size:22px;font-weight:700">{{ dkRoi }}</div></div>
+      </div>
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">ENGAGEMENT</div><div style="font-size:13px;font-weight:600">{{ dkEngagement }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">SAVES</div><div style="font-size:13px;font-weight:600">{{ dkSaves }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">SHARES</div><div style="font-size:13px;font-weight:600">{{ dkShares }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">COUPON USED</div><div style="font-size:13px;font-weight:600">{{ dkCoupon }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">POST DATE</div><div style="font-size:13px;font-weight:600">{{ dkPostedDate }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">POST LINK</div><div style="font-size:13px;font-weight:600;color:#3E5C9A">{{ dkPostLink }}</div></div>
+        </div>
+      </div>
+      </sc-if>
+      <sc-if value="{{ dkNoResult }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:40px 20px;text-align:center;color:#9A9387">
+        <div style="font-size:32px;margin-bottom:12px">📊</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px">Results not yet recorded</div>
+        <div style="font-size:12.5px">Fill in once KOL has posted</div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- COMMENTS TAB -->
+    <sc-if value="{{ isDkComments }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:700">{{ dkOpenCount }} open · {{ dkTotalComments }} total</div>
+        <span style="font-size:12px;font-weight:700;padding:7px 12px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer">+ Add Comment</span>
+      </div>
+      <sc-for list="{{ dkComments }}" as="cm" hint-placeholder-count="3">
+        <div style="background:#FBF9F4;border:1px solid {{ cm.borderColor }};border-radius:14px;padding:14px 16px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:{{ cm.ownerColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0">{{ cm.ownerInit }}</div>
+              <div><div style="font-size:12.5px;font-weight:700">{{ cm.owner }}</div><div style="font-size:11px;color:#9A9387">{{ cm.ownerTeam }} · {{ cm.createdAt }}</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <span style="{{ cm.statusStyle }}">{{ cm.status }}</span>
+              <sc-if value="{{ cm.isOpen }}" hint-placeholder-val="{{ false }}"><span onClick="{{ cm.onResolve }}" style="font-size:11px;font-weight:700;padding:4px 9px;border-radius:8px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">Resolve</span></sc-if>
+            </div>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#9A9387;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">{{ cm.type }} · {{ cm.relatedItem }}</div>
+          <div style="font-size:13px;color:#211F1C;line-height:1.5;margin-bottom:8px">{{ cm.text }}</div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="font-size:11.5px;color:#9A9387">→ {{ cm.assignedTo }}</div>
+            <sc-if value="{{ cm.hasDue }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:#C68A1E;font-weight:600">Due {{ cm.due }}</div></sc-if>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ dkNoComments }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:40px 20px;text-align:center;color:#9A9387">
+          <div style="font-size:32px;margin-bottom:12px">💬</div>
+          <div style="font-size:13px;font-weight:600">No comments yet</div>
+        </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+<!-- ── REQUEST MODAL ── -->
+<sc-if value="{{ requestOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closeRequest }}" style="position:fixed;inset:0;background:rgba(33,31,28,.4);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto">
+  <div onClick="{{ stopProp }}" style="background:#fff;border-radius:20px;padding:28px 30px;width:100%;max-width:560px;box-shadow:0 8px 40px rgba(0,0,0,.15)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px">
+      <div style="font-size:17px;font-weight:800">Request KOL / Creator</div>
+      <span onClick="{{ closeRequest }}" style="font-size:20px;color:#9A9387;cursor:pointer;line-height:1">✕</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Campaign <span style="color:#B33A2E">*</span></label><select style="{{ formSelectStyle }}"><option>Wagyu Festival</option><option>Summer Reel Series</option><option>Cocktail Hour Launch</option></select></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Brand <span style="color:#B33A2E">*</span></label><select style="{{ formSelectStyle }}"><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Branch</label><input type="text" placeholder="e.g. Thonglor" style="{{ formInputStyle }}"></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">KOL Type</label><select style="{{ formSelectStyle }}"><option>Food Blogger</option><option>Lifestyle</option><option>Food Vlogger</option><option>Chef / F&B Expert</option><option>Micro Influencer</option></select></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Platform</label><select style="{{ formSelectStyle }}"><option>Instagram</option><option>TikTok</option><option>Facebook</option><option>YouTube</option></select></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">No. of Creators</label><input type="number" placeholder="1" style="{{ formInputStyle }}"></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Budget / Creator (฿)</label><input type="text" placeholder="e.g. 50,000" style="{{ formInputStyle }}"></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Total Budget (฿)</label><input type="text" placeholder="e.g. 150,000" style="{{ formInputStyle }}"></div>
+      </div>
+      <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Deliverables</label><input type="text" placeholder="e.g. 1 Reel + 3 Stories + 1 TikTok" style="{{ formInputStyle }}"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Posting Period</label><input type="text" placeholder="e.g. Jun 20 – Jul 5" style="{{ formInputStyle }}"></div>
+        <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Approval Owner</label><select style="{{ formSelectStyle }}"><option>Aran P. (CMO)</option><option>Ken S.</option><option>Ploy R.</option></select></div>
+      </div>
+      <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Objective</label><input type="text" placeholder="e.g. Awareness + store visits" style="{{ formInputStyle }}"></div>
+      <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Notes</label><textarea placeholder="Any additional context..." rows="3" style="{{ formTextareaStyle }}"></textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <span onClick="{{ closeRequest }}" style="flex:1;text-align:center;font-size:14px;font-weight:600;color:#6b6258;border:1.5px solid #E5DECF;border-radius:11px;padding:12px;cursor:pointer">Cancel</span>
+        <span style="flex:2;text-align:center;font-size:14px;font-weight:700;color:#fff;background:#211F1C;border-radius:11px;padding:12px;cursor:pointer">Submit Request →</span>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 900}
+}">
+class Component extends DCLogic {
+  state = {
+    kolTab: 'list',
+    kolPlanTab: 'dashboard',
+    kolBrand: 'all',
+    kolStage: 'all',
+    drawerOpen: false,
+    drawerId: null,
+    drawerTab: 'profile',
+    requestOpen: false,
+    dateMode: 'month',
+    dateMonth: 5,
+    dateYear: 2026,
+    dateStart: '2026-06-01',
+    dateEnd: '2026-06-30',
+  };
+
+  brands = { teppen:{name:'TEPPEN',color:'#B33A2E'}, omakase:{name:'Omakase Don',color:'#3E5C9A'}, mainichi:{name:'Mainichi',color:'#4E7A4E'}, touka:{name:'Touka',color:'#C68A1E'} };
+
+  kolStatusMap = {
+    'Prospect':['#9A9387','#F0EDE6'],'Shortlisted':['#3E5C9A','#eef1f8'],'Negotiating':['#C68A1E','#fbf6ed'],
+    'Contract Pending':['#C68A1E','#fbf6ed'],'Contract Signed':['#4E7A4E','#eef4ee'],'Brief Sent':['#3E5C9A','#eef1f8'],
+    'Content Creating':['#3E5C9A','#eef1f8'],'Draft Submitted':['#C68A1E','#fbf6ed'],'Waiting Review':['#C68A1E','#fbf6ed'],
+    'Revision Requested':['#B33A2E','#fbf0ee'],'Approved to Post':['#4E7A4E','#eef4ee'],'Scheduled':['#4E7A4E','#eef4ee'],
+    'Posted':['#4E7A4E','#eef4ee'],'Reporting':['#6b6258','#F0EDE6'],'Completed':['#211F1C','#ECE6DA'],
+    'Paused':['#B33A2E','#fbf0ee'],'Cancelled':['#9A9387','#F0EDE6'],'Active':['#4E7A4E','#eef4ee'],
+    'Approved':['#4E7A4E','#eef4ee'],'Pending':['#C68A1E','#fbf6ed'],'Unpaid':['#B33A2E','#fbf0ee'],
+    'Paid':['#4E7A4E','#eef4ee'],'Signed':['#4E7A4E','#eef4ee'],'Resolved':['#4E7A4E','#eef4ee'],
+    'Open':['#B33A2E','#fbf0ee'],'In progress':['#3E5C9A','#eef1f8'],'Waiting reply':['#C68A1E','#fbf6ed'],
+  };
+
+  platIconMap = { 'Instagram':{icon:'IG',bg:'#E1306C',fg:'#fff'}, 'TikTok':{icon:'TK',bg:'#010101',fg:'#fff'}, 'Facebook':{icon:'FB',bg:'#1877F2',fg:'#fff'}, 'LINE OA':{icon:'LN',bg:'#06C755',fg:'#fff'}, 'Google Map':{icon:'GM',bg:'#4285F4',fg:'#fff'}, 'YouTube':{icon:'YT',bg:'#FF0000',fg:'#fff'} };
+
+  allStages = ['Prospect','Shortlisted','Negotiating','Contract Pending','Contract Signed','Brief Sent','Content Creating','Draft Submitted','Waiting Review','Revision Requested','Approved to Post','Scheduled','Posted','Reporting','Completed'];
+
+  kolData = [
+    { id:0, name:'Nong Aim', h:'@nongaim.eats', plat:'Instagram', b:'teppen', branch:'Thonglor', campaign:'Wagyu Festival', kolType:'Food Blogger', followers:320000, expectedReach:580000, actualReach:420000, visits:210, fee:45000, foodCost:5000, totalCost:50000, owner:'Ken S.', ownerTeam:'KOL Team', pendingApprover:'Aran P.', currentBlocker:null, status:'Waiting Review', waitingSince:'Jun 25', postDueDate:'Jun 28', postedDate:null, openComments:2, latestComment:'Caption too long', isOverdue:false, briefLink:'#', assetLink:'#', draftLink:'#', finalPostLink:null, utmLink:'#utm', couponCode:'WAGYU2026', contractStatus:'Signed', quotationStatus:'Approved', invoiceStatus:'Pending', paymentStatus:'Unpaid', financeReqId:'REQ-001', paymentDue:'Jul 5', roi:3.2, audienceFit:'High', contentStyle:'Food photography + short video', contactInfo:'Agency: CreatorHub · ken@creatorhub.co', rateCard:'#rate', pastCollab:'Wagyu teaser Jun 2025 — 3.8× ROI', objective:'Store Visit + Awareness', target:'BKK diners 28–45', keyMsg:'Taste the finest Wagyu in BKK', offer:'Wagyu Omakase set ฿2,990', postingPeriod:'Jun 25 – Jun 28', engagement:'18.2K', saves:'3.4K', shares:'1.2K', postLink:null,
+      stages:[{l:'Negotiate',d:'May 28',done:true,cur:false},{l:'Contract',d:'Jun 1',done:true,cur:false},{l:'Brief',d:'Jun 5',done:true,cur:false},{l:'Create',d:'Jun 20',done:true,cur:false},{l:'Review',d:'Jun 25',done:false,cur:true},{l:'Post',d:'Jun 28',done:false,cur:false}] },
+    { id:1, name:'BkkFoodie', h:'@bkkfoodie', plat:'TikTok', b:'omakase', branch:'Siam Paragon', campaign:"Father's Day Set", kolType:'Food Vlogger', followers:1200000, expectedReach:1500000, actualReach:1100000, visits:540, fee:80000, foodCost:8000, totalCost:88000, owner:'Ken S.', ownerTeam:'KOL Team', pendingApprover:'Aran P.', currentBlocker:null, status:'Draft Submitted', waitingSince:'Jun 28', postDueDate:'Jun 30', postedDate:null, openComments:1, latestComment:'Video too long', isOverdue:false, briefLink:'#', assetLink:'#', draftLink:'#draft2', finalPostLink:null, utmLink:'#', couponCode:'FDAY2026', contractStatus:'Signed', quotationStatus:'Approved', invoiceStatus:'Issued', paymentStatus:'Pending', financeReqId:'REQ-002', paymentDue:'Jul 10', roi:4.4, audienceFit:'Very High', contentStyle:'Vlog + food tour', contactInfo:'Direct · bkkfoodie@gmail.com', rateCard:'#', pastCollab:"Father's Day 2025 — 4.1× ROI", objective:'Awareness + Reservation', target:'Omakase enthusiasts', keyMsg:'Every meal tells a story', offer:'Father\'s Day Omakase ฿3,800/set', postingPeriod:'Jun 28 – Jun 30', engagement:'42K', saves:'8.1K', shares:'3.5K', postLink:null,
+      stages:[{l:'Negotiate',d:'Jun 1',done:true,cur:false},{l:'Contract',d:'Jun 5',done:true,cur:false},{l:'Brief',d:'Jun 8',done:true,cur:false},{l:'Create',d:'Jun 20',done:true,cur:false},{l:'Review',d:'Jun 28',done:false,cur:true},{l:'Post',d:'Jun 30',done:false,cur:false}] },
+    { id:2, name:'Khun Pim', h:'@pimeats', plat:'Instagram', b:'mainichi', branch:'Asok', campaign:'LINE Coupon Drive', kolType:'Micro Influencer', followers:95000, expectedReach:120000, actualReach:110000, visits:64, fee:18000, foodCost:2000, totalCost:20000, owner:'Nok W.', ownerTeam:'KOL Team', pendingApprover:'—', currentBlocker:null, status:'Completed', waitingSince:null, postDueDate:'May 30', postedDate:'May 30', openComments:0, latestComment:'', isOverdue:false, briefLink:'#', assetLink:'#', draftLink:'#', finalPostLink:'#post3', utmLink:'#', couponCode:'LUNCH189', contractStatus:'Signed', quotationStatus:'Approved', invoiceStatus:'Paid', paymentStatus:'Paid', financeReqId:'REQ-003', paymentDue:'Jun 5', roi:1.6, audienceFit:'Medium', contentStyle:'Daily food diary', contactInfo:'Direct · pim.eats@ig.com', rateCard:'#', pastCollab:'First collaboration', objective:'CRM + store visit', target:'Office workers near Asok', keyMsg:'Daily lunch elevated', offer:'Lunch set from ฿189', postingPeriod:'May 25 – May 30', engagement:'4.2K', saves:'820', shares:'310', postLink:'instagram.com/p/abc123',
+      stages:[{l:'Negotiate',d:'May 1',done:true,cur:false},{l:'Contract',d:'May 5',done:true,cur:false},{l:'Brief',d:'May 10',done:true,cur:false},{l:'Create',d:'May 20',done:true,cur:false},{l:'Review',d:'May 28',done:true,cur:false},{l:'Post',d:'May 30',done:true,cur:false}] },
+    { id:3, name:'SauceMaster', h:'@saucemaster', plat:'TikTok', b:'touka', branch:'Silom', campaign:'Cocktail Hour Launch', kolType:'Food & Lifestyle', followers:540000, expectedReach:720000, actualReach:0, visits:0, fee:35000, foodCost:4000, totalCost:39000, owner:'Ploy R.', ownerTeam:'KOL Team', pendingApprover:'Ken S.', currentBlocker:null, status:'Content Creating', waitingSince:'Jun 18', postDueDate:'Jul 5', postedDate:null, openComments:0, latestComment:'', isOverdue:false, briefLink:'#', assetLink:'#', draftLink:null, finalPostLink:null, utmLink:'#', couponCode:'COCKTAIL5PM', contractStatus:'Signed', quotationStatus:'Approved', invoiceStatus:'Pending', paymentStatus:'Unpaid', financeReqId:'REQ-004', paymentDue:'Jul 15', roi:2.1, audienceFit:'High', contentStyle:'Night life + cocktail culture', contactInfo:'Agency: TalentGo · ploy@talentgo.co', rateCard:'#', pastCollab:'First collaboration', objective:'Sales + awareness', target:'After-work crowd 25–38', keyMsg:'Where flavour meets ambiance', offer:'Cocktail hour 5–8PM · 1 free drink', postingPeriod:'Jul 1 – Jul 5', engagement:'—', saves:'—', shares:'—', postLink:null,
+      stages:[{l:'Negotiate',d:'Jun 10',done:true,cur:false},{l:'Contract',d:'Jun 15',done:true,cur:false},{l:'Brief',d:'Jun 18',done:true,cur:false},{l:'Create',d:'Jul 1',done:false,cur:true},{l:'Review',d:'Jul 3',done:false,cur:false},{l:'Post',d:'Jul 5',done:false,cur:false}] },
+    { id:4, name:'Tokyo Tom', h:'@tokyotom', plat:'YouTube', b:'teppen', branch:'EmQuartier', campaign:'Wagyu Festival', kolType:'Chef / F&B Expert', followers:210000, expectedReach:0, actualReach:0, visits:0, fee:60000, foodCost:10000, totalCost:70000, owner:'Ken S.', ownerTeam:'KOL Team', pendingApprover:'Ken S.', currentBlocker:'Fee negotiation', status:'Negotiating', waitingSince:'Jun 20', postDueDate:'TBD', postedDate:null, openComments:0, latestComment:'', isOverdue:false, briefLink:null, assetLink:null, draftLink:null, finalPostLink:null, utmLink:null, couponCode:null, contractStatus:'Pending', quotationStatus:'Pending', invoiceStatus:'Not issued', paymentStatus:'Not started', financeReqId:'—', paymentDue:'TBD', roi:0, audienceFit:'Medium', contentStyle:'Long-form review + cooking', contactInfo:'Direct · tokyotom@yt.com', rateCard:'#', pastCollab:'No prior collab', objective:'Credibility + awareness', target:'Japanese cuisine enthusiasts', keyMsg:'Authentic Wagyu experience', offer:"Chef's table experience", postingPeriod:'TBD', engagement:'—', saves:'—', shares:'—', postLink:null,
+      stages:[{l:'Negotiate',d:'Jun 20',done:false,cur:true},{l:'Contract',d:'TBD',done:false,cur:false},{l:'Brief',d:'—',done:false,cur:false},{l:'Create',d:'—',done:false,cur:false},{l:'Review',d:'—',done:false,cur:false},{l:'Post',d:'TBD',done:false,cur:false}] },
+    { id:5, name:'LINE Lady', h:'@linelady', plat:'Facebook', b:'mainichi', branch:'All branches', campaign:'Rainy Season Promo', kolType:'Lifestyle Blogger', followers:78000, expectedReach:95000, actualReach:0, visits:0, fee:12000, foodCost:1500, totalCost:13500, owner:'Nok W.', ownerTeam:'KOL Team', pendingApprover:'—', currentBlocker:'Campaign on hold', status:'Paused', waitingSince:'May 15', postDueDate:'On hold', postedDate:null, openComments:0, latestComment:'', isOverdue:false, briefLink:'#', assetLink:null, draftLink:null, finalPostLink:null, utmLink:null, couponCode:null, contractStatus:'Signed', quotationStatus:'Approved', invoiceStatus:'Not issued', paymentStatus:'Not started', financeReqId:'—', paymentDue:'TBD', roi:0, audienceFit:'Low', contentStyle:'Daily lifestyle content', contactInfo:'Direct', rateCard:'#', pastCollab:'No prior collab', objective:'Awareness', target:'LINE users 30+', keyMsg:'Daily lunch elevated', offer:'Rainy season special', postingPeriod:'On hold', engagement:'—', saves:'—', shares:'—', postLink:null,
+      stages:[{l:'Negotiate',d:'May 15',done:true,cur:false},{l:'Contract',d:'May 20',done:true,cur:false},{l:'Brief',d:'—',done:false,cur:false},{l:'Create',d:'—',done:false,cur:false},{l:'Review',d:'—',done:false,cur:false},{l:'Post',d:'On hold',done:false,cur:false}] }
+  ];
+
+  commentsData = [
+    { id:0, kolId:0, type:'Revision request', text:'Caption is too long — needs to be under 150 characters. Current draft is 280 chars.', owner:'Ken S.', ownerTeam:'Content Team', ownerColor:'#3E5C9A', assignedTo:'Nong Aim', status:'Open', relatedItem:'Caption', createdAt:'Jun 26', due:'Jun 27' },
+    { id:1, kolId:0, type:'General comment', text:'Please add #WagyuFestival2026 and tag @teppenbkk in the caption.', owner:'Ploy R.', ownerTeam:'Brand Team', ownerColor:'#B5577E', assignedTo:'Nong Aim', status:'Open', relatedItem:'Caption', createdAt:'Jun 26', due:'Jun 27' },
+    { id:2, kolId:0, type:'Approval comment', text:'Brief approved. Visual direction is on point — proceed with content creation.', owner:'Aran P.', ownerTeam:'CMO', ownerColor:'#B8945A', assignedTo:'Ken S.', status:'Resolved', relatedItem:'Brief', createdAt:'Jun 10', due:null },
+    { id:3, kolId:1, type:'Revision request', text:'Video is 2:45 min — maximum allowed is 90s for TikTok feed. Please re-edit.', owner:'Ken S.', ownerTeam:'KOL Team', ownerColor:'#3E5C9A', assignedTo:'BkkFoodie', status:'Open', relatedItem:'Draft video', createdAt:'Jun 28', due:'Jun 29' },
+    { id:4, kolId:1, type:'Brief clarification', text:'Please confirm: the signature dish to feature is the Premium Omakase Don, not the regular set.', owner:'Ploy R.', ownerTeam:'Brand Team', ownerColor:'#B5577E', assignedTo:'BkkFoodie', status:'Resolved', relatedItem:'Brief', createdAt:'Jun 8', due:null }
+  ];
+
+  deliverablesData = [
+    { id:0, kolId:0, type:'Instagram Reel', platform:'Instagram', qty:1, due:'Jun 28', draftLink:'#draft', finalPostLink:null, status:'Draft Submitted', owner:'Nong Aim', pendingApprover:'Ken S.', openComments:2 },
+    { id:1, kolId:0, type:'Instagram Story ×3', platform:'Instagram', qty:3, due:'Jun 28', draftLink:null, finalPostLink:null, status:'Content Creating', owner:'Nong Aim', pendingApprover:null, openComments:0 },
+    { id:2, kolId:1, type:'TikTok Video', platform:'TikTok', qty:1, due:'Jun 30', draftLink:'#draft2', finalPostLink:null, status:'Draft Submitted', owner:'BkkFoodie', pendingApprover:'Ken S.', openComments:1 },
+    { id:3, kolId:1, type:'TikTok Story ×2', platform:'TikTok', qty:2, due:'Jun 30', draftLink:null, finalPostLink:null, status:'Content Creating', owner:'BkkFoodie', pendingApprover:null, openComments:0 },
+    { id:4, kolId:2, type:'Instagram Feed Post', platform:'Instagram', qty:1, due:'May 30', draftLink:'#', finalPostLink:'#post3', status:'Completed', owner:'Khun Pim', pendingApprover:'—', openComments:0 },
+    { id:5, kolId:3, type:'TikTok Video', platform:'TikTok', qty:1, due:'Jul 5', draftLink:null, finalPostLink:null, status:'Content Creating', owner:'SauceMaster', pendingApprover:'Ploy R.', openComments:0 }
+  ];
+
+  teamData = [
+    { name:'Ken S.', init:'KS', color:'#3E5C9A', kols:3, active:2, done:1, waiting:1, comments:3, pct:67 },
+    { name:'Ploy R.', init:'PR', color:'#B5577E', kols:1, active:1, done:0, waiting:0, comments:0, pct:33 },
+    { name:'Nok W.', init:'NW', color:'#6b6258', kols:2, active:0, done:1, waiting:0, comments:0, pct:50 }
+  ];
+
+  fmtShort(n) {
+    if (!n && n !== 0) return '—';
+    if (n >= 1000000) return '฿' + (n/1000000).toFixed(1) + 'M';
+    if (n >= 1000) return '฿' + Math.round(n/1000) + 'K';
+    return '฿' + n;
+  }
+  fmtFollow(n) {
+    if (!n) return '—';
+    if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n/1000).toFixed(0) + 'K';
+    return String(n);
+  }
+  badge(s, map) {
+    const [fg, bg] = (map||{})[s] || ['#6b6258','#F0EDE6'];
+    return { fontSize:'11.5px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:bg, color:fg, display:'inline-block', whiteSpace:'nowrap' };
+  }
+
+  renderVals() {
+    const segBtn = (a) => a
+      ? { fontSize:'12.5px',fontWeight:700,padding:'7px 14px',borderRadius:'8px',background:'#fff',color:'#211F1C',cursor:'pointer',whiteSpace:'nowrap',boxShadow:'0 1px 2px rgba(0,0,0,.07)' }
+      : { fontSize:'12.5px',fontWeight:600,padding:'7px 14px',borderRadius:'8px',color:'#6b6258',cursor:'pointer',whiteSpace:'nowrap' };
+    const tabStyle = (a) => a
+      ? { fontSize:'13px',fontWeight:700,padding:'8px 16px',borderRadius:'10px',background:'#fff',color:'#211F1C',cursor:'pointer',whiteSpace:'nowrap',boxShadow:'0 1px 2px rgba(0,0,0,.06)' }
+      : { fontSize:'13px',fontWeight:600,padding:'8px 16px',borderRadius:'10px',color:'#6b6258',cursor:'pointer',whiteSpace:'nowrap' };
+    const chip = (a) => a
+      ? { fontSize:'12px',fontWeight:700,padding:'5px 11px',borderRadius:'999px',background:'#211F1C',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px' }
+      : { fontSize:'12px',fontWeight:500,padding:'5px 11px',borderRadius:'999px',border:'1px solid #E5DECF',color:'#6b6258',cursor:'pointer',background:'#fff',display:'flex',alignItems:'center',gap:'4px' };
+
+    // date filter
+    const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const { dateMode, dateMonth, dateYear, dateStart, dateEnd } = this.state;
+    const gMonthOptArr = monthNames.map((m,i)=>({val:i,label:m,sel:i===dateMonth}));
+    const gYearOptArr = [2024,2025,2026,2027].map(y=>({val:y,label:String(y),sel:y===dateYear}));
+    const selectStyle = { fontSize:'13px',fontWeight:600,padding:'8px 12px',borderRadius:'10px',border:'1px solid #E5DECF',background:'#fff',color:'#211F1C',cursor:'pointer' };
+    const dateInputStyle = { fontSize:'13px',fontWeight:600,padding:'8px 12px',borderRadius:'10px',border:'1px solid #E5DECF',background:'#fff',color:'#211F1C',cursor:'pointer' };
+    const navArrow = { width:'34px',height:'36px',borderRadius:'9px',border:'1px solid #E5DECF',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',color:'#211F1C' };
+    const todayBtn = { fontSize:'12px',fontWeight:700,color:'#6b6258',border:'1px solid #E5DECF',borderRadius:'9px',padding:'7px 12px',cursor:'pointer',background:'#fff',whiteSpace:'nowrap' };
+    const gMonthBtn = segBtn(dateMode==='month');
+    const gRangeBtn = segBtn(dateMode==='range');
+    const gLabel = monthNames[dateMonth] + ' ' + dateYear;
+
+    // tabs
+    const kolTab = this.state.kolTab;
+    const kolTabs = [['list','Creator List'],['pipeline','Pipeline'],['plan','KOL Plan']].map(([id,label])=>({label,onClick:()=>this.setState({kolTab:id}),style:tabStyle(kolTab===id)}));
+    const isKolList = kolTab==='list';
+    const isKolPipeline = kolTab==='pipeline';
+    const isKolPlan = kolTab==='plan';
+
+    // filters
+    const kolBrand = this.state.kolBrand;
+    const kolStage = this.state.kolStage;
+    const brandKeys = ['all','teppen','omakase','mainichi','touka'];
+    const dotStyle = (color) => ({ width:'7px',height:'7px',borderRadius:'50%',background:color,flexShrink:0 });
+    const brandFilters = brandKeys.map(k=>({ label:k==='all'?'All':this.brands[k].name, dot:dotStyle(k==='all'?'#9A9387':this.brands[k].color), onClick:()=>this.setState({kolBrand:k}), style:chip(kolBrand===k) }));
+    const stageOpts = ['all','Negotiating','Contract Pending','Brief Sent','Content Creating','Waiting Review','Draft Submitted','Revision Requested','Posted','Completed','Paused'];
+    const stageFilters = stageOpts.map(s=>({ label:s==='all'?'All Stages':s, onClick:()=>this.setState({kolStage:s}), style:chip(kolStage===s) }));
+
+    // filter data
+    const filtered = this.kolData.filter(k=>{
+      const bm = kolBrand==='all'||k.b===kolBrand;
+      const sm = kolStage==='all'||k.status===kolStage;
+      return bm&&sm;
+    });
+
+    // KPIs
+    const kpiActive = filtered.filter(k=>!['Completed','Cancelled','Paused'].includes(k.status)).length;
+    const kpiWaitingReview = filtered.filter(k=>k.status==='Waiting Review'||k.status==='Draft Submitted').length;
+    const kpiOpenComments = filtered.reduce((s,k)=>s+(k.openComments||0),0);
+    const kpiFees = this.fmtShort(filtered.reduce((s,k)=>s+k.fee,0));
+    const kpiExpReach = this.fmtFollow(filtered.reduce((s,k)=>s+k.expectedReach,0));
+    const roiK = filtered.filter(k=>k.roi>0);
+    const kpiAvgRoas = roiK.length ? (roiK.reduce((s,k)=>s+k.roi,0)/roiK.length).toFixed(1)+'×' : '—';
+
+    // alerts
+    const alertList = filtered.filter(k=>k.openComments>0||k.isOverdue||k.status==='Waiting Review'||k.status==='Revision Requested');
+    const hasAlerts = alertList.length>0;
+    const alertCount = alertList.length;
+    const alertItems = alertList.map(k=>({
+      name:k.name, init:k.name.slice(0,1)+(k.name.split(' ')[1]||'').slice(0,1), color:this.brands[k.b].color,
+      alertLabel:k.isOverdue?'⚠ Overdue':k.status==='Revision Requested'?'↩ Revision needed':k.openComments>0?'💬 '+k.openComments+' open comment(s)':'⏳ Waiting review',
+      campaign:k.campaign, onClick:()=>this.setState({drawerOpen:true,drawerId:k.id,drawerTab:'comments'})
+    }));
+
+    // creators list rows
+    const creators = filtered.map(k=>{
+      const pi = this.platIconMap[k.plat]||{icon:'??',bg:'#ccc',fg:'#fff'};
+      const stageIdx = this.allStages.indexOf(k.status);
+      const stageNum = stageIdx>=0 ? stageIdx+1 : 1;
+      const stageTot = this.allStages.length;
+      const stageBar = this.allStages.map((_,i)=>({ bg:i<stageIdx?'#B8945A':i===stageIdx?'#211F1C':'#ECE6DA' }));
+      return {
+        ...k, init:(k.name.slice(0,1)+(k.name.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+        color:this.brands[k.b].color, brandName:this.brands[k.b].name,
+        handle:k.h, platIcon:pi.icon, platBg:pi.bg, platFg:pi.fg,
+        feeF:this.fmtShort(k.fee).replace('฿','฿'),
+        stageStyle:this.badge(k.status,this.kolStatusMap),
+        statusStyle:this.badge(k.status,this.kolStatusMap),
+        stageNum, stageTot, stageBar,
+        dueColor:k.isOverdue?'#B33A2E':'#211F1C',
+        hasComments:k.openComments>0, noComments:k.openComments===0,
+        hasBlocker:!!k.currentBlocker, blocker:k.currentBlocker||'',
+        onClick:()=>this.setState({drawerOpen:true,drawerId:k.id,drawerTab:'profile'})
+      };
+    });
+
+    // pipeline
+    const pipelineStages = this.allStages.concat(['Paused']);
+    const pipelineCols = pipelineStages.map(st=>{
+      const kols = this.kolData.filter(k=>k.status===st&&(kolBrand==='all'||k.b===kolBrand));
+      if(kols.length===0) return null;
+      const totalFee = kols.reduce((s,k)=>s+k.fee,0);
+      return {
+        stage:st, count:kols.length, stageStyle:this.badge(st,this.kolStatusMap),
+        totalFee:totalFee?this.fmtShort(totalFee):'',
+        kols:kols.map(k=>({
+          ...k,
+          init:(k.name.slice(0,1)+(k.name.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+          color:this.brands[k.b].color,
+          brandName:this.brands[k.b].name,
+          platIcon:(this.platIconMap[k.plat]||{icon:'??'}).icon,
+          platBg:(this.platIconMap[k.plat]||{bg:'#ccc'}).bg,
+          platFg:(this.platIconMap[k.plat]||{fg:'#fff'}).fg,
+          feeF:this.fmtShort(k.fee),
+          hasComments:k.openComments>0,
+          noComments:k.openComments===0,
+          isOverdue:k.isOverdue,
+          dueColor:k.isOverdue?'#B33A2E':'#211F1C',
+          pendingApprover:k.pendingApprover||'—',
+          onClick:()=>this.setState({drawerOpen:true,drawerId:k.id,drawerTab:'profile'})
+        }))
+      };
+    }).filter(Boolean);
+
+    // plan sub-tabs
+    const kolPlanTab = this.state.kolPlanTab;
+    const planSubTabs = [['dashboard','Dashboard'],['calendar','Calendar']].map(([id,label])=>({
+      label, onClick:()=>this.setState({kolPlanTab:id}),
+      style:kolPlanTab===id
+        ?{fontSize:'12.5px',fontWeight:700,padding:'7px 14px',borderRadius:'9px',background:'#211F1C',color:'#fff',cursor:'pointer',whiteSpace:'nowrap'}
+        :{fontSize:'12.5px',fontWeight:600,padding:'7px 14px',borderRadius:'9px',border:'1px solid #E5DECF',color:'#6b6258',cursor:'pointer',background:'#fff',whiteSpace:'nowrap'}
+    }));
+    const isKolPlanDash = kolPlanTab==='dashboard';
+    const isKolPlanCal = kolPlanTab==='calendar';
+
+    // calendar
+    const calMonth = dateMonth, calYear = dateYear;
+    const calMonthLabel = monthNames[calMonth] + ' ' + calYear;
+    const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+    const abbrs = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const brandKols = this.kolData.filter(k=>kolBrand==='all'||k.b===kolBrand);
+    // Parse "Jun 28" → {month:5, day:28}
+    const parseDue = (s) => {
+      if(!s||s==='TBD'||s==='On hold') return null;
+      const parts = s.split(' ');
+      const m = abbrs.indexOf(parts[0]);
+      const d = parseInt(parts[1]);
+      return m>=0&&d>0 ? {month:m,day:d} : null;
+    };
+    // Build 42-cell grid (6 rows × 7 cols)
+    const calCells = [];
+    for(let i=0;i<42;i++){
+      const dayNum = i - firstDay + 1;
+      const inMonth = dayNum>=1&&dayNum<=daysInMonth;
+      const dayKols = inMonth ? brandKols.filter(k=>{
+        const due = parseDue(k.postDueDate);
+        return due && due.month===calMonth && due.day===dayNum;
+      }).map(k=>({
+        name:k.name, color:this.brands[k.b].color,
+        init:(k.name.slice(0,1)+(k.name.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+        statusStyle:this.badge(k.status,this.kolStatusMap),
+        hasComments:k.openComments>0, openComments:k.openComments,
+        onClick:()=>this.setState({drawerOpen:true,drawerId:k.id,drawerTab:'profile'})
+      })) : [];
+      calCells.push({
+        dayNum:inMonth?dayNum:'', inMonth,
+        hasKols:dayKols.length>0, kols:dayKols,
+        bg:inMonth?'#fff':'#FAFAF5',
+        border:dayKols.length>0?'1px solid #E8D5AA':'1px solid #F0EBE0'
+      });
+    }
+    const calDayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    // KOL plan
+    const tTotal = this.kolData.length;
+    const tDone = this.kolData.filter(k=>k.status==='Completed').length;
+    const tInProgress = this.kolData.filter(k=>['Content Creating','Draft Submitted','Waiting Review'].includes(k.status)).length;
+    const tOverdue = this.kolData.filter(k=>k.isOverdue).length;
+    const tPct = Math.round(tDone/tTotal*100);
+    const specialists = this.teamData.map(t=>({
+      ...t, pct:t.pct, pctW:t.pct+'%',
+      pctColor:t.pct>=70?'#4E7A4E':t.pct>=40?'#C68A1E':'#B33A2E',
+      commentColor:t.comments>0?'#B33A2E':'#9A9387'
+    }));
+    const today = new Date();
+    const groups = {};
+    brandKols.forEach(k=>{
+      const key = k.postDueDate||'TBD';
+      if(!groups[key]) groups[key]=[];
+      groups[key].push(k);
+    });
+    const planGroups = Object.entries(groups).map(([date,tasks])=>({
+      label:date, isToday:false, labelColor:'#211F1C',
+      tasks:tasks.map(k=>({
+        kol:k.name, init:(k.name.slice(0,1)+(k.name.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+        brandColor:this.brands[k.b].color, campaign:k.campaign, brand:this.brands[k.b].name,
+        platIcon:(this.platIconMap[k.plat]||{icon:'??'}).icon,
+        platBg:(this.platIconMap[k.plat]||{bg:'#ccc'}).bg,
+        platFg:(this.platIconMap[k.plat]||{fg:'#fff'}).fg,
+        stage:k.status, stageStyle:this.badge(k.status,this.kolStatusMap),
+        owner:k.owner, hasComments:k.openComments>0, openComments:k.openComments,
+        onClick:()=>this.setState({drawerOpen:true,drawerId:k.id,drawerTab:'profile'})
+      }))
+    }));
+
+    // drawer
+    const { drawerOpen, drawerId, drawerTab } = this.state;
+    const dk = drawerId!==null ? this.kolData.find(k=>k.id===drawerId) : null;
+    const drawerRight = drawerOpen ? '0px' : '-540px';
+    const overlayDisplay = drawerOpen ? 'block' : 'none';
+
+    const dkName = dk?dk.name:'';
+    const dkInit = dk?(dk.name.slice(0,1)+(dk.name.split(' ')[1]||'').slice(0,1)).toUpperCase():'';
+    const dkHandle = dk?dk.h:'';
+    const dkPlatform = dk?dk.plat:'';
+    const dkColor = dk?this.brands[dk.b].color:'#ccc';
+    const dkBrandName = dk?this.brands[dk.b].name:'';
+    const dkCampaign = dk?dk.campaign:'';
+    const dkStatus = dk?dk.status:'';
+    const dkStatusStyle = dk?this.badge(dk.status,this.kolStatusMap):{};
+    const dkOwner = dk?dk.owner:'';
+    const dkApprover = dk?dk.pendingApprover:'—';
+    const dkDue = dk?dk.postDueDate:'—';
+    const dkDueColor = dk&&dk.isOverdue?'#B33A2E':'#211F1C';
+    const dkKolType = dk?dk.kolType:'';
+    const dkFollowers = dk?this.fmtFollow(dk.followers):'';
+    const dkExpReach = dk?this.fmtFollow(dk.expectedReach):'';
+    const dkAudienceFit = dk?dk.audienceFit:'';
+    const dkContentStyle = dk?dk.contentStyle:'';
+    const dkContact = dk?dk.contactInfo:'';
+    const dkPastCollab = dk?dk.pastCollab:'';
+    const dkBranch = dk?dk.branch:'';
+    const dkObjective = dk?dk.objective:'';
+    const dkTarget = dk?dk.target:'';
+    const dkKeyMsg = dk?dk.keyMsg:'';
+    const dkOffer = dk?dk.offer:'';
+    const dkPostingPeriod = dk?dk.postingPeriod:'';
+    const dkFeeF = dk?this.fmtShort(dk.fee):'';
+    const dkFoodCostF = dk?this.fmtShort(dk.foodCost):'';
+    const dkTotalCostF = dk?this.fmtShort(dk.totalCost):'';
+    const dkPayDue = dk?dk.paymentDue:'';
+    const dkFinReqId = dk?dk.financeReqId:'';
+    const dkContractStatus = dk?dk.contractStatus:'';
+    const dkQuoteStatus = dk?dk.quotationStatus:'';
+    const dkInvoiceStatus = dk?dk.invoiceStatus:'';
+    const dkPayStatus = dk?dk.paymentStatus:'';
+    const dkContractStyle = dk?this.badge(dk.contractStatus,this.kolStatusMap):{};
+    const dkQuoteStyle = dk?this.badge(dk.quotationStatus,this.kolStatusMap):{};
+    const dkInvoiceStyle = dk?this.badge(dk.invoiceStatus,this.kolStatusMap):{};
+    const dkPayStyle = dk?this.badge(dk.paymentStatus,this.kolStatusMap):{};
+    const dkActualReach = dk?this.fmtFollow(dk.actualReach||0):'';
+    const dkVisits = dk?(dk.visits||0):'';
+    const dkCpv = dk&&dk.visits?'฿'+Math.round(dk.fee/dk.visits):'—';
+    const dkRoi = dk?dk.roi?dk.roi+'×':'—':'';
+    const dkEngagement = dk?dk.engagement:'';
+    const dkSaves = dk?dk.saves:'';
+    const dkShares = dk?dk.shares:'';
+    const dkCoupon = dk?dk.couponCode||'—':'';
+    const dkPostedDate = dk?dk.postedDate||'Not yet':'';
+    const dkPostLink = dk?dk.postLink||'Not posted yet':'';
+    const dkHasResult = dk&&(dk.actualReach>0||dk.visits>0);
+    const dkNoResult = !dkHasResult;
+
+    const dkStages = dk?dk.stages.map(s=>({
+      label:s.l, date:s.d, done:s.done, isCur:s.cur,
+      dotBg:s.done?'#4E7A4E':s.cur?'#211F1C':'#ECE6DA',
+      dotBorder:s.done?'#4E7A4E':s.cur?'#211F1C':'#D4CEC5',
+      textColor:s.done?'#4E7A4E':s.cur?'#211F1C':'#9A9387',
+      fw:s.cur?'700':s.done?'600':'400'
+    })):[];
+
+    const linkVal = (v,fallback) => v ? v : fallback||'Not set';
+    const linkColor = (v) => v ? '#3E5C9A' : '#C0B8AD';
+    const dkLinks = dk?[
+      { label:'BRIEF', value:linkVal(dk.briefLink,'Not attached'), hasLink:!!dk.briefLink, valueColor:linkColor(dk.briefLink) },
+      { label:'ASSET FOLDER', value:linkVal(dk.assetLink,'Not attached'), hasLink:!!dk.assetLink, valueColor:linkColor(dk.assetLink) },
+      { label:'DRAFT CONTENT', value:linkVal(dk.draftLink,'Not submitted'), hasLink:!!dk.draftLink, valueColor:linkColor(dk.draftLink) },
+      { label:'FINAL POST LINK', value:linkVal(dk.finalPostLink,'Not posted'), hasLink:!!dk.finalPostLink, valueColor:linkColor(dk.finalPostLink) },
+      { label:'UTM TRACKING', value:linkVal(dk.utmLink,'Not set'), hasLink:!!dk.utmLink, valueColor:linkColor(dk.utmLink) },
+      { label:'COUPON CODE', value:dk.couponCode||'—', hasLink:false, valueColor:dk.couponCode?'#211F1C':'#C0B8AD' }
+    ]:[];
+
+    const dkDeliverables = dk?this.deliverablesData.filter(d=>d.kolId===dk.id).map(d=>({
+      ...d,
+      statusStyle:this.badge(d.status,this.kolStatusMap),
+      draftLabel:d.draftLink?'Submitted':'Pending',
+      draftColor:d.draftLink?'#4E7A4E':'#9A9387',
+      postLabel:d.finalPostLink?'Live':'Not posted',
+      postColor:d.finalPostLink?'#4E7A4E':'#9A9387',
+      pendingApprover:d.pendingApprover||'—',
+      hasComments:d.openComments>0
+    })):[];
+
+    const dkAllComments = dk?this.commentsData.filter(c=>c.kolId===dk.id):[];
+    const dkOpenCount = dkAllComments.filter(c=>c.status==='Open').length;
+    const dkTotalComments = dkAllComments.length;
+    const dkNoComments = dkTotalComments===0;
+    const dkComments = dkAllComments.map(c=>({
+      ...c,
+      ownerInit:(c.owner.slice(0,1)+(c.owner.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+      ownerColor:c.ownerColor||'#9A9387',
+      statusStyle:this.badge(c.status,this.kolStatusMap),
+      borderColor:c.status==='Open'?'#F0C9BE':c.status==='Resolved'?'#B5CEAF':'#ECE6DA',
+      isOpen:c.status==='Open',
+      hasDue:!!c.due,
+      onResolve:()=>{ const idx=this.commentsData.findIndex(x=>x.id===c.id); if(idx>=0){this.commentsData[idx]={...this.commentsData[idx],status:'Resolved'};this.forceUpdate();} }
+    }));
+
+    const drawerTabDefs = [['profile','Profile'],['campaign','Campaign'],['deliverables','Deliverables'],['brief','Brief & Assets'],['contract','Contract'],['results','Results'],['comments','Comments']];
+    const drawerTabs = drawerTabDefs.map(([id,label])=>({
+      label:id==='comments'&&dkOpenCount>0?'Comments ('+dkOpenCount+')':label,
+      onClick:()=>this.setState({drawerTab:id}),
+      style:drawerTab===id
+        ?{fontSize:'12.5px',fontWeight:700,padding:'7px 14px',borderRadius:'10px 10px 0 0',background:'#FAF8F4',color:'#211F1C',cursor:'pointer',whiteSpace:'nowrap',borderBottom:'2px solid #211F1C'}
+        :{fontSize:'12.5px',fontWeight:500,padding:'7px 14px',color:'#9A9387',cursor:'pointer',whiteSpace:'nowrap',borderBottom:'2px solid transparent'}
+    }));
+    const isDkProfile = drawerTab==='profile';
+    const isDkCampaign = drawerTab==='campaign';
+    const isDkDeliverables = drawerTab==='deliverables';
+    const isDkBrief = drawerTab==='brief';
+    const isDkContract = drawerTab==='contract';
+    const isDkResults = drawerTab==='results';
+    const isDkComments = drawerTab==='comments';
+
+    // request form
+    const requestOpen = this.state.requestOpen;
+    const formInputStyle = { width:'100%', fontSize:'13.5px', padding:'10px 12px', border:'1.5px solid #E5DECF', borderRadius:'10px', background:'#FAFAF7', outline:'none', fontFamily:'inherit', boxSizing:'border-box' };
+    const formSelectStyle = { ...formInputStyle, cursor:'pointer' };
+    const formTextareaStyle = { ...formInputStyle, resize:'vertical' };
+
+    return {
+      // date filter
+      gMonthOptArr, gYearOptArr, selectStyle, dateInputStyle, navArrow, todayBtn, gLabel,
+      gMonthBtn, gRangeBtn, isGMonth:dateMode==='month', isGRange:dateMode==='range',
+      dateStart, dateEnd,
+      gPrev:()=>{let m=dateMonth-1,y=dateYear;if(m<0){m=11;y--;}this.setState({dateMonth:m,dateYear:y});},
+      gNext:()=>{let m=dateMonth+1,y=dateYear;if(m>11){m=0;y++;}this.setState({dateMonth:m,dateYear:y});},
+      gToday:()=>this.setState({dateMode:'month',dateMonth:5,dateYear:2026}),
+      onGMonth:(e)=>this.setState({dateMonth:parseInt(e.target.value)}),
+      onGYear:(e)=>this.setState({dateYear:parseInt(e.target.value)}),
+      onGStart:(e)=>this.setState({dateStart:e.target.value}),
+      onGEnd:(e)=>this.setState({dateEnd:e.target.value}),
+      setGMonth:()=>this.setState({dateMode:'month'}),
+      setGRange:()=>this.setState({dateMode:'range'}),
+      // tabs + filters
+      kolTabs, isKolList, isKolPipeline, isKolPlan,
+      brandFilters, stageFilters,
+      // list
+      kpiActive, kpiWaitingReview, kpiOpenComments, kpiFees, kpiExpReach, kpiAvgRoas,
+      hasAlerts, alertCount, alertItems, creators,
+      // pipeline
+      pipelineCols,
+      // plan
+      planSubTabs, isKolPlanDash, isKolPlanCal,
+      calMonthLabel, calDayNames, calCells,
+      tTotal, tDone, tInProgress, tOverdue, tPct,
+      specialists, planGroups,
+      // drawer
+      drawerRight, overlayDisplay,
+      closeDrawer:()=>this.setState({drawerOpen:false,drawerId:null}),
+      drawerTabs, isDkProfile, isDkCampaign, isDkDeliverables, isDkBrief, isDkContract, isDkResults, isDkComments,
+      dkName, dkInit, dkHandle, dkPlatform, dkColor, dkBrandName, dkCampaign, dkStatus, dkStatusStyle,
+      dkOwner, dkApprover, dkDue, dkDueColor,
+      dkKolType, dkFollowers, dkExpReach, dkAudienceFit, dkContentStyle, dkContact, dkPastCollab, dkStages,
+      dkBranch, dkObjective, dkTarget, dkKeyMsg, dkOffer, dkPostingPeriod,
+      dkFeeF, dkFoodCostF, dkTotalCostF, dkPayDue, dkFinReqId,
+      dkContractStatus, dkQuoteStatus, dkInvoiceStatus, dkPayStatus,
+      dkContractStyle, dkQuoteStyle, dkInvoiceStyle, dkPayStyle,
+      dkActualReach, dkVisits, dkCpv, dkRoi, dkEngagement, dkSaves, dkShares, dkCoupon, dkPostedDate, dkPostLink,
+      dkHasResult, dkNoResult,
+      dkLinks, dkDeliverables,
+      dkComments, dkOpenCount, dkTotalComments, dkNoComments,
+      // request
+      requestOpen, formInputStyle, formSelectStyle, formTextareaStyle,
+      openRequest:()=>this.setState({requestOpen:true}),
+      closeRequest:()=>this.setState({requestOpen:false}),
+      stopProp:(e)=>{e&&e.stopPropagation&&e.stopPropagation();}
+    };
+  }
+}
+</script>
+</body>
+</html>

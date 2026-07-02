@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{background:#FAF8F4;font-family:system-ui,-apple-system,sans-serif;margin:0}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+@keyframes slideInRight{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes toastPop{0%{transform:translateY(20px);opacity:0}15%{transform:translateY(0);opacity:1}75%{opacity:1}100%{opacity:0}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#FAF8F4;padding:22px 24px 80px;max-width:1300px;margin:0 auto">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:22px">
+    <div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">My Tasks</div>
+      <div style="font-size:12.5px;color:#9A9387;margin-top:2px">Personal workspace · Team overview · Approvals</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <sc-for list="{{ mainTabs }}" as="mt" hint-placeholder-count="2"><span onClick="{{ mt.onClick }}" style="{{ mt.style }}">{{ mt.label }}</span></sc-for>
+      <div style="width:1px;height:20px;background:#E5DECF;margin:0 4px"></div>
+      <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #E5DECF;border-radius:999px;padding:5px 12px">
+        <div style="width:20px;height:20px;border-radius:50%;background:{{ viewAsColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;font-weight:700">{{ viewAsInit }}</div>
+        <span style="font-size:12px;font-weight:600;color:#211F1C">{{ viewAsShort }}</span>
+        <span style="font-size:10px;color:#9A9387">▾</span>
+        <div style="display:none"><!-- dropdown placeholder --></div>
+      </div>
+      <sc-for list="{{ viewAsPeople }}" as="vp" hint-placeholder-count="6"><span onClick="{{ vp.onClick }}" style="{{ vp.style }}">{{ vp.label }}</span></sc-for>
+    </div>
+  </div>
+
+  <!-- ═══════════ MY DAY TAB ═══════════ -->
+  <sc-if value="{{ isMyDay }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;gap:18px">
+
+    <!-- GREETING + BENTO ROW -->
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+
+      <!-- Greeting card -->
+      <div style="flex:1;min-width:260px;background:linear-gradient(135deg,#FDF6E8 0%,#F5E8CE 100%);border:1px solid #E8D5AA;border-radius:24px;padding:26px 30px">
+        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#B8945A;font-weight:700;margin-bottom:8px">{{ todayLabel }}</div>
+        <div style="font-size:26px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">{{ greetText }}</div>
+        <div style="font-size:14.5px;color:#6b6258;line-height:1.55">{{ greetSubtext }}</div>
+      </div>
+
+      <!-- Bento stats -->
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:240px;max-width:276px">
+        <div style="background:#211F1C;border-radius:18px;padding:18px 20px;color:#fff">
+          <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#B8945A;font-weight:700;margin-bottom:8px">Today's Focus 🍱</div>
+          <div style="font-size:40px;font-weight:800;line-height:1;margin-bottom:4px">{{ todayFocusCount }}</div>
+          <div style="font-size:12px;color:#C0B8AD;margin-bottom:12px;font-style:italic">{{ bentoMsg }}</div>
+          <div style="height:5px;background:#3A3630;border-radius:3px;overflow:hidden"><div style="height:5px;border-radius:3px;background:#B8945A;width:{{ todayPctW }}"></div></div>
+          <div style="font-size:11px;color:#9A9387;margin-top:5px">{{ todayDone }} / {{ todayTotal }} done today</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="background:#EEF4EE;border-radius:13px;padding:13px 14px"><div style="font-size:9.5px;color:#4E7A4E;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Done ✓</div><div style="font-size:26px;font-weight:700;color:#4E7A4E;margin-top:3px">{{ myDone }}</div></div>
+          <div style="background:#FFF5F4;border-radius:13px;padding:13px 14px"><div style="font-size:9.5px;color:#B33A2E;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Stuck ⚠</div><div style="font-size:26px;font-weight:700;color:#B33A2E;margin-top:3px">{{ myStuck }}</div></div>
+          <div style="background:#F0F7F0;border-radius:13px;padding:13px 14px"><div style="font-size:9.5px;color:#4E7A4E;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Approval ✅</div><div style="font-size:26px;font-weight:700;color:#4E7A4E;margin-top:3px">{{ myApprovals }}</div></div>
+          <div style="background:#FBF8EE;border-radius:13px;padding:13px 14px"><div style="font-size:9.5px;color:#C68A1E;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Waiting</div><div style="font-size:26px;font-weight:700;color:#C68A1E;margin-top:3px">{{ myWaiting }}</div></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FILTER + VIEW ROW -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <sc-for list="{{ scopeFilters }}" as="sf" hint-placeholder-count="5"><span onClick="{{ sf.onClick }}" style="{{ sf.style }}">{{ sf.label }}</span></sc-for>
+      </div>
+      <div style="display:flex;gap:6px">
+        <sc-for list="{{ viewToggles }}" as="vt" hint-placeholder-count="2"><span onClick="{{ vt.onClick }}" style="{{ vt.style }}">{{ vt.label }}</span></sc-for>
+      </div>
+    </div>
+
+    <!-- ─── CARDS VIEW ─── -->
+    <sc-if value="{{ isCards }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;gap:26px">
+      <sc-for list="{{ groupedTasks }}" as="grp" hint-placeholder-count="5">
+      <sc-if value="{{ grp.hasItems }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:13px">
+          <span style="font-size:17px">{{ grp.icon }}</span>
+          <span style="font-size:13.5px;font-weight:700;letter-spacing:-.01em">{{ grp.label }}</span>
+          <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:{{ grp.countBg }};color:{{ grp.countColor }}">{{ grp.count }}</span>
+          <sc-if value="{{ grp.hasWarn }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;color:#B33A2E;font-style:italic">{{ grp.warnMsg }}</span></sc-if>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px">
+          <sc-for list="{{ grp.tasks }}" as="t" hint-placeholder-count="3">
+          <div onClick="{{ t.onOpen }}" style="background:#fff;border:1px solid {{ t.cardBorder }};border-radius:16px;padding:18px 18px 14px 22px;position:relative;overflow:hidden;cursor:pointer">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:{{ t.moduleColor }}"></div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;flex-wrap:wrap">
+              <span style="font-size:13px">{{ t.moduleIcon }}</span>
+              <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:{{ t.typeBg }};color:{{ t.typeFg }}">{{ t.type }}</span>
+              <span style="{{ t.priorityStyle }}">{{ t.priority }}</span>
+              <sc-if value="{{ t.isQuickWin }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FBF6ED;color:#B8945A">✨ Quick win</span></sc-if>
+              <div style="margin-left:auto"><span style="{{ t.statusStyle }}">{{ t.status }}</span></div>
+            </div>
+            <div style="font-size:14.5px;font-weight:700;line-height:1.35;margin-bottom:5px">{{ t.title }}</div>
+            <div style="font-size:11.5px;color:#9A9387;margin-bottom:10px">{{ t.brand }} · {{ t.campaign }}</div>
+            <div style="font-size:12px;color:#6b6258;background:#FAF8F4;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-style:italic;line-height:1.5">{{ t.nextAction }}</div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+              <span style="font-size:11px;font-weight:600;color:{{ t.dueColor }}">📅 {{ t.due }}</span>
+              <sc-if value="{{ t.hasPendingApprover }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:#C68A1E;font-weight:600">⏳ {{ t.pendingApprover }}</span></sc-if>
+              <sc-if value="{{ t.hasBlocker }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:#B33A2E;font-weight:600">⚠ {{ t.blockerShort }}</span></sc-if>
+            </div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+              <sc-for list="{{ t.actions }}" as="act" hint-placeholder-count="2"><span onClick="{{ act.onClick }}" style="{{ act.style }}">{{ act.label }}</span></sc-for>
+            </div>
+          </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ─── LIST VIEW ─── -->
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:2.5fr 0.7fr 1fr 1.3fr 0.65fr 0.8fr 0.85fr;gap:8px;padding:11px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9A9387;text-transform:uppercase">
+        <span>Task</span><span>Module</span><span>Assignee</span><span>Campaign</span><span>Due</span><span>Priority</span><span>Status</span>
+      </div>
+      <sc-if value="{{ listEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:48px 20px;text-align:center;color:#9A9387;font-size:13.5px">No tasks match — try a wider filter.</div></sc-if>
+      <sc-for list="{{ flatTasks }}" as="t" hint-placeholder-count="8">
+      <div onClick="{{ t.onOpen }}" style="display:grid;grid-template-columns:2.5fr 0.7fr 1fr 1.3fr 0.65fr 0.8fr 0.85fr;gap:8px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center;cursor:pointer;background:{{ t.rowBg }}">
+        <div><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.moduleIcon }} {{ t.title }}</div><sc-if value="{{ t.hasBlocker }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;color:#B33A2E;font-weight:600;margin-top:1px">⚠ {{ t.blockerShort }}</div></sc-if></div>
+        <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:{{ t.typeBg }};color:{{ t.typeFg }}">{{ t.type }}</span>
+        <div style="display:flex;align-items:center;gap:6px"><div style="width:20px;height:20px;border-radius:50%;background:{{ t.personColor }};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff">{{ t.personInit }}</div><span style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.assignee }}</span></div>
+        <span style="font-size:12px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.campaign }}</span>
+        <span style="font-size:12px;font-weight:600;color:{{ t.dueColor }}">{{ t.due }}</span>
+        <span style="{{ t.priorityStyle }}">{{ t.priority }}</span>
+        <span style="{{ t.statusStyle }}">{{ t.status }}</span>
+      </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+  </div>
+  </sc-if>
+
+  <!-- ═══════════ TEAM VIEW TAB ═══════════ -->
+  <sc-if value="{{ isTeam }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <!-- Dark summary -->
+    <div style="background:linear-gradient(135deg,#211F1C,#3A3630);border-radius:20px;padding:24px 28px;color:#fff">
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#B8945A;font-weight:700;margin-bottom:12px">Team Summary · Wed, Jul 2</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px">
+        <sc-for list="{{ teamKpis }}" as="tk" hint-placeholder-count="5"><div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:4px">{{ tk.label }}</div><div style="font-size:30px;font-weight:800;color:{{ tk.color }}">{{ tk.val }}</div></div></sc-for>
+      </div>
+    </div>
+    <!-- Alert strip -->
+    <sc-if value="{{ hasTeamAlert }}" hint-placeholder-val="{{ true }}">
+    <div style="background:#FFF5F4;border:1px solid #F5C8C4;border-radius:14px;padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <span style="font-size:18px">⚠</span>
+      <div style="flex:1;min-width:200px"><div style="font-size:13px;font-weight:700;color:#B33A2E;margin-bottom:2px">Needs support today</div><div style="font-size:12.5px;color:#6b6258">{{ teamAlertMsg }}</div></div>
+    </div>
+    </sc-if>
+    <!-- Person cards grid -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px">
+      <sc-for list="{{ personCards }}" as="pc" hint-placeholder-count="6">
+      <div onClick="{{ pc.onSelect }}" style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <div style="width:40px;height:40px;border-radius:50%;background:{{ pc.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0">{{ pc.init }}</div>
+          <div style="flex:1;min-width:0"><div style="font-size:14.5px;font-weight:700">{{ pc.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ pc.total }} tasks</div></div>
+          <span style="{{ pc.healthStyle }}">{{ pc.health }}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px">
+          <div style="text-align:center;background:#EEF4EE;border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:#4E7A4E;font-weight:700">Done</div><div style="font-size:18px;font-weight:700;color:#4E7A4E">{{ pc.done }}</div></div>
+          <div style="text-align:center;background:#EEF1F8;border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:#3E5C9A;font-weight:700">Active</div><div style="font-size:18px;font-weight:700;color:#3E5C9A">{{ pc.active }}</div></div>
+          <div style="text-align:center;background:#FBF8EE;border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:#C68A1E;font-weight:700">Wait</div><div style="font-size:18px;font-weight:700;color:#C68A1E">{{ pc.waiting }}</div></div>
+          <div style="text-align:center;background:{{ pc.stuckBg }};border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:{{ pc.stuckFg }};font-weight:700">Stuck</div><div style="font-size:18px;font-weight:700;color:{{ pc.stuckFg }}">{{ pc.stuck }}</div></div>
+        </div>
+        <div style="height:5px;background:#F0EBE0;border-radius:3px;overflow:hidden;margin-bottom:5px"><div style="height:5px;border-radius:3px;background:{{ pc.pctColor }};width:{{ pc.pctW }}"></div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;color:#9A9387">{{ pc.pct }}% done</span>
+          <sc-if value="{{ pc.hasApprovals }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:#C68A1E;font-weight:600">{{ pc.approvals }} pending approval</span></sc-if>
+        </div>
+      </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+
+<!-- ═══════════ TASK DRAWER ═══════════ -->
+<sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closeDrawer }}" style="position:fixed;inset:0;background:rgba(33,31,28,.42);z-index:200;display:flex;justify-content:flex-end">
+<div onClick="{{ stopProp }}" style="background:#fff;width:440px;max-width:100vw;height:100%;overflow-y:auto;box-shadow:-8px 0 40px rgba(0,0,0,.14);animation:slideInRight .22s ease">
+  <!-- Drawer header -->
+  <div style="padding:22px 24px 18px;border-bottom:1px solid #ECE6DA;position:sticky;top:0;background:#fff;z-index:1">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-size:14px">{{ drawerTask.moduleIcon }}</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:{{ drawerTask.typeBg }};color:{{ drawerTask.typeFg }}">{{ drawerTask.type }}</span>
+          <span style="{{ drawerTask.priorityStyle }}">{{ drawerTask.priority }}</span>
+          <span style="{{ drawerTask.statusStyle }}">{{ drawerTask.status }}</span>
+        </div>
+        <div style="font-size:16px;font-weight:800;line-height:1.3;margin-bottom:5px">{{ drawerTask.title }}</div>
+        <div style="font-size:12px;color:#9A9387">{{ drawerTask.brand }} · {{ drawerTask.campaign }}</div>
+      </div>
+      <span onClick="{{ closeDrawer }}" style="font-size:18px;color:#9A9387;cursor:pointer;padding:4px;flex-shrink:0;line-height:1">✕</span>
+    </div>
+  </div>
+  <!-- What to do next -->
+  <div style="margin:18px 24px 0">
+    <div style="background:linear-gradient(135deg,#FDF6E8,#F5E8CE);border:1px solid #E8D5AA;border-radius:14px;padding:16px">
+      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#B8945A;font-weight:700;margin-bottom:7px">What to do next</div>
+      <div style="font-size:13.5px;color:#211F1C;line-height:1.55;font-weight:600">{{ drawerTask.nextAction }}</div>
+    </div>
+  </div>
+  <!-- Details grid -->
+  <div style="padding:18px 24px">
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:11px">Task Details</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px">
+      <div style="background:#FAF8F4;border-radius:10px;padding:10px 12px"><div style="font-size:10px;color:#9A9387;font-weight:600;margin-bottom:3px">Due date</div><div style="font-size:13px;font-weight:700;color:{{ drawerTask.dueColor }}">{{ drawerTask.due }}</div></div>
+      <div style="background:#FAF8F4;border-radius:10px;padding:10px 12px"><div style="font-size:10px;color:#9A9387;font-weight:600;margin-bottom:3px">Brand</div><div style="font-size:13px;font-weight:700">{{ drawerTask.brand }}</div></div>
+      <div style="background:#FAF8F4;border-radius:10px;padding:10px 12px"><div style="font-size:10px;color:#9A9387;font-weight:600;margin-bottom:3px">Owner</div><div style="font-size:13px;font-weight:700">{{ drawerTask.assignee }}</div></div>
+      <div style="background:#FAF8F4;border-radius:10px;padding:10px 12px"><div style="font-size:10px;color:#9A9387;font-weight:600;margin-bottom:3px">Pending approver</div><div style="font-size:13px;font-weight:700;color:{{ drawerTask.approverColor }}">{{ drawerTask.approverLabel }}</div></div>
+    </div>
+    <!-- Blocker -->
+    <sc-if value="{{ drawerTask.hasBlocker }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#FFF5F4;border:1px solid #F5C8C4;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:10px;color:#B33A2E;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">⚠ Blocker</div>
+      <div style="font-size:13px;font-weight:600;color:#B33A2E">{{ drawerTask.blocker }}</div>
+    </div>
+    </sc-if>
+    <!-- Checklist -->
+    <sc-if value="{{ drawerTask.hasChecklist }}" hint-placeholder-val="{{ false }}">
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:10px">Checklist</div>
+      <sc-for list="{{ drawerTask.checklistItems }}" as="ci" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F4EFE5">
+          <div style="width:16px;height:16px;border-radius:4px;border:2px solid #DDD4C4;flex-shrink:0"></div>
+          <span style="font-size:13px;color:#211F1C">{{ ci }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+  </div>
+  <!-- Action bar -->
+  <div style="padding:16px 24px;border-top:1px solid #ECE6DA;background:#FBF9F4;position:sticky;bottom:0">
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:10px">Actions</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <sc-for list="{{ drawerTask.actions }}" as="da" hint-placeholder-count="3"><span onClick="{{ da.onClick }}" style="{{ da.style }}">{{ da.label }}</span></sc-for>
+    </div>
+  </div>
+</div>
+</div>
+</sc-if>
+
+<!-- CELEBRATION TOAST -->
+<sc-if value="{{ showCelebration }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#211F1C;color:#fff;border-radius:16px;padding:14px 24px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.25);z-index:300;animation:toastPop 3s ease forwards;white-space:nowrap">
+  <span style="font-size:18px">🌿</span>
+  <div><div style="font-size:13.5px;font-weight:700">{{ celebrationMsg }}</div><div style="font-size:11.5px;color:#C0B8AD;margin-top:2px">Small wins count — keep it going.</div></div>
+</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = {
+    activeTab: 'myDay',
+    viewAs: 'Aran P.',
+    viewMode: 'cards',
+    scopeFilter: 'all',
+    drawerOpen: false,
+    drawerTaskId: null,
+    doneTasks: [1, 4, 7, 8, 12, 14, 18, 20],
+    showCelebration: false,
+    celebrationMsg: '',
+    _timer: null,
+  };
+
+  teamColors = { 'Aran P.':'#B8945A','Ken S.':'#3E5C9A','Boss':'#4E7A4E','Nok W.':'#6b6258','Ploy R.':'#B5577E','Mei T.':'#C2691E' };
+  statusMap = { 'Done':['#4E7A4E','#EEF4EE'],'In Progress':['#3E5C9A','#EEF1F8'],'Waiting':['#C68A1E','#FBF8EE'],'Need Approval':['#4E7A4E','#F0F7F0'],'Stuck':['#B33A2E','#FFF5F4'],'Revision':['#C2691E','#FBF1E9'],'Todo':['#9A9387','#F2F0EB'] };
+  priorityMap = { 'High':['#B33A2E','#FFF5F4'],'Med':['#C68A1E','#FBF8EE'],'Low':['#9A9387','#F2F0EB'] };
+  typeColors = { 'Content':['#3E5C9A','#EEF1F8'],'KOL':['#B5577E','#FBF0F5'],'Graphic':['#C2691E','#FBF1E9'],'Budget':['#4E7A4E','#EEF4EE'],'Ads':['#C68A1E','#FBF8EE'],'Report':['#6b6258','#F0EDE6'],'Campaign':['#B8945A','#FBF6ED'] };
+
+  greetData = {
+    'Aran P.': ['Good to see you, Aran 🌿','Let\'s move things forward today.'],
+    'Ken S.':  ['Ready for today, Ken? 🌿','Your content makes the difference.'],
+    'Boss':    ['Morning, Boss 🌿','Your designs bring campaigns to life.'],
+    'Nok W.':  ['Good day, Nok 🌿','Keep the campaign engine running.'],
+    'Ploy R.': ['Hello, Ploy 🌿','Great stories start with a great brief.'],
+    'Mei T.':  ['Hi Mei 🌿','Data into clarity — that\'s your superpower.'],
+  };
+
+  bentoMessages = ['You\'re almost there','Small wins count ✓','One task at a time','Let\'s clear this gently','Nearly done — just a few more'];
+
+  tasks = [
+    { id:1,  title:'Submit Q3 budget plan',                  module:'Finance',  moduleIcon:'฿',  moduleColor:'#4E7A4E', type:'Budget',   assignee:'Aran P.', brand:'Teppen',   campaign:'Wagyu Festival',       status:'Done',         priority:'High', group:'done',        due:'Jun 25', blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Completed — well done!',                               checklist:['Draft P&L','CFO sign-off','Submit portal'] },
+    { id:2,  title:'Review Wagyu Festival KPI dashboard',    module:'Campaign', moduleIcon:'🎯', moduleColor:'#B33A2E', type:'Report',   assignee:'Aran P.', brand:'Teppen',   campaign:'Wagyu Festival',       status:'In Progress',  priority:'High', group:'doFirst',     due:'Jul 2',  blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Review the KPI numbers and flag gaps before the team meeting.', checklist:['Check reach vs target','Validate ad spend','Review ROI'] },
+    { id:3,  title:'Approve summer reel final design',       module:'Graphic',  moduleIcon:'🎨', moduleColor:'#C2691E', type:'Graphic',  assignee:'Aran P.', brand:'Omakase',  campaign:'Summer Reel Series',   status:'Need Approval',priority:'High', group:'needApproval',due:'Jul 2',  blocker:null,                     pendingApprover:'Aran P.', isQuickWin:false, nextAction:'Design is ready. Approve or request revision.',                checklist:['Check CI alignment','Check copy','Approve'] },
+    { id:4,  title:'Sign KOL contract — Nong Aim',           module:'KOL',      moduleIcon:'🌟', moduleColor:'#B5577E', type:'KOL',      assignee:'Aran P.', brand:'Teppen',   campaign:'Wagyu Festival',       status:'Done',         priority:'Med',  group:'done',        due:'Jun 1',  blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Signed and filed.',                                            checklist:[] },
+    { id:5,  title:'Content brief for Touka cocktail reel',  module:'Content',  moduleIcon:'✍️', moduleColor:'#3E5C9A', type:'Content',  assignee:'Ken S.',  brand:'Touka',    campaign:'Cocktail Hour Launch', status:'In Progress',  priority:'High', group:'doFirst',     due:'Jul 2',  blocker:null,                     pendingApprover:'Ploy R.', isQuickWin:false, nextAction:'Complete the brief and share with KOL specialist by EOD.',     checklist:['Write objective','Set key message','Add asset folder link'] },
+    { id:6,  title:'LINE OA broadcast copy — Rainy Season',  module:'Content',  moduleIcon:'✍️', moduleColor:'#3E5C9A', type:'Content',  assignee:'Ken S.',  brand:'Mainichi', campaign:'Rainy Season Promo',   status:'Stuck',        priority:'High', group:'stuck',       due:'Jul 2',  blocker:'Nok W. — brief not confirmed',pendingApprover:'Nok W.',  isQuickWin:false, nextAction:'Waiting for brief approval from Nok before copy can proceed.', checklist:['Get brief confirmed','Draft copy','Submit for review'] },
+    { id:7,  title:'Brief confirmation — BkkFoodie KOL',     module:'KOL',      moduleIcon:'🌟', moduleColor:'#B5577E', type:'KOL',      assignee:'Ken S.',  brand:'Omakase',  campaign:"Father's Day Set",     status:'Done',         priority:'Med',  group:'done',        due:'Jun 8',  blocker:null,                     pendingApprover:null,     isQuickWin:true,  nextAction:'Brief sent and confirmed.',                                    checklist:[] },
+    { id:8,  title:'Meta ads copy — Songkran promo',         module:'Ads',      moduleIcon:'📣', moduleColor:'#C68A1E', type:'Ads',      assignee:'Ken S.',  brand:'Teppen',   campaign:'Songkran Teppanyaki',  status:'Done',         priority:'Med',  group:'done',        due:'Jun 10', blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Submitted to ads team.',                                       checklist:[] },
+    { id:9,  title:'Wagyu key visual — Revision 2',          module:'Graphic',  moduleIcon:'🎨', moduleColor:'#C2691E', type:'Graphic',  assignee:'Boss',    brand:'Teppen',   campaign:'Wagyu Festival',       status:'In Progress',  priority:'High', group:'doFirst',     due:'Jul 2',  blocker:null,                     pendingApprover:'Aran P.', isQuickWin:false, nextAction:'Apply revision notes from Aran. Upload V2 by 5pm today.',      checklist:['Apply copy change','Fix logo size','Upload V2 link'] },
+    { id:10, title:'Menu redesign — Touka cocktail hour',    module:'Graphic',  moduleIcon:'🎨', moduleColor:'#C2691E', type:'Graphic',  assignee:'Boss',    brand:'Touka',    campaign:'Cocktail Hour Launch', status:'Revision',     priority:'High', group:'doFirst',     due:'Jul 3',  blocker:null,                     pendingApprover:'Ploy R.', isQuickWin:false, nextAction:'Revision notes received from Ploy. Update layout and submit V3.',checklist:['Update layout','Recheck copy','Export all sizes'] },
+    { id:11, title:"Father's Day promotional banner",        module:'Graphic',  moduleIcon:'🎨', moduleColor:'#C2691E', type:'Graphic',  assignee:'Boss',    brand:'Omakase',  campaign:"Father's Day Set",     status:'Waiting',      priority:'Med',  group:'waitingMe',   due:'Jul 3',  blocker:"Ken S. — copy not confirmed", pendingApprover:'Ken S.',  isQuickWin:false, nextAction:'Waiting for confirmed copy from Ken before design can start.',  checklist:[] },
+    { id:12, title:'LINE coupon campaign post-mortem',       module:'Campaign', moduleIcon:'🎯', moduleColor:'#B33A2E', type:'Report',   assignee:'Nok W.',  brand:'Mainichi', campaign:'LINE Coupon Drive',    status:'Done',         priority:'Low',  group:'done',        due:'Jun 15', blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Report submitted.',                                            checklist:[] },
+    { id:13, title:'Rainy season budget request',            module:'Finance',  moduleIcon:'฿',  moduleColor:'#4E7A4E', type:'Budget',   assignee:'Nok W.',  brand:'Mainichi', campaign:'Rainy Season Promo',   status:'Waiting',      priority:'High', group:'waitingMe',   due:'Jul 3',  blocker:'Aran P. — budget not approved',pendingApprover:'Aran P.', isQuickWin:false, nextAction:'Waiting for Aran to approve the budget before submission.',    checklist:['Get approval','Submit request'] },
+    { id:14, title:'Add KOL result — Khun Pim post',         module:'KOL',      moduleIcon:'🌟', moduleColor:'#B5577E', type:'KOL',      assignee:'Nok W.',  brand:'Mainichi', campaign:'LINE Coupon Drive',    status:'Done',         priority:'Low',  group:'done',        due:'May 30', blocker:null,                     pendingApprover:null,     isQuickWin:true,  nextAction:'Results logged.',                                              checklist:[] },
+    { id:15, title:'Cocktail launch PR brief',               module:'Content',  moduleIcon:'✍️', moduleColor:'#3E5C9A', type:'Content',  assignee:'Ploy R.', brand:'Touka',    campaign:'Cocktail Hour Launch', status:'In Progress',  priority:'High', group:'doFirst',     due:'Jul 2',  blocker:null,                     pendingApprover:'Aran P.', isQuickWin:false, nextAction:'Finalize the PR brief and send to agency by today.',           checklist:['Write PR angle','Get approval','Send to agency'] },
+    { id:16, title:'Touka anniversary campaign planning',    module:'Campaign', moduleIcon:'🎯', moduleColor:'#B33A2E', type:'Campaign', assignee:'Ploy R.', brand:'Touka',    campaign:'Touka Anniversary',   status:'Todo',         priority:'Med',  group:'quickWins',   due:'Jul 10', blocker:null,                     pendingApprover:null,     isQuickWin:true,  nextAction:'Start by drafting the campaign brief — just 30 minutes.',     checklist:['Draft campaign brief'] },
+    { id:17, title:'SauceMaster KOL review session',         module:'KOL',      moduleIcon:'🌟', moduleColor:'#B5577E', type:'KOL',      assignee:'Ploy R.', brand:'Touka',    campaign:'Cocktail Hour Launch', status:'Need Approval',priority:'High', group:'needApproval',due:'Jul 3',  blocker:null,                     pendingApprover:'Ploy R.', isQuickWin:false, nextAction:"Review SauceMaster's draft video and approve or request revision.", checklist:['Watch draft video','Leave feedback','Approve or revise'] },
+    { id:18, title:'TikTok Wagyu teaser script',             module:'Content',  moduleIcon:'✍️', moduleColor:'#3E5C9A', type:'Content',  assignee:'Mei T.',  brand:'Teppen',   campaign:'Wagyu Festival',       status:'Done',         priority:'Med',  group:'done',        due:'Jun 20', blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Script approved and sent to KOL.',                             checklist:[] },
+    { id:19, title:'Google PPC campaign report — June',      module:'Ads',      moduleIcon:'📣', moduleColor:'#C68A1E', type:'Ads',      assignee:'Mei T.',  brand:'Teppen',   campaign:'Wagyu Festival',       status:'In Progress',  priority:'Med',  group:'doFirst',     due:'Jul 2',  blocker:null,                     pendingApprover:'Aran P.', isQuickWin:false, nextAction:'Pull GA4 data and compile into report template. Due EOD today.',checklist:['Pull GA4 data','Calculate ROAS','Write summary'] },
+    { id:20, title:'Golden Week post-mortem report',         module:'Campaign', moduleIcon:'🎯', moduleColor:'#B33A2E', type:'Report',   assignee:'Mei T.',  brand:'Teppen',   campaign:'Golden Week Teaser',  status:'Done',         priority:'Low',  group:'done',        due:'May 10', blocker:null,                     pendingApprover:null,     isQuickWin:false, nextAction:'Done and shared.',                                             checklist:[] },
+  ];
+
+  badge(s, map) {
+    const [fg,bg] = (map||{})[s]||['#6b6258','#F0EDE6'];
+    return `font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:${bg};color:${fg};display:inline-block;white-space:nowrap`;
+  }
+
+  chip(active) {
+    return active
+      ? 'font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap'
+      : 'font-size:12px;font-weight:500;padding:6px 14px;border-radius:999px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff;white-space:nowrap';
+  }
+
+  markDone(id) {
+    const done = [...this.state.doneTasks];
+    if (!done.includes(id)) done.push(id);
+    if (this.state._timer) clearTimeout(this.state._timer);
+    const msgs = ['Nice work — one step lighter ✓','Done! That felt good 🌿','Cleared — one less to carry.','Smooth — well done!','Task complete — you\'re on a roll!'];
+    const msg = msgs[Math.floor(Math.random()*msgs.length)];
+    const timer = setTimeout(()=>this.setState({showCelebration:false,_timer:null}), 3000);
+    this.setState({doneTasks:done, showCelebration:true, celebrationMsg:msg, _timer:timer, drawerOpen:false, drawerTaskId:null});
+  }
+
+  renderVals() {
+    const s = this.state;
+    const { activeTab, viewAs, viewMode, scopeFilter } = s;
+
+    const getStatus = (t) => s.doneTasks.includes(t.id) ? 'Done' : t.status;
+    const getGroup  = (t) => s.doneTasks.includes(t.id) ? 'done' : t.group;
+
+    // Main tabs
+    const mainTabs = [
+      { label:'My Day',    onClick:()=>this.setState({activeTab:'myDay'}), style:this.chip(activeTab==='myDay') },
+      { label:'Team View', onClick:()=>this.setState({activeTab:'team'}),  style:this.chip(activeTab==='team') },
+    ];
+    const isMyDay = activeTab==='myDay', isTeam = activeTab==='team';
+
+    // View toggles
+    const viewToggles = [
+      { label:'⊞ Cards', onClick:()=>this.setState({viewMode:'cards'}), style:this.chip(viewMode==='cards') },
+      { label:'≡ List',  onClick:()=>this.setState({viewMode:'list'}),  style:this.chip(viewMode==='list') },
+    ];
+    const isCards = viewMode==='cards', isList = viewMode==='list';
+
+    // Person selector
+    const people = ['Aran P.','Ken S.','Boss','Nok W.','Ploy R.','Mei T.'];
+    const viewAsPeople = people.map(p=>({
+      label: p.split(' ')[0],
+      onClick:()=>this.setState({viewAs:p}),
+      style: viewAs===p
+        ? 'font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap'
+        : 'font-size:11px;font-weight:500;padding:4px 10px;border-radius:999px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff;white-space:nowrap',
+    }));
+    const viewAsColor = this.teamColors[viewAs]||'#9A9387';
+    const viewAsInit  = (viewAs.slice(0,1)+(viewAs.split(' ')[1]||'').slice(0,1)).toUpperCase();
+    const viewAsShort = viewAs.split(' ')[0];
+
+    // Greeting
+    const gd = this.greetData[viewAs]||['Welcome 🌿','Ready for today?'];
+    const greetText = gd[0], greetSubtext = gd[1], todayLabel = 'Wednesday · Jul 2, 2026';
+
+    // My tasks
+    const myTasks = this.tasks.filter(t=>t.assignee===viewAs);
+    const todayDues = ['Jul 2'];
+    const weekDues  = ['Jul 2','Jul 3','Jul 4','Jul 5','Jul 6'];
+
+    const todayTasks = myTasks.filter(t=>todayDues.includes(t.due)||getStatus(t)==='Stuck');
+    const todayDone  = todayTasks.filter(t=>getStatus(t)==='Done').length;
+    const todayTotal = todayTasks.length;
+    const todayPct   = todayTotal ? Math.round(todayDone/todayTotal*100) : 0;
+    const todayFocusCount = todayTasks.filter(t=>getStatus(t)!=='Done').length;
+    const myDone      = myTasks.filter(t=>getStatus(t)==='Done').length;
+    const myStuck     = myTasks.filter(t=>getStatus(t)==='Stuck').length;
+    const myApprovals = myTasks.filter(t=>getStatus(t)==='Need Approval').length;
+    const myWaiting   = myTasks.filter(t=>getStatus(t)==='Waiting').length;
+    const msgIdx = myTasks.length ? Math.min(4,Math.floor(myDone/myTasks.length*5)) : 0;
+    const bentoMsg = this.bentoMessages[msgIdx]||this.bentoMessages[0];
+    const todayPctW = todayPct+'%';
+
+    // Scope filter
+    const scopeFilters = [
+      { id:'all',       label:'All tasks' },
+      { id:'today',     label:'Today' },
+      { id:'week',      label:'This week' },
+      { id:'approvals', label:'My approvals' },
+      { id:'stuck',     label:'Stuck' },
+    ].map(f=>({ label:f.label, onClick:()=>this.setState({scopeFilter:f.id}), style:this.chip(scopeFilter===f.id) }));
+
+    const matchScope = (t) => {
+      const st = getStatus(t);
+      if (scopeFilter==='today')     return todayDues.includes(t.due)||st==='Stuck';
+      if (scopeFilter==='week')      return weekDues.includes(t.due)||['In Progress','Stuck','Waiting','Need Approval'].includes(st);
+      if (scopeFilter==='approvals') return st==='Need Approval';
+      if (scopeFilter==='stuck')     return st==='Stuck';
+      return true;
+    };
+    const scopedTasks = myTasks.filter(matchScope);
+
+    // Build card data
+    const makeCard = (t) => {
+      const status = getStatus(t);
+      const [typeFg,typeBg] = this.typeColors[t.type]||['#6b6258','#F0EDE6'];
+      const dueColor = t.due==='Jul 2'?'#B33A2E':t.due==='Jul 3'?'#C68A1E':'#6b6258';
+      const cardBorder = status==='Stuck'?'#F5C8C4':status==='Need Approval'?'#B8E0B8':'#ECE6DA';
+      const actions = [];
+      if (status==='In Progress'||status==='Revision')
+        actions.push({ label:'Mark Done ✓', onClick:(e)=>{e&&e.stopPropagation();this.markDone(t.id);}, style:'font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#4E7A4E;color:#fff;cursor:pointer' });
+      if (status==='Need Approval')
+        actions.push({ label:'Approve ✓', onClick:(e)=>{e&&e.stopPropagation();this.markDone(t.id);}, style:'font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#4E7A4E;color:#fff;cursor:pointer' });
+      if (status==='Stuck')
+        actions.push({ label:'Ask for Help', onClick:(e)=>{e&&e.stopPropagation();}, style:'font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#FFF5F4;color:#B33A2E;border:1px solid #F5C8C4;cursor:pointer' });
+      if (status==='Todo')
+        actions.push({ label:'Start', onClick:(e)=>{e&&e.stopPropagation();this.setState({drawerOpen:true,drawerTaskId:t.id});}, style:'font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#3E5C9A;color:#fff;cursor:pointer' });
+      if (status==='Waiting')
+        actions.push({ label:'Check in', onClick:(e)=>{e&&e.stopPropagation();this.setState({drawerOpen:true,drawerTaskId:t.id});}, style:'font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#FBF8EE;color:#C68A1E;border:1px solid #EDCC7A;cursor:pointer' });
+      actions.push({ label:'Details', onClick:(e)=>{e&&e.stopPropagation();this.setState({drawerOpen:true,drawerTaskId:t.id});}, style:'font-size:12px;font-weight:500;padding:6px 13px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff' });
+      return {
+        ...t, status, typeFg, typeBg, dueColor, cardBorder,
+        statusStyle:  this.badge(status, this.statusMap),
+        priorityStyle:this.badge(t.priority, this.priorityMap),
+        hasPendingApprover: !!t.pendingApprover && t.pendingApprover!==viewAs,
+        hasBlocker:!!t.blocker,
+        blockerShort: t.blocker ? t.blocker.split('—')[0].trim() : '',
+        actions,
+        onOpen:()=>this.setState({drawerOpen:true,drawerTaskId:t.id}),
+        personColor:this.teamColors[t.assignee]||'#9A9387',
+        personInit:(t.assignee.slice(0,1)+(t.assignee.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+        rowBg:status==='Stuck'?'#FFFAF9':status==='Need Approval'?'#FAFFF9':'#fff',
+      };
+    };
+
+    const groupDefs = [
+      { id:'doFirst',     label:'Do First',            icon:'🎯', countBg:'#FFF5F4', countColor:'#B33A2E', warnMsg:'' },
+      { id:'needApproval',label:'Need Approval',        icon:'✅', countBg:'#F0F7F0', countColor:'#4E7A4E', warnMsg:'' },
+      { id:'waitingMe',   label:'Waiting for Me',       icon:'✋', countBg:'#FBF8EE', countColor:'#C68A1E', warnMsg:'' },
+      { id:'quickWins',   label:'Quick Wins',           icon:'✨', countBg:'#FBF6ED', countColor:'#B8945A', warnMsg:'' },
+      { id:'stuck',       label:'Stuck — Needs support',icon:'⚠️', countBg:'#FFF5F4', countColor:'#B33A2E', warnMsg:'Let your team know if you need help' },
+      { id:'done',        label:'Done',                 icon:'✓',  countBg:'#EEF4EE', countColor:'#4E7A4E', warnMsg:'' },
+    ];
+    const groupedTasks = groupDefs.map(gd=>{
+      const tasks = scopedTasks.filter(t=>getGroup(t)===gd.id).map(makeCard);
+      return { ...gd, tasks, count:tasks.length, hasItems:tasks.length>0, hasWarn:!!gd.warnMsg&&tasks.length>0 };
+    });
+    const flatTasks = scopedTasks.map(makeCard);
+    const listEmpty = flatTasks.length===0;
+
+    // Drawer
+    const drawerTask = (() => {
+      const empty = { hasBlocker:false, hasChecklist:false, actions:[], checklistItems:[], title:'', moduleIcon:'', typeBg:'#F2F0EB', typeFg:'#6b6258', type:'', priority:'', priorityStyle:'', status:'', statusStyle:'', brand:'', campaign:'', nextAction:'', due:'', dueColor:'#6b6258', assignee:'', approverLabel:'—', approverColor:'#9A9387', blocker:'' };
+      if (!s.drawerOpen||!s.drawerTaskId) return empty;
+      const t = this.tasks.find(x=>x.id===s.drawerTaskId);
+      if (!t) return empty;
+      const status = getStatus(t);
+      const [typeFg,typeBg] = this.typeColors[t.type]||['#6b6258','#F0EDE6'];
+      const dueColor = t.due==='Jul 2'?'#B33A2E':t.due==='Jul 3'?'#C68A1E':'#6b6258';
+      const acts = [];
+      if (status==='In Progress'||status==='Revision')
+        acts.push({ label:'Mark Done ✓',   onClick:()=>this.markDone(t.id), style:'font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#4E7A4E;color:#fff;cursor:pointer' });
+      if (status==='Need Approval') {
+        acts.push({ label:'Approve ✓',      onClick:()=>this.markDone(t.id), style:'font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#4E7A4E;color:#fff;cursor:pointer' });
+        acts.push({ label:'Request revision',onClick:()=>{},                style:'font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#FBF1E9;color:#C2691E;border:1px solid #F0D5BC;cursor:pointer' });
+      }
+      if (status==='Todo')
+        acts.push({ label:'Start',          onClick:()=>{},                  style:'font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#3E5C9A;color:#fff;cursor:pointer' });
+      if (status==='Stuck')
+        acts.push({ label:'Ask for Help',   onClick:()=>{},                  style:'font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#FFF5F4;color:#B33A2E;border:1px solid #F5C8C4;cursor:pointer' });
+      acts.push({ label:'Comment',          onClick:()=>{},                  style:'font-size:13px;font-weight:500;padding:9px 18px;border-radius:10px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff' });
+      return {
+        ...t, status, typeFg, typeBg, dueColor,
+        statusStyle:  this.badge(status, this.statusMap),
+        priorityStyle:this.badge(t.priority, this.priorityMap),
+        hasBlocker: !!t.blocker,
+        hasChecklist: (t.checklist||[]).length>0,
+        checklistItems: t.checklist||[],
+        actions: acts,
+        approverLabel: t.pendingApprover||'—',
+        approverColor: t.pendingApprover ? '#C68A1E' : '#9A9387',
+      };
+    })();
+
+    // Team view
+    const teamKpis = [
+      { label:'Total Tasks',  val:this.tasks.length,                                              color:'#fff' },
+      { label:'Done',         val:this.tasks.filter(t=>getStatus(t)==='Done').length,             color:'#B8E0B8' },
+      { label:'In Progress',  val:this.tasks.filter(t=>getStatus(t)==='In Progress').length,      color:'#B8C8E8' },
+      { label:'Stuck',        val:this.tasks.filter(t=>getStatus(t)==='Stuck').length,            color:'#F5C8C4' },
+      { label:'Need Approval',val:this.tasks.filter(t=>getStatus(t)==='Need Approval').length,    color:'#B8E0B8' },
+    ];
+    const stuckAll    = this.tasks.filter(t=>getStatus(t)==='Stuck').length;
+    const approvalAll = this.tasks.filter(t=>getStatus(t)==='Need Approval').length;
+    const hasTeamAlert = stuckAll>0||approvalAll>0;
+    const parts = [];
+    if (stuckAll>0)    parts.push(`${stuckAll} task${stuckAll>1?'s':''} stuck and need support`);
+    if (approvalAll>0) parts.push(`${approvalAll} approval${approvalAll>1?'s':''} waiting`);
+    const teamAlertMsg = parts.join(' · ');
+
+    const personCards = people.map(p=>{
+      const pts  = this.tasks.filter(t=>t.assignee===p);
+      const done = pts.filter(t=>getStatus(t)==='Done').length;
+      const stuck= pts.filter(t=>getStatus(t)==='Stuck').length;
+      const wait = pts.filter(t=>getStatus(t)==='Waiting').length;
+      const act  = pts.filter(t=>['In Progress','Revision'].includes(getStatus(t))).length;
+      const appr = pts.filter(t=>getStatus(t)==='Need Approval').length;
+      const pct  = pts.length ? Math.round(done/pts.length*100) : 0;
+      const health = stuck>0?'Needs support':pct>=70?'Healthy':'Busy';
+      const healthStyle = stuck>0
+        ? 'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#FFF5F4;color:#B33A2E'
+        : pct>=70
+        ? 'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEF4EE;color:#4E7A4E'
+        : 'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#FBF8EE;color:#C68A1E';
+      return {
+        name:p, init:(p.slice(0,1)+(p.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+        color:this.teamColors[p]||'#9A9387',
+        total:pts.length, done, stuck, waiting:wait, active:act, approvals:appr,
+        pct, pctW:pct+'%', pctColor:pct>=70?'#4E7A4E':pct>=40?'#C68A1E':'#B33A2E',
+        health, healthStyle,
+        stuckBg:stuck>0?'#FFF5F4':'#F5F2ED', stuckFg:stuck>0?'#B33A2E':'#9A9387',
+        hasApprovals:appr>0,
+        onSelect:()=>this.setState({activeTab:'myDay',viewAs:p}),
+      };
+    });
+
+    const closeDrawer = ()=>this.setState({drawerOpen:false,drawerTaskId:null});
+    const stopProp = (e)=>{e&&e.stopPropagation&&e.stopPropagation();};
+
+    return {
+      mainTabs, isMyDay, isTeam,
+      viewToggles, isCards, isList,
+      viewAsPeople, viewAsColor, viewAsInit, viewAsShort,
+      greetText, greetSubtext, todayLabel,
+      todayFocusCount, bentoMsg, todayDone, todayTotal, todayPctW,
+      myDone, myStuck, myApprovals, myWaiting,
+      scopeFilters, groupedTasks, flatTasks, listEmpty,
+      drawerOpen:s.drawerOpen, drawerTask, closeDrawer, stopProp,
+      showCelebration:s.showCelebration, celebrationMsg:s.celebrationMsg,
+      teamKpis, hasTeamAlert, teamAlertMsg, personCards,
+    };
+  }
+}
+</script>
+</body>
+</html>

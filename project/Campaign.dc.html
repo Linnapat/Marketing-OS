@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  body { font-family: 'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #211F1C; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #d9d1c2; border-radius: 6px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid #B8945A; outline-offset: -1px; }
+</style>
+</helmet>
+
+<div style="padding:22px 26px 48px;min-height:100vh;background:#F7F4EE">
+
+  <!-- ===== CONFIRM MODAL ===== -->
+  <sc-if value="{{ confirmModalOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:600;display:flex;align-items:center;justify-content:center;padding:20px" onClick="{{ closeConfirmModal }}">
+    <div style="position:absolute;inset:0;background:rgba(33,31,28,.55);backdrop-filter:blur(3px)"></div>
+    <div style="position:relative;z-index:1;background:#fff;border-radius:20px;width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden" onClick="{{ stopProp }}">
+      <div style="padding:20px 24px;border-bottom:1px solid #ECE6DA;background:#FBF9F4">
+        <div style="font-size:16px;font-weight:800">Confirm &amp; Create Linked Tasks</div>
+        <div style="font-size:12.5px;color:#9A9387;margin-top:3px">This will create tasks in the following modules linked to {{ detailId }}</div>
+      </div>
+      <div style="padding:18px 24px;display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ confirmTaskList }}" as="ct" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#F7F4EE;border-radius:12px">
+            <span style="font-size:16px;flex-shrink:0">{{ ct.icon }}</span>
+            <div style="flex:1"><div style="font-size:13.5px;font-weight:600">{{ ct.label }}</div><div style="font-size:12px;color:#9A9387">{{ ct.sub }}</div></div>
+            <span style="{{ ct.badgeStyle }}">{{ ct.count }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #ECE6DA;display:flex;gap:10px">
+        <span onClick="{{ doConfirmTasks }}" style="flex:1;text-align:center;font-size:14px;font-weight:700;padding:12px;border-radius:11px;background:#211F1C;color:#fff;cursor:pointer">Create All Tasks</span>
+        <span onClick="{{ closeConfirmModal }}" style="font-size:14px;font-weight:700;padding:12px 18px;border-radius:11px;border:1.5px solid #E5DECF;color:#6b6258;cursor:pointer">Cancel</span>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ===== CAMPAIGN DETAIL ===== -->
+  <sc-if value="{{ isCampDetail }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <!-- Back + header -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0">
+        <span onClick="{{ backFromDetail }}" style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:#6b6258;border:1px solid #E5DECF;border-radius:9px;padding:8px 13px;cursor:pointer;background:#fff;flex-shrink:0">‹ Campaigns</span>
+        <div style="min-width:0">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:{{ detailColor }}"></span>
+            <div style="font-size:20px;font-weight:800;letter-spacing:-.02em;line-height:1.1">{{ detailName }}</div>
+            <span style="{{ detailStatusStyle }}">{{ detailStatus }}</span>
+            <span style="{{ detailReadinessStyle }}">{{ detailReadinessLabel }}</span>
+          </div>
+          <div style="font-size:12px;color:#9A9387;margin-top:4px">{{ detailId }} · {{ detailBrand }} · {{ detailBranch }} · {{ detailObjective }}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:700;padding:9px 14px;border-radius:10px;border:1px solid #E5DECF;background:#fff;cursor:pointer">Edit Brief</span>
+        <span onClick="{{ goDetailPlanner }}" style="font-size:13px;font-weight:700;padding:9px 14px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">Open Planner</span>
+      </div>
+    </div>
+
+    <!-- Management Summary Strip -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-bottom:16px">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:4px">Tasks</div><div style="font-size:20px;font-weight:800">{{ taskTotal }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#4E7A4E;margin-bottom:4px">Done</div><div style="font-size:20px;font-weight:800;color:#4E7A4E">{{ taskDone }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3E5C9A;margin-bottom:4px">In Progress</div><div style="font-size:20px;font-weight:800;color:#3E5C9A">{{ taskInProgress }}</div></div>
+      <div style="background:#FBF3F1;border:1.5px solid #E8C5BC;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#B33A2E;margin-bottom:4px">Blocked</div><div style="font-size:20px;font-weight:800;color:#B33A2E">{{ taskBlocked }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#C68A1E;margin-bottom:4px">Waiting</div><div style="font-size:20px;font-weight:800;color:#C68A1E">{{ taskWaiting }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#B33A2E;margin-bottom:4px">Overdue</div><div style="font-size:20px;font-weight:800;color:{{ taskOverdueColor }}">{{ taskOverdue }}</div></div>
+      <div style="background:#211F1C;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent,#B8945A);margin-bottom:4px">Bottleneck</div><div style="font-size:13px;font-weight:700;color:#fff;line-height:1.3">{{ bottleneckTeam }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:13px 15px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:4px">Next Approval</div><div style="font-size:13px;font-weight:700;line-height:1.3">{{ nextApproval }}</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:3px;background:#EFEAE0;border-radius:13px;padding:4px;margin-bottom:20px;overflow-x:auto">
+      <sc-for list="{{ detailTabs }}" as="dt" hint-placeholder-count="10"><span onClick="{{ dt.onClick }}" style="{{ dt.style }}">{{ dt.label }}</span></sc-for>
+    </div>
+
+    <!-- ── OVERVIEW ── -->
+    <sc-if value="{{ isDetailOverview }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <!-- Readiness + Brief summary -->
+      <div style="display:grid;grid-template-columns:3fr 2fr;gap:14px">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+          <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:14px">Campaign Brief</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">OBJECTIVE</div><div style="font-size:13.5px;font-weight:600">{{ detailObjective }}</div></div>
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">PERIOD</div><div style="font-size:13.5px;font-weight:600">{{ detailDates }}</div></div>
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">PLANNING BUDGET</div><div style="font-size:13.5px;font-weight:700;color:var(--accent,#B8945A)">{{ detailBudgetF }}</div></div>
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">OWNER</div><div style="font-size:13.5px;font-weight:600">{{ detailOwner }}</div></div>
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">CAMPAIGN TYPE</div><div style="font-size:13.5px;font-weight:600">{{ detailCampType }}</div></div>
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">TARGET</div><div style="font-size:13.5px;font-weight:600">{{ detailTarget }}</div></div>
+          </div>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid #F2EDE2">
+            <div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:8px">KPI TARGETS</div>
+            <div style="display:flex;flex-wrap:wrap;gap:7px">
+              <sc-for list="{{ detailKpiChips }}" as="kc" hint-placeholder-count="3"><span style="font-size:12px;font-weight:600;background:#F2EDE2;color:#6b6258;border-radius:8px;padding:5px 11px">{{ kc }}</span></sc-for>
+            </div>
+          </div>
+        </div>
+        <!-- Readiness card -->
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:18px 20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700">Campaign Readiness</div>
+            <span style="{{ detailReadinessStyle }}">{{ detailReadinessLabel }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ readinessItems }}" as="ri" hint-placeholder-count="7">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="font-size:13px;flex-shrink:0">{{ ri.icon }}</span>
+                <div style="flex:1;font-size:13px;font-weight:500;color:{{ ri.color }}">{{ ri.label }}</div>
+                <span style="{{ ri.badgeStyle }}">{{ ri.status }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <!-- Channel Coverage -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:16px">Channel Coverage</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#3E5C9A;margin-bottom:10px;background:#EEF1F8;padding:5px 10px;border-radius:7px">Online</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ channelOnline }}" as="ch" hint-placeholder-count="5">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:12px;flex-shrink:0">{{ ch.icon }}</span>
+                  <div style="flex:1;font-size:12.5px;font-weight:500">{{ ch.label }}</div>
+                  <span style="{{ ch.statusStyle }}">{{ ch.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#C68A1E;margin-bottom:10px;background:#FBF6ED;padding:5px 10px;border-radius:7px">Offline</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ channelOffline }}" as="ch" hint-placeholder-count="5">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:12px;flex-shrink:0">{{ ch.icon }}</span>
+                  <div style="flex:1;font-size:12.5px;font-weight:500">{{ ch.label }}</div>
+                  <span style="{{ ch.statusStyle }}">{{ ch.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#6b6258;margin-bottom:10px;background:#F0EBE0;padding:5px 10px;border-radius:7px">Support</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ channelSupport }}" as="ch" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:12px;flex-shrink:0">{{ ch.icon }}</span>
+                  <div style="flex:1;font-size:12.5px;font-weight:500">{{ ch.label }}</div>
+                  <span style="{{ ch.statusStyle }}">{{ ch.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Result validation -->
+      <sc-if value="{{ needsResult }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#FBF3F1;border:1.5px solid #E8C5BC;border-radius:14px;padding:16px 20px;display:flex;align-items:flex-start;gap:12px">
+        <span style="font-size:22px;flex-shrink:0">🚫</span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#B33A2E;margin-bottom:4px">Cannot close this campaign without a Result Report</div>
+          <div style="font-size:13px;color:#6b6258;line-height:1.5">{{ needsResultWarn }}</div>
+          <span onClick="{{ goDetailResult }}" style="display:inline-block;margin-top:12px;font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#B33A2E;color:#fff;cursor:pointer">Add Result Data →</span>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- Bottleneck section -->
+      <sc-if value="{{ hasBottlenecks }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#fff;border:1.5px solid #E8C5BC;border-radius:18px;padding:20px 22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <span style="font-size:14px">⚠</span>
+          <div style="font-size:14px;font-weight:700;color:#B33A2E">Where is this campaign stuck?</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ bottleneckItems }}" as="bt" hint-placeholder-count="3">
+            <div style="display:flex;align-items:flex-start;gap:14px;padding:13px 16px;background:#FBF3F1;border-radius:12px;border:1px solid #F0C9BE">
+              <div style="min-width:0;flex:1">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px">
+                  <div style="font-size:13.5px;font-weight:700;color:#B33A2E">{{ bt.team }}</div>
+                  <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fbf0ee;color:#B33A2E;border:1px solid #F0C9BE">{{ bt.count }} blocked</span>
+                </div>
+                <div style="font-size:12.5px;color:#6b6258;margin-bottom:4px">{{ bt.reason }}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#9A9387">
+                  <span>Pending: <b style="color:#211F1C">{{ bt.approver }}</b></span>
+                  <span>Waiting: <b style="color:#B33A2E">{{ bt.waitingTime }}</b></span>
+                </div>
+              </div>
+              <span style="font-size:12px;font-weight:700;padding:7px 12px;border-radius:9px;border:1px solid #E8C5BC;color:#B33A2E;cursor:pointer;white-space:nowrap;flex-shrink:0">Resolve →</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- Linked module status -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:13px;font-weight:700">Linked Modules · {{ detailId }}</div>
+          <span style="font-size:12px;color:#9A9387">Click any module to view items</span>
+        </div>
+        <sc-for list="{{ detailModuleLinks }}" as="ml" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:13px;padding:13px 20px;border-bottom:1px solid #F4EFE5">
+            <span style="{{ ml.iconBg }}">{{ ml.icon }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:600">{{ ml.label }}</div>
+              <div style="font-size:12px;color:#9A9387">{{ ml.sub }}</div>
+              <sc-if value="{{ ml.hasWarn }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:#B33A2E;font-weight:600;margin-top:2px">⚠ {{ ml.warn }}</div></sc-if>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <span style="{{ ml.statusStyle }}">{{ ml.status }}</span>
+              <div style="font-size:11px;color:#9A9387;margin-top:4px">Owner: {{ ml.owner }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ── BRIEF ── -->
+    <sc-if value="{{ isDetailBrief }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:22px 24px">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:16px">Campaign Identity</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">NAME</div><div style="font-size:15px;font-weight:700">{{ detailName }}</div></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">CAMPAIGN ID</div><div style="font-size:13.5px;font-weight:600;font-family:monospace;color:var(--accent,#B8945A)">{{ detailId }}</div></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">BRAND</div><div style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:{{ detailColor }}"></span><span style="font-size:14px;font-weight:600">{{ detailBrand }}</span></div></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">BRANCH</div><div style="font-size:14px;font-weight:600">{{ detailBranch }}</div></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">STATUS</div><span style="{{ detailStatusStyle }}">{{ detailStatus }}</span></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">CAMPAIGN TYPE</div><div style="font-size:14px;font-weight:600">{{ detailCampType }}</div></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">OWNER</div><div style="font-size:14px;font-weight:600">{{ detailOwner }}</div></div>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:22px 24px">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:16px">Objective &amp; Message</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">OBJECTIVE</div><div style="font-size:14px;font-weight:600">{{ detailObjective }}</div></div>
+          <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">TARGET CUSTOMER</div><div style="font-size:14px;font-weight:600">{{ detailTarget }}</div></div>
+          <div style="grid-column:1/-1"><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">MAIN OFFER</div><div style="font-size:14px;font-weight:600">{{ detailOffer }}</div></div>
+          <div style="grid-column:1/-1"><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">KEY MESSAGE</div><div style="font-size:14px;color:#6b6258;line-height:1.5">{{ detailKeyMessage }}</div></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+          <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:14px">Campaign Period</div>
+          <sc-for list="{{ detailPeriodRows }}" as="pr" hint-placeholder-count="4">
+            <div style="margin-bottom:12px"><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">{{ pr.label }}</div><div style="font-size:14px;font-weight:600">{{ pr.value }}</div></div>
+          </sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+          <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:8px">Planning Budget</div>
+          <div style="font-size:11.5px;color:#C68A1E;background:#FBF6ED;border-radius:8px;padding:7px 11px;margin-bottom:14px;font-weight:600">Planning only · Finance module unchanged</div>
+          <sc-for list="{{ detailBudgetLines }}" as="bl" hint-placeholder-count="4">
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2EDE2"><span style="font-size:13px;color:#6b6258">{{ bl.label }}</span><span style="font-size:13px;font-weight:700">{{ bl.value }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:14px">Required Workstreams</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <sc-for list="{{ detailWorkstreams }}" as="ws" hint-placeholder-count="6"><span style="{{ ws.style }}">{{ ws.label }}</span></sc-for>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:14px">KPI Targets</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px">
+          <sc-for list="{{ detailKpiRows }}" as="kr" hint-placeholder-count="4">
+            <div><div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:4px">{{ kr.label }}</div><div style="font-size:18px;font-weight:700">{{ kr.value }}</div></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ── PLANNER ── -->
+    <sc-if value="{{ isDetailPlanner }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <!-- Template Picker -->
+      <sc-if value="{{ showTemplatePicker }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="margin-bottom:22px"><div style="font-size:16px;font-weight:800">Choose a Campaign Template</div><div style="font-size:13px;color:#9A9387;margin-top:4px">Select a starting template to auto-generate workstream tasks for {{ detailName }}</div></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+          <sc-for list="{{ templateCards }}" as="tc" hint-placeholder-count="6">
+            <div onClick="{{ tc.onClick }}" style="background:#fff;border:2px solid #ECE6DA;border-radius:18px;padding:22px;cursor:pointer">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <div style="width:44px;height:44px;border-radius:12px;background:{{ tc.bg }};display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">{{ tc.icon }}</div>
+                <div><div style="font-size:14px;font-weight:800;color:{{ tc.color }}">{{ tc.name }}</div><div style="font-size:12px;color:#9A9387;margin-top:1px">{{ tc.totalTasks }} tasks auto-generated</div></div>
+              </div>
+              <div style="font-size:13px;color:#6b6258;margin-bottom:12px;line-height:1.4">{{ tc.desc }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ tc.taskChips }}" as="chip" hint-placeholder-count="4"><span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;background:#F2EDE2;color:#6b6258">{{ chip }}</span></sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+      <!-- Planner workstreams -->
+      <sc-if value="{{ showPlannerContent }}" hint-placeholder-val="{{ false }}">
+      <div>
+      <!-- Planner actions -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+        <div><div style="font-size:15px;font-weight:700">Campaign Planner · {{ detailName }}</div><div style="font-size:12.5px;color:#9A9387;margin-top:2px">Build and confirm all workstreams from one place</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span onClick="{{ changePlannerTemplate }}" style="font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">← Change Template</span>
+          <span style="font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">Save as Template</span>
+          <span style="font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">Send for Approval</span>
+          <span onClick="{{ openConfirmModal }}" style="font-size:12.5px;font-weight:700;padding:8px 18px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer">Confirm &amp; Create Tasks</span>
+        </div>
+      </div>
+
+      <!-- Dependency Timeline -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:16px 22px;margin-bottom:18px;overflow-x:auto">
+        <div style="font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:12px;letter-spacing:.04em;text-transform:uppercase">Dependency Timeline</div>
+        <div style="display:flex;align-items:center;gap:0;min-width:600px">
+          <sc-for list="{{ timelineSteps }}" as="ts" hint-placeholder-count="9">
+            <div style="display:flex;align-items:center;flex:1">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:70px">
+                <div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:{{ ts.numBg }};color:{{ ts.numFg }};flex-shrink:0">{{ ts.n }}</div>
+                <div style="font-size:10.5px;font-weight:600;color:{{ ts.labelColor }};text-align:center;line-height:1.3;white-space:nowrap">{{ ts.label }}</div>
+                <sc-if value="{{ ts.hasBlocker }}" hint-placeholder-val="{{ false }}"><div style="font-size:9.5px;color:#B33A2E;font-weight:700;text-align:center;background:#FBF3F1;border-radius:5px;padding:1px 5px;white-space:nowrap">{{ ts.blocker }}</div></sc-if>
+              </div>
+              <sc-if value="{{ ts.hasLine }}" hint-placeholder-val="{{ true }}"><div style="flex:1;height:2px;background:{{ ts.lineColor }};min-width:10px"></div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- 4 Workstream groups -->
+      <div style="display:flex;flex-direction:column;gap:14px">
+
+        <!-- A. Online Plan -->
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#EEF1F8;border-bottom:1px solid #C8D8F8">
+            <div style="display:flex;align-items:center;gap:9px"><span style="font-size:16px">📱</span><div style="font-size:14px;font-weight:700;color:#1E3A8A">A — Online Plan</div></div>
+            <div style="display:flex;align-items:center;gap:8px"><sc-for list="{{ onlinePlanSummary }}" as="s" hint-placeholder-count="2"><span style="{{ s.style }}">{{ s.label }}</span></sc-for></div>
+          </div>
+          <div style="padding:16px 20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+              <sc-for list="{{ planOnlineCards }}" as="pc" hint-placeholder-count="3">
+                <div style="border:1.5px solid {{ pc.borderColor }};border-radius:14px;padding:14px 16px;background:{{ pc.bg }}">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+                    <div style="font-size:13.5px;font-weight:700">{{ pc.title }}</div>
+                    <span style="{{ pc.statusStyle }}">{{ pc.status }}</span>
+                  </div>
+                  <sc-for list="{{ pc.fields }}" as="f" hint-placeholder-count="3"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:12px;color:#9A9387">{{ f.label }}</span><span style="font-size:12px;font-weight:600">{{ f.value }}</span></div></sc-for>
+                  <div style="margin-top:10px;padding-top:10px;border-top:1px solid #F0EBE0;display:flex;align-items:center;justify-content:space-between">
+                    <div style="font-size:11.5px;color:#9A9387">Owner: <b style="color:#211F1C">{{ pc.owner }}</b></div>
+                    <sc-if value="{{ pc.hasBlocker }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;color:#B33A2E;background:#FBF3F1;border-radius:6px;padding:2px 8px">⚠ {{ pc.blockerLabel }}</span></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- B. Paid / KOL Plan -->
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#FBF6ED;border-bottom:1px solid #E8D5AA">
+            <div style="display:flex;align-items:center;gap:9px"><span style="font-size:16px">📢</span><div style="font-size:14px;font-weight:700;color:#7A4A00">B — Paid &amp; KOL Plan</div></div>
+            <div style="display:flex;align-items:center;gap:8px"><sc-for list="{{ paidPlanSummary }}" as="s" hint-placeholder-count="2"><span style="{{ s.style }}">{{ s.label }}</span></sc-for></div>
+          </div>
+          <div style="padding:16px 20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+              <sc-for list="{{ planPaidCards }}" as="pc" hint-placeholder-count="2">
+                <div style="border:1.5px solid {{ pc.borderColor }};border-radius:14px;padding:14px 16px;background:{{ pc.bg }}">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+                    <div style="font-size:13.5px;font-weight:700">{{ pc.title }}</div>
+                    <span style="{{ pc.statusStyle }}">{{ pc.status }}</span>
+                  </div>
+                  <sc-for list="{{ pc.fields }}" as="f" hint-placeholder-count="3"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:12px;color:#9A9387">{{ f.label }}</span><span style="font-size:12px;font-weight:600">{{ f.value }}</span></div></sc-for>
+                  <div style="margin-top:10px;padding-top:10px;border-top:1px solid #F0EBE0;display:flex;align-items:center;justify-content:space-between">
+                    <div style="font-size:11.5px;color:#9A9387">Owner: <b style="color:#211F1C">{{ pc.owner }}</b></div>
+                    <sc-if value="{{ pc.hasBlocker }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;color:#B33A2E;background:#FBF3F1;border-radius:6px;padding:2px 8px">⚠ {{ pc.blockerLabel }}</span></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- C. Offline Plan -->
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #E8E2D6">
+            <div style="display:flex;align-items:center;gap:9px"><span style="font-size:16px">🏪</span><div style="font-size:14px;font-weight:700;color:#211F1C">C — Offline Plan</div></div>
+            <div style="display:flex;align-items:center;gap:8px"><sc-for list="{{ offlinePlanSummary }}" as="s" hint-placeholder-count="2"><span style="{{ s.style }}">{{ s.label }}</span></sc-for></div>
+          </div>
+          <div style="padding:16px 20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+              <sc-for list="{{ planOfflineCards }}" as="pc" hint-placeholder-count="2">
+                <div style="border:1.5px solid {{ pc.borderColor }};border-radius:14px;padding:14px 16px;background:{{ pc.bg }}">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+                    <div style="font-size:13.5px;font-weight:700">{{ pc.title }}</div>
+                    <span style="{{ pc.statusStyle }}">{{ pc.status }}</span>
+                  </div>
+                  <sc-for list="{{ pc.fields }}" as="f" hint-placeholder-count="3"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:12px;color:#9A9387">{{ f.label }}</span><span style="font-size:12px;font-weight:600">{{ f.value }}</span></div></sc-for>
+                  <div style="margin-top:10px;padding-top:10px;border-top:1px solid #F0EBE0">
+                    <div style="font-size:11.5px;color:#9A9387">Owner: <b style="color:#211F1C">{{ pc.owner }}</b></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- D. Support / Approval -->
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#F0EBE0;border-bottom:1px solid #DDD4C4">
+            <div style="display:flex;align-items:center;gap:9px"><span style="font-size:16px">✅</span><div style="font-size:14px;font-weight:700;color:#211F1C">D — Support &amp; Approval</div></div>
+            <div style="display:flex;align-items:center;gap:8px"><sc-for list="{{ supportPlanSummary }}" as="s" hint-placeholder-count="2"><span style="{{ s.style }}">{{ s.label }}</span></sc-for></div>
+          </div>
+          <div style="padding:16px 20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+              <sc-for list="{{ planSupportCards }}" as="pc" hint-placeholder-count="4">
+                <div style="border:1.5px solid {{ pc.borderColor }};border-radius:14px;padding:14px 16px;background:{{ pc.bg }}">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+                    <div style="font-size:13.5px;font-weight:700">{{ pc.title }}</div>
+                    <span style="{{ pc.statusStyle }}">{{ pc.status }}</span>
+                  </div>
+                  <div style="font-size:12px;color:#9A9387;margin-bottom:6px">{{ pc.sub }}</div>
+                  <div style="font-size:11.5px;color:#9A9387">Owner: <b style="color:#211F1C">{{ pc.owner }}</b></div>
+                  <sc-if value="{{ pc.approver }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:#C68A1E;margin-top:4px;font-weight:600">Pending: {{ pc.approver }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Confirmed state -->
+      <sc-if value="{{ tasksConfirmed }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#EEF4EE;border:1px solid #B5CEAF;border-radius:14px;padding:16px 20px;margin-top:14px;display:flex;align-items:center;gap:12px">
+        <span style="font-size:22px">✓</span>
+        <div><div style="font-size:14px;font-weight:700;color:#2E5E2E">Tasks created and linked to {{ detailId }}</div><div style="font-size:12.5px;color:#4E7A4E;margin-top:3px">Content · Graphic · KOL · Ads · Budget · Offline · Report tasks are live in each module.</div></div>
+      </div>
+      </sc-if>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- ── CONTENT ── -->
+    <sc-if value="{{ isDetailContent }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:700">Content — {{ detailName }}</div><span style="font-size:12px;color:#9A9387">{{ detailContentCount }} posts</span></div>
+      <sc-if value="{{ detailContentEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 20px;text-align:center;color:#9A9387;font-size:13.5px">No content planned. Go to Planner to create tasks.</div></sc-if>
+      <sc-for list="{{ detailContentItems }}" as="ci" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:13px;padding:12px 20px;border-bottom:1px solid #F4EFE5">
+          <span style="font-size:11px;color:#9A9387;font-weight:600;min-width:44px">Jun {{ ci.day }}</span>
+          <span style="font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:{{ ci.platBg }};color:{{ ci.platFg }}">{{ ci.platIcon }}</span>
+          <div style="flex:1;min-width:0;font-size:13.5px;font-weight:600">{{ ci.title }}</div>
+          <span style="{{ ci.statusStyle }}">{{ ci.status }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ── KOL ── -->
+    <sc-if value="{{ isDetailKol }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:14px;font-weight:700">KOL / Creator — {{ detailName }}</div>
+      <sc-if value="{{ detailKolEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 20px;text-align:center;color:#9A9387;font-size:13.5px">No KOL assigned.</div></sc-if>
+      <sc-for list="{{ detailKolItems }}" as="ki" hint-placeholder-count="2">
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid #F4EFE5;flex-wrap:wrap">
+          <div style="width:36px;height:36px;border-radius:50%;background:{{ ki.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0">{{ ki.init }}</div>
+          <div style="flex:1;min-width:100px"><div style="font-size:14px;font-weight:700">{{ ki.name }}</div><div style="font-size:12px;color:#9A9387">{{ ki.handle }} · {{ ki.platform }}</div></div>
+          <div style="text-align:center"><div style="font-size:10.5px;color:#9A9387">Followers</div><div style="font-size:13px;font-weight:700">{{ ki.followers }}</div></div>
+          <div style="text-align:center"><div style="font-size:10.5px;color:#9A9387">Fee</div><div style="font-size:13px;font-weight:700">{{ ki.fee }}</div></div>
+          <span style="{{ ki.statusStyle }}">{{ ki.status }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ── ADS ── -->
+    <sc-if value="{{ isDetailAds }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:4px">Ads Budget</div><div style="font-size:20px;font-weight:800">{{ adsTotal }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:4px">Spent</div><div style="font-size:20px;font-weight:800">{{ adsSpent }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:4px">Avg ROAS</div><div style="font-size:20px;font-weight:800;color:#4E7A4E">{{ adsRoas }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:4px">Channels</div><div style="font-size:20px;font-weight:800">{{ adsChannelCount }}</div></div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:700">Ad Channels — {{ detailName }}</div><span style="font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer">+ Add Channel</span></div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr 1fr;gap:10px;padding:10px 20px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase;border-bottom:1px solid #F0EBE0"><span>Channel</span><span>Type</span><span>Budget</span><span>Spent</span><span>ROAS</span><span>Status</span></div>
+        <sc-if value="{{ adsEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 20px;text-align:center;color:#9A9387;font-size:13.5px">No ads planned. Set up via Planner.</div></sc-if>
+        <sc-for list="{{ detailAdsItems }}" as="ai" hint-placeholder-count="3">
+          <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr 1fr;gap:10px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center">
+            <div style="display:flex;align-items:center;gap:9px"><span style="font-size:13px">{{ ai.icon }}</span><span style="font-size:13.5px;font-weight:600">{{ ai.channel }}</span></div>
+            <div style="font-size:12px;color:#6b6258">{{ ai.type }}</div>
+            <div style="font-size:13px;font-weight:600">{{ ai.budgetF }}</div>
+            <div style="font-size:13px;font-weight:600">{{ ai.spentF }}</div>
+            <div style="font-size:13px;font-weight:700;color:{{ ai.roasColor }}">{{ ai.roasF }}</div>
+            <span style="{{ ai.statusStyle }}">{{ ai.status }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ── BUDGET ── -->
+    <sc-if value="{{ isDetailBudget }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px 20px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:6px">Planning Budget</div><div style="font-size:24px;font-weight:800;color:var(--accent,#B8945A)">{{ detailBudgetF }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px 20px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:6px">Approved Budget</div><div style="font-size:24px;font-weight:800;color:#4E7A4E">{{ budgetApproved }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px 20px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9A9387;margin-bottom:6px">Actual Spend</div><div style="font-size:24px;font-weight:800">{{ detailSpendF }}</div></div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:16px">Budget Breakdown</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ budgetBreakdown }}" as="bb" hint-placeholder-count="5">
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:600">{{ bb.label }}</span><div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#9A9387">{{ bb.spentF }} / {{ bb.allocF }}</span><span style="{{ bb.pctStyle }}">{{ bb.pct }}%</span></div></div>
+              <div style="height:6px;background:#F0EBE0;border-radius:999px;overflow:hidden"><div style="height:100%;border-radius:999px;width:{{ bb.barW }};background:{{ bb.barColor }}"></div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:700">Budget Requests</div><span style="font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer">+ New Request</span></div>
+        <sc-if value="{{ budgetReqEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 20px;text-align:center;color:#9A9387;font-size:13.5px">No budget requests. Submit via Finance module.</div></sc-if>
+        <sc-for list="{{ detailBudgetReqs }}" as="br" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid #F4EFE5;flex-wrap:wrap">
+            <div style="flex:1;min-width:120px"><div style="font-size:13.5px;font-weight:600">{{ br.category }}</div><div style="font-size:12px;color:#9A9387">{{ br.desc }}</div></div>
+            <div style="text-align:right"><div style="font-size:13px;font-weight:700">{{ br.amountF }}</div><div style="font-size:11.5px;color:#9A9387">Approved: {{ br.approvedF }}</div></div>
+            <div style="text-align:center;min-width:60px"><div style="font-size:11px;color:#9A9387">Due</div><div style="font-size:12.5px;font-weight:600">{{ br.due }}</div></div>
+            <span style="{{ br.statusStyle }}">{{ br.status }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ── ASSETS ── -->
+    <sc-if value="{{ isDetailAssets }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6b6258">{{ assetsCount }} assets linked to {{ detailId }}</div><span style="font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer">+ Upload Asset</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+        <sc-for list="{{ detailAssets }}" as="ast" hint-placeholder-count="3">
+          <div style="background:#fff;border:1.5px solid {{ ast.borderColor }};border-radius:16px;overflow:hidden">
+            <div style="height:110px;background:{{ ast.thumbBg }};display:flex;align-items:center;justify-content:center"><span style="font-size:32px">{{ ast.icon }}</span></div>
+            <div style="padding:12px 14px">
+              <div style="font-size:13px;font-weight:700;margin-bottom:3px">{{ ast.name }}</div>
+              <div style="font-size:11.5px;color:#9A9387;margin-bottom:8px">{{ ast.type }} · {{ ast.size }}</div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="{{ ast.statusStyle }}">{{ ast.status }}</span><span style="font-size:11.5px;color:#9A9387">{{ ast.updatedAt }}</span></div>
+            </div>
+          </div>
+        </sc-for>
+        <div style="background:#FAFAF7;border:2px dashed #DDD4C4;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:180px;cursor:pointer;gap:8px">
+          <span style="font-size:28px;color:#C0B8AD">+</span>
+          <span style="font-size:12.5px;font-weight:600;color:#9A9387">Drop files here</span>
+          <span style="font-size:11.5px;color:#C0B8AD">PNG · JPG · MP4 · PDF</span>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ── APPROVAL ── -->
+    <sc-if value="{{ isDetailApproval }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:{{ approvalBannerBg }};border:1.5px solid {{ approvalBannerBorder }};border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:14px">
+        <span style="font-size:24px">{{ approvalBannerIcon }}</span>
+        <div><div style="font-size:14px;font-weight:700;color:{{ approvalBannerColor }}">{{ approvalBannerTitle }}</div><div style="font-size:12.5px;color:#6b6258;margin-top:3px">{{ approvalBannerSub }}</div></div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:14px;font-weight:700">Approval Chain</div>
+        <sc-for list="{{ approvalChain }}" as="ac" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid #F4EFE5">
+            <div style="width:32px;height:32px;border-radius:50%;background:{{ ac.avatarBg }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0">{{ ac.init }}</div>
+            <div style="flex:1"><div style="font-size:13.5px;font-weight:600">{{ ac.name }}</div><div style="font-size:12px;color:#9A9387">{{ ac.role }} · {{ ac.step }}</div></div>
+            <div style="text-align:right"><span style="{{ ac.statusStyle }}">{{ ac.status }}</span><div style="font-size:11.5px;color:#9A9387;margin-top:4px">{{ ac.date }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:14px;font-weight:700">Action Log</div>
+        <sc-for list="{{ approvalLog }}" as="al" hint-placeholder-count="3">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:13px 20px;border-bottom:1px solid #F4EFE5">
+            <span style="font-size:14px;flex-shrink:0;margin-top:1px">{{ al.icon }}</span>
+            <div style="flex:1"><div style="font-size:13px;font-weight:600">{{ al.action }}</div><div style="font-size:12px;color:#9A9387">{{ al.by }} · {{ al.date }}</div></div>
+            <span style="{{ al.tagStyle }}">{{ al.tag }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ── RESULT ── -->
+    <sc-if value="{{ isDetailResult }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <sc-if value="{{ detailHasResult }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:17px"><span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;font-weight:700">Revenue</span><div style="font-size:22px;font-weight:700;margin-top:6px">{{ detailRevenue }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:17px"><span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;font-weight:700">Spend</span><div style="font-size:22px;font-weight:700;margin-top:6px">{{ detailSpendF }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:17px"><span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;font-weight:700">ROI</span><div style="font-size:22px;font-weight:700;margin-top:6px;color:{{ detailRoiColor }}">{{ detailRoiF }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:17px"><span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;font-weight:700">KOL Reach</span><div style="font-size:22px;font-weight:700;margin-top:6px">{{ detailReach }}</div></div>
+      </div>
+      </sc-if>
+      <sc-if value="{{ detailNoResult }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#fff;border:1px dashed #DDD4C4;border-radius:18px;padding:54px 20px;text-align:center"><div style="font-size:15px;font-weight:700">No Results Yet</div><div style="font-size:13px;color:#9A9387;margin-top:6px">Submit a result report once the campaign ends.</div></div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+  </div>
+  </sc-if>
+
+  <!-- ===== CREATE CAMPAIGN ===== -->
+  <sc-if value="{{ isCreateCamp }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:22px;flex-wrap:wrap">
+      <div style="display:flex;align-items:flex-start;gap:12px">
+        <span onClick="{{ closeCreateCamp }}" style="font-size:13px;font-weight:600;color:#6b6258;border:1px solid #E5DECF;border-radius:9px;padding:8px 13px;cursor:pointer;background:#fff;flex-shrink:0;margin-top:3px">‹ Back</span>
+        <div>
+          <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">Create Campaign</div>
+          <div style="font-size:13px;color:#9A9387;margin-top:4px;max-width:560px;line-height:1.5">Set the campaign brief once — then generate Content, KOL, Ads, Offline, and Result plans from one Campaign ID.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <span onClick="{{ closeCreateCamp }}" style="font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;border:1px solid #E5DECF;background:#fff;cursor:pointer">Save Draft</span>
+        <span style="font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">Save &amp; Open Planner</span>
+      </div>
+    </div>
+    <!-- Step progress -->
+    <div style="display:flex;align-items:center;background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:12px 18px;margin-bottom:20px;overflow-x:auto;gap:0">
+      <sc-for list="{{ createSteps }}" as="cs" hint-placeholder-count="6">
+        <div style="display:flex;align-items:center;flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:7px;white-space:nowrap">
+            <span style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0;background:{{ cs.numBg }};color:{{ cs.numFg }}">{{ cs.n }}</span>
+            <span style="font-size:12px;font-weight:{{ cs.fw }};color:{{ cs.color }}">{{ cs.label }}</span>
+          </div>
+          <sc-if value="{{ cs.hasArrow }}" hint-placeholder-val="{{ true }}"><span style="font-size:13px;color:#C9C0B0;margin:0 10px">→</span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <!-- 1 Identity -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;gap:10px">
+          <span style="width:20px;height:20px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</span>
+          <div style="font-size:14px;font-weight:700">Campaign Identity</div>
+        </div>
+        <div style="padding:20px 22px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+            <div style="grid-column:span 2"><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">CAMPAIGN NAME <span style="color:#B33A2E">*</span></label><input type="text" placeholder="e.g. Wagyu Summer Festival 2026" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">CAMPAIGN ID</label><div style="font-size:13.5px;font-weight:600;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#F2EDE2;color:var(--accent,#B8945A);font-family:monospace">CAM-2026-0012</div></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">BRAND <span style="color:#B33A2E">*</span></label><select style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"><option value="">Select brand…</option><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">BRANCH <span style="color:#B33A2E">*</span></label><select style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"><option value="">Select branch…</option><option>Sathorn</option><option>Ekkamai</option><option>G Tower</option><option>Central World</option><option>Park Silom</option><option>Donki</option><option>Iconsiam</option><option>Hotel</option><option>Pop-up</option><option>Event</option></select></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">CAMPAIGN TYPE <span style="color:#B33A2E">*</span></label><select style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"><option value="">Select type…</option><option>Online Only</option><option>Offline Only</option><option>Online + Offline</option><option>CRM / LINE</option><option>Event / Store Activation</option><option>Grand Opening</option><option>New Menu Launch</option></select></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">STATUS</label><select style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"><option>Draft</option><option>Planning</option><option>Waiting Approval</option><option>Active</option><option>Completed</option></select></div>
+          </div>
+        </div>
+      </div>
+      <!-- 2 Objective -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;gap:10px">
+          <span style="width:20px;height:20px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">2</span>
+          <div style="font-size:14px;font-weight:700">Objective &amp; Message</div>
+        </div>
+        <div style="padding:20px 22px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">OBJECTIVE <span style="color:#B33A2E">*</span></label><select style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"><option value="">Select…</option><option>New Visit</option><option>Repeater</option><option>Awareness</option><option>Sales Conversion</option><option>CRM / LINE Coupon</option><option>Event / Grand Opening</option><option>New Menu Launch</option><option>KOL Seeding</option></select></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">TARGET AUDIENCE</label><input type="text" placeholder="e.g. BKK office workers 25–40" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+            <div style="grid-column:1/-1"><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">MAIN OFFER / PROMOTION</label><input type="text" placeholder="e.g. Premium Wagyu set ฿1,290 (save 15%)" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+            <div style="grid-column:1/-1"><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">KEY MESSAGE</label><textarea rows="2" placeholder="e.g. Experience premium Wagyu in the heart of Bangkok" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;resize:vertical"></textarea></div>
+          </div>
+        </div>
+      </div>
+      <!-- 3 Workstreams -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;gap:10px">
+          <span style="width:20px;height:20px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">3</span>
+          <div style="font-size:14px;font-weight:700">Required Workstreams</div>
+        </div>
+        <div style="padding:18px 22px">
+          <div style="font-size:13px;color:#6b6258;margin-bottom:14px">Select the workstreams this campaign needs. Unselected workstreams will be marked "Not needed".</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ createWorkstreamChips }}" as="wc" hint-placeholder-count="8"><span onClick="{{ wc.onClick }}" style="{{ wc.style }}">{{ wc.label }}</span></sc-for>
+          </div>
+        </div>
+      </div>
+      <!-- 4 Period + Budget -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+          <div style="padding:14px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;gap:10px">
+            <span style="width:20px;height:20px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">4</span>
+            <div style="font-size:14px;font-weight:700">Campaign Period</div>
+          </div>
+          <div style="padding:18px 22px;display:flex;flex-direction:column;gap:12px">
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">START DATE <span style="color:#B33A2E">*</span></label><input type="date" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">END DATE <span style="color:#B33A2E">*</span></label><input type="date" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">PUBLISH START</label><input type="date" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">RESULT REVIEW DATE</label><input type="date" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit;cursor:pointer"></div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+          <div style="padding:14px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;gap:10px">
+            <span style="width:20px;height:20px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">5</span>
+            <div style="font-size:14px;font-weight:700">Planning Budget</div>
+          </div>
+          <div style="padding:14px 22px 0"><div style="font-size:11.5px;color:#C68A1E;background:#FBF6ED;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-weight:600">Planning budget only · Finance unchanged</div></div>
+          <div style="padding:0 22px 20px;display:flex;flex-direction:column;gap:11px">
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">TOTAL BUDGET</label><input type="text" placeholder="฿0" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">KOL BUDGET</label><input type="text" placeholder="฿0" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">ADS BUDGET</label><input type="text" placeholder="฿0" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">OFFLINE / PRODUCTION</label><input type="text" placeholder="฿0" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+          </div>
+        </div>
+      </div>
+      <!-- 6 KPI + Team -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="padding:14px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;gap:10px">
+          <span style="width:20px;height:20px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">6</span>
+          <div style="font-size:14px;font-weight:700">KPI Targets</div>
+        </div>
+        <div style="padding:20px 22px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:13px">
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">VISIT TARGET</label><input type="text" placeholder="e.g. 500 covers" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">SALES TARGET</label><input type="text" placeholder="฿0" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">REACH TARGET</label><input type="text" placeholder="e.g. 200,000" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#9A9387;margin-bottom:6px;letter-spacing:.04em">ROAS TARGET</label><input type="text" placeholder="e.g. 3.0×" style="width:100%;font-size:14px;padding:11px 14px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;outline:none;font-family:inherit"></div>
+        </div></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;padding:4px 0 12px">
+        <span onClick="{{ closeCreateCamp }}" style="font-size:14px;font-weight:700;padding:12px 20px;border-radius:11px;border:1px solid #E5DECF;background:#fff;cursor:pointer">Save Draft</span>
+        <span style="font-size:14px;font-weight:700;padding:12px 22px;border-radius:11px;background:var(--accent,#B8945A);color:#fff;cursor:pointer">Save &amp; Open Planner</span>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ===== BROWSE ===== -->
+  <sc-if value="{{ showCampBrowse }}" hint-placeholder-val="{{ true }}">
+  <div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+      <div>
+        <div style="font-size:21px;font-weight:800;letter-spacing:-.02em">Campaigns</div>
+        <div style="font-size:12.5px;color:#9A9387;margin-top:3px">{{ campCount }} campaigns · Campaign is the parent object for all marketing work</div>
+      </div>
+      <span onClick="{{ openCreateCamp }}" style="font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">+ New Campaign</span>
+    </div>
+
+    <!-- Date filter bar -->
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:12px 16px;margin-bottom:16px">
+      <div style="display:flex;gap:4px;background:#EFEAE0;border-radius:9px;padding:3px;flex-shrink:0">
+        <span onClick="{{ setCampMonth }}" style="{{ campMonthBtn }}">Month</span>
+        <span onClick="{{ setCampRange }}" style="{{ campRangeBtn }}">Range</span>
+      </div>
+      <sc-if value="{{ isCampMonth }}" hint-placeholder-val="{{ true }}">
+        <span onClick="{{ campPrev }}" style="{{ navStyle }}">‹</span>
+        <select onChange="{{ onCampMonth }}" style="{{ selectStyle }}"><sc-for list="{{ campMonthOptArr }}" as="o" hint-placeholder-count="12"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+        <select onChange="{{ onCampYear }}" style="{{ selectStyle }}"><sc-for list="{{ campYearOptArr }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+        <span onClick="{{ campNext }}" style="{{ navStyle }}">›</span>
+      </sc-if>
+      <sc-if value="{{ isCampRange }}" hint-placeholder-val="{{ false }}">
+        <input type="date" value="{{ campStart }}" onChange="{{ onCampStart }}" style="{{ dateInputStyle }}">
+        <span style="font-size:13px;color:#9A9387;font-weight:600">→</span>
+        <input type="date" value="{{ campEnd }}" onChange="{{ onCampEnd }}" style="{{ dateInputStyle }}">
+      </sc-if>
+      <span onClick="{{ campToday }}" style="{{ todayStyle }}">This month</span>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap">
+        <div style="font-size:12.5px;font-weight:600;color:#9A9387;white-space:nowrap">{{ campPeriodLabel }}</div>
+      </div>
+    </div>
+
+
+    <!-- ── LIST VIEW ── -->
+    <div>
+    <!-- Monthly Budget Summary -->
+    <div style="margin-bottom:18px">
+      <!-- Header + brand filter -->
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:700">{{ campPeriodLabel }} <span style="font-size:13px;font-weight:500;color:#9A9387">· Campaign Budget Summary</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <sc-for list="{{ sumBrandChips }}" as="bc" hint-placeholder-count="5"><span onClick="{{ bc.onClick }}" style="{{ bc.style }}">{{ bc.label }}</span></sc-for>
+        </div>
+      </div>
+      <!-- KPI cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:12px">
+        <div style="background:#211F1C;color:#fff;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent,#B8945A);font-weight:700;margin-bottom:6px">Total Budget</div><div style="font-size:24px;font-weight:700">{{ sumBudget }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Spent</div><div style="font-size:24px;font-weight:700">{{ sumSpend }}</div><div style="font-size:11px;color:#9A9387;margin-top:3px">{{ sumSpendPct }}% utilized</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Expected Revenue</div><div style="font-size:24px;font-weight:700;color:#4E7A4E">{{ sumRevenue }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Expected GP</div><div style="font-size:24px;font-weight:700;color:#4E7A4E">{{ sumGP }}</div><div style="font-size:11px;color:#9A9387;margin-top:3px">{{ sumMargin }}% margin</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Blended ROAS</div><div style="font-size:24px;font-weight:700;color:{{ sumRoasColor }}">{{ sumRoas }}</div></div>
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px"><div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:6px">Campaigns</div><div style="font-size:24px;font-weight:700">{{ sumCampCount }}</div><div style="font-size:11px;color:#9A9387;margin-top:3px">{{ sumActiveCount }} active</div></div>
+      </div>
+      <!-- Brand bars -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Budget by Brand</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ sumBrandBars }}" as="sb" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:76px;font-size:12px;font-weight:600;color:#6b6258;white-space:nowrap">{{ sb.name }}</div>
+              <div style="flex:1;height:6px;background:#F0EBE0;border-radius:999px;overflow:hidden"><div style="height:100%;border-radius:999px;width:{{ sb.barW }};background:{{ sb.color }}"></div></div>
+              <div style="font-size:12px;font-weight:700;color:#211F1C;white-space:nowrap;min-width:52px;text-align:right">{{ sb.budgetF }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <!-- Filters -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px">
+      <span style="font-size:12px;font-weight:700;color:#9A9387;letter-spacing:.05em;margin-right:2px">BRAND</span>
+      <sc-for list="{{ brandFilters }}" as="f" hint-placeholder-count="5"><span onClick="{{ f.onClick }}" style="{{ f.style }}">{{ f.label }}</span></sc-for>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:20px">
+      <span style="font-size:12px;font-weight:700;color:#9A9387;letter-spacing:.05em;margin-right:2px">STATUS</span>
+      <sc-for list="{{ statusFilters }}" as="f" hint-placeholder-count="7"><span onClick="{{ f.onClick }}" style="{{ f.style }}">{{ f.label }}</span></sc-for>
+    </div>
+    <sc-if value="{{ campEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#fff;border:1px dashed #DDD4C4;border-radius:18px;padding:54px 20px;text-align:center"><div style="font-size:15px;font-weight:700">No campaigns match</div><span onClick="{{ clearCampFilters }}" style="display:inline-block;margin-top:14px;font-size:13px;font-weight:700;color:#211F1C;background:#fff;border:1px solid #E5DECF;border-radius:10px;padding:9px 16px;cursor:pointer">Clear filters</span></div>
+    </sc-if>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ statusGroups }}" as="sg" hint-placeholder-count="4">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;overflow:hidden">
+          <!-- Group header -->
+          <div onClick="{{ sg.onToggle }}" style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:#FBF9F4;cursor:pointer;border-bottom:{{ sg.headerBorder }}">
+            <span style="font-size:11px;color:#9A9387;width:14px;text-align:center;flex-shrink:0">{{ sg.toggleIcon }}</span>
+            <span style="{{ sg.badgeStyle }}">{{ sg.status }}</span>
+            <span style="font-size:12px;color:#9A9387;font-weight:600">{{ sg.count }} campaign(s)</span>
+          </div>
+          <!-- Column header (visible when expanded) -->
+          <sc-if value="{{ sg.expanded }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 0.8fr 1.2fr;gap:10px;padding:10px 20px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase;border-bottom:1px solid #F0EBE0">
+              <span>Campaign</span><span>Type</span><span>Budget</span><span>ROI</span><span>Readiness</span><span>Dates</span>
+            </div>
+            <sc-for list="{{ sg.items }}" as="c" hint-placeholder-count="3">
+              <div onClick="{{ c.onClick }}" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 0.8fr 1.2fr;gap:10px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center;cursor:pointer">
+                <div style="display:flex;align-items:center;gap:10px;min-width:0"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ c.color }}"></span><div style="min-width:0"><div style="font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ c.brand }} · {{ c.branch }}</div></div></div>
+                <div style="font-size:12px;color:#6b6258">{{ c.campType }}</div>
+                <div style="font-size:13px;font-weight:600">{{ c.budgetF }}</div>
+                <div style="font-size:13px;font-weight:700;color:{{ c.roiColor }}">{{ c.roiF }}</div>
+                <span style="{{ c.readinessStyle }}">{{ c.readiness }}</span>
+                <div style="font-size:12px;color:#6b6258">{{ c.dates }}</div>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    campBrand: 'all', campStatus: 'all', campTab: 'list',
+    campDetailId: null, campDetailTab: 'overview',
+    createCampOpen: false, campDraftConfirmed: false, createCampTemplate: '', plannerTemplate: null,
+    confirmModalOpen: false,
+    selectedWorkstreams: ['content','graphic','kol','ads','lineOA','budget','result'],
+    campDateMode: 'month', campMonth: 5, campYear: 2026,
+    campStart: '2026-06-01', campEnd: '2026-06-30', sumBrand: 'all',
+    statusGroupExpanded: { 'Active':true, 'In Progress':true, 'Waiting Approval':true, 'Planning':true, 'Draft':false, 'Completed':false, 'Cancelled':false }
+  };
+
+  brands = { teppen:{name:'TEPPEN',color:'#B33A2E'}, omakase:{name:'Omakase Don',color:'#3E5C9A'}, mainichi:{name:'Mainichi',color:'#4E7A4E'}, touka:{name:'Touka',color:'#C68A1E'} };
+
+  campStatusMap = { 'Draft':['#6b6258','#F0EDE6'], 'In Progress':['#3E5C9A','#eef1f8'], 'Planning':['#3E5C9A','#eef1f8'], 'Waiting Approval':['#C68A1E','#fbf6ed'], 'Active':['#4E7A4E','#eef4ee'], 'Completed':['#211F1C','#ECE6DA'], 'Cancelled':['#B33A2E','#fbf0ee'] };
+  contentStatusMap = { 'Draft':['#6b6258','#F0EDE6'], 'Waiting Design':['#C68A1E','#fbf6ed'], 'Waiting Approval':['#C2691E','#fbf1e9'], 'Scheduled':['#3E5C9A','#eef1f8'], 'Published':['#4E7A4E','#eef4ee'] };
+  kolStatusMap = { 'Active':['#4E7A4E','#eef4ee'], 'Completed':['#6b6258','#F0EDE6'], 'Negotiating':['#C68A1E','#fbf6ed'], 'Paused':['#B33A2E','#fbf0ee'] };
+  finStatusMap = { 'Approved':['#4E7A4E','#eef4ee'], 'Waiting Approval':['#C68A1E','#fbf6ed'], 'Paid':['#3E5C9A','#eef1f8'], 'Pending':['#C68A1E','#fbf6ed'] };
+  platIconMap = { 'Instagram':{icon:'IG',bg:'#E1306C',fg:'#fff'}, 'TikTok':{icon:'TK',bg:'#010101',fg:'#fff'}, 'Facebook':{icon:'FB',bg:'#1877F2',fg:'#fff'}, 'LINE OA':{icon:'LN',bg:'#06C755',fg:'#fff'}, 'Google Map':{icon:'GM',bg:'#4285F4',fg:'#fff'} };
+
+  channelStatusMap = { 'Not needed':['#C0B8AD','#F2F0EB'], 'Missing':['#B33A2E','#FBF0EE'], 'Draft':['#9A9387','#F0EDE6'], 'In progress':['#3E5C9A','#eef1f8'], 'Ready':['#4E7A4E','#eef4ee'], 'Approved':['#4E7A4E','#eef4ee'], 'Completed':['#211F1C','#ECE6DA'] };
+
+  campData = [
+    { name:'Songkran Teppanyaki', b:'teppen',   branch:'Thonglor',      owner:'Aran P.', budget:270000, spend:320000, roi:2.8, dates:'Apr 1 – Apr 30',  status:'Active',          campType:'Online + Offline', readiness:'needs_attention', taskBlocked:2, taskWaiting:1, taskOverdue:1, taskTotal:14, taskDone:8, taskInProgress:4, bottleneckTeam:'Graphic Team', nextApproval:'CMO' },
+    { name:'Wagyu Festival',      b:'teppen',   branch:'EmQuartier',    owner:'Mei T.',  budget:450000, spend:280000, roi:3.4, dates:'Jun 1 – Jul 15',  status:'Active',          campType:'Online + Offline', readiness:'ready',            taskBlocked:0, taskWaiting:1, taskOverdue:0, taskTotal:18, taskDone:14, taskInProgress:3, bottleneckTeam:'None',          nextApproval:'None' },
+    { name:'Summer Reel Series',  b:'omakase',  branch:'Siam Paragon',  owner:'Ken S.',  budget:180000, spend:60000,  roi:0,   dates:'Jun 20 – Jul 20', status:'In Progress',     campType:'Online Only',       readiness:'needs_attention', taskBlocked:1, taskWaiting:2, taskOverdue:0, taskTotal:10, taskDone:4,  taskInProgress:4, bottleneckTeam:'Design Team',   nextApproval:'Brand Manager' },
+    { name:"Father's Day Set",    b:'omakase',  branch:'Central World', owner:'Ken S.',  budget:120000, spend:95000,  roi:3.6, dates:'Jun 10 – Jun 30', status:'Active',          campType:'Online Only',       readiness:'ready',            taskBlocked:0, taskWaiting:0, taskOverdue:0, taskTotal:9,  taskDone:9,  taskInProgress:0, bottleneckTeam:'None',          nextApproval:'None' },
+    { name:'Rainy Season Promo',  b:'mainichi', branch:'Icon Siam',     owner:'Nok W.',  budget:90000,  spend:0,      roi:0,   dates:'Jul 1 – Jul 31',  status:'Waiting Approval',campType:'CRM / LINE',         readiness:'blocked',          taskBlocked:3, taskWaiting:2, taskOverdue:0, taskTotal:8,  taskDone:0,  taskInProgress:2, bottleneckTeam:'Budget',        nextApproval:'CFO' },
+    { name:'LINE Coupon Drive',   b:'mainichi', branch:'Thonglor',      owner:'Nok W.',  budget:60000,  spend:58000,  roi:0.8, dates:'May 1 – May 31',  status:'Completed',       campType:'CRM / LINE',         readiness:'ready',            taskBlocked:0, taskWaiting:0, taskOverdue:0, taskTotal:12, taskDone:12, taskInProgress:0, bottleneckTeam:'None',          nextApproval:'None' },
+    { name:'Cocktail Hour Launch',b:'touka',    branch:'Thonglor',      owner:'Ploy R.', budget:150000, spend:35000,  roi:4.1, dates:'Jun 15 – Aug 1',  status:'Active',          campType:'Online + Offline',  readiness:'needs_attention', taskBlocked:1, taskWaiting:1, taskOverdue:1, taskTotal:15, taskDone:10, taskInProgress:3, bottleneckTeam:'Content Team',  nextApproval:'CMO' },
+    { name:'Omakase Tasting Menu',b:'omakase',  branch:'EmQuartier',    owner:'Ken S.',  budget:200000, spend:0,      roi:0,   dates:'Jul 10 – Aug 10', status:'Draft',           campType:'Offline Only',       readiness:'needs_attention', taskBlocked:0, taskWaiting:0, taskOverdue:0, taskTotal:3,  taskDone:0,  taskInProgress:1, bottleneckTeam:'None',          nextApproval:'CMO' },
+    { name:'Golden Week Teaser',  b:'teppen',   branch:'Siam Paragon',  owner:'Mei T.',  budget:100000, spend:100000, roi:2.2, dates:'Apr 28 – May 6',  status:'Completed',       campType:'Online Only',        readiness:'ready',            taskBlocked:0, taskWaiting:0, taskOverdue:0, taskTotal:10, taskDone:10, taskInProgress:0, bottleneckTeam:'None',          nextApproval:'None' },
+    { name:'Touka Anniversary',   b:'touka',    branch:'Central World', owner:'Ploy R.', budget:130000, spend:0,      roi:0,   dates:'Aug 1 – Aug 31',  status:'Draft',           campType:'Event / Store Activation', readiness:'blocked',    taskBlocked:1, taskWaiting:0, taskOverdue:0, taskTotal:4,  taskDone:0,  taskInProgress:0, bottleneckTeam:'Brief',         nextApproval:'CMO' }
+  ];
+  contentData = [
+    { day:5,  title:'Matcha dessert promo',   b:'mainichi', plat:'Instagram',  status:'Published',        campaign:'LINE Coupon Drive' },
+    { day:12, title:'Google Map refresh',      b:'teppen',   plat:'Google Map', status:'Published',        campaign:'Wagyu Festival' },
+    { day:18, title:'Wagyu plating reel',      b:'teppen',   plat:'Instagram',  status:'Published',        campaign:'Wagyu Festival' },
+    { day:21, title:'Sake pairing post',       b:'omakase',  plat:'Facebook',   status:'Published',        campaign:"Father's Day Set" },
+    { day:24, title:'Summer reel BTS',         b:'omakase',  plat:'Instagram',  status:'Waiting Design',   campaign:'Summer Reel Series' },
+    { day:27, title:'Wagyu drop teaser',       b:'teppen',   plat:'Instagram',  status:'Scheduled',        campaign:'Wagyu Festival' },
+    { day:28, title:'Behind the bar',          b:'touka',    plat:'TikTok',     status:'Waiting Approval', campaign:'Cocktail Hour Launch' },
+    { day:29, title:'Lunch set promo',         b:'mainichi', plat:'LINE OA',    status:'Draft',            campaign:'Rainy Season Promo' }
+  ];
+  kolData = [
+    { name:'Nong Aim',    h:'@nongaim.eats', plat:'Instagram', followers:320000, fee:45000, status:'Active', b:'teppen',  pd:'Jun 28', camp:'Wagyu Festival' },
+    { name:'BkkFoodie',   h:'@bkkfoodie',    plat:'TikTok',    followers:1200000,fee:80000, status:'Active', b:'omakase', pd:'Jun 30', camp:"Father's Day Set" },
+    { name:'SauceMaster', h:'@saucemaster',  plat:'TikTok',    followers:540000, fee:35000, status:'Active', b:'touka',   pd:'Jul 5',  camp:'Cocktail Hour Launch' }
+  ];
+  reqData = [
+    { category:'KOL fee',     b:'teppen',   campaign:'Songkran Teppanyaki', requested:180000, approved:150000, due:'Jul 5',  status:'Waiting Approval' },
+    { category:'Production',  b:'omakase',  campaign:"Father's Day Set",    requested:80000,  approved:80000,  due:'Jun 28', status:'Approved' },
+    { category:'Event setup', b:'teppen',   campaign:'Wagyu Festival',      requested:120000, approved:100000, due:'Jun 30', status:'Approved' }
+  ];
+
+  fmtShort(v) { if(!v&&v!==0)return'—'; const abs=Math.abs(v); const s=abs>=1000000?(abs/1000000).toFixed(1)+'M':abs>=1000?(abs/1000).toFixed(0)+'K':String(abs); return(v<0?'-':'')+'฿'+s; }
+  fmtFollow(v) { return v>=1000000?(v/1000000).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':String(v); }
+  badge(status, map) { const [fg,bg]=map[status]||['#6b6258','#F0EDE6']; return {fontSize:'11.5px',fontWeight:700,padding:'4px 10px',borderRadius:'999px',background:bg,color:fg,whiteSpace:'nowrap',display:'inline-block'}; }
+  smallBadge(status, map) { const [fg,bg]=map[status]||['#6b6258','#F0EDE6']; return {fontSize:'10.5px',fontWeight:700,padding:'3px 8px',borderRadius:'999px',background:bg,color:fg,whiteSpace:'nowrap',display:'inline-block'}; }
+  chStatus(s) { return this.smallBadge(s, this.channelStatusMap); }
+
+  goToCampDetail(idx) { this.setState({ campDetailId:idx, campDetailTab:'overview', campDraftConfirmed:false }); }
+  backFromDetail() { this.setState({ campDetailId:null }); }
+  goDetailPlanner() { this.setState({ campDetailTab:'planner' }); }
+  confirmTasksFn() { this.setState({ campDraftConfirmed:true, confirmModalOpen:false }); }
+  openCreateCamp() { this.setState({ createCampOpen:true }); }
+  closeCreateCamp() { this.setState({ createCampOpen:false }); }
+
+  renderVals() {
+    const segBtn = (active) => active
+      ? { fontSize:'12.5px', fontWeight:700, padding:'7px 14px', borderRadius:'8px', background:'#fff', color:'#211F1C', cursor:'pointer', whiteSpace:'nowrap', boxShadow:'0 1px 2px rgba(0,0,0,.07)' }
+      : { fontSize:'12.5px', fontWeight:600, padding:'7px 14px', borderRadius:'8px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const tabStyle = (active) => active
+      ? { fontSize:'12.5px', fontWeight:700, padding:'8px 14px', borderRadius:'10px', background:'#fff', color:'#211F1C', cursor:'pointer', whiteSpace:'nowrap', boxShadow:'0 1px 2px rgba(0,0,0,.06)' }
+      : { fontSize:'12.5px', fontWeight:600, padding:'8px 14px', borderRadius:'10px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const chip = (active) => ({ fontSize:'12px', fontWeight:active?700:500, padding:'5px 12px', borderRadius:'999px', cursor:'pointer', display:'flex', alignItems:'center', gap:'5px', background:active?'#211F1C':'#fff', color:active?'#fff':'#6b6258', border:active?'none':'1px solid #E5DECF' });
+
+    // campaign list
+    const brandKeys=['all','teppen','omakase','mainichi','touka'];
+    const campStatuses=['all','Draft','Planning','In Progress','Waiting Approval','Active','Completed','Cancelled'];
+    const cb=this.state.campBrand, cs=this.state.campStatus;
+    const brandFilters=brandKeys.map(k=>({label:k==='all'?'All':this.brands[k].name,onClick:()=>this.setState({campBrand:k}),style:chip(cb===k)}));
+    const statusFilters=campStatuses.map(s=>({label:s==='all'?'All':s,onClick:()=>this.setState({campStatus:s}),style:chip(cs===s)}));
+    const readinessStyleMap = { ready:{fontSize:'10.5px',fontWeight:700,padding:'3px 8px',borderRadius:'999px',background:'#eef4ee',color:'#4E7A4E',whiteSpace:'nowrap',display:'inline-block'}, needs_attention:{fontSize:'10.5px',fontWeight:700,padding:'3px 8px',borderRadius:'999px',background:'#fbf6ed',color:'#C68A1E',whiteSpace:'nowrap',display:'inline-block'}, blocked:{fontSize:'10.5px',fontWeight:700,padding:'3px 8px',borderRadius:'999px',background:'#fbf0ee',color:'#B33A2E',whiteSpace:'nowrap',display:'inline-block'} };
+    const readinessLabelMap = { ready:'✓ Ready', needs_attention:'⚠ Needs attention', blocked:'⛔ Blocked' };
+    // date filter (Finance pattern)
+    const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const campDateMode=this.state.campDateMode||'month';
+    const campGM=this.state.campMonth!==undefined?this.state.campMonth:5;
+    const campGY=this.state.campYear||2026;
+    const campMonthOptArr=monthNames.map((m,i)=>({val:i,label:m,sel:i===campGM}));
+    const campYearOptArr=[2024,2025,2026,2027].map(y=>({val:y,label:String(y),sel:y===campGY}));
+    const selectStyle={fontSize:'13px',fontWeight:600,padding:'8px 12px',borderRadius:'10px',border:'1px solid #E5DECF',background:'#fff',color:'#211F1C',cursor:'pointer'};
+    const dateInputStyle={fontSize:'13px',fontWeight:600,padding:'8px 12px',borderRadius:'10px',border:'1px solid #E5DECF',background:'#fff',color:'#211F1C',cursor:'pointer'};
+    const navStyle={width:'34px',height:'36px',borderRadius:'9px',border:'1px solid #E5DECF',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',color:'#211F1C'};
+    const todayStyle={fontSize:'12px',fontWeight:700,color:'#6b6258',border:'1px solid #E5DECF',borderRadius:'9px',padding:'7px 12px',cursor:'pointer',background:'#fff',whiteSpace:'nowrap'};
+    const campMonthBtn=segBtn(campDateMode==='month');
+    const campRangeBtn=segBtn(campDateMode==='range');
+    const campPeriodLabel=campDateMode==='month'?monthNames[campGM]+' '+campGY:(this.state.campStart||'')+' → '+(this.state.campEnd||'');
+    const filterYear=campGY, filterMonth=campGM;
+    const campMatchesMonth=(c)=>{
+      const d=c.dates||'';
+      const mAbbr=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][filterMonth];
+      return d.includes(mAbbr)||d.includes(monthNames[filterMonth].slice(0,3));
+    };
+
+    // monthly budget summary
+    const sumBrand = this.state.sumBrand || 'all';
+    const sumBrandKeys = ['all','teppen','omakase','mainichi','touka'];
+    const sumBrandNames = { all:'All Brands', teppen:'TEPPEN', omakase:'Omakase', mainichi:'Mainichi', touka:'Touka' };
+    const sumBrandChips = sumBrandKeys.map(k => ({
+      label: sumBrandNames[k],
+      onClick: () => this.setState({ sumBrand: k }),
+      style: k === sumBrand
+        ? { fontSize:'12px', fontWeight:700, padding:'5px 12px', borderRadius:'999px', background:'#211F1C', color:'#fff', cursor:'pointer', whiteSpace:'nowrap' }
+        : { fontSize:'12px', fontWeight:500, padding:'5px 12px', borderRadius:'999px', border:'1px solid #E5DECF', color:'#6b6258', cursor:'pointer', background:'#fff', whiteSpace:'nowrap' }
+    }));
+    const periodCamps = this.campData.filter(c => campMatchesMonth(c) && (sumBrand === 'all' || c.b === sumBrand));
+    const sumBudgetRaw=periodCamps.reduce((s,c)=>s+c.budget,0);
+    const sumSpendRaw=periodCamps.reduce((s,c)=>s+c.spend,0);
+    const sumSpendPct=sumBudgetRaw?Math.round(sumSpendRaw/sumBudgetRaw*100):0;
+    const sumRevRaw=periodCamps.reduce((s,c)=>{if(c.roi>0&&c.spend>0)return s+c.spend*c.roi;return s+c.budget*2.8;},0);
+    const sumGPRaw=Math.round(sumRevRaw*0.38);
+    const roiCamps=periodCamps.filter(c=>c.roi>0);
+    const avgRoas=roiCamps.length?(roiCamps.reduce((s,c)=>s+c.roi,0)/roiCamps.length):2.8;
+    const sumBudget=this.fmtShort(sumBudgetRaw);
+    const sumSpend=this.fmtShort(sumSpendRaw);
+    const sumRevenue=this.fmtShort(Math.round(sumRevRaw));
+    const sumGP=this.fmtShort(sumGPRaw);
+    const sumMargin=38;
+    const sumRoas=avgRoas.toFixed(1)+'×';
+    const sumRoasColor=avgRoas>=3?'#7DC87D':avgRoas>=2?'#E8C87D':'#F4A080';
+    const sumCampCount=periodCamps.length;
+    const sumActiveCount=periodCamps.filter(c=>['Active','In Progress'].includes(c.status)).length;
+    const bColors={teppen:'#B33A2E',omakase:'#3E5C9A',mainichi:'#4E7A4E',touka:'#C68A1E'};
+    const bNames={teppen:'TEPPEN',omakase:'Omakase',mainichi:'Mainichi',touka:'Touka'};
+    const bBudgets=['teppen','omakase','mainichi','touka'].map(k=>periodCamps.filter(c=>c.b===k).reduce((s,c)=>s+c.budget,0));
+    const maxB=Math.max(...bBudgets,1);
+    const sumBrandBars=['teppen','omakase','mainichi','touka'].map((k,i)=>({name:bNames[k],color:bColors[k],budgetF:this.fmtShort(bBudgets[i]),barW:Math.round(bBudgets[i]/maxB*100)+'%'}));
+
+
+    // ── campaign detail + browse ──
+    const isCampDetail = this.state.campDetailId !== null;
+    const showCampBrowse = !isCampDetail && !this.state.createCampOpen;
+    const isCreateCamp = this.state.createCampOpen;
+    const di = this.state.campDetailId;
+    const dc = di !== null ? this.campData[di] : null;
+    // detail basics
+    const detailName = dc ? dc.name : '';
+    const detailId = dc ? ('CAM-2026-' + String(di + 1).padStart(4, '0')) : '';
+    const detailBrand = dc ? this.brands[dc.b].name : '';
+    const detailBranch = dc ? dc.branch : '';
+    const detailColor = dc ? this.brands[dc.b].color : '#ccc';
+    const detailOwner = dc ? dc.owner : '';
+    const detailStatus = dc ? dc.status : '';
+    const detailStatusStyle = dc ? this.badge(dc.status, this.campStatusMap) : {};
+    const detailCampType = dc ? dc.campType : '';
+    const detailBudgetF = dc ? this.fmtShort(dc.budget) : '';
+    const detailSpendF = dc ? (dc.spend ? this.fmtShort(dc.spend) : '—') : '';
+    const detailRoiF = dc ? (dc.roi ? dc.roi + '×' : '—') : '';
+    const detailRoiColor = dc && dc.roi ? (dc.roi < 1.5 ? '#C68A1E' : '#4E7A4E') : '#9A9387';
+    const detailDates = dc ? dc.dates : '';
+    const detailHasResult = dc && dc.spend > 0 && dc.roi > 0;
+    const detailNoResult = !detailHasResult;
+    const detailRevenue = dc && dc.roi ? this.fmtShort(Math.round(dc.spend * dc.roi)) : '—';
+    const detailReachMap = { teppen:'580K', omakase:'1.5M', mainichi:'95K', touka:'720K' };
+    const detailReach = dc ? (detailReachMap[dc.b] || '—') : '—';
+    const detailObjMap = { teppen:'New Visit', omakase:'Awareness', mainichi:'CRM / LINE Coupon', touka:'Sales Conversion' };
+    const detailObjective = dc ? (detailObjMap[dc.b] || 'Awareness') : '';
+    const detailTargetMap = { teppen:'BKK diners 28–45', omakase:'Omakase enthusiasts', mainichi:'Office workers · lunch', touka:'After-work crowd' };
+    const detailTarget = dc ? (detailTargetMap[dc.b] || '') : '';
+    const detailOfferMap = { teppen:'Premium Wagyu set · seasonal pricing', omakase:'Omakase experience · private dining', mainichi:'Lunch set from ฿189', touka:'Cocktail hour 5–8PM · 1 free drink' };
+    const detailOffer = dc ? (detailOfferMap[dc.b] || '') : '';
+    const detailMsgMap = { teppen:'Taste the finest Japanese beef in Bangkok', omakase:'Every meal tells a story', mainichi:'Daily lunch, elevated', touka:'Where flavour meets ambiance' };
+    const detailKeyMessage = dc ? (detailMsgMap[dc.b] || '') : '';
+    const startParts = dc ? dc.dates.split(' – ') : ['—','—'];
+    const detailPeriodRows = [{ label:'START DATE', value:startParts[0]||'—' },{ label:'END DATE', value:startParts[1]||'—' },{ label:'PUBLISH START', value:startParts[0]||'—' }];
+    const detailBudgetLines = dc ? [
+      { label:'Total Planning Budget', value:this.fmtShort(dc.budget) },
+      { label:'Content Budget', value:this.fmtShort(Math.round(dc.budget*0.1)) },
+      { label:'KOL Budget', value:this.fmtShort(Math.round(dc.budget*0.2)) },
+      { label:'Ads Budget', value:this.fmtShort(Math.round(dc.budget*0.4)) },
+      { label:'Production Budget', value:this.fmtShort(Math.round(dc.budget*0.15)) }
+    ] : [];
+    const detailKpiChips = dc ? ['Visit +20%','ROAS ≥ 3.0×', dc.roi>0 ? 'Actual: '+dc.roi+'×' : 'ROI pending'] : [];
+    const detailKpiRows = dc ? [
+      { label:'VISIT TARGET', value:{teppen:'800 covers',omakase:'200 seatings',mainichi:'1,200 covers',touka:'500 guests'}[dc.b]||'—' },
+      { label:'SALES TARGET', value:this.fmtShort(Math.round(dc.budget*3)) },
+      { label:'REACH TARGET', value:detailReach },
+      { label:'ROAS TARGET', value:'3.0×' }
+    ] : [];
+    // task metrics
+    const taskTotal = dc ? dc.taskTotal : 0;
+    const taskDone = dc ? dc.taskDone : 0;
+    const taskInProgress = dc ? dc.taskInProgress : 0;
+    const taskBlocked = dc ? dc.taskBlocked : 0;
+    const taskWaiting = dc ? dc.taskWaiting : 0;
+    const taskOverdue = dc ? dc.taskOverdue : 0;
+    const taskOverdueColor = taskOverdue > 0 ? '#B33A2E' : '#9A9387';
+    const bottleneckTeam = dc ? dc.bottleneckTeam : '—';
+    const nextApproval = dc ? dc.nextApproval : '—';
+    // readiness
+    const readinessMap2 = { ready:{label:'✓ Ready',style:{fontSize:'11px',fontWeight:700,padding:'3px 9px',borderRadius:'999px',background:'#eef4ee',color:'#4E7A4E',display:'inline-block'}}, needs_attention:{label:'⚠ Needs attention',style:{fontSize:'11px',fontWeight:700,padding:'3px 9px',borderRadius:'999px',background:'#fbf6ed',color:'#C68A1E',display:'inline-block'}}, blocked:{label:'⛔ Blocked',style:{fontSize:'11px',fontWeight:700,padding:'3px 9px',borderRadius:'999px',background:'#fbf0ee',color:'#B33A2E',display:'inline-block'}} };
+    const detailReadinessLabel = dc ? (readinessMap2[dc.readiness]||readinessMap2.ready).label : '';
+    const detailReadinessStyle = dc ? (readinessMap2[dc.readiness]||readinessMap2.ready).style : {};
+    // alerts / readiness items
+    const campHasContent = dc ? this.contentData.some(c => c.campaign === dc.name) : false;
+    const campHasKol = dc ? this.kolData.some(k => k.camp === dc.name) : false;
+    const campHasReq = dc ? this.reqData.some(r => r.campaign === dc.name) : false;
+    const campHasReport = dc ? (this.pnlData||[]).some(p => p.name === dc.name) : false;
+    const readinessItems = dc ? [
+      { label:'Content Plan', icon: campHasContent?'✓':'—', color: campHasContent?'#4E7A4E':'#9A9387' },
+      { label:'KOL Plan', icon: campHasKol?'✓':'—', color: campHasKol?'#4E7A4E':'#9A9387' },
+      { label:'Ads Budget', icon: campHasReq?'✓':'⚠', color: campHasReq?'#4E7A4E':'#C68A1E' },
+      { label:'Artwork', icon:'✓', color:'#4E7A4E' },
+      { label:'Result Report', icon: campHasReport?'✓':'—', color: campHasReport?'#4E7A4E':'#9A9387' }
+    ] : [];
+    const needsResult = dc && dc.status === 'Completed' && !campHasReport;
+    const needsResultWarn = needsResult;
+    // workstreams
+    const wsActive = this.state.selectedWorkstreams || ['content','graphic','kol','ads','lineOA','budget','result'];
+    const allWorkstreams = [{key:'content',label:'Content'},{key:'graphic',label:'Graphic'},{key:'kol',label:'KOL'},{key:'ads',label:'Ads'},{key:'lineOA',label:'LINE OA'},{key:'budget',label:'Budget'},{key:'result',label:'Result'}];
+    const wsChipOn = { fontSize:'12px',fontWeight:700,padding:'5px 12px',borderRadius:'999px',background:'#211F1C',color:'#fff',cursor:'pointer' };
+    const wsChipOff = { fontSize:'12px',fontWeight:500,padding:'5px 12px',borderRadius:'999px',border:'1px solid #E5DECF',color:'#9A9387',cursor:'pointer',background:'#fff' };
+    const detailWorkstreams = allWorkstreams.map(w => ({ label:w.label, style: wsActive.includes(w.key)?wsChipOn:wsChipOff }));
+    const createWorkstreamChips = allWorkstreams.map(w => ({
+      label: w.label,
+      onClick: () => this.setState(s => { const sel=s.selectedWorkstreams||[]; return { selectedWorkstreams: sel.includes(w.key)?sel.filter(k=>k!==w.key):[...sel,w.key] }; }),
+      style: wsActive.includes(w.key)?{ fontSize:'12.5px',fontWeight:700,padding:'7px 14px',borderRadius:'999px',background:'#211F1C',color:'#fff',cursor:'pointer' }:{ fontSize:'12.5px',fontWeight:500,padding:'7px 14px',borderRadius:'999px',border:'1px solid #E5DECF',color:'#6b6258',cursor:'pointer',background:'#fff' }
+    }));
+    // channels
+    const channelOnline = dc ? [{name:'Instagram',status:campHasContent?'Ready':'Draft',icon:'IG',bg:'#E1306C',fg:'#fff'},{name:'TikTok',status:'In progress',icon:'TK',bg:'#010101',fg:'#fff'},{name:'Facebook',status:'In progress',icon:'FB',bg:'#1877F2',fg:'#fff'}] : [];
+    const channelOffline = dc ? [{name:'In-Store Signage',status:'Ready',icon:'📍',bg:'#F2EDE2',fg:'#6b6258'},{name:'Flyer',status:dc.campType.includes('Offline')?'Ready':'Not needed',icon:'🗂',bg:'#F2EDE2',fg:'#6b6258'}] : [];
+    const channelSupport = dc ? [{name:'LINE OA',status:campHasContent?'Scheduled':'Draft',icon:'LN',bg:'#06C755',fg:'#fff'},{name:'Google Map',status:'Completed',icon:'GM',bg:'#4285F4',fg:'#fff'}] : [];
+    const hasBottlenecks = dc && (taskBlocked > 0 || taskOverdue > 0);
+    const bottleneckItems = dc && hasBottlenecks ? [{team:bottleneckTeam,issue:taskBlocked+' task(s) blocked',severity:'Blocked',sevColor:'#B33A2E',sevBg:'#FBF3F1'},{team:'All Teams',issue:taskOverdue+' task(s) overdue',severity:'Overdue',sevColor:'#C68A1E',sevBg:'#FBF6ED'}].filter(Boolean) : [];
+    // module links
+    const adsByB = { teppen:'Meta Ads + Google + TikTok', omakase:'Meta Ads + LINE Ads', mainichi:'LINE Broadcast + TikTok', touka:'Meta Ads + Google' };
+    const mib = (bg) => ({ width:'28px',height:'28px',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',flexShrink:0,background:bg });
+    const detailModuleLinks = dc ? [
+      { icon:'📝', label:'Content Calendar', sub:campHasContent?(this.contentData.filter(c=>c.campaign===dc.name).length+' posts planned'):'No posts yet', status:campHasContent?'Planned':'Missing', statusStyle:campHasContent?this.badge('Active',this.campStatusMap):this.badge('Waiting Approval',this.campStatusMap), iconBg:mib('#EEF4EE') },
+      { icon:'🤝', label:'KOL Plan', sub:campHasKol?this.kolData.filter(k=>k.camp===dc.name).map(k=>k.name).join(', '):'No KOL assigned', status:campHasKol?'Active':'Missing', statusStyle:campHasKol?this.badge('Active',this.campStatusMap):this.badge('Waiting Approval',this.campStatusMap), iconBg:mib('#FBF6ED') },
+      { icon:'📢', label:'Ads Plan', sub:adsByB[dc.b]||'No ads plan', status:campHasReq?'Budget OK':'Pending', statusStyle:this.badge(campHasReq?'Active':'Draft',this.campStatusMap), iconBg:mib('#EEF1F8') },
+      { icon:'🎨', label:'Graphic / Asset', sub:'Artwork in progress', status:'In Progress', statusStyle:this.badge('In Progress',this.campStatusMap), iconBg:mib('#F2EDE2') },
+      { icon:'✅', label:'Approval Queue', sub:campHasReq?'Budget request submitted':'No approval pending', status:campHasReq?'Pending':'None', statusStyle:this.badge(campHasReq?'Waiting Approval':'Draft',this.campStatusMap), iconBg:mib('#FBF3F1') },
+      { icon:'📊', label:'Result / Report', sub:campHasReport?'Report available':'Report pending', status:campHasReport?'Done':'Pending', statusStyle:this.badge(campHasReport?'Completed':'Draft',this.campStatusMap), iconBg:mib('#EEF4EE') }
+    ] : [];
+    // tabs + tab content
+    const dTab = this.state.campDetailTab;
+    const detailTabs = [['overview','Overview'],['brief','Brief'],['planner','Planner'],['content','Content'],['kol','KOL'],['ads','Ads'],['budget','Budget'],['assets','Assets'],['approval','Approval'],['result','Result / Report']].map(([id,label])=>({label,onClick:()=>this.setState({campDetailTab:id}),style:tabStyle(dTab===id)}));
+    const detailContentItems = dc ? this.contentData.filter(c=>c.campaign===dc.name).map(ci=>{const pi=this.platIconMap[ci.plat]||{icon:'?',bg:'#ccc',fg:'#fff'};return{day:ci.day,title:ci.title,platIcon:pi.icon,platBg:pi.bg,platFg:pi.fg,status:ci.status,statusStyle:this.badge(ci.status,this.contentStatusMap)};}) : [];
+    const detailContentCount = detailContentItems.length;
+    const detailContentEmpty = detailContentCount === 0;
+    const detailKolItems = dc ? this.kolData.filter(k=>k.camp===dc.name).map(k=>({ name:k.name, init:k.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(), handle:k.h, platform:k.plat, color:this.brands[k.b].color, followers:this.fmtFollow(k.followers), fee:this.fmtShort(k.fee), postDue:k.pd, status:k.status, statusStyle:this.badge(k.status,this.kolStatusMap) })) : [];
+    const detailKolEmpty = detailKolItems.length === 0;
+    // timeline
+    const tlSteps=['Brief','Template','Draft Plan','Review','Confirm','Track'];
+    const campStep = dc ? (['Draft','Planning'].includes(dc.status)?0:dc.status==='In Progress'?2:dc.status==='Waiting Approval'?3:dc.status==='Active'?4:dc.status==='Completed'?5:0) : 0;
+    const timelineSteps = tlSteps.map((label,i)=>({ label, n:i+1, done:i<campStep, active:i===campStep, dotBg:i<campStep?'#4E7A4E':i===campStep?'#211F1C':'#E5DECF', dotFg:i<=campStep?'#fff':'#9A9387', textColor:i===campStep?'#211F1C':i<campStep?'#4E7A4E':'#9A9387', textFw:i===campStep?'700':'500', hasLine:i<tlSteps.length-1, lineColor:i<campStep?'#4E7A4E':'#E5DECF' }));
+    // plan cards
+    const mkCard=(title,sub,status,bg,bc)=>({title,sub,status,bg:bg||'#FBF9F4',borderColor:bc||'#ECE6DA',statusStyle:this.badge(status,this.campStatusMap)});
+    const planOnlineCards = dc ? [mkCard('Instagram Feed Post',dc.name+' · Launch',campHasContent?'Active':'Draft','#EEF4EE','#B5CEAF'),mkCard('Instagram Stories (×5)','Story series','In Progress','#EEF1F8','#C8D8F8'),mkCard('TikTok Reel','15s highlight','Draft','#FBF9F4','#ECE6DA')] : [];
+    const planPaidCards = dc ? [mkCard('Meta Ads — Feed','Boosted from IG post',campHasReq?'Active':'Draft','#FBF9F4','#ECE6DA'),mkCard('Google PPC','Search + Display','Draft','#FBF9F4','#ECE6DA')] : [];
+    const planOfflineCards = dc && dc.campType.includes('Offline') ? [mkCard('In-Store Standee','A1 print · 3 pcs','Active','#EEF4EE','#B5CEAF'),mkCard('Flyer Distribution','500 pcs','Draft','#FBF9F4','#ECE6DA')] : [];
+    const planSupportCards = dc ? [mkCard('LINE OA Broadcast','CRM segment blast',campHasContent?'Scheduled':'Draft','#F0FAF0','#B5CEAF'),mkCard('Google Business Post','Branch profile update','Completed','#EEF4EE','#B5CEAF')] : [];
+    const onlinePlanSummary = planOnlineCards.length+' pieces';
+    const paidPlanSummary = planPaidCards.length+' ad sets';
+    const offlinePlanSummary = planOfflineCards.length+' materials';
+    const supportPlanSummary = planSupportCards.length+' touchpoints';
+    // confirm modal
+    const confirmModalOpen = this.state.confirmModalOpen;
+    const confirmTaskList = dc ? [{icon:'📝',label:'Content tasks',count:'4 tasks',module:'Content'},{icon:'🎨',label:'Graphic tasks',count:'3 tasks',module:'Graphic'},{icon:'🤝',label:'KOL tasks',count:'2 tasks',module:'KOL'},{icon:'📢',label:'Ads tasks',count:'2 tasks',module:'Ads'},{icon:'💰',label:'Budget requests',count:'1 task',module:'Budget'},{icon:'📊',label:'Report tasks',count:'1 task',module:'Report'}] : [];
+    // create steps
+    const createSteps = [{n:1,label:'Campaign Brief',hasArrow:true,numBg:'#211F1C',numFg:'#fff',color:'#211F1C',fw:'700'},{n:2,label:'Choose Template',hasArrow:true,numBg:'#F0EBE0',numFg:'#9A9387',color:'#9A9387',fw:'500'},{n:3,label:'Generate Plans',hasArrow:true,numBg:'#F0EBE0',numFg:'#9A9387',color:'#9A9387',fw:'500'},{n:4,label:'Review',hasArrow:true,numBg:'#F0EBE0',numFg:'#9A9387',color:'#9A9387',fw:'500'},{n:5,label:'Confirm Tasks',hasArrow:true,numBg:'#F0EBE0',numFg:'#9A9387',color:'#9A9387',fw:'500'},{n:6,label:'Track Result',hasArrow:false,numBg:'#F0EBE0',numFg:'#9A9387',color:'#9A9387',fw:'500'}];
+    // campaign list — filter + status groups
+    const filteredCampaigns = this.campData.filter(c=>{
+      const brandMatch = cb==='all'||c.b===cb;
+      const statusMatch = cs==='all'||c.status===cs;
+      const monthMatch = campMatchesMonth(c);
+      return brandMatch&&statusMatch&&monthMatch;
+    }).map(c=>{
+      const origIdx = this.campData.indexOf(c);
+      return { ...c, onClick:()=>this.goToCampDetail(origIdx), color:this.brands[c.b].color, brand:this.brands[c.b].name, budgetF:this.fmtShort(c.budget), roiF:c.roi?c.roi+'×':'—', roiColor:!c.roi?'#9A9387':c.roi<2?'#C68A1E':'#4E7A4E', readiness:readinessLabelMap[c.readiness]||c.readiness, readinessStyle:readinessStyleMap[c.readiness]||readinessStyleMap.ready };
+    });
+    const campCount = this.campData.length;
+    const statusOrder = ['Active','In Progress','Waiting Approval','Planning','Draft','Completed','Cancelled'];
+    const sgExp = this.state.statusGroupExpanded || {};
+    const statusGroups = statusOrder.map(st=>{
+      const items = filteredCampaigns.filter(c=>c.status===st);
+      if(items.length===0) return null;
+      const exp = sgExp[st] !== false;
+      return { status:st, count:items.length, expanded:exp, items, badgeStyle:this.badge(st,this.campStatusMap), headerBorder:exp?'1px solid #F0EBE0':'none', toggleIcon:exp?'▼':'▶', onToggle:()=>this.setState(s=>({ statusGroupExpanded:{ ...(s.statusGroupExpanded||{}), [st]:!(s.statusGroupExpanded||{})[st] } })) };
+    }).filter(Boolean);
+
+    // planner templates + new tab data (after dc is defined)
+    const campTemplates=[{id:'lunch_awareness',name:'Lunch Awareness',icon:'🍱',desc:'Drive lunchtime footfall with organic + paid push',tasks:{Content:4,Graphic:3,Ads:2,KOL:1,Budget:1,Report:1},color:'#3E5C9A',bg:'#EEF1F8'},{id:'new_menu',name:'New Menu Launch',icon:'🍽',desc:'Full channel launch for a new menu item',tasks:{Content:6,Graphic:5,Ads:3,KOL:2,Budget:2,Report:1},color:'#4E7A4E',bg:'#EEF4EE'},{id:'anniversary',name:'Anniversary Event',icon:'🎉',desc:'In-store event with KOL + offline materials',tasks:{Content:5,Graphic:6,KOL:3,Ads:2,Offline:4,Budget:3,Report:1},color:'#B8945A',bg:'#FBF6ED'},{id:'line_coupon',name:'LINE Coupon',icon:'💬',desc:'CRM blast via LINE OA with coupon tracking',tasks:{Content:2,Graphic:2,'LINE OA':3,Budget:1,Report:1},color:'#06C755',bg:'#F0FAF0'},{id:'grand_opening',name:'Grand Opening',icon:'🏪',desc:'Full-scale launch: KOL, ads, offline, PR',tasks:{Content:8,Graphic:8,KOL:4,Ads:4,Offline:6,Budget:4,Report:2},color:'#B33A2E',bg:'#FBF3F1'},{id:'crm_repeater',name:'CRM Repeater',icon:'🔄',desc:'Re-engage existing customers with CRM sequence',tasks:{Content:3,Graphic:2,'LINE OA':4,Budget:1,Report:1},color:'#6b6258',bg:'#F0EBE0'}];
+    const plannerTemplate=this.state.plannerTemplate;
+    const showTemplatePicker=!plannerTemplate;
+    const showPlannerContent=!!plannerTemplate;
+    const templateCards=campTemplates.map(t=>({...t,totalTasks:Object.values(t.tasks).reduce((a,b)=>a+b,0),taskChips:Object.entries(t.tasks).map(([k,v])=>k+' ×'+v),onClick:()=>this.setState({plannerTemplate:t.id})}));
+    // ads tab
+    const adsMap={teppen:[{icon:'📘',channel:'Meta Ads',type:'Feed + Reels',budget:Math.round((dc?.budget||0)*0.3),spent:Math.round((dc?.spend||0)*0.4),roas:2.8,status:'Active'},{icon:'🔍',channel:'Google PPC',type:'Search + Display',budget:Math.round((dc?.budget||0)*0.1),spent:Math.round((dc?.spend||0)*0.15),roas:3.1,status:'Active'},{icon:'🎵',channel:'TikTok Ads',type:'TopView',budget:Math.round((dc?.budget||0)*0.1),spent:0,roas:0,status:'Pending'}],omakase:[{icon:'📘',channel:'Meta Ads',type:'Feed + Story',budget:Math.round((dc?.budget||0)*0.3),spent:Math.round((dc?.spend||0)*0.5),roas:3.4,status:'Active'},{icon:'💚',channel:'LINE Ads',type:'Smart Message',budget:Math.round((dc?.budget||0)*0.1),spent:Math.round((dc?.spend||0)*0.1),roas:2.1,status:'Active'}],mainichi:[{icon:'💚',channel:'LINE Broadcast',type:'CRM Push',budget:Math.round((dc?.budget||0)*0.25),spent:Math.round((dc?.spend||0)*0.6),roas:1.8,status:'Active'},{icon:'🎵',channel:'TikTok Ads',type:'In-Feed',budget:Math.round((dc?.budget||0)*0.15),spent:0,roas:0,status:'Pending'}],touka:[{icon:'📘',channel:'Meta Ads',type:'Feed + Reels',budget:Math.round((dc?.budget||0)*0.3),spent:Math.round((dc?.spend||0)*0.5),roas:4.1,status:'Active'},{icon:'🔍',channel:'Google PPC',type:'Display',budget:Math.round((dc?.budget||0)*0.1),spent:Math.round((dc?.spend||0)*0.15),roas:3.2,status:'Active'}]};
+    const rawAds=dc?(adsMap[dc.b]||[]):[];
+    const detailAdsItems=rawAds.map(a=>({...a,budgetF:this.fmtShort(a.budget),spentF:a.spent?this.fmtShort(a.spent):'—',roasF:a.roas?a.roas+'×':'—',roasColor:a.roas===0?'#9A9387':a.roas<2?'#C68A1E':'#4E7A4E',statusStyle:this.badge(a.status==='Active'?'Active':a.status==='Pending'?'Waiting Approval':'Draft',this.campStatusMap)}));
+    const adsEmpty=detailAdsItems.length===0;
+    const adsTotal=this.fmtShort(rawAds.reduce((s,a)=>s+a.budget,0));
+    const adsSpent=this.fmtShort(rawAds.reduce((s,a)=>s+a.spent,0));
+    const adsRoasArr=rawAds.filter(a=>a.roas>0).map(a=>a.roas);
+    const adsRoas=adsRoasArr.length?(adsRoasArr.reduce((a,b)=>a+b,0)/adsRoasArr.length).toFixed(1)+'×':'—';
+    const adsChannelCount=rawAds.length;
+    // budget tab
+    const budgetApproved=dc?this.fmtShort(Math.round(dc.budget*0.85)):'—';
+    const bLines=[{label:'Content & Graphic',alloc:Math.round((dc?.budget||0)*0.15),spent:Math.round((dc?.spend||0)*0.1)},{label:'KOL / Creator',alloc:Math.round((dc?.budget||0)*0.2),spent:Math.round((dc?.spend||0)*0.2)},{label:'Paid Media',alloc:Math.round((dc?.budget||0)*0.4),spent:Math.round((dc?.spend||0)*0.5)},{label:'Offline / Production',alloc:Math.round((dc?.budget||0)*0.15),spent:Math.round((dc?.spend||0)*0.1)},{label:'Contingency',alloc:Math.round((dc?.budget||0)*0.1),spent:0}];
+    const budgetBreakdown=bLines.map(b=>{const pct=b.alloc?Math.min(100,Math.round(b.spent/b.alloc*100)):0;return{label:b.label,allocF:this.fmtShort(b.alloc),spentF:b.spent?this.fmtShort(b.spent):'—',pct,barW:pct+'%',barColor:pct>100?'#B33A2E':pct>75?'#C68A1E':'#4E7A4E',pctStyle:{fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'999px',background:pct>75?'#fbf6ed':'#eef4ee',color:pct>75?'#C68A1E':'#4E7A4E',display:'inline-block'}};});
+    const detailBudgetReqs=dc?this.reqData.filter(r=>r.campaign===dc.name).map(r=>({...r,amountF:this.fmtShort(r.requested),approvedF:r.approved?this.fmtShort(r.approved):'Pending',desc:'Budget request · '+r.category,statusStyle:this.badge(r.status,this.campStatusMap)})):[];
+    const budgetReqEmpty=detailBudgetReqs.length===0;
+    // assets tab
+    const assetMap={teppen:[{name:'Hero Banner',type:'Image',size:'1920×1080',icon:'🖼',status:'Approved',thumbBg:'#EEF1F8',updatedAt:'Jun 28'},{name:'Story Set (×5)',type:'Image',size:'1080×1920',icon:'📱',status:'In Progress',thumbBg:'#FBF9F4',updatedAt:'Jun 29'},{name:'Reel Video',type:'MP4',size:'15s · 1080p',icon:'🎬',status:'Waiting Approval',thumbBg:'#FBF6ED',updatedAt:'Jun 30'}],omakase:[{name:'Menu Photos (×8)',type:'Image',size:'4K',icon:'🖼',status:'Approved',thumbBg:'#EEF4EE',updatedAt:'Jun 25'},{name:'KOL Brief',type:'PDF',size:'A4',icon:'📄',status:'Approved',thumbBg:'#FBF9F4',updatedAt:'Jun 22'}],mainichi:[{name:'LINE Banner',type:'Image',size:'1200×630',icon:'🖼',status:'Draft',thumbBg:'#F0FAF0',updatedAt:'Jul 1'},{name:'Coupon Card',type:'Image',size:'800×500',icon:'🎫',status:'Draft',thumbBg:'#FBF9F4',updatedAt:'Jul 1'}],touka:[{name:'Cocktail Photos (×6)',type:'Image',size:'4K',icon:'🖼',status:'In Progress',thumbBg:'#FBF6ED',updatedAt:'Jun 29'},{name:'Event Flyer',type:'PDF',size:'A5',icon:'🎉',status:'Waiting Approval',thumbBg:'#FBF3F1',updatedAt:'Jul 1'}]};
+    const rawAssets=dc?(assetMap[dc.b]||[]):[];
+    const detailAssets=rawAssets.map(a=>({...a,borderColor:a.status==='Approved'?'#B5CEAF':a.status==='Waiting Approval'?'#E8D5AA':'#ECE6DA',statusStyle:this.badge(a.status==='Approved'?'Active':a.status==='In Progress'?'In Progress':a.status==='Waiting Approval'?'Waiting Approval':'Draft',this.campStatusMap)}));
+    const assetsCount=detailAssets.length;
+    // approval tab
+    const approvalStatusMap2={...this.campStatusMap,Approved:['#4E7A4E','#eef4ee'],Pending:['#C68A1E','#fbf6ed'],Waiting:['#C68A1E','#fbf6ed']};
+    const approvalChainMap={Draft:[{name:'Aran P.',init:'AP',role:'CMO',step:'Final Approval',status:'Pending',date:'Not submitted',avatarBg:'#9A9387'}],'In Progress':[{name:'Brand Mgr',init:'BM',role:'Brand Manager',step:'Brief Sign-off',status:'Pending',date:'Awaiting',avatarBg:'#9A9387'}],'Waiting Approval':[{name:'Brand Mgr',init:'BM',role:'Brand Manager',step:'Brief Sign-off',status:'Approved',date:'Jun 30, 2026',avatarBg:'#4E7A4E'},{name:'Aran P.',init:'AP',role:'CMO',step:'Final Approval',status:'Waiting',date:'Jul 2, 2026',avatarBg:'#C68A1E'}],Active:[{name:'Brand Mgr',init:'BM',role:'Brand Manager',step:'Brief Sign-off',status:'Approved',date:'Jun 15, 2026',avatarBg:'#4E7A4E'},{name:'Finance',init:'FN',role:'Finance Team',step:'Budget Approval',status:'Approved',date:'Jun 16, 2026',avatarBg:'#3E5C9A'},{name:'Aran P.',init:'AP',role:'CMO',step:'Final Approval',status:'Approved',date:'Jun 18, 2026',avatarBg:'#4E7A4E'}],Completed:[{name:'Brand Mgr',init:'BM',role:'Brand Manager',step:'Brief Sign-off',status:'Approved',date:'May 12, 2026',avatarBg:'#4E7A4E'},{name:'Finance',init:'FN',role:'Finance Team',step:'Budget Approval',status:'Approved',date:'May 14, 2026',avatarBg:'#3E5C9A'},{name:'Aran P.',init:'AP',role:'CMO',step:'Final Approval',status:'Approved',date:'May 15, 2026',avatarBg:'#4E7A4E'}],Planning:[{name:'Brand Mgr',init:'BM',role:'Brand Manager',step:'Brief Sign-off',status:'Pending',date:'Awaiting',avatarBg:'#9A9387'}]};
+    const approvalChain=dc?(approvalChainMap[dc.status]||approvalChainMap.Draft).map(a=>({...a,statusStyle:this.badge(a.status,approvalStatusMap2)})):[];
+    const tagBadge2=(tag,color,bg)=>({fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'999px',background:bg,color,display:'inline-block'});
+    const approvalLogMap={Active:[{icon:'✅',action:'Final Approval granted',by:'Aran P. (CMO)',date:'Jun 18',tag:'Approved'},{icon:'✅',action:'Budget approved',by:'Finance Team',date:'Jun 16',tag:'Approved'},{icon:'✅',action:'Brief signed off',by:'Brand Manager',date:'Jun 15',tag:'Approved'},{icon:'📝',action:'Brief submitted for review',by:dc?.owner||'—',date:'Jun 12',tag:'Submitted'}],'Waiting Approval':[{icon:'⏳',action:'Waiting for CMO sign-off',by:'System',date:'Jul 2',tag:'Pending'},{icon:'✅',action:'Brief signed off',by:'Brand Manager',date:'Jun 30',tag:'Approved'},{icon:'📝',action:'Brief submitted',by:dc?.owner||'—',date:'Jun 28',tag:'Submitted'}],Completed:[{icon:'🏁',action:'Campaign closed out',by:dc?.owner||'—',date:'—',tag:'Completed'},{icon:'✅',action:'Result report approved',by:'Aran P. (CMO)',date:'—',tag:'Done'},{icon:'✅',action:'All approvals received',by:'CMO',date:'—',tag:'Approved'}]};
+    const rawLog=dc?(approvalLogMap[dc.status]||[{icon:'📝',action:'Campaign created',by:dc.owner,date:dc.dates.split(' – ')[0],tag:'Created'}]):[];
+    const approvalLog=rawLog.map(l=>({...l,tagStyle:l.tag==='Approved'||l.tag==='Done'?tagBadge2(l.tag,'#4E7A4E','#eef4ee'):l.tag==='Pending'?tagBadge2(l.tag,'#C68A1E','#fbf6ed'):l.tag==='Completed'?tagBadge2(l.tag,'#211F1C','#ECE6DA'):tagBadge2(l.tag,'#3E5C9A','#eef1f8')}));
+    const approvalBannerMap2={Draft:{bg:'#F7F4EE',border:'#E5DECF',icon:'📋',color:'#6b6258',title:'Approval not yet requested',sub:'Submit brief for Brand Manager review to start the process'},'In Progress':{bg:'#EEF1F8',border:'#C8D8F8',icon:'📋',color:'#3E5C9A',title:'In planning — preparing for review',sub:'Complete all workstreams before requesting approval'},'Waiting Approval':{bg:'#FBF6ED',border:'#E8D5AA',icon:'⏳',color:'#C68A1E',title:'Waiting for CMO approval',sub:'Submitted Jul 2, 2026 — avg approval time 3 days'},Active:{bg:'#EEF4EE',border:'#B5CEAF',icon:'✅',color:'#4E7A4E',title:'Approved and Active',sub:'All approvals complete — campaign is live'},Completed:{bg:'#ECE6DA',border:'#C9C0B0',icon:'🏁',color:'#211F1C',title:'Campaign Completed',sub:'Fully approved and closed out'},Planning:{bg:'#EEF1F8',border:'#C8D8F8',icon:'📋',color:'#3E5C9A',title:'In planning',sub:'Complete workstreams before requesting approval'}};
+    const approvalBanner2=dc?(approvalBannerMap2[dc.status]||approvalBannerMap2.Draft):{bg:'#F7F4EE',border:'#E5DECF',icon:'📋',color:'#6b6258',title:'—',sub:'—'};
+
+    return {
+      isCampDetail, showCampBrowse, isCreateCamp, campCount,
+      backFromDetail:()=>this.backFromDetail(), goDetailPlanner:()=>this.goDetailPlanner(), openCreateCamp:()=>this.openCreateCamp(), closeCreateCamp:()=>this.closeCreateCamp(),
+      detailName, detailId, detailBrand, detailBranch, detailColor, detailOwner, detailStatus, detailStatusStyle, detailCampType,
+      detailBudgetF, detailSpendF, detailRoiF, detailRoiColor, detailDates, detailObjective, detailTarget, detailOffer, detailKeyMessage,
+      detailHasResult, detailNoResult, detailRevenue, detailReach,
+      detailReadinessLabel, detailReadinessStyle,
+      taskTotal, taskDone, taskInProgress, taskBlocked, taskWaiting, taskOverdue, taskOverdueColor, bottleneckTeam, nextApproval,
+      readinessItems, detailWorkstreams, detailKpiChips, detailKpiRows, detailPeriodRows, detailBudgetLines,
+      channelOnline, channelOffline, channelSupport, hasBottlenecks, bottleneckItems,
+      detailModuleLinks, detailTabs,
+      isDetailOverview:dTab==='overview', isDetailBrief:dTab==='brief', isDetailPlanner:dTab==='planner', isDetailContent:dTab==='content', isDetailKol:dTab==='kol', isDetailAds:dTab==='ads', isDetailBudget:dTab==='budget', isDetailAssets:dTab==='assets', isDetailApproval:dTab==='approval', isDetailResult:dTab==='result',
+      detailContentItems, detailContentCount, detailContentEmpty, detailKolItems, detailKolEmpty,
+      timelineSteps,
+      planOnlineCards, planPaidCards, planOfflineCards, planSupportCards,
+      onlinePlanSummary, paidPlanSummary, offlinePlanSummary, supportPlanSummary,
+      tasksConfirmed:this.state.campDraftConfirmed,
+      confirmModalOpen, confirmTaskList,
+      openConfirmModal:()=>this.setState({confirmModalOpen:true}),
+      closeConfirmModal:()=>this.setState({confirmModalOpen:false}),
+      doConfirmTasks:()=>this.confirmTasksFn(),
+      stopProp:(e)=>{e&&e.stopPropagation&&e.stopPropagation();},
+      brandFilters, statusFilters, filteredCampaigns, campEmpty:filteredCampaigns.length===0,
+      clearCampFilters:()=>this.setState({campBrand:'all',campStatus:'all'}),
+      statusGroups,
+      // date filter
+      campMonthOptArr, campYearOptArr, selectStyle, dateInputStyle, navStyle, todayStyle,
+      campMonthBtn, campRangeBtn, isCampMonth:campDateMode==='month', isCampRange:campDateMode==='range',
+      campPeriodLabel, campStart:this.state.campStart, campEnd:this.state.campEnd,
+      campPrev:()=>{let m=campGM-1,y=campGY;if(m<0){m=11;y--;}this.setState({campMonth:m,campYear:y});},
+      campNext:()=>{let m=campGM+1,y=campGY;if(m>11){m=0;y++;}this.setState({campMonth:m,campYear:y});},
+      campToday:()=>this.setState({campDateMode:'month',campMonth:5,campYear:2026}),
+      onCampMonth:(e)=>this.setState({campMonth:parseInt(e.target.value)}),
+      onCampYear:(e)=>this.setState({campYear:parseInt(e.target.value)}),
+      onCampStart:(e)=>this.setState({campStart:e.target.value}),
+      onCampEnd:(e)=>this.setState({campEnd:e.target.value}),
+      setCampMonth:()=>this.setState({campDateMode:'month'}),
+      setCampRange:()=>this.setState({campDateMode:'range'}),
+      // monthly summary
+      sumBudget, sumSpend, sumSpendPct, sumRevenue, sumGP, sumMargin, sumRoas, sumRoasColor, sumCampCount, sumActiveCount, sumBrandBars, sumBrandChips,
+      needsResult, needsResultWarn,
+      goDetailResult:()=>this.setState({campDetailTab:'result'}),
+      createSteps, createWorkstreamChips,
+      showTemplatePicker, showPlannerContent, templateCards,
+      changePlannerTemplate:()=>this.setState({plannerTemplate:null}),
+      detailAdsItems, adsEmpty, adsTotal, adsSpent, adsRoas, adsChannelCount,
+      budgetApproved, budgetBreakdown, detailBudgetReqs, budgetReqEmpty,
+      detailAssets, assetsCount,
+      approvalChain, approvalLog,
+      approvalBannerBg:approvalBanner2.bg, approvalBannerBorder:approvalBanner2.border, approvalBannerIcon:approvalBanner2.icon, approvalBannerColor:approvalBanner2.color, approvalBannerTitle:approvalBanner2.title, approvalBannerSub:approvalBanner2.sub
+    };
+  }
+}
+</script>
+</body>
+</html>

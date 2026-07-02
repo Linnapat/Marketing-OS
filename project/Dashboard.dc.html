@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{background:#FAF8F4;font-family:system-ui,-apple-system,sans-serif;margin:0}
+:root{--accent:#B8945A}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#FAF8F4;padding:22px 24px 60px;max-width:1380px;margin:0 auto">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+    <div>
+      <div style="font-size:12px;color:#9A9387;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Wednesday · July 2, 2026</div>
+      <div style="font-size:23px;font-weight:800;letter-spacing:-.02em;margin-top:3px">Marketing Result Dashboard</div>
+      <div style="font-size:13px;color:#9A9387;margin-top:3px">Track results from CRM, Marketing, Creative, and KOL in one view.</div>
+    </div>
+    <div style="font-size:13px;color:#6b6258">Spent <b style="color:#211F1C">฿2.84M</b> of ฿4.50M · <span style="color:var(--accent);font-weight:700">63%</span> used</div>
+  </div>
+
+  <!-- DATE + BRAND FILTER BAR -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:12px 16px;margin-top:14px;margin-bottom:20px">
+    <div style="display:flex;gap:4px;background:#EFEAE0;border-radius:9px;padding:3px;flex-shrink:0">
+      <span onClick="{{ setGMonth }}" style="{{ gMonthBtn }}">Month</span>
+      <span onClick="{{ setGRange }}" style="{{ gRangeBtn }}">Range</span>
+    </div>
+    <sc-if value="{{ isGMonth }}" hint-placeholder-val="{{ true }}">
+      <span onClick="{{ gPrev }}" style="{{ navArrow }}">‹</span>
+      <select onChange="{{ onGMonth }}" style="{{ selectStyle }}"><sc-for list="{{ gMonthOptArr }}" as="o" hint-placeholder-count="12"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+      <select onChange="{{ onGYear }}" style="{{ selectStyle }}"><sc-for list="{{ gYearOptArr }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+      <span onClick="{{ gNext }}" style="{{ navArrow }}">›</span>
+    </sc-if>
+    <sc-if value="{{ isGRange }}" hint-placeholder-val="{{ false }}">
+      <input type="date" value="{{ gStart }}" onChange="{{ onGStart }}" style="{{ dateInputStyle }}">
+      <span style="font-size:13px;color:#9A9387;font-weight:600">→</span>
+      <input type="date" value="{{ gEnd }}" onChange="{{ onGEnd }}" style="{{ dateInputStyle }}">
+    </sc-if>
+    <span onClick="{{ gToday }}" style="{{ todayBtn }}">This month</span>
+    <div style="font-size:12.5px;font-weight:600;color:#9A9387;white-space:nowrap;margin-left:auto">{{ gLabel }}</div>
+  </div>
+
+  <!-- BRAND FILTER -->
+  <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:20px">
+    <span style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.05em;text-transform:uppercase">Brand</span>
+    <sc-for list="{{ brandChips }}" as="bc" hint-placeholder-count="5">
+      <span onClick="{{ bc.onClick }}" style="{{ bc.style }}">{{ bc.label }}</span>
+    </sc-for>
+  </div>
+
+  <!-- ═══ OVERALL KPIs ═══ -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:11px;margin-bottom:22px">
+    <sc-for list="{{ overallKpis }}" as="k" hint-placeholder-count="6">
+      <div style="background:{{ k.cardBg }};border:1px solid {{ k.cardBorder }};border-radius:16px;padding:16px 18px">
+        <div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:{{ k.labelColor }};font-weight:700;margin-bottom:8px">{{ k.label }}</div>
+        <div style="font-size:24px;font-weight:800;letter-spacing:-.02em;color:{{ k.valColor }};margin-bottom:4px">{{ k.value }}</div>
+        <div style="font-size:11px;color:{{ k.metaColor }};margin-bottom:8px">{{ k.meta }}</div>
+        <div style="height:5px;background:{{ k.trackColor }};border-radius:3px;overflow:hidden"><div style="height:5px;border-radius:3px;background:{{ k.barColor }};width:{{ k.barW }}"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10.5px">
+          <span style="color:{{ k.pctColor }};font-weight:700">{{ k.pct }}% of target</span>
+          <span style="color:{{ k.trendColor }};font-weight:600">{{ k.trend }}</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- ═══ TEAM RESULT ROWS ═══ -->
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;margin-bottom:13px">Team Results</div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px">
+    <sc-for list="{{ teamResults }}" as="tr" hint-placeholder-count="4">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:16px 20px">
+      <!-- Row: left info + KPIs + insight -->
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <!-- Left: team identity -->
+        <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:0 0 220px">
+          <span style="font-size:22px">{{ tr.icon }}</span>
+          <div>
+            <div style="font-size:14.5px;font-weight:800;margin-bottom:3px">{{ tr.label }}</div>
+            <span style="{{ tr.healthStyle }}">{{ tr.healthLabel }}</span>
+          </div>
+        </div>
+        <!-- Achievement bar -->
+        <div style="flex:0 0 140px">
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:5px">
+            <span style="font-size:20px;font-weight:800;color:{{ tr.barColor }}">{{ tr.achievement }}%</span>
+            <span style="font-size:10.5px;color:#9A9387">{{ tr.achieveTarget }}</span>
+          </div>
+          <div style="height:6px;background:#F0EBE0;border-radius:3px;overflow:hidden"><div style="height:6px;border-radius:3px;background:{{ tr.barColor }};width:{{ tr.barW }}"></div></div>
+        </div>
+        <!-- KPI chips -->
+        <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;min-width:0">
+          <sc-for list="{{ tr.kpis }}" as="kpi" hint-placeholder-count="4">
+            <div style="background:#FAF8F4;border:1px solid #F0EBE0;border-radius:11px;padding:9px 14px;min-width:90px">
+              <div style="font-size:9.5px;color:#9A9387;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">{{ kpi.label }}</div>
+              <div style="font-size:16px;font-weight:700;color:{{ kpi.color }}">{{ kpi.val }}</div>
+              <div style="font-size:10px;color:#9A9387;margin-top:1px">{{ kpi.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <!-- View link -->
+        <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap">View →</span>
+      </div>
+      <!-- Insight strip -->
+      <div style="display:flex;gap:24px;margin-top:12px;padding-top:11px;border-top:1px solid #F4EFE5;flex-wrap:wrap">
+        <div><span style="font-size:10px;color:#4E7A4E;font-weight:700;text-transform:uppercase;letter-spacing:.04em">✓ Best result · </span><span style="font-size:12px;color:#211F1C;font-weight:600">{{ tr.bestResult }}</span></div>
+        <div><span style="font-size:10px;color:#B8945A;font-weight:700;text-transform:uppercase;letter-spacing:.04em">✦ Next action · </span><span style="font-size:12px;color:#6b6258;font-weight:600">{{ tr.nextAction }}</span></div>
+      </div>
+    </div>
+    </sc-for>
+  </div>
+
+  <!-- ═══ TEAM HEALTH COMPARISON ═══ -->
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;margin-bottom:13px">Team Health</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px">
+    <sc-for list="{{ teamHealth }}" as="th" hint-placeholder-count="4">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:18px">{{ th.icon }}</span>
+        <div style="font-size:14.5px;font-weight:700">{{ th.team }}</div>
+        <span style="{{ th.statusStyle }}">{{ th.statusLabel }}</span>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;color:#9A9387;font-weight:600;margin-bottom:2px">{{ th.kpiLabel }}</div>
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <span style="font-size:22px;font-weight:800;color:{{ th.valColor }}">{{ th.result }}</span>
+          <span style="font-size:12px;color:#9A9387">vs {{ th.target }} target</span>
+        </div>
+      </div>
+      <div style="height:5px;background:#F0EBE0;border-radius:3px;overflow:hidden;margin-bottom:6px"><div style="height:5px;border-radius:3px;background:{{ th.barColor }};width:{{ th.barW }}"></div></div>
+      <div style="font-size:11.5px;color:#6b6258;font-style:italic;line-height:1.4">{{ th.insight }}</div>
+    </div>
+    </sc-for>
+  </div>
+
+  <!-- ═══ NEEDS ATTENTION + APPROVALS ═══ -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px">
+    <!-- Needs Attention -->
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700">Needs Attention</div>
+        <span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:#FFF5F4;color:#B33A2E">{{ alertCount }} items</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ alerts }}" as="al" hint-placeholder-count="5">
+          <div style="border-left:3px solid {{ al.accent }};background:{{ al.bg }};border-radius:0 11px 11px 0;padding:10px 13px">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;flex-wrap:wrap">
+              <span style="font-size:10px;font-weight:700;color:{{ al.accent }}">{{ al.type }}</span>
+              <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:{{ al.accent }}22;color:{{ al.accent }}">{{ al.team }}</span>
+            </div>
+            <div style="font-size:13px;font-weight:600;color:#211F1C;margin-bottom:2px">{{ al.title }}</div>
+            <div style="font-size:11.5px;color:#9A9387">{{ al.meta }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <!-- Approval Queue -->
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700">Pending Approval</div>
+        <span style="font-size:11px;font-weight:700;color:#fff;background:#B33A2E;border-radius:999px;padding:3px 9px">{{ approvalCount }}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0">
+        <sc-for list="{{ approvals }}" as="a" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #F4EFE5">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.title }}</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:2px;flex-wrap:wrap">
+                <span style="font-size:11px;color:#9A9387">{{ a.meta }}</span>
+                <span style="font-size:10.5px;font-weight:600;color:#C68A1E">{{ a.waiting }}</span>
+              </div>
+            </div>
+            <span style="font-size:11.5px;font-weight:700;color:var(--accent);border:1px solid #E5DECF;border-radius:8px;padding:5px 11px;cursor:pointer;flex-shrink:0;white-space:nowrap">Review</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TEAM PULSE (light strip) ═══ -->
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 22px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:700;color:#211F1C;margin-right:6px">Team Pulse</span>
+    <sc-for list="{{ teamPulse }}" as="tp" hint-placeholder-count="5">
+      <div style="display:flex;align-items:center;gap:7px;padding:7px 14px;border-radius:999px;background:{{ tp.bg }};border:1px solid {{ tp.border }}">
+        <span style="font-size:14px">{{ tp.icon }}</span>
+        <span style="font-size:12px;font-weight:700;color:{{ tp.fg }}">{{ tp.val }}</span>
+        <span style="font-size:11px;color:{{ tp.fg }};opacity:.8">{{ tp.label }}</span>
+      </div>
+    </sc-for>
+    <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer;margin-left:auto">View Team Workload →</span>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1380,&quot;height&quot;:960}}">
+class Component extends DCLogic {
+  state = {
+    dateMode:'month', dateMonth:6, dateYear:2026,
+    dateStart:'2026-07-01', dateEnd:'2026-07-31',
+    brand:'all',
+  };
+
+  brands = ['all','teppen','omakase','mainichi','touka'];
+  brandLabels = { all:'All Brands', teppen:'Teppen', omakase:'Omakase Don', mainichi:'Mainichi', touka:'Touka' };
+
+  overallData = [
+    { label:'Marketing Revenue', value:'฿8.2M', meta:'Target ฿9.5M', pct:86, trend:'+12% vs last mo.', cardBg:'#fff',    cardBorder:'#ECE6DA', labelColor:'#9A9387', valColor:'#211F1C', metaColor:'#9A9387', barColor:'#B8945A', trackColor:'#F0EBE0', pctColor:'#B8945A', trendColor:'#4E7A4E' },
+    { label:'Total Visits',      value:'12,400', meta:'Target 14,000', pct:89, trend:'+8% vs last mo.',  cardBg:'#fff',    cardBorder:'#ECE6DA', labelColor:'#9A9387', valColor:'#211F1C', metaColor:'#9A9387', barColor:'#3E5C9A', trackColor:'#F0EBE0', pctColor:'#3E5C9A', trendColor:'#4E7A4E' },
+    { label:'Repeat Rate',       value:'34%',    meta:'Target 40%',    pct:85, trend:'+2% vs last mo.',  cardBg:'#FBF8EE', cardBorder:'#E8CCA0', labelColor:'#C68A1E', valColor:'#C68A1E', metaColor:'#9A9387', barColor:'#C68A1E', trackColor:'#EDD5A0', pctColor:'#C68A1E', trendColor:'#C68A1E' },
+    { label:'Blended ROAS',      value:'3.2×',   meta:'Target 2.5×',   pct:128,trend:'+0.4× QoQ',       cardBg:'#EEF4EE', cardBorder:'#C8E0C8', labelColor:'#4E7A4E', valColor:'#4E7A4E', metaColor:'#9A9387', barColor:'#4E7A4E', trackColor:'#C8E0C8', pctColor:'#4E7A4E', trendColor:'#4E7A4E' },
+    { label:'Budget Used',       value:'63%',    meta:'฿2.84M / ฿4.5M',pct:63, trend:'฿1.66M left',    cardBg:'#fff',    cardBorder:'#ECE6DA', labelColor:'#9A9387', valColor:'#211F1C', metaColor:'#9A9387', barColor:'#B8945A', trackColor:'#F0EBE0', pctColor:'#B8945A', trendColor:'#9A9387' },
+    { label:'Achievement',       value:'87%',    meta:'Overall target', pct:87, trend:'On track',        cardBg:'#211F1C', cardBorder:'#211F1C', labelColor:'#B8945A', valColor:'#fff',    metaColor:'#cabfa9', barColor:'#B8945A', trackColor:'#3A3630', pctColor:'#B8945A', trendColor:'#9de09d' },
+  ];
+
+  teamData = [
+    {
+      id:'crm', label:'CRM Result', icon:'💬', health:'attention',
+      healthLabel:'Needs attention', barColor:'#C68A1E', barW:'85%', achievement:85, achieveTarget:'repeat rate',
+      kpis:[
+        { label:'New Members',   val:'1,240', sub:'/ 1,500 target', color:'#211F1C' },
+        { label:'Repeat Rate',   val:'34%',   sub:'target 40%',     color:'#C68A1E' },
+        { label:'15D Revisit',   val:'8.2%',  sub:'target 10%',     color:'#C68A1E' },
+        { label:'CRM Revenue',   val:'฿1.8M', sub:'+6% vs last',    color:'#4E7A4E' },
+      ],
+      bestResult:'OMD Central World — 42% repeat rate',
+      nextAction:'Push Day 14 revisit campaign for Park Silom',
+    },
+    {
+      id:'marketing', label:'Marketing / Campaign', icon:'🎯', health:'ontrack',
+      healthLabel:'On track', barColor:'#4E7A4E', barW:'92%', achievement:92, achieveTarget:'revenue target',
+      kpis:[
+        { label:'Campaign Revenue', val:'฿4.6M', sub:'/ ฿5.0M target', color:'#211F1C' },
+        { label:'Visits',           val:'8,420', sub:'/ 9,000 target',  color:'#3E5C9A' },
+        { label:'ROAS',             val:'14.8×', sub:'target 12×',      color:'#4E7A4E' },
+        { label:'Budget Used',      val:'68%',   sub:'฿3.1M / ฿4.5M',   color:'#B8945A' },
+      ],
+      bestResult:'OMD Lunch Set — ROAS 22×, 2,840 visits',
+      nextAction:'Review TEPPEN Dinner targeting (ROAS 4.2×)',
+    },
+    {
+      id:'creative', label:'Creative Result', icon:'🎨', health:'ontrack',
+      healthLabel:'On track', barColor:'#4E7A4E', barW:'87%', achievement:87, achieveTarget:'on-time delivery',
+      kpis:[
+        { label:'Delivered',       val:'42',   sub:'/ 48 requested',  color:'#211F1C' },
+        { label:'On-time',         val:'87%',  sub:'target 90%',      color:'#C68A1E' },
+        { label:'Avg Revision',    val:'1.6',  sub:'target 1.5 rds',  color:'#C68A1E' },
+        { label:'Waiting Feedback',val:'5',    sub:'items pending',   color:'#B33A2E' },
+      ],
+      bestResult:'OMD Reel Cover Set — approved in 1 round',
+      nextAction:'Review 5 assets waiting feedback from Brand Lead',
+    },
+    {
+      id:'kol', label:'KOL Result', icon:'🌟', health:'excellent',
+      healthLabel:'Excellent', barColor:'#4E7A4E', barW:'117%', achievement:117, achieveTarget:'ROI target',
+      kpis:[
+        { label:'Posted Creators', val:'12',   sub:'/ 15 active',    color:'#211F1C' },
+        { label:'Total Reach',     val:'840K', sub:'+18% vs last',   color:'#4E7A4E' },
+        { label:'CPV',             val:'฿137', sub:'target ฿150',    color:'#4E7A4E' },
+        { label:'ROI',             val:'9.4×', sub:'target 8×',      color:'#4E7A4E' },
+      ],
+      bestResult:'Foodie Bangkok — 245K reach, CPV ฿92',
+      nextAction:'Follow up 2 creators missing post links',
+    },
+  ];
+
+  healthStyles = {
+    excellent:  { style:'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEF4EE;color:#4E7A4E', barColor:'#4E7A4E' },
+    ontrack:    { style:'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEF4EE;color:#4E7A4E', barColor:'#4E7A4E' },
+    attention:  { style:'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#FBF8EE;color:#C68A1E', barColor:'#C68A1E' },
+    below:      { style:'font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#FFF5F4;color:#B33A2E', barColor:'#B33A2E' },
+  };
+
+  teamHealthData = [
+    { team:'CRM',       icon:'💬', kpiLabel:'Repeat Rate',      result:'34%',  target:'40%', barW:'85%',  status:'attention', statusLabel:'Needs attention', valColor:'#C68A1E', barColor:'#C68A1E', insight:'Repeat rate below target. Push Day 14 revisit campaign for weakest branch.' },
+    { team:'Marketing', icon:'🎯', kpiLabel:'Campaign Revenue', result:'฿4.6M',target:'฿5M', barW:'92%',  status:'ontrack',   statusLabel:'On track',        valColor:'#211F1C', barColor:'#4E7A4E', insight:'ROAS exceeds target at 14.8×. Review TEPPEN Dinner underperformance.' },
+    { team:'Creative',  icon:'🎨', kpiLabel:'On-time Delivery', result:'87%',  target:'90%', barW:'87%',  status:'ontrack',   statusLabel:'On track',        valColor:'#211F1C', barColor:'#4E7A4E', insight:'Close to target. Clear 5 waiting feedback items to improve on-time rate.' },
+    { team:'KOL',       icon:'🌟', kpiLabel:'ROI',              result:'9.4×', target:'8×',  barW:'100%', status:'excellent', statusLabel:'Excellent',       valColor:'#4E7A4E', barColor:'#4E7A4E', insight:'Exceeding ROI target. Complete result tracking for 3 remaining creators.' },
+  ];
+
+  alertsData = [
+    { type:'BELOW TARGET',   team:'CRM',       accent:'#C68A1E', bg:'#FBF8EE', title:'Repeat Rate 34% vs 40% target',         meta:'Push Day 14 revisit · Park Silom branch' },
+    { type:'ROAS BELOW',     team:'Marketing', accent:'#B33A2E', bg:'#FFF5F4', title:'TEPPEN Dinner — ROAS 4.2× (target 12×)', meta:'Review targeting and offer · ฿180K spent' },
+    { type:'WAITING',        team:'Creative',  accent:'#C68A1E', bg:'#FBF8EE', title:'5 assets waiting feedback >3 days',      meta:'Brand Lead review needed · affects 2 campaigns' },
+    { type:'MISSING DATA',   team:'KOL',       accent:'#B33A2E', bg:'#FFF5F4', title:'2 creators missing post links',          meta:'Results cannot be tracked until links added' },
+    { type:'APPROVAL 5 DAYS',team:'Finance',   accent:'#B33A2E', bg:'#FFF5F4', title:'Q3 media plan approval pending',         meta:'฿1.2M · waiting CMO sign-off' },
+  ];
+
+  approvalsData = [
+    { title:'Q3 media plan',           meta:'Campaign · All Brands · ฿1.2M',   waiting:'5 days' },
+    { title:'Songkran budget request', meta:'Budget · TEPPEN · ฿180,000',      waiting:'4 days' },
+    { title:'Wagyu key visual V2',     meta:'Graphic · TEPPEN',                waiting:'3 days' },
+    { title:'KOL contract — Nong Aim', meta:'KOL · TEPPEN · ฿45,000',         waiting:'2 days' },
+    { title:'Menu redesign final',     meta:'Graphic · Touka · 2 revisions',   waiting:'1 day' },
+  ];
+
+  pulseData = [
+    { icon:'🌿', val:'2', label:'Healthy',      fg:'#4E7A4E', bg:'#EEF4EE', border:'#C8E0C8' },
+    { icon:'🔥', val:'2', label:'Busy',          fg:'#C68A1E', bg:'#FBF8EE', border:'#E8CCA0' },
+    { icon:'🛟', val:'2', label:'Needs support', fg:'#B33A2E', bg:'#FFF5F4', border:'#F5C8C4' },
+    { icon:'🧱', val:'4', label:'Stuck tasks',   fg:'#C2691E', bg:'#FBF1E9', border:'#F0D5BC' },
+    { icon:'✅', val:'12',label:'Done today',    fg:'#4E7A4E', bg:'#EEF4EE', border:'#C8E0C8' },
+  ];
+
+  renderVals() {
+    const { dateMode, dateMonth, dateYear, dateStart, dateEnd, brand } = this.state;
+
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const gMonthOptArr = monthNames.map((m,i)=>({ val:i, label:m, sel:i===dateMonth }));
+    const gYearOptArr  = [2024,2025,2026,2027].map(y=>({ val:y, label:String(y), sel:y===dateYear }));
+    const segBtn = (a) => ({ fontSize:'13px', fontWeight:700, padding:'6px 14px', borderRadius:'7px', cursor:'pointer', background:a?'#fff':'transparent', color:a?'#211F1C':'#9A9387', boxShadow:a?'0 1px 4px rgba(0,0,0,.08)':undefined, whiteSpace:'nowrap' });
+    const selectStyle    = { fontSize:'13px', fontWeight:600, padding:'8px 12px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C', cursor:'pointer' };
+    const dateInputStyle = { fontSize:'13px', fontWeight:600, padding:'7px 11px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C' };
+    const navArrow  = { width:'34px', height:'36px', borderRadius:'9px', border:'1px solid #E5DECF', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'16px', color:'#211F1C', flexShrink:0 };
+    const todayBtn  = { fontSize:'12px', fontWeight:700, color:'#6b6258', border:'1px solid #E5DECF', borderRadius:'9px', padding:'7px 12px', cursor:'pointer', background:'#fff', whiteSpace:'nowrap' };
+    const gMonthBtn = segBtn(dateMode==='month');
+    const gRangeBtn = segBtn(dateMode==='range');
+    const isGMonth  = dateMode==='month';
+    const isGRange  = dateMode==='range';
+    const gLabel    = monthNames[dateMonth]+' '+dateYear;
+    const setGMonth = ()=>this.setState({dateMode:'month'});
+    const setGRange = ()=>this.setState({dateMode:'range'});
+    const gPrev     = ()=>{ let m=dateMonth-1,y=dateYear; if(m<0){m=11;y--;} this.setState({dateMonth:m,dateYear:y}); };
+    const gNext     = ()=>{ let m=dateMonth+1,y=dateYear; if(m>11){m=0;y++;} this.setState({dateMonth:m,dateYear:y}); };
+    const gToday    = ()=>this.setState({dateMonth:6,dateYear:2026,dateStart:'2026-07-01',dateEnd:'2026-07-31'});
+    const onGMonth  = (e)=>this.setState({dateMonth:parseInt(e.target.value)});
+    const onGYear   = (e)=>this.setState({dateYear:parseInt(e.target.value)});
+    const onGStart  = (e)=>this.setState({dateStart:e.target.value});
+    const onGEnd    = (e)=>this.setState({dateEnd:e.target.value});
+
+    const brandOpts = this.brands.map(b=>({ val:b, label:this.brandLabels[b]||b, sel:b===brand }));
+    const onBrand   = (e)=>this.setState({brand:e.target.value});
+    const brandChips = this.brands.map(b=>({
+      label: this.brandLabels[b]||b,
+      onClick: ()=>this.setState({brand:b}),
+      style: b===brand
+        ? 'font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap'
+        : 'font-size:12px;font-weight:500;padding:6px 14px;border-radius:999px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff;white-space:nowrap',
+    }));
+
+    const overallKpis = this.overallData.map(k=>({ ...k, barW:Math.min(k.pct,100)+'%' }));
+
+    const teamResults = this.teamData.map(tr=>({
+      ...tr,
+      healthStyle: (this.healthStyles[tr.health]||this.healthStyles.ontrack).style,
+    }));
+
+    const teamHealth = this.teamHealthData.map(th=>({
+      ...th,
+      statusStyle:(this.healthStyles[th.status]||this.healthStyles.ontrack).style,
+    }));
+
+    const alerts       = this.alertsData;
+    const alertCount   = alerts.length;
+    const approvals    = this.approvalsData;
+    const approvalCount= approvals.length;
+    const teamPulse    = this.pulseData;
+
+    return {
+      gMonthBtn, gRangeBtn, isGMonth, isGRange, gLabel,
+      gMonthOptArr, gYearOptArr, gStart:dateStart, gEnd:dateEnd,
+      selectStyle, dateInputStyle, navArrow, todayBtn,
+      setGMonth, setGRange, gPrev, gNext, gToday,
+      onGMonth, onGYear, onGStart, onGEnd,
+      brandOpts, onBrand, brandChips,
+      overallKpis, teamResults, teamHealth,
+      alerts, alertCount, approvals, approvalCount, teamPulse,
+    };
+  }
+}
+</script>
+</body>
+</html>

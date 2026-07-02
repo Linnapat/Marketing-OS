@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style data-omelette-print-defaults>
+@media print {
+  @page { margin: 0.5in; }
+  h1, h2, h3, h4, h5, h6 { break-after: avoid; }
+  figure, table, pre, blockquote, img, svg, tr, [class~="card" i] { break-inside: avoid; }
+  img, svg { max-width: 100%; }
+  p { orphans: 3; widows: 3; }
+}
+</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  body { font-family: 'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #211F1C; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #d9d1c2; border-radius: 6px; }
+</style>
+</helmet>
+
+<div style="padding:22px 26px 40px;min-height:100vh;background:#F7F4EE">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+    <div>
+      <div style="font-size:21px;font-weight:800;letter-spacing:-.02em">Content Calendar</div>
+      <div style="font-size:12.5px;color:#9A9387;margin-top:3px">{{ headerSub }}</div>
+    </div>
+    <span style="font-size:13px;font-weight:700;color:#fff;background:#211F1C;border-radius:10px;padding:9px 16px;cursor:pointer">+ New Post</span>
+  </div>
+
+  <!-- Module tabs -->
+  <div style="display:flex;gap:3px;background:#EFEAE0;border-radius:13px;padding:4px;margin-bottom:22px;width:fit-content">
+    <span onClick="{{ goCalendar }}" style="{{ calTabStyle }}">📅 Calendar</span>
+    <span onClick="{{ goGraphic }}" style="{{ graphicTabStyle }}">🎨 Graphic Board</span>
+  </div>
+
+  <!-- ══ CALENDAR ══ -->
+  <sc-if value="{{ showCalendar }}" hint-placeholder-val="{{ true }}">
+  <div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span onClick="{{ calPrev }}" style="width:34px;height:34px;border-radius:9px;border:1px solid #E5DECF;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:#6b6258;line-height:1">‹</span>
+        <div style="font-size:17px;font-weight:700;min-width:150px;text-align:center">{{ calLabel }}</div>
+        <span onClick="{{ calNext }}" style="width:34px;height:34px;border-radius:9px;border:1px solid #E5DECF;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:#6b6258;line-height:1">›</span>
+        <span onClick="{{ calToday }}" style="font-size:12.5px;font-weight:700;color:#6b6258;border:1px solid #E5DECF;border-radius:9px;padding:8px 13px;cursor:pointer;background:#fff">Today</span>
+      </div>
+      <div style="display:flex;gap:6px;background:#EFEAE0;border-radius:11px;padding:4px">
+        <span onClick="{{ setMonthView }}" style="{{ monthBtnStyle }}">Month</span>
+        <span onClick="{{ setWeekView }}" style="{{ weekBtnStyle }}">Week</span>
+        <span onClick="{{ setTableView }}" style="{{ tableBtnStyle }}">Table</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:18px">
+      <span style="font-size:12px;font-weight:700;color:#9A9387;letter-spacing:.05em;margin-right:2px">BRAND</span>
+      <sc-for list="{{ calBrandFilters }}" as="f" hint-placeholder-count="5"><span onClick="{{ f.onClick }}" style="{{ f.style }}"><span style="{{ f.dot }}"></span>{{ f.label }}</span></sc-for>
+    </div>
+
+    <!-- MONTH GRID -->
+    <sc-if value="{{ isMonthView }}" hint-placeholder-val="{{ true }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);background:#FBF9F4;border-bottom:1px solid #ECE6DA">
+        <sc-for list="{{ weekdayLabels }}" as="d" hint-placeholder-count="7"><div style="padding:11px 8px;font-size:11px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase;text-align:center">{{ d }}</div></sc-for>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr)">
+        <sc-for list="{{ calCells }}" as="cell" hint-placeholder-count="35">
+          <div style="{{ cell.style }}">
+            <div style="{{ cell.numStyle }}">{{ cell.day }}</div>
+            <div style="display:flex;flex-direction:column;gap:3px;margin-top:4px">
+              <sc-for list="{{ cell.items }}" as="it" hint-placeholder-count="0"><div style="font-size:10.5px;font-weight:600;color:#fff;background:{{ it.color }};border-radius:5px;padding:2px 4px;display:flex;align-items:center;gap:3px;overflow:hidden"><span style="font-size:9px;background:rgba(255,255,255,.25);border-radius:3px;padding:0 2px;flex-shrink:0;font-weight:800">{{ it.platIcon }}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.short }}</span></div></sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- WEEK VIEW -->
+    <sc-if value="{{ isWeekView }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <sc-for list="{{ weekDays }}" as="d" hint-placeholder-count="7">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:14px 18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:{{ d.gap }}"><div style="font-size:13.5px;font-weight:700;color:{{ d.labelColor }}">{{ d.label }}</div><sc-if value="{{ d.isToday }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:700;color:var(--accent,#B8945A);background:#f7efe1;border-radius:999px;padding:1px 8px">TODAY</span></sc-if></div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="0">
+              <div style="display:flex;align-items:center;gap:11px"><span style="width:6px;height:32px;border-radius:4px;flex-shrink:0;background:{{ it.color }}"></span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">{{ it.title }}</div><div style="font-size:11.5px;color:#9A9387">{{ it.campaign }}</div></div><span style="{{ it.platStyle }}">{{ it.plat }}</span><span style="{{ it.statusStyle }}">{{ it.status }}</span></div>
+            </sc-for>
+            <sc-if value="{{ d.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size:12.5px;color:#bbb2a4;padding:2px 0">No content scheduled</div></sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- TABLE VIEW -->
+    <sc-if value="{{ isTableView }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:80px 120px 1fr 0.9fr 1.1fr 1fr;gap:10px;padding:12px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase">
+        <span>Date</span><span>Platform</span><span>Content</span><span>Brand</span><span>Campaign</span><span>Status</span>
+      </div>
+      <sc-for list="{{ calTableRows }}" as="row" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:80px 120px 1fr 0.9fr 1.1fr 1fr;gap:10px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <div style="font-size:12px;font-weight:600;color:#6b6258">{{ row.dateLabel }}</div>
+          <div style="display:flex;align-items:center;gap:7px"><span style="{{ row.platIconStyle }}">{{ row.platIcon }}</span><span style="font-size:11.5px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.platName }}</span></div>
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.title }}</div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ row.brandColor }}"></span><span style="font-size:12px;color:#6b6258">{{ row.brand }}</span></div>
+          <div style="font-size:12px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.campaign }}</div>
+          <span style="{{ row.statusStyle }}">{{ row.status }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+  <!-- ══ GRAPHIC BOARD ══ -->
+  <sc-if value="{{ showGraphic }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+      <div style="display:flex;gap:6px;background:#EFEAE0;border-radius:11px;padding:4px">
+        <span onClick="{{ setGraphicBoard }}" style="{{ graphicBoardBtn }}">Board</span>
+        <span onClick="{{ setGraphicList }}" style="{{ graphicListBtn }}">List</span>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#fff;background:#211F1C;border-radius:10px;padding:9px 15px;cursor:pointer">+ New request</span>
+    </div>
+
+    <!-- BOARD -->
+    <sc-if value="{{ isGraphicBoard }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:8px">
+      <sc-for list="{{ graphicColumns }}" as="col" hint-placeholder-count="6">
+        <div style="width:266px;flex-shrink:0;background:#F1ECE2;border-radius:16px;padding:13px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:0 4px"><div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:{{ col.color }}"></span><span style="font-size:13px;font-weight:700">{{ col.title }}</span></div><span style="font-size:11.5px;font-weight:700;color:#9A9387;background:#fff;border-radius:999px;padding:2px 8px">{{ col.count }}</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+              <div style="background:#fff;border:1px solid #ECE6DA;border-radius:13px;padding:13px;cursor:pointer">
+                <image-slot id="{{ card.slotId }}" shape="rounded" radius="10" placeholder="Drop design" style="display:block;width:100%;height:114px;margin-bottom:11px"></image-slot>
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span style="width:7px;height:7px;border-radius:50%;background:{{ card.color }}"></span><span style="font-size:11px;font-weight:600;color:#9A9387">{{ card.brand }}</span></div>
+                <div style="font-size:13.5px;font-weight:700;line-height:1.3;margin-bottom:5px">{{ card.title }}</div>
+                <div style="font-size:11.5px;color:#9A9387;margin-bottom:11px">{{ card.campaign }}</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid #F4EFE5;padding-top:10px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span style="display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:{{ card.fbColor }}">💬 {{ card.feedback }}</span>
+                    <span style="font-size:11.5px;color:#9A9387">📎</span>
+                  </div>
+                  <span style="font-size:11px;color:#9A9387">Due {{ card.due }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px"><div style="width:22px;height:22px;border-radius:50%;background:{{ card.ownerColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700">{{ card.ownerInit }}</div><span style="font-size:11.5px;color:#6b6258">{{ card.designer }}</span></div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size:12px;color:#bbb2a4;text-align:center;padding:18px 0;border:1px dashed #DDD4C4;border-radius:12px">Nothing here</div></sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- LIST -->
+    <sc-if value="{{ isGraphicList }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:1.4fr 0.9fr 1.2fr 1fr 0.7fr 0.6fr 1fr;gap:10px;padding:12px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase">
+        <span>Title</span><span>Brand</span><span>Campaign</span><span>Designer</span><span>Due</span><span>FB</span><span>Stage</span>
+      </div>
+      <sc-for list="{{ graphicList }}" as="g" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:1.4fr 0.9fr 1.2fr 1fr 0.7fr 0.6fr 1fr;gap:10px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.title }}</div>
+          <div style="display:flex;align-items:center;gap:7px;min-width:0"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ g.color }}"></span><span style="font-size:12px;color:#6b6258;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.brand }}</span></div>
+          <div style="font-size:12px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.campaign }}</div>
+          <div style="font-size:12px;color:#6b6258">{{ g.designer }}</div>
+          <div style="font-size:12px;font-weight:600;color:#6b6258">{{ g.due }}</div>
+          <div style="display:flex;align-items:center;gap:3px"><span style="font-size:13px;font-weight:700;color:{{ g.fbColor }}">{{ g.feedback }}</span><span style="font-size:10px;color:#9A9387">↩</span></div>
+          <span style="{{ g.stageStyle }}">{{ g.stage }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    moduleTab: 'calendar',
+    calView: 'month',
+    calBrand: 'all',
+    calMonth: 5,
+    calYear: 2026,
+    graphicView: 'board'
+  };
+
+  brands = {
+    teppen:   { name: 'TEPPEN',      color: '#B33A2E' },
+    omakase:  { name: 'Omakase Don', color: '#3E5C9A' },
+    mainichi: { name: 'Mainichi',    color: '#4E7A4E' },
+    touka:    { name: 'Touka',       color: '#C68A1E' }
+  };
+
+  contentStatusMap = { 'Draft': ['#6b6258','#F0EDE6'], 'Waiting Design': ['#C68A1E','#fbf6ed'], 'Waiting Approval': ['#C2691E','#fbf1e9'], 'Scheduled': ['#3E5C9A','#eef1f8'], 'Published': ['#4E7A4E','#eef4ee'] };
+  platMap = { 'Instagram': ['#B4377E','#fbeff5','IG'], 'TikTok': ['#1f1f1f','#eeecec','TikTok'], 'Facebook': ['#3E5C9A','#eef1f8','FB'], 'LINE OA': ['#4E7A4E','#eef4ee','LINE'], 'Google Map': ['#C68A1E','#fbf6ed','Map'], 'YouTube': ['#B33A2E','#fbf0ee','YT'] };
+  platIconMap = { 'Instagram': { icon:'IG',bg:'#E1306C',fg:'#fff' }, 'TikTok': { icon:'TK',bg:'#010101',fg:'#fff' }, 'Facebook': { icon:'FB',bg:'#1877F2',fg:'#fff' }, 'LINE OA': { icon:'LN',bg:'#06C755',fg:'#fff' }, 'Google Map': { icon:'GM',bg:'#4285F4',fg:'#fff' }, 'YouTube': { icon:'YT',bg:'#FF0000',fg:'#fff' } };
+  graphicStageMap = { 'New Request': ['#6b6258','#F0EDE6'], 'In Progress': ['#3E5C9A','#eef1f8'], 'Waiting Feedback': ['#C68A1E','#fbf6ed'], 'Revision': ['#C2691E','#fbf1e9'], 'Approved': ['#4E7A4E','#eef4ee'], 'Delivered': ['#211F1C','#ECE6DA'] };
+
+  contentData = [
+    { day: 5,  title: 'Matcha dessert promo',     b: 'mainichi', plat: 'Instagram',  status: 'Published',        campaign: 'LINE Coupon Drive' },
+    { day: 12, title: 'Google Map photo refresh',  b: 'teppen',   plat: 'Google Map', status: 'Published',        campaign: 'Wagyu Festival' },
+    { day: 18, title: 'Wagyu plating reel',        b: 'teppen',   plat: 'Instagram',  status: 'Published',        campaign: 'Wagyu Festival' },
+    { day: 21, title: 'Sake pairing post',         b: 'omakase',  plat: 'Facebook',   status: 'Published',        campaign: "Father's Day Set" },
+    { day: 24, title: 'Summer reel BTS',           b: 'omakase',  plat: 'Instagram',  status: 'Waiting Design',   campaign: 'Summer Reel Series' },
+    { day: 27, title: 'Wagyu drop teaser',         b: 'teppen',   plat: 'Instagram',  status: 'Scheduled',        campaign: 'Wagyu Festival' },
+    { day: 27, title: 'Lunch set carousel',        b: 'mainichi', plat: 'Facebook',   status: 'Scheduled',        campaign: 'Rainy Season Promo' },
+    { day: 27, title: 'Cocktail of the week',      b: 'touka',    plat: 'TikTok',     status: 'Scheduled',        campaign: 'Cocktail Hour Launch' },
+    { day: 28, title: 'Behind the bar',            b: 'touka',    plat: 'TikTok',     status: 'Waiting Approval', campaign: 'Cocktail Hour Launch' },
+    { day: 29, title: 'Lunch set promo',           b: 'mainichi', plat: 'LINE OA',    status: 'Draft',            campaign: 'Rainy Season Promo' },
+    { day: 30, title: "Father's Day set",          b: 'omakase',  plat: 'Facebook',   status: 'Scheduled',        campaign: "Father's Day Set" }
+  ];
+
+  graphicData = [
+    { col: 'New Request',      color: '#9A9387', cards: [
+      { title: 'Songkran key visual', b: 'teppen',   campaign: 'Songkran Teppanyaki',  due: 'Jul 2',  designer: 'Unassigned', oi: '?', oc: '#9A9387', fb: 0 },
+      { title: 'Anniversary poster',  b: 'touka',    campaign: 'Touka Anniversary',    due: 'Jul 8',  designer: 'Unassigned', oi: '?', oc: '#9A9387', fb: 0 } ]},
+    { col: 'In Progress',      color: '#3E5C9A', cards: [
+      { title: 'Wagyu menu board',    b: 'teppen',   campaign: 'Wagyu Festival',       due: 'Jun 29', designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 1 },
+      { title: 'Lunch set carousel',  b: 'mainichi', campaign: 'Rainy Season Promo',  due: 'Jun 28', designer: 'Aom',   oi: 'A', oc: '#B5577E', fb: 0 } ]},
+    { col: 'Waiting Feedback', color: '#C68A1E', cards: [
+      { title: "Father's Day banner", b: 'omakase',  campaign: "Father's Day Set",     due: 'Jun 28', designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 2 } ]},
+    { col: 'Revision',         color: '#C2691E', cards: [
+      { title: 'Menu redesign',       b: 'touka',    campaign: 'Cocktail Hour Launch', due: 'Jun 30', designer: 'Aom',   oi: 'A', oc: '#B5577E', fb: 2 },
+      { title: 'Summer reel cover',   b: 'omakase',  campaign: 'Summer Reel Series',  due: 'Jun 26', designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 3 } ]},
+    { col: 'Approved',         color: '#4E7A4E', cards: [
+      { title: 'Cocktail menu card',  b: 'touka',    campaign: 'Cocktail Hour Launch', due: 'Jun 24', designer: 'Aom',   oi: 'A', oc: '#B5577E', fb: 1 } ]},
+    { col: 'Delivered',        color: '#6b6258', cards: [
+      { title: 'Matcha dessert post', b: 'mainichi', campaign: 'LINE Coupon Drive',   due: 'Jun 5',  designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 0 } ]}
+  ];
+
+  badge(status, map) {
+    const [fg, bg] = map[status] || ['#6b6258','#F0EDE6'];
+    return { fontSize:'11.5px', fontWeight:700, padding:'4px 10px', borderRadius:'999px', background:bg, color:fg, whiteSpace:'nowrap', display:'inline-block' };
+  }
+
+  renderVals() {
+    const tabBtn = (active) => active
+      ? { fontSize:'13px', fontWeight:700, padding:'9px 16px', borderRadius:'10px', background:'#fff', color:'#211F1C', cursor:'pointer', whiteSpace:'nowrap', boxShadow:'0 1px 2px rgba(0,0,0,.06)' }
+      : { fontSize:'13px', fontWeight:600, padding:'9px 16px', borderRadius:'10px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const segBtn = (active) => active
+      ? { fontSize:'13px', fontWeight:700, padding:'8px 16px', borderRadius:'9px', background:'#fff', color:'#211F1C', cursor:'pointer', boxShadow:'0 1px 2px rgba(0,0,0,.06)', whiteSpace:'nowrap' }
+      : { fontSize:'13px', fontWeight:600, padding:'8px 16px', borderRadius:'9px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const chip = (active) => ({ fontSize:'12px', fontWeight:active?700:500, padding:'5px 12px', borderRadius:'999px', cursor:'pointer', display:'flex', alignItems:'center', gap:'5px', background:active?'#211F1C':'#fff', color:active?'#fff':'#6b6258', border:active?'none':'1px solid #E5DECF' });
+
+    const mt = this.state.moduleTab;
+    const showCalendar = mt === 'calendar';
+    const showGraphic  = mt === 'graphic';
+    const calTabStyle  = tabBtn(mt === 'calendar');
+    const graphicTabStyle = tabBtn(mt === 'graphic');
+
+    const brandKeys = ['all','teppen','omakase','mainichi','touka'];
+    const cy = this.state.calYear, cm = this.state.calMonth, cb = this.state.calBrand;
+    const monthsFull = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const weekdayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const calLabel = monthsFull[cm] + ' ' + cy;
+    const isJune = cy === 2026 && cm === 5;
+    const totalPosts = isJune ? this.contentData.filter(it => cb==='all'||it.b===cb).length : 0;
+    const headerSub = totalPosts > 0 ? calLabel + ' · ' + totalPosts + ' posts' : calLabel;
+
+    const calBrandFilters = brandKeys.map(k => ({
+      label: k==='all' ? 'All' : this.brands[k].name,
+      onClick: () => this.setState({ calBrand: k }),
+      style: chip(cb === k),
+      dot: { width:'8px', height:'8px', borderRadius:'50%', flexShrink:0, background: k==='all'?(cb==='all'?'#B8945A':'#c9c0b0'):this.brands[k].color }
+    }));
+
+    const firstDow = (new Date(cy, cm, 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(cy, cm+1, 0).getDate();
+    const monthContent = isJune ? this.contentData.filter(it => cb==='all'||it.b===cb) : [];
+    const byDay = {};
+    monthContent.forEach(it => { (byDay[it.day] = byDay[it.day]||[]).push(it); });
+    const calCells = [];
+    const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7;
+    for (let i = 0; i < totalCells; i++) {
+      const day = i - firstDow + 1;
+      const inMonth = day >= 1 && day <= daysInMonth;
+      const isToday = isJune && day === 27;
+      const items = (inMonth && byDay[day]) ? byDay[day].map(it => {
+        const pi = this.platIconMap[it.plat] || { icon:'?', bg:'#ccc', fg:'#fff' };
+        return { color: this.brands[it.b].color, short: it.title, platIcon: pi.icon };
+      }) : [];
+      calCells.push({
+        day: inMonth ? day : '',
+        style: { minHeight:'108px', padding:'7px 7px 8px', borderRight:'1px solid #F2EDE2', borderBottom:'1px solid #F2EDE2', background: isToday?'#FBF7EF':(inMonth?'#fff':'#FBF9F4') },
+        numStyle: { fontSize:'12px', fontWeight:isToday?800:600, color:isToday?'#fff':(inMonth?'#6b6258':'#cabfb0'), width:'22px', height:'22px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', background:isToday?'#211F1C':'transparent' },
+        items
+      });
+    }
+
+    const weekStart = isJune ? 22 : 1;
+    const weekDays = [];
+    for (let off = 0; off < 7; off++) {
+      const d = weekStart + off;
+      if (d > daysInMonth) break;
+      const dt = new Date(cy, cm, d);
+      const lbl = weekdayLabels[(dt.getDay()+6)%7] + ' ' + d;
+      const its = (byDay[d]||[]).map(it => ({
+        title:it.title, campaign:it.campaign, color:this.brands[it.b].color,
+        plat:this.platMap[it.plat][2], platStyle:this.badge(it.plat,{[it.plat]:this.platMap[it.plat]}),
+        status:it.status, statusStyle:this.badge(it.status,this.contentStatusMap)
+      }));
+      const isT = isJune && d === 27;
+      weekDays.push({ label:lbl, labelColor:isT?'#B8945A':'#211F1C', isToday:isT, items:its, empty:its.length===0, gap:its.length?'12px':'6px' });
+    }
+
+    const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cm];
+    const calTableRows = monthContent.slice().sort((a,b) => a.day-b.day).map(it => {
+      const pi = this.platIconMap[it.plat] || { icon:'?', bg:'#ccc', fg:'#fff' };
+      return { dateLabel:monthAbbr+' '+it.day, platIcon:pi.icon, platName:it.plat,
+        platIconStyle:{ width:'22px', height:'22px', borderRadius:'6px', background:pi.bg, color:pi.fg, fontSize:'9px', fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, letterSpacing:'-.01em' },
+        title:it.title, brandColor:this.brands[it.b].color, brand:this.brands[it.b].name,
+        campaign:it.campaign, status:it.status, statusStyle:this.badge(it.status,this.contentStatusMap) };
+    });
+
+    const calPrev = () => { let m=cm-1,y=cy; if(m<0){m=11;y--;} this.setState({calMonth:m,calYear:y}); };
+    const calNext = () => { let m=cm+1,y=cy; if(m>11){m=0;y++;} this.setState({calMonth:m,calYear:y}); };
+    const calToday = () => this.setState({calMonth:5,calYear:2026});
+
+    const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+    const graphicColumns = this.graphicData.map(col => ({
+      title:col.col, color:col.color, count:col.cards.length, empty:col.cards.length===0,
+      cards:col.cards.map(c => ({
+        title:c.title, brand:this.brands[c.b].name, color:this.brands[c.b].color, campaign:c.campaign,
+        due:c.due, designer:c.designer, ownerInit:c.oi, ownerColor:c.oc,
+        feedback:c.fb, fbColor:c.fb>=2?'#C2691E':'#6b6258',
+        slotId:'gr-'+slug(c.title)
+      }))
+    }));
+    const graphicList = this.graphicData.flatMap(col => col.cards.map(c => ({
+      title:c.title, brand:this.brands[c.b].name, color:this.brands[c.b].color,
+      campaign:c.campaign, designer:c.designer, due:c.due,
+      feedback:c.fb, fbColor:c.fb>=2?'#C2691E':'#6b6258',
+      stage:col.col, stageStyle:this.badge(col.col,this.graphicStageMap)
+    })));
+
+    const cv = this.state.calView;
+    const gv = this.state.graphicView;
+    return {
+      headerSub, showCalendar, showGraphic, calTabStyle, graphicTabStyle,
+      calLabel, calBrandFilters, weekdayLabels, calCells, weekDays, calTableRows,
+      isMonthView:cv==='month', isWeekView:cv==='week', isTableView:cv==='table',
+      setMonthView:()=>this.setState({calView:'month'}), setWeekView:()=>this.setState({calView:'week'}), setTableView:()=>this.setState({calView:'table'}),
+      monthBtnStyle:segBtn(cv==='month'), weekBtnStyle:segBtn(cv==='week'), tableBtnStyle:segBtn(cv==='table'),
+      calPrev, calNext, calToday,
+      graphicColumns, graphicList, isGraphicBoard:gv==='board', isGraphicList:gv==='list',
+      graphicBoardBtn:segBtn(gv==='board'), graphicListBtn:segBtn(gv==='list'),
+      setGraphicBoard:()=>this.setState({graphicView:'board'}), setGraphicList:()=>this.setState({graphicView:'list'}),
+      goCalendar:()=>this.setState({moduleTab:'calendar'}), goGraphic:()=>this.setState({moduleTab:'graphic'})
+    };
+  }
+}
+</script>
+<script>
+(async () => {
+  if (!document.title || !document.title.trim()) document.title = "Content Calendar";
+  // Prepend so page-supplied @page / break rules (deck-stage's margin:0,
+  // author CSS) keep source-order precedence over the baseline.
+  const baseCss = document.createElement('style');
+  baseCss.textContent = "@media print {\n  figure, table { break-inside: avoid; }\n  *, *::before, *::after {\n    print-color-adjust: exact; -webkit-print-color-adjust: exact;\n    backdrop-filter: none !important; -webkit-backdrop-filter: none !important;\n    animation-delay: -99s !important; animation-duration: .001s !important;\n    animation-iteration-count: 1 !important; animation-fill-mode: both !important;\n    animation-play-state: running !important; transition-duration: 0s !important;\n  }\n}";
+  document.head.prepend(baseCss);
+  if (document.readyState === 'loading') {
+    await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
+  }
+  let ds = document.querySelector('deck-stage');
+  // whenDefined never resolves when nothing registers the element, so only
+  // await it when a <deck-stage> tag exists (and race a timeout regardless).
+  if (ds && !customElements.get('deck-stage')) {
+    try {
+      await Promise.race([
+        customElements.whenDefined('deck-stage'),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    } catch (e) {}
+    ds = document.querySelector('deck-stage');
+  }
+  // dc-runtime assigns window.DCLogic at init and mounts into #dc-root on
+  // DOMContentLoaded; settle on that subtree so React has rendered before
+  // print(). Non-DC pages fall through to weighing body.
+  const isDc = !ds && 'DCLogic' in window;
+  const settleRoot = ds || (isDc ? document.getElementById('dc-root') : null) || document.body;
+  if (settleRoot) {
+    // Weigh only content children — skip script/style/template so inline
+    // Babel/CSS doesn't register as stable "content" before the framework
+    // has mounted anything.
+    const MEDIA = 'img,svg,canvas,video,picture,iframe,embed,object';
+    const weigh = () => {
+      let text = 0, media = 0;
+      for (const c of settleRoot.children) {
+        const t = c.tagName;
+        if (t === 'SCRIPT' || t === 'STYLE' || t === 'TEMPLATE') continue;
+        text += (c.textContent || '').trim().length;
+        media += c.querySelectorAll(MEDIA).length + (c.matches(MEDIA) ? 1 : 0);
+      }
+      return text + media * 100;
+    };
+    // "Non-zero and stable" alone is not sufficient to mean rendered: generic
+    // body can carry a static shell while async main content is pending, and
+    // #dc-root can carry the root DC's static text while child refs are still
+    // .sc-placeholder boxes. Gate generic on readyState 'complete', and never
+    // accept stability while a dc-runtime placeholder is present.
+    const isGeneric = settleRoot === document.body;
+    const deadline = Date.now() + 15000;
+    let last = -1, stable = 0;
+    while (Date.now() < deadline) {
+      const n = weigh();
+      const ready =
+        (!isGeneric || document.readyState === 'complete') &&
+        !settleRoot.querySelector('.sc-placeholder');
+      if (n > 0 && n === last && ready) { if (++stable >= 2) break; } else { stable = 0; }
+      last = n;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+  // Project support.js may predate runtime default-seeding; push via bridge.
+  if (isDc && window.__dcSetProps && window.__dcRootName) {
+    try {
+      const dpEl = document.querySelector('script[data-dc-script]');
+      const meta = JSON.parse((dpEl && dpEl.getAttribute('data-props')) || '{}');
+      const bag = {};
+      for (const k in meta)
+        if (k[0] !== '$' && meta[k] && meta[k].default !== undefined)
+          bag[k] = meta[k].default;
+      if (Object.keys(bag).length) {
+        window.__dcSetProps(window.__dcRootName(), bag);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } catch (e) {}
+  }
+  // Reveal content gated on scroll or visibility before printing. Lazy <img>,
+  // IntersectionObserver fade-ins, and collapsed <details> don't render while
+  // off-screen, so a long page would print with them blank or closed. Open
+  // every <details>, force native-lazy images eager, and scroll the document
+  // through its full height to trip lazy-load + IO; then wait (bounded) for the
+  // newly-triggered images. Inert for deck-stage (slides aren't scroll-gated).
+  try {
+    for (const d of document.querySelectorAll('details')) d.open = true;
+    for (const img of document.querySelectorAll('img[loading="lazy"]'))
+      img.loading = 'eager';
+    const scroller = document.scrollingElement || document.documentElement;
+    const full = Math.max(scroller.scrollHeight, document.body.scrollHeight);
+    const step = window.innerHeight || 800;
+    for (let y = 0; y <= full; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    window.scrollTo(0, 0);
+    await Promise.race([
+      Promise.all(
+        [...document.images].map((img) =>
+          img.complete
+            ? null
+            : new Promise((res) => {
+                img.addEventListener('load', res, { once: true });
+                img.addEventListener('error', res, { once: true });
+              })
+        )
+      ),
+      new Promise((r) => setTimeout(r, 4000)),
+    ]);
+  } catch (e) {}
+  try { await document.fonts.ready; } catch (e) {}
+  // Jump every animation to its end state so print() never captures a slide
+  // mid-entrance. Ordering matters: the 0s-transition style must be live
+  // BEFORE data-deck-active is set so attribute-keyed transitions don't
+  // start a (now-0s) run from the pre-active base.
+  const st = document.createElement('style');
+  st.textContent = '*,*::before,*::after{animation-delay:-99s !important;animation-duration:.001s !important;animation-iteration-count:1 !important;animation-fill-mode:both !important;animation-play-state:running !important;transition-duration:0s !important}';
+  document.head.appendChild(st);
+  for (const d of document.querySelectorAll('deck-stage')) {
+    for (const c of d.children) {
+      const t = c.tagName;
+      if (t === 'SCRIPT' || t === 'STYLE' || t === 'TEMPLATE') continue;
+      c.setAttribute('data-deck-active', '');
+    }
+  }
+  // Re-append deck-stage's @page last so no author @page can add a margin and
+  // spill each full-bleed slide onto two sheets. Backstop for old copies.
+  if (ds) {
+    let pg = document.getElementById('deck-stage-print-page');
+    if (!pg) {
+      pg = document.createElement('style');
+      pg.textContent = '@page{size:' + (+ds.getAttribute('width') || 1920) +
+        'px ' + (+ds.getAttribute('height') || 1080) + 'px;margin:0}';
+    }
+    document.body.appendChild(pg);
+  }
+  try {
+    const sweep = () => {
+      for (const a of document.getAnimations()) {
+        try { a.finish(); } catch (e) {
+          try { a.currentTime = (a.effect && a.effect.getComputedTiming().duration) || 0; a.pause(); } catch (e2) {}
+        }
+      }
+    };
+    sweep();
+    await new Promise((r) => requestAnimationFrame(r));
+    sweep();
+    await new Promise((r) => requestAnimationFrame(r));
+  } catch (e) {}
+  // Size the PDF page to the rendered design unless the file opted into
+  // standard paper via @page{size:letter|A4|…}. Decks own their own @page.
+  // Wrappers (body, …) lose padding+margin so the frame sits at (0,0); the
+  // frame itself loses only margin — its padding is INSIDE the measured
+  // rect and must stay, or content shifts and leaves a gap at bottom/right.
+  var __m = null;
+  try { __m = (() => {
+  var STAMP = true;
+  var docEl = document.documentElement;
+  var doc = { width: docEl.scrollWidth, height: docEl.scrollHeight };
+
+  var ds = document.querySelector('deck-stage');
+  if (ds) {
+    var dw = Number(ds.getAttribute('width')) || 1920;
+    var dh = Number(ds.getAttribute('height')) || 1080;
+    var n = typeof ds.length === 'number' ? ds.length : ds.children.length;
+    var idx = typeof ds.index === 'number' ? ds.index : 0;
+    var frames = [];
+    for (var i = 0; i < n; i++) frames.push({ left: 0, top: 0, width: dw, height: dh });
+    return { kind: 'deck', source: 'declared', doc: doc, frames: frames,
+      authored: frames.map(function(){return{width:true,height:true}}),
+      deck: { width: dw, height: dh, slideCount: n, index: idx },
+      signals: { paperPage: false, pxPage: false } };
+  }
+
+  // Declared kind: a doc-page tag names the kind outright, so no signal
+  // heuristics run (like the deck branch above, signals report false —
+  // they describe inferred classifications only). The tag alone is not
+  // trusted: the element must have upgraded (shadowRoot present), so a
+  // leftover tag whose script was deleted falls through to the heuristics
+  // that handle plain markup.
+  var stageSx = window.scrollX || 0, stageSy = window.scrollY || 0;
+  var dp = document.querySelector('doc-page');
+  if (dp && dp.shadowRoot) {
+    // Crop to the sheet, not the host — the desk around it is screen-only
+    // chrome that must not land in PNG exports.
+    var sheet = dp.shadowRoot.querySelector('.sheet');
+    var sr = (sheet || dp).getBoundingClientRect();
+    return { kind: 'paper-doc', source: 'declared', doc: doc,
+      frames: [{ left: sr.left + stageSx, top: sr.top + stageSy,
+        width: sr.width, height: sr.height }],
+      authored: [{ width: false, height: false }],
+      signals: { paperPage: false, pxPage: false } };
+  }
+  var paperPage = false, pxPage = false;
+  var eachRule = function (fn) {
+    for (var s = 0; s < document.styleSheets.length; s++) {
+      var rs; try { rs = document.styleSheets[s].cssRules; } catch (e) { continue; }
+      for (var r = 0; r < rs.length; r++) {
+        fn(rs[r]);
+        if (rs[r].cssRules) for (var n = 0; n < rs[r].cssRules.length; n++) fn(rs[r].cssRules[n]);
+      }
+    }
+  };
+  eachRule(function (r) {
+    if (r.type !== 6) return;
+    var m = /\bsize\s*:\s*([^;}]+)/i.exec(r.cssText || '');
+    if (!m) return;
+    if (/\b(letter|a[3-5]|legal|ledger)\b/i.test(m[1])) paperPage = true;
+    if (/\d+(?:\.\d+)?px\b/i.test(m[1])) pxPage = true;
+  });
+  var signals = { paperPage: paperPage, pxPage: pxPage };
+
+  var pxVal = function (v) {
+    var m = /^(\d+(?:\.\d+)?)px$/.exec(v || ''); return m ? +m[1] : 0;
+  };
+  var authoredPx = function (el, prop) {
+    if (pxVal(el.style[prop])) return true;
+    var attr = el.getAttribute(prop);
+    if (attr && /^\d+$/.test(attr)) return true;
+    var hit = false;
+    eachRule(function (r) {
+      if (hit || r.type !== 1 || !r.style) return;
+      try { if (el.matches(r.selectorText) && pxVal(r.style[prop])) hit = true; } catch (e) {}
+    });
+    return hit;
+  };
+
+  var el = document.body, rootPxW = false;
+  for (;;) {
+    var kids = [];
+    for (var c = 0; c < el.children.length; c++) {
+      var t = el.children[c].tagName;
+      if (t !== 'SCRIPT' && t !== 'STYLE' && t !== 'TEMPLATE') kids.push(el.children[c]);
+    }
+    if (kids.length !== 1 || !(kids[0] instanceof HTMLElement)) break;
+    if (STAMP) el.setAttribute('data-om-frame-wrap', '');
+    el = kids[0];
+    rootPxW = authoredPx(el, 'width');
+    if (rootPxW) break;
+  }
+  if (!rootPxW) rootPxW = authoredPx(el, 'width');
+
+  // @page{size:letter} alone is a flowing doc; with a px-width root it's a
+  // fixed sheet pretending to be paper — fall through and size to render.
+  if (paperPage && !rootPxW) {
+    return { kind: 'paper-doc', source: 'inferred', doc: doc, signals: signals,
+      frames: [{ left: 0, top: 0, width: doc.width, height: doc.height }],
+      authored: [{ width: false, height: false }] };
+  }
+
+  var sx = window.scrollX || 0, sy = window.scrollY || 0;
+  var rectOf = function (e) {
+    var r = e.getBoundingClientRect();
+    var oy; try { oy = getComputedStyle(e).overflowY; } catch (err) {}
+    var h = oy === 'visible' ? Math.max(r.height, e.scrollHeight || 0) : r.height;
+    return { left: r.left + sx, top: r.top + sy, width: r.width, height: h };
+  };
+
+  // Multi-frame: ≥2 visible non-fixed children, each with authored px width
+  // AND height, all within ±2px of each other. Off unless the page opts in
+  // via data-om-multi-frame on the stop element — guards against card grids
+  // and pricing tables that match the geometry but aren't separate canvases.
+  if (el.hasAttribute('data-om-multi-frame')) {
+    var cands = [];
+    for (var k = 0; k < el.children.length; k++) {
+      var ch = el.children[k];
+      var cs; try { cs = getComputedStyle(ch); } catch (e) { continue; }
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.position === 'fixed') continue;
+      var rc = rectOf(ch);
+      if (rc.width < 2 || rc.height < 2) continue;
+      if (!authoredPx(ch, 'width') || !authoredPx(ch, 'height')) continue;
+      cands.push(rc);
+    }
+    if (cands.length >= 2) {
+      var w0 = cands[0].width, h0 = cands[0].height, ok = true;
+      for (var q = 1; q < cands.length; q++)
+        if (Math.abs(cands[q].width - w0) > 2 || Math.abs(cands[q].height - h0) > 2) ok = false;
+      if (ok) return { kind: 'multi-frame', source: 'inferred', doc: doc, signals: signals,
+        frames: cands, authored: cands.map(function(){return{width:true,height:true}}) };
+    }
+  }
+
+  if (STAMP) el.setAttribute('data-om-frame', '');
+  return { kind: 'single-canvas', source: 'inferred', doc: doc, signals: signals,
+    frames: [rectOf(el)],
+    authored: [{ width: rootPxW, height: authoredPx(el, 'height') }] };
+})(); } catch (e) {}
+  var frame = null;
+  if (__m && __m.kind === 'single-canvas') {
+    var f = __m.frames && __m.frames[0];
+    if (f && f.width >= 200 && f.height >= 200) {
+      frame = f;
+      var fst = document.createElement('style');
+      fst.textContent = '@media print{@page{size:' + Math.ceil(f.width) + 'px ' +
+        Math.ceil(f.height) + 'px;margin:0}' +
+        'html,body,[data-om-frame-wrap]{padding:0!important;margin:0!important;background:none!important}' +
+        '[data-om-frame]{margin:0!important}}';
+      document.body.appendChild(fst);
+    }
+  }
+  // Relax break-inside on oversized elements. An element taller than a
+  // printable page can't honor break-inside: avoid — browsers either overflow
+  // it or push it whole to the next page, leaving a blank gap, then break it
+  // anyway at an arbitrary point. After the final layout (content revealed,
+  // animations jumped), find elements taller than a page that still compute
+  // break-inside: avoid and reset them to auto, so the browser breaks them at
+  // their children's boundaries instead (children keep their own avoid). PAGE_PX
+  // is a conservative portrait estimate at 96 CSS px/in — Letter/A4 usable
+  // height minus our 0.5in margins — so only clearly-oversized elements are
+  // touched and under-page elements still stay whole. Skipped for decks (slides
+  // are sized to the page) and for fixed-size canvases (frame set, or an author
+  // px-based @page) — runs as before for flowing docs on letter/A4.
+  try {
+    if (!ds && !frame && !(__m && __m.signals && __m.signals.pxPage)) {
+      const PAGE_PX = 1024;
+      // Our print defaults add a real @page margin only when the source has
+      // no @page of its own; computed style can't tell us (it reports screen
+      // media), so read the injected rule directly.
+      const defaults = document.querySelector('style[data-omelette-print-defaults]');
+      const pageInset = /@page\s*\{[^}]*margin/.test(defaults ? defaults.textContent || '' : '');
+      const SEL = 'section,article,figure,table,pre,blockquote,[class~="card" i],[class~="page" i],[class~="sheet" i]';
+      for (const el of document.body.querySelectorAll(SEL)) {
+        if (el instanceof HTMLElement && el.offsetHeight > PAGE_PX) {
+          el.setAttribute('data-om-oversized', '');
+          // Fake-paged docs simulate sheets with over-tall break-after:page
+          // boxes; honoring the break spills half-blank pages and ends a
+          // colored box mid-sheet. Flow them, and (only when we own the page
+          // inset) drop the redundant padding/background via the rule below.
+          const cs = getComputedStyle(el);
+          if (cs.breakAfter === 'page' || cs.pageBreakAfter === 'always') {
+            el.setAttribute('data-om-fakepage', '');
+          }
+        }
+      }
+      const ost = document.createElement('style');
+      ost.textContent = '@media print{' +
+        '[data-om-oversized]{break-inside:auto !important;page-break-inside:auto !important}' +
+        '[data-om-fakepage]{break-after:auto !important;page-break-after:auto !important}' +
+        (pageInset ? '[data-om-fakepage]{padding:0 !important;background:none !important}' : '') +
+        '}';
+      document.head.appendChild(ost);
+    }
+  } catch (e) {}
+  // macOS Preview renders Skia-PDF Luminosity soft-masks as opaque grey boxes;
+  // swap the CSS that triggers them for Preview-safe forms.
+  try {
+    for (const el of document.body.querySelectorAll('*')) {
+      const cs = getComputedStyle(el);
+
+      if (cs.boxShadow !== 'none' && cs.filter === 'none') {
+        const outs = [], kept = [];
+        for (const s of cs.boxShadow.split(/,(?![^(]*[)])/)) {
+          const t = s.trim();
+          const m = t.match(/^(rgba?[(][^)]+[)]) (-?[0-9.]+px) (-?[0-9.]+px) ([0-9.]+px) -?[0-9.]+px$/);
+          if (m && parseFloat(m[4]) > 0) outs.push('drop-shadow(' + m[2] + ' ' + m[3] + ' ' + m[4] + ' ' + m[1] + ')');
+          else kept.push(t);
+        }
+        if (outs.length) {
+          el.style.setProperty('filter', outs.join(' '), 'important');
+          el.style.setProperty('box-shadow', kept.join(', ') || 'none', 'important');
+        }
+      }
+
+      const mask = cs.maskImage && cs.maskImage !== 'none' ? cs.maskImage : cs.webkitMaskImage;
+      if (mask && mask !== 'none' && cs.filter === 'none') el.style.setProperty('filter', 'opacity(1)', 'important');
+    }
+  } catch (e) {}
+  setTimeout(() => { try { window.print(); } catch (e) {} }, 200);
+})();
+</script>
+</body>
+</html>

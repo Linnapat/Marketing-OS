@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{background:#FAF8F4;font-family:system-ui,-apple-system,sans-serif;margin:0}
+:root{--accent:#B8945A}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#FAF8F4">
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside style="width:220px;flex-shrink:0;background:#fff;border-right:1px solid #ECE6DA;padding:22px 0;position:sticky;top:0;height:100vh;overflow-y:auto">
+    <div style="padding:0 18px 20px;border-bottom:1px solid #F4EFE5;margin-bottom:8px">
+      <div style="font-size:14px;font-weight:800;color:#211F1C">Settings</div>
+      <div style="font-size:11px;color:#9A9387;margin-top:2px">Marketing OS Config</div>
+    </div>
+    <sc-for list="{{ navGroups }}" as="ng" hint-placeholder-count="5">
+      <div style="padding:6px 18px 2px">
+        <div style="font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#C0B8AD;margin-bottom:4px">{{ ng.group }}</div>
+        <sc-for list="{{ ng.items }}" as="ni" hint-placeholder-count="3">
+          <div onClick="{{ ni.onClick }}" style="{{ ni.style }}">{{ ni.icon }} {{ ni.label }}</div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </aside>
+
+  <!-- ═══ CONTENT ═══ -->
+  <main style="flex:1;min-width:0;padding:28px 32px 60px;max-width:960px">
+
+    <!-- Section header -->
+    <div style="margin-bottom:22px">
+      <div style="font-size:20px;font-weight:800;letter-spacing:-.01em">{{ activeTitle }}</div>
+      <div style="font-size:13px;color:#9A9387;margin-top:3px">{{ activeDesc }}</div>
+    </div>
+
+    <!-- ─── ORGANIZATION ─── -->
+    <sc-if value="{{ isOrg }}" hint-placeholder-val="{{ true }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:24px;max-width:580px">
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <sc-for list="{{ orgFields }}" as="f" hint-placeholder-count="8">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px">{{ f.label }}</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;background:#FAF8F4;border:1px solid #ECE6DA;border-radius:10px">
+              <span style="font-size:13.5px;font-weight:600;color:#211F1C">{{ f.value }}</span>
+              <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer;flex-shrink:0">Edit</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─── BRANDS & BRANCHES ─── -->
+    <sc-if value="{{ isBrands }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;justify-content:flex-end"><span style="font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">+ Add brand</span></div>
+      <sc-for list="{{ brandList }}" as="b" hint-placeholder-count="4">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:14px;padding:18px 22px;flex-wrap:wrap">
+          <div style="width:38px;height:38px;border-radius:11px;background:{{ b.color }};flex-shrink:0"></div>
+          <div style="flex:1;min-width:150px"><div style="font-size:15px;font-weight:700">{{ b.name }}</div><div style="font-size:12px;color:#9A9387">{{ b.key }} · Brand lead: {{ b.lead }}</div></div>
+          <div style="display:flex;gap:18px;flex-wrap:wrap">
+            <div style="text-align:center"><div style="font-size:9.5px;color:#9A9387;font-weight:700;text-transform:uppercase">Branches</div><div style="font-size:18px;font-weight:700;margin-top:2px">{{ b.branches }}</div></div>
+            <div style="text-align:center"><div style="font-size:9.5px;color:#9A9387;font-weight:700;text-transform:uppercase">Campaigns</div><div style="font-size:18px;font-weight:700;margin-top:2px">{{ b.campaigns }}</div></div>
+            <div style="text-align:center"><div style="font-size:9.5px;color:#9A9387;font-weight:700;text-transform:uppercase">Budget</div><div style="font-size:18px;font-weight:700;margin-top:2px">{{ b.budget }}</div></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <span style="font-size:12px;font-weight:700;color:var(--accent);border:1px solid #E5DECF;border-radius:9px;padding:7px 13px;cursor:pointer">Edit</span>
+            <span style="font-size:12px;font-weight:700;color:#6b6258;border:1px solid #E5DECF;border-radius:9px;padding:7px 13px;cursor:pointer">Branches</span>
+          </div>
+        </div>
+        <!-- Branch list -->
+        <div style="border-top:1px solid #F4EFE5;padding:12px 22px;display:flex;gap:8px;flex-wrap:wrap">
+          <sc-for list="{{ b.branchList }}" as="br" hint-placeholder-count="3">
+            <span style="font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:999px;background:#FAF8F4;border:1px solid #ECE6DA;color:#6b6258">{{ br }}</span>
+          </sc-for>
+          <span style="font-size:11.5px;font-weight:700;padding:4px 12px;border-radius:999px;background:#FBF6ED;border:1px solid #E8D5AA;color:var(--accent);cursor:pointer">+ Add branch</span>
+        </div>
+      </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ─── TEAMS ─── -->
+    <sc-if value="{{ isTeams }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+      <sc-for list="{{ teamList }}" as="tm" hint-placeholder-count="6">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <span style="font-size:20px">{{ tm.icon }}</span>
+          <div><div style="font-size:14.5px;font-weight:700">{{ tm.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ tm.lead }}</div></div>
+        </div>
+        <div style="font-size:11.5px;color:#9A9387;margin-bottom:10px;line-height:1.5">{{ tm.scope }}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <sc-for list="{{ tm.members }}" as="mem" hint-placeholder-count="3">
+            <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:#FAF8F4;border:1px solid #ECE6DA;color:#6b6258">{{ mem }}</span>
+          </sc-for>
+        </div>
+      </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ─── USERS & ROLES ─── -->
+    <sc-if value="{{ isUsers }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <span style="font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">+ Invite member</span>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1.2fr 0.8fr auto;gap:8px;padding:11px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9A9387;text-transform:uppercase">
+          <span>Member</span><span>Role</span><span>Access</span><span>Brand access</span><span>Status</span><span></span>
+        </div>
+        <sc-for list="{{ userList }}" as="u" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1.2fr 0.8fr auto;gap:8px;padding:13px 22px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <div style="width:34px;height:34px;border-radius:50%;background:{{ u.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">{{ u.init }}</div>
+            <div style="min-width:0"><div style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.name }}</div><div style="font-size:11px;color:#9A9387;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.email }}</div></div>
+          </div>
+          <span style="font-size:12.5px;font-weight:600">{{ u.role }}</span>
+          <span style="{{ u.accessStyle }}">{{ u.access }}</span>
+          <span style="font-size:12px;color:#6b6258">{{ u.brandAccess }}</span>
+          <span style="{{ u.statusStyle }}">{{ u.status }}</span>
+          <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer;white-space:nowrap">Edit</span>
+        </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─── PERMISSIONS ─── -->
+    <sc-if value="{{ isPermissions }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:auto">
+      <div style="min-width:700px">
+        <!-- Header row: modules -->
+        <div style="display:grid;grid-template-columns:160px repeat(7,1fr);border-bottom:1px solid #ECE6DA;background:#FBF9F4;padding:0 18px">
+          <div style="padding:12px 0;font-size:10px;font-weight:700;color:#9A9387;text-transform:uppercase;letter-spacing:.05em">Role</div>
+          <sc-for list="{{ permModules }}" as="pm" hint-placeholder-count="7">
+            <div style="padding:12px 6px;font-size:10px;font-weight:700;color:#9A9387;text-transform:uppercase;letter-spacing:.04em;text-align:center">{{ pm }}</div>
+          </sc-for>
+        </div>
+        <sc-for list="{{ permRoles }}" as="pr" hint-placeholder-count="7">
+        <div style="display:grid;grid-template-columns:160px repeat(7,1fr);border-bottom:1px solid #F4EFE5;padding:0 18px;align-items:center">
+          <div style="padding:13px 0">
+            <div style="font-size:13px;font-weight:700">{{ pr.role }}</div>
+            <div style="font-size:11px;color:#9A9387">{{ pr.desc }}</div>
+          </div>
+          <sc-for list="{{ pr.perms }}" as="perm" hint-placeholder-count="7">
+            <div style="padding:8px 6px;text-align:center"><span style="{{ perm.style }}">{{ perm.label }}</span></div>
+          </sc-for>
+        </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─── APPROVAL MATRIX ─── -->
+    <sc-if value="{{ isApproval }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <!-- Budget thresholds -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:20px 22px">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px">Budget Threshold Rules</div>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+          <sc-for list="{{ budgetThresholds }}" as="bt" hint-placeholder-count="4">
+            <div style="background:#FAF8F4;border-radius:10px;padding:11px 14px">
+              <div style="font-size:11px;color:#9A9387;font-weight:600;margin-bottom:3px">{{ bt.range }}</div>
+              <div style="font-size:13px;font-weight:700;color:#211F1C">{{ bt.approver }}</div>
+            </div>
+            <div style="background:#FAF8F4;border-radius:10px;padding:11px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ bt.chain }}" as="c" hint-placeholder-count="3">
+                <span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:{{ c.bg }};color:{{ c.fg }}">{{ c.name }}</span>
+                <sc-if value="{{ c.hasArrow }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:#C0B8AD">→</span></sc-if>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <!-- Module approval rules -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ approvalRules }}" as="ar" hint-placeholder-count="5">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px 22px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:18px">{{ ar.icon }}</span>
+              <div style="font-size:14.5px;font-weight:700">{{ ar.module }}</div>
+              <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#EEF4EE;color:#4E7A4E">SLA {{ ar.sla }}d</span>
+            </div>
+            <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer">Edit rule</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <sc-for list="{{ ar.chain }}" as="c" hint-placeholder-count="4">
+              <span style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;background:{{ c.bg }};color:{{ c.fg }}">{{ c.name }}</span>
+              <sc-if value="{{ c.hasArrow }}" hint-placeholder-val="{{ false }}"><span style="font-size:13px;color:#C0B8AD">→</span></sc-if>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:16px;font-size:12px;color:#9A9387;flex-wrap:wrap">
+            <span>⏱ Escalate after {{ ar.escalate }}d</span>
+            <span>📩 Remind every {{ ar.remind }}d</span>
+            <span>🔄 Backup: {{ ar.backup }}</span>
+          </div>
+        </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─── WORKFLOW STATUS ─── -->
+    <sc-if value="{{ isWorkflow }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <sc-for list="{{ wfModuleTabs }}" as="wt" hint-placeholder-count="4"><span onClick="{{ wt.onClick }}" style="{{ wt.style }}">{{ wt.label }}</span></sc-for>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:auto 1fr 1fr auto;gap:10px;padding:11px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9A9387;text-transform:uppercase">
+          <span>Order</span><span>Status name</span><span>Type</span><span>Color</span>
+        </div>
+        <sc-for list="{{ wfStatuses }}" as="ws" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:auto 1fr 1fr auto;gap:10px;padding:12px 22px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <span style="font-size:12px;color:#9A9387;font-weight:700;width:24px;text-align:center">{{ ws.order }}</span>
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:{{ ws.color }};flex-shrink:0"></span><span style="font-size:13.5px;font-weight:600">{{ ws.name }}</span></div>
+          <span style="{{ ws.typeStyle }}">{{ ws.type }}</span>
+          <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer">Edit</span>
+        </div>
+        </sc-for>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#211F1C;border:1px dashed #DDD4C4;border-radius:12px;padding:11px;text-align:center;cursor:pointer">+ Add status</span>
+    </div>
+    </sc-if>
+
+    <!-- ─── NOTIFICATIONS ─── -->
+    <sc-if value="{{ isNotifs }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <!-- Channel toggles -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:20px 22px">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px">Channels</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <sc-for list="{{ notifChannels }}" as="nc" hint-placeholder-count="4">
+            <div style="background:#FAF8F4;border:1px solid #ECE6DA;border-radius:13px;padding:14px 18px;display:flex;align-items:center;gap:12px;min-width:180px">
+              <span style="font-size:20px">{{ nc.icon }}</span>
+              <div style="flex:1"><div style="font-size:13px;font-weight:700">{{ nc.label }}</div><div style="font-size:11px;color:#9A9387">{{ nc.desc }}</div></div>
+              <div onClick="{{ nc.toggle }}" style="width:38px;height:22px;border-radius:999px;background:{{ nc.bg }};position:relative;cursor:pointer;flex-shrink:0"><div style="position:absolute;top:2px;{{ nc.knob }}:2px;width:18px;height:18px;border-radius:50%;background:#fff"></div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <!-- Trigger rules -->
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;overflow:hidden">
+        <div style="padding:16px 22px;border-bottom:1px solid #ECE6DA;font-size:14px;font-weight:700">Notification Triggers</div>
+        <sc-for list="{{ notifTriggers }}" as="nt" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;padding:12px 22px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <div><div style="font-size:13px;font-weight:600">{{ nt.trigger }}</div><div style="font-size:11.5px;color:#9A9387">{{ nt.desc }}</div></div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap"><sc-for list="{{ nt.channels }}" as="ch" hint-placeholder-count="2"><span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FAF8F4;border:1px solid #ECE6DA;color:#6b6258">{{ ch }}</span></sc-for></div>
+          <span style="font-size:11.5px;color:#9A9387">{{ nt.timing }}</span>
+          <div onClick="{{ nt.toggle }}" style="width:38px;height:22px;border-radius:999px;background:{{ nt.bg }};position:relative;cursor:pointer;flex-shrink:0"><div style="position:absolute;top:2px;{{ nt.knob }}:2px;width:18px;height:18px;border-radius:50%;background:#fff"></div></div>
+        </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─── INTEGRATIONS ─── -->
+    <sc-if value="{{ isIntegrations }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+      <sc-for list="{{ integrations }}" as="ig" hint-placeholder-count="6">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:20px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <div style="width:40px;height:40px;border-radius:11px;background:{{ ig.iconBg }};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">{{ ig.icon }}</div>
+          <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">{{ ig.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ ig.category }}</div></div>
+          <span style="{{ ig.statusStyle }}">{{ ig.statusLabel }}</span>
+        </div>
+        <div style="font-size:12px;color:#9A9387;margin-bottom:14px;line-height:1.5">{{ ig.desc }}</div>
+        <sc-if value="{{ ig.isConnected }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:11.5px;color:#9A9387;margin-bottom:10px">Last sync: {{ ig.lastSync }}</div>
+        </sc-if>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <sc-for list="{{ ig.actions }}" as="ia" hint-placeholder-count="2">
+            <span style="{{ ia.style }}">{{ ia.label }}</span>
+          </sc-for>
+        </div>
+      </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ─── TEMPLATES ─── -->
+    <sc-if value="{{ isTemplates }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;justify-content:flex-end"><span style="font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">+ New template</span></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1.5fr 0.8fr auto;gap:8px;padding:11px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9A9387;text-transform:uppercase">
+          <span>Template</span><span>Module</span><span>Updated</span><span>Status</span><span></span>
+        </div>
+        <sc-for list="{{ templates }}" as="tp" hint-placeholder-count="7">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1.5fr 0.8fr auto;gap:8px;padding:13px 22px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <div><div style="font-size:13.5px;font-weight:600">{{ tp.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ tp.desc }}</div></div>
+          <span style="{{ tp.modStyle }}">{{ tp.module }}</span>
+          <span style="font-size:12.5px;color:#9A9387">{{ tp.updated }}</span>
+          <span style="{{ tp.statusStyle }}">{{ tp.status }}</span>
+          <div style="display:flex;gap:7px">
+            <span style="font-size:12px;color:var(--accent);font-weight:700;cursor:pointer">Edit</span>
+          </div>
+        </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─── AUDIT LOG ─── -->
+    <sc-if value="{{ isAudit }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:1.2fr 1.5fr 1fr 1.2fr 1.2fr;gap:8px;padding:11px 22px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9A9387;text-transform:uppercase">
+        <span>Time</span><span>Action</span><span>User</span><span>Module</span><span>Change</span>
+      </div>
+      <sc-for list="{{ auditLog }}" as="al" hint-placeholder-count="8">
+      <div style="display:grid;grid-template-columns:1.2fr 1.5fr 1fr 1.2fr 1.2fr;gap:8px;padding:12px 22px;border-bottom:1px solid #F4EFE5;align-items:start">
+        <span style="font-size:11.5px;color:#9A9387;white-space:nowrap">{{ al.time }}</span>
+        <span style="font-size:13px;font-weight:600">{{ al.action }}</span>
+        <span style="font-size:12.5px;color:#6b6258">{{ al.user }}</span>
+        <span style="{{ al.modStyle }}">{{ al.module }}</span>
+        <div><div style="font-size:11.5px;color:#9A9387">{{ al.before }}</div><div style="font-size:11.5px;color:#211F1C;font-weight:600">→ {{ al.after }}</div></div>
+      </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  state = {
+    section:'org',
+    wfModule:'campaign',
+    notifToggles:{ line:true, email:true, approval:true, overdue:false },
+    channelToggles:{ line:true, email:true, slack:false, gchat:false },
+    triggerToggles:{ newTask:true, approval:true, mention:true, due:true, overdue:true, feedback:true, launch:false, kol:true },
+  };
+
+  teamColors = { 'Aran P.':'#B8945A','Ken S.':'#3E5C9A','Boss':'#4E7A4E','Nok W.':'#6b6258','Ploy R.':'#B5577E','Mei T.':'#C2691E' };
+
+  typeColors = { 'Campaign':'#B33A2E','Graphic':'#C2691E','KOL':'#B5577E','Finance':'#4E7A4E','Content':'#3E5C9A','Settings':'#B8945A' };
+
+  navDef = [
+    { group:'General',       items:[{ id:'org', icon:'🏢', label:'Organization' }] },
+    { group:'Structure',     items:[{ id:'brands', icon:'🎨', label:'Brands & Branches' }, { id:'teams', icon:'👥', label:'Teams' }, { id:'users', icon:'👤', label:'Users & Roles' }] },
+    { group:'Rules',         items:[{ id:'perms', icon:'🔐', label:'Permissions' }, { id:'approval', icon:'✅', label:'Approval Matrix' }, { id:'workflow', icon:'🔄', label:'Workflow Status' }] },
+    { group:'Communication', items:[{ id:'notifs', icon:'🔔', label:'Notifications' }, { id:'integrations', icon:'🔌', label:'Integrations' }] },
+    { group:'Resources',     items:[{ id:'templates', icon:'📋', label:'Templates' }, { id:'audit', icon:'📝', label:'Audit Log' }] },
+  ];
+
+  sectionMeta = {
+    org:          { title:'Organization',       desc:'Company details, timezone, currency, and fiscal year settings.' },
+    brands:       { title:'Brands & Branches',  desc:'Configure brands, branch locations, and brand leads.' },
+    teams:        { title:'Teams',              desc:'Define team groups, responsibilities, and default owners.' },
+    users:        { title:'Users & Roles',      desc:'Manage team members, roles, and access scopes.' },
+    perms:        { title:'Permissions',        desc:'Role-based module access matrix.' },
+    approval:     { title:'Approval Matrix',    desc:'Configure approval rules by module, budget, and campaign type.' },
+    workflow:     { title:'Workflow Status',    desc:'Manage status options for each module.' },
+    notifs:       { title:'Notifications',      desc:'Configure channels and triggers for alerts.' },
+    integrations: { title:'Integrations',       desc:'Connect external services and APIs.' },
+    templates:    { title:'Templates',          desc:'Manage brief and report templates for each module.' },
+    audit:        { title:'Audit Log',          desc:'Track all configuration changes.' },
+  };
+
+  brandsData = [
+    { key:'teppen',   name:'Teppen Thailand',  color:'#B33A2E', lead:'Ken S.',   branches:3, campaigns:8,  budget:'฿1.8M', branchList:['Central World','EmQuartier','Siam Paragon'] },
+    { key:'omakase',  name:'Omakase Don',       color:'#3E5C9A', lead:'Aran P.',  branches:4, campaigns:6,  budget:'฿1.2M', branchList:['IconSiam','Centralplaza Westgate','The Mall','Terminal 21'] },
+    { key:'mainichi', name:'Mainichi',           color:'#4E7A4E', lead:'Nok W.',  branches:2, campaigns:5,  budget:'฿0.8M', branchList:['Emporium','Central Rama 9'] },
+    { key:'touka',    name:'Touka',              color:'#C68A1E', lead:'Ploy R.', branches:2, campaigns:4,  budget:'฿0.7M', branchList:['Park Silom','Gaysorn'] },
+  ];
+
+  teamsData = [
+    { icon:'📊', name:'CRM Team',            lead:'Nok W.',  scope:'LINE OA · Coupon · CRM campaigns · Revisit tracking',     members:['Nok W.','Ken S.'] },
+    { icon:'🎯', name:'Marketing / Campaign', lead:'Ken S.',  scope:'Campaign brief · Planner · Store activation · Online ads', members:['Ken S.','Aran P.','Mei T.'] },
+    { icon:'🎨', name:'Creative Team',        lead:'Boss',    scope:'Graphic request · Artwork · Video · Final delivery',       members:['Boss'] },
+    { icon:'🌟', name:'KOL / Creator Team',   lead:'Ploy R.', scope:'KOL selection · Brief · Draft review · Result tracking',   members:['Ploy R.','Nok W.'] },
+    { icon:'฿',  name:'Finance / Budget',     lead:'Aran P.', scope:'Budget approval · Expense request · Payment voucher',      members:['Aran P.','Mei T.'] },
+    { icon:'✅', name:'Management / Approval',lead:'Aran P.', scope:'CMO approval · Final campaign review · CFO sign-off',      members:['Aran P.'] },
+  ];
+
+  usersData = [
+    { name:'Khun Aran', email:'aran@teppenthailand.co.th', role:'CMO',             access:'Admin',  brandAccess:'All brands',  status:'Active',  color:'#B8945A' },
+    { name:'Ken S.',    email:'ken@teppenthailand.co.th',  role:'Campaign Lead',   access:'Editor', brandAccess:'Teppen · OMD',status:'Active',  color:'#3E5C9A' },
+    { name:'Boss',      email:'boss@teppenthailand.co.th', role:'Senior Designer', access:'Editor', brandAccess:'All brands',  status:'Active',  color:'#4E7A4E' },
+    { name:'Nok W.',    email:'nok@teppenthailand.co.th',  role:'Campaign Mgr',    access:'Editor', brandAccess:'Mainichi',   status:'Active',  color:'#6b6258' },
+    { name:'Ploy R.',   email:'ploy@teppenthailand.co.th', role:'KOL Specialist',  access:'Editor', brandAccess:'Touka',      status:'Active',  color:'#B5577E' },
+    { name:'Mei T.',    email:'mei@teppenthailand.co.th',  role:'Performance',     access:'Viewer', brandAccess:'All brands',  status:'Active',  color:'#C2691E' },
+  ];
+
+  badge(txt,fg,bg){ return `font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:${bg};color:${fg};white-space:nowrap;display:inline-block`; }
+  chip(active){ return active ? 'font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap' : 'font-size:12px;font-weight:500;padding:6px 14px;border-radius:999px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff;white-space:nowrap'; }
+  toggle(on){ return on?'#4E7A4E':'#D0C8BC'; }
+  knob(on){ return on?'right':'left'; }
+  approverChip(name,last){ return { name, bg:'#EEF1F8', fg:'#3E5C9A', hasArrow:!last }; }
+
+  renderVals() {
+    const { section, wfModule } = this.state;
+    const ct = this.state.channelToggles, tt = this.state.triggerToggles;
+
+    // Sidebar nav
+    const navGroups = this.navDef.map(ng=>({
+      group:ng.group,
+      items:ng.items.map(ni=>({
+        label:ni.label, icon:ni.icon,
+        onClick:()=>this.setState({section:ni.id}),
+        style:ni.id===section
+          ? 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:#F5EFE4;color:#211F1C;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:2px'
+          : 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;color:#6b6258;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px',
+      })),
+    }));
+
+    const meta = this.sectionMeta[section]||{ title:section, desc:'' };
+    const activeTitle = meta.title, activeDesc = meta.desc;
+
+    // Section flags
+    const isOrg=section==='org', isBrands=section==='brands', isTeams=section==='teams',
+          isUsers=section==='users', isPermissions=section==='perms', isApproval=section==='approval',
+          isWorkflow=section==='workflow', isNotifs=section==='notifs', isIntegrations=section==='integrations',
+          isTemplates=section==='templates', isAudit=section==='audit';
+
+    // Org fields
+    const orgFields = [
+      { label:'Company name',   value:'TEPPEN Group Co., Ltd.' },
+      { label:'Timezone',       value:'Asia/Bangkok (UTC+7)' },
+      { label:'Currency',       value:'Thai Baht (฿ THB)' },
+      { label:'VAT rate',       value:'7% — included in total' },
+      { label:'Fiscal year',    value:'January — December 2026' },
+      { label:'Working days',   value:'Monday — Friday' },
+      { label:'Working hours',  value:'10:00 — 19:00' },
+      { label:'Date format',    value:'DD/MM/YYYY' },
+    ];
+
+    // Brands
+    const brandList = this.brandsData;
+
+    // Teams
+    const teamList = this.teamsData;
+
+    // Users
+    const userList = this.usersData.map(u=>({
+      ...u,
+      init:(u.name.slice(0,1)+(u.name.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+      accessStyle:u.access==='Admin'?this.badge(u.access,'#B8945A','#FBF6ED'):u.access==='Editor'?this.badge(u.access,'#3E5C9A','#EEF1F8'):this.badge(u.access,'#9A9387','#F2F0EB'),
+      statusStyle:this.badge(u.status,'#4E7A4E','#EEF4EE'),
+    }));
+
+    // Permissions matrix
+    const permModules = ['Campaign','Graphic','KOL','Finance','Content','CRM','Settings'];
+    const permRoles = [
+      { role:'Admin / CMO',    desc:'Full access',        perms:[{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'}] },
+      { role:'Brand Lead',     desc:'Review & Approve',   perms:[{l:'Approve',c:'#4E7A4E',b:'#EEF4EE'},{l:'Approve',c:'#4E7A4E',b:'#EEF4EE'},{l:'Approve',c:'#4E7A4E',b:'#EEF4EE'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'Approve',c:'#4E7A4E',b:'#EEF4EE'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'}] },
+      { role:'Planner',        desc:'Create & Edit',      perms:[{l:'Edit',c:'#3E5C9A',b:'#EEF1F8'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'Edit',c:'#3E5C9A',b:'#EEF1F8'},{l:'Edit',c:'#3E5C9A',b:'#EEF1F8'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'}] },
+      { role:'Designer',       desc:'Graphic module',     perms:[{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'Edit',c:'#3E5C9A',b:'#EEF1F8'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'}] },
+      { role:'KOL Specialist', desc:'KOL module',         perms:[{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'Edit',c:'#3E5C9A',b:'#EEF1F8'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'}] },
+      { role:'Finance',        desc:'Budget & payments',  perms:[{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'Admin',c:'#B8945A',b:'#FBF6ED'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'}] },
+      { role:'Viewer',         desc:'Read only',          perms:[{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'View',c:'#9A9387',b:'#F2F0EB'},{l:'—',c:'#C0B8AD',b:'#F2F0EB'}] },
+    ].map(r=>({ ...r, perms:r.perms.map(p=>({ label:p.l, style:`font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:${p.b};color:${p.c};white-space:nowrap` })) }));
+
+    // Budget thresholds
+    const budgetThresholds = [
+      { range:'฿0 – 10,000',      approver:'Brand Lead only',      chain:[{name:'Brand Lead',bg:'#FBF6ED',fg:'#B8945A',hasArrow:false}] },
+      { range:'฿10,001 – 50,000', approver:'CMO approval',         chain:[{name:'Brand Lead',bg:'#FBF6ED',fg:'#B8945A',hasArrow:true},{name:'CMO',bg:'#EEF1F8',fg:'#3E5C9A',hasArrow:false}] },
+      { range:'฿50,001 – 200,000',approver:'CMO + CFO',            chain:[{name:'Brand Lead',bg:'#FBF6ED',fg:'#B8945A',hasArrow:true},{name:'CMO',bg:'#EEF1F8',fg:'#3E5C9A',hasArrow:true},{name:'CFO',bg:'#EEF4EE',fg:'#4E7A4E',hasArrow:false}] },
+      { range:'฿200,001+',        approver:'CMO + CFO + CEO',      chain:[{name:'CMO',bg:'#EEF1F8',fg:'#3E5C9A',hasArrow:true},{name:'CFO',bg:'#EEF4EE',fg:'#4E7A4E',hasArrow:true},{name:'CEO',bg:'#FBF1E9',fg:'#C2691E',hasArrow:false}] },
+    ];
+
+    const mkChain = (names) => names.map((n,i)=>({name:n,bg:'#EEF1F8',fg:'#3E5C9A',hasArrow:i<names.length-1}));
+    const approvalRules = [
+      { icon:'🎯', module:'Campaign',       sla:3, escalate:4, remind:2, backup:'Aran P.', chain:mkChain(['Brand Lead','CMO']) },
+      { icon:'🎨', module:'Graphic Request',sla:2, escalate:4, remind:1, backup:'Ken S.',  chain:mkChain(['Requester','Brand Lead','CMO']) },
+      { icon:'🌟', module:'KOL / Creator',  sla:3, escalate:5, remind:2, backup:'Aran P.', chain:mkChain(['Brand Lead','CMO','Finance']) },
+      { icon:'✍️', module:'Content',        sla:2, escalate:3, remind:1, backup:'Ken S.',  chain:mkChain(['Brand Lead','CMO']) },
+      { icon:'฿',  module:'Finance / Budget',sla:3,escalate:4, remind:2, backup:'Aran P.', chain:mkChain(['Brand Lead','CMO','CFO']) },
+    ];
+
+    // Workflow status
+    const wfModuleTabs = ['campaign','graphic','kol','task'].map(m=>({
+      label:m==='campaign'?'Campaign':m==='graphic'?'Graphic':m==='kol'?'KOL':'Task',
+      onClick:()=>this.setState({wfModule:m}), style:this.chip(wfModule===m),
+    }));
+
+    const statusSets = {
+      campaign:[ {order:1,name:'Draft',color:'#9A9387',type:'Active'},{order:2,name:'Planning',color:'#3E5C9A',type:'Active'},{order:3,name:'Waiting Approval',color:'#C68A1E',type:'Waiting'},{order:4,name:'Approved',color:'#4E7A4E',type:'Active'},{order:5,name:'In Execution',color:'#3E5C9A',type:'Active'},{order:6,name:'Completed',color:'#4E7A4E',type:'Done'},{order:7,name:'On Hold',color:'#C68A1E',type:'Waiting'},{order:8,name:'Cancelled',color:'#B33A2E',type:'Cancelled'} ],
+      graphic:[ {order:1,name:'New Request',color:'#9A9387',type:'Active'},{order:2,name:'In Progress',color:'#3E5C9A',type:'Active'},{order:3,name:'Waiting Feedback',color:'#C68A1E',type:'Waiting'},{order:4,name:'Revision',color:'#C2691E',type:'Active'},{order:5,name:'Waiting Approval',color:'#C68A1E',type:'Waiting'},{order:6,name:'Approved',color:'#4E7A4E',type:'Done'},{order:7,name:'Delivered',color:'#4E7A4E',type:'Done'},{order:8,name:'Cancelled',color:'#B33A2E',type:'Cancelled'} ],
+      kol:[ {order:1,name:'Prospect',color:'#9A9387',type:'Active'},{order:2,name:'Negotiating',color:'#C68A1E',type:'Active'},{order:3,name:'Contract Signed',color:'#4E7A4E',type:'Active'},{order:4,name:'Brief Sent',color:'#3E5C9A',type:'Active'},{order:5,name:'Content Creating',color:'#B5577E',type:'Active'},{order:6,name:'Draft Submitted',color:'#C68A1E',type:'Waiting'},{order:7,name:'Approved to Post',color:'#4E7A4E',type:'Active'},{order:8,name:'Completed',color:'#4E7A4E',type:'Done'} ],
+      task:[ {order:1,name:'Todo',color:'#9A9387',type:'Active'},{order:2,name:'In Progress',color:'#3E5C9A',type:'Active'},{order:3,name:'Waiting',color:'#C68A1E',type:'Waiting'},{order:4,name:'Stuck',color:'#B33A2E',type:'Waiting'},{order:5,name:'Need Approval',color:'#4E7A4E',type:'Waiting'},{order:6,name:'Revision',color:'#C2691E',type:'Active'},{order:7,name:'Done',color:'#4E7A4E',type:'Done'},{order:8,name:'Cancelled',color:'#B33A2E',type:'Cancelled'} ],
+    };
+    const wfStatuses = (statusSets[wfModule]||[]).map(s=>({...s, typeStyle:s.type==='Done'?this.badge(s.type,'#4E7A4E','#EEF4EE'):s.type==='Waiting'?this.badge(s.type,'#C68A1E','#FBF8EE'):s.type==='Cancelled'?this.badge(s.type,'#B33A2E','#FFF5F4'):this.badge(s.type,'#3E5C9A','#EEF1F8') }));
+
+    // Notifications
+    const notifChannels = [
+      { icon:'💬', label:'LINE Notify',   desc:'Push to LINE group',       key:'line',  toggle:()=>this.setState({channelToggles:{...ct,line:!ct.line}}),   bg:this.toggle(ct.line),   knob:this.knob(ct.line) },
+      { icon:'📧', label:'Email',         desc:'Daily digest + alerts',    key:'email', toggle:()=>this.setState({channelToggles:{...ct,email:!ct.email}}), bg:this.toggle(ct.email),  knob:this.knob(ct.email) },
+      { icon:'💼', label:'Slack',         desc:'Team channel alerts',      key:'slack', toggle:()=>this.setState({channelToggles:{...ct,slack:!ct.slack}}), bg:this.toggle(ct.slack),  knob:this.knob(ct.slack) },
+      { icon:'💬', label:'Google Chat',   desc:'Future state',             key:'gchat', toggle:()=>this.setState({channelToggles:{...ct,gchat:!ct.gchat}}), bg:this.toggle(ct.gchat),  knob:this.knob(ct.gchat) },
+    ];
+    const notifTriggers = [
+      { trigger:'New task assigned',      desc:'Notify when task is created and assigned',   channels:['LINE','Email'], timing:'Immediately', key:'newTask', toggle:()=>this.setState({triggerToggles:{...tt,newTask:!tt.newTask}}), bg:this.toggle(tt.newTask), knob:this.knob(tt.newTask) },
+      { trigger:'Approval request',       desc:'Approval waiting for your action',           channels:['LINE','Email'], timing:'Immediately', key:'approval',toggle:()=>this.setState({triggerToggles:{...tt,approval:!tt.approval}}),bg:this.toggle(tt.approval),knob:this.knob(tt.approval) },
+      { trigger:'Comment mention',        desc:'Someone mentioned you in a comment',         channels:['LINE'],        timing:'Immediately', key:'mention', toggle:()=>this.setState({triggerToggles:{...tt,mention:!tt.mention}}), bg:this.toggle(tt.mention), knob:this.knob(tt.mention) },
+      { trigger:'Task due soon',          desc:'24h before deadline',                        channels:['Email'],       timing:'24h before',  key:'due',     toggle:()=>this.setState({triggerToggles:{...tt,due:!tt.due}}),         bg:this.toggle(tt.due),     knob:this.knob(tt.due) },
+      { trigger:'Task overdue',           desc:'When due date has passed',                   channels:['LINE','Email'], timing:'08:00 daily', key:'overdue', toggle:()=>this.setState({triggerToggles:{...tt,overdue:!tt.overdue}}), bg:this.toggle(tt.overdue), knob:this.knob(tt.overdue) },
+      { trigger:'Graphic waiting feedback',desc:'Asset waiting review >2 days',             channels:['LINE'],        timing:'Daily',       key:'feedback',toggle:()=>this.setState({triggerToggles:{...tt,feedback:!tt.feedback}}),bg:this.toggle(tt.feedback),knob:this.knob(tt.feedback) },
+      { trigger:'Campaign launching soon',desc:'48h before campaign live date',             channels:['Email'],       timing:'48h before',  key:'launch',  toggle:()=>this.setState({triggerToggles:{...tt,launch:!tt.launch}}),   bg:this.toggle(tt.launch),  knob:this.knob(tt.launch) },
+      { trigger:'KOL missing post link',  desc:'KOL has posted but no link added',          channels:['LINE'],        timing:'Daily',       key:'kol',     toggle:()=>this.setState({triggerToggles:{...tt,kol:!tt.kol}}),         bg:this.toggle(tt.kol),     knob:this.knob(tt.kol) },
+    ];
+
+    // Integrations
+    const noop = ()=>{};
+    const mkBtn = (label,primary)=>({ label, onClick:noop, style:primary?'font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer':'font-size:12px;font-weight:500;padding:6px 13px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff' });
+    const integrations = [
+      { icon:'📁', iconBg:'#EEF1F8', name:'Google Drive',     category:'Storage',      desc:'Link brief, asset, and result files directly from Drive.', isConnected:true,  lastSync:'2 hours ago', statusLabel:'Connected', statusStyle:this.badge('Connected','#4E7A4E','#EEF4EE'), actions:[mkBtn('Reconnect',false),mkBtn('Disconnect',false)] },
+      { icon:'📊', iconBg:'#EEF4EE', name:'Google Sheets',    category:'Data',         desc:'Sync campaign result data and budget tracking.',            isConnected:true,  lastSync:'1 day ago',   statusLabel:'Connected', statusStyle:this.badge('Connected','#4E7A4E','#EEF4EE'), actions:[mkBtn('Sync now',true),mkBtn('Disconnect',false)] },
+      { icon:'💼', iconBg:'#EEF1F8', name:'Slack',            category:'Messaging',    desc:'Send task and approval alerts to your team channels.',      isConnected:false, lastSync:'—',           statusLabel:'Not connected', statusStyle:this.badge('Not connected','#9A9387','#F2F0EB'), actions:[mkBtn('Connect',true)] },
+      { icon:'💬', iconBg:'#EEF4EE', name:'LINE OA',          category:'CRM / OA',     desc:'Connected to LINE Official Account for CRM campaigns.',    isConnected:true,  lastSync:'30 min ago',  statusLabel:'Connected', statusStyle:this.badge('Connected','#4E7A4E','#EEF4EE'), actions:[mkBtn('Test',false),mkBtn('Disconnect',false)] },
+      { icon:'⚙️', iconBg:'#FBF6ED', name:'Make.com',         category:'Automation',   desc:'Trigger workflows from campaign and approval events.',      isConnected:false, lastSync:'—',           statusLabel:'Not connected', statusStyle:this.badge('Not connected','#9A9387','#F2F0EB'), actions:[mkBtn('Connect',true)] },
+      { icon:'📘', iconBg:'#EEF1F8', name:'Meta / Instagram', category:'Publishing',   desc:'Future: auto-publish posts via Meta API.',                  isConnected:false, lastSync:'—',           statusLabel:'Coming soon', statusStyle:this.badge('Coming soon','#C68A1E','#FBF8EE'), actions:[mkBtn('Learn more',false)] },
+    ];
+
+    // Templates
+    const typeStyle = (t) => { const c=this.typeColors[t]||'#6b6258'; return this.badge(t,c,c+'18'); };
+    const templates = [
+      { name:'Campaign Brief',        desc:'Standard campaign planning form',    module:'Campaign', updated:'Jun 28, 2026', status:'Active' },
+      { name:'Graphic Request',       desc:'Full brief + asset spec form',       module:'Graphic',  updated:'Jun 25, 2026', status:'Active' },
+      { name:'KOL Brief',             desc:'Creator brief with deliverables',    module:'KOL',      updated:'Jun 20, 2026', status:'Active' },
+      { name:'Content Caption',       desc:'Caption + copy template by platform',module:'Content',  updated:'Jun 15, 2026', status:'Active' },
+      { name:'CRM Campaign',          desc:'LINE coupon and revisit template',   module:'CRM',      updated:'Jun 10, 2026', status:'Active' },
+      { name:'Result Report',         desc:'Monthly result summary template',    module:'Campaign', updated:'May 30, 2026', status:'Active' },
+      { name:'Approval Route',        desc:'Custom approval chain template',     module:'Settings', updated:'May 20, 2026', status:'Draft' },
+    ].map(t=>({ ...t, modStyle:typeStyle(t.module), statusStyle:t.status==='Active'?this.badge(t.status,'#4E7A4E','#EEF4EE'):this.badge(t.status,'#C68A1E','#FBF8EE') }));
+
+    // Audit log
+    const auditLog = [
+      { time:'Jul 2  14:32', action:'Permission updated',    user:'Aran P.',  module:'Permissions', before:'Viewer → Editor',      after:'Mei T. now Editor' },
+      { time:'Jul 2  11:15', action:'Approval rule edited',  user:'Aran P.',  module:'Approval',    before:'SLA 5 days',           after:'SLA 3 days' },
+      { time:'Jul 1  16:40', action:'Brand added',           user:'Aran P.',  module:'Brands',      before:'3 brands',             after:'4 brands (Touka)' },
+      { time:'Jul 1  10:22', action:'User invited',          user:'Ken S.',   module:'Users',       before:'5 members',            after:'6 members (Mei T.)' },
+      { time:'Jun 30 15:10', action:'Status renamed',        user:'Aran P.',  module:'Workflow',    before:'"Blocked" status',     after:'"Stuck"' },
+      { time:'Jun 28 09:55', action:'Notification enabled',  user:'Ken S.',   module:'Notifications',before:'OFF',                after:'KOL missing link ON' },
+      { time:'Jun 25 14:00', action:'Google Drive connected',user:'Aran P.',  module:'Integrations',before:'Not connected',       after:'Connected' },
+      { time:'Jun 20 11:30', action:'Template created',      user:'Ploy R.',  module:'Templates',   before:'—',                   after:'KOL Brief template' },
+    ].map(al=>({ ...al, modStyle:typeStyle(al.module) }));
+
+    return {
+      navGroups, activeTitle, activeDesc,
+      isOrg, isBrands, isTeams, isUsers, isPermissions, isApproval, isWorkflow, isNotifs, isIntegrations, isTemplates, isAudit,
+      orgFields, brandList, teamList, userList,
+      permModules, permRoles,
+      budgetThresholds, approvalRules,
+      wfModuleTabs, wfStatuses,
+      notifChannels, notifTriggers,
+      integrations,
+      templates,
+      auditLog,
+    };
+  }
+}
+</script>
+</body>
+</html>

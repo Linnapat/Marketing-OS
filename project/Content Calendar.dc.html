@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="./image-slot.js"></script>
+<template id="__bundler_thumbnail" data-bg-color="#F7F4EE">
+  <svg viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+    <rect width="800" height="500" fill="#F7F4EE"/>
+    <rect x="40" y="36" width="380" height="40" rx="10" fill="#211F1C"/>
+    <rect x="40" y="96" width="160" height="28" rx="8" fill="#E5DECF"/>
+    <rect x="210" y="96" width="160" height="28" rx="8" fill="#E5DECF"/>
+    <rect x="40" y="144" width="720" height="100" rx="16" fill="#fff" stroke="#ECE6DA" stroke-width="1.5"/>
+    <rect x="40" y="264" width="720" height="200" rx="16" fill="#fff" stroke="#ECE6DA" stroke-width="1.5"/>
+    <rect x="60" y="284" width="680" height="12" rx="4" fill="#F0EBE0"/>
+    <rect x="60" y="308" width="680" height="12" rx="4" fill="#F0EBE0"/>
+    <rect x="60" y="332" width="500" height="12" rx="4" fill="#F0EBE0"/>
+    <rect x="60" y="356" width="680" height="12" rx="4" fill="#F0EBE0"/>
+    <circle cx="720" cy="152" r="20" fill="#B8945A"/>
+    <text x="720" cy="158" y="158" font-size="18" fill="#fff" text-anchor="middle" font-family="sans-serif">📅</text>
+  </svg>
+</template>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  body { font-family: 'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #211F1C; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #d9d1c2; border-radius: 6px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid #B8945A; outline-offset: -1px; }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#F7F4EE">
+
+  <!-- Detail Drawer Overlay -->
+  <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:500;display:flex" onClick="{{ closeDrawer }}">
+    <div style="position:absolute;inset:0;background:rgba(33,31,28,.45);backdrop-filter:blur(2px)"></div>
+    <div style="position:absolute;top:0;right:0;bottom:0;width:520px;max-width:100vw;background:#fff;box-shadow:-8px 0 32px rgba(33,31,28,.14);display:flex;flex-direction:column;overflow:hidden" onClick="{{ stopProp }}">
+      <!-- Drawer header -->
+      <div style="padding:16px 20px;border-bottom:1px solid #ECE6DA;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-shrink:0;background:#FBF9F4">
+        <div style="min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px">
+            <span style="{{ drawerPlatIconStyle }}">{{ drawerPlatIcon }}</span>
+            <div style="font-size:15px;font-weight:800;line-height:1.2">{{ drawerTitle }}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:#6b6258"><span style="width:7px;height:7px;border-radius:50%;background:{{ drawerBrandColor }}"></span>{{ drawerBrandName }}</span>
+            <span style="font-size:12px;color:#9A9387">·</span>
+            <span style="font-size:12px;color:#6b6258">{{ drawerCampaign }}</span>
+            <span style="font-size:12px;color:#9A9387">·</span>
+            <span style="font-size:12px;color:#6b6258">{{ drawerDateFull }}</span>
+          </div>
+        </div>
+        <span onClick="{{ closeDrawer }}" style="font-size:18px;color:#9A9387;cursor:pointer;flex-shrink:0;padding:4px;line-height:1">✕</span>
+      </div>
+      <!-- Drawer tabs -->
+      <div style="display:flex;gap:0;border-bottom:1px solid #ECE6DA;flex-shrink:0;overflow-x:auto">
+        <sc-for list="{{ drawerTabs }}" as="dt" hint-placeholder-count="4"><span onClick="{{ dt.onClick }}" style="{{ dt.style }}">{{ dt.label }}</span></sc-for>
+      </div>
+      <!-- Drawer body -->
+      <div style="flex:1;overflow-y:auto;padding:18px 20px">
+
+        <!-- OVERVIEW tab -->
+        <sc-if value="{{ isDrawerOverview }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="background:#F7F4EE;border-radius:14px;overflow:hidden">
+            <sc-if value="{{ drawerHasThumb }}" hint-placeholder-val="{{ false }}">
+            <img src="{{ drawerThumbUrl }}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:14px" alt="preview">
+            </sc-if>
+            <sc-if value="{{ drawerNoThumb }}" hint-placeholder-val="{{ false }}">
+            <div style="width:100%;height:160px;background:#F0EBE0;border-radius:14px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+              <div style="font-size:28px">🖼</div>
+              <div style="font-size:13px;color:#9A9387;font-weight:600">{{ drawerAssetStatus }}</div>
+            </div>
+            </sc-if>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="background:#F7F4EE;border-radius:12px;padding:12px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:4px">Status</div><span style="{{ drawerStatusStyle }}">{{ drawerStatus }}</span></div>
+            <div style="background:#F7F4EE;border-radius:12px;padding:12px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:4px">Owner</div><div style="font-size:13.5px;font-weight:600">{{ drawerOwner }}</div></div>
+            <div style="background:#F7F4EE;border-radius:12px;padding:12px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:4px">Asset</div><span style="{{ drawerAssetBadgeStyle }}">{{ drawerAssetStatus }}</span></div>
+            <div style="background:#F7F4EE;border-radius:12px;padding:12px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:4px">Caption</div><span style="{{ drawerCaptionBadgeStyle }}">{{ drawerCaptionStatus }}</span></div>
+          </div>
+          <sc-if value="{{ drawerHasWarnings }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#FBF3F1;border:1px solid #E8C5BC;border-radius:12px;padding:12px 14px">
+            <div style="font-size:11.5px;font-weight:700;color:#B33A2E;margin-bottom:8px">Action needed</div>
+            <sc-for list="{{ drawerWarnings }}" as="w" hint-placeholder-count="2"><div style="font-size:12.5px;color:#B33A2E;font-weight:600;margin-bottom:5px;display:flex;align-items:center;gap:6px"><span>⚠</span><span>{{ w }}</span></div></sc-for>
+          </div>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <!-- CAPTION tab -->
+        <sc-if value="{{ isDrawerCaption }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <label style="font-size:11.5px;font-weight:700;color:#6b6258">Caption</label>
+              <span style="{{ drawerCaptionBadgeStyle }}">{{ drawerCaptionStatus }}</span>
+            </div>
+            <textarea rows="6" placeholder="Write caption here…" onChange="{{ onDrawerCaption }}" style="width:100%;font-size:13.5px;padding:11px 13px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;font-family:inherit;resize:vertical;line-height:1.5">{{ drawerCaption }}</textarea>
+            <div style="font-size:11px;color:#9A9387;margin-top:4px;text-align:right">{{ drawerCaptionLen }} chars</div>
+          </div>
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Hashtags</label>
+            <input type="text" value="{{ drawerHashtags }}" placeholder="#wagyu #bangkok #teppen" onChange="{{ onDrawerHashtags }}" style="width:100%;font-size:13.5px;padding:10px 13px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;font-family:inherit">
+          </div>
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Call to Action</label>
+            <input type="text" value="{{ drawerCta }}" placeholder="e.g. Reserve now via link in bio" onChange="{{ onDrawerCta }}" style="width:100%;font-size:13.5px;padding:10px 13px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;font-family:inherit">
+          </div>
+          <div style="display:flex;gap:8px">
+            <span onClick="{{ saveCaption }}" style="flex:1;text-align:center;font-size:13.5px;font-weight:700;padding:11px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">Save Caption</span>
+            <span style="font-size:13.5px;font-weight:600;padding:11px 16px;border-radius:10px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer">Mark Ready</span>
+          </div>
+          <div style="font-size:11.5px;color:#9A9387">{{ drawerCaptionMeta }}</div>
+        </div>
+        </sc-if>
+
+        <!-- APPROVAL tab -->
+        <sc-if value="{{ isDrawerApproval }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="background:#F7F4EE;border-radius:14px;padding:16px">
+            <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9A9387;margin-bottom:10px">Approval Status</div>
+            <span style="{{ drawerApprovalBadgeStyle }}">{{ drawerApprovalStatus }}</span>
+            <div style="font-size:12.5px;color:#9A9387;margin-top:8px">{{ drawerFeedbackCount }} feedback round(s)</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <span style="flex:1;text-align:center;font-size:13px;font-weight:700;padding:10px;border-radius:10px;background:#4E7A4E;color:#fff;cursor:pointer">✓ Approve</span>
+            <span style="flex:1;text-align:center;font-size:13px;font-weight:700;padding:10px;border-radius:10px;border:1.5px solid #E5DECF;color:#C2691E;cursor:pointer">↩ Request Revision</span>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- PUBLISH tab -->
+        <sc-if value="{{ isDrawerPublish }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="background:#EEF3FF;border:1px solid #C5D4F8;border-radius:12px;padding:12px 14px">
+            <div style="font-size:12px;font-weight:700;color:#1E3A8A;margin-bottom:4px">Future Publish Integration</div>
+            <div style="font-size:12px;color:#3B6BF5">Meta connection not connected · Ready for future auto-publish once integrated.</div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:8px">Select channels</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ publishChannels }}" as="ch" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border:1.5px solid {{ ch.borderColor }};border-radius:10px;background:{{ ch.bg }}">
+                  <div style="display:flex;align-items:center;gap:9px"><span style="font-size:15px">{{ ch.icon }}</span><div><div style="font-size:13px;font-weight:600">{{ ch.label }}</div><div style="font-size:11px;color:#9A9387">{{ ch.sub }}</div></div></div>
+                  <span style="{{ ch.statusStyle }}">{{ ch.connStatus }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:5px">Schedule Date</label><input type="date" value="{{ drawerSchedDate }}" onChange="{{ onSchedDate }}" style="width:100%;font-size:13px;padding:9px 12px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;font-family:inherit"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:5px">Schedule Time</label><input type="time" value="{{ drawerSchedTime }}" onChange="{{ onSchedTime }}" style="width:100%;font-size:13px;padding:9px 12px;border:1.5px solid #E5DECF;border-radius:10px;background:#FAFAF7;font-family:inherit"></div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:8px">Preflight checklist</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ preflightItems }}" as="pf" hint-placeholder-count="5">
+                <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:9px;background:#F7F4EE">
+                  <span style="font-size:13px;flex-shrink:0">{{ pf.icon }}</span>
+                  <span style="font-size:12.5px;font-weight:500;color:{{ pf.color }}">{{ pf.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <span style="text-align:center;font-size:13.5px;font-weight:700;padding:12px;border-radius:11px;background:#E8E2D6;color:#9A9387;cursor:not-allowed">Auto-publish available after Meta connection</span>
+          <span style="text-align:center;font-size:13.5px;font-weight:700;padding:12px;border-radius:11px;background:#211F1C;color:#fff;cursor:pointer">Save Schedule · Manual Post</span>
+        </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <div style="padding:22px 26px 40px">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+      <div>
+        <div style="font-size:21px;font-weight:800;letter-spacing:-.02em">Content Calendar</div>
+        <div style="font-size:12.5px;color:#9A9387;margin-top:3px">{{ headerSub }}</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#fff;background:#211F1C;border-radius:10px;padding:9px 16px;cursor:pointer">+ New Post</span>
+    </div>
+
+    <!-- Brand Overview Cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:22px">
+      <sc-for list="{{ brandCards }}" as="bc" hint-placeholder-count="4">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px 18px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:{{ bc.color }}"></span>
+            <div style="font-size:14px;font-weight:800">{{ bc.name }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div style="font-size:11px;color:#9A9387;font-weight:600">Posts this month</div><div style="font-size:11px;font-weight:700;text-align:right">{{ bc.total }}</div>
+            <div style="font-size:11px;color:#3E5C9A;font-weight:600">Scheduled</div><div style="font-size:11px;font-weight:700;color:#3E5C9A;text-align:right">{{ bc.scheduled }}</div>
+            <div style="font-size:11px;color:#C68A1E;font-weight:600">Waiting approval</div><div style="font-size:11px;font-weight:700;color:#C68A1E;text-align:right">{{ bc.waitApproval }}</div>
+            <div style="font-size:11px;color:#B33A2E;font-weight:600">Missing asset</div><div style="font-size:11px;font-weight:700;color:#B33A2E;text-align:right">{{ bc.missingAsset }}</div>
+          </div>
+          <sc-if value="{{ bc.hasFailed }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:8px;font-size:11px;font-weight:700;color:#B33A2E;background:#FBF3F1;border-radius:7px;padding:4px 8px">⚠ {{ bc.failed }} failed</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- Module tabs -->
+    <div style="display:flex;gap:3px;background:#EFEAE0;border-radius:13px;padding:4px;margin-bottom:22px;overflow-x:auto;width:fit-content">
+      <span onClick="{{ goCalendar }}" style="{{ tabStyle_calendar }}">📅 Calendar</span>
+      <span onClick="{{ goList }}" style="{{ tabStyle_list }}">📋 List</span>
+      <span onClick="{{ goQueue }}" style="{{ tabStyle_queue }}">🚀 Publish Queue</span>
+      <span onClick="{{ goGraphic }}" style="{{ tabStyle_graphic }}">🎨 Graphic Board</span>
+      <span onClick="{{ goSocial }}" style="{{ tabStyle_social }}">🔗 Social Connections</span>
+    </div>
+
+    <!-- ══ CALENDAR ══ -->
+    <sc-if value="{{ showCalendar }}" hint-placeholder-val="{{ true }}">
+    <div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span onClick="{{ calPrev }}" style="{{ navArrowStyle }}">‹</span>
+          <div style="font-size:17px;font-weight:700;min-width:150px;text-align:center">{{ calLabel }}</div>
+          <span onClick="{{ calNext }}" style="{{ navArrowStyle }}">›</span>
+          <span onClick="{{ calToday }}" style="{{ todayBtnStyle }}">Today</span>
+        </div>
+        <div style="display:flex;gap:6px;background:#EFEAE0;border-radius:11px;padding:4px">
+          <span onClick="{{ setMonthView }}" style="{{ monthBtnStyle }}">Month</span>
+          <span onClick="{{ setWeekView }}" style="{{ weekBtnStyle }}">Week</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:18px">
+        <span style="font-size:12px;font-weight:700;color:#9A9387;letter-spacing:.05em">BRAND</span>
+        <sc-for list="{{ calBrandFilters }}" as="f" hint-placeholder-count="5"><span onClick="{{ f.onClick }}" style="{{ f.style }}"><span style="{{ f.dot }}"></span>{{ f.label }}</span></sc-for>
+      </div>
+      <sc-if value="{{ isMonthView }}" hint-placeholder-val="{{ true }}">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);background:#FBF9F4;border-bottom:1px solid #ECE6DA">
+          <sc-for list="{{ weekdayLabels }}" as="d" hint-placeholder-count="7"><div style="padding:11px 8px;font-size:11px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase;text-align:center">{{ d }}</div></sc-for>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr)">
+          <sc-for list="{{ calCells }}" as="cell" hint-placeholder-count="35">
+            <div style="{{ cell.style }}">
+              <div style="{{ cell.numStyle }}">{{ cell.day }}</div>
+              <div style="display:flex;flex-direction:column;gap:3px;margin-top:4px">
+                <sc-for list="{{ cell.items }}" as="it" hint-placeholder-count="0">
+                  <div onClick="{{ it.onOpen }}" style="font-size:10.5px;font-weight:600;color:#fff;background:{{ it.color }};border-radius:5px;padding:2px 5px;display:flex;align-items:center;gap:3px;overflow:hidden;cursor:pointer">
+                    <span style="font-size:9px;background:rgba(255,255,255,.25);border-radius:3px;padding:0 2px;flex-shrink:0;font-weight:800">{{ it.platIcon }}</span>
+                    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.short }}</span>
+                    <sc-if value="{{ it.hasWarn }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;flex-shrink:0">⚠</span></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+      <sc-if value="{{ isWeekView }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ weekDays }}" as="d" hint-placeholder-count="7">
+          <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:14px 18px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:{{ d.gap }}"><div style="font-size:13.5px;font-weight:700;color:{{ d.labelColor }}">{{ d.label }}</div><sc-if value="{{ d.isToday }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:700;color:var(--accent,#B8945A);background:#f7efe1;border-radius:999px;padding:1px 8px">TODAY</span></sc-if></div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="0">
+                <div onClick="{{ it.onOpen }}" style="display:flex;align-items:center;gap:11px;cursor:pointer"><span style="width:6px;height:32px;border-radius:4px;flex-shrink:0;background:{{ it.color }}"></span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">{{ it.title }}</div><div style="font-size:11.5px;color:#9A9387">{{ it.campaign }}</div></div><span style="{{ it.platStyle }}">{{ it.plat }}</span><span style="{{ it.statusStyle }}">{{ it.status }}</span></div>
+              </sc-for>
+              <sc-if value="{{ d.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size:12.5px;color:#bbb2a4">No content scheduled</div></sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- ══ LIST ══ -->
+    <sc-if value="{{ showList }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px">
+        <select onChange="{{ onListBrand }}" style="{{ filterSelectStyle }}"><sc-for list="{{ listBrandOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+        <select onChange="{{ onListPlat }}" style="{{ filterSelectStyle }}"><sc-for list="{{ listPlatOpts }}" as="o" hint-placeholder-count="7"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+        <select onChange="{{ onListStatus }}" style="{{ filterSelectStyle }}"><sc-for list="{{ listStatusOpts }}" as="o" hint-placeholder-count="6"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+        <div style="margin-left:auto;font-size:12.5px;color:#9A9387;font-weight:600">{{ listCount }} posts</div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:70px 28px 100px 80px 1fr 110px 90px 80px 90px;gap:8px;padding:11px 18px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase;align-items:center">
+          <span>Date</span><span></span><span>Brand</span><span>Platform</span><span>Content</span><span>Caption</span><span>Asset</span><span>Approval</span><span>Publish</span>
+        </div>
+        <sc-for list="{{ listRows }}" as="r" hint-placeholder-count="8">
+          <div onClick="{{ r.onOpen }}" style="display:grid;grid-template-columns:70px 28px 100px 80px 1fr 110px 90px 80px 90px;gap:8px;padding:12px 18px;border-bottom:1px solid #F4EFE5;align-items:center;cursor:pointer;background:#fff">
+            <div style="font-size:11.5px;font-weight:600;color:#6b6258">{{ r.dateLabel }}</div>
+            <div style="display:flex;align-items:center;justify-content:center"><sc-if value="{{ r.hasWarn }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px" title="Missing asset or caption">⚠</span></sc-if></div>
+            <div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:{{ r.brandColor }}"></span><span style="font-size:12px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.brand }}</span></div>
+            <span style="{{ r.platStyle }}">{{ r.plat }}</span>
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.title }}</div>
+            <span style="{{ r.captionStyle }}">{{ r.captionStatus }}</span>
+            <span style="{{ r.assetStyle }}">{{ r.assetStatus }}</span>
+            <span style="{{ r.approvalStyle }}">{{ r.approvalStatus }}</span>
+            <span style="{{ r.publishStyle }}">{{ r.publishStatus }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ══ PUBLISH QUEUE ══ -->
+    <sc-if value="{{ showQueue }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="font-size:13px;color:#9A9387;background:#EEF3FF;border:1px solid #C5D4F8;border-radius:12px;padding:11px 16px;margin-bottom:18px;font-weight:600">🔗 Meta integration not active · Posts are scheduled manually. Auto-publish will be available after connecting Meta API.</div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:90px 1fr 100px 130px 110px 1fr;gap:10px;padding:12px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase;align-items:center">
+          <span>Scheduled</span><span>Content</span><span>Channel</span><span>Account</span><span>Publish Status</span><span>Actions</span>
+        </div>
+        <sc-for list="{{ queueRows }}" as="q" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:90px 1fr 100px 130px 110px 1fr;gap:10px;padding:14px 20px;border-bottom:1px solid #F4EFE5;align-items:center">
+            <div style="font-size:12px;font-weight:600;color:#6b6258">{{ q.scheduledAt }}</div>
+            <div style="min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ q.title }}</div><div style="font-size:11px;color:#9A9387">{{ q.brand }}</div></div>
+            <div style="font-size:12px;color:#6b6258">{{ q.channel }}</div>
+            <div style="font-size:12px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ q.account }}</div>
+            <span style="{{ q.publishStyle }}">{{ q.publishStatus }}</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <sc-if value="{{ q.canRetry }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;background:#FBF3F1;color:#B33A2E;cursor:pointer;border:1px solid #E8C5BC">Retry</span></sc-if>
+              <span style="font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:8px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer">Manual done</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ══ GRAPHIC BOARD ══ -->
+    <sc-if value="{{ showGraphic }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+        <div style="display:flex;gap:6px;background:#EFEAE0;border-radius:11px;padding:4px">
+          <span onClick="{{ setGraphicBoard }}" style="{{ graphicBoardBtn }}">Board</span>
+          <span onClick="{{ setGraphicList }}" style="{{ graphicListBtn }}">List</span>
+        </div>
+        <span style="font-size:13px;font-weight:700;color:#fff;background:#211F1C;border-radius:10px;padding:9px 15px;cursor:pointer">+ New request</span>
+      </div>
+      <sc-if value="{{ isGraphicBoard }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:8px">
+        <sc-for list="{{ graphicColumns }}" as="col" hint-placeholder-count="6">
+          <div style="width:266px;flex-shrink:0;background:#F1ECE2;border-radius:16px;padding:13px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:0 4px"><div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:{{ col.color }}"></span><span style="font-size:13px;font-weight:700">{{ col.title }}</span></div><span style="font-size:11.5px;font-weight:700;color:#9A9387;background:#fff;border-radius:999px;padding:2px 8px">{{ col.count }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+                <div style="background:#fff;border:1px solid #ECE6DA;border-radius:13px;padding:13px;cursor:pointer">
+                  <image-slot id="{{ card.slotId }}" shape="rounded" radius="10" placeholder="Drop design" style="display:block;width:100%;height:114px;margin-bottom:11px"></image-slot>
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span style="width:7px;height:7px;border-radius:50%;background:{{ card.color }}"></span><span style="font-size:11px;font-weight:600;color:#9A9387">{{ card.brand }}</span></div>
+                  <div style="font-size:13.5px;font-weight:700;line-height:1.3;margin-bottom:5px">{{ card.title }}</div>
+                  <div style="font-size:11.5px;color:#9A9387;margin-bottom:11px">{{ card.campaign }}</div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid #F4EFE5;padding-top:10px">
+                    <span style="display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:{{ card.fbColor }}">💬 {{ card.feedback }}</span>
+                    <span style="font-size:11px;color:#9A9387">Due {{ card.due }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:10px"><div style="width:22px;height:22px;border-radius:50%;background:{{ card.ownerColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700">{{ card.ownerInit }}</div><span style="font-size:11.5px;color:#6b6258">{{ card.designer }}</span></div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size:12px;color:#bbb2a4;text-align:center;padding:18px 0;border:1px dashed #DDD4C4;border-radius:12px">Nothing here</div></sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+      <sc-if value="{{ isGraphicList }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1.4fr 0.9fr 1.2fr 1fr 0.7fr 0.6fr 1fr;gap:10px;padding:12px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase"><span>Title</span><span>Brand</span><span>Campaign</span><span>Designer</span><span>Due</span><span>FB</span><span>Stage</span></div>
+        <sc-for list="{{ graphicList }}" as="g" hint-placeholder-count="8">
+          <div style="display:grid;grid-template-columns:1.4fr 0.9fr 1.2fr 1fr 0.7fr 0.6fr 1fr;gap:10px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.title }}</div>
+            <div style="display:flex;align-items:center;gap:7px;min-width:0"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ g.color }}"></span><span style="font-size:12px;color:#6b6258;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.brand }}</span></div>
+            <div style="font-size:12px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.campaign }}</div>
+            <div style="font-size:12px;color:#6b6258">{{ g.designer }}</div>
+            <div style="font-size:12px;font-weight:600;color:#6b6258">{{ g.due }}</div>
+            <div style="display:flex;align-items:center;gap:3px"><span style="font-size:13px;font-weight:700;color:{{ g.fbColor }}">{{ g.feedback }}</span><span style="font-size:10px;color:#9A9387">↩</span></div>
+            <span style="{{ g.stageStyle }}">{{ g.stage }}</span>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- ══ SOCIAL CONNECTIONS ══ -->
+    <sc-if value="{{ showSocial }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="font-size:13px;color:#1E3A8A;background:#EEF3FF;border:1px solid #C5D4F8;border-radius:12px;padding:11px 16px;margin-bottom:20px;font-weight:600">Future integration · Connect Facebook Pages and Instagram accounts to enable auto-scheduling from Marketing OS.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+        <sc-for list="{{ socialAccounts }}" as="sa" hint-placeholder-count="4">
+          <div style="background:#fff;border:1.5px solid {{ sa.borderColor }};border-radius:18px;padding:18px 20px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <span style="font-size:22px">{{ sa.icon }}</span>
+              <div><div style="font-size:14px;font-weight:700">{{ sa.name }}</div><div style="font-size:12px;color:#9A9387">{{ sa.platform }}</div></div>
+              <span style="{{ sa.statusStyle }}">{{ sa.status }}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;font-size:12.5px">
+              <div style="display:flex;justify-content:space-between"><span style="color:#9A9387">Permission</span><span style="font-weight:600;color:{{ sa.permColor }}">{{ sa.permission }}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9A9387">Token</span><span style="font-weight:600;color:{{ sa.tokenColor }}">{{ sa.token }}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9A9387">Last checked</span><span style="font-weight:600;color:#6b6258">{{ sa.lastSync }}</span></div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <span style="{{ sa.actionBtnStyle }}">{{ sa.actionLabel }}</span>
+              <sc-if value="{{ sa.isConnected }}" hint-placeholder-val="{{ false }}"><span style="font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:9px;border:1px solid #E5DECF;color:#B33A2E;cursor:pointer">Disconnect</span></sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    moduleTab: 'calendar',
+    calView: 'month',
+    calBrand: 'all',
+    calMonth: 5,
+    calYear: 2026,
+    graphicView: 'board',
+    listBrand: 'all',
+    listPlat: 'all',
+    listStatus: 'all',
+    drawerOpen: false,
+    drawerIdx: null,
+    drawerTab: 'overview',
+    drawerCaption: '',
+    drawerHashtags: '',
+    drawerCta: '',
+    drawerSchedDate: '',
+    drawerSchedTime: '12:00',
+    captionSaved: false
+  };
+
+  brands = {
+    teppen:   { name: 'TEPPEN',      color: '#B33A2E' },
+    omakase:  { name: 'Omakase Don', color: '#3E5C9A' },
+    mainichi: { name: 'Mainichi',    color: '#4E7A4E' },
+    touka:    { name: 'Touka',       color: '#C68A1E' }
+  };
+
+  contentStatusMap = { 'Draft': ['#6b6258','#F0EDE6'], 'Waiting Design': ['#C68A1E','#fbf6ed'], 'Waiting Approval': ['#C2691E','#fbf1e9'], 'Scheduled': ['#3E5C9A','#eef1f8'], 'Published': ['#4E7A4E','#eef4ee'], 'Failed': ['#B33A2E','#fbf0ee'], 'Missing Asset': ['#B33A2E','#fbf0ee'] };
+  platMap = { 'Instagram': ['#B4377E','#fbeff5','IG'], 'Instagram Reel': ['#B4377E','#fbeff5','Reel'], 'TikTok': ['#1f1f1f','#eeecec','TikTok'], 'Facebook': ['#3E5C9A','#eef1f8','FB'], 'LINE OA': ['#4E7A4E','#eef4ee','LINE'], 'Google Map': ['#C68A1E','#fbf6ed','Map'] };
+  platIconMap = { 'Instagram': { icon:'IG',bg:'#E1306C',fg:'#fff' }, 'Instagram Reel': { icon:'Reel',bg:'#E1306C',fg:'#fff' }, 'TikTok': { icon:'TK',bg:'#010101',fg:'#fff' }, 'Facebook': { icon:'FB',bg:'#1877F2',fg:'#fff' }, 'LINE OA': { icon:'LN',bg:'#06C755',fg:'#fff' }, 'Google Map': { icon:'GM',bg:'#4285F4',fg:'#fff' } };
+  graphicStageMap = { 'New Request': ['#6b6258','#F0EDE6'], 'In Progress': ['#3E5C9A','#eef1f8'], 'Waiting Feedback': ['#C68A1E','#fbf6ed'], 'Revision': ['#C2691E','#fbf1e9'], 'Approved': ['#4E7A4E','#eef4ee'], 'Delivered': ['#211F1C','#ECE6DA'] };
+
+  contentData = [
+    { id:'c01', day:5,  time:'10:00', title:'Matcha dessert promo',      b:'mainichi', plat:'Instagram',      status:'Published',        campaign:'LINE Coupon Drive',   owner:'Mei T.',  caption:'Indulge in our seasonal matcha…',  hashtags:'#matcha #mainichi #lunch', cta:'Reserve now', captionStatus:'Approved', assetStatus:'Final',       assetUrl:'',  approvalStatus:'Approved',        publishStatus:'Published',           thumbUrl:'' },
+    { id:'c02', day:12, time:'11:00', title:'Google Map photo refresh',   b:'teppen',   plat:'Google Map',     status:'Published',        campaign:'Wagyu Festival',     owner:'Ken S.',  caption:'',  hashtags:'', cta:'',          captionStatus:'Missing',  assetStatus:'Final',       assetUrl:'',  approvalStatus:'Approved',        publishStatus:'Published',           thumbUrl:'' },
+    { id:'c03', day:18, time:'12:00', title:'Wagyu plating reel',         b:'teppen',   plat:'Instagram Reel', status:'Published',        campaign:'Wagyu Festival',     owner:'Ken S.',  caption:'A4 wagyu, seared to perfection.',  hashtags:'#wagyu #teppen', cta:'Book via link in bio', captionStatus:'Approved', assetStatus:'Final', assetUrl:'', approvalStatus:'Approved', publishStatus:'Published', thumbUrl:'' },
+    { id:'c04', day:21, time:'09:00', title:'Sake pairing post',          b:'omakase',  plat:'Facebook',       status:'Published',        campaign:"Father's Day Set",   owner:'Ken S.',  caption:'Perfect pairings for Dad.',       hashtags:'#sake #omakase', cta:'',   captionStatus:'Approved', assetStatus:'Final',       assetUrl:'',  approvalStatus:'Approved',        publishStatus:'Published',           thumbUrl:'' },
+    { id:'c05', day:24, time:'18:00', title:'Summer reel BTS',            b:'omakase',  plat:'Instagram Reel', status:'Waiting Design',   campaign:'Summer Reel Series', owner:'Boss',    caption:'',  hashtags:'', cta:'',          captionStatus:'Missing',  assetStatus:'Waiting Design', assetUrl:'', approvalStatus:'Draft',          publishStatus:'Draft',               thumbUrl:'' },
+    { id:'c06', day:27, time:'10:00', title:'Wagyu drop teaser',          b:'teppen',   plat:'Instagram',      status:'Scheduled',        campaign:'Wagyu Festival',     owner:'Ken S.',  caption:'Something big is coming…',       hashtags:'#wagyu #teppen #newdrop', cta:'Save the date', captionStatus:'Ready', assetStatus:'Approved', assetUrl:'', approvalStatus:'Approved', publishStatus:'Scheduled in OS', thumbUrl:'' },
+    { id:'c07', day:27, time:'11:30', title:'Lunch set carousel',         b:'mainichi', plat:'Facebook',       status:'Scheduled',        campaign:'Rainy Season Promo', owner:'Mei T.',  caption:'Rainy season calls for warm sets.', hashtags:'#lunch #mainichi', cta:'Check menu', captionStatus:'Ready', assetStatus:'Approved', assetUrl:'', approvalStatus:'Approved', publishStatus:'Scheduled in OS', thumbUrl:'' },
+    { id:'c08', day:27, time:'15:00', title:'Cocktail of the week',       b:'touka',    plat:'TikTok',         status:'Scheduled',        campaign:'Cocktail Hour Launch',owner:'Nok W.', caption:'This week: Yuzu Highball.',        hashtags:'#cocktail #touka', cta:'Visit us', captionStatus:'Approved', assetStatus:'Final', assetUrl:'', approvalStatus:'Approved', publishStatus:'Scheduled in OS', thumbUrl:'' },
+    { id:'c09', day:28, time:'17:00', title:'Behind the bar',             b:'touka',    plat:'TikTok',         status:'Waiting Approval', campaign:'Cocktail Hour Launch',owner:'Nok W.', caption:'Draft caption only.',              hashtags:'', cta:'',        captionStatus:'Draft',    assetStatus:'Waiting Feedback', assetUrl:'', approvalStatus:'Waiting Approval', publishStatus:'Draft',          thumbUrl:'' },
+    { id:'c10', day:29, time:'10:00', title:'Lunch set promo',            b:'mainichi', plat:'LINE OA',        status:'Draft',            campaign:'Rainy Season Promo', owner:'Mei T.',  caption:'',  hashtags:'', cta:'',          captionStatus:'Missing',  assetStatus:'No Asset',    assetUrl:'',  approvalStatus:'Draft',           publishStatus:'Draft',               thumbUrl:'' },
+    { id:'c11', day:30, time:'09:00', title:"Father's Day set",           b:'omakase',  plat:'Facebook',       status:'Scheduled',        campaign:"Father's Day Set",   owner:'Ken S.',  caption:"Celebrate Dad with Omakase.",     hashtags:'#fathersday #omakase', cta:'Reserve', captionStatus:'Approved', assetStatus:'Final', assetUrl:'', approvalStatus:'Approved', publishStatus:'Queued', thumbUrl:'' }
+  ];
+
+  graphicData = [
+    { col: 'New Request',      color: '#9A9387', cards: [
+      { title: 'Songkran key visual', b: 'teppen',   campaign: 'Songkran Teppanyaki',  due: 'Jul 2',  designer: 'Unassigned', oi: '?', oc: '#9A9387', fb: 0 },
+      { title: 'Anniversary poster',  b: 'touka',    campaign: 'Touka Anniversary',    due: 'Jul 8',  designer: 'Unassigned', oi: '?', oc: '#9A9387', fb: 0 } ]},
+    { col: 'In Progress',      color: '#3E5C9A', cards: [
+      { title: 'Wagyu menu board',    b: 'teppen',   campaign: 'Wagyu Festival',       due: 'Jun 29', designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 1 },
+      { title: 'Lunch set carousel',  b: 'mainichi', campaign: 'Rainy Season Promo',  due: 'Jun 28', designer: 'Aom',   oi: 'A', oc: '#B5577E', fb: 0 } ]},
+    { col: 'Waiting Feedback', color: '#C68A1E', cards: [
+      { title: "Father's Day banner", b: 'omakase',  campaign: "Father's Day Set",     due: 'Jun 28', designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 2 } ]},
+    { col: 'Revision',         color: '#C2691E', cards: [
+      { title: 'Menu redesign',       b: 'touka',    campaign: 'Cocktail Hour Launch', due: 'Jun 30', designer: 'Aom',   oi: 'A', oc: '#B5577E', fb: 2 },
+      { title: 'Summer reel cover',   b: 'omakase',  campaign: 'Summer Reel Series',  due: 'Jun 26', designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 3 } ]},
+    { col: 'Approved',         color: '#4E7A4E', cards: [
+      { title: 'Cocktail menu card',  b: 'touka',    campaign: 'Cocktail Hour Launch', due: 'Jun 24', designer: 'Aom',   oi: 'A', oc: '#B5577E', fb: 1 } ]},
+    { col: 'Delivered',        color: '#6b6258', cards: [
+      { title: 'Matcha dessert post', b: 'mainichi', campaign: 'LINE Coupon Drive',   due: 'Jun 5',  designer: 'Boss',  oi: 'B', oc: '#4E7A4E', fb: 0 } ]}
+  ];
+
+  badge(status, map) {
+    const [fg, bg] = map[status] || ['#6b6258','#F0EDE6'];
+    return { fontSize:'11.5px', fontWeight:700, padding:'4px 10px', borderRadius:'999px', background:bg, color:fg, whiteSpace:'nowrap', display:'inline-block' };
+  }
+  smallBadge(status, map) {
+    const [fg, bg] = map[status] || ['#6b6258','#F0EDE6'];
+    return { fontSize:'10.5px', fontWeight:700, padding:'3px 7px', borderRadius:'999px', background:bg, color:fg, whiteSpace:'nowrap', display:'inline-block' };
+  }
+
+  openDrawer(idx) { const it = this.contentData[idx]; this.setState({ drawerOpen:true, drawerIdx:idx, drawerTab:'overview', drawerCaption:it.caption||'', drawerHashtags:it.hashtags||'', drawerCta:it.cta||'' }); }
+  closeDrawer() { this.setState({ drawerOpen:false }); }
+
+  renderVals() {
+    const tabStyle = (active) => active
+      ? { fontSize:'13px', fontWeight:700, padding:'9px 16px', borderRadius:'10px', background:'#fff', color:'#211F1C', cursor:'pointer', whiteSpace:'nowrap', boxShadow:'0 1px 2px rgba(0,0,0,.06)' }
+      : { fontSize:'13px', fontWeight:600, padding:'9px 16px', borderRadius:'10px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const segBtn = (active) => active
+      ? { fontSize:'13px', fontWeight:700, padding:'8px 16px', borderRadius:'9px', background:'#fff', color:'#211F1C', cursor:'pointer', boxShadow:'0 1px 2px rgba(0,0,0,.06)', whiteSpace:'nowrap' }
+      : { fontSize:'13px', fontWeight:600, padding:'8px 16px', borderRadius:'9px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const chip = (active) => ({ fontSize:'12px', fontWeight:active?700:500, padding:'5px 12px', borderRadius:'999px', cursor:'pointer', display:'flex', alignItems:'center', gap:'5px', background:active?'#211F1C':'#fff', color:active?'#fff':'#6b6258', border:active?'none':'1px solid #E5DECF' });
+    const drawerTabBtn = (active) => ({ fontSize:'12.5px', fontWeight:active?700:500, padding:'10px 16px', cursor:'pointer', color:active?'#211F1C':'#9A9387', borderBottom:active?'2px solid #211F1C':'2px solid transparent', whiteSpace:'nowrap', flexShrink:0 });
+
+    const mt = this.state.moduleTab;
+
+    // brand overview cards
+    const brandKeys = ['all','teppen','omakase','mainichi','touka'];
+    const brandCardKeys = ['teppen','omakase','mainichi','touka'];
+    const brandCards = brandCardKeys.map(k => {
+      const posts = this.contentData.filter(c => c.b === k);
+      return {
+        name: this.brands[k].name, color: this.brands[k].color,
+        total: posts.length,
+        scheduled: posts.filter(c => ['Scheduled','Queued','Scheduled in OS'].includes(c.publishStatus)).length,
+        waitApproval: posts.filter(c => c.approvalStatus === 'Waiting Approval').length,
+        missingAsset: posts.filter(c => ['No Asset','Waiting Design'].includes(c.assetStatus)).length,
+        failed: posts.filter(c => c.publishStatus === 'Failed').length,
+        hasFailed: posts.some(c => c.publishStatus === 'Failed')
+      };
+    });
+
+    const totalPosts = this.contentData.length;
+    const headerSub = totalPosts + ' posts this month · June 2026';
+
+    // calendar
+    const cy = this.state.calYear, cm = this.state.calMonth, cb = this.state.calBrand;
+    const monthsFull = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const weekdayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const calLabel = monthsFull[cm] + ' ' + cy;
+    const isJune = cy === 2026 && cm === 5;
+    const calBrandFilters = brandKeys.map(k => ({
+      label: k==='all' ? 'All' : this.brands[k].name,
+      onClick: () => this.setState({ calBrand: k }),
+      style: chip(cb === k),
+      dot: { width:'8px', height:'8px', borderRadius:'50%', flexShrink:0, background: k==='all'?(cb==='all'?'#B8945A':'#c9c0b0'):this.brands[k].color }
+    }));
+    const monthContent = isJune ? this.contentData.filter(it => cb==='all'||it.b===cb) : [];
+    const byDay = {};
+    monthContent.forEach(it => { (byDay[it.day] = byDay[it.day]||[]).push(it); });
+    const firstDow = (new Date(cy, cm, 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(cy, cm+1, 0).getDate();
+    const calCells = [];
+    const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7;
+    for (let i = 0; i < totalCells; i++) {
+      const day = i - firstDow + 1;
+      const inMonth = day >= 1 && day <= daysInMonth;
+      const isToday = isJune && day === 27;
+      const dayIdx = this.contentData.findIndex(it => it.day === day && (cb==='all'||it.b===cb));
+      const items = (inMonth && byDay[day]) ? byDay[day].map((it, ii) => {
+        const pi = this.platIconMap[it.plat] || { icon:'?', bg:'#ccc', fg:'#fff' };
+        const hasWarn = it.captionStatus === 'Missing' || ['No Asset','Waiting Design'].includes(it.assetStatus);
+        const realIdx = this.contentData.indexOf(it);
+        return { color: this.brands[it.b].color, short: it.title, platIcon: pi.icon, hasWarn, onOpen: () => this.openDrawer(realIdx) };
+      }) : [];
+      calCells.push({
+        day: inMonth ? day : '',
+        style: { minHeight:'108px', padding:'7px 7px 8px', borderRight:'1px solid #F2EDE2', borderBottom:'1px solid #F2EDE2', background: isToday?'#FBF7EF':(inMonth?'#fff':'#FBF9F4') },
+        numStyle: { fontSize:'12px', fontWeight:isToday?800:600, color:isToday?'#fff':(inMonth?'#6b6258':'#cabfb0'), width:'22px', height:'22px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', background:isToday?'#211F1C':'transparent' },
+        items
+      });
+    }
+    const weekStart = isJune ? 22 : 1;
+    const weekDays = [];
+    for (let off = 0; off < 7; off++) {
+      const d = weekStart + off;
+      if (d > daysInMonth) break;
+      const dt = new Date(cy, cm, d);
+      const lbl = weekdayLabels[(dt.getDay()+6)%7] + ' ' + d;
+      const its = (byDay[d]||[]).filter(it => cb==='all'||it.b===cb).map(it => {
+        const realIdx = this.contentData.indexOf(it);
+        return { title:it.title, campaign:it.campaign, color:this.brands[it.b].color,
+          plat:this.platMap[it.plat]?this.platMap[it.plat][2]:'?',
+          platStyle:this.badge(it.plat,{[it.plat]:this.platMap[it.plat]||['#9A9387','#F0EDE6',it.plat]}),
+          status:it.status, statusStyle:this.badge(it.status,this.contentStatusMap),
+          onOpen:()=>this.openDrawer(realIdx) };
+      });
+      const isT = isJune && d === 27;
+      weekDays.push({ label:lbl, labelColor:isT?'#B8945A':'#211F1C', isToday:isT, items:its, empty:its.length===0, gap:its.length?'12px':'6px' });
+    }
+    const calPrev = () => { let m=cm-1,y=cy; if(m<0){m=11;y--;} this.setState({calMonth:m,calYear:y}); };
+    const calNext = () => { let m=cm+1,y=cy; if(m>11){m=0;y++;} this.setState({calMonth:m,calYear:y}); };
+    const calToday = () => this.setState({calMonth:5,calYear:2026});
+    const navArrowStyle = { width:'34px', height:'34px', borderRadius:'9px', border:'1px solid #E5DECF', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'17px', color:'#6b6258', lineHeight:'1' };
+    const todayBtnStyle = { fontSize:'12.5px', fontWeight:'700', color:'#6b6258', border:'1px solid #E5DECF', borderRadius:'9px', padding:'8px 13px', cursor:'pointer', background:'#fff' };
+    const cv = this.state.calView;
+
+    // list view
+    const lb = this.state.listBrand, lp = this.state.listPlat, ls = this.state.listStatus;
+    const filterSelectStyle = { fontSize:'13px', fontWeight:600, padding:'8px 12px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C', cursor:'pointer' };
+    const listBrandOpts = [{ val:'all', label:'All Brands', sel:lb==='all' }].concat(brandCardKeys.map(k => ({ val:k, label:this.brands[k].name, sel:k===lb })));
+    const listPlatOpts = [{ val:'all', label:'All Platforms', sel:lp==='all' }].concat(Object.keys(this.platIconMap).map(p => ({ val:p, label:p, sel:p===lp })));
+    const listStatusOpts = [{ val:'all', label:'All Statuses', sel:ls==='all' }].concat(['Draft','Scheduled','Waiting Approval','Published','Failed'].map(s => ({ val:s, label:s, sel:s===ls })));
+    const captionColorMap = { 'Missing': ['#B33A2E','#fbf0ee'], 'Draft': ['#C68A1E','#fbf6ed'], 'Ready': ['#3E5C9A','#eef1f8'], 'Approved': ['#4E7A4E','#eef4ee'] };
+    const assetColorMap = { 'No Asset': ['#B33A2E','#fbf0ee'], 'Waiting Design': ['#C68A1E','#fbf6ed'], 'Waiting Feedback': ['#C2691E','#fbf1e9'], 'Approved': ['#3E5C9A','#eef1f8'], 'Final': ['#4E7A4E','#eef4ee'], 'Draft': ['#9A9387','#F0EDE6'] };
+    const publishColorMap = { 'Draft': ['#9A9387','#F0EDE6'], 'Scheduled in OS': ['#3E5C9A','#eef1f8'], 'Queued': ['#C68A1E','#fbf6ed'], 'Published': ['#4E7A4E','#eef4ee'], 'Failed': ['#B33A2E','#fbf0ee'], 'Manual Action Needed': ['#B33A2E','#fbf0ee'] };
+    const approvalColorMap = { 'Draft': ['#9A9387','#F0EDE6'], 'Waiting Approval': ['#C68A1E','#fbf6ed'], 'Approved': ['#4E7A4E','#eef4ee'], 'Rejected': ['#B33A2E','#fbf0ee'] };
+    const filteredList = this.contentData.filter(c =>
+      (lb==='all'||c.b===lb) && (lp==='all'||c.plat===lp) &&
+      (ls==='all'||c.status===ls||c.publishStatus===ls||c.approvalStatus===ls)
+    );
+    const listRows = filteredList.map(c => {
+      const idx = this.contentData.indexOf(c);
+      const pi = this.platIconMap[c.plat] || { icon:'?', bg:'#ccc', fg:'#fff' };
+      const hasWarn = c.captionStatus==='Missing'||['No Asset','Waiting Design'].includes(c.assetStatus);
+      return {
+        dateLabel: 'Jun ' + c.day,
+        hasWarn,
+        brandColor: this.brands[c.b].color,
+        brand: this.brands[c.b].name,
+        plat: pi.icon,
+        platStyle: { fontSize:'10.5px', fontWeight:800, padding:'3px 6px', borderRadius:'6px', background:pi.bg, color:pi.fg, whiteSpace:'nowrap', display:'inline-block' },
+        title: c.title,
+        captionStatus: c.captionStatus,
+        captionStyle: this.smallBadge(c.captionStatus, captionColorMap),
+        assetStatus: c.assetStatus,
+        assetStyle: this.smallBadge(c.assetStatus, assetColorMap),
+        approvalStatus: c.approvalStatus,
+        approvalStyle: this.smallBadge(c.approvalStatus, approvalColorMap),
+        publishStatus: c.publishStatus,
+        publishStyle: this.smallBadge(c.publishStatus, publishColorMap),
+        onOpen: () => this.openDrawer(idx)
+      };
+    });
+    const listCount = listRows.length;
+
+    // publish queue
+    const queueRows = this.contentData.filter(c => ['Scheduled in OS','Queued','Failed'].includes(c.publishStatus)).map(c => {
+      const pubs = publishColorMap[c.publishStatus] || ['#9A9387','#F0EDE6'];
+      return {
+        scheduledAt: 'Jun ' + c.day + ' · ' + c.time,
+        title: c.title,
+        brand: this.brands[c.b].name,
+        channel: this.platIconMap[c.plat]?.icon || c.plat,
+        account: this.brands[c.b].name + ' ' + c.plat,
+        publishStatus: c.publishStatus,
+        publishStyle: { fontSize:'11.5px', fontWeight:700, padding:'4px 10px', borderRadius:'999px', background:pubs[1], color:pubs[0], whiteSpace:'nowrap', display:'inline-block' },
+        canRetry: c.publishStatus === 'Failed'
+      };
+    });
+
+    // social accounts
+    const socialAccounts = [
+      { name:'TEPPEN Facebook Page', platform:'Facebook', icon:'📘', status:'Connected', isConnected:true, permission:'Valid', token:'Healthy', lastSync:'Today 10:30', statusStyle:{ fontSize:'11.5px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:'#eef4ee', color:'#4E7A4E', display:'inline-block' }, borderColor:'#B5CEAF', permColor:'#4E7A4E', tokenColor:'#4E7A4E', actionLabel:'Test Connection', actionBtnStyle:{ fontSize:'12.5px', fontWeight:700, flex:1, textAlign:'center', padding:'8px', borderRadius:'9px', background:'#F0EBE0', color:'#6b6258', cursor:'pointer' } },
+      { name:'TEPPEN Instagram', platform:'Instagram', icon:'📷', status:'Not connected', isConnected:false, permission:'—', token:'—', lastSync:'Never', statusStyle:{ fontSize:'11.5px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:'#fbf6ed', color:'#C68A1E', display:'inline-block' }, borderColor:'#E5DECF', permColor:'#9A9387', tokenColor:'#9A9387', actionLabel:'Connect Meta Account', actionBtnStyle:{ fontSize:'12.5px', fontWeight:700, flex:1, textAlign:'center', padding:'8px', borderRadius:'9px', background:'#211F1C', color:'#fff', cursor:'pointer' } },
+      { name:'Omakase Don Facebook', platform:'Facebook', icon:'📘', status:'Connected', isConnected:true, permission:'Valid', token:'Expires soon', lastSync:'Yesterday 09:15', statusStyle:{ fontSize:'11.5px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:'#eef4ee', color:'#4E7A4E', display:'inline-block' }, borderColor:'#E8D5AA', permColor:'#4E7A4E', tokenColor:'#C68A1E', actionLabel:'Reconnect', actionBtnStyle:{ fontSize:'12.5px', fontWeight:700, flex:1, textAlign:'center', padding:'8px', borderRadius:'9px', background:'#C68A1E', color:'#fff', cursor:'pointer' } },
+      { name:'Mainichi LINE OA', platform:'LINE OA', icon:'💬', status:'Connected', isConnected:true, permission:'Valid', token:'Healthy', lastSync:'Today 08:00', statusStyle:{ fontSize:'11.5px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:'#eef4ee', color:'#4E7A4E', display:'inline-block' }, borderColor:'#B5CEAF', permColor:'#4E7A4E', tokenColor:'#4E7A4E', actionLabel:'Test Connection', actionBtnStyle:{ fontSize:'12.5px', fontWeight:700, flex:1, textAlign:'center', padding:'8px', borderRadius:'9px', background:'#F0EBE0', color:'#6b6258', cursor:'pointer' } }
+    ];
+
+    // graphic board
+    const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+    const gv = this.state.graphicView;
+    const graphicColumns = this.graphicData.map(col => ({
+      title:col.col, color:col.color, count:col.cards.length, empty:col.cards.length===0,
+      cards:col.cards.map(c => ({ title:c.title, brand:this.brands[c.b].name, color:this.brands[c.b].color, campaign:c.campaign, due:c.due, designer:c.designer, ownerInit:c.oi, ownerColor:c.oc, feedback:c.fb, fbColor:c.fb>=2?'#C2691E':'#6b6258', slotId:'gr-'+slug(c.title) }))
+    }));
+    const graphicList = this.graphicData.flatMap(col => col.cards.map(c => ({
+      title:c.title, brand:this.brands[c.b].name, color:this.brands[c.b].color, campaign:c.campaign, designer:c.designer, due:c.due, feedback:c.fb, fbColor:c.fb>=2?'#C2691E':'#6b6258', stage:col.col, stageStyle:this.badge(col.col,this.graphicStageMap)
+    })));
+
+    // drawer
+    const drawerOpen = this.state.drawerOpen;
+    const di = this.state.drawerIdx;
+    const dc = di !== null ? this.contentData[di] : null;
+    const dTab = this.state.drawerTab;
+    const drawerTabs = [['overview','Overview'],['caption','Caption'],['approval','Approval'],['publish','Publish']].map(([id,label]) => ({ label, onClick:()=>this.setState({drawerTab:id}), style:drawerTabBtn(dTab===id) }));
+    const pi = dc ? (this.platIconMap[dc.plat] || { icon:'?', bg:'#ccc', fg:'#fff' }) : {};
+    const drawerPlatIconStyle = dc ? { width:'24px', height:'24px', borderRadius:'6px', background:pi.bg, color:pi.fg, fontSize:'10px', fontWeight:800, display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0 } : {};
+    const captionColorMapFull = { 'Missing': ['#B33A2E','#fbf0ee'], 'Draft': ['#C68A1E','#fbf6ed'], 'Ready': ['#3E5C9A','#eef1f8'], 'Approved': ['#4E7A4E','#eef4ee'] };
+    const assetColorMapFull = { 'No Asset': ['#B33A2E','#fbf0ee'], 'Waiting Design': ['#C68A1E','#fbf6ed'], 'Waiting Feedback': ['#C2691E','#fbf1e9'], 'Approved': ['#3E5C9A','#eef1f8'], 'Final': ['#4E7A4E','#eef4ee'], 'Draft': ['#9A9387','#F0EDE6'] };
+    const approvalColorMapFull = { 'Draft': ['#9A9387','#F0EDE6'], 'Waiting Approval': ['#C68A1E','#fbf6ed'], 'Approved': ['#4E7A4E','#eef4ee'], 'Rejected': ['#B33A2E','#fbf0ee'] };
+    const drawerWarnings = dc ? [
+      dc.captionStatus === 'Missing' ? 'Caption is missing' : null,
+      ['No Asset','Waiting Design'].includes(dc.assetStatus) ? 'Asset not ready: ' + dc.assetStatus : null,
+      dc.approvalStatus === 'Waiting Approval' ? 'Waiting for approval' : null
+    ].filter(Boolean) : [];
+    const drawerHasWarnings = drawerWarnings.length > 0;
+    const captionLen = (this.state.drawerCaption||'').length;
+
+    // publish preflight
+    const preflightItems = dc ? [
+      { icon: (dc.captionStatus==='Approved'?'✅':'⚠'), label:'Caption: '+dc.captionStatus, color: dc.captionStatus==='Approved'?'#4E7A4E':'#C68A1E' },
+      { icon: (dc.assetStatus==='Final'||dc.assetStatus==='Approved'?'✅':'⚠'), label:'Asset: '+dc.assetStatus, color: (dc.assetStatus==='Final'||dc.assetStatus==='Approved')?'#4E7A4E':'#C68A1E' },
+      { icon: '⚪', label:'Meta account: Not connected', color:'#9A9387' },
+      { icon: '⚪', label:'Permission: Requires Meta connection', color:'#9A9387' },
+      { icon: (dc.approvalStatus==='Approved'?'✅':'⚠'), label:'Approval: '+dc.approvalStatus, color: dc.approvalStatus==='Approved'?'#4E7A4E':'#C68A1E' }
+    ] : [];
+
+    const publishChannels = [
+      { icon:'📘', label:'Facebook Page', sub: dc ? (this.brands[dc.b]?.name+' Page') : '—', connStatus:'Not connected', borderColor:'#E5DECF', bg:'#FAFAF7', statusStyle:{ fontSize:'11px', fontWeight:700, padding:'3px 8px', borderRadius:'999px', background:'#fbf6ed', color:'#C68A1E', display:'inline-block' } },
+      { icon:'📷', label:'Instagram Feed', sub: dc ? (this.brands[dc.b]?.name+' IG') : '—', connStatus:'Not connected', borderColor:'#E5DECF', bg:'#FAFAF7', statusStyle:{ fontSize:'11px', fontWeight:700, padding:'3px 8px', borderRadius:'999px', background:'#fbf6ed', color:'#C68A1E', display:'inline-block' } },
+      { icon:'🎬', label:'Instagram Reel', sub:'Requires video asset', connStatus:'Not connected', borderColor:'#E5DECF', bg:'#FAFAF7', statusStyle:{ fontSize:'11px', fontWeight:700, padding:'3px 8px', borderRadius:'999px', background:'#fbf6ed', color:'#C68A1E', display:'inline-block' } }
+    ];
+
+    return {
+      headerSub, brandCards,
+      tabStyle_calendar:tabStyle(mt==='calendar'), tabStyle_list:tabStyle(mt==='list'), tabStyle_queue:tabStyle(mt==='queue'), tabStyle_graphic:tabStyle(mt==='graphic'), tabStyle_social:tabStyle(mt==='social'),
+      showCalendar:mt==='calendar', showList:mt==='list', showQueue:mt==='queue', showGraphic:mt==='graphic', showSocial:mt==='social',
+      goCalendar:()=>this.setState({moduleTab:'calendar'}), goList:()=>this.setState({moduleTab:'list'}), goQueue:()=>this.setState({moduleTab:'queue'}), goGraphic:()=>this.setState({moduleTab:'graphic'}), goSocial:()=>this.setState({moduleTab:'social'}),
+      calLabel, calBrandFilters, weekdayLabels, calCells, weekDays, navArrowStyle, todayBtnStyle,
+      isMonthView:cv==='month', isWeekView:cv==='week',
+      monthBtnStyle:segBtn(cv==='month'), weekBtnStyle:segBtn(cv==='week'),
+      setMonthView:()=>this.setState({calView:'month'}), setWeekView:()=>this.setState({calView:'week'}),
+      calPrev, calNext, calToday,
+      listBrandOpts, listPlatOpts, listStatusOpts, listRows, listCount, filterSelectStyle,
+      onListBrand:(e)=>this.setState({listBrand:e.target.value}),
+      onListPlat:(e)=>this.setState({listPlat:e.target.value}),
+      onListStatus:(e)=>this.setState({listStatus:e.target.value}),
+      queueRows, socialAccounts,
+      graphicColumns, graphicList, isGraphicBoard:gv==='board', isGraphicList:gv==='list',
+      graphicBoardBtn:segBtn(gv==='board'), graphicListBtn:segBtn(gv==='list'),
+      setGraphicBoard:()=>this.setState({graphicView:'board'}), setGraphicList:()=>this.setState({graphicView:'list'}),
+      // drawer
+      drawerOpen, drawerTabs,
+      isDrawerOverview:dTab==='overview', isDrawerCaption:dTab==='caption', isDrawerApproval:dTab==='approval', isDrawerPublish:dTab==='publish',
+      closeDrawer:()=>this.closeDrawer(), stopProp:(e)=>{ e&&e.stopPropagation&&e.stopPropagation(); },
+      drawerPlatIcon: pi.icon||'', drawerPlatIconStyle,
+      drawerTitle: dc?dc.title:'', drawerBrandName: dc?this.brands[dc.b]?.name:'', drawerBrandColor: dc?this.brands[dc.b]?.color:'#ccc',
+      drawerCampaign: dc?dc.campaign:'', drawerDateFull: dc?('Jun '+dc.day+' · '+dc.time):'',
+      drawerOwner: dc?dc.owner:'', drawerStatus: dc?dc.status:'',
+      drawerStatusStyle: dc?this.badge(dc.status,this.contentStatusMap):{},
+      drawerHasThumb: !!(dc&&dc.thumbUrl), drawerNoThumb: !(dc&&dc.thumbUrl),
+      drawerThumbUrl: dc?dc.thumbUrl:'',
+      drawerAssetStatus: dc?dc.assetStatus:'', drawerCaptionStatus: dc?dc.captionStatus:'',
+      drawerAssetBadgeStyle: dc?this.badge(dc.assetStatus,assetColorMapFull):{},
+      drawerCaptionBadgeStyle: dc?this.badge(dc.captionStatus,captionColorMapFull):{},
+      drawerApprovalStatus: dc?dc.approvalStatus:'',
+      drawerApprovalBadgeStyle: dc?this.badge(dc.approvalStatus,approvalColorMapFull):{},
+      drawerFeedbackCount: dc?0:'',
+      drawerWarnings, drawerHasWarnings,
+      drawerCaption: this.state.drawerCaption,
+      drawerHashtags: this.state.drawerHashtags,
+      drawerCta: this.state.drawerCta,
+      drawerCaptionLen: captionLen,
+      drawerCaptionMeta: dc?('Last edited: now · '+dc.owner):'',
+      drawerSchedDate: this.state.drawerSchedDate,
+      drawerSchedTime: this.state.drawerSchedTime,
+      onDrawerCaption:(e)=>this.setState({drawerCaption:e.target.value}),
+      onDrawerHashtags:(e)=>this.setState({drawerHashtags:e.target.value}),
+      onDrawerCta:(e)=>this.setState({drawerCta:e.target.value}),
+      onSchedDate:(e)=>this.setState({drawerSchedDate:e.target.value}),
+      onSchedTime:(e)=>this.setState({drawerSchedTime:e.target.value}),
+      saveCaption:()=>this.setState({captionSaved:true}),
+      publishChannels, preflightItems
+    };
+  }
+}
+</script>
+</body>
+</html>

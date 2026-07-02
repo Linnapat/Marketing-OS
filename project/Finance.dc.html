@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="./doc-page.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  body { font-family: 'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #211F1C; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #d9d1c2; border-radius: 6px; }
+</style>
+</helmet>
+
+<div style="padding:22px 26px 80px;min-height:100vh;background:#F7F4EE">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+    <div>
+      <div style="font-size:21px;font-weight:800;letter-spacing:-.02em">Finance</div>
+      <div style="font-size:12.5px;color:#9A9387;margin-top:3px">Budget Plan · Expense Request · Spending · ROI / P&amp;L</div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:#C68A1E;background:#FBF6ED;border-radius:10px;padding:8px 13px;border:1px solid #E8D5AA">Finance data is protected · Not connected to Campaign planning budget</div>
+  </div>
+
+  <!-- Date filter bar -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:12px 16px;margin-bottom:16px">
+    <div style="display:flex;gap:4px;background:#EFEAE0;border-radius:9px;padding:3px;flex-shrink:0">
+      <span onClick="{{ setGMonth }}" style="{{ gMonthBtn }}">Month</span>
+      <span onClick="{{ setGRange }}" style="{{ gRangeBtn }}">Range</span>
+    </div>
+    <sc-if value="{{ isGMonth }}" hint-placeholder-val="{{ true }}">
+      <span onClick="{{ gPrev }}" style="{{ navArrow }}">‹</span>
+      <select onChange="{{ onGMonth }}" style="{{ selectStyle }}"><sc-for list="{{ gMonthOptArr }}" as="o" hint-placeholder-count="12"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+      <select onChange="{{ onGYear }}" style="{{ selectStyle }}"><sc-for list="{{ gYearOptArr }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+      <span onClick="{{ gNext }}" style="{{ navArrow }}">›</span>
+    </sc-if>
+    <sc-if value="{{ isGRange }}" hint-placeholder-val="{{ false }}">
+      <input type="date" value="{{ gStart }}" onChange="{{ onGStart }}" style="{{ dateInputStyle }}">
+      <span style="font-size:13px;color:#9A9387;font-weight:600">→</span>
+      <input type="date" value="{{ gEnd }}" onChange="{{ onGEnd }}" style="{{ dateInputStyle }}">
+    </sc-if>
+    <span onClick="{{ gToday }}" style="{{ todayBtn }}">This month</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap">
+      <select onChange="{{ onFinBrand }}" style="{{ selectStyle }}">
+        <sc-for list="{{ finBrandOpts }}" as="bo" hint-placeholder-count="5"><option value="{{ bo.val }}" selected="{{ bo.sel }}">{{ bo.label }}</option></sc-for>
+      </select>
+      <span onClick="{{ exportCSV }}" style="font-size:12px;font-weight:700;padding:8px 13px;border-radius:10px;border:1px solid #E5DECF;background:#fff;cursor:pointer;color:#6b6258;white-space:nowrap">↓ CSV</span>
+      <div style="font-size:12.5px;font-weight:600;color:#9A9387;white-space:nowrap">{{ gLabel }}</div>
+    </div>
+  </div>
+
+  <!-- Finance tabs -->
+  <div style="display:flex;gap:3px;background:#EFEAE0;border-radius:13px;padding:4px;margin-bottom:22px;overflow-x:auto">
+    <sc-for list="{{ financeTabs }}" as="t" hint-placeholder-count="4"><span onClick="{{ t.onClick }}" style="{{ t.style }}">{{ t.label }}</span></sc-for>
+  </div>
+
+  <!-- ══ BUDGET PLAN ══ -->
+  <sc-if value="{{ isBudgetPlan }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:18px">
+      <div style="background:#211F1C;color:#fff;border-radius:16px;padding:18px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent,#B8945A);font-weight:700">Total Plan</div><div style="font-size:25px;font-weight:700;margin-top:6px">฿4.50M</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700">Committed</div><div style="font-size:25px;font-weight:700;margin-top:6px">฿2.84M</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700">Available</div><div style="font-size:25px;font-weight:700;margin-top:6px">฿1.66M</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px">Allocation by brand</div>
+        <div style="display:flex;flex-direction:column;gap:15px">
+          <sc-for list="{{ budgetByBrand }}" as="b" hint-placeholder-count="4">
+            <div><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span style="font-weight:600">{{ b.name }}</span><span style="color:#6b6258">{{ b.spentF }} / {{ b.planF }} · <b style="color:{{ b.pctColor }}">{{ b.pct }}</b></span></div><div style="height:8px;background:#F0EBE0;border-radius:5px;overflow:hidden"><div style="height:8px;border-radius:5px;width:{{ b.pctW }};background:{{ b.color }}"></div></div></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px">By category</div>
+        <div style="display:flex;flex-direction:column;gap:15px">
+          <sc-for list="{{ budgetByCategory }}" as="b" hint-placeholder-count="5">
+            <div><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span style="font-weight:600">{{ b.name }}</span><span style="color:#6b6258">{{ b.amountF }}</span></div><div style="height:8px;background:#F0EBE0;border-radius:5px;overflow:hidden"><div style="height:8px;border-radius:5px;width:{{ b.pctW }};background:var(--accent,#B8945A)"></div></div></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:15px;font-weight:700">Campaign-level profitability</div>
+        <span onClick="{{ exportCSV }}" style="font-size:12px;font-weight:700;padding:7px 13px;border-radius:9px;border:1px solid #E5DECF;background:#fff;cursor:pointer;color:#6b6258">↓ Export CSV</span>
+      </div>
+      <div style="display:grid;grid-template-columns:18px 1.6fr 1fr 1fr 1fr 1.1fr 0.8fr 0.8fr;gap:10px;padding:12px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase;align-items:center"><span></span><span>Campaign</span><span>Revenue</span><span>Budget</span><span>Expense</span><span>Gross Profit</span><span>ROI</span><span>ROAS</span></div>
+      <sc-for list="{{ pnlRows }}" as="p" hint-placeholder-count="6">
+        <div onClick="{{ p.onToggle }}" style="display:grid;grid-template-columns:18px 1.6fr 1fr 1fr 1fr 1.1fr 0.8fr 0.8fr;gap:10px;padding:13px 20px;border-bottom:1px solid #F4EFE5;align-items:center;cursor:pointer;background:{{ p.rowBg }}">
+          <span style="font-size:10px;color:#9A9387;text-align:center">{{ p.toggleIcon }}</span>
+          <div style="display:flex;align-items:center;gap:9px;min-width:0"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ p.color }}"></span><span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</span></div>
+          <div style="font-size:12.5px;font-weight:600">{{ p.revenue }}</div>
+          <div style="font-size:12.5px;color:#6b6258">{{ p.budget }}</div>
+          <div style="font-size:12.5px;color:#6b6258">{{ p.expense }}</div>
+          <div style="font-size:12.5px;font-weight:700;color:{{ p.gpColor }}">{{ p.gp }}</div>
+          <div style="font-size:12.5px;font-weight:700;color:{{ p.roiColor }}">{{ p.roi }}</div>
+          <div style="font-size:12.5px;color:#6b6258">{{ p.roas }}</div>
+        </div>
+        <sc-for list="{{ p.detail }}" as="dl" hint-placeholder-count="0">
+          <div style="display:grid;grid-template-columns:18px 1.6fr 1fr 1fr 1fr 1.1fr 0.8fr 0.8fr;gap:10px;padding:9px 20px 9px 46px;border-bottom:1px solid #F9F5EF;align-items:center;background:#FAFAF7">
+            <span></span>
+            <span style="font-size:12px;color:#6b6258">{{ dl.label }}</span>
+            <span></span>
+            <span style="font-size:12px;color:#9A9387;text-align:left">{{ dl.budget }}</span>
+            <span style="font-size:12px;font-weight:600;color:#211F1C">{{ dl.actual }}</span>
+            <span></span><span></span><span></span>
+          </div>
+        </sc-for>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ══ EXPENSE REQUEST (renamed from Budget Request) ══ -->
+  <sc-if value="{{ isBudgetRequest }}" hint-placeholder-val="{{ false }}">
+  <div>
+
+    <!-- SUCCESS STATE -->
+    <sc-if value="{{ expSubmitted }}" hint-placeholder-val="{{ false }}">
+    <div style="max-width:500px;margin:48px auto;background:#fff;border:1px solid #E8E4DC;border-radius:24px;padding:40px 36px;text-align:center;box-shadow:0 4px 20px rgba(33,31,28,.08)">
+      <div style="width:56px;height:56px;border-radius:50%;background:#EEF4EE;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:26px">✓</div>
+      <div style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px">Request Submitted</div>
+      <div style="font-size:13px;color:var(--accent,#B8945A);font-weight:700;margin-bottom:6px;font-family:monospace">{{ expReqId }}</div>
+      <div style="font-size:13.5px;color:#6b6258;margin-bottom:28px;line-height:1.5">{{ expApprovalMsg }}</div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <span onClick="{{ openPvPage }}" style="font-size:13.5px;font-weight:700;padding:12px 22px;border-radius:11px;background:#1a3a6b;color:#fff;cursor:pointer">🖨 View Voucher</span>
+        <span onClick="{{ resetExpForm }}" style="font-size:13.5px;font-weight:700;padding:12px 22px;border-radius:11px;border:1.5px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">New Request</span>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- FORM + SIDEBAR -->
+    <sc-if value="{{ expNotSubmitted }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+
+      <!-- LEFT: Form -->
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+
+        <!-- Card 1: Request Info -->
+        <div style="background:#fff;border:1px solid #E8E4DC;border-radius:18px;padding:22px 24px;box-shadow:0 2px 8px rgba(33,31,28,.05)">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;margin-bottom:16px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">1</span>Request Info</div>
+          <div style="display:flex;flex-direction:column;gap:13px">
+            <div>
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Request Title <span style="color:#B33A2E">*</span></label>
+              <input type="text" value="{{ expTitle }}" placeholder="e.g. KOL Fee — Wagyu Festival Jun 2026" onChange="{{ onExpTitle }}" style="{{ expFieldStyle }}">
+              <sc-if value="{{ expErrTitle }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:#B33A2E;margin-top:5px;font-weight:600">⚠ {{ expErrTitle }}</div></sc-if>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Brand <span style="color:#B33A2E">*</span></label>
+                <select onChange="{{ onExpBrand }}" style="{{ expSelectStyle }}">
+                  <sc-for list="{{ expBrandOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Branch <span style="color:#B33A2E">*</span></label>
+                <select onChange="{{ onExpBranch }}" style="{{ expSelectStyle }}">
+                  <sc-for list="{{ expBranchOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Campaign (optional)</label>
+              <select onChange="{{ onExpCampaign }}" style="{{ expSelectStyle }}">
+                <sc-for list="{{ expCampaignOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Expense Detail -->
+        <div style="background:#fff;border:1px solid #E8E4DC;border-radius:18px;padding:22px 24px;box-shadow:0 2px 8px rgba(33,31,28,.05)">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;margin-bottom:16px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">2</span>Expense Detail</div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+
+            <!-- Category picker -->
+            <div style="position:relative">
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Category <span style="color:#B33A2E">*</span></label>
+              <div onClick="{{ toggleExpCat }}" style="{{ expCatTriggerStyle }}">
+                <span style="color:{{ expCatTriggerColor }}">{{ expCatPlaceholder }}</span>
+                <span style="color:#9A9387;font-size:11px;margin-left:auto;flex-shrink:0">▾</span>
+              </div>
+              <sc-if value="{{ expCatSelected }}" hint-placeholder-val="{{ false }}">
+                <div style="display:inline-flex;align-items:center;gap:7px;margin-top:8px;background:#EEF3FF;border:1px solid #C5D4F8;border-radius:9px;padding:6px 12px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#3B6BF5;flex-shrink:0"></span>
+                  <span style="font-size:12.5px;font-weight:700;color:#1E3A8A">{{ expCatGroup }} · {{ expCatLabelVal }}</span>
+                  <span onClick="{{ clearExpCat }}" style="font-size:11px;color:#9A9387;cursor:pointer;margin-left:6px;padding:2px 4px">✕</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ expCatOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:300;background:#fff;border:1.5px solid #E5DECF;border-radius:14px;box-shadow:0 8px 28px rgba(33,31,28,.18);overflow:hidden">
+                <div style="padding:10px 12px;border-bottom:1px solid #F0EBE0;background:#FAFAF7">
+                  <input type="text" placeholder="Search: Ads, KOL, Food, Office, Transport…" value="{{ expCatSearch }}" onChange="{{ onExpCatSearch }}" style="width:100%;font-size:13px;padding:8px 12px;border:1.5px solid #E5DECF;border-radius:9px;background:#fff;outline:none;font-family:inherit">
+                </div>
+                <div style="max-height:280px;overflow-y:auto">
+                  <sc-for list="{{ expCatGroups }}" as="cg" hint-placeholder-count="3">
+                    <div style="padding:8px 16px 4px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#B8B0A4;background:#FAFAF7;position:sticky;top:0">{{ cg.group }}</div>
+                    <sc-for list="{{ cg.items }}" as="ci" hint-placeholder-count="3">
+                      <div onClick="{{ ci.onSelect }}" style="{{ ci.itemStyle }}">{{ ci.label }}</div>
+                    </sc-for>
+                  </sc-for>
+                </div>
+              </div>
+              </sc-if>
+            </div>
+
+            <!-- Vendor -->
+            <div>
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Vendor / Payee</label>
+              <input type="text" value="{{ expVendor }}" placeholder="Vendor name or company" onChange="{{ onExpVendor }}" style="{{ expFieldStyle }}">
+            </div>
+
+            <!-- Amounts row -->
+            <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:10px">
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Amount (excl. VAT) <span style="color:#B33A2E">*</span></label>
+                <input type="number" value="{{ expAmountRaw }}" placeholder="0.00" min="0" onChange="{{ onExpAmount }}" style="{{ expFieldStyle }}">
+                <sc-if value="{{ expErrAmount }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:#B33A2E;margin-top:5px;font-weight:600">⚠ {{ expErrAmount }}</div></sc-if>
+              </div>
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">VAT Rate</label>
+                <select onChange="{{ onExpVat }}" style="{{ expSelectStyle }}">
+                  <sc-for list="{{ expVatOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">WHT Rate</label>
+                <select onChange="{{ onExpWht }}" style="{{ expSelectStyle }}">
+                  <sc-for list="{{ expWhtOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+            </div>
+
+            <!-- Amount summary card -->
+            <sc-if value="{{ expHasAmount }}" hint-placeholder-val="{{ false }}">
+            <div style="background:linear-gradient(135deg,#EEF3FF 0%,#F0F6FF 100%);border:1px solid #C5D4F8;border-radius:14px;padding:14px 18px">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
+                <div style="text-align:center;padding:0 8px">
+                  <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6B8AB8;margin-bottom:5px">VAT Amount</div>
+                  <div style="font-size:15px;font-weight:700;color:#1E3A8A">{{ expAmountVatF }}</div>
+                </div>
+                <div style="text-align:center;padding:0 8px;border-left:1px solid #C5D4F8;border-right:1px solid #C5D4F8">
+                  <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6B8AB8;margin-bottom:5px">WHT Deducted</div>
+                  <div style="font-size:15px;font-weight:700;color:#B33A2E">−{{ expAmountWhtF }}</div>
+                </div>
+                <div style="text-align:center;padding:0 8px">
+                  <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6B8AB8;margin-bottom:5px">Net Payable</div>
+                  <div style="font-size:18px;font-weight:800;color:#1E3A8A">{{ expAmountNetF }}</div>
+                </div>
+              </div>
+            </div>
+            </sc-if>
+
+            <!-- Payment info -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Payment Due <span style="color:#B33A2E">*</span></label>
+                <input type="date" value="{{ expPayDue }}" onChange="{{ onExpPayDue }}" style="{{ expFieldStyle }}">
+              </div>
+              <div>
+                <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Payment Type</label>
+                <select onChange="{{ onExpPayType }}" style="{{ expSelectStyle }}">
+                  <sc-for list="{{ expPayTypeOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+            </div>
+
+            <!-- Purpose -->
+            <div>
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Purpose / Description</label>
+              <textarea rows="3" placeholder="Describe the purpose and expected outcome of this expense…" onChange="{{ onExpPurpose }}" style="{{ expTextareaStyle }}">{{ expPurpose }}</textarea>
+            </div>
+
+            <!-- Expected ROI -->
+            <div>
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Expected ROI / KPI</label>
+              <input type="text" value="{{ expRoi }}" placeholder="e.g. 3× ROAS · 500 new visits · 200 coupons redeemed" onChange="{{ onExpRoi }}" style="{{ expFieldStyle }}">
+            </div>
+
+            <!-- Additional Line Items -->
+            <div style="border:1px solid #E5DECF;border-radius:14px;overflow:hidden">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:#FAFAF7;border-bottom:1px solid #EEE8DE">
+                <div style="font-size:12px;font-weight:700;color:#6b6258">Additional Line Items{{ expLineCountLabel }}</div>
+                <span onClick="{{ toggleExpLine }}" style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:8px;background:#211F1C;color:#fff;cursor:pointer">+ Add Line</span>
+              </div>
+              <!-- Existing extra lines -->
+              <sc-if value="{{ expHasLines }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <sc-for list="{{ expLinesDisplay }}" as="el" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #F4EFE5;background:#fff">
+                    <div style="width:22px;height:22px;border-radius:6px;background:#EEF1F8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#3E5C9A;flex-shrink:0">{{ el.n }}</div>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ el.desc }}</div>
+                      <div style="font-size:11px;color:#9A9387">{{ el.catLabel }} · VAT {{ el.vatLabel }}</div>
+                    </div>
+                    <div style="font-size:13px;font-weight:700;color:#211F1C;white-space:nowrap">{{ el.amountF }}</div>
+                    <span onClick="{{ el.onRemove }}" style="font-size:13px;color:#C0B8AD;cursor:pointer;padding:2px 6px;line-height:1">✕</span>
+                  </div>
+                </sc-for>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#F7F4EE">
+                  <div style="font-size:12px;font-weight:700;color:#9A9387">Total (all lines incl. primary)</div>
+                  <div style="font-size:15px;font-weight:800;color:var(--accent,#B8945A)">{{ expGrandTotal }}</div>
+                </div>
+              </div>
+              </sc-if>
+              <!-- Add line mini-form -->
+              <sc-if value="{{ expLineOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:14px;background:#fff;border-top:1px solid #EEE8DE;display:flex;flex-direction:column;gap:10px">
+                <div style="display:grid;grid-template-columns:1.5fr 1fr 0.8fr;gap:10px">
+                  <div>
+                    <label style="display:block;font-size:11px;font-weight:700;color:#6b6258;margin-bottom:5px">Description</label>
+                    <input type="text" value="{{ expLineDesc }}" placeholder="e.g. Food support cost" onChange="{{ onExpLineDesc }}" style="{{ expLineFieldStyle }}">
+                  </div>
+                  <div>
+                    <label style="display:block;font-size:11px;font-weight:700;color:#6b6258;margin-bottom:5px">Amount (฿)</label>
+                    <input type="number" value="{{ expLineAmount }}" placeholder="0" onChange="{{ onExpLineAmount }}" style="{{ expLineFieldStyle }}">
+                  </div>
+                  <div>
+                    <label style="display:block;font-size:11px;font-weight:700;color:#6b6258;margin-bottom:5px">VAT</label>
+                    <select onChange="{{ onExpLineVat }}" style="{{ expLineFieldStyle }};cursor:pointer">
+                      <option value="0">0%</option>
+                      <option value="7">7%</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <span onClick="{{ addExpLine }}" style="flex:1;text-align:center;font-size:13px;font-weight:700;padding:9px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer">Confirm Line</span>
+                  <span onClick="{{ toggleExpLine }}" style="font-size:13px;font-weight:600;padding:9px 16px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">Cancel</span>
+                </div>
+              </div>
+              </sc-if>
+            </div>
+
+            <!-- Attachment -->
+            <div>
+              <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Attachment</label>
+              <div style="border:1.5px dashed #D0C8BA;border-radius:13px;padding:22px 16px;text-align:center;color:#9A9387;background:#FAFAF7;cursor:pointer">
+                <div style="font-size:22px;margin-bottom:8px">📎</div>
+                <div style="font-size:13px;font-weight:600;color:#6b6258;margin-bottom:4px">Drop file here or click to upload</div>
+                <div style="font-size:12px">Quotation · Invoice · Brief · Agreement (PDF / JPG / PNG)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Budget Check Card (shows when category + amount filled) -->
+        <sc-if value="{{ expShowBudgetCheck }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1px solid #E8E4DC;border-radius:18px;padding:20px 22px;box-shadow:0 2px 8px rgba(33,31,28,.05)">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700">Budget Check · {{ expBudgetCheckLabel }}</div>
+            <span style="{{ expBudgetStatusStyle }}">{{ expBudgetStatusLabel }}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+            <div style="text-align:center"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:5px">Budget</div><div style="font-size:18px;font-weight:700">{{ expBudgetTotal }}</div></div>
+            <div style="text-align:center;border-left:1px solid #F0EBE0;border-right:1px solid #F0EBE0"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:5px">Used</div><div style="font-size:18px;font-weight:700;color:#C68A1E">{{ expBudgetUsed }}</div></div>
+            <div style="text-align:center"><div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:5px">Remaining</div><div style="font-size:18px;font-weight:700;color:{{ expBudgetRemainColor }}">{{ expBudgetRemain }}</div></div>
+          </div>
+          <div style="height:9px;background:#F0EBE0;border-radius:6px;overflow:hidden;margin-bottom:6px"><div style="height:9px;border-radius:6px;width:{{ expBudgetPctW }};background:{{ expBudgetBarColor }}"></div></div>
+          <div style="font-size:11.5px;color:#9A9387;font-weight:600">{{ expBudgetPctLabel }} used · This request: <b style="color:#211F1C">{{ expAmountTotalF }}</b></div>
+        </div>
+        </sc-if>
+
+        <!-- Approval Route (shows when amount > 0) -->
+        <sc-if value="{{ expShowApproval }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1px solid #E8E4DC;border-radius:18px;padding:20px 22px;box-shadow:0 2px 8px rgba(33,31,28,.05)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:14px">Approval Route</div>
+          <sc-for list="{{ expApprovalSteps }}" as="step" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #F4EFE5">
+              <div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;font-weight:800;background:{{ step.numBg }};color:{{ step.numFg }}">{{ step.n }}</div>
+              <div style="flex:1"><div style="font-size:13px;font-weight:700">{{ step.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ step.role }}</div></div>
+              <span style="{{ step.badgeStyle }}">{{ step.badge }}</span>
+            </div>
+          </sc-for>
+          <div style="font-size:12px;color:#9A9387;margin-top:10px">{{ expApprovalNote }}</div>
+        </div>
+        </sc-if>
+
+        <!-- Validation errors -->
+        <sc-if value="{{ expHasErrors }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#FBF3F1;border:1.5px solid #E8C5BC;border-radius:14px;padding:14px 18px">
+          <div style="font-size:12.5px;font-weight:700;color:#B33A2E;margin-bottom:8px">Please fix before submitting:</div>
+          <sc-for list="{{ expErrors }}" as="err" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:#B33A2E;font-weight:600;margin-bottom:6px"><span style="flex-shrink:0">⚠</span><span>{{ err }}</span></div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <!-- Desktop actions -->
+        <div style="display:flex;gap:10px;padding-bottom:8px">
+          <span onClick="{{ submitExpReq }}" style="flex:1;text-align:center;font-size:14px;font-weight:700;color:#fff;background:#211F1C;border-radius:11px;padding:13px;cursor:pointer">Submit Request</span>
+          <span style="font-size:14px;font-weight:700;color:#6b6258;border:1.5px solid #E5DECF;border-radius:11px;padding:13px 20px;cursor:pointer;white-space:nowrap">Save Draft</span>
+        </div>
+      </div>
+
+      <!-- RIGHT: Recent Requests -->
+      <div style="flex-shrink:0;width:360px;min-width:280px;display:flex;flex-direction:column;gap:11px">
+        <div style="font-size:15px;font-weight:700">Recent Requests</div>
+        <sc-if value="{{ expReqListEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1.5px dashed #DDD4C4;border-radius:18px;padding:44px 20px;text-align:center">
+          <div style="font-size:28px;margin-bottom:10px">📋</div>
+          <div style="font-size:14px;font-weight:600;color:#6b6258;margin-bottom:5px">No requests yet</div>
+          <div style="font-size:12.5px;color:#9A9387">Submit your first expense request using the form</div>
+        </div>
+        </sc-if>
+        <sc-for list="{{ recentRequests }}" as="r" hint-placeholder-count="4">
+        <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:15px 17px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0">
+              <span style="width:9px;height:9px;border-radius:50%;flex-shrink:0;background:{{ r.color }}"></span>
+              <div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.category }}</div>
+            </div>
+            <span style="{{ r.statusStyle }}">{{ r.status }}</span>
+          </div>
+          <div style="font-size:12px;color:#9A9387;margin-bottom:11px">{{ r.brand }} · {{ r.campaign }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+            <div><div style="font-size:10px;color:#9A9387;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">Requested</div><div style="font-size:13px;font-weight:700">{{ r.requestedF }}</div></div>
+            <div><div style="font-size:10px;color:#9A9387;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">Approved</div><div style="font-size:13px;font-weight:700;color:{{ r.approvedColor }}">{{ r.approvedF }}</div></div>
+            <div><div style="font-size:10px;color:#9A9387;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">Due</div><div style="font-size:13px;font-weight:700">{{ r.due }}</div></div>
+          </div>
+        </div>
+        </sc-for>
+      </div>
+
+    </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+  <!-- ══ EXPENSE LOG ══ -->
+  <sc-if value="{{ isExpense }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700">Actual spending</div>
+      <span onClick="{{ goExpReq }}" style="font-size:13px;font-weight:700;color:#fff;background:#211F1C;border-radius:10px;padding:9px 15px;cursor:pointer">+ New Expense Request</span>
+    </div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:1.6fr 1.2fr 1fr 1fr 0.9fr 1.2fr;gap:10px;padding:13px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase"><span>Vendor</span><span>Category / Brand</span><span>Amount</span><span>VAT 7%</span><span>Date</span><span>Status</span></div>
+      <sc-for list="{{ expenses }}" as="e" hint-placeholder-count="5">
+        <div style="display:grid;grid-template-columns:1.6fr 1.2fr 1fr 1fr 0.9fr 1.2fr;gap:10px;padding:14px 20px;border-bottom:1px solid #F4EFE5;align-items:center">
+          <div style="display:flex;align-items:center;gap:9px;min-width:0"><span style="font-size:13px">📎</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ e.vendor }}</span></div>
+          <div style="font-size:12px;color:#6b6258"><div style="font-weight:600;color:#211F1C">{{ e.category }}</div>{{ e.brand }}</div>
+          <div style="font-size:13px;font-weight:700">{{ e.amountF }}</div>
+          <div style="font-size:12.5px;color:#6b6258">{{ e.vatF }}</div>
+          <div style="font-size:12px;color:#6b6258">{{ e.date }}</div>
+          <div style="display:flex;align-items:center;gap:8px"><span style="{{ e.statusStyle }}">{{ e.status }}</span><span onClick="{{ e.openVoucher }}" style="font-size:11px;font-weight:700;color:#1a3a6b;border:1px solid #ccd8ec;border-radius:7px;padding:4px 9px;cursor:pointer;white-space:nowrap;background:#f4f8ff">Voucher ↗</span></div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- PV MODAL -->
+    <sc-if value="{{ pvModalOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:48px 16px 20px" onClick="{{ closePvModal }}">
+      <div style="position:absolute;inset:0;background:rgba(33,31,28,.72);backdrop-filter:blur(4px)"></div>
+      <div style="position:relative;z-index:1;background:#fff;border-radius:16px;width:100%;max-width:720px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45);display:flex;flex-direction:column;max-height:90vh" onClick="{{ stop }}">
+        <div style="background:#1a3a6b;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-size:14px;font-weight:700">ใบสำคัญจ่าย · {{ pvNo }}</div>
+          <div style="display:flex;gap:8px">
+            <span onClick="{{ openPvPage }}" style="font-size:12px;font-weight:700;padding:6px 13px;border-radius:7px;background:#4472c4;color:#fff;cursor:pointer">🖨 Open Full Voucher</span>
+            <span onClick="{{ closePvModal }}" style="font-size:12px;padding:6px 11px;border-radius:7px;border:1px solid rgba(255,255,255,.4);color:#fff;cursor:pointer">✕</span>
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:18px 20px">
+          <div style="font-size:11px;color:#4472c4;background:#f0f5ff;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-weight:600">Preview — Finance module data stays unchanged. Voucher for accounting reference only.</div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:'Sarabun',system-ui,sans-serif;color:#111">
+            <tbody>
+              <tr><td colspan="5" style="border:1px solid #888;text-align:center;padding:4px 6px;font-weight:700;font-size:11px;color:#1a3a6b">14/2 ซอยสุขุมวิท 61 แขวงคลองตันเหนือ เขตวัฒนา กรุงเทพฯ 10110</td></tr>
+              <tr><td colspan="5" style="border:1px solid #888;background:#4472c4;text-align:center;padding:5px 6px;font-weight:700;font-size:13px;color:#fff;letter-spacing:1px">PAYMENT VOUCHER</td></tr>
+              <tr><td colspan="3" style="border:1px solid #888;padding:3px 6px;text-align:right;font-size:10px;color:#555;font-weight:600">PV NO.</td><td colspan="2" style="border:1px solid #888;padding:3px 8px;font-size:10px">{{ pvNo }}</td></tr>
+              <tr><td colspan="3" style="border:1px solid #888;padding:3px 6px;text-align:right;font-size:10px;color:#555;font-weight:600">วันที่</td><td colspan="2" style="border:1px solid #888;padding:3px 8px;font-size:10px">{{ pvDate }}</td></tr>
+              <tr><td style="border:1px solid #888;padding:4px 6px;font-weight:600;font-size:10px;white-space:nowrap">จ่ายให้ (Pay To) :</td><td colspan="4" style="border:1px solid #888;padding:4px 8px;font-size:11px;font-weight:700">{{ pvPayTo }}</td></tr>
+              <tr><td colspan="3" style="border:1px solid #888;background:#dde8f3;text-align:center;padding:3px 6px;font-weight:700;font-size:10px">รายการ (Description)</td><td style="border:1px solid #888;background:#dde8f3;text-align:center;padding:3px 4px;font-weight:700;font-size:10px">หน่วยงาน</td><td style="border:1px solid #888;background:#dde8f3;text-align:center;padding:3px 4px;font-weight:700;font-size:10px">จำนวนเงิน</td></tr>
+              <tr><td colspan="3" style="border:1px solid #888;padding:6px;height:24px;font-size:10px">{{ pvItemDesc }}</td><td style="border:1px solid #888;padding:6px 4px;text-align:center;font-size:10px">{{ pvBrand }}</td><td style="border:1px solid #888;padding:6px;text-align:right;font-weight:700;font-size:11px">{{ pvAmountStr }}</td></tr>
+              <tr><td colspan="3" style="border:1px solid #aaa;height:18px"></td><td style="border:1px solid #aaa"></td><td style="border:1px solid #aaa"></td></tr>
+              <tr><td style="border:1px solid #888;padding:3px 6px;font-size:10px;font-weight:600">Brand</td><td colspan="4" style="border:1px solid #888;padding:3px 8px;font-size:10px">{{ pvBrand }}</td></tr>
+              <tr><td style="border:1px solid #888;padding:3px 6px;font-size:10px;font-weight:600">Branch</td><td colspan="4" style="border:1px solid #888;padding:3px 8px;font-size:10px">{{ pvBranch }}</td></tr>
+              <tr><td style="border:1px solid #888;padding:3px 6px;font-size:10px">ภาษี ณ ที่จ่าย 3%</td><td colspan="3" style="border:1px solid #888"></td><td style="border:1px solid #888;padding:3px 6px;text-align:right;font-size:10px">{{ pvWhtStr }}</td></tr>
+              <tr><td style="border:1px solid #888;padding:3px 6px;font-size:10px">ภาษี 7%</td><td colspan="3" style="border:1px solid #888"></td><td style="border:1px solid #888;padding:3px 6px;text-align:right;font-size:10px">{{ pvVatStr }}</td></tr>
+              <tr><td style="border:1px solid #888;padding:4px 6px;font-weight:700;font-size:10px;background:#eef4ea">รวม (ตัวอักษร)</td><td colspan="2" style="border:1px solid #888;padding:4px 6px;font-size:9.5px;background:#eef4ea">{{ pvTotalWords }}</td><td style="border:1px solid #888;padding:4px 5px;text-align:center;font-weight:600;font-size:10px;background:#eef4ea">จำนวนเงิน</td><td style="border:1px solid #888;padding:4px 6px;text-align:right;font-weight:700;font-size:12px;background:#eef4ea">{{ pvTotalStr }}</td></tr>
+            </tbody>
+          </table>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:-1px;font-family:'Sarabun',system-ui,sans-serif">
+            <tbody>
+              <tr><td rowspan="4" style="border:1px solid #888;padding:6px 10px;vertical-align:top;font-size:10px;line-height:1.9;width:42%"><div>เอกสารประกอบ .......................................</div><div>เลขที่ใบสั่งซื้อ .......................................</div><div>หนังสือรับรองหัก ณ ที่จ่าย .............. ฉบับ</div></td><td style="border:1px solid #888;padding:3px 6px;text-align:center;font-weight:600;font-size:10px;background:#e4edf7">ผู้จัดทำ / วันที่</td><td style="border:1px solid #888;padding:3px 6px;text-align:center;font-weight:600;font-size:10px;background:#e4edf7">ผู้อนุมัติ / วันที่</td></tr>
+              <tr><td style="border:1px solid #888;height:34px"></td><td style="border:1px solid #888;height:34px"></td></tr>
+              <tr><td style="border:1px solid #888;padding:3px 6px;text-align:center;font-weight:600;font-size:10px;background:#e4edf7">ผู้จ่ายเงิน / วันที่</td><td style="border:1px solid #888;background:#fafafa"></td></tr>
+              <tr><td style="border:1px solid #888;height:34px"></td><td style="border:1px solid #888;background:#fafafa"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:13px 18px;border-top:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between;background:#FBF9F4;flex-shrink:0">
+          <div style="font-size:12px;color:#9A9387">{{ pvBrand }} · {{ pvBranch }} · สร้างจาก Marketing OS</div>
+          <span onClick="{{ openPvPage }}" style="font-size:13px;font-weight:700;padding:9px 18px;border-radius:10px;background:#1a3a6b;color:#fff;cursor:pointer">Open Printable Version →</span>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+  <!-- ══ ROI / P&L ══ -->
+  <sc-if value="{{ isPnl }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">
+      <div>
+        <div style="font-size:16px;font-weight:700">{{ pnlPeriodTitle }}</div>
+        <div style="font-size:12px;color:#9A9387;margin-top:2px">Compared with {{ pnlPrevLabel }}</div>
+      </div>
+      <div style="display:flex;gap:4px;background:#EFEAE0;border-radius:11px;padding:4px">
+        <span onClick="{{ setPnlMonth }}" style="{{ pnlMonthBtn }}">Month</span>
+        <span onClick="{{ setPnlYear }}" style="{{ pnlYearBtn }}">Year</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin-bottom:16px">
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700">Revenue</div><div style="font-size:23px;font-weight:700;margin-top:6px">{{ pnlRev }}</div><div style="font-size:12px;font-weight:700;margin-top:4px;color:{{ pnlRevColor }}">{{ pnlRevDelta }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700">Expense</div><div style="font-size:23px;font-weight:700;margin-top:6px">{{ pnlExp }}</div><div style="font-size:12px;font-weight:700;margin-top:4px;color:{{ pnlExpColor }}">{{ pnlExpDelta }}</div></div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:16px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700">Gross Profit</div><div style="font-size:23px;font-weight:700;margin-top:6px;color:#4E7A4E">{{ pnlGp }}</div><div style="font-size:12px;font-weight:700;margin-top:4px;color:{{ pnlGpColor }}">{{ pnlGpDelta }}</div></div>
+      <div style="background:#211F1C;color:#fff;border-radius:16px;padding:16px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent,#B8945A);font-weight:700">Blended ROAS</div><div style="font-size:23px;font-weight:700;margin-top:6px">{{ pnlRoas }}</div><div style="font-size:12px;font-weight:700;margin-top:4px;color:#cabfa9">{{ pnlRoasDelta }}</div></div>
+    </div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px 22px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:18px"><div style="font-size:15px;font-weight:700">This {{ pnlPeriodWord }} vs {{ pnlPrevLabel }}</div><div style="display:flex;gap:14px;font-size:12px;color:#6b6258"><span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:var(--accent,#B8945A)"></span>This {{ pnlPeriodWord }}</span><span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:#D8CDBA"></span>Previous</span></div></div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <sc-for list="{{ pnlCompare }}" as="c" hint-placeholder-count="3">
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span style="font-weight:600">{{ c.label }}</span><span style="color:#6b6258"><b style="color:#211F1C">{{ c.thisV }}</b> vs {{ c.prevV }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="height:11px;border-radius:6px;background:var(--accent,#B8945A);width:{{ c.thisW }}"></div>
+              <div style="height:11px;border-radius:6px;background:#D8CDBA;width:{{ c.prevW }}"></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid #ECE6DA;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:15px;font-weight:700">Category / Line item · Budget Breakdown</div>
+        <span onClick="{{ exportCSV }}" style="font-size:12px;font-weight:700;padding:7px 13px;border-radius:9px;border:1px solid #E5DECF;background:#fff;cursor:pointer;color:#6b6258">↓ Export CSV</span>
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 130px;gap:10px;padding:12px 20px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9A9387;text-transform:uppercase;align-items:center">
+        <span>Category / Line item</span><span style="text-align:right">Budget</span><span style="text-align:right">Actual</span><span style="text-align:right">Remaining</span><span>Usage</span>
+      </div>
+      <sc-for list="{{ budgetSections }}" as="sec" hint-placeholder-count="5">
+        <div onClick="{{ sec.onToggle }}" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 130px;gap:10px;padding:13px 20px;border-bottom:1px solid #E8E2D6;align-items:center;cursor:pointer;background:#F6F3EC">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span style="font-size:10px;color:#9A9387;width:14px;text-align:center;flex-shrink:0">{{ sec.toggleIcon }}</span>
+            <div><div style="font-size:13.5px;font-weight:700">{{ sec.label }}</div><div style="font-size:11px;color:#9A9387">{{ sec.sub }}</div></div>
+          </div>
+          <div style="text-align:right;font-size:13px;font-weight:700">{{ sec.totalBudgetF }}</div>
+          <div style="text-align:right;font-size:13px;font-weight:700">{{ sec.totalActualF }}</div>
+          <div style="text-align:right;font-size:13px;font-weight:700;color:{{ sec.remainColor }}">{{ sec.remainF }}</div>
+          <div style="display:flex;flex-direction:column;gap:4px"><div style="height:7px;background:#E8E2D6;border-radius:4px;overflow:hidden"><div style="height:7px;border-radius:4px;width:{{ sec.pctW }};background:{{ sec.barColor }}"></div></div><span style="font-size:10.5px;color:#9A9387;font-weight:600">{{ sec.pctLabel }}</span></div>
+        </div>
+        <sc-for list="{{ sec.items }}" as="item" hint-placeholder-count="0">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 130px;gap:10px;padding:10px 20px 10px 44px;border-bottom:1px solid #F4EFE5;align-items:center;background:#fff">
+            <span style="font-size:12.5px;color:#6b6258">{{ item.name }}</span>
+            <div style="text-align:right;font-size:12.5px;color:#9A9387">{{ item.budgetF }}</div>
+            <div style="text-align:right;font-size:12.5px;font-weight:600;color:#211F1C">{{ item.actualF }}</div>
+            <div style="text-align:right;font-size:12.5px;font-weight:600;color:{{ item.remainColor }}">{{ item.remainF }}</div>
+            <div style="display:flex;flex-direction:column;gap:3px"><div style="height:5px;background:#F0EBE0;border-radius:3px;overflow:hidden"><div style="height:5px;border-radius:3px;width:{{ item.pctW }};background:{{ item.barColor }}"></div></div><span style="font-size:10px;color:#9A9387">{{ item.pctLabel }}</span></div>
+          </div>
+        </sc-for>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ══ APPROVAL ══ -->
+  <sc-if value="{{ isApproval }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+      <div><div style="font-size:16px;font-weight:700">Approval Queue</div><div style="font-size:12.5px;color:#9A9387;margin-top:3px">{{ pendingCount }} requests waiting for your signature</div></div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+      <!-- Pending list -->
+      <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:11px">
+        <sc-for list="{{ approvalItems }}" as="ai" hint-placeholder-count="3">
+          <div style="background:#fff;border:1.5px solid {{ ai.borderColor }};border-radius:16px;padding:16px 18px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                <span style="width:9px;height:9px;border-radius:50%;flex-shrink:0;background:{{ ai.color }}"></span>
+                <div style="font-size:14px;font-weight:700">{{ ai.category }}</div>
+              </div>
+              <span style="{{ ai.statusStyle }}">{{ ai.status }}</span>
+            </div>
+            <div style="font-size:12px;color:#9A9387;margin-bottom:12px">{{ ai.brand }} · {{ ai.campaign }} · Due {{ ai.due }}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+              <div><div style="font-size:10px;color:#9A9387;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Requested</div><div style="font-size:15px;font-weight:700">{{ ai.requestedF }}</div></div>
+              <div><div style="font-size:10px;color:#9A9387;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Approved</div><div style="font-size:15px;font-weight:700;color:{{ ai.approvedColor }}">{{ ai.approvedF }}</div></div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <span onClick="{{ ai.onApprove }}" style="{{ ai.approveBtnStyle }}">✓ Approve</span>
+              <span style="font-size:13px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid #E5DECF;color:#B33A2E;cursor:pointer;background:#fff">Reject</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- Signature pad -->
+      <div style="flex-shrink:0;width:380px;min-width:280px">
+        <div style="background:#fff;border:1px solid #E8E4DC;border-radius:18px;padding:22px;box-shadow:0 2px 8px rgba(33,31,28,.05)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">Digital Signature</div>
+          <div style="font-size:12px;color:#9A9387;margin-bottom:14px">{{ sigTargetLabel }}</div>
+          <sc-if value="{{ sigSaved }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#EEF4EE;border:1px solid #B5CEAF;border-radius:12px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+              <span style="font-size:20px">✓</span>
+              <div><div style="font-size:13px;font-weight:700;color:#2E5E2E">Approved &amp; signed</div><div style="font-size:11.5px;color:#4E7A4E;margin-top:2px">{{ sigApprovedLabel }}</div></div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ sigNotSaved }}" hint-placeholder-val="{{ true }}">
+            <div style="font-size:11.5px;color:#9A9387;margin-bottom:8px;font-weight:600">Draw your signature below:</div>
+            <canvas ref="{{ sigCanvasRef }}" width="600" height="140" style="border:1.5px solid #E5DECF;border-radius:12px;background:#FAFAF7;cursor:crosshair;width:100%;height:140px;display:block;touch-action:none"></canvas>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <span onClick="{{ clearSig }}" style="font-size:13px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;flex:1;text-align:center">Clear</span>
+              <span onClick="{{ saveSig }}" style="font-size:13px;font-weight:700;padding:8px 18px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer;flex:2;text-align:center">Confirm &amp; Approve</span>
+            </div>
+            <div style="font-size:11px;color:#9A9387;text-align:center;margin-top:8px">By signing you confirm approval of the selected request</div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    financeTab: 'request',
+    pnlPeriod: 'month',
+    gDateMode: 'month',
+    gMonth: 5, gYear: 2026,
+    gStart: '2026-06-01', gEnd: '2026-06-30',
+    pvModalExp: null,
+    budgetExpanded: { digital: true, system: false, operation: false, outsource: false, admin: false },
+    // expense request form
+    expState: { title:'', brand:'', branch:'', campaign:'', catKey:'', catLabel:'', catGroup:'', vendor:'', amountRaw:'', vatRate:'7', whtRate:'3', payDue:'', payType:'transfer', purpose:'', roi:'' },
+    expCatSearch: '',
+    expCatOpen: false,
+    expLines: [],
+    expLineDesc: '', expLineAmount: '', expLineVat: 0,
+    expLineOpen: false,
+    expSubmitted: false,
+    expValidated: false,
+    expReqCounter: 5,
+    finBrand: 'all',
+    campExpanded: {},
+    sigHasContent: false,
+    sigSaved: false,
+    sigTarget: null,
+    approvedReqs: {}
+  };
+
+  sigCanvasRef = React.createRef();
+  _sigSetup = false;
+
+  componentDidMount() { this._setupSig(); }
+  componentDidUpdate() { if (!this._sigSetup) this._setupSig(); }
+  _setupSig() {
+    const canvas = this.sigCanvasRef.current;
+    if (!canvas || this._sigSetup) return;
+    this._sigSetup = true;
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#211F1C'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    let drawing = false;
+    const getPos = (e) => { const r = canvas.getBoundingClientRect(), sc = canvas.width / r.width; const t = e.touches ? e.touches[0] : e; return { x: (t.clientX - r.left) * sc, y: (t.clientY - r.top) * sc }; };
+    canvas.addEventListener('mousedown', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+    canvas.addEventListener('mousemove', (e) => { if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+    canvas.addEventListener('mouseup', () => { drawing = false; this.setState({ sigHasContent: true }); });
+    canvas.addEventListener('mouseleave', () => { drawing = false; });
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
+    canvas.addEventListener('touchend', () => { drawing = false; this.setState({ sigHasContent: true }); });
+  }
+  clearSig() {
+    const canvas = this.sigCanvasRef.current;
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    this.setState({ sigHasContent: false, sigSaved: false });
+  }
+  saveSig() {
+    if (!this.state.sigHasContent) return;
+    const idx = this.state.sigTarget;
+    if (idx === null) return;
+    this.setState(s => ({
+      sigSaved: true,
+      approvedReqs: { ...s.approvedReqs, [idx]: true }
+    }));
+  }
+  exportCSV() {
+    const ftab = this.state.financeTab;
+    let rows = [], filename = 'finance.csv';
+    if (ftab === 'expense') {
+      filename = 'spending-log.csv';
+      rows = [['Vendor','Category','Brand','Amount','VAT','Date','Status']];
+      this.expData.forEach(e => rows.push([e.vendor, e.category, this.brands[e.b].name, e.amount, e.vat||0, e.date, e.status]));
+    } else if (ftab === 'request') {
+      filename = 'expense-requests.csv';
+      rows = [['Category','Brand','Campaign','Requested','Approved','Due','Status']];
+      this.reqData.forEach(r => rows.push([r.category, this.brands[r.b].name, r.campaign, r.requested, r.approved||0, r.due, r.status]));
+    } else if (ftab === 'roi') {
+      filename = 'budget-breakdown.csv';
+      rows = [['Section','Line Item','Budget','Actual','Remaining','Usage%']];
+      this.budgetLineData.forEach(sec => sec.items.forEach(i => { const pct = i.budget ? Math.round(i.actual/Math.abs(i.budget)*100) : 0; rows.push([sec.label, i.name, i.budget, i.actual, i.budget-i.actual, pct+'%']); }));
+    } else {
+      filename = 'campaign-profitability.csv';
+      rows = [['Campaign','Brand','Revenue','Budget','Expense','Gross Profit','ROI','ROAS']];
+      this.pnlData.forEach(p => { const gp = p.revenue-p.expense; rows.push([p.name, this.brands[p.b].name, p.revenue, p.budget, p.expense, gp, p.roi+'x', p.roas+'x']); });
+    }
+    const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const blob = new Blob(['\uFEFF'+csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  brands = {
+    teppen:   { name: 'TEPPEN',      color: '#B33A2E' },
+    omakase:  { name: 'Omakase Don', color: '#3E5C9A' },
+    mainichi: { name: 'Mainichi',    color: '#4E7A4E' },
+    touka:    { name: 'Touka',       color: '#C68A1E' }
+  };
+
+  finStatusMap = { 'Approved': ['#4E7A4E','#eef4ee'], 'Waiting Approval': ['#C68A1E','#fbf6ed'], 'Paid': ['#3E5C9A','#eef1f8'], 'Pending': ['#C68A1E','#fbf6ed'], 'Unpaid': ['#B33A2E','#fbf0ee'], 'Rejected': ['#B33A2E','#fbf0ee'] };
+
+  budgetBrandData = [
+    { b: 'teppen',   plan: 1500000, spent: 1120000 },
+    { b: 'omakase',  plan: 1200000, spent: 780000 },
+    { b: 'mainichi', plan: 900000,  spent: 590000 },
+    { b: 'touka',    plan: 900000,  spent: 350000 }
+  ];
+  budgetCatData = [
+    { name: 'Paid Ads',      amount: 980000 },
+    { name: 'KOL / Creator', amount: 760000 },
+    { name: 'Production',    amount: 620000 },
+    { name: 'Events',        amount: 320000 },
+    { name: 'Print',         amount: 160000 }
+  ];
+  reqData = [
+    { category: 'KOL fee',     b: 'teppen',   campaign: 'Songkran Teppanyaki', requested: 180000, approved: 150000, due: 'Jul 5',  status: 'Waiting Approval' },
+    { category: 'Production',  b: 'omakase',  campaign: "Father's Day Set",    requested: 80000,  approved: 80000,  due: 'Jun 28', status: 'Approved' },
+    { category: 'Print menus', b: 'touka',    campaign: 'Touka Anniversary',   requested: 45000,  approved: 0,      due: 'Jul 10', status: 'Waiting Approval' },
+    { category: 'Paid ads',    b: 'mainichi', campaign: 'LINE Coupon Drive',   requested: 30000,  approved: 30000,  due: 'May 20', status: 'Paid' },
+    { category: 'Event setup', b: 'teppen',   campaign: 'Wagyu Festival',      requested: 120000, approved: 100000, due: 'Jun 30', status: 'Approved' }
+  ];
+  expData = [
+    { vendor: 'Studio Mori',     category: 'Production', b: 'teppen',   amount: 85000, vat: 5950, date: 'Jun 12', status: 'Paid' },
+    { vendor: 'Meta Ads',        category: 'Paid Ads',   b: 'omakase',  amount: 42000, vat: 2940, date: 'Jun 20', status: 'Paid' },
+    { vendor: 'Nong Aim (KOL)',  category: 'KOL',        b: 'teppen',   amount: 45000, vat: 0,    date: 'Jun 25', status: 'Pending' },
+    { vendor: 'Print House BKK', category: 'Print',      b: 'touka',    amount: 28000, vat: 1960, date: 'Jun 22', status: 'Unpaid' },
+    { vendor: 'LINE Ads',        category: 'Paid Ads',   b: 'mainichi', amount: 30000, vat: 2100, date: 'May 18', status: 'Paid' }
+  ];
+  pnlData = [
+    { name: 'Wagyu Festival',      b: 'teppen',   revenue: 952000,  budget: 450000, expense: 280000, roi: 3.4, roas: 3.4 },
+    { name: 'Songkran Teppanyaki', b: 'teppen',   revenue: 896000,  budget: 270000, expense: 320000, roi: 2.8, roas: 2.8 },
+    { name: "Father's Day Set",    b: 'omakase',  revenue: 342000,  budget: 120000, expense: 95000,  roi: 3.6, roas: 3.6 },
+    { name: 'Cocktail Hour Launch',b: 'touka',    revenue: 143500,  budget: 150000, expense: 35000,  roi: 4.1, roas: 4.1 },
+    { name: 'Golden Week Teaser',  b: 'teppen',   revenue: 220000,  budget: 100000, expense: 100000, roi: 2.2, roas: 2.2 },
+    { name: 'LINE Coupon Drive',   b: 'mainichi', revenue: 46400,   budget: 60000,  expense: 58000,  roi: 0.8, roas: 0.8 }
+  ];
+  budgetLineData = [
+    { key: 'digital', label: 'Digital Marketing', sub: 'ต้นทุนในการขาย/ค่าโฆษณา', items: [
+      { name: 'Facebook/Instagram Ads', budget: 550000, actual: 380000 },
+      { name: 'Google Ads/PPC',         budget: 250000, actual: 145000 },
+      { name: 'SEO',                    budget: 60000,  actual: 48000 },
+      { name: 'Youtube Ads',            budget: 120000, actual: 85000 },
+      { name: 'Twitter',                budget: 30000,  actual: 0 },
+      { name: 'Line Ads',               budget: 180000, actual: 165000 },
+      { name: 'Line Package',           budget: 100000, actual: 100000 },
+      { name: 'Line Broadcast',         budget: 60000,  actual: 55000 },
+      { name: 'KOL',                    budget: 280000, actual: 193000 },
+      { name: 'Food cost (KOL/Photo)',  budget: 90000,  actual: 65000 },
+      { name: 'Voucher',                budget: 120000, actual: 42000 },
+      { name: 'Web advertorial',        budget: 60000,  actual: 30000 },
+      { name: 'Event',                  budget: 100000, actual: 0 },
+      { name: 'TikTok',                 budget: 120000, actual: 88000 },
+      { name: 'SMS',                    budget: 30000,  actual: 0 },
+      { name: 'Delivery Ads',           budget: 60000,  actual: 38000 },
+      { name: 'Chinese Marketing',      budget: 40000,  actual: 0 },
+      { name: 'Other',                  budget: 50000,  actual: 16000 }
+    ]},
+    { key: 'system', label: 'System', sub: 'Total', items: [
+      { name: 'Foodie/Hatohub/Loga',   budget: 180000, actual: 135000 },
+      { name: 'Website (Cloud)',        budget: 80000,  actual: 80000 },
+      { name: 'Eatlab AI',             budget: 80000,  actual: 60000 },
+      { name: 'Shopline',              budget: 60000,  actual: 45000 },
+      { name: 'System develop',        budget: 80000,  actual: 40000 },
+      { name: 'GP 3% subscription',   budget: 40000,  actual: 20000 }
+    ]},
+    { key: 'operation', label: 'Operation', sub: 'Total', items: [
+      { name: 'Base salary',           budget: 240000, actual: 210000 },
+      { name: 'Management fee',        budget: 80000,  actual: 60000 },
+      { name: 'Position Fee',          budget: 60000,  actual: 45000 },
+      { name: 'ค่าเลี้ยงดูบุตร',         budget: 20000,  actual: 18000 },
+      { name: 'Phone',                 budget: 15000,  actual: 14000 },
+      { name: 'Transportation',        budget: 20000,  actual: 12000 },
+      { name: 'Food',                  budget: 25000,  actual: 20000 },
+      { name: 'Point/B (Incentive)',   budget: 40000,  actual: 15000 },
+      { name: 'Bonus',                 budget: 80000,  actual: 60000 },
+      { name: 'OT',                    budget: 30000,  actual: 25000 },
+      { name: 'SSO (Company)',         budget: 40000,  actual: 35000 },
+      { name: 'Creative',              budget: 80000,  actual: 38000 }
+    ]},
+    { key: 'outsource', label: 'Outsource', sub: 'Total', items: [
+      { name: 'Agency',    budget: 250000, actual: 140000 },
+      { name: 'Partime',   budget: 120000, actual: 60000 },
+      { name: 'Outsource', budget: 80000,  actual: 40000 }
+    ]},
+    { key: 'admin', label: 'Administration', sub: 'Total', items: [
+      { name: 'ค่าเช่าออฟฟิศ Marketing', budget: 80000,  actual: 80000 },
+      { name: 'ค่าน้ำ-ค่าไฟ',             budget: 20000,  actual: 18000 },
+      { name: 'Tel + Wifi',              budget: 15000,  actual: 14000 },
+      { name: 'Miscellaneous',           budget: 30000,  actual: 12000 },
+      { name: 'CRM / Customer Mgmt',    budget: 50000,  actual: 0 },
+      { name: 'ค่าเสื่อมราคา - ฮาร์ดแวร์', budget: 30000,  actual: 15000 }
+    ]}
+  ];
+  expCategories = [
+    { key: 'fb_ig',       label: 'Facebook / Instagram Ads', group: 'Digital Marketing' },
+    { key: 'google',      label: 'Google Ads / PPC',         group: 'Digital Marketing' },
+    { key: 'line_ads',    label: 'LINE Ads',                 group: 'Digital Marketing' },
+    { key: 'line_bc',     label: 'LINE Broadcast',           group: 'Digital Marketing' },
+    { key: 'kol',         label: 'KOL / Influencer',         group: 'Digital Marketing' },
+    { key: 'tiktok',      label: 'TikTok Ads',               group: 'Digital Marketing' },
+    { key: 'youtube',     label: 'YouTube Ads',              group: 'Digital Marketing' },
+    { key: 'event',       label: 'Event / Activation',       group: 'Digital Marketing' },
+    { key: 'voucher',     label: 'Voucher / Discount',       group: 'Digital Marketing' },
+    { key: 'delivery',    label: 'Delivery Ads',             group: 'Digital Marketing' },
+    { key: 'photo',       label: 'Food cost / Photo shoot',  group: 'Digital Marketing' },
+    { key: 'seo',         label: 'SEO',                      group: 'Digital Marketing' },
+    { key: 'other_d',     label: 'Other Digital',            group: 'Digital Marketing' },
+    { key: 'website',     label: 'Website (Cloud)',          group: 'System' },
+    { key: 'eatlab',      label: 'Eatlab AI',                group: 'System' },
+    { key: 'shopline',    label: 'Shopline',                 group: 'System' },
+    { key: 'foodie',      label: 'Foodie / Hatohub / Loga', group: 'System' },
+    { key: 'sys_dev',     label: 'System Development',       group: 'System' },
+    { key: 'salary',      label: 'Base Salary',              group: 'Operation' },
+    { key: 'mgmt',        label: 'Management Fee',           group: 'Operation' },
+    { key: 'transport',   label: 'Transportation',           group: 'Operation' },
+    { key: 'food_op',     label: 'Food Allowance',           group: 'Operation' },
+    { key: 'bonus',       label: 'Bonus / Incentive',        group: 'Operation' },
+    { key: 'sso',         label: 'SSO (Company)',            group: 'Operation' },
+    { key: 'ot',          label: 'Overtime (OT)',            group: 'Operation' },
+    { key: 'agency',      label: 'Agency Fee',               group: 'Outsource' },
+    { key: 'partime',     label: 'Part-time / Freelance',    group: 'Outsource' },
+    { key: 'outsource',   label: 'Outsource',                group: 'Outsource' },
+    { key: 'rent',        label: 'Office Rent',              group: 'Administration' },
+    { key: 'utilities',   label: 'Utilities (Water/Electric)',group: 'Administration' },
+    { key: 'tel_wifi',    label: 'Tel + WiFi',               group: 'Administration' },
+    { key: 'misc',        label: 'Miscellaneous',            group: 'Administration' },
+    { key: 'crm_admin',   label: 'CRM / Customer Goods',     group: 'Administration' },
+    { key: 'hardware',    label: 'Hardware / Depreciation',  group: 'Administration' }
+  ];
+  expBudgetByKey = {
+    fb_ig:  { budget: 550000, used: 380000 }, google: { budget: 250000, used: 145000 },
+    line_ads:{ budget: 180000, used: 165000 }, line_bc:{ budget: 60000, used: 55000 },
+    kol:    { budget: 280000, used: 193000 }, tiktok: { budget: 120000, used: 88000 },
+    youtube:{ budget: 120000, used: 85000 },  event:  { budget: 100000, used: 0 },
+    voucher:{ budget: 120000, used: 42000 },  delivery:{ budget: 60000, used: 38000 },
+    photo:  { budget: 90000,  used: 65000 },  seo:    { budget: 60000,  used: 48000 },
+    other_d:{ budget: 50000,  used: 16000 },  website:{ budget: 80000,  used: 80000 },
+    eatlab: { budget: 80000,  used: 60000 },  shopline:{ budget: 60000, used: 45000 },
+    agency: { budget: 250000, used: 140000 }, partime:{ budget: 120000, used: 60000 },
+    rent:   { budget: 80000,  used: 80000 },  misc:   { budget: 30000,  used: 12000 }
+  };
+
+  fmtShort(v) {
+    if (!v && v !== 0) return '—';
+    const abs = Math.abs(v);
+    const s = abs >= 1000000 ? (abs/1000000).toFixed(1)+'M' : abs >= 1000 ? (abs/1000).toFixed(0)+'K' : String(abs);
+    return (v < 0 ? '-' : '') + '฿' + s;
+  }
+  fmtFull(v) { return '฿' + Number(v).toLocaleString('th-TH'); }
+  fmtTH(v) { return Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  badge(status, map) {
+    const [fg, bg] = map[status] || ['#6b6258','#F0EDE6'];
+    return { fontSize:'11.5px', fontWeight:700, padding:'4px 10px', borderRadius:'999px', background:bg, color:fg, whiteSpace:'nowrap', display:'inline-block' };
+  }
+
+  openPvModal(idx) { this.setState({ pvModalExp: idx }); }
+  submitExpReq() {
+    const s = this.state.expState;
+    const errs = [];
+    if (!s.title.trim()) errs.push('Request title is required');
+    if (!s.brand) errs.push('Brand is required');
+    if (!s.catKey) errs.push('Expense category is required');
+    if (!s.amountRaw || parseFloat(s.amountRaw) <= 0) errs.push('Amount must be greater than 0');
+    if (!s.payDue) errs.push('Payment due date is required');
+    if (errs.length) { this.setState({ expValidated: true }); return; }
+    this.setState(prev => ({ expSubmitted: true, expReqCounter: prev.expReqCounter + 1 }));
+  }
+  resetExpForm() {
+    this.setState({ expSubmitted: false, expValidated: false, expCatOpen: false, expCatSearch: '',
+      expState: { title:'', brand:'', branch:'', campaign:'', catKey:'', catLabel:'', catGroup:'', vendor:'', amountRaw:'', vatRate:'7', whtRate:'3', payDue:'', payType:'transfer', purpose:'', roi:'' } });
+  }
+
+  renderVals() {
+    const tabStyle = (active) => active
+      ? { fontSize:'13px', fontWeight:700, padding:'9px 16px', borderRadius:'10px', background:'#fff', color:'#211F1C', cursor:'pointer', whiteSpace:'nowrap', boxShadow:'0 1px 2px rgba(0,0,0,.06)' }
+      : { fontSize:'13px', fontWeight:600, padding:'9px 16px', borderRadius:'10px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+    const segBtn = (active) => active
+      ? { fontSize:'12px', fontWeight:700, padding:'6px 13px', borderRadius:'8px', background:'#fff', color:'#211F1C', cursor:'pointer', boxShadow:'0 1px 2px rgba(0,0,0,.06)', whiteSpace:'nowrap' }
+      : { fontSize:'12px', fontWeight:600, padding:'6px 13px', borderRadius:'8px', color:'#6b6258', cursor:'pointer', whiteSpace:'nowrap' };
+
+    const ftab = this.state.financeTab;
+    const financeTabs = [['plan','Budget Plan'],['request','Expense Request'],['expense','Spending Log'],['roi','ROI / P&L'],['approval','Approval']]
+      .map(([id, label]) => ({ label, onClick: () => this.setState({ financeTab: id }), style: tabStyle(ftab === id) }));
+
+    // date filter
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const gm = this.state.gMonth, gy = this.state.gYear, gDateMode = this.state.gDateMode;
+    const gMonthOptArr = monthNames.map((m,i) => ({ val:i, label:m, sel:i===gm }));
+    const gYearOptArr = [2024,2025,2026,2027].map(y => ({ val:y, label:String(y), sel:y===gy }));
+    const selectStyle = { fontSize:'13px', fontWeight:600, padding:'8px 12px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C', cursor:'pointer' };
+    const dateInputStyle = { fontSize:'13px', fontWeight:600, padding:'8px 12px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C', cursor:'pointer' };
+    const navArrow = { width:'34px', height:'36px', borderRadius:'9px', border:'1px solid #E5DECF', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'17px', color:'#6b6258', flexShrink:0 };
+    const todayBtn = { fontSize:'12px', fontWeight:700, color:'#6b6258', border:'1px solid #E5DECF', borderRadius:'9px', padding:'7px 12px', cursor:'pointer', background:'#fff', whiteSpace:'nowrap' };
+    const gMonthBtn = segBtn(gDateMode==='month');
+    const gRangeBtn = segBtn(gDateMode==='range');
+
+    // budget plan
+    const activeBrand = this.state.finBrand;
+    const budgetByBrand = this.budgetBrandData.filter(b => activeBrand==='all' || b.b===activeBrand).map(b => {
+      const pct = Math.round(b.spent/b.plan*100);
+      return { name:this.brands[b.b].name, color:this.brands[b.b].color, planF:this.fmtShort(b.plan), spentF:this.fmtShort(b.spent), pct:pct+'%', pctW:Math.min(pct,100)+'%', pctColor:pct>95?'#B33A2E':'#6b6258' };
+    });
+    const maxCat = Math.max(...this.budgetCatData.map(c=>c.amount));
+    const budgetByCategory = this.budgetCatData.map(c => ({ name:c.name, amountF:this.fmtShort(c.amount), pctW:Math.round(c.amount/maxCat*100)+'%' }));
+    const budgetSections = this.budgetLineData.map(sec => {
+      const exp = this.state.budgetExpanded[sec.key];
+      const tb = sec.items.reduce((s,i)=>s+i.budget,0);
+      const ta = sec.items.reduce((s,i)=>s+i.actual,0);
+      const rem = tb-ta; const pct = tb?Math.min(Math.round(ta/Math.abs(tb)*100),100):0;
+      return { label:sec.label, sub:sec.sub, expanded:exp, toggleIcon:exp?'▼':'▶',
+        onToggle:()=>this.setState(s=>({budgetExpanded:{...s.budgetExpanded,[sec.key]:!s.budgetExpanded[sec.key]}})),
+        totalBudgetF:this.fmtShort(tb), totalActualF:this.fmtShort(ta),
+        remainF:(rem<0?'-':'')+this.fmtShort(Math.abs(rem)), remainColor:ta>tb?'#B33A2E':'#4E7A4E',
+        pctW:pct+'%', pctLabel:pct+'%', barColor:ta>tb?'#B33A2E':'var(--accent,#B8945A)',
+        items: exp?sec.items.map(i=>{
+          const vb=i.budget,va=i.actual,vr=vb-va,over=va>vb&&vb>0,vp=vb?Math.min(Math.round(va/Math.abs(vb)*100),200):0;
+          return { name:i.name, budgetF:this.fmtShort(vb), actualF:va?this.fmtShort(va):'—',
+            remainF:(vr<0?'-':'')+this.fmtShort(Math.abs(vr)), remainColor:over?'#B33A2E':'#6b6258',
+            pctW:Math.min(vp,100)+'%', pctLabel:vp+'%', barColor:over?'#B33A2E':vp>80?'#C68A1E':'var(--accent,#B8945A)' };
+        }):[] };
+    });
+
+    // expense request form state
+    const es = this.state.expState;
+    const expFieldStyle = { width:'100%', fontSize:'14px', padding:'11px 14px', border:'1.5px solid #E5DECF', borderRadius:'10px', background:'#FAFAF7', outline:'none', fontFamily:'inherit' };
+    const expSelectStyle = { width:'100%', fontSize:'14px', padding:'11px 14px', border:'1.5px solid #E5DECF', borderRadius:'10px', background:'#FAFAF7', outline:'none', fontFamily:'inherit', cursor:'pointer' };
+    const expTextareaStyle = { width:'100%', fontSize:'14px', padding:'11px 14px', border:'1.5px solid #E5DECF', borderRadius:'10px', background:'#FAFAF7', outline:'none', fontFamily:'inherit', resize:'vertical' };
+
+    // brand/branch options
+    const brandNames = { teppen:'TEPPEN', omakase:'Omakase Don', mainichi:'Mainichi', touka:'Touka' };
+    const expBrandOpts = [{ val:'', label:'Select brand…', sel:!es.brand }].concat(Object.keys(brandNames).map(k=>({ val:k, label:brandNames[k], sel:k===es.brand })));
+    const branchMap = { teppen:['Sathorn','Ekkamai'], omakase:['G Tower','Central World','Park Silom','Donki','Iconsiam'], mainichi:['All Branches'], touka:['Hotel','Pop-up','Event'] };
+    const branches = es.brand ? (branchMap[es.brand]||[]) : [];
+    const expBranchOpts = [{ val:'', label:es.brand?'Select branch…':'— select brand first —', sel:!es.branch }].concat(branches.map(b=>({ val:b, label:b, sel:b===es.branch })));
+    const campaignNames = ['Wagyu Festival','Songkran Teppanyaki',"Father's Day Set",'Cocktail Hour Launch','LINE Coupon Drive','Grand Opening'];
+    const expCampaignOpts = [{ val:'', label:'Not linked to a campaign', sel:!es.campaign }].concat(campaignNames.map(c=>({ val:c, label:c, sel:c===es.campaign })));
+
+    // category dropdown
+    const catSearch = (this.state.expCatSearch||'').toLowerCase();
+    const groups = ['Digital Marketing','System','Operation','Outsource','Administration'];
+    const expCatGroups = groups.map(g => ({
+      group: g,
+      items: this.expCategories.filter(c => c.group===g && (!catSearch || c.label.toLowerCase().includes(catSearch) || g.toLowerCase().includes(catSearch))).map(c => ({
+        label: c.label,
+        onSelect: () => this.setState(s=>({ expState:{...s.expState, catKey:c.key, catLabel:c.label, catGroup:c.group}, expCatOpen:false, expCatSearch:'' })),
+        itemStyle: { padding:'9px 16px', cursor:'pointer', fontSize:'13.5px', fontWeight: c.key===es.catKey?700:400, color: c.key===es.catKey?'#3B6BF5':'#211F1C', background: c.key===es.catKey?'#EEF3FF':'transparent' }
+      }))
+    })).filter(g=>g.items.length>0);
+    const expCatOpen = this.state.expCatOpen;
+    const expCatSelected = !!es.catKey;
+    const expCatLabelVal = es.catLabel;
+    const expCatGroup = es.catGroup;
+    const expCatPlaceholder = es.catKey ? es.catLabel : 'Select expense category…';
+    const expCatTriggerColor = es.catKey ? '#211F1C' : '#9A9387';
+    const expCatTriggerStyle = { display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'14px', padding:'11px 14px', border:'1.5px solid #E5DECF', borderRadius:'10px', background:'#FAFAF7', cursor:'pointer' };
+    const toggleExpCat = () => this.setState(s=>({ expCatOpen:!s.expCatOpen }));
+    const clearExpCat = (e) => { e && e.stopPropagation && e.stopPropagation(); this.setState(s=>({ expState:{...s.expState, catKey:'', catLabel:'', catGroup:''} })); };
+
+    // vat/wht options
+    const expVatOpts = ['0%','1%','7%'].map(v=>({ val:v.replace('%',''), label:v, sel:es.vatRate===v.replace('%','') }));
+    const expWhtOpts = ['0%','1%','3%','5%'].map(v=>({ val:v.replace('%',''), label:v, sel:es.whtRate===v.replace('%','') }));
+    const expPayTypeOpts = [['transfer','Bank Transfer'],['cash','Cash'],['card','Credit Card'],['cheque','Cheque']].map(([v,l])=>({ val:v, label:l, sel:es.payType===v }));
+
+    // amounts calculation
+    const rawAmt = parseFloat(es.amountRaw)||0;
+    const vatPct = parseFloat(es.vatRate)||0;
+    const whtPct = parseFloat(es.whtRate)||0;
+    const vatAmt = Math.round(rawAmt * vatPct / 100);
+    const whtAmt = Math.round(rawAmt * whtPct / 100);
+    const totalAmt = rawAmt + vatAmt;
+    const netAmt = totalAmt - whtAmt;
+    const expHasAmount = rawAmt > 0;
+    const expAmountVatF = this.fmtFull(vatAmt);
+    const expAmountWhtF = this.fmtFull(whtAmt);
+    const expAmountNetF = this.fmtFull(netAmt);
+    const expAmountTotalF = this.fmtFull(totalAmt);
+
+    // budget check
+    const expShowBudgetCheck = !!es.catKey && rawAmt > 0;
+    const bud = this.expBudgetByKey[es.catKey] || null;
+    const expBudgetCheckLabel = es.catGroup ? es.catGroup + (es.catLabel ? ' · ' + es.catLabel : '') : '';
+    const budTotal = bud ? bud.budget : 0;
+    const budUsed = bud ? bud.used : 0;
+    const budRemain = budTotal - budUsed;
+    const budPct = budTotal ? Math.min(Math.round((budUsed + totalAmt) / budTotal * 100), 120) : 0;
+    const budOk = budRemain >= totalAmt;
+    const expBudgetTotal = this.fmtShort(budTotal);
+    const expBudgetUsed = this.fmtShort(budUsed);
+    const expBudgetRemain = this.fmtShort(budRemain);
+    const expBudgetRemainColor = budOk ? '#4E7A4E' : '#B33A2E';
+    const expBudgetPctW = Math.min(budPct, 100) + '%';
+    const expBudgetPctLabel = budPct + '%';
+    const expBudgetBarColor = budPct > 100 ? '#B33A2E' : budPct > 80 ? '#C68A1E' : 'var(--accent,#B8945A)';
+    const budStatusLabel = budOk ? 'Within Budget' : 'Over Budget';
+    const expBudgetStatusLabel = budStatusLabel;
+    const expBudgetStatusStyle = { fontSize:'12px', fontWeight:700, padding:'4px 11px', borderRadius:'999px', background: budOk?'#eef4ee':'#fbf0ee', color: budOk?'#4E7A4E':'#B33A2E', display:'inline-block' };
+
+    // approval route
+    const expShowApproval = rawAmt > 0;
+    const highAmount = totalAmt >= 10000;
+    const approvalStepStyle = (n) => ({ fontSize:'10px', fontWeight:800, display:'inline-flex', alignItems:'center', justifyContent:'center', width:'24px', height:'24px', borderRadius:'50%', background:'#F0EBE0', color:'#9A9387', flexShrink:0 });
+    const pendingBadge = { fontSize:'11px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:'#fbf6ed', color:'#C68A1E', display:'inline-block' };
+    const expApprovalSteps = highAmount
+      ? [{ n:'1', name:'Khun Aran (CMO)', role:'First approval · sign off', numBg:'#3B6BF5', numFg:'#fff', badge:'Pending', badgeStyle:pendingBadge },
+         { n:'2', name:'CFO',             role:'Final approval · payment release', numBg:'#F0EBE0', numFg:'#9A9387', badge:'Pending', badgeStyle:pendingBadge }]
+      : [{ n:'1', name:'Khun Aran (CMO)', role:'Single approver · payment release', numBg:'#3B6BF5', numFg:'#fff', badge:'Pending', badgeStyle:pendingBadge }];
+    const expApprovalRouteLabel = highAmount ? 'CMO + CFO required (≥ ฿10,000)' : 'CMO only (< ฿10,000)';
+    const expApprovalNote = highAmount
+      ? 'This request requires dual approval because the total exceeds ฿10,000.'
+      : 'This request only needs CMO approval. Payments below ฿10,000 have a faster turnaround.';
+
+    // validation
+    const expValidated = this.state.expValidated;
+    const expErrors = expValidated ? [
+      !es.title.trim() ? 'Request title is required' : null,
+      !es.brand ? 'Brand is required' : null,
+      !es.catKey ? 'Expense category is required' : null,
+      (!es.amountRaw || parseFloat(es.amountRaw) <= 0) ? 'Amount must be greater than 0' : null,
+      !es.payDue ? 'Payment due date is required' : null
+    ].filter(Boolean) : [];
+    const expHasErrors = expErrors.length > 0;
+    const expErrTitle = expValidated && !es.title.trim() ? 'Title is required' : '';
+    const expErrAmount = expValidated && (!es.amountRaw || parseFloat(es.amountRaw) <= 0) ? 'Enter a valid amount' : '';
+
+    // success state
+    // extra line items
+    const expLines = this.state.expLines || [];
+    const expLineCount = expLines.length;
+    const expLineCountLabel = expLineCount > 0 ? ' (' + expLineCount + ')' : '';
+    const expHasLines = expLineCount > 0;
+    const expLineOpen = this.state.expLineOpen;
+    const expLineDesc = this.state.expLineDesc || '';
+    const expLineAmount = this.state.expLineAmount || '';
+    const expLineVat = this.state.expLineVat || 0;
+    const expLineFieldStyle = { fontSize:'13px', padding:'9px 11px', border:'1.5px solid #E5DECF', borderRadius:'9px', background:'#FAFAF7', outline:'none', fontFamily:'inherit', width:'100%', boxSizing:'border-box' };
+    const expLinesDisplay = expLines.map((l, i) => ({
+      ...l, n: i + 2,
+      amountF: '฿' + Number(l.amount || 0).toLocaleString(),
+      vatLabel: l.vat ? l.vat + '%' : '0%',
+      catLabel: l.catLabel || 'Other',
+      onRemove: () => this.setState(s => ({ expLines: s.expLines.filter((_, j) => j !== i) }))
+    }));
+    const primaryAmt = parseFloat((this.state.expState || {}).amountRaw) || 0;
+    const linesAmt = expLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+    const grandTotal = primaryAmt + linesAmt;
+    const expGrandTotal = grandTotal ? '฿' + grandTotal.toLocaleString() : '—';
+    const expSubmitted = this.state.expSubmitted;
+    const expNotSubmitted = !expSubmitted;
+    const expReqId = 'REQ-2568-' + String(this.state.expReqCounter).padStart(5,'0');
+    const expApprovalMsg = highAmount
+      ? 'Pending CMO approval, then CFO. You will be notified via LINE and email.'
+      : 'Pending CMO approval. You will be notified via LINE and email once approved.';
+
+    // recent requests
+    const recentRequests = this.reqData.map((r,idx) => {
+      const wasApproved = !!this.state.approvedReqs[idx];
+      const effectiveStatus = wasApproved ? 'Approved' : r.status;
+      return {
+        category:r.category, brand:this.brands[r.b].name, color:this.brands[r.b].color, campaign:r.campaign,
+        requestedF:this.fmtShort(r.requested),
+        approvedF:(wasApproved||r.approved) ? this.fmtShort(r.approved||r.requested) : 'Pending',
+        approvedColor:(wasApproved||r.approved)?'#4E7A4E':'#C68A1E',
+        due:r.due, status:effectiveStatus, statusStyle:this.badge(effectiveStatus,this.finStatusMap)
+      };
+    }).filter((_,idx) => activeBrand==='all' || this.reqData[idx].b===activeBrand);
+    const expReqListEmpty = recentRequests.length === 0;
+
+    // expense log
+    const expenses = this.expData.filter(e => activeBrand==='all' || e.b===activeBrand).map((e,idx) => ({
+      vendor:e.vendor, category:e.category, brand:this.brands[e.b].name, amountF:this.fmtFull(e.amount),
+      vatF:e.vat?this.fmtFull(e.vat):'—', date:e.date, status:e.status, statusStyle:this.badge(e.status,this.finStatusMap),
+      openVoucher:()=>this.openPvModal(idx)
+    }));
+
+    // PV modal
+    const pvModalExp = this.state.pvModalExp;
+    const pvModalOpen = pvModalExp !== null;
+    const pvE = pvModalOpen ? this.expData[pvModalExp] : null;
+    const pvPayTo = pvE ? pvE.vendor : '';
+    const pvNo = pvE ? ('PV-2568-'+String(pvModalExp+1).padStart(5,'0')) : '';
+    const pvDate = pvE ? pvE.date+'/2568' : '';
+    const pvBrand = pvE ? this.brands[pvE.b].name : '';
+    const pvBranchMap = { teppen:'Sathorn', omakase:'G Tower', mainichi:'All Branches', touka:'Hotel' };
+    const pvBranch = pvE ? (pvBranchMap[pvE.b]||'') : '';
+    const pvItemDesc = pvE ? pvE.category+' — '+pvE.vendor : '';
+    const pvAmount = pvE ? pvE.amount : 0;
+    const pvWht = Math.round(pvAmount*0.03*100)/100;
+    const pvVat = pvE&&pvE.vat ? pvE.vat : Math.round(pvAmount*0.07*100)/100;
+    const pvTotal = pvAmount - pvWht + pvVat;
+    const pvAmountStr = pvE ? this.fmtTH(pvAmount) : '';
+    const pvWhtStr = pvE ? this.fmtTH(pvWht) : '';
+    const pvVatStr = pvE ? this.fmtTH(pvVat) : '';
+    const pvTotalStr = pvE ? this.fmtTH(pvTotal) : '';
+    const pvTotalWords = pvE ? '('+this.fmtTH(pvTotal)+' บาท)' : '';
+    const closePvModal = () => this.setState({ pvModalExp: null });
+    const openPvPage = () => window.open('Payment Voucher.dc.html','_blank');
+    const stop = (e) => { e && e.stopPropagation && e.stopPropagation(); };
+
+    // P&L — with expandable expense detail
+    const expDetailRatios = [
+      { label:'Content & Creative', pct:0.12 },
+      { label:'KOL / Influencer',   pct:0.25 },
+      { label:'Paid Ads (Meta/Google)', pct:0.30 },
+      { label:'Production / Photo', pct:0.18 },
+      { label:'Event & Other',      pct:0.15 }
+    ];
+    const filteredPnl = this.state.finBrand === 'all'
+      ? this.pnlData
+      : this.pnlData.filter(p => p.b === this.state.finBrand);
+    const pnlRows = filteredPnl.map(p => {
+      const gp = p.revenue - p.expense;
+      const exp = !!this.state.campExpanded[p.name];
+      const detail = exp ? expDetailRatios.map(d => ({
+        label: d.label,
+        budget: this.fmtShort(Math.round(p.budget * d.pct)),
+        actual: this.fmtShort(Math.round(p.expense * d.pct))
+      })) : [];
+      return {
+        name:p.name, color:this.brands[p.b].color,
+        revenue:this.fmtShort(p.revenue), budget:this.fmtShort(p.budget),
+        expense:this.fmtShort(p.expense),
+        gp:(gp<0?'-':'')+this.fmtShort(Math.abs(gp)),
+        gpColor:gp<0?'#B33A2E':'#4E7A4E',
+        roi:p.roi+'×', roiColor:p.roi<1.5?'#C68A1E':'#4E7A4E', roas:p.roas+'×',
+        toggleIcon: exp ? '▼' : '▶',
+        rowBg: exp ? '#FBF9F4' : '#fff',
+        onToggle: () => this.setState(s => ({ campExpanded: { ...s.campExpanded, [p.name]: !s.campExpanded[p.name] } })),
+        detail
+      };
+    });
+    const periodData = {
+      month:{ rev:2600000, exp:890000, gp:1710000, roas:2.9, prevRev:2320000, prevExp:850000, prevGp:1470000, prevRoas:2.6, title:'June 2026', prev:'May 2026', word:'month' },
+      year: { rev:18400000, exp:6200000, gp:12200000, roas:3.0, prevRev:15100000, prevExp:5680000, prevGp:9420000, prevRoas:2.6, title:'FY 2026 YTD', prev:'FY 2025', word:'year' }
+    };
+    const pp = periodData[this.state.pnlPeriod];
+    const delta=(now,prev,goodUp)=>{ const d=Math.round((now-prev)/prev*100),up=d>=0; return {txt:(up?'↑':'↓')+' '+Math.abs(d)+'% vs '+pp.prev,color:(up===goodUp)?'#4E7A4E':'#C68A1E'}; };
+    const dRev=delta(pp.rev,pp.prevRev,true),dExp=delta(pp.exp,pp.prevExp,false),dGp=delta(pp.gp,pp.prevGp,true);
+    const roasD=(pp.roas-pp.prevRoas).toFixed(1);
+    const cmpMax=Math.max(pp.rev,pp.prevRev);
+    const pnlCompare=[
+      {label:'Revenue',thisV:this.fmtShort(pp.rev),prevV:this.fmtShort(pp.prevRev),thisW:Math.round(pp.rev/cmpMax*100)+'%',prevW:Math.round(pp.prevRev/cmpMax*100)+'%'},
+      {label:'Expense',thisV:this.fmtShort(pp.exp),prevV:this.fmtShort(pp.prevExp),thisW:Math.round(pp.exp/cmpMax*100)+'%',prevW:Math.round(pp.prevExp/cmpMax*100)+'%'},
+      {label:'Gross Profit',thisV:this.fmtShort(pp.gp),prevV:this.fmtShort(pp.prevGp),thisW:Math.round(pp.gp/cmpMax*100)+'%',prevW:Math.round(pp.prevGp/cmpMax*100)+'%'}
+    ];
+
+    // brand filter
+    const finBrandOpts = [
+      { val:'all', label:'All Brands', sel:this.state.finBrand==='all' },
+      { val:'teppen', label:'TEPPEN', sel:this.state.finBrand==='teppen' },
+      { val:'omakase', label:'Omakase Don', sel:this.state.finBrand==='omakase' },
+      { val:'mainichi', label:'Mainichi', sel:this.state.finBrand==='mainichi' },
+      { val:'touka', label:'Touka', sel:this.state.finBrand==='touka' }
+    ];
+    const onFinBrand = (e) => this.setState({ finBrand: e.target.value });
+
+    // approval tab
+    const sigCanvasRef = this.sigCanvasRef;
+    const sigSaved = this.state.sigSaved;
+    const sigNotSaved = !sigSaved;
+    const pendingCount = this.reqData.filter((r,idx) => !this.state.approvedReqs[idx] && r.status === 'Waiting Approval').length;
+    const approvalItems = this.reqData.map((r,idx) => {
+      const wasApproved = !!this.state.approvedReqs[idx];
+      const effectiveStatus = wasApproved ? 'Approved' : r.status;
+      const isPending = effectiveStatus === 'Waiting Approval';
+      return {
+        category: r.category, brand: this.brands[r.b].name, color: this.brands[r.b].color,
+        campaign: r.campaign, due: r.due, status: effectiveStatus,
+        statusStyle: this.badge(effectiveStatus, this.finStatusMap),
+        requestedF: this.fmtShort(r.requested),
+        approvedF: (wasApproved || r.approved) ? this.fmtShort(r.approved || r.requested) : 'Pending',
+        approvedColor: (wasApproved || r.approved) ? '#4E7A4E' : '#C68A1E',
+        borderColor: isPending ? '#E8D5AA' : '#ECE6DA',
+        onApprove: isPending
+          ? () => this.setState({ sigTarget: idx, sigSaved: false, sigHasContent: false, financeTab: 'approval' })
+          : () => {},
+        approveBtnStyle: isPending
+          ? { fontSize:'13px', fontWeight:700, padding:'8px 14px', borderRadius:'9px', background:'#211F1C', color:'#fff', cursor:'pointer', flex:1, textAlign:'center' }
+          : { fontSize:'13px', fontWeight:600, padding:'8px 14px', borderRadius:'9px', border:'1px solid #BDDAB5', color:'#4E7A4E', cursor:'default', flex:1, textAlign:'center', background:'#EEF4EE' }
+      };
+    });
+    const sigIdx = this.state.sigTarget;
+    const sigItem = sigIdx !== null ? this.reqData[sigIdx] : null;
+    const sigTargetLabel = sigItem ? sigItem.category+' · '+this.brands[sigItem.b].name+' · '+this.fmtShort(sigItem.requested) : 'Select a request to approve';
+    const sigApprovedLabel = sigItem ? sigItem.category+' approved · '+new Date().toLocaleDateString('en-GB') : '';
+
+    return {
+      financeTabs, isBudgetPlan:ftab==='plan', isBudgetRequest:ftab==='request', isExpense:ftab==='expense', isPnl:ftab==='roi', isApproval:ftab==='approval',
+      budgetByBrand, budgetByCategory, budgetSections, expenses, recentRequests, expReqListEmpty,
+      finBrandOpts, onFinBrand,
+      approvalItems, pendingCount, sigCanvasRef, sigSaved, sigNotSaved, sigTargetLabel, sigApprovedLabel,
+      clearSig: () => this.clearSig(), saveSig: () => this.saveSig(),
+      exportCSV: () => this.exportCSV(),
+      // expense form
+      expTitle:es.title, expVendor:es.vendor, expAmountRaw:es.amountRaw, expPayDue:es.payDue, expPurpose:es.purpose, expRoi:es.roi,
+      expBrandOpts, expBranchOpts, expCampaignOpts, expVatOpts, expWhtOpts, expPayTypeOpts,
+      expFieldStyle, expSelectStyle, expTextareaStyle,
+      expCatGroups, expCatOpen, expCatSelected, expCatLabelVal, expCatGroup, expCatPlaceholder, expCatTriggerColor, expCatTriggerStyle,
+      toggleExpCat, clearExpCat,
+      expHasAmount, expAmountVatF, expAmountWhtF, expAmountNetF, expAmountTotalF,
+      expShowBudgetCheck, expBudgetCheckLabel, expBudgetTotal, expBudgetUsed, expBudgetRemain, expBudgetRemainColor,
+      expBudgetPctW, expBudgetPctLabel, expBudgetBarColor, expBudgetStatusLabel, expBudgetStatusStyle,
+      expShowApproval, expApprovalSteps, expApprovalRouteLabel, expApprovalNote,
+      expErrors, expHasErrors, expErrTitle, expErrAmount,
+      expLineCountLabel, expHasLines, expLineOpen, expLineDesc, expLineAmount, expLineVat,
+      expLineFieldStyle, expLinesDisplay, expGrandTotal,
+      toggleExpLine: () => this.setState(s => ({ expLineOpen: !s.expLineOpen })),
+      onExpLineDesc: (e) => this.setState({ expLineDesc: e.target.value }),
+      onExpLineAmount: (e) => this.setState({ expLineAmount: e.target.value }),
+      onExpLineVat: (e) => this.setState({ expLineVat: parseInt(e.target.value) }),
+      addExpLine: () => {
+        const { expLineDesc, expLineAmount, expLineVat } = this.state;
+        if (!expLineDesc || !expLineAmount) return;
+        this.setState(s => ({ expLines: [...(s.expLines||[]), { desc: expLineDesc, amount: expLineAmount, vat: expLineVat, catLabel: 'Other' }], expLineDesc: '', expLineAmount: '', expLineVat: 0, expLineOpen: false }));
+      },
+      expSubmitted, expNotSubmitted, expReqId, expApprovalMsg,
+      submitExpReq: () => this.submitExpReq(),
+      resetExpForm: () => this.resetExpForm(),
+      goExpReq: () => this.setState({ financeTab: 'request' }),
+      onExpTitle: (e)=>this.setState(s=>({expState:{...s.expState,title:e.target.value}})),
+      onExpBrand: (e)=>this.setState(s=>({expState:{...s.expState,brand:e.target.value,branch:''}})),
+      onExpBranch: (e)=>this.setState(s=>({expState:{...s.expState,branch:e.target.value}})),
+      onExpCampaign: (e)=>this.setState(s=>({expState:{...s.expState,campaign:e.target.value}})),
+      onExpCatSearch: (e)=>this.setState({expCatSearch:e.target.value}),
+      onExpVendor: (e)=>this.setState(s=>({expState:{...s.expState,vendor:e.target.value}})),
+      onExpAmount: (e)=>this.setState(s=>({expState:{...s.expState,amountRaw:e.target.value}})),
+      onExpVat: (e)=>this.setState(s=>({expState:{...s.expState,vatRate:e.target.value}})),
+      onExpWht: (e)=>this.setState(s=>({expState:{...s.expState,whtRate:e.target.value}})),
+      onExpPayDue: (e)=>this.setState(s=>({expState:{...s.expState,payDue:e.target.value}})),
+      onExpPayType: (e)=>this.setState(s=>({expState:{...s.expState,payType:e.target.value}})),
+      onExpPurpose: (e)=>this.setState(s=>({expState:{...s.expState,purpose:e.target.value}})),
+      onExpRoi: (e)=>this.setState(s=>({expState:{...s.expState,roi:e.target.value}})),
+      // pv
+      pvModalOpen, pvNo, pvDate, pvPayTo, pvBrand, pvBranch, pvItemDesc, pvAmountStr, pvWhtStr, pvVatStr, pvTotalStr, pvTotalWords,
+      closePvModal, openPvPage, stop,
+      // p&l
+      pnlRows, pnlCompare, pnlPeriodTitle:pp.title, pnlPrevLabel:pp.prev, pnlPeriodWord:pp.word,
+      pnlRev:this.fmtShort(pp.rev), pnlExp:this.fmtShort(pp.exp), pnlGp:this.fmtShort(pp.gp),
+      pnlRoas:pp.roas+'×', pnlRoasDelta:(roasD>=0?'↑ +':'↓ ')+roasD+'× vs '+pp.prev,
+      pnlRevDelta:dRev.txt, pnlRevColor:dRev.color, pnlExpDelta:dExp.txt, pnlExpColor:dExp.color,
+      pnlGpDelta:dGp.txt, pnlGpColor:dGp.color,
+      pnlMonthBtn:segBtn(this.state.pnlPeriod==='month'), pnlYearBtn:segBtn(this.state.pnlPeriod==='year'),
+      setPnlMonth:()=>this.setState({pnlPeriod:'month'}), setPnlYear:()=>this.setState({pnlPeriod:'year'}),
+      gMonthBtn, gRangeBtn, isGMonth:gDateMode==='month', isGRange:gDateMode==='range',
+      gMonthOptArr, gYearOptArr, gStart:this.state.gStart, gEnd:this.state.gEnd,
+      gLabel:monthNames[gm]+' '+gy, selectStyle, dateInputStyle, navArrow, todayBtn,
+      gPrev:()=>{ let m=gm-1,y=gy; if(m<0){m=11;y--;} this.setState({gMonth:m,gYear:y}); },
+      gNext:()=>{ let m=gm+1,y=gy; if(m>11){m=0;y++;} this.setState({gMonth:m,gYear:y}); },
+      gToday:()=>this.setState({gMonth:5,gYear:2026,gStart:'2026-06-01',gEnd:'2026-06-30'}),
+      onGMonth:(e)=>this.setState({gMonth:parseInt(e.target.value)}),
+      onGYear:(e)=>this.setState({gYear:parseInt(e.target.value)}),
+      onGStart:(e)=>this.setState({gStart:e.target.value}),
+      onGEnd:(e)=>this.setState({gEnd:e.target.value}),
+      setGMonth:()=>this.setState({gDateMode:'month'}),
+      setGRange:()=>this.setState({gDateMode:'range'})
+    };
+  }
+}
+</script>
+</body>
+</html>

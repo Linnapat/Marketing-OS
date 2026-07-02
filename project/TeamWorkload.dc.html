@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{background:#FAF8F4;font-family:system-ui,-apple-system,sans-serif;margin:0}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+@keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#FAF8F4;padding:22px 24px 80px;max-width:1340px;margin:0 auto">
+
+  <!-- HEADER -->
+  <div style="margin-bottom:6px">
+    <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">Team Pulse 🌿</div>
+    <div style="font-size:13px;color:#9A9387;margin-top:3px">See who is busy, who is stuck, and where the team needs support today.</div>
+  </div>
+  <!-- Date filter bar — same as Finance -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:12px 16px;margin-bottom:8px">
+    <div style="display:flex;gap:4px;background:#EFEAE0;border-radius:9px;padding:3px;flex-shrink:0">
+      <span onClick="{{ setGMonth }}" style="{{ gMonthBtn }}">Month</span>
+      <span onClick="{{ setGRange }}" style="{{ gRangeBtn }}">Range</span>
+    </div>
+    <sc-if value="{{ isGMonth }}" hint-placeholder-val="{{ true }}">
+      <span onClick="{{ gPrev }}" style="{{ navArrow }}">‹</span>
+      <select onChange="{{ onGMonth }}" style="{{ selectStyle }}"><sc-for list="{{ gMonthOptArr }}" as="o" hint-placeholder-count="12"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+      <select onChange="{{ onGYear }}" style="{{ selectStyle }}"><sc-for list="{{ gYearOptArr }}" as="o" hint-placeholder-count="4"><option value="{{ o.val }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for></select>
+      <span onClick="{{ gNext }}" style="{{ navArrow }}">›</span>
+    </sc-if>
+    <sc-if value="{{ isGRange }}" hint-placeholder-val="{{ false }}">
+      <input type="date" value="{{ gStart }}" onChange="{{ onGStart }}" style="{{ dateInputStyle }}">
+      <span style="font-size:13px;color:#9A9387;font-weight:600">→</span>
+      <input type="date" value="{{ gEnd }}" onChange="{{ onGEnd }}" style="{{ dateInputStyle }}">
+    </sc-if>
+    <span onClick="{{ gToday }}" style="{{ todayBtn }}">This month</span>
+    <div style="font-size:12.5px;font-weight:600;color:#9A9387;white-space:nowrap;margin-left:auto">{{ gLabel }}</div>
+  </div>
+  <!-- Microcopy -->
+  <div style="font-size:13px;color:#B8945A;font-style:italic;margin-bottom:20px">✦ {{ microcopy }}</div>
+
+  <!-- ═══ TEAM PULSE SUMMARY ═══ -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:11px;margin-bottom:22px">
+    <sc-for list="{{ pulseSummary }}" as="ps" hint-placeholder-count="6">
+      <div style="background:{{ ps.bg }};border:1px solid {{ ps.border }};border-radius:16px;padding:15px 17px">
+        <div style="font-size:20px;margin-bottom:6px">{{ ps.icon }}</div>
+        <div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:{{ ps.fg }};font-weight:700;margin-bottom:4px">{{ ps.label }}</div>
+        <div style="font-size:28px;font-weight:800;color:{{ ps.fg }};line-height:1;margin-bottom:4px">{{ ps.val }}</div>
+        <div style="font-size:11px;color:{{ ps.fg }};opacity:.7">{{ ps.helper }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- ═══ NEEDS SUPPORT PANEL ═══ -->
+  <sc-if value="{{ hasNeedsSupport }}" hint-placeholder-val="{{ true }}">
+  <div style="background:#fff;border:1px solid #F5C8C4;border-radius:18px;padding:20px 24px;margin-bottom:22px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <span style="font-size:18px">🛟</span>
+      <div style="font-size:14px;font-weight:800">Needs support today</div>
+      <span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:#FFF5F4;color:#B33A2E">{{ needsSupportCount }} people</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <sc-for list="{{ needsSupportPeople }}" as="ns" hint-placeholder-count="2">
+        <div style="display:flex;align-items:flex-start;gap:14px;background:#FFF5F4;border-radius:13px;padding:14px 16px;flex-wrap:wrap">
+          <div style="width:36px;height:36px;border-radius:50%;background:{{ ns.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0">{{ ns.init }}</div>
+          <div style="flex:1;min-width:200px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+              <span style="font-size:14px;font-weight:700">{{ ns.name }}</span>
+              <span style="font-size:12px;color:#9A9387">{{ ns.role }}</span>
+            </div>
+            <div style="font-size:12.5px;color:#6b6258;margin-bottom:4px">Reason: {{ ns.reason }}</div>
+            <div style="font-size:12px;color:#B33A2E;font-weight:600;margin-bottom:8px">🧱 {{ ns.bottleneck }}</div>
+            <div style="font-size:12px;color:#4E7A4E;font-style:italic">✦ Suggested: {{ ns.action }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ═══ TEAM MEMBER CARDS ═══ -->
+  <div style="font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;margin-bottom:13px">Team · {{ teamCount }} members</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px;margin-bottom:28px">
+    <sc-for list="{{ teamCards }}" as="m" hint-placeholder-count="6">
+    <div onClick="{{ m.onOpen }}" style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;padding:20px;cursor:pointer">
+      <!-- Person header -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div style="width:42px;height:42px;border-radius:50%;background:{{ m.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0">{{ m.init }}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:15px;font-weight:700">{{ m.name }}</div>
+          <div style="font-size:12px;color:#9A9387">{{ m.role }}</div>
+        </div>
+        <span style="{{ m.statusBadge }}">{{ m.statusLabel }}</span>
+      </div>
+      <!-- Stats grid -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:13px">
+        <div style="text-align:center;background:#FAF8F4;border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:#9A9387;font-weight:700;text-transform:uppercase">Tasks</div><div style="font-size:18px;font-weight:700;color:#211F1C">{{ m.tasks }}</div></div>
+        <div style="text-align:center;background:#EEF4EE;border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:#4E7A4E;font-weight:700;text-transform:uppercase">Done ✓</div><div style="font-size:18px;font-weight:700;color:#4E7A4E">{{ m.doneToday }}</div></div>
+        <div style="text-align:center;background:#FBF8EE;border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:#C68A1E;font-weight:700;text-transform:uppercase">Waiting</div><div style="font-size:18px;font-weight:700;color:#C68A1E">{{ m.waiting }}</div></div>
+        <div style="text-align:center;background:{{ m.stuckBg }};border-radius:9px;padding:8px 4px"><div style="font-size:9px;color:{{ m.stuckFg }};font-weight:700;text-transform:uppercase">Stuck</div><div style="font-size:18px;font-weight:700;color:{{ m.stuckFg }}">{{ m.stuck }}</div></div>
+      </div>
+      <!-- Secondary stats row -->
+      <div style="display:flex;gap:14px;padding:10px 14px;background:#FAF8F4;border-radius:10px;margin-bottom:13px;flex-wrap:wrap">
+        <div><span style="font-size:10.5px;color:#9A9387">⏰ Attention </span><span style="font-size:12.5px;font-weight:700;color:#B33A2E">{{ m.needsAttention }}</span></div>
+        <div><span style="font-size:10.5px;color:#9A9387">💬 Feedback </span><span style="font-size:12.5px;font-weight:700">{{ m.feedback }}</span></div>
+        <div><span style="font-size:10.5px;color:#9A9387">🔁 Revision </span><span style="font-size:12.5px;font-weight:700;color:{{ m.revColor }}">{{ m.revisions }}</span></div>
+      </div>
+      <!-- Workload bar -->
+      <div style="height:7px;background:#F0EBE0;border-radius:4px;overflow:hidden;margin-bottom:5px"><div style="height:7px;border-radius:4px;background:{{ m.sc.barColor }};width:{{ m.barW }}"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+        <span style="font-size:11px;font-weight:700;color:{{ m.sc.fg }}">{{ m.capacityLabel }}</span>
+        <span style="font-size:11px;color:#9A9387">Score {{ m.workloadScore }} / {{ m.capacityTarget }} ({{ m.utilization }}%)</span>
+      </div>
+      <!-- Bottleneck -->
+      <sc-if value="{{ m.hasBottleneck }}" hint-placeholder-val="{{ true }}">
+      <div style="background:{{ m.sc.bg }};border-radius:9px;padding:9px 12px">
+        <div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:2px">Main bottleneck</div>
+        <div style="font-size:12.5px;font-weight:600;color:#211F1C">{{ m.mainBottleneck }}</div>
+        <div style="font-size:11.5px;color:#4E7A4E;margin-top:4px;font-style:italic">✦ {{ m.suggestedAction }}</div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-for>
+  </div>
+
+  <!-- ═══ WHERE WORK IS STUCK ═══ -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <span style="font-size:18px">🧱</span>
+    <div style="font-size:15px;font-weight:800">Where work is stuck</div>
+    <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:#FBF1E9;color:#C2691E">{{ totalStuck }} stuck tasks</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:28px">
+    <sc-for list="{{ bottleneckCards }}" as="bn" hint-placeholder-count="5">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;padding:18px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <span style="font-size:20px">{{ bn.icon }}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">{{ bn.module }}</div>
+          <span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:{{ bn.bg }};color:{{ bn.color }}">{{ bn.stuckCount }} stuck</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#6b6258;margin-bottom:12px">
+        <div><span style="color:#9A9387">Main reason: </span>{{ bn.mainReason }}</div>
+        <div><span style="color:#9A9387">Pending approver: </span><span style="font-weight:600">{{ bn.pendingApprover }}</span></div>
+        <div><span style="color:#9A9387">Oldest waiting: </span><span style="font-weight:600;color:#B33A2E">{{ bn.oldestDays }} days</span></div>
+      </div>
+      <div style="background:#FBF9F4;border-radius:9px;padding:9px 11px;font-size:12px;color:#4E7A4E;font-style:italic;font-weight:600">✦ {{ bn.suggestedAction }}</div>
+    </div>
+    </sc-for>
+  </div>
+
+  <!-- ═══ SMART REBALANCE ═══ -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <span style="font-size:18px">✨</span>
+    <div style="font-size:15px;font-weight:800">Smart Rebalance</div>
+    <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:#FBF6ED;color:#B8945A">{{ recCount }} recommendations</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:11px;margin-bottom:28px">
+    <sc-for list="{{ recommendations }}" as="rec" hint-placeholder-count="4">
+    <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:16px 20px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+      <span style="font-size:20px;flex-shrink:0;margin-top:2px">{{ rec.icon }}</span>
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">{{ rec.text }}</div>
+        <div style="font-size:12px;color:#9A9387;font-style:italic">{{ rec.reason }}</div>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;flex-shrink:0">
+        <sc-for list="{{ rec.actions }}" as="ra" hint-placeholder-count="2">
+          <span onClick="{{ ra.onClick }}" style="{{ ra.style }}">{{ ra.label }}</span>
+        </sc-for>
+      </div>
+    </div>
+    </sc-for>
+  </div>
+
+</div>
+
+<!-- ═══ PERSON DRAWER ═══ -->
+<sc-if value="{{ hasDrawer }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closeDrawer }}" style="position:fixed;inset:0;background:rgba(33,31,28,.42);z-index:200;display:flex;justify-content:flex-end">
+<div onClick="{{ stopProp }}" style="background:#fff;width:460px;max-width:100vw;height:100%;overflow-y:auto;box-shadow:-8px 0 40px rgba(0,0,0,.13);animation:slideIn .22s ease">
+  <!-- Header -->
+  <div style="padding:22px 24px 18px;border-bottom:1px solid #ECE6DA;position:sticky;top:0;background:#fff;z-index:1">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <div style="width:44px;height:44px;border-radius:50%;background:{{ drawerPerson.color }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex-shrink:0">{{ drawerPerson.init }}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+          <span style="font-size:16px;font-weight:800">{{ drawerPerson.name }}</span>
+          <span style="{{ drawerPerson.statusBadge }}">{{ drawerPerson.statusLabel }}</span>
+        </div>
+        <div style="font-size:12.5px;color:#9A9387">{{ drawerPerson.role }}</div>
+      </div>
+      <span onClick="{{ closeDrawer }}" style="font-size:18px;color:#9A9387;cursor:pointer;padding:4px;flex-shrink:0;line-height:1">✕</span>
+    </div>
+  </div>
+  <!-- Workload score -->
+  <div style="margin:18px 24px 0">
+    <div style="background:linear-gradient(135deg,#FDF6E8,#F5E8CE);border:1px solid #E8D5AA;border-radius:14px;padding:16px 20px">
+      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#B8945A;font-weight:700;margin-bottom:10px">Workload Score</div>
+      <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:10px">
+        <div style="font-size:38px;font-weight:800;line-height:1;color:#211F1C">{{ drawerPerson.workloadScore }}</div>
+        <div style="font-size:15px;color:#9A9387;margin-bottom:6px">/ {{ drawerPerson.capacityTarget }} target</div>
+        <div style="margin-left:auto;text-align:right"><div style="font-size:11px;color:#9A9387">Utilization</div><div style="font-size:22px;font-weight:800;color:{{ drawerPerson.utilColor }}">{{ drawerPerson.utilization }}%</div></div>
+      </div>
+      <div style="height:6px;background:#E8D5AA;border-radius:3px;overflow:hidden">
+        <div style="height:6px;border-radius:3px;background:{{ drawerPerson.utilColor }};width:{{ drawerPerson.utilBarW }}"></div>
+      </div>
+      <div style="font-size:11px;color:#9A9387;margin-top:5px">{{ drawerPerson.capacityLabel }}</div>
+    </div>
+  </div>
+  <!-- Breakdown -->
+  <div style="padding:18px 24px">
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:12px">Workload Breakdown</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px">
+      <sc-for list="{{ drawerPerson.breakdownStats }}" as="bs" hint-placeholder-count="8">
+        <div style="background:#FAF8F4;border-radius:10px;padding:10px 8px;text-align:center">
+          <div style="font-size:9px;color:#9A9387;font-weight:600;line-height:1.3;margin-bottom:4px">{{ bs.label }}</div>
+          <div style="font-size:20px;font-weight:700;color:{{ bs.color }}">{{ bs.val }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <!-- Bottleneck -->
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:10px">Main Bottleneck</div>
+    <div style="background:#FFF5F4;border:1px solid #F5C8C4;border-radius:10px;padding:12px 14px;margin-bottom:18px">
+      <div style="font-size:13.5px;font-weight:600;color:#B33A2E;margin-bottom:6px">{{ drawerPerson.mainBottleneck }}</div>
+      <div style="font-size:12px;color:#4E7A4E;font-style:italic">✦ {{ drawerPerson.suggestedAction }}</div>
+    </div>
+    <!-- Oldest waiting -->
+    <sc-if value="{{ drawerPerson.hasOldestWaiting }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#FBF8EE;border-radius:10px;padding:12px 14px;margin-bottom:18px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:16px">⏰</span>
+      <div>
+        <div style="font-size:11px;color:#C68A1E;font-weight:700;margin-bottom:1px">Oldest waiting task</div>
+        <div style="font-size:13px;font-weight:600">{{ drawerPerson.oldestWaitingDays }} days — follow up recommended</div>
+      </div>
+    </div>
+    </sc-if>
+  </div>
+  <!-- Actions -->
+  <div style="padding:16px 24px;border-top:1px solid #ECE6DA;background:#FBF9F4;position:sticky;bottom:0">
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:10px">Manager Actions</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:700;padding:9px 16px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer">Reassign task</span>
+      <span style="font-size:13px;font-weight:700;padding:9px 16px;border-radius:10px;background:#FBF8EE;color:#C68A1E;border:1px solid #EDCC7A;cursor:pointer">Follow up</span>
+      <span style="font-size:13px;font-weight:500;padding:9px 16px;border-radius:10px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">Mark handled</span>
+    </div>
+  </div>
+</div>
+</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { dateMode:'month', dateMonth:6, dateYear:2026, dateStart:'2026-07-01', dateEnd:'2026-07-31', drawerOpen:false, drawerId:null };
+
+  teamColors = { 'Aran P.':'#B8945A','Ken S.':'#3E5C9A','Boss':'#4E7A4E','Nok W.':'#6b6258','Ploy R.':'#B5577E','Mei T.':'#C2691E' };
+
+  sc = {
+    needsSupport:{ label:'Needs support', icon:'🛟', fg:'#B33A2E', bg:'#FFF5F4', border:'#F5C8C4', barColor:'#B33A2E' },
+    busy:        { label:'Busy',          icon:'🔥', fg:'#C68A1E', bg:'#FBF8EE', border:'#E8CCA0', barColor:'#C68A1E' },
+    healthy:     { label:'Healthy',       icon:'🌿', fg:'#4E7A4E', bg:'#EEF4EE', border:'#C8E0C8', barColor:'#4E7A4E' },
+    stuck:       { label:'Stuck',         icon:'🧱', fg:'#C2691E', bg:'#FBF1E9', border:'#F0D5BC', barColor:'#C2691E' },
+    waiting:     { label:'Waiting',       icon:'⏳', fg:'#3E5C9A', bg:'#EEF1F8', border:'#B8C8E8', barColor:'#3E5C9A' },
+  };
+
+  teamData = [
+    { id:'aran', name:'Aran P.', role:'Marketing Director',  tasks:18, doneToday:3, inProgress:7, waiting:3, stuck:1, needsAttention:2, feedback:5, revisions:3, urgent:2, workloadScore:48, capacityTarget:35, utilization:137, capacityStatus:'needsSupport', mainBottleneck:'3 campaign approvals pending across teams',       suggestedAction:'Delegate 2 mid-priority approvals to team leads',    oldestWaitingDays:4 },
+    { id:'ken',  name:'Ken S.',  role:'Content Lead',        tasks:14, doneToday:2, inProgress:5, waiting:4, stuck:1, needsAttention:1, feedback:6, revisions:2, urgent:1, workloadScore:38, capacityTarget:35, utilization:109, capacityStatus:'busy',        mainBottleneck:'Waiting brief approval from Nok for LINE copy',        suggestedAction:'Follow up Nok on brief confirmation today',           oldestWaitingDays:2 },
+    { id:'boss', name:'Boss',    role:'Senior Designer',     tasks:16, doneToday:1, inProgress:6, waiting:4, stuck:2, needsAttention:3, feedback:9, revisions:7, urgent:2, workloadScore:52, capacityTarget:35, utilization:149, capacityStatus:'needsSupport', mainBottleneck:'Waiting requester feedback on 4 design revisions',     suggestedAction:'Move 2 low-priority tasks, follow up feedback today', oldestWaitingDays:5 },
+    { id:'nok',  name:'Nok W.',  role:'Campaign Manager',   tasks:12, doneToday:2, inProgress:4, waiting:3, stuck:0, needsAttention:1, feedback:3, revisions:1, urgent:1, workloadScore:30, capacityTarget:35, utilization:86,  capacityStatus:'busy',        mainBottleneck:'Rainy Season budget request pending approval',         suggestedAction:'Review and approve pending budget today',             oldestWaitingDays:1 },
+    { id:'ploy', name:'Ploy R.', role:'KOL Specialist',     tasks:10, doneToday:2, inProgress:4, waiting:1, stuck:0, needsAttention:0, feedback:2, revisions:0, urgent:1, workloadScore:24, capacityTarget:35, utilization:69,  capacityStatus:'healthy',     mainBottleneck:'None — on track',                                      suggestedAction:'Can take 1–2 additional tasks if needed',            oldestWaitingDays:0 },
+    { id:'mei',  name:'Mei T.',  role:'Performance Analyst', tasks:9,  doneToday:2, inProgress:3, waiting:1, stuck:0, needsAttention:0, feedback:1, revisions:0, urgent:0, workloadScore:18, capacityTarget:35, utilization:51,  capacityStatus:'healthy',     mainBottleneck:'None — on track',                                      suggestedAction:'Can take 2–3 additional tasks',                      oldestWaitingDays:0 },
+  ];
+
+  bottlenecks = [
+    { module:'Graphic',  icon:'🎨', stuckCount:5, mainReason:'Waiting requester feedback',     pendingApprover:'Brand Lead',  oldestDays:5, suggestedAction:'Follow up feedback requests today',           color:'#C2691E', bg:'#FBF1E9' },
+    { module:'Content',  icon:'✍️', stuckCount:2, mainReason:'Brief not confirmed by Campaign', pendingApprover:'Nok W.',      oldestDays:2, suggestedAction:'Confirm brief today',                         color:'#3E5C9A', bg:'#EEF1F8' },
+    { module:'Approval', icon:'✅', stuckCount:3, mainReason:'Waiting CMO sign-off',            pendingApprover:'Aran P.',     oldestDays:4, suggestedAction:'Schedule an approval round today',            color:'#4E7A4E', bg:'#EEF4EE' },
+    { module:'Budget',   icon:'฿',  stuckCount:1, mainReason:'Pending budget approval',        pendingApprover:'Aran P.',     oldestDays:1, suggestedAction:'Approve or delegate',                         color:'#4E7A4E', bg:'#EEF4EE' },
+    { module:'KOL',      icon:'🌟', stuckCount:1, mainReason:'Waiting draft from KOL',         pendingApprover:'—',           oldestDays:3, suggestedAction:'Follow up KOL for draft submission',          color:'#B5577E', bg:'#FBF0F5' },
+  ];
+
+  recs = [
+    { icon:'✨', text:'Move 2 light design tasks from Boss to Mei T.', reason:'Boss is at 149% capacity — Mei has room to take more.', actionLabels:['View tasks','Reassign'] },
+    { icon:'⏳', text:'Follow up Brand Lead for 3 pending design approvals', reason:'Oldest waiting 5 days — blocking Boss and whole Graphic queue.', actionLabels:['View tasks','Follow up'] },
+    { icon:'🧱', text:'Ask requesters to complete 2 missing content briefs', reason:'Ken S. is blocked waiting for brief confirmation.', actionLabels:['View tasks','Follow up'] },
+    { icon:'✨', text:'Ploy R. and Mei T. can take more tasks today', reason:'Both under 70% capacity — good day to rebalance.', actionLabels:['View tasks'] },
+  ];
+
+  chip(active) {
+    return active
+      ? 'font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap'
+      : 'font-size:12px;font-weight:500;padding:6px 14px;border-radius:999px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff;white-space:nowrap';
+  }
+
+  init(name) { return (name.slice(0,1)+(name.split(' ')[1]||'').slice(0,1)).toUpperCase(); }
+
+  renderVals() {
+    const { dateMode, dateMonth, dateYear, dateStart, dateEnd, drawerOpen, drawerId } = this.state;
+
+    // Date filter — Finance-style
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const gMonthOptArr = monthNames.map((m,i)=>({ val:i, label:m, sel:i===dateMonth }));
+    const gYearOptArr  = [2024,2025,2026,2027].map(y=>({ val:y, label:String(y), sel:y===dateYear }));
+    const segBtn = (active) => ({ fontSize:'13px', fontWeight:700, padding:'6px 14px', borderRadius:'7px', cursor:'pointer', background:active?'#fff':'transparent', color:active?'#211F1C':'#9A9387', boxShadow:active?'0 1px 4px rgba(0,0,0,.08)':undefined, whiteSpace:'nowrap' });
+    const selectStyle  = { fontSize:'13px', fontWeight:600, padding:'8px 12px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C', cursor:'pointer' };
+    const dateInputStyle = { fontSize:'13px', fontWeight:600, padding:'7px 11px', borderRadius:'10px', border:'1px solid #E5DECF', background:'#fff', color:'#211F1C', cursor:'pointer' };
+    const navArrow     = { width:'34px', height:'36px', borderRadius:'9px', border:'1px solid #E5DECF', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'16px', color:'#211F1C', flexShrink:0 };
+    const todayBtn     = { fontSize:'12px', fontWeight:700, color:'#6b6258', border:'1px solid #E5DECF', borderRadius:'9px', padding:'7px 12px', cursor:'pointer', background:'#fff', whiteSpace:'nowrap' };
+    const gMonthBtn    = segBtn(dateMode==='month');
+    const gRangeBtn    = segBtn(dateMode==='range');
+    const isGMonth     = dateMode==='month';
+    const isGRange     = dateMode==='range';
+    const gLabel       = monthNames[dateMonth]+' '+dateYear;
+    const setGMonth    = ()=>this.setState({dateMode:'month'});
+    const setGRange    = ()=>this.setState({dateMode:'range'});
+    const gPrev        = ()=>{ let m=dateMonth-1,y=dateYear; if(m<0){m=11;y--;} this.setState({dateMonth:m,dateYear:y}); };
+    const gNext        = ()=>{ let m=dateMonth+1,y=dateYear; if(m>11){m=0;y++;} this.setState({dateMonth:m,dateYear:y}); };
+    const gToday       = ()=>this.setState({dateMonth:6,dateYear:2026,dateStart:'2026-07-01',dateEnd:'2026-07-31'});
+    const onGMonth     = (e)=>this.setState({dateMonth:parseInt(e.target.value)});
+    const onGYear      = (e)=>this.setState({dateYear:parseInt(e.target.value)});
+    const onGStart     = (e)=>this.setState({dateStart:e.target.value});
+    const onGEnd       = (e)=>this.setState({dateEnd:e.target.value});
+
+    // Pulse summary
+    const healthy     = this.teamData.filter(m=>m.capacityStatus==='healthy').length;
+    const busy        = this.teamData.filter(m=>m.capacityStatus==='busy').length;
+    const nsCount     = this.teamData.filter(m=>m.capacityStatus==='needsSupport').length;
+    const stuckAll    = this.teamData.reduce((s,m)=>s+m.stuck,0);
+    const attentionAll= this.teamData.reduce((s,m)=>s+m.needsAttention,0);
+    const doneAll     = this.teamData.reduce((s,m)=>s+m.doneToday,0);
+    const pulseSummary = [
+      { icon:'🌿', label:'Healthy',         val:healthy,      helper:'Members on track',              fg:'#4E7A4E', bg:'#EEF4EE', border:'#C8E0C8' },
+      { icon:'🔥', label:'Busy',            val:busy,         helper:'High workload, manageable',     fg:'#C68A1E', bg:'#FBF8EE', border:'#E8CCA0' },
+      { icon:'🛟', label:'Need support',    val:nsCount,      helper:'Consider rebalancing today',    fg:'#B33A2E', bg:'#FFF5F4', border:'#F5C8C4' },
+      { icon:'🧱', label:'Stuck tasks',     val:stuckAll,     helper:'Blocked by dependencies',       fg:'#C2691E', bg:'#FBF1E9', border:'#F0D5BC' },
+      { icon:'⏰', label:'Needs attention', val:attentionAll, helper:'Review before EOD',             fg:'#B33A2E', bg:'#FFF5F4', border:'#F5C8C4' },
+      { icon:'✅', label:'Done today',      val:doneAll,      helper:'Great progress',                fg:'#4E7A4E', bg:'#EEF4EE', border:'#C8E0C8' },
+    ];
+
+    // Microcopy
+    let microcopy = 'The team is in good shape today.';
+    if (nsCount >= 2) microcopy = `${nsCount} people may need support. Small rebalancing can prevent overload.`;
+    else if (nsCount === 1) microcopy = '1 person needs support today. A small rebalance keeps the team moving.';
+    else if (busy >= 3) microcopy = 'The team is busy, but manageable today.';
+
+    // Needs support
+    const needsSupportPeople = this.teamData.filter(m=>m.capacityStatus==='needsSupport').map(m=>({
+      name:m.name, role:m.role,
+      init:this.init(m.name), color:this.teamColors[m.name]||'#9A9387',
+      reason:`${m.tasks} tasks · ${m.revisions} revisions · ${m.needsAttention} needs attention`,
+      bottleneck:m.mainBottleneck, action:m.suggestedAction,
+    }));
+    const hasNeedsSupport = needsSupportPeople.length>0;
+    const needsSupportCount = needsSupportPeople.length;
+
+    // Team cards
+    const teamCards = this.teamData.map(m=>{
+      const sc = this.sc[m.capacityStatus]||this.sc.healthy;
+      const barW = Math.min(m.utilization,100)+'%';
+      const capacityLabel = m.utilization>=140?'Full capacity':m.utilization>=100?'Needs support':m.utilization>=70?'Balanced':'Can take more';
+      return {
+        ...m, sc, barW, init:this.init(m.name),
+        color:this.teamColors[m.name]||'#9A9387',
+        capacityLabel,
+        statusBadge:`font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc.bg};color:${sc.fg}`,
+        statusLabel:`${sc.icon} ${sc.label}`,
+        stuckBg:m.stuck>0?'#FFF5F4':'#FAF8F4',
+        stuckFg:m.stuck>0?'#B33A2E':'#9A9387',
+        revColor:m.revisions>=5?'#B33A2E':m.revisions>=3?'#C2691E':'#211F1C',
+        hasBottleneck:m.mainBottleneck!=='None — on track',
+        onOpen:()=>this.setState({drawerOpen:true,drawerId:m.id}),
+      };
+    });
+    const teamCount = teamCards.length;
+
+    // Bottleneck cards
+    const bottleneckCards = this.bottlenecks;
+    const totalStuck = this.bottlenecks.reduce((s,b)=>s+b.stuckCount,0);
+
+    // Recommendations
+    const recommendations = this.recs.map(r=>({
+      ...r,
+      actions:r.actionLabels.map((lbl,i)=>({
+        label:lbl,
+        onClick:()=>{},
+        style:i===0
+          ?'font-size:12px;font-weight:700;padding:7px 14px;border-radius:9px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap'
+          :'font-size:12px;font-weight:500;padding:7px 14px;border-radius:9px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff;white-space:nowrap',
+      })),
+    }));
+    const recCount = recommendations.length;
+
+    // Drawer
+    const closeDrawer = ()=>this.setState({drawerOpen:false,drawerId:null});
+    const stopProp = (e)=>{e&&e.stopPropagation&&e.stopPropagation();};
+    const drawerPerson = (() => {
+      if (!drawerOpen||!drawerId) return null;
+      const m = this.teamData.find(x=>x.id===drawerId);
+      if (!m) return null;
+      const sc = this.sc[m.capacityStatus]||this.sc.healthy;
+      const utilColor = m.utilization>=100?'#B33A2E':m.utilization>=70?'#C68A1E':'#4E7A4E';
+      const capacityLabel = m.utilization>=140?'Full capacity':m.utilization>=100?'Needs support':m.utilization>=70?'Balanced':'Can take more';
+      const breakdownStats = [
+        { label:'Total tasks',    val:m.tasks,         color:'#211F1C' },
+        { label:'Done today',     val:m.doneToday,     color:'#4E7A4E' },
+        { label:'In progress',    val:m.inProgress,    color:'#3E5C9A' },
+        { label:'Waiting',        val:m.waiting,       color:'#C68A1E' },
+        { label:'Stuck',          val:m.stuck,         color:'#B33A2E' },
+        { label:'Needs attention',val:m.needsAttention,color:'#B33A2E' },
+        { label:'Feedback',       val:m.feedback,      color:'#6b6258' },
+        { label:'Revisions',      val:m.revisions,     color:'#C2691E' },
+      ];
+      return {
+        ...m, sc, init:this.init(m.name),
+        color:this.teamColors[m.name]||'#9A9387',
+        utilColor, capacityLabel,
+        utilBarW:Math.min(m.utilization,100)+'%',
+        statusBadge:`font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc.bg};color:${sc.fg}`,
+        statusLabel:`${sc.icon} ${sc.label}`,
+        hasOldestWaiting:m.oldestWaitingDays>0,
+        breakdownStats,
+      };
+    })();
+    const hasDrawer = !!drawerPerson;
+
+    return {
+      gMonthBtn, gRangeBtn, isGMonth, isGRange, gLabel,
+      gMonthOptArr, gYearOptArr, gStart:dateStart, gEnd:dateEnd,
+      selectStyle, dateInputStyle, navArrow, todayBtn,
+      setGMonth, setGRange, gPrev, gNext, gToday,
+      onGMonth, onGYear, onGStart, onGEnd,
+      microcopy,
+      pulseSummary,
+      hasNeedsSupport, needsSupportPeople, needsSupportCount,
+      teamCards, teamCount,
+      bottleneckCards, totalStuck,
+      recommendations, recCount,
+      hasDrawer, drawerPerson, closeDrawer, stopProp,
+    };
+  }
+}
+</script>
+</body>
+</html>

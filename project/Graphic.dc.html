@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+:root{--accent:#B8945A;}
+body{background:#FAF8F4;font-family:system-ui,-apple-system,sans-serif;}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#DDD4C4;border-radius:3px}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#FAF8F4;padding:22px 24px 60px">
+
+<!-- HEADER -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+  <div>
+    <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">Graphic Request</div>
+    <div style="font-size:12.5px;color:#9A9387;margin-top:3px">Design board · Artwork management · Feedback tracking</div>
+  </div>
+  <span onClick="{{ openForm }}" style="font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;background:#211F1C;color:#fff;cursor:pointer;white-space:nowrap">+ New Request</span>
+</div>
+
+<!-- KPI STRIP -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px">
+  <div style="background:#211F1C;color:#fff;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent,#B8945A);font-weight:700;margin-bottom:5px">Total</div><div style="font-size:24px;font-weight:700">{{ kpiTotal }}</div></div>
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:5px">In Progress</div><div style="font-size:24px;font-weight:700;color:#3E5C9A">{{ kpiInProgress }}</div></div>
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:5px">Waiting</div><div style="font-size:24px;font-weight:700;color:#C68A1E">{{ kpiWaiting }}</div></div>
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:5px">Revisions</div><div style="font-size:24px;font-weight:700;color:#C2691E">{{ kpiRevision }}</div></div>
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:5px">Approved</div><div style="font-size:24px;font-weight:700;color:#4E7A4E">{{ kpiApproved }}</div></div>
+  <div style="background:#FBF3F1;border:1px solid #F0C9BE;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#B33A2E;font-weight:700;margin-bottom:5px">Overdue</div><div style="font-size:24px;font-weight:700;color:#B33A2E">{{ kpiOverdue }}</div></div>
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:5px">Open Feedback</div><div style="font-size:24px;font-weight:700;color:#B33A2E">{{ kpiFeedback }}</div></div>
+  <div style="background:#fff;border:1px solid #ECE6DA;border-radius:14px;padding:14px 16px"><div style="font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;font-weight:700;margin-bottom:5px">Delivered</div><div style="font-size:24px;font-weight:700">{{ kpiDelivered }}</div></div>
+</div>
+
+<!-- NEEDS ATTENTION -->
+<sc-if value="{{ hasAlerts }}" hint-placeholder-val="{{ false }}">
+<div style="background:#FBF6ED;border:1px solid #E8D5AA;border-radius:14px;padding:14px 18px;margin-bottom:16px">
+  <div style="font-size:12px;font-weight:700;color:#C68A1E;margin-bottom:10px">⚠ Needs Attention · {{ alertCount }} request(s)</div>
+  <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
+    <sc-for list="{{ alertItems }}" as="al" hint-placeholder-count="3">
+      <div onClick="{{ al.onClick }}" style="flex-shrink:0;background:#fff;border:1px solid #E8D5AA;border-radius:12px;padding:11px 14px;min-width:190px;cursor:pointer">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.title }}</div>
+        <div style="font-size:11.5px;font-weight:700;color:#C68A1E">{{ al.alertLabel }}</div>
+        <div style="font-size:11px;color:#9A9387;margin-top:2px">{{ al.campaign }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- FILTER + VIEW TOGGLE -->
+<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px">
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+    <span style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.05em">BRAND</span>
+    <sc-for list="{{ brandFilters }}" as="f" hint-placeholder-count="5"><span onClick="{{ f.onClick }}" style="{{ f.style }}"><span style="{{ f.dot }}"></span>{{ f.label }}</span></sc-for>
+    <span style="width:1px;height:16px;background:#ECE6DA;display:inline-block;margin:0 4px"></span>
+    <span style="font-size:11px;font-weight:700;color:#9A9387;letter-spacing:.05em">DESIGNER</span>
+    <sc-for list="{{ designerFilters }}" as="f" hint-placeholder-count="4"><span onClick="{{ f.onClick }}" style="{{ f.style }}">{{ f.label }}</span></sc-for>
+  </div>
+  <div style="display:flex;gap:5px;background:#EFEAE0;border-radius:10px;padding:3px">
+    <span onClick="{{ setBoard }}" style="{{ boardBtn }}">▦ Board</span>
+    <span onClick="{{ setList }}" style="{{ listBtn }}">☰ List</span>
+  </div>
+</div>
+
+<!-- ══ BOARD VIEW ══ -->
+<sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
+<div style="overflow-x:auto;padding-bottom:12px">
+  <div style="display:flex;gap:13px;min-width:max-content;align-items:flex-start">
+    <sc-for list="{{ boardCols }}" as="col" hint-placeholder-count="8">
+      <div style="width:236px;flex-shrink:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="width:8px;height:8px;border-radius:50%;background:{{ col.color }};flex-shrink:0"></span>
+            <span style="font-size:12.5px;font-weight:700">{{ col.title }}</span>
+          </div>
+          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#F0EBE0;color:#6b6258">{{ col.count }}</span>
+        </div>
+        <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+          <div style="border:2px dashed #E5DECF;border-radius:13px;padding:22px 12px;text-align:center;color:#C0B8AD;font-size:12px">No items</div>
+        </sc-if>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+            <div onClick="{{ card.onClick }}" style="background:#fff;border:1.5px solid {{ card.borderColor }};border-radius:14px;padding:13px 14px;cursor:pointer">
+              <!-- Badges row -->
+              <div style="display:flex;align-items:center;gap:5px;margin-bottom:8px;flex-wrap:wrap">
+                <span style="{{ card.priorityStyle }}">{{ card.priority }}</span>
+                <span style="font-size:10.5px;font-weight:600;color:#9A9387;background:#F7F4EE;padding:2px 7px;border-radius:6px">{{ card.type }}</span>
+                <sc-if value="{{ card.briefIncomplete }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;color:#B33A2E;background:#FBF3F1;padding:2px 7px;border-radius:6px">Brief !</span></sc-if>
+              </div>
+              <!-- Title -->
+              <div style="font-size:13px;font-weight:700;color:#211F1C;margin-bottom:5px;line-height:1.3">{{ card.title }}</div>
+              <!-- Brand + campaign -->
+              <div style="display:flex;align-items:center;gap:5px;margin-bottom:9px">
+                <span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:{{ card.brandColor }}"></span>
+                <span style="font-size:11.5px;color:#6b6258;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ card.campaign }}</span>
+              </div>
+              <!-- Footer -->
+              <div style="border-top:1px solid #F4EFE5;padding-top:9px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div style="width:22px;height:22px;border-radius:50%;background:{{ card.designerColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:8.5px;font-weight:700;flex-shrink:0">{{ card.designerInit }}</div>
+                  <span style="font-size:11px;color:#6b6258">{{ card.designer }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <sc-if value="{{ card.hasFeedback }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:700;color:#C2691E;background:#fbf1e9;padding:2px 7px;border-radius:999px">{{ card.fb }}× rev</span></sc-if>
+                  <span style="font-size:11px;font-weight:600;color:{{ card.dueColor }}">{{ card.due }}</span>
+                </div>
+              </div>
+              <!-- Approver row -->
+              <sc-if value="{{ card.hasPendingApprover }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:7px;font-size:11px;color:#C68A1E;font-weight:600">↑ Approver: {{ card.pendingApprover }}</div>
+              </sc-if>
+              <!-- Overdue warning -->
+              <sc-if value="{{ card.isOverdue }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:6px;font-size:10.5px;font-weight:700;color:#B33A2E;background:#FBF3F1;border-radius:7px;padding:4px 8px">⚠ Overdue</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══ LIST VIEW ══ -->
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid #ECE6DA;border-radius:18px;overflow:hidden">
+  <div style="display:grid;grid-template-columns:1.8fr 0.6fr 1.2fr 0.8fr 0.7fr 0.7fr 0.5fr 0.6fr 1.1fr;gap:6px;padding:10px 18px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:10px;font-weight:700;letter-spacing:.05em;color:#9A9387;text-transform:uppercase">
+    <span>Title</span><span>Type</span><span>Campaign</span><span>Designer</span><span>Due</span><span>Approver</span><span>Rev</span><span>Feedback</span><span>Stage</span>
+  </div>
+  <sc-for list="{{ listItems }}" as="item" hint-placeholder-count="8">
+    <div onClick="{{ item.onClick }}" style="display:grid;grid-template-columns:1.8fr 0.6fr 1.2fr 0.8fr 0.7fr 0.7fr 0.5fr 0.6fr 1.1fr;gap:6px;padding:12px 18px;border-bottom:1px solid #F4EFE5;align-items:center;cursor:pointer">
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ item.title }}</div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:2px"><span style="width:6px;height:6px;border-radius:50%;background:{{ item.brandColor }};flex-shrink:0"></span><span style="font-size:11px;color:#9A9387">{{ item.brand }}</span>
+          <sc-if value="{{ item.briefIncomplete }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;color:#B33A2E;background:#FBF3F1;padding:1px 6px;border-radius:5px">Brief!</span></sc-if>
+        </div>
+      </div>
+      <span style="font-size:11.5px;color:#6b6258;font-weight:600">{{ item.type }}</span>
+      <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ item.campaign }}</div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:22px;height:22px;border-radius:50%;background:{{ item.designerColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:8.5px;font-weight:700;flex-shrink:0">{{ item.designerInit }}</div><span style="font-size:11.5px">{{ item.designer }}</span></div>
+      <span style="font-size:12px;font-weight:600;color:{{ item.dueColor }}">{{ item.due }}</span>
+      <span style="font-size:11.5px;color:#C68A1E;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ item.pendingApprover }}</span>
+      <span style="font-size:12px;font-weight:700;color:{{ item.revColor }}">{{ item.fb }}</span>
+      <div>
+        <sc-if value="{{ item.hasFeedback }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;color:#B33A2E;background:#FBF3F1;padding:3px 8px;border-radius:999px">{{ item.openFb }}</span></sc-if>
+        <sc-if value="{{ item.noFeedback }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:#C0B8AD">—</span></sc-if>
+      </div>
+      <span style="{{ item.stageStyle }}">{{ item.stage }}</span>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+
+</div>
+
+<!-- DRAWER OVERLAY -->
+<div onClick="{{ closeDrawer }}" style="position:fixed;inset:0;background:rgba(33,31,28,.3);z-index:98;display:{{ overlayDisplay }}"></div>
+
+<!-- DETAIL DRAWER -->
+<div style="position:fixed;right:{{ drawerRight }};top:0;bottom:0;width:520px;background:#fff;z-index:99;box-shadow:-4px 0 32px rgba(33,31,28,.12);overflow-y:auto;transition:right .28s cubic-bezier(.32,.72,0,1);display:flex;flex-direction:column">
+  <!-- Drawer header -->
+  <div style="padding:18px 22px 0;border-bottom:1px solid #ECE6DA;flex-shrink:0">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px">
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:800;margin-bottom:5px">{{ dkTitle }}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          <span style="{{ dkStageStyle }}">{{ dkStage }}</span>
+          <span style="{{ dkPriorityStyle }}">{{ dkPriority }}</span>
+          <span style="font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:999px;background:#F7F4EE;color:#6b6258">{{ dkType }}</span>
+          <sc-if value="{{ dkBriefIncomplete }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:#FBF3F1;color:#B33A2E">Brief Incomplete</span></sc-if>
+        </div>
+        <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap">
+          <div><div style="font-size:10px;color:#9A9387;font-weight:600;text-transform:uppercase;letter-spacing:.04em">DESIGNER</div><div style="font-size:12.5px;font-weight:700">{{ dkDesigner }}</div></div>
+          <div><div style="font-size:10px;color:#9A9387;font-weight:600;text-transform:uppercase;letter-spacing:.04em">APPROVER</div><div style="font-size:12.5px;font-weight:700;color:#C68A1E">{{ dkApprover }}</div></div>
+          <div><div style="font-size:10px;color:#9A9387;font-weight:600;text-transform:uppercase;letter-spacing:.04em">DUE</div><div style="font-size:12.5px;font-weight:700;color:{{ dkDueColor }}">{{ dkDue }}</div></div>
+        </div>
+      </div>
+      <span onClick="{{ closeDrawer }}" style="font-size:20px;color:#9A9387;cursor:pointer;flex-shrink:0;padding:4px;line-height:1">✕</span>
+    </div>
+    <div style="display:flex;gap:1px;overflow-x:auto;padding-bottom:1px">
+      <sc-for list="{{ drawerTabs }}" as="dt" hint-placeholder-count="6"><span onClick="{{ dt.onClick }}" style="{{ dt.style }}">{{ dt.label }}</span></sc-for>
+    </div>
+  </div>
+
+  <!-- Drawer body -->
+  <div style="flex:1;overflow-y:auto;padding:20px 22px">
+
+    <!-- OVERVIEW -->
+    <sc-if value="{{ isDkOverview }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Request Info</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">BRAND</div><div style="font-size:13px;font-weight:600">{{ dkBrand }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">CAMPAIGN</div><div style="font-size:13px;font-weight:600">{{ dkCampaign }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">REQUESTER</div><div style="font-size:13px;font-weight:600">{{ dkRequester }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">CONTENT ITEM</div><div style="font-size:13px;font-weight:600">{{ dkContentItem }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">PLATFORM</div><div style="font-size:13px;font-weight:600">{{ dkPlatform }}</div></div>
+          <div><div style="font-size:10.5px;color:#9A9387;font-weight:600;margin-bottom:3px">SIZE / FORMAT</div><div style="font-size:13px;font-weight:600">{{ dkSize }}</div></div>
+        </div>
+      </div>
+      <!-- Blocking -->
+      <sc-if value="{{ dkHasBlocker }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#FBF6ED;border:1px solid #E8D5AA;border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:700;color:#C68A1E;margin-bottom:6px">⚠ Current Blocker</div>
+        <div style="font-size:13px;font-weight:600;color:#211F1C;margin-bottom:4px">{{ dkBlocker }}</div>
+        <div style="font-size:11.5px;color:#9A9387">Waiting since {{ dkWaitingSince }}</div>
+        <div style="font-size:11.5px;font-weight:700;color:#C68A1E;margin-top:6px">→ {{ dkNextAction }}</div>
+      </div>
+      </sc-if>
+      <!-- Linked modules -->
+      <div style="background:#FBF9F4;border-radius:14px;padding:16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:12px">Linked Modules</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <sc-for list="{{ dkLinks }}" as="lk" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border-radius:11px;border:1px solid #F0EBE0">
+              <span style="font-size:16px;flex-shrink:0">{{ lk.icon }}</span>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">{{ lk.module }}</div><div style="font-size:11.5px;color:#9A9387;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ lk.record }}</div></div>
+              <span style="{{ lk.statusStyle }}">{{ lk.status }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- BRIEF -->
+    <sc-if value="{{ isDkBrief }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:700">Brief Completeness</div>
+        <span style="{{ dkBriefBadgeStyle }}">{{ dkBriefBadge }}</span>
+      </div>
+      <div style="height:7px;background:#F0EBE0;border-radius:5px;overflow:hidden;margin-bottom:4px"><div style="height:7px;border-radius:5px;width:{{ dkBriefPct }}%;background:{{ dkBriefBarColor }}"></div></div>
+      <sc-for list="{{ dkBriefFields }}" as="bf" hint-placeholder-count="8">
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;background:#FBF9F4;border-radius:11px;border:1px solid {{ bf.borderColor }}">
+          <span style="font-size:13px;flex-shrink:0;margin-top:1px">{{ bf.icon }}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:10.5px;font-weight:700;color:#9A9387;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">{{ bf.label }}</div>
+            <div style="font-size:13px;color:{{ bf.valueColor }};font-weight:{{ bf.filled ? '600' : '400' }}">{{ bf.value }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- ASSETS -->
+    <sc-if value="{{ isDkAssets }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:700">{{ dkVersionCount }} version(s) · Latest: {{ dkLatestVersion }}</div>
+        <span style="font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#211F1C;color:#fff;cursor:pointer">+ Upload</span>
+      </div>
+      <sc-for list="{{ dkVersions }}" as="v" hint-placeholder-count="3">
+        <div style="background:#FBF9F4;border:1.5px solid {{ v.borderColor }};border-radius:14px;padding:14px 16px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">{{ v.icon }}</span>
+              <div><div style="font-size:13.5px;font-weight:700">{{ v.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ v.uploadedBy }} · {{ v.uploadedAt }}</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0"><sc-if value="{{ v.isLatest }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:700;color:var(--accent,#B8945A);background:#FBF6ED;padding:2px 8px;border-radius:999px;border:1px solid #E8D5AA">LATEST</span></sc-if><span style="{{ v.approvalStyle }}">{{ v.approvalStatus }}</span></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span style="font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;background:#211F1C;color:#fff;cursor:pointer">View →</span>
+            <sc-if value="{{ v.hasFeedback }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;border:1px solid #F0C9BE;color:#C2691E;background:#fff;cursor:pointer">{{ v.feedbackCount }} feedback(s)</span></sc-if>
+          </div>
+        </div>
+      </sc-for>
+      <!-- Source / exports -->
+      <div style="background:#FBF9F4;border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9387;margin-bottom:10px">File Links</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ dkFileLinks }}" as="fl" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#fff;border-radius:9px;border:1px solid #F0EBE0">
+              <div><div style="font-size:11px;font-weight:700;color:#9A9387;text-transform:uppercase;letter-spacing:.04em">{{ fl.label }}</div><div style="font-size:12.5px;font-weight:600;color:{{ fl.color }}">{{ fl.value }}</div></div>
+              <sc-if value="{{ fl.hasLink }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;font-weight:700;padding:4px 9px;border-radius:7px;background:#211F1C;color:#fff;cursor:pointer">Open →</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- FEEDBACK -->
+    <sc-if value="{{ isDkFeedback }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:700">{{ dkOpenFbCount }} open · {{ dkTotalFbCount }} total</div>
+        <span style="font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#211F1C;color:#fff;cursor:pointer">+ Feedback</span>
+      </div>
+      <sc-if value="{{ dkNoFeedback }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:40px 20px;text-align:center;color:#9A9387"><div style="font-size:28px;margin-bottom:10px">💬</div><div style="font-size:13px;font-weight:600">No feedback yet</div></div>
+      </sc-if>
+      <sc-for list="{{ dkFeedbackItems }}" as="fb" hint-placeholder-count="3">
+        <div style="background:#FBF9F4;border:1px solid {{ fb.borderColor }};border-radius:14px;padding:14px 16px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:{{ fb.ownerColor }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0">{{ fb.ownerInit }}</div>
+              <div><div style="font-size:12.5px;font-weight:700">{{ fb.owner }}</div><div style="font-size:11px;color:#9A9387">{{ fb.team }} · {{ fb.version }} · {{ fb.createdAt }}</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <span style="{{ fb.statusStyle }}">{{ fb.status }}</span>
+              <sc-if value="{{ fb.isOpen }}" hint-placeholder-val="{{ false }}"><span onClick="{{ fb.onResolve }}" style="font-size:11px;font-weight:700;padding:4px 9px;border-radius:7px;border:1px solid #E5DECF;color:#6b6258;cursor:pointer;background:#fff">Resolve</span></sc-if>
+            </div>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#9A9387;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">{{ fb.type }}</div>
+          <div style="font-size:13px;color:#211F1C;line-height:1.5;margin-bottom:6px">{{ fb.text }}</div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:11.5px;color:#9A9387">→ {{ fb.assignedTo }}</span>
+            <sc-if value="{{ fb.hasDue }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;color:#C68A1E;font-weight:600">Due {{ fb.due }}</span></sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- APPROVAL -->
+    <sc-if value="{{ isDkApproval }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:{{ dkApprovalBannerBg }};border:1.5px solid {{ dkApprovalBannerBorder }};border-radius:14px;padding:14px 18px">
+        <div style="font-size:14px;font-weight:700;color:{{ dkApprovalBannerColor }}">{{ dkApprovalBannerTitle }}</div>
+        <div style="font-size:12px;color:#6b6258;margin-top:3px">{{ dkApprovalBannerSub }}</div>
+      </div>
+      <div style="background:#fff;border:1px solid #ECE6DA;border-radius:16px;overflow:hidden">
+        <div style="padding:12px 18px;background:#FBF9F4;border-bottom:1px solid #ECE6DA;font-size:13px;font-weight:700">Approval Chain</div>
+        <sc-for list="{{ dkApprovalChain }}" as="ap" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #F4EFE5">
+            <div style="width:30px;height:30px;border-radius:50%;background:{{ ap.avatarBg }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">{{ ap.init }}</div>
+            <div style="flex:1"><div style="font-size:13px;font-weight:600">{{ ap.name }}</div><div style="font-size:11.5px;color:#9A9387">{{ ap.role }} · {{ ap.step }}</div></div>
+            <div style="text-align:right"><span style="{{ ap.statusStyle }}">{{ ap.status }}</span><div style="font-size:11px;color:#9A9387;margin-top:3px">{{ ap.date }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- DELIVERY -->
+    <sc-if value="{{ isDkDelivery }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px">Delivery Checklist</div>
+      <sc-for list="{{ dkDeliveryChecklist }}" as="dl" hint-placeholder-count="7">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#FBF9F4;border-radius:12px;border:1px solid {{ dl.borderColor }}">
+          <div style="width:24px;height:24px;border-radius:50%;background:{{ dl.dotBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:11px;color:#fff;font-weight:700">{{ dl.icon }}</span></div>
+          <div style="flex:1"><div style="font-size:13px;font-weight:600;color:{{ dl.textColor }}">{{ dl.label }}</div><sc-if value="{{ dl.hasNote }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:#9A9387;margin-top:2px">{{ dl.note }}</div></sc-if></div>
+          <span style="{{ dl.statusStyle }}">{{ dl.checkStatus }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+<!-- REQUEST FORM MODAL -->
+<sc-if value="{{ formOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closeForm }}" style="position:fixed;inset:0;background:rgba(33,31,28,.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:32px 20px;overflow-y:auto">
+  <div onClick="{{ stopProp }}" style="background:#fff;border-radius:22px;width:100%;max-width:600px;box-shadow:0 12px 48px rgba(0,0,0,.18);overflow:hidden">
+
+    <!-- Modal header -->
+    <div style="padding:22px 28px 18px;border-bottom:1px solid #F0EBE0;display:flex;align-items:center;justify-content:space-between">
+      <div><div style="font-size:18px;font-weight:800">New Graphic Request</div><div style="font-size:12.5px;color:#9A9387;margin-top:3px">Fill brief → assign designer → submit</div></div>
+      <span onClick="{{ closeForm }}" style="font-size:20px;color:#9A9387;cursor:pointer;line-height:1;padding:4px">✕</span>
+    </div>
+
+    <div style="padding:22px 28px;display:flex;flex-direction:column;gap:18px;max-height:75vh;overflow-y:auto">
+
+      <!-- SECTION 1: Linking -->
+      <div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">1</span>Campaign Link</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Brand <span style="color:#B33A2E">*</span></label>
+            <select onChange="{{ onFormBrand }}" style="{{ selectStyle2 }}"><option value="">— Select —</option><option value="teppen">TEPPEN</option><option value="omakase">Omakase Don</option><option value="mainichi">Mainichi</option><option value="touka">Touka</option></select>
+          </div>
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Campaign <span style="color:#9A9387">(link to module)</span></label>
+            <select onChange="{{ onFormCampaign }}" style="{{ selectStyle2 }}"><sc-for list="{{ campaignSelOpts }}" as="co" hint-placeholder-count="6"><option value="{{ co.val }}" selected="{{ co.sel }}">{{ co.label }}</option></sc-for></select>
+          </div>
+        </div>
+        <!-- Campaign preview card -->
+        <sc-if value="{{ hasCampaignPreview }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:10px;background:#F7F4EE;border:1px solid #E5DECF;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:12px">
+          <span style="width:8px;height:8px;border-radius:50%;background:{{ campPreviewColor }};flex-shrink:0"></span>
+          <div style="flex:1"><div style="font-size:12.5px;font-weight:700">{{ campPreviewBrand }}</div><div style="font-size:11.5px;color:#6b6258">{{ campPreviewDates }}</div></div>
+          <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEF4EE;color:#4E7A4E">{{ campPreviewStatus }}</span>
+          <span style="font-size:12px;font-weight:700;color:#3E5C9A;cursor:pointer">View →</span>
+        </div>
+        </sc-if>
+      </div>
+
+      <!-- SECTION 2: Request Info -->
+      <div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">2</span>Request Info</div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Request Title <span style="color:#B33A2E">*</span></label><input type="text" placeholder="e.g. Wagyu Festival Key Visual" style="{{ fldStyle }}"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Asset Type <span style="color:#B33A2E">*</span></label><select style="{{ selectStyle2 }}"><sc-for list="{{ assetTypeOpts }}" as="o" hint-placeholder-count="6"><option>{{ o }}</option></sc-for></select></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Priority</label><select style="{{ selectStyle2 }}"><option>High</option><option>Med</option><option>Low</option></select></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Due Date <span style="color:#B33A2E">*</span></label><input type="date" style="{{ fldStyle }}"></div>
+            <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Linked Content Item</label><input type="text" placeholder="e.g. Wagyu hero post" style="{{ fldStyle }}"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 3: Channels + Sizes -->
+      <div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">3</span>Channels &amp; Sizes <span style="font-size:10px;color:#9A9387;font-weight:500;text-transform:none;letter-spacing:0">Select all that apply</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">
+          <sc-for list="{{ channelChips }}" as="ch" hint-placeholder-count="8"><span onClick="{{ ch.onClick }}" style="{{ ch.style }}"><span>{{ ch.icon }}</span><span>{{ ch.label }}</span></span></sc-for>
+        </div>
+        <!-- Per-channel size rows -->
+        <sc-if value="{{ hasSelectedChannels }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#FBF9F4;border:1px solid #E5DECF;border-radius:13px;overflow:hidden">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;padding:9px 14px;background:#F2EDE2;font-size:10.5px;font-weight:700;color:#9A9387;letter-spacing:.05em;text-transform:uppercase"><span>Channel</span><span>Size / Format</span></div>
+          <sc-for list="{{ selectedChannelRows }}" as="sr" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:10px 14px;border-top:1px solid #EEE8DE;align-items:center">
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-size:14px">{{ sr.icon }}</span><span style="font-size:13px;font-weight:600">{{ sr.label }}</span></div>
+              <input type="text" placeholder="{{ sr.size }}" style="font-size:12.5px;padding:7px 10px;border:1.5px solid #E5DECF;border-radius:8px;background:#fff;outline:none;font-family:inherit;width:100%;box-sizing:border-box">
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+        <sc-if value="{{ noSelectedChannels }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px;text-align:center;color:#C0B8AD;font-size:12.5px;background:#FAFAF5;border:1.5px dashed #E5DECF;border-radius:13px">Select channels above to specify sizes</div>
+        </sc-if>
+      </div>
+
+      <!-- SECTION 4: Brief -->
+      <div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">4</span>Brief</div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Key Message</label><input type="text" placeholder="e.g. Taste the finest Wagyu in Bangkok" style="{{ fldStyle }}"></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">CI / Mood Direction</label><input type="text" placeholder="e.g. Premium dark tones, gold accent, no text overlay" style="{{ fldStyle }}"></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Reference Link</label><input type="text" placeholder="Figma / Pinterest / Drive URL" style="{{ fldStyle }}"></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Notes / Do's &amp; Don'ts</label><textarea rows="4" placeholder="Visual direction, copy to include, things to avoid…" style="{{ textareaStyle }}"></textarea></div>
+        </div>
+      </div>
+
+      <!-- SECTION 5: Team -->
+      <div>
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9A9387;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;background:#211F1C;color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">5</span>Team</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Requester</label><select style="{{ selectStyle2 }}"><option>Ken S.</option><option>Ploy R.</option><option>Mei T.</option><option>Nok W.</option></select></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Designer</label><select style="{{ selectStyle2 }}"><option>Unassigned</option><option>Boss</option><option>Aom</option></select></div>
+          <div><label style="display:block;font-size:11.5px;font-weight:700;color:#6b6258;margin-bottom:6px">Approver</label><select style="{{ selectStyle2 }}"><option>Aran P. (CMO)</option><option>Ken S.</option><option>Ploy R.</option></select></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal footer -->
+    <div style="padding:16px 28px;border-top:1px solid #F0EBE0;display:flex;gap:10px;background:#FAFAF7">
+      <span onClick="{{ closeForm }}" style="flex:1;text-align:center;font-size:14px;font-weight:600;color:#6b6258;border:1.5px solid #E5DECF;border-radius:11px;padding:12px;cursor:pointer;background:#fff">Cancel</span>
+      <span style="flex:2;text-align:center;font-size:14px;font-weight:700;color:#fff;background:#211F1C;border-radius:11px;padding:12px;cursor:pointer">Submit Request →</span>
+    </div>
+  </div>
+</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = {
+    view: 'board',
+    filterBrand: 'all',
+    filterDesigner: 'all',
+    formOpen: false,
+    formChannels: [],
+    formCampaign: '',
+    formBrand: '',
+    drawerOpen: false,
+    drawerId: null,
+    drawerTab: 'overview',
+  };
+
+  brands = { teppen:{name:'TEPPEN',color:'#B33A2E'}, omakase:{name:'Omakase Don',color:'#3E5C9A'}, mainichi:{name:'Mainichi',color:'#4E7A4E'}, touka:{name:'Touka',color:'#C68A1E'} };
+
+  stageMap = {
+    'New Request':['#9A9387','#F2F0EB'],'Brief Incomplete':['#B33A2E','#fbf0ee'],'Ready to Start':['#6b6258','#F0EDE6'],
+    'In Progress':['#3E5C9A','#eef1f8'],'Waiting Feedback':['#C68A1E','#fbf6ed'],'Revision Requested':['#C2691E','#fbf1e9'],
+    'Waiting Approval':['#C68A1E','#fbf6ed'],'Approved':['#4E7A4E','#eef4ee'],'Delivered':['#211F1C','#ECE6DA'],'Cancelled':['#9A9387','#F0EDE6'],
+    'Open':['#B33A2E','#fbf0ee'],'Resolved':['#4E7A4E','#eef4ee'],'In progress':['#3E5C9A','#eef1f8'],'Waiting reply':['#C68A1E','#fbf6ed'],
+    'Approved_badge':['#4E7A4E','#eef4ee'],'Pending':['#C68A1E','#fbf6ed'],'Rejected':['#B33A2E','#fbf0ee'],
+    'Done':['#4E7A4E','#eef4ee'],'Not done':['#9A9387','#F2F0EB'],
+  };
+  priorityMap = {'High':['#B33A2E','#fbf0ee'],'Med':['#C68A1E','#fbf6ed'],'Low':['#6b6258','#F0EDE6']};
+  designerColors = { 'Boss':'#4E7A4E', 'Aom':'#B5577E', 'New':'#3E5C9A', 'Unassigned':'#9A9387' };
+
+  graphicData = [
+    { col:'New Request', cards:[
+      { id:0, title:'Songkran key visual', b:'teppen', campaign:'Songkran Teppanyaki', due:'Jul 2', designer:'Unassigned', requester:'Ken S.', approver:'Aran P.', type:'Key Visual', priority:'High', fb:0, openFb:0, isOverdue:false, briefComplete:false, pendingApprover:'—', blocker:'Brief incomplete', waitingSince:'Jun 28', nextAction:'Fill brief to proceed', platform:'IG + FB', size:'1080×1080 · 1920×1080', contentItem:'Songkran hero post' },
+      { id:1, title:'Anniversary poster', b:'touka', campaign:'Touka Anniversary', due:'Jul 8', designer:'Unassigned', requester:'Ploy R.', approver:'Aran P.', type:'Print', priority:'Med', fb:0, openFb:0, isOverdue:false, briefComplete:true, pendingApprover:'—', blocker:null, waitingSince:'Jun 30', nextAction:'Assign designer', platform:'Print · in-store', size:'A3 portrait', contentItem:'—' },
+      { id:2, title:'Rainy season promo banner', b:'mainichi', campaign:'Rainy Season Promo', due:'Jul 3', designer:'Unassigned', requester:'Nok W.', approver:'Ken S.', type:'Social Media', priority:'High', fb:0, openFb:0, isOverdue:false, briefComplete:false, pendingApprover:'—', blocker:'Brief incomplete', waitingSince:'Jun 29', nextAction:'Complete brief then assign', platform:'IG + FB Feed', size:'1080×1080', contentItem:'Rainy season main post' },
+    ]},
+    { col:'In Progress', cards:[
+      { id:3, title:'Wagyu menu board', b:'teppen', campaign:'Wagyu Festival', due:'Jun 29', designer:'Boss', requester:'Ken S.', approver:'Aran P.', type:'In-Store', priority:'High', fb:1, openFb:0, isOverdue:true, briefComplete:true, pendingApprover:'Ken S.', blocker:'Waiting requester review', waitingSince:'Jun 27', nextAction:'Upload V2 for review', platform:'In-store · A2 board', size:'594×420mm', contentItem:'Menu board display' },
+      { id:4, title:'Lunch set carousel', b:'mainichi', campaign:'Rainy Season Promo', due:'Jun 28', designer:'Aom', requester:'Nok W.', approver:'Ken S.', type:'Social Media', priority:'Med', fb:0, openFb:0, isOverdue:true, briefComplete:true, pendingApprover:'—', blocker:null, waitingSince:'Jun 25', nextAction:'Complete V1 design', platform:'IG Carousel', size:'1080×1080 ×5', contentItem:'Lunch promotion carousel' },
+      { id:5, title:'Cocktail hour reel cover', b:'touka', campaign:'Cocktail Hour Launch', due:'Jul 1', designer:'Boss', requester:'Ploy R.', approver:'Ploy R.', type:'Reel Cover', priority:'High', fb:0, openFb:0, isOverdue:false, briefComplete:true, pendingApprover:'—', blocker:null, waitingSince:'Jun 28', nextAction:'Design in progress', platform:'IG Reels', size:'1080×1920', contentItem:'Cocktail reel thumbnail' },
+    ]},
+    { col:'Waiting Feedback', cards:[
+      { id:6, title:"Father's Day banner", b:'omakase', campaign:"Father's Day Set", due:'Jun 28', designer:'Boss', requester:'Ken S.', approver:'Aran P.', type:'Social Media', priority:'High', fb:2, openFb:2, isOverdue:true, briefComplete:true, pendingApprover:'Ken S.', blocker:'Waiting requester feedback', waitingSince:'Jun 26', nextAction:'Ken S. to review V2', platform:'FB + IG Feed', size:'1200×628 · 1080×1080', contentItem:"Father's Day main post" },
+      { id:7, title:'LINE OA coupon card', b:'mainichi', campaign:'LINE Coupon Drive', due:'Jun 27', designer:'Aom', requester:'Nok W.', approver:'Ken S.', type:'LINE Rich Message', priority:'Med', fb:1, openFb:1, isOverdue:true, briefComplete:true, pendingApprover:'Nok W.', blocker:'Waiting requester feedback', waitingSince:'Jun 25', nextAction:'Nok W. to approve card design', platform:'LINE OA', size:'1200×630', contentItem:'Coupon redemption card' },
+    ]},
+    { col:'Revision Requested', cards:[
+      { id:8, title:'Menu redesign', b:'touka', campaign:'Cocktail Hour Launch', due:'Jun 30', designer:'Aom', requester:'Ploy R.', approver:'Aran P.', type:'Print', priority:'High', fb:2, openFb:2, isOverdue:true, briefComplete:true, pendingApprover:'Ploy R.', blocker:'Design revision needed', waitingSince:'Jun 24', nextAction:'Aom to revise V2 per feedback', platform:'Print · menu', size:'A5 folded', contentItem:'Cocktail menu card' },
+      { id:9, title:'Summer reel cover', b:'omakase', campaign:'Summer Reel Series', due:'Jun 26', designer:'Boss', requester:'Ken S.', approver:'Aran P.', type:'Reel Cover', priority:'High', fb:3, openFb:3, isOverdue:true, briefComplete:true, pendingApprover:'Ken S.', blocker:'CI correction needed', waitingSince:'Jun 22', nextAction:'Boss to revise brand colours V4', platform:'IG Reels', size:'1080×1920', contentItem:'Summer series cover' },
+    ]},
+    { col:'Waiting Approval', cards:[
+      { id:10, title:'Cocktail menu card', b:'touka', campaign:'Cocktail Hour Launch', due:'Jun 24', designer:'Aom', requester:'Ploy R.', approver:'Aran P.', type:'Print', priority:'Med', fb:1, openFb:0, isOverdue:false, briefComplete:true, pendingApprover:'Aran P.', blocker:'Waiting CMO approval', waitingSince:'Jun 23', nextAction:'Aran P. to approve final artwork', platform:'Print', size:'A5', contentItem:'Menu card' },
+    ]},
+    { col:'Approved', cards:[
+      { id:11, title:'Wagyu teaser story', b:'teppen', campaign:'Wagyu Festival', due:'Jun 22', designer:'Boss', requester:'Ken S.', approver:'Aran P.', type:'Story', priority:'Med', fb:1, openFb:0, isOverdue:false, briefComplete:true, pendingApprover:'—', blocker:null, waitingSince:null, nextAction:'Upload final files for delivery', platform:'IG Story', size:'1080×1920 ×3', contentItem:'Wagyu teaser 3-frame story' },
+    ]},
+    { col:'Delivered', cards:[
+      { id:12, title:'Matcha dessert post', b:'mainichi', campaign:'LINE Coupon Drive', due:'Jun 5', designer:'Boss', requester:'Nok W.', approver:'Ken S.', type:'Social Media', priority:'Low', fb:0, openFb:0, isOverdue:false, briefComplete:true, pendingApprover:'—', blocker:null, waitingSince:null, nextAction:'—', platform:'IG Feed', size:'1080×1080', contentItem:'Dessert promo post' },
+    ]},
+  ];
+
+  feedbackData = [
+    { id:0, gid:6, owner:'Ken S.', team:'Campaign Lead', ownerColor:'#3E5C9A', type:'Design revision', text:"Brand colours need adjustment — use Omakase navy (#3E5C9A) as dominant, not the current warm brown. Also the CTA button is too small on mobile.", version:'V2', status:'Open', assignedTo:'Boss', due:'Jun 29', createdAt:'Jun 27' },
+    { id:1, gid:6, owner:'Ploy R.', team:'Brand Manager', ownerColor:'#B5577E', type:'Copy revision', text:"The headline copy needs to say 'Father's Day Omakase Set' not 'Special Set'. Brand guideline: always use the full name.", version:'V2', status:'Open', assignedTo:'Boss', due:'Jun 28', createdAt:'Jun 26' },
+    { id:2, gid:7, owner:'Nok W.', team:'Performance', ownerColor:'#6b6258', type:'CI correction', text:"Coupon border colour is wrong — should match the warm gold from CI kit, not yellow. Please check the brand asset folder.", version:'V1', status:'Open', assignedTo:'Aom', due:'Jun 28', createdAt:'Jun 25' },
+    { id:3, gid:8, owner:'Ploy R.', team:'Brand Manager', ownerColor:'#B5577E', type:'Design revision', text:"Cocktail photo angle is wrong — use the low-angle dramatic shot, not the top-down. Reference pinned in the asset folder.", version:'V1', status:'Open', assignedTo:'Aom', due:'Jun 29', createdAt:'Jun 24' },
+    { id:4, gid:8, owner:'Aran P.', team:'CMO', ownerColor:'#B8945A', type:'Approval comment', text:"Good direction. Once Ploy's feedback is addressed in V2, send me for CMO sign-off.", version:'V1', status:'Resolved', assignedTo:'Aom', due:null, createdAt:'Jun 23' },
+    { id:5, gid:9, owner:'Ken S.', team:'Campaign Lead', ownerColor:'#3E5C9A', type:'CI correction', text:"Reel cover has the wrong font — must use Cormorant for headlines, not Playfair. Check CI guidelines.", version:'V3', status:'Open', assignedTo:'Boss', due:'Jun 27', createdAt:'Jun 22' },
+    { id:6, gid:9, owner:'Ploy R.', team:'Brand Manager', ownerColor:'#B5577E', type:'Design revision', text:"Background too dark — Omakase brand requires at least 30% lighter dark navy. Current version feels too heavy.", version:'V3', status:'Open', assignedTo:'Boss', due:'Jun 26', createdAt:'Jun 22' },
+    { id:7, gid:9, owner:'Ken S.', team:'Campaign Lead', ownerColor:'#3E5C9A', type:'General comment', text:"V1 and V2 direction was wrong — we needed it simpler. V3 is closer, just the colour + font corrections.", version:'V3', status:'Open', assignedTo:'Boss', due:'Jun 28', createdAt:'Jun 23' },
+  ];
+
+  versionsData = [
+    { gid:3, name:'V1 — Draft', uploadedBy:'Boss', uploadedAt:'Jun 25', feedbackCount:1, approvalStatus:'Needs revision', isLatest:false },
+    { gid:3, name:'V2 — In review', uploadedBy:'Boss', uploadedAt:'Jun 27', feedbackCount:0, approvalStatus:'Awaiting review', isLatest:true },
+    { gid:6, name:'V1 — Draft', uploadedBy:'Boss', uploadedAt:'Jun 24', feedbackCount:1, approvalStatus:'Revision requested', isLatest:false },
+    { gid:6, name:'V2 — Revised', uploadedBy:'Boss', uploadedAt:'Jun 26', feedbackCount:2, approvalStatus:'Waiting feedback', isLatest:true },
+    { gid:8, name:'V1 — Draft', uploadedBy:'Aom', uploadedAt:'Jun 22', feedbackCount:2, approvalStatus:'Revision requested', isLatest:true },
+    { gid:9, name:'V1', uploadedBy:'Boss', uploadedAt:'Jun 18', feedbackCount:2, approvalStatus:'Rejected', isLatest:false },
+    { gid:9, name:'V2', uploadedBy:'Boss', uploadedAt:'Jun 20', feedbackCount:1, approvalStatus:'Rejected', isLatest:false },
+    { gid:9, name:'V3', uploadedBy:'Boss', uploadedAt:'Jun 22', feedbackCount:3, approvalStatus:'Revision requested', isLatest:true },
+    { gid:10, name:'Final — Approved', uploadedBy:'Aom', uploadedAt:'Jun 23', feedbackCount:0, approvalStatus:'Approved', isLatest:true },
+    { gid:11, name:'Final', uploadedBy:'Boss', uploadedAt:'Jun 21', feedbackCount:1, approvalStatus:'Approved', isLatest:true },
+    { gid:12, name:'Final — Delivered', uploadedBy:'Boss', uploadedAt:'Jun 5', feedbackCount:0, approvalStatus:'Approved', isLatest:true },
+  ];
+
+  badge(s, map) {
+    const [fg, bg] = (map||{})[s] || ['#6b6258','#F0EDE6'];
+    return { fontSize:'11.5px', fontWeight:700, padding:'3px 9px', borderRadius:'999px', background:bg, color:fg, display:'inline-block', whiteSpace:'nowrap' };
+  }
+
+  renderVals() {
+    const segBtn = (a) => a
+      ? {fontSize:'12.5px',fontWeight:700,padding:'7px 14px',borderRadius:'8px',background:'#fff',color:'#211F1C',cursor:'pointer',whiteSpace:'nowrap',boxShadow:'0 1px 2px rgba(0,0,0,.07)'}
+      : {fontSize:'12.5px',fontWeight:600,padding:'7px 14px',borderRadius:'8px',color:'#6b6258',cursor:'pointer',whiteSpace:'nowrap'};
+    const chip = (a) => a
+      ? {fontSize:'12px',fontWeight:700,padding:'5px 11px',borderRadius:'999px',background:'#211F1C',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px'}
+      : {fontSize:'12px',fontWeight:500,padding:'5px 11px',borderRadius:'999px',border:'1px solid #E5DECF',color:'#6b6258',cursor:'pointer',background:'#fff',display:'flex',alignItems:'center',gap:'4px'};
+
+    const { view, filterBrand, filterDesigner, formOpen, drawerOpen, drawerId, drawerTab } = this.state;
+    const isBoard = view==='board', isList = view==='list';
+
+    // filters
+    const dotStyle = (c) => ({width:'7px',height:'7px',borderRadius:'50%',background:c,flexShrink:0});
+    const brandFilters = ['all','teppen','omakase','mainichi','touka'].map(k=>({
+      label:k==='all'?'All':this.brands[k].name, dot:dotStyle(k==='all'?'#9A9387':this.brands[k].color),
+      onClick:()=>this.setState({filterBrand:k}), style:chip(filterBrand===k)
+    }));
+    const designerFilters = ['all','Boss','Aom','Unassigned'].map(d=>({
+      label:d==='all'?'All':d, onClick:()=>this.setState({filterDesigner:d}), style:chip(filterDesigner===d)
+    }));
+
+    const allCards = this.graphicData.flatMap(col=>col.cards.map(c=>({...c,stage:col.col})));
+    const filtered = allCards.filter(c=>(filterBrand==='all'||c.b===filterBrand)&&(filterDesigner==='all'||c.designer===filterDesigner));
+
+    // KPIs
+    const kpiTotal = filtered.length;
+    const kpiInProgress = filtered.filter(c=>c.stage==='In Progress').length;
+    const kpiWaiting = filtered.filter(c=>['Waiting Feedback','Waiting Approval'].includes(c.stage)).length;
+    const kpiRevision = filtered.filter(c=>c.stage==='Revision Requested').length;
+    const kpiApproved = filtered.filter(c=>c.stage==='Approved').length;
+    const kpiOverdue = filtered.filter(c=>c.isOverdue).length;
+    const kpiFeedback = filtered.reduce((s,c)=>s+c.openFb,0);
+    const kpiDelivered = filtered.filter(c=>c.stage==='Delivered').length;
+
+    // needs attention
+    const alertList = filtered.filter(c=>c.isOverdue||!c.briefComplete||c.openFb>0);
+    const hasAlerts = alertList.length>0;
+    const alertCount = alertList.length;
+    const alertItems = alertList.map(c=>({
+      title:c.title, campaign:c.campaign, brandColor:this.brands[c.b]?.color,
+      alertLabel:c.isOverdue?'⚠ Overdue':!c.briefComplete?'📋 Brief incomplete':'💬 '+c.openFb+' open feedback',
+      onClick:()=>this.setState({drawerOpen:true,drawerId:c.id,drawerTab:'overview'})
+    }));
+
+    const makeCard = (c, stage) => {
+      const dc = this.designerColors[c.designer]||'#9A9387';
+      const init = c.designer==='Unassigned'?'?':c.designer.slice(0,1);
+      return {
+        ...c, stage,
+        brandColor:this.brands[c.b]?.color||'#ccc',
+        brandName:this.brands[c.b]?.name||c.b,
+        designerColor:dc, designerInit:init,
+        priorityStyle:this.badge(c.priority,this.priorityMap),
+        stageStyle:this.badge(stage||c.stage,this.stageMap),
+        borderColor:c.isOverdue?'#F0C9BE':!c.briefComplete?'#F0C9BE':c.openFb>0?'#E8D5AA':'#ECE6DA',
+        hasFeedback:c.fb>0, noFeedback:c.fb===0,
+        dueColor:c.isOverdue?'#B33A2E':'#6b6258',
+        revColor:c.fb>2?'#B33A2E':c.fb>0?'#C2691E':'#9A9387',
+        briefIncomplete:!c.briefComplete,
+        hasPendingApprover:!!c.pendingApprover&&c.pendingApprover!=='—',
+        openFb:c.openFb,
+        onClick:()=>this.setState({drawerOpen:true,drawerId:c.id,drawerTab:'overview'})
+      };
+    };
+
+    const boardCols = this.graphicData.map(col=>{
+      const cards = col.cards.filter(c=>(filterBrand==='all'||c.b===filterBrand)&&(filterDesigner==='all'||c.designer===filterDesigner)).map(c=>makeCard(c,col.col));
+      return {title:col.col,color:this.stageMap[col.col]?this.stageMap[col.col][0]:'#9A9387',count:cards.length,empty:cards.length===0,cards};
+    });
+
+    const listItems = filtered.map(c=>makeCard(c,c.stage));
+
+    // drawer
+    const dk = drawerId!==null ? allCards.find(c=>c.id===drawerId) : null;
+    const drawerRight = drawerOpen ? '0px' : '-540px';
+    const overlayDisplay = drawerOpen ? 'block' : 'none';
+
+    const dkTitle = dk?dk.title:'';
+    const dkStage = dk?dk.stage:'';
+    const dkStageStyle = dk?this.badge(dk.stage,this.stageMap):{};
+    const dkPriority = dk?dk.priority:'';
+    const dkPriorityStyle = dk?this.badge(dk.priority,this.priorityMap):{};
+    const dkType = dk?dk.type:'';
+    const dkBriefIncomplete = dk&&!dk.briefComplete;
+    const dkDesigner = dk?dk.designer:'';
+    const dkApprover = dk?dk.approver:'—';
+    const dkDue = dk?dk.due:'';
+    const dkDueColor = dk&&dk.isOverdue?'#B33A2E':'#211F1C';
+    const dkBrand = dk?this.brands[dk.b]?.name:'';
+    const dkCampaign = dk?dk.campaign:'';
+    const dkRequester = dk?dk.requester:'';
+    const dkContentItem = dk?dk.contentItem:'—';
+    const dkPlatform = dk?dk.platform:'';
+    const dkSize = dk?dk.size:'';
+    const dkBlocker = dk?dk.blocker:'';
+    const dkHasBlocker = !!(dk&&dk.blocker);
+    const dkWaitingSince = dk?dk.waitingSince:'';
+    const dkNextAction = dk?dk.nextAction:'';
+
+    // linked modules
+    const dkLinks = dk?[
+      {icon:'📣',module:'Campaign',record:dk.campaign,status:'Active',statusStyle:this.badge('Approved',this.stageMap)},
+      {icon:'📝',module:'Content Calendar',record:dk.contentItem!=='—'?dk.contentItem:'Not linked',status:dk.contentItem!=='—'?'Linked':'—',statusStyle:dk.contentItem!=='—'?this.badge('Approved',this.stageMap):this.badge('New Request',this.stageMap)},
+      {icon:'💰',module:'Finance / Budget',record:'Budget request linked',status:'Approved',statusStyle:this.badge('Approved',this.stageMap)}
+    ]:[];
+
+    // brief fields
+    const briefFields = dk ? [
+      {label:'OBJECTIVE',value:dk.briefComplete?'Drive awareness and store visits':'Not filled',filled:dk.briefComplete,icon:dk.briefComplete?'✓':'⚠',borderColor:dk.briefComplete?'#F0EBE0':'#F0C9BE',valueColor:dk.briefComplete?'#211F1C':'#B33A2E'},
+      {label:'KEY MESSAGE',value:dk.briefComplete?'Experience the finest '+dk.campaign:'Not filled',filled:dk.briefComplete,icon:dk.briefComplete?'✓':'⚠',borderColor:dk.briefComplete?'#F0EBE0':'#F0C9BE',valueColor:dk.briefComplete?'#211F1C':'#B33A2E'},
+      {label:'CI / MOOD',value:dk.briefComplete?'Premium dark tones · gold accent · minimal text':'Not filled',filled:dk.briefComplete,icon:dk.briefComplete?'✓':'⚠',borderColor:dk.briefComplete?'#F0EBE0':'#F0C9BE',valueColor:dk.briefComplete?'#211F1C':'#B33A2E'},
+      {label:'CAPTION / COPY',value:dk.briefComplete?'Draft caption in asset folder':'Not provided',filled:dk.briefComplete,icon:dk.briefComplete?'✓':'—',borderColor:'#F0EBE0',valueColor:'#6b6258'},
+      {label:'REFERENCE LINK',value:dk.briefComplete?'Figma board linked':'Not provided',filled:dk.briefComplete,icon:dk.briefComplete?'🔗':'—',borderColor:'#F0EBE0',valueColor:dk.briefComplete?'#3E5C9A':'#9A9387'},
+      {label:'ASSET FOLDER',value:dk.briefComplete?'Google Drive · '+dk.b+'/'+dk.campaign:'Not created',filled:dk.briefComplete,icon:dk.briefComplete?'📁':'—',borderColor:'#F0EBE0',valueColor:dk.briefComplete?'#3E5C9A':'#9A9387'},
+      {label:'PLATFORM',value:dk.platform,filled:true,icon:'📱',borderColor:'#F0EBE0',valueColor:'#211F1C'},
+      {label:'SIZE / FORMAT',value:dk.size,filled:true,icon:'📐',borderColor:'#F0EBE0',valueColor:'#211F1C'},
+    ] : [];
+    const filledCount = briefFields.filter(f=>f.filled).length;
+    const dkBriefPct = Math.round(filledCount/briefFields.length*100);
+    const dkBriefBarColor = dkBriefPct===100?'#4E7A4E':dkBriefPct>=60?'#C68A1E':'#B33A2E';
+    const dkBriefBadge = dkBriefPct===100?'Complete':dkBriefPct>=60?'Partially filled':'Incomplete';
+    const dkBriefBadgeStyle = dkBriefPct===100?this.badge('Approved',this.stageMap):dkBriefPct>=60?this.badge('Waiting Feedback',this.stageMap):this.badge('Brief Incomplete',this.stageMap);
+    const dkBriefFields = briefFields;
+
+    // versions
+    const dkRawVersions = dk ? this.versionsData.filter(v=>v.gid===dk.id) : [];
+    const dkVersionCount = dkRawVersions.length;
+    const dkLatestVersion = dkRawVersions.filter(v=>v.isLatest).map(v=>v.name)[0] || '—';
+    const dkVersions = dkRawVersions.map(v=>({
+      ...v,
+      icon: v.approvalStatus==='Approved'?'✅':v.approvalStatus==='Rejected'?'❌':'🎨',
+      isLatest:v.isLatest, hasFeedback:v.feedbackCount>0,
+      approvalStyle:this.badge(v.approvalStatus==='Approved'?'Approved':v.approvalStatus==='Rejected'?'Rejected':'Pending',this.stageMap),
+      borderColor:v.isLatest?'#B8945A44':'#ECE6DA'
+    }));
+    const dkFileLinks = dk ? [
+      {label:'FINAL ASSET LINK',value:['Approved','Delivered'].includes(dk.stage)?'Drive → '+dk.b+'/'+dk.campaign+'/Final':'Not uploaded',hasLink:['Approved','Delivered'].includes(dk.stage),color:['Approved','Delivered'].includes(dk.stage)?'#3E5C9A':'#C0B8AD'},
+      {label:'SOURCE FILE',value:['Approved','Delivered'].includes(dk.stage)?'Figma / AI file linked':'Not uploaded',hasLink:['Approved','Delivered'].includes(dk.stage),color:['Approved','Delivered'].includes(dk.stage)?'#3E5C9A':'#C0B8AD'},
+      {label:'EXPORT FOLDER',value:'Drive → Exports/'+dk.b+'/'+dk.campaign,hasLink:true,color:'#3E5C9A'},
+    ] : [];
+
+    // feedback
+    const dkRawFeedback = dk ? this.feedbackData.filter(f=>f.gid===dk.id) : [];
+    const dkOpenFbCount = dkRawFeedback.filter(f=>f.status==='Open').length;
+    const dkTotalFbCount = dkRawFeedback.length;
+    const dkNoFeedback = dkTotalFbCount===0;
+    const dkFeedbackItems = dkRawFeedback.map(f=>({
+      ...f,
+      ownerInit:(f.owner.slice(0,1)+(f.owner.split(' ')[1]||'').slice(0,1)).toUpperCase(),
+      statusStyle:this.badge(f.status,this.stageMap),
+      borderColor:f.status==='Open'?'#F0C9BE':f.status==='Resolved'?'#B5CEAF':'#ECE6DA',
+      isOpen:f.status==='Open', hasDue:!!f.due,
+      onResolve:()=>{const idx=this.feedbackData.findIndex(x=>x.id===f.id);if(idx>=0){this.feedbackData[idx]={...this.feedbackData[idx],status:'Resolved'};this.forceUpdate();}}
+    }));
+
+    // approval
+    const approvalMap = {
+      'In Progress':{bg:'#EEF1F8',border:'#C8D8F8',color:'#3E5C9A',title:'Designer working on V1',sub:'Awaiting first draft submission'},
+      'Waiting Feedback':{bg:'#FBF6ED',border:'#E8D5AA',color:'#C68A1E',title:'Waiting for requester feedback',sub:'Submitted for review · Avg response 2 days'},
+      'Revision Requested':{bg:'#FBF3F1',border:'#F0C9BE',color:'#B33A2E',title:'Revision in progress',sub:'Designer revising based on feedback'},
+      'Waiting Approval':{bg:'#FBF6ED',border:'#E8D5AA',color:'#C68A1E',title:'Waiting for final approval',sub:'Artwork ready — pending CMO sign-off'},
+      'Approved':{bg:'#EEF4EE',border:'#B5CEAF',color:'#4E7A4E',title:'Approved ✓',sub:'All approvals complete'},
+      'Delivered':{bg:'#ECE6DA',border:'#C9C0B0',color:'#211F1C',title:'Delivered',sub:'Final files handed off'},
+    };
+    const apBanner = dk?(approvalMap[dk.stage]||{bg:'#F7F4EE',border:'#E5DECF',color:'#6b6258',title:'Pending submission',sub:'Awaiting design work'}):{bg:'#F7F4EE',border:'#E5DECF',color:'#6b6258',title:'—',sub:'—'};
+    const dkApprovalBannerBg=apBanner.bg, dkApprovalBannerBorder=apBanner.border, dkApprovalBannerColor=apBanner.color, dkApprovalBannerTitle=apBanner.title, dkApprovalBannerSub=apBanner.sub;
+    const dkApprovalChain = dk ? [
+      {init:'D',name:dk.designer,role:'Designer',step:'Submit draft',status:['In Progress','Waiting Feedback','Revision Requested','Waiting Approval','Approved','Delivered'].includes(dk.stage)?'Done':'Pending',date:dk.stage!=='In Progress'?'Jun 25':'—',avatarBg:'#4E7A4E'},
+      {init:'R',name:dk.requester,role:'Requester',step:'Review & feedback',status:['Waiting Approval','Approved','Delivered'].includes(dk.stage)?'Approved':['Waiting Feedback','Revision Requested'].includes(dk.stage)?'Reviewing':'Pending',date:['Waiting Approval','Approved','Delivered'].includes(dk.stage)?'Jun 27':'—',avatarBg:'#3E5C9A'},
+      {init:'A',name:dk.approver,role:'Approver',step:'Final sign-off',status:['Approved','Delivered'].includes(dk.stage)?'Approved':dk.stage==='Waiting Approval'?'Pending':'Not yet',date:['Approved','Delivered'].includes(dk.stage)?'Jun 28':'—',avatarBg:['Approved','Delivered'].includes(dk.stage)?'#4E7A4E':'#9A9387'},
+    ].map(a=>({...a,statusStyle:this.badge(a.status==='Done'||a.status==='Approved'?'Approved':a.status==='Pending'||a.status==='Reviewing'?'Pending':'New Request',this.stageMap)})) : [];
+
+    // delivery checklist
+    const isDelivered = dk&&dk.stage==='Delivered';
+    const isApproved = dk&&['Approved','Delivered'].includes(dk.stage);
+    const mkItem = (label,done,note) => ({label,done,note,hasNote:!!note,icon:done?'✓':'—',dotBg:done?'#4E7A4E':'#E5DECF',textColor:done?'#211F1C':'#9A9387',borderColor:done?'#B5CEAF':'#F0EBE0',checkStatus:done?'Done':'Not done',statusStyle:this.badge(done?'Done':'Not done',this.stageMap)});
+    const dkDeliveryChecklist = dk ? [
+      mkItem('Final artwork approved',isApproved,'Approved by '+dk.approver),
+      mkItem('Correct size / format exported',isDelivered,dk.size),
+      mkItem('Source file attached',isDelivered,'Figma / AI file linked'),
+      mkItem('Final asset link added',isDelivered,'Google Drive linked'),
+      mkItem('Content Calendar updated',isDelivered,null),
+      mkItem('Campaign status updated',isDelivered,null),
+      mkItem('Delivered date recorded',isDelivered,isDelivered?dk.due:'—'),
+    ] : [];
+
+    // drawer tabs
+    const drawerTabDefs = [['overview','Overview'],['brief','Brief'],['assets','Assets'],['feedback','Feedback'+(dkOpenFbCount>0?' ('+dkOpenFbCount+')':'')],['approval','Approval'],['delivery','Delivery']];
+    const drawerTabs = drawerTabDefs.map(([id,label])=>({
+      label, onClick:()=>this.setState({drawerTab:id}),
+      style:drawerTab===id
+        ?{fontSize:'12px',fontWeight:700,padding:'7px 13px',borderRadius:'9px 9px 0 0',background:'#FAF8F4',color:'#211F1C',cursor:'pointer',whiteSpace:'nowrap',borderBottom:'2px solid #211F1C'}
+        :{fontSize:'12px',fontWeight:500,padding:'7px 13px',color:'#9A9387',cursor:'pointer',whiteSpace:'nowrap',borderBottom:'2px solid transparent'}
+    }));
+    const isDkOverview=drawerTab==='overview', isDkBrief=drawerTab==='brief', isDkAssets=drawerTab==='assets', isDkFeedback=drawerTab==='feedback', isDkApproval=drawerTab==='approval', isDkDelivery=drawerTab==='delivery';
+
+    // form
+    const fldStyle = {width:'100%',fontSize:'13.5px',padding:'10px 12px',border:'1.5px solid #E5DECF',borderRadius:'10px',background:'#FAFAF7',outline:'none',fontFamily:'inherit',boxSizing:'border-box',color:'#211F1C'};
+    const textareaStyle = {width:'100%',fontSize:'13.5px',padding:'11px 13px',border:'1.5px solid #E5DECF',borderRadius:'12px',background:'#FAFAF7',outline:'none',fontFamily:'inherit',boxSizing:'border-box',resize:'vertical',lineHeight:'1.5',color:'#211F1C',minHeight:'88px'};
+    const selectStyle2 = {width:'100%',fontSize:'13.5px',padding:'10px 12px',border:'1.5px solid #E5DECF',borderRadius:'10px',background:'#FAFAF7',outline:'none',fontFamily:'inherit',boxSizing:'border-box',cursor:'pointer',color:'#211F1C',appearance:'auto'};
+    const assetTypeOpts = ['Key Visual','Poster','Menu Board','Carousel','Reel Cover','Story','LINE Rich Message','Coupon','Table Tent','Menu Insert','Event Signage','Delivery Banner','Other'];
+
+    // multi-channel form
+    const allChannels = [
+      {id:'ig_feed',label:'IG Feed',icon:'📸',size:'1080×1080'},
+      {id:'ig_story',label:'IG Story',icon:'📱',size:'1080×1920'},
+      {id:'ig_reel',label:'IG Reel',icon:'🎬',size:'1080×1920'},
+      {id:'fb_feed',label:'FB Feed',icon:'🔵',size:'1200×628'},
+      {id:'fb_story',label:'FB Story',icon:'🔵',size:'1080×1920'},
+      {id:'tiktok',label:'TikTok',icon:'🎵',size:'1080×1920'},
+      {id:'youtube',label:'YouTube',icon:'▶️',size:'1280×720'},
+      {id:'line_oa',label:'LINE OA',icon:'💚',size:'1200×630'},
+      {id:'google',label:'Google Display',icon:'🔍',size:'1200×628'},
+      {id:'print',label:'Print',icon:'🖨',size:'Custom'},
+      {id:'instore',label:'In-Store',icon:'🏪',size:'Custom'},
+      {id:'other',label:'Other',icon:'➕',size:'Custom'},
+    ];
+    const formChannels = this.state.formChannels || [];
+    const formCampaign = this.state.formCampaign || '';
+    const formBrand = this.state.formBrand || '';
+
+    const channelChips = allChannels.map(ch=>({
+      ...ch,
+      selected: formChannels.includes(ch.id),
+      onClick: ()=>this.setState(s=>{
+        const cur = s.formChannels||[];
+        return {formChannels: cur.includes(ch.id)?cur.filter(x=>x!==ch.id):[...cur,ch.id]};
+      }),
+      style: formChannels.includes(ch.id)
+        ? {fontSize:'12px',fontWeight:700,padding:'6px 12px',borderRadius:'9px',background:'#211F1C',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',border:'1.5px solid #211F1C'}
+        : {fontSize:'12px',fontWeight:500,padding:'6px 12px',borderRadius:'9px',border:'1.5px solid #E5DECF',color:'#6b6258',cursor:'pointer',background:'#fff',display:'flex',alignItems:'center',gap:'5px'}
+    }));
+
+    const selectedChannelRows = allChannels.filter(ch=>formChannels.includes(ch.id)).map(ch=>({
+      ...ch,
+      inputId: 'size_'+ch.id
+    }));
+    const hasSelectedChannels = selectedChannelRows.length > 0;
+    const noSelectedChannels = !hasSelectedChannels;
+
+    // campaign link preview
+    const campaigns = this.graphicData ? [
+      {id:'wagyu', name:'Wagyu Festival', brand:'teppen', status:'Active', dates:'Jun 1 – Jul 15'},
+      {id:'fathers', name:"Father's Day Set", brand:'omakase', status:'Active', dates:'Jun 10 – Jun 30'},
+      {id:'cocktail', name:'Cocktail Hour Launch', brand:'touka', status:'Active', dates:'Jun 20 – Jul 10'},
+      {id:'summer', name:'Summer Reel Series', brand:'omakase', status:'In Progress', dates:'Jun 20 – Jul 20'},
+      {id:'rainy', name:'Rainy Season Promo', brand:'mainichi', status:'In Progress', dates:'Jun 15 – Jul 15'},
+      {id:'songkran', name:'Songkran Teppanyaki', brand:'teppen', status:'Active', dates:'Apr 1 – Apr 30'},
+    ] : [];
+    const campaignOpts = [{id:'',name:'— Select Campaign —',brand:'',status:'',dates:''}].concat(campaigns);
+    const campaignSelOpts = campaignOpts.map(c=>({val:c.id,label:c.name,sel:c.id===formCampaign}));
+    const selCamp = campaigns.find(c=>c.id===formCampaign);
+    const hasCampaignPreview = !!selCamp;
+    const campPreviewBrand = selCamp?this.brands[selCamp.brand]?.name:'';
+    const campPreviewColor = selCamp?this.brands[selCamp.brand]?.color:'#ccc';
+    const campPreviewStatus = selCamp?selCamp.status:'';
+    const campPreviewDates = selCamp?selCamp.dates:'';
+
+    return {
+      brandFilters, designerFilters, isBoard, isList,
+      boardBtn:segBtn(isBoard), listBtn:segBtn(isList),
+      setBoard:()=>this.setState({view:'board'}), setList:()=>this.setState({view:'list'}),
+      kpiTotal, kpiInProgress, kpiWaiting, kpiRevision, kpiApproved, kpiOverdue, kpiFeedback, kpiDelivered,
+      hasAlerts, alertCount, alertItems,
+      boardCols, listItems,
+      drawerRight, overlayDisplay,
+      closeDrawer:()=>this.setState({drawerOpen:false,drawerId:null}),
+      drawerTabs, isDkOverview, isDkBrief, isDkAssets, isDkFeedback, isDkApproval, isDkDelivery,
+      dkTitle, dkStage, dkStageStyle, dkPriority, dkPriorityStyle, dkType, dkBriefIncomplete,
+      dkDesigner, dkApprover, dkDue, dkDueColor,
+      dkBrand, dkCampaign, dkRequester, dkContentItem, dkPlatform, dkSize,
+      dkBlocker, dkHasBlocker, dkWaitingSince, dkNextAction, dkLinks,
+      dkBriefPct, dkBriefBarColor, dkBriefBadge, dkBriefBadgeStyle, dkBriefFields,
+      dkVersionCount, dkLatestVersion, dkVersions, dkFileLinks,
+      dkOpenFbCount, dkTotalFbCount, dkNoFeedback, dkFeedbackItems,
+      dkApprovalBannerBg, dkApprovalBannerBorder, dkApprovalBannerColor, dkApprovalBannerTitle, dkApprovalBannerSub, dkApprovalChain,
+      dkDeliveryChecklist,
+      formOpen, openForm:()=>this.setState({formOpen:true}),
+      closeForm:()=>this.setState({formOpen:false,formChannels:[],formCampaign:'',formBrand:''}),
+      channelChips, selectedChannelRows, hasSelectedChannels, noSelectedChannels,
+      campaignSelOpts, hasCampaignPreview, campPreviewBrand, campPreviewColor, campPreviewStatus, campPreviewDates,
+      onFormCampaign:(e)=>this.setState({formCampaign:e.target.value}),
+      onFormBrand:(e)=>this.setState({formBrand:e.target.value}),
+      stopProp:(e)=>{e&&e.stopPropagation&&e.stopPropagation();},
+      fldStyle, textareaStyle, selectStyle2, assetTypeOpts,
+    };
+  }
+}
+</script>
+</body>
+</html>
