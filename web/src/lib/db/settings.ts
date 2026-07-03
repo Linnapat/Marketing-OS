@@ -21,7 +21,7 @@ export async function fetchMembers(): Promise<Member[]> {
   const db = supabase();
   if (!db) return USERS_DATA.map((u) => ({ ...u }));
   const { data, error } = await db.from("members").select("*").order("email");
-  if (error || !data || data.length === 0) return USERS_DATA.map((u) => ({ ...u }));
+  if (error || !data) return USERS_DATA.map((u) => ({ ...u }));
   return (data as Row[]).map(toMember);
 }
 
@@ -41,7 +41,7 @@ export async function fetchPermissions(): Promise<Record<string, Record<string, 
   const db = supabase();
   if (!db) return null;
   const { data, error } = await db.from("permissions").select("role, perms");
-  if (error || !data || data.length === 0) return null;
+  if (error || !data) return null;
   const map: Record<string, Record<string, string>> = {};
   data.forEach((r) => {
     const inner: Record<string, string> = {};
@@ -64,7 +64,7 @@ export async function fetchOrg(): Promise<{ label: string; value: string }[] | n
   const db = supabase();
   if (!db) return null;
   const { data, error } = await db.from("org_settings").select("label, value").order("key");
-  if (error || !data || data.length === 0) return null;
+  if (error || !data) return null;
   return data.map((r) => ({ label: r.label as string, value: r.value as string }));
 }
 

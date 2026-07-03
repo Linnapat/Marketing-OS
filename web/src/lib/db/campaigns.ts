@@ -27,7 +27,7 @@ export async function fetchCampaigns(): Promise<CampaignRow[]> {
   const db = supabase();
   if (!db) return CAMPAIGNS.map((c) => ({ ...c }));
   const { data, error } = await db.from("campaigns").select("*").order("id");
-  if (error || !data || data.length === 0) return CAMPAIGNS.map((c) => ({ ...c }));
+  if (error || !data) return CAMPAIGNS.map((c) => ({ ...c }));
   return (data as Row[]).map(toCampaign);
 }
 

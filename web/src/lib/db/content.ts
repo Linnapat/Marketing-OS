@@ -12,7 +12,7 @@ export async function fetchContent(): Promise<ContentItem[]> {
   const db = supabase();
   if (!db) return CONTENT.map((c) => ({ ...c }));
   const { data, error } = await db.from("content_posts").select("id, data").order("id");
-  if (error || !data || data.length === 0) return CONTENT.map((c) => ({ ...c }));
+  if (error || !data) return CONTENT.map((c) => ({ ...c }));
   return data
     .map((r) => (r.data ? { ...(r.data as ContentItem), id: (r.data as ContentItem).id ?? `c${r.id}` } : null))
     .filter(Boolean) as ContentItem[];

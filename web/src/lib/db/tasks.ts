@@ -19,7 +19,7 @@ export async function fetchTasks(): Promise<{ tasks: Task[]; doneIds: number[] }
   const db = supabase();
   if (!db) return { tasks: TASKS.map((t) => ({ ...t })), doneIds: [...DEFAULT_DONE] };
   const { data, error } = await db.from("tasks").select("id, done, data").order("id");
-  if (error || !data || data.length === 0) return { tasks: TASKS.map((t) => ({ ...t })), doneIds: [...DEFAULT_DONE] };
+  if (error || !data) return { tasks: TASKS.map((t) => ({ ...t })), doneIds: [...DEFAULT_DONE] };
   const tasks = data.map((r) => r.data as Task).filter(Boolean);
   const doneIds = data.filter((r) => r.done || (r.data as Task)?.status === "Done").map((r) => (r.data as Task).id);
   return { tasks, doneIds };

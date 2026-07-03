@@ -10,7 +10,7 @@ export async function fetchKols(): Promise<Kol[]> {
   const db = supabase();
   if (!db) return KOLS.map((k) => ({ ...k }));
   const { data, error } = await db.from("kols").select("id, data").order("id");
-  if (error || !data || data.length === 0) return KOLS.map((k) => ({ ...k }));
+  if (error || !data) return KOLS.map((k) => ({ ...k }));
   return data.map((r) => r.data as Kol).filter(Boolean);
 }
 

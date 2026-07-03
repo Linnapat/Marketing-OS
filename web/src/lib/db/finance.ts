@@ -23,7 +23,7 @@ export async function fetchExpenseRequests(): Promise<ExpenseReq[]> {
   const db = supabase();
   if (!db) return REQUESTS.map((r) => ({ ...r }));
   const { data, error } = await db.from("expense_requests").select("*").order("id", { ascending: false });
-  if (error || !data || data.length === 0) return REQUESTS.map((r) => ({ ...r }));
+  if (error || !data) return REQUESTS.map((r) => ({ ...r }));
   return (data as Row[]).map(toReq);
 }
 

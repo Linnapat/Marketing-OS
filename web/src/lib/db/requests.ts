@@ -19,7 +19,7 @@ export async function fetchRequests(): Promise<RequestRow[]> {
   const db = supabase();
   if (!db) return REQUESTS.map((r) => ({ ...r }));
   const { data, error } = await db.from("requests").select("*").order("created_at", { ascending: false });
-  if (error || !data || data.length === 0) return REQUESTS.map((r) => ({ ...r }));
+  if (error || !data) return REQUESTS.map((r) => ({ ...r }));
   return (data as Row[]).map(toReq);
 }
 
