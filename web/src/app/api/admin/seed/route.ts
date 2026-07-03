@@ -68,21 +68,23 @@ export async function POST(req: Request) {
     title: t.title, brand: brandId(t.brand), campaign: t.campaign, campaign_id: campById[t.campaign] ?? null,
     assignee: t.assignee, type: t.type, priority: t.priority, status: t.status, due: t.due,
     next_action: t.nextAction, blocker: t.blocker, checklist: t.checklist ?? [], done: t.status === "Done",
+    data: t,
   })));
   await run("content_posts", CONTENT.map((c) => ({
     title: c.title, brand: c.b, campaign: c.campaign, campaign_id: campById[c.campaign] ?? null,
     platforms: (c as { platforms?: string[] }).platforms ?? [c.plat], status: c.status, day: c.day, time: c.time,
     owner: c.owner, caption: c.caption, asset: (c as { assetStatus?: string }).assetStatus ?? null,
+    data: c,
   })));
   await run("graphic_requests", GRAPHICS.map((g) => ({
     title: g.title, brand: g.b, campaign: g.campaign, campaign_id: campById[g.campaign] ?? null,
     designer: g.designer, requester: g.requester, approver: g.approver, type: g.type, priority: g.priority,
     stage: g.stage, due: g.due, platform: g.platform, size: g.size, brief_complete: g.briefComplete,
-    blocker: g.blocker, next_action: g.nextAction,
+    blocker: g.blocker, next_action: g.nextAction, data: g,
   })));
   await run("kols", KOLS.map((k) => ({
     name: k.name, handle: k.h, brand: k.b, campaign: k.campaign, tier: k.kolType, platform: k.plat,
-    followers: k.followers, rate: k.fee, status: k.status, stage: null, owner: k.owner,
+    followers: k.followers, rate: k.fee, status: k.status, stage: null, owner: k.owner, data: k,
   })));
   await run("budget_items", BUDGET_SECTIONS.flatMap((s) => s.items.map((i) => ({
     section_key: s.key, section_label: s.label, name: i.name, budget: i.budget, actual: i.actual,
@@ -95,7 +97,7 @@ export async function POST(req: Request) {
     campaign_id: campById[r.campaign] ?? null, requester: r.requester, approver: r.approver, due: r.due, stage: r.stage, priority: r.priority,
   })), "id");
   await run("assets", ASSETS.map((a) => ({ name: a.name, type: a.type, brand: a.b, campaign: a.campaign, version: a.version, approval: a.approval, updated: a.updated, drive_url: a.driveUrl ?? null, canva_url: a.canvaUrl ?? null })));
-  await run("workload_members", MEMBERS.map((m) => ({ name: m.name, role: m.role, team: null, color: null, capacity: m.capacityTarget, assigned: m.tasks, status: m.capacityStatus })));
+  await run("workload_members", MEMBERS.map((m) => ({ name: m.name, role: m.role, team: null, color: null, capacity: m.capacityTarget, assigned: m.tasks, status: m.capacityStatus, data: m })));
   await run("members", USERS_DATA.map((u) => ({ email: u.email, name: u.name, role: u.role, access: u.access, brand_access: u.brandAccess, status: u.status, color: u.color })), "email");
   await run("permissions", PERM_ROLES.map((r) => ({ role: r.role, descr: r.desc, perms: r.perms.map((p, i) => ({ module: PERM_MODULES[i], level: p.l })) })), "role");
   await run("org_settings", ORG_FIELDS.map((f) => ({ key: slug(f.label), label: f.label, value: f.value })), "key");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -12,6 +12,7 @@ import { BrandFilterValue, brandName, BRAND_ORDER, BRANDS, BrandId } from "@/lib
 import {
   CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS, itemPlatforms,
 } from "@/lib/data/content";
+import { fetchContent, createContent } from "@/lib/db/content";
 
 /** Row of platform badges (one per selected channel). */
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
@@ -43,12 +44,19 @@ export default function ContentPage() {
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [newOpen, setNewOpen] = useState(false);
 
+  useEffect(() => {
+    let alive = true;
+    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const items = useMemo(() => posts.filter((c) => brand === "all" || c.b === brand), [posts, brand]);
   const cards = useMemo(() => brandOverview(posts), [posts]);
 
-  const addPost = (p: ContentItem) => {
-    setPosts((ps) => [p, ...ps]);
+  const addPost = async (p: ContentItem) => {
     setNewOpen(false);
+    const created = await createContent(p);
+    setPosts((ps) => [created, ...ps]);
   };
 
   return (
