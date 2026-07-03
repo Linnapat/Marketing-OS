@@ -42,7 +42,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/my-tasks", label: "My Tasks", icon: CheckSquare, badge: 4, ready: true },
       { href: "/team", label: "Team Workload", icon: Users, ready: true },
-      { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/settings", label: "Settings", icon: Settings, ready: true },
     ],
   },
 ];
