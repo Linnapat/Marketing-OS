@@ -15,21 +15,33 @@ export default function MyTasksPage() {
   const [viewAs, setViewAs] = useState(PEOPLE[0]);
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
-  const [drawer, setDrawer] = useState<Task | null>(null);
+  const [tasks, setTasks] = useState<Task[]>(TASKS);
+  const [drawer, setDrawerId] = useState<number | null>(null);
   const [celebration, setCelebration] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
 
+  const drawerTask = drawer !== null ? tasks.find((t) => t.id === drawer) ?? null : null;
   const statusOf = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
   const groupOf = (t: Task) => (doneIds.has(t.id) ? "done" : t.group);
 
   const markDone = (id: number) => {
     setDoneIds((s) => new Set(s).add(id));
-    setDrawer(null);
+    setDrawerId(null);
     const msg = CELEBRATIONS[id % CELEBRATIONS.length];
     setCelebration(msg);
     setTimeout(() => setCelebration((c) => (c === msg ? null : c)), 3000);
   };
 
-  const mine = useMemo(() => TASKS.filter((t) => t.assignee === viewAs), [viewAs]);
+  const createTask = (t: Task) => {
+    setTasks((ts) => [t, ...ts]);
+    setNewOpen(false);
+  };
+
+  const reassign = (id: number, to: string) => {
+    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t)));
+  };
+
+  const mine = useMemo(() => tasks.filter((t) => t.assignee === viewAs), [tasks, viewAs]);
   const [greetTitle, greetSub] = GREETINGS[viewAs];
 
   const summary = {
@@ -50,17 +62,20 @@ export default function MyTasksPage() {
         title={tab === "myDay" ? "My Day" : "Team View"}
         subtitle={tab === "myDay" ? "Your focus for today — small wins count 🌿" : "Everyone's workload at a glance."}
         right={
-          <div className="flex items-center gap-[6px] flex-wrap justify-end">
-            <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em] mr-1">Viewing as</span>
-            {PEOPLE.map((p) => {
-              const active = p === viewAs;
-              return (
-                <button key={p} onClick={() => setViewAs(p)} className="text-[11px] px-[10px] py-[4px] rounded-pill whitespace-nowrap"
-                  style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
-                  {p.split(" ")[0]}
-                </button>
-              );
-            })}
+          <div className="flex flex-col items-end gap-[10px]">
+            <button onClick={() => setNewOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Task</button>
+            <div className="flex items-center gap-[6px] flex-wrap justify-end">
+              <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em] mr-1">Viewing as</span>
+              {PEOPLE.map((p) => {
+                const active = p === viewAs;
+                return (
+                  <button key={p} onClick={() => setViewAs(p)} className="text-[11px] px-[10px] py-[4px] rounded-pill whitespace-nowrap"
+                    style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
+                    {p.split(" ")[0]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         }
       />
@@ -114,11 +129,11 @@ export default function MyTasksPage() {
                   </div>
                   {viewMode === "cards" ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={statusOf(t)} onOpen={() => setDrawer(t)} onDone={() => markDone(t.id)} />)}
+                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={statusOf(t)} onOpen={() => setDrawerId(t.id)} onDone={() => markDone(t.id)} />)}
                     </div>
                   ) : (
                     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-                      {groupTasks.map((t) => <TaskRow key={t.id} t={t} status={statusOf(t)} onOpen={() => setDrawer(t)} />)}
+                      {groupTasks.map((t) => <TaskRow key={t.id} t={t} status={statusOf(t)} onOpen={() => setDrawerId(t.id)} />)}
                     </div>
                   )}
                 </div>
@@ -127,10 +142,11 @@ export default function MyTasksPage() {
           </div>
         </>
       ) : (
-        <TeamView doneIds={doneIds} onPick={(p) => { setViewAs(p); setTab("myDay"); }} />
+        <TeamView doneIds={doneIds} tasks={tasks} onPick={(p) => { setViewAs(p); setTab("myDay"); }} />
       )}
 
-      {drawer && <TaskDrawer t={drawer} status={statusOf(drawer)} onClose={() => setDrawer(null)} onDone={() => markDone(drawer.id)} />}
+      {drawerTask && <TaskDrawer t={drawerTask} status={statusOf(drawerTask)} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} />}
+      {newOpen && <NewTaskModal owner={viewAs} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-panel text-white text-[13.5px] font-bold px-5 py-3 rounded-pill shadow-2xl">
           {celebration}
@@ -178,8 +194,8 @@ function TaskRow({ t, status, onOpen }: { t: Task; status: string; onOpen: () =>
   );
 }
 
-function TeamView({ doneIds, onPick }: { doneIds: Set<number>; onPick: (p: string) => void }) {
-  const people = teamSummary(doneIds);
+function TeamView({ doneIds, tasks, onPick }: { doneIds: Set<number>; tasks: Task[]; onPick: (p: string) => void }) {
+  const people = teamSummary(doneIds, tasks);
   const needHelp = people.filter((p) => p.needsAttention);
   return (
     <div className="mt-4 flex flex-col gap-5">
@@ -216,7 +232,7 @@ function TeamView({ doneIds, onPick }: { doneIds: Set<number>; onPick: (p: strin
   );
 }
 
-function TaskDrawer({ t, status, onClose, onDone }: { t: Task; status: string; onClose: () => void; onDone: () => void }) {
+function TaskDrawer({ t, status, onClose, onDone, onReassign }: { t: Task; status: string; onClose: () => void; onDone: () => void; onReassign: (to: string) => void }) {
   const done = status === "Done";
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -259,6 +275,24 @@ function TaskDrawer({ t, status, onClose, onDone }: { t: Task; status: string; o
               <div key={l as string}><div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[3px]">{l as string}</div><div className="text-[13px] text-ink">{v as string}</div></div>
             ))}
           </div>
+
+          {/* Hand off / reassign */}
+          <div className="rounded-card px-4 py-3 bg-ivory border border-line3">
+            <div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-2">Hand off to</div>
+            <div className="flex flex-wrap gap-2">
+              {PEOPLE.map((p) => {
+                const active = p === t.assignee;
+                return (
+                  <button key={p} onClick={() => onReassign(p)} disabled={active}
+                    className="flex items-center gap-[6px] text-[12px] px-[11px] py-[6px] rounded-pill transition disabled:cursor-default"
+                    style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
+                    <span className="w-[16px] h-[16px] rounded-full flex items-center justify-center text-[8px] font-bold text-white" style={{ background: PERSON_COLOR[p] }}>{p.split(" ").map((w) => w[0]).join("")}</span>
+                    {p.split(" ")[0]}{active ? " · current" : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
         <div className="px-5 py-4 border-t border-line flex gap-2">
           {!done ? (
@@ -270,6 +304,101 @@ function TaskDrawer({ t, status, onClose, onDone }: { t: Task; status: string; o
             <div className="flex-1 text-center text-[13px] font-bold text-status-green py-[11px]">🌿 Completed — nice work</div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const TYPE_META: Record<string, { module: string; icon: string; color: string }> = {
+  Content: { module: "Content", icon: "✍️", color: "#3E5C9A" },
+  KOL: { module: "KOL", icon: "🌟", color: "#B5577E" },
+  Graphic: { module: "Graphic", icon: "🎨", color: "#C2691E" },
+  Budget: { module: "Finance", icon: "฿", color: "#4E7A4E" },
+  Ads: { module: "Ads", icon: "📣", color: "#C68A1E" },
+  Report: { module: "Campaign", icon: "🎯", color: "#B33A2E" },
+  Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
+};
+
+function NewTaskModal({ owner, nextId, onClose, onCreate }: { owner: string; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState("Content");
+  const [assignee, setAssignee] = useState(owner);
+  const [brand, setBrand] = useState("Teppen");
+  const [campaign, setCampaign] = useState("");
+  const [due, setDue] = useState("Jul 5");
+  const [priority, setPriority] = useState<"High" | "Med" | "Low">("Med");
+  const [group, setGroup] = useState("doFirst");
+  const [nextAction, setNextAction] = useState("");
+
+  const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  const create = () => {
+    if (!title.trim()) return;
+    const meta = TYPE_META[type];
+    onCreate({
+      id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color,
+      type, assignee, brand, campaign: campaign.trim() || "—", status: "Todo", priority, group,
+      due, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins",
+      nextAction: nextAction.trim() || "Start when you're ready.", checklist: [],
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-surface rounded-cardLg w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
+        <div className="text-[16px] font-extrabold mb-4">New Task</div>
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Task Title <span className="text-status-red">*</span></label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Draft Wagyu launch caption" autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label>
+              <select value={type} onChange={(e) => setType(e.target.value)} className={field}>
+                {Object.keys(TYPE_META).map((t) => <option key={t} value={t}>{TYPE_META[t].icon} {t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Assign to</label>
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field}>
+                {PEOPLE.map((p) => <option key={p} value={p}>{p}{p === owner ? " (me)" : ""}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
+              <select value={brand} onChange={(e) => setBrand(e.target.value)} className={field}><option>Teppen</option><option>Omakase</option><option>Mainichi</option><option>Touka</option></select>
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+              <input value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field} placeholder="e.g. Wagyu Festival" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label>
+              <input value={due} onChange={(e) => setDue(e.target.value)} className={field} placeholder="Jul 5" />
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label>
+              <select value={priority} onChange={(e) => setPriority(e.target.value as "High" | "Med" | "Low")} className={field}><option>High</option><option>Med</option><option>Low</option></select>
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Focus group</label>
+              <select value={group} onChange={(e) => setGroup(e.target.value)} className={field}>
+                {TASK_GROUPS.filter((g) => g.key !== "done").map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Next action</label>
+            <input value={nextAction} onChange={(e) => setNextAction(e.target.value)} className={field} placeholder="One clear next step…" />
+          </div>
+        </div>
+        <button onClick={create} disabled={!title.trim()} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Task</button>
       </div>
     </div>
   );

@@ -97,9 +97,9 @@ export interface PersonSummary {
   total: number; done: number; active: number; waiting: number; stuck: number; needsAttention: boolean;
 }
 
-export function teamSummary(doneIds: Set<number>): PersonSummary[] {
+export function teamSummary(doneIds: Set<number>, source: Task[] = TASKS): PersonSummary[] {
   return PEOPLE.map((name) => {
-    const mine = TASKS.filter((t) => t.assignee === name);
+    const mine = source.filter((t) => t.assignee === name);
     const status = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
     const done = mine.filter((t) => status(t) === "Done").length;
     const stuck = mine.filter((t) => status(t) === "Stuck").length;
