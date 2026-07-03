@@ -67,9 +67,9 @@ export interface BrandCard {
   total: number; scheduled: number; waitApproval: number; missingAsset: number; failed: number;
 }
 
-export function brandOverview(): BrandCard[] {
+export function brandOverview(source: ContentItem[] = CONTENT): BrandCard[] {
   return BRAND_ORDER.map((b) => {
-    const items = CONTENT.filter((c) => c.b === b);
+    const items = source.filter((c) => c.b === b);
     return {
       b, name: brandName(b), color: brandColor(b),
       total: items.length,

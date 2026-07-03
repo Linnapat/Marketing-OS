@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { SignaturePad } from "@/components/finance/SignaturePad";
+import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
 import { BrandFilterValue, brandName, brandColor, BrandId } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import {
@@ -105,7 +106,7 @@ export default function FinancePage() {
         {tab === "approval" && <ApprovalTab brand={brand} />}
       </div>
 
-      {pvExpense && <VoucherModal expense={pvExpense} onClose={() => setPvExpense(null)} />}
+      {pvExpense && <PrintableVoucher expense={pvExpense} onClose={() => setPvExpense(null)} />}
     </>
   );
 }
@@ -453,39 +454,6 @@ function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; onVouch
           <div><button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Voucher ↗</button></div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function VoucherModal({ expense, onClose }: { expense: ExpenseRow; onClose: () => void }) {
-  const wht = Math.round(expense.amount * 0.03);
-  const total = expense.amount + expense.vat - wht;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div className="relative bg-surface rounded-cardLg w-full max-w-md p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-center mb-4">
-          <div className="text-[11px] uppercase tracking-[0.1em] text-faint font-bold">Payment Voucher</div>
-          <div className="text-[16px] font-extrabold mt-1">TEPPEN Group</div>
-        </div>
-        <div className="flex flex-col gap-[2px] text-[13px]">
-          {[
-            ["PV No.", `PV-2026-${String(Math.floor(1000 + expense.amount % 9000))}`],
-            ["Vendor", expense.vendor],
-            ["Brand", brandName(expense.b)],
-            ["Category", expense.category],
-            ["Date", expense.date],
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between py-[6px] border-b border-line4"><span className="text-faint">{k}</span><span className="font-semibold text-ink">{v}</span></div>
-          ))}
-          <div className="flex justify-between py-[6px] border-b border-line4"><span className="text-faint">Amount</span><span className="font-semibold text-ink">{baht(expense.amount)}</span></div>
-          <div className="flex justify-between py-[6px] border-b border-line4"><span className="text-faint">VAT 7%</span><span className="font-semibold text-ink">+ {baht(expense.vat)}</span></div>
-          <div className="flex justify-between py-[6px] border-b border-line4"><span className="text-faint">WHT 3%</span><span className="font-semibold text-ink">− {baht(wht)}</span></div>
-          <div className="flex justify-between pt-3 text-[15px] font-bold"><span>Net Total</span><span className="text-accent">{baht(total)}</span></div>
-        </div>
-        <button className="w-full mt-5 text-[12.5px] font-bold text-white bg-panel rounded-[9px] py-[10px]">Open Printable Version →</button>
-      </div>
     </div>
   );
 }

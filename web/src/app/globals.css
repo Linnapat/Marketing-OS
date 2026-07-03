@@ -20,3 +20,12 @@ html, body {
 @layer utilities {
   .letter-tightest { letter-spacing: -0.02em; }
 }
+
+/* Printable voucher: when the print overlay is mounted, print ONLY it. */
+@media print {
+  body * { visibility: hidden !important; }
+  .print-root, .print-root * { visibility: visible !important; }
+  .print-root { position: absolute !important; inset: 0 !important; background: #fff !important; }
+  .no-print { display: none !important; }
+  @page { size: A5 landscape; margin: 8mm; }
+}
