@@ -32,9 +32,9 @@ export const NAV: NavGroup[] = [
       { href: "/content", label: "Content Calendar", icon: CalendarDays, ready: true },
       { href: "/graphic", label: "Graphic Request", icon: Palette, ready: true },
       { href: "/kol", label: "KOL / Creator", icon: Star, ready: true },
-      { href: "/requests", label: "Request Center", icon: Inbox },
-      { href: "/approvals", label: "Approval Queue", icon: ClipboardCheck },
-      { href: "/assets", label: "Asset Library", icon: FolderOpen },
+      { href: "/requests", label: "Request Center", icon: Inbox, ready: true },
+      { href: "/approvals", label: "Approval Queue", icon: ClipboardCheck, ready: true },
+      { href: "/assets", label: "Asset Library", icon: FolderOpen, ready: true },
     ],
   },
   {
