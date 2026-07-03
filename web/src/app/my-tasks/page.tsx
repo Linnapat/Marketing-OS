@@ -1,28 +1,64 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { X } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Segmented } from "@/components/ui/Segmented";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import {
-  TASKS, Task, PEOPLE, PERSON_COLOR, PERSON_ROLE, GREETINGS, TASK_GROUPS,
-  STATUS_TONE, PRIORITY_TONE, TYPE_TONE, CELEBRATIONS, teamSummary,
-} from "@/lib/data/tasks";
+import { useMemo, useState, CSSProperties } from "react";
+import { TASKS, Task, PEOPLE, GREETINGS, CELEBRATIONS } from "@/lib/data/tasks";
+
+// ── Exact color maps from MyTasks.dc.html ──────────────────────────
+const TEAM_COLORS: Record<string, string> = {
+  "Aran P.": "#B8945A", "Ken S.": "#3E5C9A", Boss: "#4E7A4E",
+  "Nok W.": "#6b6258", "Ploy R.": "#B5577E", "Mei T.": "#C2691E",
+};
+const STATUS_MAP: Record<string, [string, string]> = {
+  Done: ["#4E7A4E", "#EEF4EE"], "In Progress": ["#3E5C9A", "#EEF1F8"], Waiting: ["#C68A1E", "#FBF8EE"],
+  "Need Approval": ["#4E7A4E", "#F0F7F0"], Stuck: ["#B33A2E", "#FFF5F4"], Revision: ["#C2691E", "#FBF1E9"], Todo: ["#9A9387", "#F2F0EB"],
+};
+const PRIORITY_MAP: Record<string, [string, string]> = {
+  High: ["#B33A2E", "#FFF5F4"], Med: ["#C68A1E", "#FBF8EE"], Low: ["#9A9387", "#F2F0EB"],
+};
+const TYPE_COLORS: Record<string, [string, string]> = {
+  Content: ["#3E5C9A", "#EEF1F8"], KOL: ["#B5577E", "#FBF0F5"], Graphic: ["#C2691E", "#FBF1E9"],
+  Budget: ["#4E7A4E", "#EEF4EE"], Ads: ["#C68A1E", "#FBF8EE"], Report: ["#6b6258", "#F0EDE6"], Campaign: ["#B8945A", "#FBF6ED"],
+};
+const BENTO_MESSAGES = ["You're almost there", "Small wins count ✓", "One task at a time", "Let's clear this gently", "Nearly done — just a few more"];
+
+const badge = (s: string, map: Record<string, [string, string]>): CSSProperties => {
+  const [fg, bg] = map[s] ?? ["#6b6258", "#F0EDE6"];
+  return { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: bg, color: fg, display: "inline-block", whiteSpace: "nowrap" };
+};
+const init = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
+const chip = (active: boolean): CSSProperties => active
+  ? { fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 999, background: "#211F1C", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }
+  : { fontSize: 12, fontWeight: 500, padding: "6px 14px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" };
+
+const TODAY_DUES = ["Jul 2"];
+const WEEK_DUES = ["Jul 2", "Jul 3", "Jul 4", "Jul 5", "Jul 6"];
+const GROUP_DEFS = [
+  { id: "doFirst", label: "Do First", icon: "🎯", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "" },
+  { id: "needApproval", label: "Need Approval", icon: "✅", countBg: "#F0F7F0", countColor: "#4E7A4E", warnMsg: "" },
+  { id: "waitingMe", label: "Waiting for Me", icon: "✋", countBg: "#FBF8EE", countColor: "#C68A1E", warnMsg: "" },
+  { id: "quickWins", label: "Quick Wins", icon: "✨", countBg: "#FBF6ED", countColor: "#B8945A", warnMsg: "" },
+  { id: "stuck", label: "Stuck — Needs support", icon: "⚠️", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "Let your team know if you need help" },
+  { id: "done", label: "Done", icon: "✓", countBg: "#EEF4EE", countColor: "#4E7A4E", warnMsg: "" },
+];
+const SCOPE_FILTERS = [
+  { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
+  { id: "approvals", label: "My approvals" }, { id: "stuck", label: "Stuck" },
+];
 
 export default function MyTasksPage() {
-  const [tab, setTab] = useState<"myDay" | "team">("myDay");
-  const [viewAs, setViewAs] = useState(PEOPLE[0]);
+  const [activeTab, setActiveTab] = useState<"myDay" | "team">("myDay");
+  const [viewAs, setViewAs] = useState("Aran P.");
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
-  const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
+  const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
-  const [drawer, setDrawerId] = useState<number | null>(null);
+  const [doneIds, setDoneIds] = useState<Set<number>>(new Set([1, 4, 7, 8, 12, 14, 18, 20]));
+  const [drawerId, setDrawerId] = useState<number | null>(null);
   const [celebration, setCelebration] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
 
-  const drawerTask = drawer !== null ? tasks.find((t) => t.id === drawer) ?? null : null;
-  const statusOf = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
-  const groupOf = (t: Task) => (doneIds.has(t.id) ? "done" : t.group);
+  const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
+  const getGroup = (t: Task) => (doneIds.has(t.id) ? "done" : t.group);
+  const drawerTask = drawerId !== null ? tasks.find((t) => t.id === drawerId) ?? null : null;
 
   const markDone = (id: number) => {
     setDoneIds((s) => new Set(s).add(id));
@@ -31,292 +67,376 @@ export default function MyTasksPage() {
     setCelebration(msg);
     setTimeout(() => setCelebration((c) => (c === msg ? null : c)), 3000);
   };
+  const createTask = (t: Task) => { setTasks((ts) => [t, ...ts]); setNewOpen(false); };
+  const reassign = (id: number, to: string) => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t)));
 
-  const createTask = (t: Task) => {
-    setTasks((ts) => [t, ...ts]);
-    setNewOpen(false);
+  const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs), [tasks, viewAs]);
+  const [greetText, greetSubtext] = GREETINGS[viewAs] ?? ["Welcome 🌿", "Ready for today?"];
+
+  const todayTasks = myTasks.filter((t) => TODAY_DUES.includes(t.due) || getStatus(t) === "Stuck");
+  const todayDone = todayTasks.filter((t) => getStatus(t) === "Done").length;
+  const todayTotal = todayTasks.length;
+  const todayFocusCount = todayTasks.filter((t) => getStatus(t) !== "Done").length;
+  const myDone = myTasks.filter((t) => getStatus(t) === "Done").length;
+  const myStuck = myTasks.filter((t) => getStatus(t) === "Stuck").length;
+  const myApprovals = myTasks.filter((t) => getStatus(t) === "Need Approval").length;
+  const myWaiting = myTasks.filter((t) => getStatus(t) === "Waiting").length;
+  const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
+
+  const matchScope = (t: Task) => {
+    const st = getStatus(t);
+    if (scopeFilter === "today") return TODAY_DUES.includes(t.due) || st === "Stuck";
+    if (scopeFilter === "week") return WEEK_DUES.includes(t.due) || ["In Progress", "Stuck", "Waiting", "Need Approval"].includes(st);
+    if (scopeFilter === "approvals") return st === "Need Approval";
+    if (scopeFilter === "stuck") return st === "Stuck";
+    return true;
   };
-
-  const reassign = (id: number, to: string) => {
-    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t)));
-  };
-
-  const mine = useMemo(() => tasks.filter((t) => t.assignee === viewAs), [tasks, viewAs]);
-  const [greetTitle, greetSub] = GREETINGS[viewAs];
-
-  const summary = {
-    today: mine.filter((t) => statusOf(t) !== "Done").length,
-    done: mine.filter((t) => statusOf(t) === "Done").length,
-    waiting: mine.filter((t) => statusOf(t) === "Waiting").length,
-    needApproval: mine.filter((t) => statusOf(t) === "Need Approval").length,
-    stuck: mine.filter((t) => statusOf(t) === "Stuck").length,
-    quick: mine.filter((t) => t.isQuickWin && statusOf(t) !== "Done").length,
-  };
-  const doneToday = summary.done;
-  const totalToday = mine.length;
+  const scopedTasks = myTasks.filter(matchScope);
 
   return (
-    <>
-      <PageHeader
-        eyebrow="My Tasks"
-        title={tab === "myDay" ? "My Day" : "Team View"}
-        subtitle={tab === "myDay" ? "Your focus for today — small wins count 🌿" : "Everyone's workload at a glance."}
-        right={
-          <div className="flex flex-col items-end gap-[10px]">
-            <button onClick={() => setNewOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Task</button>
-            <div className="flex items-center gap-[6px] flex-wrap justify-end">
-              <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em] mr-1">Viewing as</span>
-              {PEOPLE.map((p) => {
-                const active = p === viewAs;
+    <div style={{ paddingBottom: 40 }}>
+      {/* HEADER */}
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-[22px]">
+        <div>
+          <div className="text-[22px] font-extrabold tracking-[-0.02em]">My Tasks</div>
+          <div className="text-[12.5px] text-faint mt-[2px]">Personal workspace · Team overview · Approvals</div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setNewOpen(true)} style={chip(true)}>+ New Task</button>
+          <div className="w-px h-5 bg-line2 mx-1" />
+          <span onClick={() => setActiveTab("myDay")} style={chip(activeTab === "myDay")}>My Day</span>
+          <span onClick={() => setActiveTab("team")} style={chip(activeTab === "team")}>Team View</span>
+          <div className="w-px h-5 bg-line2 mx-1" />
+          <div className="flex items-center gap-[6px] bg-white border border-line2 rounded-pill px-3 py-[5px]">
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ background: TEAM_COLORS[viewAs] }}>{init(viewAs)}</span>
+            <span className="text-[12px] font-semibold text-ink">{viewAs.split(" ")[0]}</span>
+          </div>
+          {PEOPLE.map((p) => {
+            const active = viewAs === p;
+            return <span key={p} onClick={() => setViewAs(p)} style={active
+              ? { fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#211F1C", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }
+              : { fontSize: 11, fontWeight: 500, padding: "4px 10px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" }}>{p.split(" ")[0]}</span>;
+          })}
+        </div>
+      </div>
+
+      {activeTab === "myDay" ? (
+        <div className="flex flex-col gap-[18px]">
+          {/* GREETING + BENTO */}
+          <div className="flex gap-[14px] flex-wrap">
+            <div className="flex-1 min-w-[260px] rounded-[24px] px-[30px] py-[26px]" style={{ background: "linear-gradient(135deg,#FDF6E8 0%,#F5E8CE 100%)", border: "1px solid #E8D5AA" }}>
+              <div className="text-[11px] tracking-[0.08em] uppercase font-bold mb-2" style={{ color: "#B8945A" }}>Wednesday · Jul 2, 2026</div>
+              <div className="text-[26px] font-extrabold tracking-[-0.02em] mb-[6px]">{greetText}</div>
+              <div className="text-[14.5px] text-muted leading-[1.55]">{greetSubtext}</div>
+            </div>
+            <div className="flex flex-col gap-2 min-w-[240px] max-w-[276px]">
+              <div className="rounded-[18px] px-5 py-[18px] text-white" style={{ background: "#211F1C" }}>
+                <div className="text-[10px] tracking-[0.08em] uppercase font-bold mb-2" style={{ color: "#B8945A" }}>Today&apos;s Focus 🍱</div>
+                <div className="text-[40px] font-extrabold leading-none mb-1">{todayFocusCount}</div>
+                <div className="text-[12px] italic mb-3" style={{ color: "#C0B8AD" }}>{bentoMsg}</div>
+                <div className="h-[5px] rounded-[3px] overflow-hidden" style={{ background: "#3A3630" }}><div className="h-[5px] rounded-[3px]" style={{ background: "#B8945A", width: `${todayTotal ? Math.round((todayDone / todayTotal) * 100) : 0}%` }} /></div>
+                <div className="text-[11px] mt-[5px]" style={{ color: "#9A9387" }}>{todayDone} / {todayTotal} done today</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <StatMini label="Done ✓" val={myDone} fg="#4E7A4E" bg="#EEF4EE" />
+                <StatMini label="Stuck ⚠" val={myStuck} fg="#B33A2E" bg="#FFF5F4" />
+                <StatMini label="Approval ✅" val={myApprovals} fg="#4E7A4E" bg="#F0F7F0" />
+                <StatMini label="Waiting" val={myWaiting} fg="#C68A1E" bg="#FBF8EE" />
+              </div>
+            </div>
+          </div>
+
+          {/* FILTER + VIEW */}
+          <div className="flex items-center justify-between flex-wrap gap-[10px]">
+            <div className="flex gap-[7px] flex-wrap">
+              {SCOPE_FILTERS.map((f) => <span key={f.id} onClick={() => setScopeFilter(f.id)} style={chip(scopeFilter === f.id)}>{f.label}</span>)}
+            </div>
+            <div className="flex gap-[6px]">
+              <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>
+              <span onClick={() => setViewMode("list")} style={chip(viewMode === "list")}>≡ List</span>
+            </div>
+          </div>
+
+          {viewMode === "cards" ? (
+            <div className="flex flex-col gap-[26px]">
+              {GROUP_DEFS.map((g) => {
+                const groupTasks = scopedTasks.filter((t) => getGroup(t) === g.id);
+                if (groupTasks.length === 0) return null;
                 return (
-                  <button key={p} onClick={() => setViewAs(p)} className="text-[11px] px-[10px] py-[4px] rounded-pill whitespace-nowrap"
-                    style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
-                    {p.split(" ")[0]}
-                  </button>
+                  <div key={g.id}>
+                    <div className="flex items-center gap-[10px] mb-[13px]">
+                      <span className="text-[17px]">{g.icon}</span>
+                      <span className="text-[13.5px] font-bold tracking-[-0.01em]">{g.label}</span>
+                      <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: g.countBg, color: g.countColor }}>{groupTasks.length}</span>
+                      {g.warnMsg && <span className="text-[11.5px] italic" style={{ color: "#B33A2E" }}>{g.warnMsg}</span>}
+                    </div>
+                    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))" }}>
+                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} onOpen={() => setDrawerId(t.id)} onDone={() => markDone(t.id)} />)}
+                    </div>
+                  </div>
                 );
               })}
             </div>
-          </div>
-        }
-      />
-
-      <div className="mt-4">
-        <Segmented value={tab} onChange={setTab} options={[{ value: "myDay", label: "My Day" }, { value: "team", label: "Team View" }]} />
-      </div>
-
-      {tab === "myDay" ? (
-        <>
-          {/* Greeting */}
-          <div className="mt-4 bg-panel text-white rounded-cardLg px-6 py-5">
-            <div className="text-[19px] font-extrabold">{greetTitle}</div>
-            <div className="text-[13px] text-white/60 mt-1">{greetSub}</div>
-            <div className="flex gap-5 mt-4 flex-wrap">
-              {[["Today", summary.today], ["Done today", summary.done], ["Waiting for me", summary.waiting], ["Need approval", summary.needApproval], ["Stuck", summary.stuck], ["Quick wins", summary.quick]].map(([l, v]) => (
-                <div key={l as string}>
-                  <div className="text-[22px] font-extrabold" style={{ color: (l === "Stuck" && (v as number) > 0) ? "#f0a89f" : "#fff" }}>{v as number}</div>
-                  <div className="text-[10.5px] text-white/50 uppercase tracking-[0.04em] font-bold mt-[2px]">{l as string}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Bento progress */}
-          <div className="mt-4 bg-accent-soft border border-accent-border rounded-cardLg px-5 py-4 flex items-center gap-4 flex-wrap">
-            <span className="text-[22px]">🍱</span>
-            <div className="flex-1 min-w-[180px]">
-              <div className="text-[13px] font-bold text-ink">Today&apos;s Bento — {doneToday}/{totalToday} cleared</div>
-              <div className="h-[7px] bg-white rounded-full overflow-hidden mt-2"><div className="h-full rounded-full" style={{ width: `${totalToday ? (doneToday / totalToday) * 100 : 0}%`, background: "#B8945A" }} /></div>
-            </div>
-            <div className="text-[12.5px] text-status-gold font-semibold italic">You&apos;re almost there — keep going 🌿</div>
-          </div>
-
-          {/* View toggle */}
-          <div className="mt-5 flex justify-end">
-            <Segmented value={viewMode} onChange={setViewMode} options={[{ value: "cards", label: "⊞ Cards" }, { value: "list", label: "≡ List" }]} />
-          </div>
-
-          {/* Today Focus groups */}
-          <div className="mt-4 flex flex-col gap-5">
-            {TASK_GROUPS.map((g) => {
-              const groupTasks = mine.filter((t) => groupOf(t) === g.key);
-              if (groupTasks.length === 0) return null;
-              return (
-                <div key={g.key}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[16px]">{g.icon}</span>
-                    <span className="text-[13.5px] font-bold">{g.label}</span>
-                    <span className="text-[12px] text-faint font-semibold">{groupTasks.length}</span>
-                  </div>
-                  {viewMode === "cards" ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={statusOf(t)} onOpen={() => setDrawerId(t.id)} onDone={() => markDone(t.id)} />)}
-                    </div>
-                  ) : (
-                    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-                      {groupTasks.map((t) => <TaskRow key={t.id} t={t} status={statusOf(t)} onOpen={() => setDrawerId(t.id)} />)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </>
+          ) : (
+            <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} />
+          )}
+        </div>
       ) : (
-        <TeamView doneIds={doneIds} tasks={tasks} onPick={(p) => { setViewAs(p); setTab("myDay"); }} />
+        <TeamView tasks={tasks} getStatus={getStatus} onSelect={(p) => { setViewAs(p); setActiveTab("myDay"); }} />
       )}
 
-      {drawerTask && <TaskDrawer t={drawerTask} status={statusOf(drawerTask)} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} />}
+      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} />}
       {newOpen && <NewTaskModal owner={viewAs} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-panel text-white text-[13.5px] font-bold px-5 py-3 rounded-pill shadow-2xl">
-          {celebration}
+        <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
+          <span className="text-[18px]">🌿</span>
+          <div><div className="text-[13.5px] font-bold">{celebration}</div><div className="text-[11.5px] mt-[2px]" style={{ color: "#C0B8AD" }}>Small wins count — keep it going.</div></div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
-function TypeBadge({ t }: { t: Task }) {
-  return <StatusBadge tone={TYPE_TONE[t.type] ?? "neutral"}>{t.moduleIcon} {t.type}</StatusBadge>;
+function StatMini({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
+  return (
+    <div className="rounded-[13px] px-[14px] py-[13px]" style={{ background: bg }}>
+      <div className="text-[9.5px] font-bold tracking-[0.05em] uppercase" style={{ color: fg }}>{label}</div>
+      <div className="text-[26px] font-bold mt-[3px]" style={{ color: fg }}>{val}</div>
+    </div>
+  );
 }
 
-function TaskCard({ t, status, onOpen, onDone }: { t: Task; status: string; onOpen: () => void; onDone: () => void }) {
-  const done = status === "Done";
+const dueColorOf = (due: string) => (due === "Jul 2" ? "#B33A2E" : due === "Jul 3" ? "#C68A1E" : "#6b6258");
+
+function TaskCard({ t, status, viewAs, onOpen, onDone }: { t: Task; status: string; viewAs: string; onOpen: () => void; onDone: () => void }) {
+  const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
+  const cardBorder = status === "Stuck" ? "#F5C8C4" : status === "Need Approval" ? "#B8E0B8" : "#ECE6DA";
+  const hasApprover = !!t.pendingApprover && t.pendingApprover !== viewAs;
+  const blockerShort = t.blocker ? t.blocker.split("—")[0].trim() : "";
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
-    <div className="bg-surface border border-line rounded-cardLg p-4 flex flex-col gap-2" style={{ opacity: done ? 0.6 : 1 }}>
-      <div className="flex items-center justify-between gap-2">
-        <TypeBadge t={t} />
-        <StatusBadge tone={STATUS_TONE[status] ?? "neutral"}>{status}</StatusBadge>
+    <div onClick={onOpen} className="relative overflow-hidden cursor-pointer" style={{ background: "#fff", border: `1px solid ${cardBorder}`, borderRadius: 16, padding: "18px 18px 14px 22px" }}>
+      <div className="absolute left-0 top-0 bottom-0" style={{ width: 4, background: t.moduleColor }} />
+      <div className="flex items-center gap-[7px] mb-[10px] flex-wrap">
+        <span className="text-[13px]">{t.moduleIcon}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg }}>{t.type}</span>
+        <span style={badge(t.priority, PRIORITY_MAP)}>{t.priority}</span>
+        {t.isQuickWin && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: "#FBF6ED", color: "#B8945A" }}>✨ Quick win</span>}
+        <span className="ml-auto"><span style={badge(status, STATUS_MAP)}>{status}</span></span>
       </div>
-      <button onClick={onOpen} className="text-left">
-        <div className="text-[14px] font-bold text-ink leading-tight">{t.title}</div>
-        <div className="text-[11.5px] text-faint mt-1">{t.brand} · {t.campaign} · Due {t.due}</div>
-      </button>
-      {!done && <div className="text-[12px] text-muted leading-[1.4]">{t.nextAction}</div>}
-      {t.blocker && <div className="text-[11.5px] font-semibold text-status-red">⚠ Blocked by {t.blocker}</div>}
-      <div className="flex items-center gap-2 mt-1">
-        {!done && <button onClick={onDone} className="text-[11.5px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[6px]">✓ Mark done</button>}
-        <button onClick={onOpen} className="text-[11.5px] font-bold text-muted border border-line2 rounded-[8px] px-3 py-[6px]">{t.status === "Need Approval" ? "Review" : "Open"}</button>
+      <div className="text-[14.5px] font-bold leading-[1.35] mb-[5px]">{t.title}</div>
+      <div className="text-[11.5px] text-faint mb-[10px]">{t.brand} · {t.campaign}</div>
+      <div className="text-[12px] text-muted rounded-[9px] px-3 py-[9px] mb-3 italic leading-[1.5]" style={{ background: "#FAF8F4" }}>{t.nextAction}</div>
+      <div className="flex items-center gap-[10px] mb-3 flex-wrap">
+        <span className="text-[11px] font-semibold" style={{ color: dueColorOf(t.due) }}>📅 {t.due}</span>
+        {hasApprover && <span className="text-[11px] font-semibold" style={{ color: "#C68A1E" }}>⏳ {t.pendingApprover}</span>}
+        {t.blocker && <span className="text-[11px] font-semibold" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</span>}
+      </div>
+      <div className="flex gap-[7px] flex-wrap">
+        {(status === "In Progress" || status === "Revision") && <span onClick={(e) => { stop(e); onDone(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Mark Done ✓</span>}
+        {status === "Need Approval" && <span onClick={(e) => { stop(e); onDone(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Approve ✓</span>}
+        {status === "Stuck" && <span onClick={stop} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4", cursor: "pointer" }}>Ask for Help</span>}
+        {status === "Todo" && <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#3E5C9A", color: "#fff", cursor: "pointer" }}>Start</span>}
+        {status === "Waiting" && <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#FBF8EE", color: "#C68A1E", border: "1px solid #EDCC7A", cursor: "pointer" }}>Check in</span>}
+        <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 500, padding: "6px 13px", borderRadius: 9, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff" }}>Details</span>
       </div>
     </div>
   );
 }
 
-function TaskRow({ t, status, onOpen }: { t: Task; status: string; onOpen: () => void }) {
+function ListView({ tasks, getStatus, onOpen }: { tasks: Task[]; getStatus: (t: Task) => string; onOpen: (id: number) => void }) {
+  const cols = "2.5fr 0.7fr 1fr 1.3fr 0.65fr 0.8fr 0.85fr";
   return (
-    <button onClick={onOpen} className="w-full grid grid-cols-[1.4fr_2fr_1fr_0.8fr_1fr] gap-3 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
-      <TypeBadge t={t} />
-      <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{t.title}</div><div className="text-[11px] text-faint truncate">{t.brand} · {t.campaign}</div></div>
-      <span className="text-[12px] text-muted">{t.assignee}</span>
-      <span className="text-[12px] text-muted">{t.due}</span>
-      <StatusBadge tone={STATUS_TONE[status] ?? "neutral"}>{status}</StatusBadge>
-    </button>
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      <div className="grid gap-2 px-5 py-[11px] text-[10px] font-bold tracking-[0.06em] uppercase text-faint" style={{ gridTemplateColumns: cols, background: "#FBF9F4", borderBottom: "1px solid #ECE6DA" }}>
+        <span>Task</span><span>Module</span><span>Assignee</span><span>Campaign</span><span>Due</span><span>Priority</span><span>Status</span>
+      </div>
+      {tasks.length === 0 && <div className="py-12 text-center text-faint text-[13.5px]">No tasks match — try a wider filter.</div>}
+      {tasks.map((t) => {
+        const status = getStatus(t);
+        const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
+        const rowBg = status === "Stuck" ? "#FFFAF9" : status === "Need Approval" ? "#FAFFF9" : "#fff";
+        const blockerShort = t.blocker ? t.blocker.split("—")[0].trim() : "";
+        return (
+          <div key={t.id} onClick={() => onOpen(t.id)} className="grid gap-2 px-5 py-[13px] items-center cursor-pointer" style={{ gridTemplateColumns: cols, borderBottom: "1px solid #F4EFE5", background: rowBg }}>
+            <div><div className="text-[13px] font-semibold truncate">{t.moduleIcon} {t.title}</div>{t.blocker && <div className="text-[10.5px] font-semibold mt-[1px]" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</div>}</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg, justifySelf: "start" }}>{t.type}</span>
+            <div className="flex items-center gap-[6px] min-w-0"><span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0" style={{ background: TEAM_COLORS[t.assignee] ?? "#9A9387" }}>{init(t.assignee)}</span><span className="text-[12px] font-semibold truncate">{t.assignee}</span></div>
+            <span className="text-[12px] text-muted truncate">{t.campaign}</span>
+            <span className="text-[12px] font-semibold" style={{ color: dueColorOf(t.due) }}>{t.due}</span>
+            <span style={{ ...badge(t.priority, PRIORITY_MAP), justifySelf: "start" }}>{t.priority}</span>
+            <span style={{ ...badge(status, STATUS_MAP), justifySelf: "start" }}>{status}</span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-function TeamView({ doneIds, tasks, onPick }: { doneIds: Set<number>; tasks: Task[]; onPick: (p: string) => void }) {
-  const people = teamSummary(doneIds, tasks);
-  const needHelp = people.filter((p) => p.needsAttention);
+function TeamView({ tasks, getStatus, onSelect }: { tasks: Task[]; getStatus: (t: Task) => string; onSelect: (p: string) => void }) {
+  const count = (s: string) => tasks.filter((t) => getStatus(t) === s).length;
+  const teamKpis = [
+    { label: "Total Tasks", val: tasks.length, color: "#fff" },
+    { label: "Done", val: count("Done"), color: "#B8E0B8" },
+    { label: "In Progress", val: count("In Progress"), color: "#B8C8E8" },
+    { label: "Stuck", val: count("Stuck"), color: "#F5C8C4" },
+    { label: "Need Approval", val: count("Need Approval"), color: "#B8E0B8" },
+  ];
+  const stuckAll = count("Stuck"), apprAll = count("Need Approval");
+  const parts: string[] = [];
+  if (stuckAll > 0) parts.push(`${stuckAll} task${stuckAll > 1 ? "s" : ""} stuck and need support`);
+  if (apprAll > 0) parts.push(`${apprAll} approval${apprAll > 1 ? "s" : ""} waiting`);
+
   return (
-    <div className="mt-4 flex flex-col gap-5">
-      {needHelp.length > 0 && (
-        <div className="bg-status-goldBg border border-accent-border rounded-cardLg p-4">
-          <div className="text-[12px] font-bold text-status-gold mb-2">🛟 Needs support today · {needHelp.length}</div>
-          <div className="text-[12.5px] text-muted">{needHelp.map((p) => p.name.split(" ")[0]).join(", ")} — consider rebalancing or following up on blockers.</div>
+    <div className="flex flex-col gap-4">
+      <div className="rounded-[20px] px-7 py-6 text-white" style={{ background: "linear-gradient(135deg,#211F1C,#3A3630)" }}>
+        <div className="text-[11px] tracking-[0.08em] uppercase font-bold mb-3" style={{ color: "#B8945A" }}>Team Summary · Wed, Jul 2</div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))" }}>
+          {teamKpis.map((k) => <div key={k.label}><div className="text-[10.5px] font-semibold mb-1" style={{ color: "#9A9387" }}>{k.label}</div><div className="text-[30px] font-extrabold" style={{ color: k.color }}>{k.val}</div></div>)}
+        </div>
+      </div>
+      {parts.length > 0 && (
+        <div className="rounded-[14px] px-5 py-[14px] flex items-center gap-[14px] flex-wrap" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
+          <span className="text-[18px]">⚠</span>
+          <div className="flex-1 min-w-[200px]"><div className="text-[13px] font-bold mb-[2px]" style={{ color: "#B33A2E" }}>Needs support today</div><div className="text-[12.5px] text-muted">{parts.join(" · ")}</div></div>
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {people.map((p) => (
-          <button key={p.name} onClick={() => onPick(p.name)} className="text-left bg-surface border border-line rounded-cardLg p-5 hover:border-accent transition">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-extrabold text-white" style={{ background: p.color }}>{p.name.split(" ").map((w) => w[0]).join("")}</span>
-              <div>
-                <div className="text-[14px] font-bold">{p.name}</div>
-                <div className="text-[11px] text-faint">{p.role}</div>
+      <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))" }}>
+        {PEOPLE.map((p) => {
+          const pts = tasks.filter((t) => t.assignee === p);
+          const done = pts.filter((t) => getStatus(t) === "Done").length;
+          const stuck = pts.filter((t) => getStatus(t) === "Stuck").length;
+          const wait = pts.filter((t) => getStatus(t) === "Waiting").length;
+          const act = pts.filter((t) => ["In Progress", "Revision"].includes(getStatus(t))).length;
+          const appr = pts.filter((t) => getStatus(t) === "Need Approval").length;
+          const pct = pts.length ? Math.round((done / pts.length) * 100) : 0;
+          const healthStyle: CSSProperties = stuck > 0
+            ? { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FFF5F4", color: "#B33A2E" }
+            : pct >= 70 ? { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#EEF4EE", color: "#4E7A4E" }
+            : { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF8EE", color: "#C68A1E" };
+          const pctColor = pct >= 70 ? "#4E7A4E" : pct >= 40 ? "#C68A1E" : "#B33A2E";
+          return (
+            <div key={p} onClick={() => onSelect(p)} className="cursor-pointer" style={{ background: "#fff", border: "1px solid #ECE6DA", borderRadius: 18, padding: 20 }}>
+              <div className="flex items-center gap-3 mb-[14px]">
+                <span className="w-10 h-10 rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0" style={{ background: TEAM_COLORS[p] }}>{init(p)}</span>
+                <div className="flex-1 min-w-0"><div className="text-[14.5px] font-bold">{p}</div><div className="text-[11.5px] text-faint">{pts.length} tasks</div></div>
+                <span style={healthStyle}>{stuck > 0 ? "Needs support" : pct >= 70 ? "Healthy" : "Busy"}</span>
               </div>
-              {p.needsAttention && <StatusBadge tone="gold" className="ml-auto">Needs support</StatusBadge>}
-              {!p.needsAttention && <StatusBadge tone="green" className="ml-auto">Healthy</StatusBadge>}
+              <div className="grid grid-cols-4 gap-[6px] mb-3">
+                <TeamStat label="Done" val={done} fg="#4E7A4E" bg="#EEF4EE" />
+                <TeamStat label="Active" val={act} fg="#3E5C9A" bg="#EEF1F8" />
+                <TeamStat label="Wait" val={wait} fg="#C68A1E" bg="#FBF8EE" />
+                <TeamStat label="Stuck" val={stuck} fg={stuck > 0 ? "#B33A2E" : "#9A9387"} bg={stuck > 0 ? "#FFF5F4" : "#F5F2ED"} />
+              </div>
+              <div className="h-[5px] rounded-[3px] overflow-hidden mb-[5px]" style={{ background: "#F0EBE0" }}><div className="h-[5px] rounded-[3px]" style={{ background: pctColor, width: `${pct}%` }} /></div>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-faint">{pct}% done</span>
+                {appr > 0 && <span className="text-[11px] font-semibold" style={{ color: "#C68A1E" }}>{appr} pending approval</span>}
+              </div>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {[["Done", p.done, "#4E7A4E"], ["Active", p.active, "#3E5C9A"], ["Waiting", p.waiting, "#C68A1E"], ["Stuck", p.stuck, p.stuck ? "#B33A2E" : "#9A9387"]].map(([l, v, c]) => (
-                <div key={l as string} className="bg-ivory border border-line3 rounded-card p-2 text-center">
-                  <div className="text-[16px] font-extrabold" style={{ color: c as string }}>{v as number}</div>
-                  <div className="text-[9.5px] text-faint font-bold uppercase tracking-[0.03em] mt-[1px]">{l as string}</div>
-                </div>
-              ))}
-            </div>
-          </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function TeamStat({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
+  return <div className="text-center rounded-[9px] px-1 py-2" style={{ background: bg }}><div className="text-[9px] font-bold" style={{ color: fg }}>{label}</div><div className="text-[18px] font-bold" style={{ color: fg }}>{val}</div></div>;
 }
 
 function TaskDrawer({ t, status, onClose, onDone, onReassign }: { t: Task; status: string; onClose: () => void; onDone: () => void; onReassign: (to: string) => void }) {
-  const done = status === "Done";
+  const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
   return (
-    <div className="fixed inset-0 z-50 flex">
-      <div className="absolute inset-0 bg-black/45" onClick={onClose} />
-      <div className="absolute inset-y-0 right-0 w-full max-w-[480px] bg-surface flex flex-col shadow-2xl">
-        <div className="px-5 py-4 border-b border-line flex items-start justify-between gap-2" style={{ background: "#FBF9F4" }}>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-[6px] flex-wrap"><TypeBadge t={t} /><StatusBadge tone={STATUS_TONE[status] ?? "neutral"}>{status}</StatusBadge><StatusBadge tone={PRIORITY_TONE[t.priority]}>{t.priority}</StatusBadge></div>
-            <div className="text-[16px] font-extrabold leading-tight">{t.title}</div>
-            <div className="text-[12px] text-faint mt-1">{t.brand} · {t.campaign} · Due {t.due}</div>
+    <div onClick={onClose} className="fixed inset-0 z-[200] flex justify-end" style={{ background: "rgba(33,31,28,.42)" }}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white h-full overflow-y-auto" style={{ width: 440, maxWidth: "100vw", boxShadow: "-8px 0 40px rgba(0,0,0,.14)" }}>
+        <div className="sticky top-0 bg-white z-[1]" style={{ padding: "22px 24px 18px", borderBottom: "1px solid #ECE6DA" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-[7px] mb-2 flex-wrap">
+                <span className="text-[14px]">{t.moduleIcon}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg }}>{t.type}</span>
+                <span style={badge(t.priority, PRIORITY_MAP)}>{t.priority}</span>
+                <span style={badge(status, STATUS_MAP)}>{status}</span>
+              </div>
+              <div className="text-[16px] font-extrabold leading-[1.3] mb-[5px]">{t.title}</div>
+              <div className="text-[12px] text-faint">{t.brand} · {t.campaign}</div>
+            </div>
+            <span onClick={onClose} className="text-[18px] text-faint cursor-pointer p-1 leading-none flex-shrink-0">✕</span>
           </div>
-          <button onClick={onClose} className="text-faint hover:text-ink flex-shrink-0"><X size={18} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-4">
-          <div className="rounded-card px-4 py-3 bg-accent-soft border border-accent-border">
-            <div className="text-[11px] font-bold text-status-gold mb-1">What to do next</div>
-            <div className="text-[13px] text-ink">{t.nextAction}</div>
+        <div style={{ margin: "18px 24px 0" }}>
+          <div className="rounded-[14px] p-4" style={{ background: "linear-gradient(135deg,#FDF6E8,#F5E8CE)", border: "1px solid #E8D5AA" }}>
+            <div className="text-[10px] tracking-[0.08em] uppercase font-bold mb-[7px]" style={{ color: "#B8945A" }}>What to do next</div>
+            <div className="text-[13.5px] font-semibold leading-[1.55]" style={{ color: "#211F1C" }}>{t.nextAction}</div>
+          </div>
+        </div>
+        <div style={{ padding: "18px 24px" }}>
+          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[11px]">Task Details</div>
+          <div className="grid grid-cols-2 gap-[9px] mb-[14px]">
+            <Detail label="Due date" value={t.due} valueColor={dueColorOf(t.due)} />
+            <Detail label="Brand" value={t.brand} />
+            <Detail label="Owner" value={t.assignee} />
+            <Detail label="Pending approver" value={t.pendingApprover ?? "—"} valueColor={t.pendingApprover ? "#C68A1E" : "#9A9387"} />
           </div>
           {t.blocker && (
-            <div className="rounded-card px-4 py-3" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
-              <div className="text-[11px] font-bold text-status-red mb-1">Stuck</div>
-              <div className="text-[13px] text-status-red font-semibold">⚠ Blocked by {t.blocker}</div>
+            <div className="rounded-[10px] px-[14px] py-3 mb-[14px]" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
+              <div className="text-[10px] font-bold tracking-[0.05em] uppercase mb-1" style={{ color: "#B33A2E" }}>⚠ Blocker</div>
+              <div className="text-[13px] font-semibold" style={{ color: "#B33A2E" }}>{t.blocker}</div>
             </div>
           )}
           {t.checklist.length > 0 && (
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-2">Checklist</div>
-              <div className="flex flex-col gap-2">
-                {t.checklist.map((c, i) => (
-                  <div key={i} className="flex items-center gap-[9px] px-4 py-[10px] rounded-card" style={{ background: "#F7F4EE" }}>
-                    <span className="text-[13px]">{done ? "✅" : "⬜"}</span>
-                    <span className="text-[12.5px]" style={{ color: done ? "#4E7A4E" : "#211F1C" }}>{c}</span>
-                  </div>
-                ))}
-              </div>
+            <div className="mb-4">
+              <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[10px]">Checklist</div>
+              {t.checklist.map((c, i) => (
+                <div key={i} className="flex items-center gap-[10px] py-2" style={{ borderBottom: "1px solid #F4EFE5" }}>
+                  <span className="w-4 h-4 rounded-[4px] flex-shrink-0" style={{ border: "2px solid #DDD4C4" }} />
+                  <span className="text-[13px] text-ink">{c}</span>
+                </div>
+              ))}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-2">
-            {[["Owner", t.assignee], ["Module", t.module], ["Pending approver", t.pendingApprover ?? "—"], ["Priority", t.priority]].map(([l, v]) => (
-              <div key={l as string}><div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[3px]">{l as string}</div><div className="text-[13px] text-ink">{v as string}</div></div>
-            ))}
-          </div>
-
           {/* Hand off / reassign */}
-          <div className="rounded-card px-4 py-3 bg-ivory border border-line3">
-            <div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-2">Hand off to</div>
-            <div className="flex flex-wrap gap-2">
-              {PEOPLE.map((p) => {
-                const active = p === t.assignee;
-                return (
-                  <button key={p} onClick={() => onReassign(p)} disabled={active}
-                    className="flex items-center gap-[6px] text-[12px] px-[11px] py-[6px] rounded-pill transition disabled:cursor-default"
-                    style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
-                    <span className="w-[16px] h-[16px] rounded-full flex items-center justify-center text-[8px] font-bold text-white" style={{ background: PERSON_COLOR[p] }}>{p.split(" ").map((w) => w[0]).join("")}</span>
-                    {p.split(" ")[0]}{active ? " · current" : ""}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[10px]">Hand off to</div>
+          <div className="flex flex-wrap gap-2">
+            {PEOPLE.map((p) => {
+              const active = p === t.assignee;
+              return (
+                <button key={p} onClick={() => onReassign(p)} disabled={active} className="flex items-center gap-[6px] rounded-pill transition disabled:cursor-default"
+                  style={active ? { fontSize: 12, fontWeight: 700, padding: "5px 11px", background: "#211F1C", color: "#fff" } : { fontSize: 12, fontWeight: 500, padding: "5px 11px", border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ background: TEAM_COLORS[p] }}>{init(p)}</span>
+                  {p.split(" ")[0]}{active ? " · current" : ""}
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div className="px-5 py-4 border-t border-line flex gap-2">
-          {!done ? (
-            <>
-              <button onClick={onDone} className="flex-1 text-[13px] font-bold text-white bg-status-green rounded-[10px] py-[11px]">✓ Mark done</button>
-              <button className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4">Ask for help</button>
-            </>
-          ) : (
-            <div className="flex-1 text-center text-[13px] font-bold text-status-green py-[11px]">🌿 Completed — nice work</div>
-          )}
+        <div className="sticky bottom-0" style={{ padding: "16px 24px", borderTop: "1px solid #ECE6DA", background: "#FBF9F4" }}>
+          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[10px]">Actions</div>
+          <div className="flex gap-2 flex-wrap">
+            {(status === "In Progress" || status === "Revision") && <span onClick={onDone} style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Mark Done ✓</span>}
+            {status === "Need Approval" && <>
+              <span onClick={onDone} style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Approve ✓</span>
+              <span style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#FBF1E9", color: "#C2691E", border: "1px solid #F0D5BC", cursor: "pointer" }}>Request revision</span>
+            </>}
+            {status === "Todo" && <span style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#3E5C9A", color: "#fff", cursor: "pointer" }}>Start</span>}
+            {status === "Stuck" && <span style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4", cursor: "pointer" }}>Ask for Help</span>}
+            <span style={{ fontSize: 13, fontWeight: 500, padding: "9px 18px", borderRadius: 10, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff" }}>Comment</span>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+function Detail({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return <div className="rounded-[10px] px-3 py-[10px]" style={{ background: "#FAF8F4" }}><div className="text-[10px] font-semibold text-faint mb-[3px]">{label}</div><div className="text-[13px] font-bold" style={{ color: valueColor ?? "#211F1C" }}>{value}</div></div>;
+}
+
 const TYPE_META: Record<string, { module: string; icon: string; color: string }> = {
-  Content: { module: "Content", icon: "✍️", color: "#3E5C9A" },
-  KOL: { module: "KOL", icon: "🌟", color: "#B5577E" },
-  Graphic: { module: "Graphic", icon: "🎨", color: "#C2691E" },
-  Budget: { module: "Finance", icon: "฿", color: "#4E7A4E" },
-  Ads: { module: "Ads", icon: "📣", color: "#C68A1E" },
-  Report: { module: "Campaign", icon: "🎯", color: "#B33A2E" },
-  Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
+  Content: { module: "Content", icon: "✍️", color: "#3E5C9A" }, KOL: { module: "KOL", icon: "🌟", color: "#B5577E" },
+  Graphic: { module: "Graphic", icon: "🎨", color: "#C2691E" }, Budget: { module: "Finance", icon: "฿", color: "#4E7A4E" },
+  Ads: { module: "Ads", icon: "📣", color: "#C68A1E" }, Report: { module: "Campaign", icon: "🎯", color: "#B33A2E" }, Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
 };
 
 function NewTaskModal({ owner, nextId, onClose, onCreate }: { owner: string; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
@@ -329,74 +449,34 @@ function NewTaskModal({ owner, nextId, onClose, onCreate }: { owner: string; nex
   const [priority, setPriority] = useState<"High" | "Med" | "Low">("Med");
   const [group, setGroup] = useState("doFirst");
   const [nextAction, setNextAction] = useState("");
-
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const create = () => {
     if (!title.trim()) return;
     const meta = TYPE_META[type];
-    onCreate({
-      id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color,
-      type, assignee, brand, campaign: campaign.trim() || "—", status: "Todo", priority, group,
-      due, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins",
-      nextAction: nextAction.trim() || "Start when you're ready.", checklist: [],
-    });
+    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand, campaign: campaign.trim() || "—", status: "Todo", priority, group, due, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
   };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-surface rounded-cardLg w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink text-[18px] leading-none">✕</button>
         <div className="text-[16px] font-extrabold mb-4">New Task</div>
         <div className="flex flex-col gap-4">
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Task Title <span className="text-status-red">*</span></label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Draft Wagyu launch caption" autoFocus />
+          <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Task Title <span style={{ color: "#B33A2E" }}>*</span></label><input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Draft Wagyu launch caption" autoFocus /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label><select value={type} onChange={(e) => setType(e.target.value)} className={field}>{Object.keys(TYPE_META).map((t) => <option key={t} value={t}>{TYPE_META[t].icon} {t}</option>)}</select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Assign to</label><select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field}>{PEOPLE.map((p) => <option key={p} value={p}>{p}{p === owner ? " (me)" : ""}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label>
-              <select value={type} onChange={(e) => setType(e.target.value)} className={field}>
-                {Object.keys(TYPE_META).map((t) => <option key={t} value={t}>{TYPE_META[t].icon} {t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Assign to</label>
-              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field}>
-                {PEOPLE.map((p) => <option key={p} value={p}>{p}{p === owner ? " (me)" : ""}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-              <select value={brand} onChange={(e) => setBrand(e.target.value)} className={field}><option>Teppen</option><option>Omakase</option><option>Mainichi</option><option>Touka</option></select>
-            </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
-              <input value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field} placeholder="e.g. Wagyu Festival" />
-            </div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={brand} onChange={(e) => setBrand(e.target.value)} className={field}><option>Teppen</option><option>Omakase</option><option>Mainichi</option><option>Touka</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><input value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field} placeholder="e.g. Wagyu Festival" /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label>
-              <input value={due} onChange={(e) => setDue(e.target.value)} className={field} placeholder="Jul 5" />
-            </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label>
-              <select value={priority} onChange={(e) => setPriority(e.target.value as "High" | "Med" | "Low")} className={field}><option>High</option><option>Med</option><option>Low</option></select>
-            </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Focus group</label>
-              <select value={group} onChange={(e) => setGroup(e.target.value)} className={field}>
-                {TASK_GROUPS.filter((g) => g.key !== "done").map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
-              </select>
-            </div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><input value={due} onChange={(e) => setDue(e.target.value)} className={field} placeholder="Jul 5" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label><select value={priority} onChange={(e) => setPriority(e.target.value as "High" | "Med" | "Low")} className={field}><option>High</option><option>Med</option><option>Low</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Focus group</label><select value={group} onChange={(e) => setGroup(e.target.value)} className={field}>{GROUP_DEFS.filter((g) => g.id !== "done").map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select></div>
           </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Next action</label>
-            <input value={nextAction} onChange={(e) => setNextAction(e.target.value)} className={field} placeholder="One clear next step…" />
-          </div>
+          <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Next action</label><input value={nextAction} onChange={(e) => setNextAction(e.target.value)} className={field} placeholder="One clear next step…" /></div>
         </div>
         <button onClick={create} disabled={!title.trim()} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Task</button>
       </div>
