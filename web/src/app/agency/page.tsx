@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -9,6 +9,7 @@ import {
   AGENCY_TASKS, AGENCY_STATUSES, AGENCY_EDITABLE_STATUSES, AGENCY_STATUS_TONE,
   AGENCY_TYPES, AgencyStatus, AgencyTask,
 } from "@/lib/data/agency";
+import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 
 export default function AgencyPortalPage() {
   const [tasks, setTasks] = useState<AgencyTask[]>(() => AGENCY_TASKS.map((t) => ({ ...t })));
@@ -16,6 +17,13 @@ export default function AgencyPortalPage() {
   const [newOpen, setNewOpen] = useState(false);
   const empty = { title: "", b: "teppen" as BrandId, campaign: "", type: "Graphic", due: "" };
   const [nt, setNt] = useState(empty);
+
+  // Load from Supabase (falls back to the mock already in state).
+  useEffect(() => {
+    let alive = true;
+    fetchAgencyTasks().then((t) => { if (alive) setTasks(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const rows = tasks.filter((t) => filter === "all" || t.status === filter);
   const counts = useMemo(() => ({
@@ -25,17 +33,22 @@ export default function AgencyPortalPage() {
     approved: tasks.filter((t) => t.status === "Approved").length,
   }), [tasks]);
 
-  const update = (id: number, patch: Partial<AgencyTask>) =>
+  // Optimistic local update + persist to the database.
+  const update = (id: number, patch: Partial<AgencyTask>) => {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    updateAgencyTask(id, patch);
+  };
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!nt.title.trim()) return;
-    setTasks((ts) => [
-      { id: Math.max(0, ...ts.map((t) => t.id)) + 1, title: nt.title.trim(), b: nt.b, campaign: nt.campaign.trim() || "—", type: nt.type, status: "To Do", due: nt.due.trim() || "TBD", brief: "", link: "", note: "" },
-      ...ts,
-    ]);
+    const draft: Omit<AgencyTask, "id"> = {
+      title: nt.title.trim(), b: nt.b, campaign: nt.campaign.trim() || "—", type: nt.type,
+      status: "To Do", due: nt.due.trim() || "TBD", brief: "", link: "", note: "",
+    };
     setNewOpen(false);
     setNt(empty);
+    const created = await createAgencyTask(draft, tasks);
+    setTasks((ts) => [created, ...ts]);
   };
 
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
