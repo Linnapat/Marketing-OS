@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
@@ -15,8 +15,9 @@ import { useRole, canSeeOperation } from "@/lib/role";
 import { baht } from "@/lib/format";
 import {
   BUDGET_SECTIONS, SECTION_ICON, EXPENSES, REQUESTS, PNL, EXP_CATEGORIES,
-  BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, ExpenseRow,
+  BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, ExpenseRow, RequestRow,
 } from "@/lib/data/finance";
+import { fetchExpenseRequests, createExpenseRequest } from "@/lib/db/finance";
 
 const TABS = [
   ["plan", "Budget Plan"],
@@ -231,10 +232,29 @@ function BudgetProfitability({ rows, open, setOpen }: {
 /* ── Expense Request: form + calculator + budget check + approval route ─ */
 interface ExtraLine { desc: string; amount: number; vat: number; }
 
+const BRAND_NAME_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
+
 function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   const [catKey, setCatKey] = useState("");
   const [amount, setAmount] = useState("");
+  const [formBrand, setFormBrand] = useState("TEPPEN");
   const [submitted, setSubmitted] = useState<string | null>(null);
+  const [requests, setRequests] = useState<RequestRow[]>(REQUESTS);
+
+  useEffect(() => {
+    let alive = true;
+    fetchExpenseRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [submitted]);
+
+  const submit = async () => {
+    const row: RequestRow = {
+      category: cat?.label ?? "Expense", b: BRAND_NAME_TO_ID[formBrand] ?? "teppen",
+      campaign: "—", requested: amt, approved: 0, due: "—", status: "Waiting Approval",
+    };
+    await createExpenseRequest(row);
+    setSubmitted(`REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`);
+  };
   // Additional line items
   const [lines, setLines] = useState<ExtraLine[]>([]);
   const [lineOpen, setLineOpen] = useState(false);
@@ -300,7 +320,7 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-                <select className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+                <select value={formBrand} onChange={(e) => setFormBrand(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Amount (฿) <span className="text-status-red">*</span></label>
@@ -372,7 +392,7 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
               <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">Drop file here or click to upload</div>
             </div>
             <button
-              onClick={() => setSubmitted(`REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`)}
+              onClick={submit}
               disabled={!catKey || amt <= 0}
               className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
               Submit for Approval
@@ -412,7 +432,7 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
       {/* RIGHT: Recent Requests */}
       <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
         <div className="text-[15px] font-bold">Recent Requests</div>
-        {REQUESTS.filter((r) => brand === "all" || r.b === brand).map((r, i) => (
+        {requests.filter((r) => brand === "all" || r.b === brand).map((r, i) => (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -533,12 +553,20 @@ function RoiTab({ canOps }: { canOps: boolean }) {
 function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const [signing, setSigning] = useState<number | null>(null);
-  const rows = REQUESTS.map((r, i) => ({ r, i })).filter(({ r }) => brand === "all" || r.b === brand);
+  const [allReqs, setAllReqs] = useState<RequestRow[]>(REQUESTS);
+
+  useEffect(() => {
+    let alive = true;
+    fetchExpenseRequests().then((r) => { if (alive) setAllReqs(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const rows = allReqs.map((r, i) => ({ r, i })).filter(({ r }) => brand === "all" || r.b === brand);
 
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[12px] text-faint">
-        {REQUESTS.filter((r, i) => !approved[i] && r.status === "Waiting Approval").length} request(s) waiting for your signature.
+        {allReqs.filter((r, i) => !approved[i] && r.status === "Waiting Approval").length} request(s) waiting for your signature.
       </div>
       {rows.map(({ r, i }) => {
         const isApproved = approved[i] || r.status !== "Waiting Approval";

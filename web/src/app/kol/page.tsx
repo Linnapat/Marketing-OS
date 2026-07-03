@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { KolDrawer } from "@/components/kol/KolDrawer";
-import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName, brandColor } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
@@ -15,6 +15,7 @@ import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, initials, fmtFollow,
   kolKpis, kolAlerts, stageProgress,
 } from "@/lib/data/kol";
+import { fetchKols, createKol, buildKol } from "@/lib/db/kol";
 
 const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"]] as const;
 type Tab = (typeof TABS)[number][0];
@@ -24,8 +25,21 @@ export default function KolPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [drawer, setDrawer] = useState<{ kol: Kol; tab: "profile" | "comments" } | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [kols, setKols] = useState<Kol[]>(KOLS);
 
-  const filtered = KOLS.filter((k) => brand === "all" || k.b === brand);
+  useEffect(() => {
+    let alive = true;
+    fetchKols().then((k) => { if (alive) setKols(k); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const addKol = async (k: Kol) => {
+    setRequestOpen(false);
+    const created = await createKol(k);
+    setKols((ks) => [created, ...ks]);
+  };
+
+  const filtered = kols.filter((k) => brand === "all" || k.b === brand);
   const kpi = kolKpis(filtered);
   const alerts = kolAlerts(filtered);
 
@@ -96,12 +110,12 @@ export default function KolPage() {
 
       <div className="mt-5">
         {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-        {tab === "pipeline" && <PipelineList brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-        {tab === "plan" && <KolPlan brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "pipeline" && <PipelineList kols={kols} brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "plan" && <KolPlan kols={kols} brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
       </div>
 
       {drawer && <KolDrawer kol={drawer.kol} initialTab={drawer.tab} onClose={() => setDrawer(null)} />}
-      {requestOpen && <RequestModal onClose={() => setRequestOpen(false)} />}
+      {requestOpen && <RequestModal nextId={Math.max(0, ...kols.map((k) => k.id)) + 1} onClose={() => setRequestOpen(false)} onCreate={addKol} />}
     </>
   );
 }
@@ -148,10 +162,10 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
   );
 }
 
-function PipelineList({ brand, onOpen }: { brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
+function PipelineList({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
   const stages = [...ALL_STAGES, "Paused"];
   const groups = stages
-    .map((st) => ({ stage: st, kols: KOLS.filter((k) => k.status === st && (brand === "all" || k.b === brand)) }))
+    .map((st) => ({ stage: st, kols: kols.filter((k) => k.status === st && (brand === "all" || k.b === brand)) }))
     .filter((g) => g.kols.length > 0);
   return (
     <div className="flex flex-col gap-3">
@@ -185,8 +199,8 @@ function PipelineList({ brand, onOpen }: { brand: BrandFilterValue; onOpen: (k: 
   );
 }
 
-function KolPlan({ brand, onOpen }: { brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
-  const list = KOLS.filter((k) => brand === "all" || k.b === brand);
+function KolPlan({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
+  const list = kols.filter((k) => brand === "all" || k.b === brand);
   return (
     <div className="flex flex-col gap-4">
       {/* Specialist dashboard */}
@@ -234,8 +248,25 @@ function KolPlan({ brand, onOpen }: { brand: BrandFilterValue; onOpen: (k: Kol) 
   );
 }
 
-function RequestModal({ onClose }: { onClose: () => void }) {
+const KOL_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
+
+function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (k: Kol) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  const [campaign, setCampaign] = useState("Wagyu Festival");
+  const [brandSel, setBrandSel] = useState("TEPPEN");
+  const [kolType, setKolType] = useState("Food Blogger");
+  const [count, setCount] = useState("1");
+  const [budget, setBudget] = useState("");
+  const [deliverables, setDeliverables] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const submit = () => {
+    onCreate(buildKol({
+      id: nextId, campaign, b: KOL_BRAND_TO_ID[brandSel] ?? "teppen", kolType,
+      count: parseInt(count) || 1, budget: parseFloat(budget) || 0, deliverables, notes,
+    }));
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -245,34 +276,34 @@ function RequestModal({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
-            <select className={field}><option>Wagyu Festival</option><option>Father&apos;s Day Set</option><option>Cocktail Hour Launch</option></select>
+            <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}><option>Wagyu Festival</option><option>Father&apos;s Day Set</option><option>Cocktail Hour Launch</option></select>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-            <select className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+            <select value={brandSel} onChange={(e) => setBrandSel(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">KOL Type</label>
-            <select className={field}><option>Food Blogger</option><option>Food Vlogger</option><option>Micro Influencer</option></select>
+            <select value={kolType} onChange={(e) => setKolType(e.target.value)} className={field}><option>Food Blogger</option><option>Food Vlogger</option><option>Micro Influencer</option></select>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]"># Creators</label>
-            <input type="number" className={field} placeholder="1" />
+            <input type="number" value={count} onChange={(e) => setCount(e.target.value)} className={field} placeholder="1" />
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Budget / creator</label>
-            <input type="number" className={field} placeholder="฿" />
+            <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} className={field} placeholder="฿" />
           </div>
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deliverables</label>
-            <input className={field} placeholder="1 Reel + 3 Stories" />
+            <input value={deliverables} onChange={(e) => setDeliverables(e.target.value)} className={field} placeholder="1 Reel + 3 Stories" />
           </div>
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Notes</label>
-            <textarea className={field} rows={3} placeholder="Brief, target audience, posting period…" />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={field} rows={3} placeholder="Brief, target audience, posting period…" />
           </div>
         </div>
-        <button onClick={onClose} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px]">Create KOL Request</button>
+        <button onClick={submit} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px]">Create KOL Request</button>
       </div>
     </div>
   );
