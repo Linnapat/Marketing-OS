@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { useAuth } from "@/lib/auth";
 
 export const ROLES = [
   "CMO / Admin",
@@ -24,7 +25,10 @@ const RoleContext = createContext<RoleCtx | null>(null);
 /** App-wide "viewing as" role. Drives role-based visibility across modules
  *  (the sidebar RoleSwitcher writes here; feature gates read from here). */
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<Role>("CMO / Admin");
+  const { role: authRole } = useAuth();
+  const [role, setRole] = useState<Role>(authRole);
+  // When the signed-in user resolves, default the "viewing as" role to theirs.
+  useEffect(() => { setRole(authRole); }, [authRole]);
   return <RoleContext.Provider value={{ role, setRole }}>{children}</RoleContext.Provider>;
 }
 

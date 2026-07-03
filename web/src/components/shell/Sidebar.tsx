@@ -2,12 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogOut } from "lucide-react";
 import { NAV } from "@/lib/nav";
 import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
+import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
+
+const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { user, member, signOut } = useAuth();
+  const displayName = member?.name ?? user?.email ?? "Linnapat D.";
+  const displayRole = member?.role ?? "CMO / Admin";
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -80,12 +87,17 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <RoleSwitcher />
         <div className="flex items-center gap-[10px] px-2 pt-3">
           <div className="w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center text-panel text-[12px] font-extrabold">
-            LD
+            {initials(displayName)}
           </div>
-          <div className="min-w-0">
-            <div className="text-[12.5px] font-bold text-white/90 truncate">Linnapat D.</div>
-            <div className="text-[10.5px] text-white/40 truncate">CMO / Admin</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-bold text-white/90 truncate">{displayName}</div>
+            <div className="text-[10.5px] text-white/40 truncate">{displayRole}</div>
           </div>
+          {AUTH_REQUIRED && user && (
+            <button onClick={() => signOut()} aria-label="Sign out" className="text-white/40 hover:text-white p-1" title="Sign out">
+              <LogOut size={15} />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,15 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { SidebarContent } from "./Sidebar";
 import { RoleProvider } from "@/lib/role";
+import { AuthProvider, useAuth, AUTH_REQUIRED } from "@/lib/auth";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <RoleProvider>
+        <AuthGate>{children}</AuthGate>
+      </RoleProvider>
+    </AuthProvider>
+  );
+}
+
+/** Redirects unauthenticated users to /login when auth is enforced. Renders the
+ *  login route full-bleed (no sidebar). */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const onLogin = pathname === "/login";
+
+  useEffect(() => {
+    if (!AUTH_REQUIRED || loading) return;
+    if (!user && !onLogin) router.replace("/login");
+    if (user && onLogin) router.replace("/");
+  }, [loading, user, onLogin, router]);
+
+  if (onLogin) return <>{children}</>;
+  if (AUTH_REQUIRED && loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-ivory text-[13px] text-faint">Loading…</div>;
+  }
+  if (AUTH_REQUIRED && !user) return null; // redirecting
+
+  return <Shell>{children}</Shell>;
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
   const [drawer, setDrawer] = useState(false);
 
   return (
-    <RoleProvider>
     <div className="min-h-screen bg-ivory">
       {/* Desktop sidebar (fixed) */}
       <aside className="hidden lg:block fixed inset-y-0 left-0 z-30">
@@ -53,6 +87,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="max-w-content mx-auto px-5 sm:px-6 pt-5 pb-16">{children}</div>
       </main>
     </div>
-    </RoleProvider>
   );
 }
