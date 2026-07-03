@@ -80,6 +80,23 @@ export const SECTION_ICON: Record<string, string> = {
   digital: "📢", system: "💻", operation: "👥", outsource: "🧩", admin: "🗂",
 };
 
+// Budget Plan allocation — per-brand plan vs spent, and by-category totals.
+export interface BudgetBrand { b: BrandId; plan: number; spent: number; }
+export const BUDGET_BY_BRAND: BudgetBrand[] = [
+  { b: "teppen", plan: 1500000, spent: 1120000 },
+  { b: "omakase", plan: 1200000, spent: 780000 },
+  { b: "mainichi", plan: 900000, spent: 590000 },
+  { b: "touka", plan: 900000, spent: 350000 },
+];
+
+export const BUDGET_BY_CATEGORY: { name: string; amount: number }[] = [
+  { name: "Paid Ads", amount: 980000 },
+  { name: "KOL / Creator", amount: 760000 },
+  { name: "Production", amount: 620000 },
+  { name: "Events", amount: 320000 },
+  { name: "Print", amount: 160000 },
+];
+
 export interface ExpenseRow { vendor: string; category: string; b: BrandId; amount: number; vat: number; date: string; status: string; }
 export const EXPENSES: ExpenseRow[] = [
   { vendor: "Studio Mori", category: "Production", b: "teppen", amount: 85000, vat: 5950, date: "Jun 12", status: "Paid" },

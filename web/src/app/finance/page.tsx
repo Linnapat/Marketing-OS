@@ -9,12 +9,11 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { SignaturePad } from "@/components/finance/SignaturePad";
-import { BrandFilterValue } from "@/lib/brands";
+import { BrandFilterValue, brandName, brandColor, BrandId } from "@/lib/brands";
 import { baht } from "@/lib/format";
-import { brandName } from "@/lib/brands";
 import {
   BUDGET_SECTIONS, SECTION_ICON, EXPENSES, REQUESTS, PNL, EXP_CATEGORIES,
-  STATUS_TONE, buildCsv, ExpenseRow,
+  BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, ExpenseRow,
 } from "@/lib/data/finance";
 
 const TABS = [
@@ -100,7 +99,7 @@ export default function FinancePage() {
 
       <div className="mt-5">
         {tab === "plan" && <BudgetPlanTab brand={brand} />}
-        {tab === "request" && <ExpenseRequestTab />}
+        {tab === "request" && <ExpenseRequestTab brand={brand} />}
         {tab === "log" && <SpendingLogTab brand={brand} onVoucher={setPvExpense} />}
         {tab === "roi" && <RoiTab />}
         {tab === "approval" && <ApprovalTab brand={brand} />}
@@ -111,10 +110,72 @@ export default function FinancePage() {
   );
 }
 
-/* ── Budget Plan: campaign-level profitability (expandable) ─────────── */
+/* ── Budget Plan: allocation + campaign-level profitability ─────────── */
 function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const rows = PNL.filter((p) => brand === "all" || p.b === brand);
+  const brandAlloc = BUDGET_BY_BRAND.filter((b) => brand === "all" || b.b === brand);
+  const maxCat = Math.max(...BUDGET_BY_CATEGORY.map((c) => c.amount));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Top KPI cards */}
+      <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+        <div className="rounded-card p-[18px]" style={{ background: "#211F1C", color: "#fff" }}>
+          <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
+          <div className="text-[25px] font-bold mt-[6px]">฿4.50M</div>
+        </div>
+        {[["Committed", "฿2.84M"], ["Available", "฿1.66M"]].map(([l, v]) => (
+          <div key={l} className="bg-surface border border-line rounded-card p-[18px]">
+            <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
+            <div className="text-[25px] font-bold mt-[6px] text-ink">{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Allocation panels */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))" }}>
+        <div className="bg-surface border border-line rounded-cardLg p-5">
+          <div className="text-[15px] font-bold mb-4">Allocation by brand</div>
+          <div className="flex flex-col gap-[15px]">
+            {brandAlloc.map((b) => {
+              const pct = Math.round((b.spent / b.plan) * 100);
+              return (
+                <div key={b.b}>
+                  <div className="flex justify-between text-[12.5px] mb-[5px]">
+                    <span className="font-semibold">{brandName(b.b)}</span>
+                    <span className="text-muted">{baht(b.spent, { compact: true })} / {baht(b.plan, { compact: true })} · <b style={{ color: pct > 95 ? "#B33A2E" : "#6b6258" }}>{pct}%</b></span>
+                  </div>
+                  <Progress value={pct} color={brandColor(b.b)} height={8} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="bg-surface border border-line rounded-cardLg p-5">
+          <div className="text-[15px] font-bold mb-4">By category</div>
+          <div className="flex flex-col gap-[15px]">
+            {BUDGET_BY_CATEGORY.map((c) => (
+              <div key={c.name}>
+                <div className="flex justify-between text-[12.5px] mb-[5px]">
+                  <span className="font-semibold">{c.name}</span>
+                  <span className="text-muted">{baht(c.amount, { compact: true })}</span>
+                </div>
+                <Progress value={Math.round((c.amount / maxCat) * 100)} color="#B8945A" height={8} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <BudgetProfitability rows={rows} open={open} setOpen={setOpen} />
+    </div>
+  );
+}
+
+function BudgetProfitability({ rows, open, setOpen }: {
+  rows: typeof PNL; open: Record<string, boolean>; setOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}) {
   const detail = (p: (typeof PNL)[number]) => [
     { label: "Content & Creative", budget: Math.round(p.budget * 0.15), actual: Math.round(p.expense * 0.12) },
     { label: "KOL / Influencer", budget: Math.round(p.budget * 0.25), actual: Math.round(p.expense * 0.28) },
@@ -164,10 +225,19 @@ function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
 }
 
 /* ── Expense Request: form + calculator + budget check + approval route ─ */
-function ExpenseRequestTab() {
+interface ExtraLine { desc: string; amount: number; vat: number; }
+
+function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   const [catKey, setCatKey] = useState("");
   const [amount, setAmount] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
+  // Additional line items
+  const [lines, setLines] = useState<ExtraLine[]>([]);
+  const [lineOpen, setLineOpen] = useState(false);
+  const [lineDesc, setLineDesc] = useState("");
+  const [lineAmount, setLineAmount] = useState("");
+  const [lineVat, setLineVat] = useState(0);
+
   const amt = parseFloat(amount) || 0;
   const vat = Math.round(amt * 0.07);
   const wht = Math.round(amt * 0.03);
@@ -176,6 +246,7 @@ function ExpenseRequestTab() {
   const remaining = cat ? cat.budget - cat.used : 0;
   const overBudget = cat ? amt > remaining : false;
   const route = amt >= 10000 ? "CMO + CFO" : "CMO only";
+  const grandTotal = amt + vat + lines.reduce((s, l) => s + l.amount + Math.round(l.amount * l.vat / 100), 0);
 
   const grouped = useMemo(() => {
     const g: Record<string, typeof EXP_CATEGORIES> = {};
@@ -183,95 +254,180 @@ function ExpenseRequestTab() {
     return g;
   }, []);
 
+  const addLine = () => {
+    const a = parseFloat(lineAmount) || 0;
+    if (!lineDesc || a <= 0) return;
+    setLines((ls) => [...ls, { desc: lineDesc, amount: a, vat: lineVat }]);
+    setLineDesc(""); setLineAmount(""); setLineVat(0); setLineOpen(false);
+  };
+
   if (submitted) {
     return (
       <div className="bg-surface border border-line rounded-cardLg p-10 text-center max-w-lg mx-auto">
         <div className="text-[40px] mb-2">✓</div>
         <div className="text-[16px] font-bold text-ink">Request submitted</div>
-        <div className="text-[13px] text-faint mt-1">Reference <b className="text-ink">{submitted}</b> · routed to {route}</div>
-        <button onClick={() => { setSubmitted(null); setAmount(""); setCatKey(""); }} className="mt-5 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">New Request</button>
+        <div className="text-[13px] text-faint mt-1">Reference <b className="text-ink">{submitted}</b> · {lines.length + 1} line item(s) · routed to {route}</div>
+        <button onClick={() => { setSubmitted(null); setAmount(""); setCatKey(""); setLines([]); }} className="mt-5 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">New Request</button>
       </div>
     );
   }
 
   const field = "w-full text-[14px] px-[13px] py-[11px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  const lineField = "w-full text-[13px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none";
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
-      <div className="bg-surface border border-line rounded-cardLg p-5">
-        <div className="text-[13px] font-bold mb-4">New Expense Request</div>
-        <div className="flex flex-col gap-4">
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category <span className="text-status-red">*</span></label>
-            <select value={catKey} onChange={(e) => setCatKey(e.target.value)} className={field}>
-              <option value="">Select category…</option>
-              {Object.entries(grouped).map(([group, items]) => (
-                <optgroup key={group} label={group}>
-                  {items.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+    <div className="flex flex-col lg:flex-row gap-4">
+      {/* LEFT: form */}
+      <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <div className="bg-surface border border-line rounded-cardLg p-5">
+          <div className="text-[13px] font-bold mb-4">New Expense Request</div>
+          <div className="flex flex-col gap-4">
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-              <select className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category <span className="text-status-red">*</span></label>
+              <select value={catKey} onChange={(e) => setCatKey(e.target.value)} className={field}>
+                <option value="">Select category…</option>
+                {Object.entries(grouped).map(([group, items]) => (
+                  <optgroup key={group} label={group}>
+                    {items.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </optgroup>
+                ))}
+              </select>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
+                <select className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Amount (฿) <span className="text-status-red">*</span></label>
+                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className={field} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Vendor</label>
+                <input className={field} placeholder="Vendor name" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Payment Type</label>
+                <select className={field}><option>Bank Transfer</option><option>Cash</option><option>Credit Card</option><option>Cheque</option></select>
+              </div>
+            </div>
+
+            {/* Additional Line Items */}
+            <div className="border border-line2 rounded-[14px] overflow-hidden">
+              <div className="flex items-center justify-between px-[14px] py-[11px]" style={{ background: "#FAFAF7", borderBottom: "1px solid #EEE8DE" }}>
+                <div className="text-[12px] font-bold text-muted">Additional Line Items{lines.length ? ` · ${lines.length}` : ""}</div>
+                <button onClick={() => setLineOpen((o) => !o)} className="text-[12px] font-bold px-3 py-[5px] rounded-[8px] bg-panel text-white">+ Add Line</button>
+              </div>
+              {lines.length > 0 && (
+                <div>
+                  {lines.map((el, i) => (
+                    <div key={i} className="flex items-center gap-[10px] px-[14px] py-[10px] bg-surface border-b border-line4">
+                      <div className="w-[22px] h-[22px] rounded-[6px] flex items-center justify-center text-[11px] font-bold flex-shrink-0" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-semibold truncate">{el.desc}</div>
+                        <div className="text-[11px] text-faint">Extra line · VAT {el.vat}%</div>
+                      </div>
+                      <div className="text-[13px] font-bold text-ink whitespace-nowrap">{baht(el.amount + Math.round(el.amount * el.vat / 100))}</div>
+                      <button onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} className="text-[13px] text-[#C0B8AD] px-[6px]">✕</button>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center px-[14px] py-[10px]" style={{ background: "#F7F4EE" }}>
+                    <div className="text-[12px] font-bold text-faint">Total (all lines incl. primary)</div>
+                    <div className="text-[15px] font-extrabold text-accent">{baht(grandTotal)}</div>
+                  </div>
+                </div>
+              )}
+              {lineOpen && (
+                <div className="p-[14px] bg-surface flex flex-col gap-[10px]" style={{ borderTop: "1px solid #EEE8DE" }}>
+                  <div className="grid gap-[10px]" style={{ gridTemplateColumns: "1.5fr 1fr 0.8fr" }}>
+                    <div>
+                      <label className="block text-[11px] font-bold text-muted mb-[5px]">Description</label>
+                      <input value={lineDesc} onChange={(e) => setLineDesc(e.target.value)} placeholder="e.g. Food support cost" className={lineField} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-muted mb-[5px]">Amount (฿)</label>
+                      <input type="number" value={lineAmount} onChange={(e) => setLineAmount(e.target.value)} placeholder="0" className={lineField} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-muted mb-[5px]">VAT</label>
+                      <select value={lineVat} onChange={(e) => setLineVat(parseInt(e.target.value))} className={lineField}><option value={0}>0%</option><option value={7}>7%</option></select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={addLine} className="flex-1 text-center text-[13px] font-bold py-[9px] rounded-[9px] bg-panel text-white">Confirm Line</button>
+                    <button onClick={() => setLineOpen(false)} className="text-[13px] font-semibold py-[9px] px-4 rounded-[9px] border border-line2 text-muted bg-white">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Amount (฿) <span className="text-status-red">*</span></label>
-              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className={field} />
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attach quotation</label>
+              <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">Drop file here or click to upload</div>
             </div>
+            <button
+              onClick={() => setSubmitted(`REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`)}
+              disabled={!catKey || amt <= 0}
+              className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
+              Submit for Approval
+            </button>
           </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Vendor</label>
-            <input className={field} placeholder="Vendor name" />
+        </div>
+
+        {/* calculator + budget check + route */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-surface border border-line rounded-cardLg p-5">
+            <div className="text-[13px] font-bold mb-3">Amount Breakdown</div>
+            {[["Amount", baht(amt)], ["VAT 7%", `+ ${baht(vat)}`], ["WHT 3%", `− ${baht(wht)}`]].map(([l, v]) => (
+              <div key={l} className="flex justify-between py-[6px] text-[12.5px] border-b border-line4">
+                <span className="text-muted">{l}</span><span className="text-ink font-semibold">{v}</span>
+              </div>
+            ))}
+            <div className="flex justify-between pt-3 text-[13.5px] font-bold"><span>Net Payable</span><span className="text-accent">{baht(net)}</span></div>
           </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attach quotation</label>
-            <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">Drop quotation PDF / image</div>
+          {cat ? (
+            <div className="rounded-cardLg p-5 border" style={{ background: overBudget ? "#FFF5F4" : "#EEF4EE", borderColor: overBudget ? "#F5C8C4" : "#C8E0C8" }}>
+              <div className="text-[13px] font-bold mb-3" style={{ color: overBudget ? "#B33A2E" : "#4E7A4E" }}>Budget Check</div>
+              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Budget</span><span className="font-semibold text-ink">{baht(cat.budget, { compact: true })}</span></div>
+              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Used</span><span className="font-semibold text-ink">{baht(cat.used, { compact: true })}</span></div>
+              <div className="text-[12px] text-muted flex justify-between mb-2"><span>Remaining</span><span className="font-semibold text-ink">{baht(remaining, { compact: true })}</span></div>
+              <Progress value={cat.budget ? (cat.used / cat.budget) * 100 : 0} color={overBudget ? "#B33A2E" : "#4E7A4E"} />
+            </div>
+          ) : (
+            <div className="bg-surface border border-line rounded-cardLg p-5 text-[12px] text-faint flex items-center justify-center text-center">Select a category to see the budget check</div>
+          )}
+          <div className="bg-surface border border-line rounded-cardLg p-5">
+            <div className="text-[13px] font-bold mb-2">Approval Route</div>
+            <div className="text-[12.5px] text-muted">Amount {amt >= 10000 ? "≥" : "<"} ฿10,000 → <b className="text-ink">{route}</b></div>
           </div>
-          <button
-            onClick={() => setSubmitted(`REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`)}
-            disabled={!catKey || amt <= 0}
-            className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
-            Submit for Approval
-          </button>
         </div>
       </div>
 
-      {/* Side: calculator + budget check + route */}
-      <div className="flex flex-col gap-4">
-        <div className="bg-surface border border-line rounded-cardLg p-5">
-          <div className="text-[13px] font-bold mb-3">Amount Breakdown</div>
-          {[
-            { label: "Amount", value: baht(amt) },
-            { label: "VAT 7%", value: `+ ${baht(vat)}` },
-            { label: "WHT 3% deducted", value: `− ${baht(wht)}` },
-          ].map((r) => (
-            <div key={r.label} className="flex justify-between py-[7px] text-[13px] border-b border-line4">
-              <span className="text-muted">{r.label}</span><span className="text-ink font-semibold">{r.value}</span>
+      {/* RIGHT: Recent Requests */}
+      <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
+        <div className="text-[15px] font-bold">Recent Requests</div>
+        {REQUESTS.filter((r) => brand === "all" || r.b === brand).map((r, i) => (
+          <div key={i} className="bg-surface border border-line rounded-card p-4">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <BrandDot brand={r.b} size={9} />
+                <div className="text-[13.5px] font-bold truncate">{r.category}</div>
+              </div>
+              <StatusBadge tone={STATUS_TONE[r.status] ?? "gold"}>{r.status}</StatusBadge>
             </div>
-          ))}
-          <div className="flex justify-between pt-3 text-[14px] font-bold">
-            <span>Net payable</span><span className="text-accent">{baht(net)}</span>
-          </div>
-        </div>
-
-        {cat && (
-          <div className="rounded-cardLg p-5 border" style={{ background: overBudget ? "#FFF5F4" : "#EEF4EE", borderColor: overBudget ? "#F5C8C4" : "#C8E0C8" }}>
-            <div className="text-[13px] font-bold mb-3" style={{ color: overBudget ? "#B33A2E" : "#4E7A4E" }}>
-              Budget Check {overBudget ? "· over budget" : "· within budget"}
+            <div className="text-[12px] text-faint mb-3">{brandName(r.b)} · {r.campaign}</div>
+            <div className="grid grid-cols-3 gap-[6px]">
+              {[["Requested", baht(r.requested, { compact: true }), "#211F1C"], ["Approved", r.approved ? baht(r.approved, { compact: true }) : "—", r.approved ? "#4E7A4E" : "#9A9387"], ["Due", r.due, "#211F1C"]].map(([l, v, c]) => (
+                <div key={l}>
+                  <div className="text-[10px] text-faint font-bold uppercase tracking-[0.04em] mb-[3px]">{l}</div>
+                  <div className="text-[13px] font-bold" style={{ color: c }}>{v}</div>
+                </div>
+              ))}
             </div>
-            <div className="text-[12px] text-muted flex justify-between mb-1"><span>Budget</span><span className="font-semibold text-ink">{baht(cat.budget, { compact: true })}</span></div>
-            <div className="text-[12px] text-muted flex justify-between mb-1"><span>Used</span><span className="font-semibold text-ink">{baht(cat.used, { compact: true })}</span></div>
-            <div className="text-[12px] text-muted flex justify-between mb-2"><span>Remaining</span><span className="font-semibold text-ink">{baht(remaining, { compact: true })}</span></div>
-            <Progress value={cat.budget ? (cat.used / cat.budget) * 100 : 0} color={overBudget ? "#B33A2E" : "#4E7A4E"} />
           </div>
-        )}
-
-        <div className="bg-surface border border-line rounded-cardLg p-5">
-          <div className="text-[13px] font-bold mb-2">Approval Route</div>
-          <div className="text-[12.5px] text-muted">Amount {amt >= 10000 ? "≥" : "<"} ฿10,000 → <b className="text-ink">{route}</b></div>
-        </div>
+        ))}
       </div>
     </div>
   );
