@@ -115,3 +115,94 @@ export const WORK_SECTIONS: WorkSection[] = [
 export const ALL_WORK_TASKS = WORK_SECTIONS.flatMap((s) =>
   s.tasks.map((t) => ({ ...t, section: s })),
 );
+
+/* ── Auto-generation across any month ──────────────────────────────────
+ * The source sheet's day markers ARE July 2026 (July 1 2026 = Wednesday, which
+ * matches the real calendar). So we treat July 2026 as the template and project
+ * each marker onto a target month by its "weekday + occurrence" slot — e.g. a
+ * marker on the 2nd Friday stays on the 2nd Friday of whatever month is chosen.
+ * Weekly/recurring tasks therefore re-flow onto the right days automatically,
+ * and selecting July 2026 reproduces the original sheet exactly. */
+
+export const TEMPLATE_YEAR = 2026;
+export const TEMPLATE_MONTH = 6; // July, 0-based
+
+export const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const LETTER = ["S", "M", "T", "W", "TH", "F", "S"]; // getDay() 0..6 → sheet letters
+
+export interface MonthMeta { year: number; month: number; days: number[]; letters: string[]; }
+
+export function monthMeta(year: number, month: number): MonthMeta {
+  const count = new Date(year, month + 1, 0).getDate();
+  const days: number[] = [];
+  const letters: string[] = [];
+  for (let d = 1; d <= count; d++) {
+    days.push(d);
+    letters.push(LETTER[new Date(year, month, d).getDay()]);
+  }
+  return { year, month, days, letters };
+}
+
+export const isWeekendDate = (year: number, month: number, day: number) => {
+  const wd = new Date(year, month, day).getDay();
+  return wd === 0 || wd === 6;
+};
+
+// Which weekday, and which occurrence of it within the month, a given day is.
+function slotOf(year: number, month: number, day: number) {
+  const wd = new Date(year, month, day).getDay();
+  let occ = 0;
+  for (let d = 1; d <= day; d++) if (new Date(year, month, d).getDay() === wd) occ++;
+  return { wd, occ };
+}
+
+// The day-of-month that is the `occ`-th `wd` weekday of the target month (or null).
+function dayForSlot(year: number, month: number, wd: number, occ: number): number | null {
+  const count = new Date(year, month + 1, 0).getDate();
+  let seen = 0;
+  for (let d = 1; d <= count; d++) {
+    if (new Date(year, month, d).getDay() === wd) {
+      seen++;
+      if (seen === occ) return d;
+    }
+  }
+  return null;
+}
+
+/** Project template (July 2026) markers onto the target month. */
+export function projectMarks(base: Record<number, string>, year: number, month: number): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const [dayStr, val] of Object.entries(base)) {
+    const { wd, occ } = slotOf(TEMPLATE_YEAR, TEMPLATE_MONTH, Number(dayStr));
+    const td = dayForSlot(year, month, wd, occ);
+    if (td) out[td] = val;
+  }
+  return out;
+}
+
+// Marker values an admin can cycle a cell through while editing.
+export const VALUE_CYCLE = ["7", "8", "9", "6", "8-9"];
+export function nextValue(current: string | undefined): string {
+  if (!current) return VALUE_CYCLE[0];
+  const i = VALUE_CYCLE.indexOf(current);
+  return i === -1 || i === VALUE_CYCLE.length - 1 ? "" : VALUE_CYCLE[i + 1]; // "" = remove
+}
+
+/** Apply an admin's per-month overrides on top of the generated marks. */
+export function applyOverrides(
+  base: Record<number, string>, monthKey: string, taskKey: string, overrides: Record<string, string>,
+): Record<number, string> {
+  const out = { ...base };
+  const prefix = `${monthKey}::${taskKey}::`;
+  for (const [k, v] of Object.entries(overrides)) {
+    if (!k.startsWith(prefix)) continue;
+    const day = Number(k.slice(prefix.length));
+    if (v === "") delete out[day];
+    else out[day] = v;
+  }
+  return out;
+}
