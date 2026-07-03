@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, CSSProperties } from "react";
+import { useEffect, useMemo, useState, CSSProperties } from "react";
 import { TASKS, Task, PEOPLE, GREETINGS, CELEBRATIONS } from "@/lib/data/tasks";
+import { fetchTasks, createTaskDb, markDoneDb, reassignDb } from "@/lib/db/tasks";
 
 // ── Exact color maps from MyTasks.dc.html ──────────────────────────
 const TEAM_COLORS: Record<string, string> = {
@@ -60,15 +61,26 @@ export default function MyTasksPage() {
   const getGroup = (t: Task) => (doneIds.has(t.id) ? "done" : t.group);
   const drawerTask = drawerId !== null ? tasks.find((t) => t.id === drawerId) ?? null : null;
 
+  useEffect(() => {
+    let alive = true;
+    fetchTasks().then(({ tasks, doneIds }) => {
+      if (!alive) return;
+      setTasks(tasks);
+      setDoneIds(new Set(doneIds));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const markDone = (id: number) => {
     setDoneIds((s) => new Set(s).add(id));
     setDrawerId(null);
+    markDoneDb(id);
     const msg = CELEBRATIONS[id % CELEBRATIONS.length];
     setCelebration(msg);
     setTimeout(() => setCelebration((c) => (c === msg ? null : c)), 3000);
   };
-  const createTask = (t: Task) => { setTasks((ts) => [t, ...ts]); setNewOpen(false); };
-  const reassign = (id: number, to: string) => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t)));
+  const createTask = (t: Task) => { setTasks((ts) => [t, ...ts]); setNewOpen(false); createTaskDb(t); };
+  const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
   const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs), [tasks, viewAs]);
   const [greetText, greetSubtext] = GREETINGS[viewAs] ?? ["Welcome 🌿", "Ready for today?"];
