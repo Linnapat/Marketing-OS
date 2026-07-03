@@ -12,9 +12,13 @@ const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { user, member, signOut } = useAuth();
+  const { user, member, role, signOut } = useAuth();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
   const displayRole = member?.role ?? "CMO / Admin";
+  // External agency users only see their portal.
+  const groups = AUTH_REQUIRED && role === "Agency (External)"
+    ? NAV.filter((g) => g.label === "External")
+    : NAV;
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -40,7 +44,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {NAV.map((group, gi) => (
+        {groups.map((group, gi) => (
           <div key={gi} className="mb-3">
             {group.label && (
               <div className="px-3 pt-3 pb-1.5 text-[10px] font-bold tracking-[0.08em] uppercase text-white/30">
@@ -84,7 +88,9 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* Footer: role switcher + user */}
       <div className="px-3 pb-4 pt-2 border-t border-white/[0.07]">
-        <RoleSwitcher />
+        {/* Role preview is a demo aid — hide it once real logins are enforced,
+            so a signed-in user can't escalate their "viewing as" role. */}
+        {!AUTH_REQUIRED && <RoleSwitcher />}
         <div className="flex items-center gap-[10px] px-2 pt-3">
           <div className="w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center text-panel text-[12px] font-extrabold">
             {initials(displayName)}

@@ -21,7 +21,9 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 /** Map a member record to an app Role for UI gating. */
 function memberRole(m: Member | null): Role {
-  if (!m) return "CMO / Admin";
+  // A signed-in user with no members row gets the least-privileged role — never
+  // admin. (The demo/no-auth default is handled separately in the provider.)
+  if (!m) return "Content Planner";
   if (m.brandAccess === "External only" || /agency/i.test(m.role)) return "Agency (External)";
   if (m.access === "Admin") return "CMO / Admin";
   if (/finance/i.test(m.role)) return "Finance";
@@ -67,8 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => { await supabase()?.auth.signOut(); };
 
+  // Auth off / demo → full access. Signed in → role from their members row.
+  const role: Role = !AUTH_REQUIRED || !user ? "CMO / Admin" : memberRole(member);
+
   return (
-    <Ctx.Provider value={{ user, member, role: memberRole(member), loading, signOut }}>
+    <Ctx.Provider value={{ user, member, role, loading, signOut }}>
       {children}
     </Ctx.Provider>
   );

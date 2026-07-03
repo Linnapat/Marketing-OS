@@ -20,16 +20,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 /** Redirects unauthenticated users to /login when auth is enforced. Renders the
  *  login route full-bleed (no sidebar). */
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, role } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const onLogin = pathname === "/login";
+  const isAgency = role === "Agency (External)";
 
   useEffect(() => {
     if (!AUTH_REQUIRED || loading) return;
-    if (!user && !onLogin) router.replace("/login");
-    if (user && onLogin) router.replace("/");
-  }, [loading, user, onLogin, router]);
+    if (!user && !onLogin) { router.replace("/login"); return; }
+    if (user && onLogin) { router.replace(isAgency ? "/agency" : "/"); return; }
+    // External agency users are confined to their portal.
+    if (user && isAgency && !onLogin && !pathname.startsWith("/agency")) router.replace("/agency");
+  }, [loading, user, onLogin, isAgency, pathname, router]);
 
   if (onLogin) return <>{children}</>;
   if (AUTH_REQUIRED && loading) {
