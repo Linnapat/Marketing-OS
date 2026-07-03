@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { SidebarContent } from "./Sidebar";
+import { RoleProvider } from "@/lib/role";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawer, setDrawer] = useState(false);
 
   return (
+    <RoleProvider>
     <div className="min-h-screen bg-ivory">
       {/* Desktop sidebar (fixed) */}
       <aside className="hidden lg:block fixed inset-y-0 left-0 z-30">
@@ -51,5 +53,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="max-w-content mx-auto px-5 sm:px-6 pt-5 pb-16">{children}</div>
       </main>
     </div>
+    </RoleProvider>
   );
 }

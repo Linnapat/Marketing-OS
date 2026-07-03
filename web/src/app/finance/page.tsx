@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/Progress";
 import { SignaturePad } from "@/components/finance/SignaturePad";
 import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
 import { BrandFilterValue, brandName, brandColor, BrandId } from "@/lib/brands";
+import { useRole, canSeeOperation } from "@/lib/role";
 import { baht } from "@/lib/format";
 import {
   BUDGET_SECTIONS, SECTION_ICON, EXPENSES, REQUESTS, PNL, EXP_CATEGORIES,
@@ -41,6 +42,8 @@ export default function FinancePage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [pvExpense, setPvExpense] = useState<ExpenseRow | null>(null);
+  const { role } = useRole();
+  const canOps = canSeeOperation(role);
 
   const exportCsv = () => {
     if (tab === "log") {
@@ -56,7 +59,7 @@ export default function FinancePage() {
     } else if (tab === "roi") {
       download("budget-breakdown.csv", buildCsv(
         ["Section", "Item", "Budget", "Actual", "Remaining", "Used %"],
-        BUDGET_SECTIONS.flatMap((s) => s.items.map((i) => [s.label, i.name, i.budget, i.actual, i.budget - i.actual, (i.budget ? Math.round((i.actual / Math.abs(i.budget)) * 100) : 0) + "%"])),
+        BUDGET_SECTIONS.filter((s) => canOps || s.key !== "operation").flatMap((s) => s.items.map((i) => [s.label, i.name, i.budget, i.actual, i.budget - i.actual, (i.budget ? Math.round((i.actual / Math.abs(i.budget)) * 100) : 0) + "%"])),
       ));
     } else {
       download("campaign-pnl.csv", buildCsv(
@@ -102,7 +105,7 @@ export default function FinancePage() {
         {tab === "plan" && <BudgetPlanTab brand={brand} />}
         {tab === "request" && <ExpenseRequestTab brand={brand} />}
         {tab === "log" && <SpendingLogTab brand={brand} onVoucher={setPvExpense} />}
-        {tab === "roi" && <RoiTab />}
+        {tab === "roi" && <RoiTab canOps={canOps} />}
         {tab === "approval" && <ApprovalTab brand={brand} />}
       </div>
 
@@ -459,11 +462,30 @@ function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; onVouch
 }
 
 /* ── ROI / P&L: collapsible category + line-item breakdown ─────────── */
-function RoiTab() {
+function RoiTab({ canOps }: { canOps: boolean }) {
   const [open, setOpen] = useState<Record<string, boolean>>({ digital: true });
   return (
     <div className="flex flex-col gap-3">
       {BUDGET_SECTIONS.map((sec) => {
+        // Operation costs (salary, bonus, incentives) are CMO-only.
+        if (sec.key === "operation" && !canOps) {
+          return (
+            <div key={sec.key} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+              <div className="flex items-center gap-3 px-5 py-[14px]">
+                <span className="text-[16px] grayscale opacity-60">{SECTION_ICON[sec.key]}</span>
+                <div className="flex-1">
+                  <div className="text-[13.5px] font-bold text-faint flex items-center gap-2">
+                    {sec.label} <span className="text-[11px]">🔒</span>
+                  </div>
+                  <div className="text-[11px] text-faint">Restricted — visible to CMO / Admin only</div>
+                </div>
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-faint border border-line2 rounded-pill px-[9px] py-[3px]">
+                  CMO only
+                </span>
+              </div>
+            </div>
+          );
+        }
         const budget = sec.items.reduce((s, i) => s + i.budget, 0);
         const actual = sec.items.reduce((s, i) => s + i.actual, 0);
         const remaining = budget - actual;

@@ -2,21 +2,12 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { ROLES, useRole } from "@/lib/role";
 
-const ROLES = [
-  "CMO / Admin",
-  "Brand Lead",
-  "Content Planner",
-  "Graphic / Creator",
-  "KOL Specialist",
-  "Finance",
-  "CEO / Management",
-];
-
-/** Role switcher placeholder — role-based visibility is a Phase-2 concern; for now it
- *  just records the selected role so the UI can reflect it later. */
+/** Role switcher — writes the app-wide "viewing as" role so role-based
+ *  visibility (e.g. CMO-only P&L Operation costs) reflects the selection live. */
 export function RoleSwitcher() {
-  const [role, setRole] = useState(ROLES[0]);
+  const { role, setRole } = useRole();
   const [open, setOpen] = useState(false);
 
   return (
