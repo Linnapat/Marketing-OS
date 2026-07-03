@@ -6,7 +6,7 @@ import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, BUDGET_THRESHOLDS, APPROVAL_RULES,
   WF_MODULE_LABELS, STATUS_SETS, WfModule, NOTIF_CHANNELS, NOTIF_TRIGGERS,
-  INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR,
+  INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR, ROLE_OPTIONS,
 } from "@/lib/data/settings";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
@@ -68,8 +68,13 @@ export default function SettingsPage() {
   // Team members (invitable)
   const [users, setUsers] = useState(() => USERS_DATA.map((u) => ({ ...u })));
   const [inviteOpen, setInviteOpen] = useState(false);
-  const emptyInvite = { name: "", email: "", role: "", access: "Editor", brandAccess: "All brands" };
+  const emptyInvite = { name: "", email: "", role: "Campaign Planner", access: "Editor", brandAccess: "All brands" };
   const [inv, setInv] = useState(emptyInvite);
+  // Picking a role opens/closes its default view/edit access + brand scope.
+  const pickRole = (role: string) => {
+    const opt = ROLE_OPTIONS.find((o) => o.role === role);
+    setInv((v) => ({ ...v, role, access: opt?.access ?? v.access, brandAccess: opt?.brand ?? v.brandAccess }));
+  };
   const inviteValid = inv.name.trim() !== "" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email.trim());
   const submitInvite = () => {
     if (!canEdit || !inviteValid) return;
@@ -398,8 +403,11 @@ export default function SettingsPage() {
                 <input value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} placeholder="name@teppenthailand.co.th" className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
               </div>
               <div>
-                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Role / title</label>
-                <input value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value })} placeholder="e.g. Content Planner" className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Role / position</label>
+                <select value={inv.role} onChange={(e) => pickRole(e.target.value)} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                  {ROLE_OPTIONS.map((o) => <option key={o.role} value={o.role}>{o.role}{o.external ? " · external" : ""}</option>)}
+                </select>
+                <div className="text-[11px] text-faint mt-[5px]">Sets default view / edit access — fine-tune per role in <b className="text-muted">Permissions</b>.</div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -411,7 +419,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand access</label>
                   <select value={inv.brandAccess} onChange={(e) => setInv({ ...inv, brandAccess: e.target.value })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
-                    <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option>
+                    <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option><option>External only</option>
                   </select>
                 </div>
               </div>

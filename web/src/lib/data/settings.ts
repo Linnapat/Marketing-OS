@@ -74,6 +74,21 @@ export const PERM_ROLES: { role: string; desc: string; perms: Perm[] }[] = [
   { role: "KOL Specialist", desc: "KOL module", perms: [V, N, E, V, V, N, N] },
   { role: "Finance", desc: "Budget & payments", perms: [V, N, N, A, N, N, N] },
   { role: "Viewer", desc: "Read only", perms: [V, V, V, V, V, V, N] },
+  { role: "Agency (External)", desc: "External — task list only", perms: [N, E, N, N, E, N, N] },
+];
+
+// Selectable positions when inviting a member. Each role carries a default
+// access level and brand scope so picking a role opens/closes what they can
+// view or edit — an admin can still fine-tune per-role rights in Permissions.
+export const ROLE_OPTIONS: { role: string; access: "Admin" | "Editor" | "Viewer"; brand: string; external?: boolean }[] = [
+  { role: "CMO / Admin", access: "Admin", brand: "All brands" },
+  { role: "Brand Lead", access: "Editor", brand: "All brands" },
+  { role: "Campaign Planner", access: "Editor", brand: "All brands" },
+  { role: "Senior Designer", access: "Editor", brand: "All brands" },
+  { role: "KOL Specialist", access: "Editor", brand: "Touka" },
+  { role: "Finance", access: "Editor", brand: "All brands" },
+  { role: "Performance / Analyst", access: "Viewer", brand: "All brands" },
+  { role: "Agency (External)", access: "Editor", brand: "External only", external: true },
 ];
 
 export const BUDGET_THRESHOLDS = [

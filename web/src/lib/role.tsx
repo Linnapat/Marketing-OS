@@ -10,6 +10,7 @@ export const ROLES = [
   "KOL Specialist",
   "Finance",
   "CEO / Management",
+  "Agency (External)",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
