@@ -19,15 +19,19 @@ export async function GET() {
   const db = supabase();
   if (db) {
     try {
-      const [{ count: brands, error: e1 }, { count: campaigns, error: e2 }] = await Promise.all([
-        db.from("brands").select("*", { count: "exact", head: true }),
-        db.from("campaigns").select("*", { count: "exact", head: true }),
-      ]);
-      if (e1 || e2) throw (e1 || e2);
+      const tables = ["brands", "campaigns", "tasks", "content_posts", "expense_requests", "kols", "agency_tasks"];
+      const counts = await Promise.all(
+        tables.map((t) => db.from(t).select("*", { count: "exact", head: true })),
+      );
+      const firstErr = counts.find((c) => c.error)?.error;
+      if (firstErr) throw firstErr;
+      const byTable: Record<string, number> = {};
+      tables.forEach((t, i) => { byTable[t] = counts[i].count ?? 0; });
       result.dbReachable = true;
-      result.brands = brands ?? 0;
-      result.campaigns = campaigns ?? 0;
-      result.seeded = (brands ?? 0) > 0;
+      result.brands = byTable.brands;
+      result.campaigns = byTable.campaigns;
+      result.counts = byTable;
+      result.seeded = byTable.brands > 0;
       if (!result.seeded) result.hint = "Connected. Tables are empty — run the seed to load demo data.";
     } catch (e) {
       result.error = (e as Error).message;
