@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -15,18 +15,26 @@ import { campaignTone } from "@/lib/status";
 import {
   CAMPAIGNS, STATUS_ORDER, READINESS_META, monthlySummary,
 } from "@/lib/data/campaigns";
+import { fetchCampaigns } from "@/lib/db/campaigns";
 
 export default function CampaignsPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
+  const [campaigns, setCampaigns] = useState(CAMPAIGNS);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     Completed: true, Draft: true, Cancelled: true,
   });
 
-  const summary = monthlySummary(brand);
+  useEffect(() => {
+    let alive = true;
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
-  const filtered = CAMPAIGNS.filter(
+  const summary = monthlySummary(brand, campaigns);
+
+  const filtered = campaigns.filter(
     (c) => (brand === "all" || c.b === brand) && (status === "all" || c.status === status),
   );
   const groups = STATUS_ORDER

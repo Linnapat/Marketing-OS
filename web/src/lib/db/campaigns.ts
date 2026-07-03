@@ -1,0 +1,41 @@
+// Data access for Campaigns. Reads Supabase when configured, else the mock.
+
+import { supabase } from "@/lib/supabase";
+import { CAMPAIGNS, CampaignRow, Readiness } from "@/lib/data/campaigns";
+import { BrandId } from "@/lib/brands";
+
+type Row = {
+  id: string; name: string; brand: BrandId; branch: string; owner: string;
+  budget: number; spend: number; roi: number; dates: string; status: string;
+  camp_type: string; readiness: string;
+  task_blocked: number; task_waiting: number; task_overdue: number;
+  task_total: number; task_done: number; task_in_progress: number;
+  bottleneck_team: string; next_approval: string;
+};
+
+const toCampaign = (r: Row): CampaignRow => ({
+  id: r.id, name: r.name, b: r.brand, branch: r.branch, owner: r.owner,
+  budget: Number(r.budget), spend: Number(r.spend), roi: Number(r.roi), dates: r.dates,
+  status: r.status, campType: r.camp_type, readiness: (r.readiness as Readiness) ?? "ready",
+  taskBlocked: r.task_blocked, taskWaiting: r.task_waiting, taskOverdue: r.task_overdue,
+  taskTotal: r.task_total, taskDone: r.task_done, taskInProgress: r.task_in_progress,
+  bottleneckTeam: r.bottleneck_team, nextApproval: r.next_approval,
+});
+
+/** All campaigns — from Supabase if configured, else the mock. */
+export async function fetchCampaigns(): Promise<CampaignRow[]> {
+  const db = supabase();
+  if (!db) return CAMPAIGNS.map((c) => ({ ...c }));
+  const { data, error } = await db.from("campaigns").select("*").order("id");
+  if (error || !data || data.length === 0) return CAMPAIGNS.map((c) => ({ ...c }));
+  return (data as Row[]).map(toCampaign);
+}
+
+/** A single campaign by id — for the detail page. */
+export async function fetchCampaign(id: string): Promise<CampaignRow | undefined> {
+  const db = supabase();
+  if (!db) return CAMPAIGNS.find((c) => c.id === id);
+  const { data, error } = await db.from("campaigns").select("*").eq("id", id).maybeSingle();
+  if (error || !data) return CAMPAIGNS.find((c) => c.id === id);
+  return toCampaign(data as Row);
+}

@@ -196,8 +196,8 @@ export const CAMPAIGN_TAB_LABELS: Record<CampaignTab, string> = {
 };
 
 // ── Monthly summary (dark card above the list) ────────────────────────
-export function monthlySummary(brandFilter: BrandId | "all") {
-  const camps = CAMPAIGNS.filter((c) => brandFilter === "all" || c.b === brandFilter);
+export function monthlySummary(brandFilter: BrandId | "all", list: CampaignRow[] = CAMPAIGNS) {
+  const camps = list.filter((c) => brandFilter === "all" || c.b === brandFilter);
   const budget = camps.reduce((s, c) => s + c.budget, 0);
   const spend = camps.reduce((s, c) => s + c.spend, 0);
   const rev = camps.reduce((s, c) => s + (c.roi > 0 && c.spend > 0 ? c.spend * c.roi : c.budget * 2.8), 0);
