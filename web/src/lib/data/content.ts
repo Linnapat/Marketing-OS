@@ -12,6 +12,8 @@ export interface ContentItem {
   title: string;
   b: BrandId;
   plat: string;
+  /** Optional multi-channel list; falls back to [plat] when absent. */
+  platforms?: string[];
   status: string;
   campaign: string;
   owner: string;
@@ -48,6 +50,11 @@ export const CONTENT_STATUS_TONE: Record<string, Tone> = {
 
 export function contentTone(status: string): Tone {
   return CONTENT_STATUS_TONE[status] ?? "neutral";
+}
+
+/** All channels for an item — the multi-select array, or [plat] as fallback. */
+export function itemPlatforms(c: ContentItem): string[] {
+  return c.platforms && c.platforms.length ? c.platforms : [c.plat];
 }
 
 export function platIcon(plat: string): { icon: string; bg: string; fg: string } {

@@ -10,8 +10,25 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { BrandFilterValue, brandName, BRAND_ORDER, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS,
+  CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS, itemPlatforms,
 } from "@/lib/data/content";
+
+/** Row of platform badges (one per selected channel). */
+function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
+  return (
+    <span className="flex items-center gap-[2px] flex-shrink-0">
+      {itemPlatforms(item).map((p, i) => {
+        const pi = platIcon(p);
+        return (
+          <span key={i} className="rounded-[4px] flex items-center justify-center font-bold flex-shrink-0"
+            style={{ width: size, height: size, background: pi.bg, color: pi.fg, fontSize: size <= 15 ? 7 : 8 }}>
+            {pi.icon}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 type View = "month" | "week" | "list" | "queue";
 // July 2026 starts on a Wednesday (index 3, Sun=0).
@@ -88,19 +105,21 @@ export default function ContentPage() {
 function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCreate: (p: ContentItem) => void; count: number }) {
   const [title, setTitle] = useState("");
   const [b, setB] = useState<BrandId>("teppen");
-  const [plat, setPlat] = useState(PLATFORMS[0]);
+  const [plats, setPlats] = useState<string[]>([PLATFORMS[0]]);
   const [campaign, setCampaign] = useState("");
   const [day, setDay] = useState("27");
   const [time, setTime] = useState("10:00");
   const [owner, setOwner] = useState("");
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  const togglePlat = (p: string) => setPlats((ps) => ps.includes(p) ? ps.filter((x) => x !== p) : [...ps, p]);
+  const canCreate = title.trim() && plats.length > 0;
   const create = () => {
-    if (!title.trim()) return;
+    if (!canCreate) return;
     const d = Math.max(1, Math.min(31, parseInt(day) || 1));
     onCreate({
       id: `c${String(count + 1).padStart(2, "0")}-new`,
-      day: d, time, title: title.trim(), b, plat, status: "Draft",
+      day: d, time, title: title.trim(), b, plat: plats[0], platforms: plats, status: "Draft",
       campaign: campaign.trim() || "—", owner: owner.trim() || "Unassigned",
       caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: "No Asset", approvalStatus: "Draft", publishStatus: "Draft",
@@ -118,18 +137,26 @@ function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCre
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Content Title <span className="text-status-red">*</span></label>
             <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Wagyu weekend teaser" autoFocus />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-              <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
-                {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Platform</label>
-              <select value={plat} onChange={(e) => setPlat(e.target.value)} className={field}>
-                {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
+            <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
+              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Platforms <span className="text-status-red">*</span> <span className="text-faint font-normal">· choose one or more</span></label>
+            <div className="flex flex-wrap gap-2">
+              {PLATFORMS.map((p) => {
+                const on = plats.includes(p);
+                const pi = platIcon(p);
+                return (
+                  <button key={p} onClick={() => togglePlat(p)} className="flex items-center gap-[6px] text-[12px] px-[11px] py-[6px] rounded-pill transition"
+                    style={on ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
+                    <span className="rounded-[4px] flex items-center justify-center font-bold" style={{ width: 15, height: 15, fontSize: 7, background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+                    {p}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div>
@@ -151,7 +178,7 @@ function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCre
             </div>
           </div>
         </div>
-        <button onClick={create} disabled={!title.trim()} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
+        <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
       </div>
     </div>
   );
@@ -174,15 +201,12 @@ function MonthView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Conten
             <div key={i} className="min-h-[104px] border-r border-b border-line4 p-[6px] last:border-r-0" style={{ background: day ? "#fff" : "#FBF9F4" }}>
               {day && <div className="text-[11px] font-bold text-faint mb-1 px-1">{day}</div>}
               <div className="flex flex-col gap-[3px]">
-                {dayItems.map((c) => {
-                  const pi = platIcon(c.plat);
-                  return (
-                    <button key={c.id} onClick={() => onOpen(c)} className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition" style={{ background: "#FAF8F4", border: "1px solid #F0EBE0" }}>
-                      <span className="w-[15px] h-[15px] rounded-[4px] flex items-center justify-center text-[7px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
-                      <span className="text-[10.5px] font-semibold truncate flex-1">{c.title}</span>
-                    </button>
-                  );
-                })}
+                {dayItems.map((c) => (
+                  <button key={c.id} onClick={() => onOpen(c)} className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition" style={{ background: "#FAF8F4", border: "1px solid #F0EBE0" }}>
+                    <PlatBadges item={c} />
+                    <span className="text-[10.5px] font-semibold truncate flex-1">{c.title}</span>
+                  </button>
+                ))}
               </div>
             </div>
           );
@@ -207,12 +231,11 @@ function WeekView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Content
 }
 
 function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }) {
-  const pi = platIcon(c.plat);
   return (
     <button onClick={() => onOpen(c)} className="w-full grid grid-cols-[52px_1fr_auto] gap-3 items-center px-5 py-[11px] text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
       <span className="text-[11px] font-bold text-faint">{c.time}</span>
       <div className="flex items-center gap-2 min-w-0">
-        <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+        <PlatBadges item={c} size={18} />
         <div className="min-w-0">
           <div className="text-[13px] font-semibold truncate">{c.title}</div>
           <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{brandName(c.b)} · {c.campaign}</div>
@@ -231,12 +254,11 @@ function ListView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Content
         <div>Date</div><div>Content</div><div>Campaign</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
       </div>
       {[...items].sort((a, b) => a.day - b.day).map((c) => {
-        const pi = platIcon(c.plat);
         return (
           <button key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
             <span className="text-[11px] font-bold text-faint">Jul {c.day}</span>
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+              <PlatBadges item={c} size={18} />
               <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{c.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div></div>
             </div>
             <span className="text-[12px] text-muted truncate">{c.campaign}</span>
@@ -260,10 +282,9 @@ function QueueView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Conten
       </div>
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
         {queue.map((c) => {
-          const pi = platIcon(c.plat);
           return (
             <div key={c.id} className="grid grid-cols-[auto_1fr_auto_auto] gap-3 items-center px-5 py-3 border-b border-line4 last:border-0">
-              <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+              <PlatBadges item={c} size={18} />
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold truncate">{c.title}</div>
                 <div className="text-[11px] text-faint">{brandName(c.b)} · July {c.day}, {c.time}</div>

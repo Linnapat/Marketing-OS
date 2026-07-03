@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, contentWarnings, preflight } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
@@ -16,7 +16,6 @@ export function ContentDrawer({ item, onClose }: { item: ContentItem; onClose: (
   const [caption, setCaption] = useState(item.caption);
   const [hashtags, setHashtags] = useState(item.hashtags);
   const [cta, setCta] = useState(item.cta);
-  const pi = platIcon(item.plat);
   const warnings = contentWarnings(item);
 
   const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none font-sans";
@@ -29,7 +28,12 @@ export function ContentDrawer({ item, onClose }: { item: ContentItem; onClose: (
         <div className="px-5 py-4 border-b border-line flex items-start justify-between gap-2 flex-shrink-0" style={{ background: "#FBF9F4" }}>
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-[5px] flex-wrap">
-              <span className="w-[22px] h-[22px] rounded-[6px] flex items-center justify-center text-[9px] font-bold" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+              <span className="flex items-center gap-[3px]">
+                {itemPlatforms(item).map((p, i) => {
+                  const pi = platIcon(p);
+                  return <span key={i} className="w-[22px] h-[22px] rounded-[6px] flex items-center justify-center text-[9px] font-bold" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>;
+                })}
+              </span>
               <span className="text-[15px] font-extrabold leading-tight">{item.title}</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted">
