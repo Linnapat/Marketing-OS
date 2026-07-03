@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, brandName } from "@/lib/brands";
 import { REQUESTS, RequestRow, APPROVAL_STAGES, STAGE_TONE, PRIORITY_TONE } from "@/lib/data/requests";
-import { fetchRequests } from "@/lib/db/requests";
+import { fetchRequests, updateRequestStage } from "@/lib/db/requests";
 
 export default function ApprovalQueuePage() {
   const [view, setView] = useState<"board" | "list">("board");
@@ -20,6 +20,16 @@ export default function ApprovalQueuePage() {
     fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  const moveStage = (id: string, dir: 1 | -1) => {
+    setRequests((rs) => rs.map((r) => {
+      if (r.id !== id) return r;
+      const idx = APPROVAL_STAGES.indexOf(r.stage);
+      const stage = APPROVAL_STAGES[Math.max(0, Math.min(APPROVAL_STAGES.length - 1, idx + dir))];
+      updateRequestStage(id, stage);
+      return { ...r, stage };
+    }));
+  };
 
   const rows = requests.filter((r) => brand === "all" || r.b === brand);
 
@@ -53,6 +63,12 @@ export default function ApprovalQueuePage() {
                         <div className="text-[11px] text-faint flex items-center gap-[5px] mb-1"><BrandDot brand={r.b} size={6} />{brandName(r.b)} · {r.campaign}</div>
                         <div className="flex items-center justify-between text-[11px] text-faint">
                           <span>{r.requester} → {r.approver}</span><span>{r.due}</span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-line4">
+                          <button onClick={() => moveStage(r.id, -1)} disabled={APPROVAL_STAGES.indexOf(r.stage) === 0}
+                            className="text-[11px] font-bold text-muted border border-line2 rounded-[7px] px-2 py-[3px] bg-white disabled:opacity-30 disabled:cursor-default">← Back</button>
+                          <button onClick={() => moveStage(r.id, 1)} disabled={APPROVAL_STAGES.indexOf(r.stage) === APPROVAL_STAGES.length - 1}
+                            className="text-[11px] font-bold text-white bg-panel rounded-[7px] px-2 py-[3px] disabled:opacity-30 disabled:cursor-default ml-auto">Advance →</button>
                         </div>
                       </div>
                     ))}

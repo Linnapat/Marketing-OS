@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
-import { fetchMembers, createMember } from "@/lib/db/settings";
+import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, BUDGET_THRESHOLDS, APPROVAL_RULES,
@@ -63,9 +63,31 @@ export default function SettingsPage() {
     setPerm((m) => m.map((row, r) => (r === ri ? row.map((v, c) => (c === mi ? (v + 1) % PERM_LEVELS.length : v)) : row)));
     setPermDirty(true);
   };
+  const persistPermissions = () => {
+    savePermissions(PERM_ROLES.map((r, ri) => ({
+      role: r.role, descr: r.desc,
+      perms: PERM_MODULES.map((m, mi) => ({ module: m, level: PERM_LEVELS[perm[ri][mi]].l })),
+    })));
+    setPermDirty(false);
+  };
   // Editable organization fields
   const [orgEdit, setOrgEdit] = useState(false);
   const [org, setOrg] = useState(() => ORG_FIELDS.map((f) => ({ ...f })));
+  const persistOrg = () => { saveOrg(org); setOrgEdit(false); };
+
+  // Load saved permissions + org from Supabase.
+  useEffect(() => {
+    let alive = true;
+    fetchPermissions().then((map) => {
+      if (!alive || !map) return;
+      setPerm(PERM_ROLES.map((r) => r.perms.map((p, mi) => {
+        const lvl = map[r.role]?.[PERM_MODULES[mi]];
+        return lvl ? levelIndex(lvl) : levelIndex(p.l);
+      })));
+    }).catch(() => {});
+    fetchOrg().then((f) => { if (alive && f && f.length) setOrg(f); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // Team members (invitable) — loaded from Supabase when configured.
   const [users, setUsers] = useState(() => USERS_DATA.map((u) => ({ ...u })));
   useEffect(() => {
@@ -148,7 +170,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between mb-5">
               <div className="text-[13px] font-bold">Company details</div>
               {canEdit && (orgEdit
-                ? <button onClick={() => setOrgEdit(false)} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[7px]">Save</button>
+                ? <button onClick={persistOrg} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[7px]">Save</button>
                 : <button onClick={() => setOrgEdit(true)} className="text-[12px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[7px]">Edit</button>)}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -229,7 +251,7 @@ export default function SettingsPage() {
               {canEdit && permDirty && (
                 <div className="flex items-center gap-2">
                   <button onClick={() => { setPerm(PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l)))); setPermDirty(false); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[6px]">Reset</button>
-                  <button onClick={() => setPermDirty(false)} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[6px]">Save changes</button>
+                  <button onClick={persistPermissions} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[6px]">Save changes</button>
                 </div>
               )}
             </div>

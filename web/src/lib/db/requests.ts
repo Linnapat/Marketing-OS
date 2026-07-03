@@ -23,6 +23,12 @@ export async function fetchRequests(): Promise<RequestRow[]> {
   return (data as Row[]).map(toReq);
 }
 
+export async function updateRequestStage(id: string, stage: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("requests").update({ stage }).eq("id", id);
+}
+
 export async function createRequest(r: RequestRow): Promise<void> {
   const db = supabase();
   if (!db) return;
