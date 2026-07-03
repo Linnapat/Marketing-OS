@@ -1,0 +1,144 @@
+// Graphic / Creative Request — ported from Graphic.dc.html. Requests carry the full
+// workflow schema (brief completeness, blocker, versions, feedback thread) so the board,
+// list, and 6-tab detail drawer all read from one shape.
+
+import { BrandId } from "@/lib/brands";
+import { Tone } from "@/lib/status";
+
+export interface Graphic {
+  id: number;
+  stage: string;
+  title: string;
+  b: BrandId;
+  campaign: string;
+  due: string;
+  designer: string;
+  requester: string;
+  approver: string;
+  type: string;
+  priority: "High" | "Med" | "Low";
+  fb: number;
+  openFb: number;
+  isOverdue: boolean;
+  briefComplete: boolean;
+  pendingApprover: string;
+  blocker: string | null;
+  waitingSince: string | null;
+  nextAction: string;
+  platform: string;
+  size: string;
+  contentItem: string;
+}
+
+const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
+  { col: "New Request", cards: [
+    { id: 0, title: "Songkran key visual", b: "teppen", campaign: "Songkran Teppanyaki", due: "Jul 2", designer: "Unassigned", requester: "Ken S.", approver: "Aran P.", type: "Key Visual", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: false, pendingApprover: "—", blocker: "Brief incomplete", waitingSince: "Jun 28", nextAction: "Fill brief to proceed", platform: "IG + FB", size: "1080×1080 · 1920×1080", contentItem: "Songkran hero post" },
+    { id: 1, title: "Anniversary poster", b: "touka", campaign: "Touka Anniversary", due: "Jul 8", designer: "Unassigned", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 0, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 30", nextAction: "Assign designer", platform: "Print · in-store", size: "A3 portrait", contentItem: "—" },
+    { id: 2, title: "Rainy season promo banner", b: "mainichi", campaign: "Rainy Season Promo", due: "Jul 3", designer: "Unassigned", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: false, pendingApprover: "—", blocker: "Brief incomplete", waitingSince: "Jun 29", nextAction: "Complete brief then assign", platform: "IG + FB Feed", size: "1080×1080", contentItem: "Rainy season main post" },
+  ]},
+  { col: "In Progress", cards: [
+    { id: 3, title: "Wagyu menu board", b: "teppen", campaign: "Wagyu Festival", due: "Jun 29", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "In-Store", priority: "High", fb: 1, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "Waiting requester review", waitingSince: "Jun 27", nextAction: "Upload V2 for review", platform: "In-store · A2 board", size: "594×420mm", contentItem: "Menu board display" },
+    { id: 4, title: "Lunch set carousel", b: "mainichi", campaign: "Rainy Season Promo", due: "Jun 28", designer: "Aom", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "Med", fb: 0, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 25", nextAction: "Complete V1 design", platform: "IG Carousel", size: "1080×1080 ×5", contentItem: "Lunch promotion carousel" },
+    { id: 5, title: "Cocktail hour reel cover", b: "touka", campaign: "Cocktail Hour Launch", due: "Jul 1", designer: "Boss", requester: "Ploy R.", approver: "Ploy R.", type: "Reel Cover", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 28", nextAction: "Design in progress", platform: "IG Reels", size: "1080×1920", contentItem: "Cocktail reel thumbnail" },
+  ]},
+  { col: "Waiting Feedback", cards: [
+    { id: 6, title: "Father's Day banner", b: "omakase", campaign: "Father's Day Set", due: "Jun 28", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "Social Media", priority: "High", fb: 2, openFb: 2, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "Waiting requester feedback", waitingSince: "Jun 26", nextAction: "Ken S. to review V2", platform: "FB + IG Feed", size: "1200×628 · 1080×1080", contentItem: "Father's Day main post" },
+    { id: 7, title: "LINE OA coupon card", b: "mainichi", campaign: "LINE Coupon Drive", due: "Jun 27", designer: "Aom", requester: "Nok W.", approver: "Ken S.", type: "LINE Rich Message", priority: "Med", fb: 1, openFb: 1, isOverdue: true, briefComplete: true, pendingApprover: "Nok W.", blocker: "Waiting requester feedback", waitingSince: "Jun 25", nextAction: "Nok W. to approve card design", platform: "LINE OA", size: "1200×630", contentItem: "Coupon redemption card" },
+  ]},
+  { col: "Revision Requested", cards: [
+    { id: 8, title: "Menu redesign", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 30", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "High", fb: 2, openFb: 2, isOverdue: true, briefComplete: true, pendingApprover: "Ploy R.", blocker: "Design revision needed", waitingSince: "Jun 24", nextAction: "Aom to revise V2 per feedback", platform: "Print · menu", size: "A5 folded", contentItem: "Cocktail menu card" },
+    { id: 9, title: "Summer reel cover", b: "omakase", campaign: "Summer Reel Series", due: "Jun 26", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "Reel Cover", priority: "High", fb: 3, openFb: 3, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "CI correction needed", waitingSince: "Jun 22", nextAction: "Boss to revise brand colours V4", platform: "IG Reels", size: "1080×1920", contentItem: "Summer series cover" },
+  ]},
+  { col: "Waiting Approval", cards: [
+    { id: 10, title: "Cocktail menu card", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 24", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "Aran P.", blocker: "Waiting CMO approval", waitingSince: "Jun 23", nextAction: "Aran P. to approve final artwork", platform: "Print", size: "A5", contentItem: "Menu card" },
+  ]},
+  { col: "Approved", cards: [
+    { id: 11, title: "Wagyu teaser story", b: "teppen", campaign: "Wagyu Festival", due: "Jun 22", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "Story", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "Upload final files for delivery", platform: "IG Story", size: "1080×1920 ×3", contentItem: "Wagyu teaser 3-frame story" },
+  ]},
+  { col: "Delivered", cards: [
+    { id: 12, title: "Matcha dessert post", b: "mainichi", campaign: "LINE Coupon Drive", due: "Jun 5", designer: "Boss", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "Low", fb: 0, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "—", platform: "IG Feed", size: "1080×1080", contentItem: "Dessert promo post" },
+  ]},
+];
+
+export const STAGE_ORDER = ["New Request", "In Progress", "Waiting Feedback", "Revision Requested", "Waiting Approval", "Approved", "Delivered"];
+
+export const GRAPHICS: Graphic[] = BOARD.flatMap((col) => col.cards.map((c) => ({ ...c, stage: col.col })));
+
+export const STAGE_TONE: Record<string, Tone> = {
+  "New Request": "neutral", "Brief Incomplete": "red", "Ready to Start": "neutral",
+  "In Progress": "blue", "Waiting Feedback": "gold", "Revision Requested": "orange",
+  "Waiting Approval": "gold", Approved: "green", Delivered: "ink", Cancelled: "neutral",
+  Open: "red", Resolved: "green", "In progress": "blue", "Waiting reply": "gold",
+  Pending: "gold", Rejected: "red",
+};
+export const stageTone = (s: string): Tone => STAGE_TONE[s] ?? "neutral";
+
+export const PRIORITY_TONE: Record<string, Tone> = { High: "red", Med: "gold", Low: "neutral" };
+
+export const DESIGNER_COLOR: Record<string, string> = { Boss: "#4E7A4E", Aom: "#B5577E", New: "#3E5C9A", Unassigned: "#9A9387" };
+
+export interface Feedback {
+  id: number; gid: number; owner: string; team: string; ownerColor: string;
+  type: string; text: string; version: string; status: string; assignedTo: string; due: string | null; createdAt: string;
+}
+
+export const FEEDBACK: Feedback[] = [
+  { id: 0, gid: 6, owner: "Ken S.", team: "Campaign Lead", ownerColor: "#3E5C9A", type: "Design revision", text: "Brand colours need adjustment — use Omakase navy (#3E5C9A) as dominant, not the current warm brown. Also the CTA button is too small on mobile.", version: "V2", status: "Open", assignedTo: "Boss", due: "Jun 29", createdAt: "Jun 27" },
+  { id: 1, gid: 6, owner: "Ploy R.", team: "Brand Manager", ownerColor: "#B5577E", type: "Copy revision", text: "The headline copy needs to say 'Father's Day Omakase Set' not 'Special Set'. Brand guideline: always use the full name.", version: "V2", status: "Open", assignedTo: "Boss", due: "Jun 28", createdAt: "Jun 26" },
+  { id: 2, gid: 7, owner: "Nok W.", team: "Performance", ownerColor: "#6b6258", type: "CI correction", text: "Coupon border colour is wrong — should match the warm gold from CI kit, not yellow. Please check the brand asset folder.", version: "V1", status: "Open", assignedTo: "Aom", due: "Jun 28", createdAt: "Jun 25" },
+  { id: 3, gid: 8, owner: "Ploy R.", team: "Brand Manager", ownerColor: "#B5577E", type: "Design revision", text: "Cocktail photo angle is wrong — use the low-angle dramatic shot, not the top-down. Reference pinned in the asset folder.", version: "V1", status: "Open", assignedTo: "Aom", due: "Jun 29", createdAt: "Jun 24" },
+  { id: 4, gid: 8, owner: "Aran P.", team: "CMO", ownerColor: "#B8945A", type: "Approval comment", text: "Good direction. Once Ploy's feedback is addressed in V2, send me for CMO sign-off.", version: "V1", status: "Resolved", assignedTo: "Aom", due: null, createdAt: "Jun 23" },
+  { id: 5, gid: 9, owner: "Ken S.", team: "Campaign Lead", ownerColor: "#3E5C9A", type: "CI correction", text: "Reel cover has the wrong font — must use Cormorant for headlines, not Playfair. Check CI guidelines.", version: "V3", status: "Open", assignedTo: "Boss", due: "Jun 27", createdAt: "Jun 22" },
+  { id: 6, gid: 9, owner: "Ploy R.", team: "Brand Manager", ownerColor: "#B5577E", type: "Design revision", text: "Background too dark — Omakase brand requires at least 30% lighter dark navy. Current version feels too heavy.", version: "V3", status: "Open", assignedTo: "Boss", due: "Jun 26", createdAt: "Jun 22" },
+  { id: 7, gid: 9, owner: "Ken S.", team: "Campaign Lead", ownerColor: "#3E5C9A", type: "General comment", text: "V1 and V2 direction was wrong — we needed it simpler. V3 is closer, just the colour + font corrections.", version: "V3", status: "Open", assignedTo: "Boss", due: "Jun 28", createdAt: "Jun 23" },
+];
+
+export interface Version {
+  gid: number; name: string; uploadedBy: string; uploadedAt: string;
+  feedbackCount: number; approvalStatus: string; isLatest: boolean;
+}
+
+export const VERSIONS: Version[] = [
+  { gid: 3, name: "V1 — Draft", uploadedBy: "Boss", uploadedAt: "Jun 25", feedbackCount: 1, approvalStatus: "Needs revision", isLatest: false },
+  { gid: 3, name: "V2 — In review", uploadedBy: "Boss", uploadedAt: "Jun 27", feedbackCount: 0, approvalStatus: "Awaiting review", isLatest: true },
+  { gid: 6, name: "V1 — Draft", uploadedBy: "Boss", uploadedAt: "Jun 24", feedbackCount: 1, approvalStatus: "Revision requested", isLatest: false },
+  { gid: 6, name: "V2 — Revised", uploadedBy: "Boss", uploadedAt: "Jun 26", feedbackCount: 2, approvalStatus: "Waiting feedback", isLatest: true },
+  { gid: 8, name: "V1 — Draft", uploadedBy: "Aom", uploadedAt: "Jun 22", feedbackCount: 2, approvalStatus: "Revision requested", isLatest: true },
+  { gid: 9, name: "V1", uploadedBy: "Boss", uploadedAt: "Jun 18", feedbackCount: 2, approvalStatus: "Rejected", isLatest: false },
+  { gid: 9, name: "V2", uploadedBy: "Boss", uploadedAt: "Jun 20", feedbackCount: 1, approvalStatus: "Rejected", isLatest: false },
+  { gid: 9, name: "V3", uploadedBy: "Boss", uploadedAt: "Jun 22", feedbackCount: 3, approvalStatus: "Revision requested", isLatest: true },
+  { gid: 10, name: "Final — Approved", uploadedBy: "Aom", uploadedAt: "Jun 23", feedbackCount: 0, approvalStatus: "Approved", isLatest: true },
+  { gid: 11, name: "Final", uploadedBy: "Boss", uploadedAt: "Jun 21", feedbackCount: 1, approvalStatus: "Approved", isLatest: true },
+  { gid: 12, name: "Final — Delivered", uploadedBy: "Boss", uploadedAt: "Jun 5", feedbackCount: 0, approvalStatus: "Approved", isLatest: true },
+];
+
+export const DESIGNERS = ["Boss", "Aom", "New", "Unassigned"];
+
+export function graphicKpis(list: Graphic[]) {
+  return {
+    total: list.length,
+    inProgress: list.filter((g) => g.stage === "In Progress").length,
+    waiting: list.filter((g) => g.stage === "Waiting Feedback").length,
+    revisions: list.filter((g) => g.stage === "Revision Requested").length,
+    approved: list.filter((g) => ["Approved", "Delivered"].includes(g.stage)).length,
+    feedback: list.reduce((s, g) => s + g.openFb, 0),
+  };
+}
+
+export function graphicNeedsAttention(list: Graphic[]): Graphic[] {
+  return list.filter((g) => g.isOverdue || !g.briefComplete || g.openFb > 0);
+}
+
+/** Brief completeness (0–100) for the Brief tab. */
+export function briefFields(g: Graphic): { label: string; ok: boolean }[] {
+  return [
+    { label: "Objective", ok: g.briefComplete },
+    { label: "Key message", ok: g.briefComplete },
+    { label: "Platform / usage", ok: !!g.platform },
+    { label: "Size / format", ok: !!g.size },
+    { label: "CI / mood direction", ok: g.briefComplete },
+    { label: "Reference link", ok: g.briefComplete },
+    { label: "Linked content item", ok: g.contentItem !== "—" },
+    { label: "Caption / copy", ok: g.briefComplete },
+  ];
+}
