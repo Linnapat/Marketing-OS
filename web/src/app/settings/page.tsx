@@ -41,6 +41,14 @@ const levelIndex = (label: string) => Math.max(0, PERM_LEVELS.findIndex((p) => p
 const CURRENT_ROLE = "CMO / Admin";
 const canEdit = CURRENT_ROLE === "CMO / Admin";
 
+// Avatar colors assigned to newly invited members.
+const AVATAR_COLORS = ["#7A5C9E", "#2E7D74", "#B33A2E", "#C68A1E", "#3E5C9A", "#4E7A4E", "#B5577E"];
+const ACCESS_STYLE: Record<string, { fg: string; bg: string }> = {
+  Admin: { fg: "#B8945A", bg: "#FBF6ED" },
+  Editor: { fg: "#3E5C9A", bg: "#EEF1F8" },
+  Viewer: { fg: "#9A9387", bg: "#F2F0EB" },
+};
+
 export default function SettingsPage() {
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
@@ -57,6 +65,22 @@ export default function SettingsPage() {
   // Editable organization fields
   const [orgEdit, setOrgEdit] = useState(false);
   const [org, setOrg] = useState(() => ORG_FIELDS.map((f) => ({ ...f })));
+  // Team members (invitable)
+  const [users, setUsers] = useState(() => USERS_DATA.map((u) => ({ ...u })));
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const emptyInvite = { name: "", email: "", role: "", access: "Editor", brandAccess: "All brands" };
+  const [inv, setInv] = useState(emptyInvite);
+  const inviteValid = inv.name.trim() !== "" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email.trim());
+  const submitInvite = () => {
+    if (!canEdit || !inviteValid) return;
+    setUsers((us) => [...us, {
+      name: inv.name.trim(), email: inv.email.trim(), role: inv.role.trim() || "Member",
+      access: inv.access, brandAccess: inv.brandAccess, status: "Invited",
+      color: AVATAR_COLORS[us.length % AVATAR_COLORS.length],
+    }]);
+    setInviteOpen(false);
+    setInv(emptyInvite);
+  };
   const meta = SECTION_META[section];
 
   return (
@@ -161,16 +185,24 @@ export default function SettingsPage() {
 
         {section === "users" && (
           <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-line4"><div className="text-[13px] font-bold">{USERS_DATA.length} members</div><button className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[7px]">+ Invite</button></div>
-            {USERS_DATA.map((u) => (
-              <div key={u.email} className="grid grid-cols-1 md:grid-cols-[2fr_1.3fr_1fr_1.2fr_0.8fr] gap-y-1 items-center px-5 py-3 border-b border-line4 last:border-0">
-                <div className="flex items-center gap-3"><span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold" style={{ background: u.color }}>{initials(u.name)}</span><div><div className="text-[13.5px] font-bold">{u.name}</div><div className="text-[11px] text-faint">{u.email}</div></div></div>
-                <div className="text-[12.5px] text-muted">{u.role}</div>
-                <div><Pill text={u.access} fg={u.access === "Admin" ? "#B8945A" : u.access === "Editor" ? "#3E5C9A" : "#9A9387"} bg={u.access === "Admin" ? "#FBF6ED" : u.access === "Editor" ? "#EEF1F8" : "#F2F0EB"} /></div>
-                <div className="text-[12px] text-muted">{u.brandAccess}</div>
-                <div><Pill text={u.status} fg="#4E7A4E" bg="#EEF4EE" /></div>
-              </div>
-            ))}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-line4">
+              <div className="text-[13px] font-bold">{users.length} members</div>
+              <button onClick={() => canEdit && setInviteOpen(true)} disabled={!canEdit}
+                className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[7px] disabled:opacity-40 disabled:cursor-default">+ Invite</button>
+            </div>
+            {users.map((u) => {
+              const acc = ACCESS_STYLE[u.access] ?? ACCESS_STYLE.Viewer;
+              const invited = u.status === "Invited";
+              return (
+                <div key={u.email} className="grid grid-cols-1 md:grid-cols-[2fr_1.3fr_1fr_1.2fr_0.8fr] gap-y-1 items-center px-5 py-3 border-b border-line4 last:border-0">
+                  <div className="flex items-center gap-3"><span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold" style={{ background: u.color }}>{initials(u.name)}</span><div><div className="text-[13.5px] font-bold">{u.name}</div><div className="text-[11px] text-faint">{u.email}</div></div></div>
+                  <div className="text-[12.5px] text-muted">{u.role}</div>
+                  <div><Pill text={u.access} fg={acc.fg} bg={acc.bg} /></div>
+                  <div className="text-[12px] text-muted">{u.brandAccess}</div>
+                  <div><Pill text={u.status} fg={invited ? "#C68A1E" : "#4E7A4E"} bg={invited ? "#FBF8EE" : "#EEF4EE"} /></div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -345,6 +377,53 @@ export default function SettingsPage() {
           </div>
         )}
       </main>
+
+      {/* Invite member modal */}
+      {inviteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setInviteOpen(false)} />
+          <div className="relative bg-surface rounded-cardLg border border-line shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-start justify-between mb-1">
+              <div className="text-[16px] font-extrabold">Invite member</div>
+              <button onClick={() => setInviteOpen(false)} className="text-[18px] text-faint leading-none -mt-1">✕</button>
+            </div>
+            <div className="text-[12px] text-faint mb-5">They’ll receive an email invite to join the TEPPEN Marketing OS.</div>
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Full name <span className="text-status-red">*</span></label>
+                <input value={inv.name} onChange={(e) => setInv({ ...inv, name: e.target.value })} placeholder="e.g. Somchai P." className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Email <span className="text-status-red">*</span></label>
+                <input value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} placeholder="name@teppenthailand.co.th" className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Role / title</label>
+                <input value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value })} placeholder="e.g. Content Planner" className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Access level</label>
+                  <select value={inv.access} onChange={(e) => setInv({ ...inv, access: e.target.value })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                    <option>Admin</option><option>Editor</option><option>Viewer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand access</label>
+                  <select value={inv.brandAccess} onChange={(e) => setInv({ ...inv, brandAccess: e.target.value })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                    <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={submitInvite} disabled={!inviteValid}
+                className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40 disabled:cursor-default">Send invite</button>
+              <button onClick={() => setInviteOpen(false)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
