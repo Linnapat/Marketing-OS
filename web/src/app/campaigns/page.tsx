@@ -104,23 +104,17 @@ export default function CampaignsPage() {
       </div>
       <div className="mt-4 flex flex-col gap-3">
         <BrandFilter value={brand} onChange={setBrand} />
-        <div className="flex items-center gap-[7px] flex-wrap">
+        <div className="flex items-center gap-[9px]">
           <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Status</span>
-          {statusChips.map((s) => {
-            const active = s === status;
-            return (
-              <button
-                key={s}
-                onClick={() => setStatus(s)}
-                className="text-[12px] px-[13px] py-[5px] rounded-pill whitespace-nowrap transition"
-                style={active
-                  ? { fontWeight: 700, background: "#211F1C", color: "#fff" }
-                  : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}
-              >
-                {s === "all" ? "All Statuses" : s}
-              </button>
-            );
-          })}
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none"
+          >
+            {statusChips.map((s) => (
+              <option key={s} value={s}>{s === "all" ? "All Statuses" : s}</option>
+            ))}
+          </select>
         </div>
       </div>
 
