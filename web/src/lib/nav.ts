@@ -29,7 +29,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Plan & Produce",
     items: [
-      { href: "/content", label: "Content Calendar", icon: CalendarDays },
+      { href: "/content", label: "Content Calendar", icon: CalendarDays, ready: true },
       { href: "/graphic", label: "Graphic Request", icon: Palette },
       { href: "/kol", label: "KOL / Creator", icon: Star, ready: true },
       { href: "/requests", label: "Request Center", icon: Inbox },
