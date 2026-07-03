@@ -17,7 +17,7 @@ import {
   BUDGET_SECTIONS, SECTION_ICON, EXPENSES, REQUESTS, PNL, EXP_CATEGORIES,
   BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, ExpenseRow, RequestRow,
 } from "@/lib/data/finance";
-import { fetchExpenseRequests, createExpenseRequest } from "@/lib/db/finance";
+import { fetchExpenseRequests, createExpenseRequest, approveExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 
 const TABS = [
   ["plan", "Budget Plan"],
@@ -553,7 +553,7 @@ function RoiTab({ canOps }: { canOps: boolean }) {
 function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const [signing, setSigning] = useState<number | null>(null);
-  const [allReqs, setAllReqs] = useState<RequestRow[]>(REQUESTS);
+  const [allReqs, setAllReqs] = useState<ExpenseReq[]>(REQUESTS);
 
   useEffect(() => {
     let alive = true;
@@ -591,7 +591,7 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
             {signing === i && !isApproved && (
               <div className="mt-4 pt-4 border-t border-line4">
                 <div className="text-[12px] font-semibold text-muted mb-2">Sign to approve this request</div>
-                <SignaturePad onSave={() => { setApproved((a) => ({ ...a, [i]: true })); setSigning(null); }} />
+                <SignaturePad onSave={() => { setApproved((a) => ({ ...a, [i]: true })); setSigning(null); approveExpenseRequest(r._id, r.requested); }} />
               </div>
             )}
           </div>

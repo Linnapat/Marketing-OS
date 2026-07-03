@@ -1,18 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, brandName } from "@/lib/brands";
-import { REQUESTS, APPROVAL_STAGES, STAGE_TONE, PRIORITY_TONE } from "@/lib/data/requests";
+import { REQUESTS, RequestRow, APPROVAL_STAGES, STAGE_TONE, PRIORITY_TONE } from "@/lib/data/requests";
+import { fetchRequests } from "@/lib/db/requests";
 
 export default function ApprovalQueuePage() {
   const [view, setView] = useState<"board" | "list">("board");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
-  const rows = REQUESTS.filter((r) => brand === "all" || r.b === brand);
+  const [requests, setRequests] = useState<RequestRow[]>(REQUESTS);
+
+  useEffect(() => {
+    let alive = true;
+    fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const rows = requests.filter((r) => brand === "all" || r.b === brand);
 
   return (
     <>

@@ -10,18 +10,28 @@ type Row = {
   requested: number; approved: number; due: string; status: string;
 };
 
-const toReq = (r: Row): RequestRow => ({
-  category: r.category, b: r.brand, campaign: r.campaign ?? "—",
+/** A request row that also carries its DB id (for status updates). */
+export type ExpenseReq = RequestRow & { _id?: number };
+
+const toReq = (r: Row): ExpenseReq => ({
+  _id: r.id, category: r.category, b: r.brand, campaign: r.campaign ?? "—",
   requested: Number(r.requested), approved: Number(r.approved), due: r.due, status: r.status,
 });
 
 /** Expense requests — newest first from Supabase, else the mock. */
-export async function fetchExpenseRequests(): Promise<RequestRow[]> {
+export async function fetchExpenseRequests(): Promise<ExpenseReq[]> {
   const db = supabase();
   if (!db) return REQUESTS.map((r) => ({ ...r }));
   const { data, error } = await db.from("expense_requests").select("*").order("id", { ascending: false });
   if (error || !data || data.length === 0) return REQUESTS.map((r) => ({ ...r }));
   return (data as Row[]).map(toReq);
+}
+
+/** Mark a request approved (persists status + approved amount). */
+export async function approveExpenseRequest(id: number | undefined, approved: number): Promise<void> {
+  const db = supabase();
+  if (!db || id === undefined) return;
+  await db.from("expense_requests").update({ status: "Approved", approved }).eq("id", id);
 }
 
 /** Insert a new expense request; returns the created row (with its DB id). */
