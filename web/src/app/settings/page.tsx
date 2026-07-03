@@ -26,11 +26,37 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   );
 }
 
+// Permission levels admins can cycle a cell through (visibility → full edit).
+const PERM_LEVELS: { l: string; c: string; b: string }[] = [
+  { l: "—", c: "#C0B8AD", b: "#F2F0EB" },
+  { l: "View", c: "#9A9387", b: "#F2F0EB" },
+  { l: "Comment", c: "#6b6258", b: "#F0EDE6" },
+  { l: "Edit", c: "#3E5C9A", b: "#EEF1F8" },
+  { l: "Approve", c: "#4E7A4E", b: "#EEF4EE" },
+  { l: "Admin", c: "#B8945A", b: "#FBF6ED" },
+];
+const levelIndex = (label: string) => Math.max(0, PERM_LEVELS.findIndex((p) => p.l === label));
+
+// The current viewer's role. CMO / Admin can edit everything in Settings.
+const CURRENT_ROLE = "CMO / Admin";
+const canEdit = CURRENT_ROLE === "CMO / Admin";
+
 export default function SettingsPage() {
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
   const [channels, setChannels] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_CHANNELS.map((c) => [c.key, c.def])));
   const [triggers, setTriggers] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_TRIGGERS.map((t) => [t.key, t.def])));
+  // Editable permission matrix (role × module) as level indices.
+  const [perm, setPerm] = useState<number[][]>(() => PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l))));
+  const [permDirty, setPermDirty] = useState(false);
+  const cyclePerm = (ri: number, mi: number) => {
+    if (!canEdit) return;
+    setPerm((m) => m.map((row, r) => (r === ri ? row.map((v, c) => (c === mi ? (v + 1) % PERM_LEVELS.length : v)) : row)));
+    setPermDirty(true);
+  };
+  // Editable organization fields
+  const [orgEdit, setOrgEdit] = useState(false);
+  const [org, setOrg] = useState(() => ORG_FIELDS.map((f) => ({ ...f })));
   const meta = SECTION_META[section];
 
   return (
@@ -58,9 +84,19 @@ export default function SettingsPage() {
 
       {/* Content */}
       <main className="flex-1 min-w-0">
-        <div className="mb-5">
+        <div className="mb-4">
           <div className="text-[20px] font-extrabold tracking-[-0.01em]">{meta.title}</div>
           <div className="text-[13px] text-faint mt-1">{meta.desc}</div>
+        </div>
+
+        {/* Admin access banner */}
+        <div className="mb-5 flex items-center gap-3 rounded-card px-4 py-[10px]" style={{ background: canEdit ? "#FBF6ED" : "#F2F0EB", border: `1px solid ${canEdit ? "#E8D5AA" : "#E5DECF"}` }}>
+          <span className="text-[15px]">{canEdit ? "🔓" : "🔒"}</span>
+          <div className="text-[12.5px]" style={{ color: canEdit ? "#8A6A2E" : "#6b6258" }}>
+            {canEdit
+              ? <>Signed in as <b>CMO / Admin</b> — you can edit everything here, including view and edit permissions.</>
+              : <>Read-only. Only <b>CMO / Admin</b> can change settings.</>}
+          </div>
         </div>
 
         {/* Mobile section picker */}
@@ -71,10 +107,23 @@ export default function SettingsPage() {
         </div>
 
         {section === "org" && (
-          <div className="bg-surface border border-line rounded-cardLg p-6 grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl">
-            {ORG_FIELDS.map((f) => (
-              <div key={f.label}><div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{f.label}</div><div className="text-[14px] font-semibold text-ink">{f.value}</div></div>
-            ))}
+          <div className="bg-surface border border-line rounded-cardLg p-6 max-w-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <div className="text-[13px] font-bold">Company details</div>
+              {canEdit && (orgEdit
+                ? <button onClick={() => setOrgEdit(false)} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[7px]">Save</button>
+                : <button onClick={() => setOrgEdit(true)} className="text-[12px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[7px]">Edit</button>)}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {org.map((f, i) => (
+                <div key={f.label}>
+                  <div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{f.label}</div>
+                  {orgEdit
+                    ? <input value={f.value} onChange={(e) => setOrg((o) => o.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} className="w-full text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+                    : <div className="text-[14px] font-semibold text-ink">{f.value}</div>}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -126,20 +175,45 @@ export default function SettingsPage() {
         )}
 
         {section === "perms" && (
-          <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
-            <table className="w-full text-left" style={{ borderCollapse: "collapse", minWidth: 720 }}>
-              <thead>
-                <tr className="border-b border-line4"><th className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold px-4 py-3">Role</th>{PERM_MODULES.map((m) => <th key={m} className="text-[10px] uppercase tracking-[0.04em] text-faint font-bold px-2 py-3 text-center">{m}</th>)}</tr>
-              </thead>
-              <tbody>
-                {PERM_ROLES.map((r) => (
-                  <tr key={r.role} className="border-b border-line4 last:border-0">
-                    <td className="px-4 py-3"><div className="text-[13px] font-bold">{r.role}</div><div className="text-[11px] text-faint">{r.desc}</div></td>
-                    {r.perms.map((p, i) => <td key={i} className="px-2 py-3 text-center"><span className="text-[10.5px] font-bold px-2 py-[2px] rounded-[6px] whitespace-nowrap" style={{ background: p.b, color: p.c }}>{p.l}</span></td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                {canEdit && <span className="text-faint font-semibold">Click a cell to change · </span>}
+                {PERM_LEVELS.map((p) => <span key={p.l} className="font-bold px-2 py-[2px] rounded-[6px]" style={{ background: p.b, color: p.c }}>{p.l}</span>)}
+              </div>
+              {canEdit && permDirty && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setPerm(PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l)))); setPermDirty(false); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[6px]">Reset</button>
+                  <button onClick={() => setPermDirty(false)} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[6px]">Save changes</button>
+                </div>
+              )}
+            </div>
+            <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
+              <table className="w-full text-left" style={{ borderCollapse: "collapse", minWidth: 720 }}>
+                <thead>
+                  <tr className="border-b border-line4"><th className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold px-4 py-3">Role</th>{PERM_MODULES.map((m) => <th key={m} className="text-[10px] uppercase tracking-[0.04em] text-faint font-bold px-2 py-3 text-center">{m}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {PERM_ROLES.map((r, ri) => (
+                    <tr key={r.role} className="border-b border-line4 last:border-0">
+                      <td className="px-4 py-3"><div className="text-[13px] font-bold">{r.role}</div><div className="text-[11px] text-faint">{r.desc}</div></td>
+                      {r.perms.map((_, mi) => {
+                        const lvl = PERM_LEVELS[perm[ri][mi]];
+                        return (
+                          <td key={mi} className="px-2 py-3 text-center">
+                            <button onClick={() => cyclePerm(ri, mi)} disabled={!canEdit}
+                              className="text-[10.5px] font-bold px-2 py-[3px] rounded-[6px] whitespace-nowrap transition disabled:cursor-default"
+                              style={{ background: lvl.b, color: lvl.c, cursor: canEdit ? "pointer" : "default", boxShadow: canEdit ? "0 0 0 1px rgba(0,0,0,0.03)" : undefined }}>
+                              {lvl.l}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
