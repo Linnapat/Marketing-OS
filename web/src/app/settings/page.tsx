@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
+import { fetchMembers, createMember } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, BUDGET_THRESHOLDS, APPROVAL_RULES,
@@ -65,8 +66,13 @@ export default function SettingsPage() {
   // Editable organization fields
   const [orgEdit, setOrgEdit] = useState(false);
   const [org, setOrg] = useState(() => ORG_FIELDS.map((f) => ({ ...f })));
-  // Team members (invitable)
+  // Team members (invitable) — loaded from Supabase when configured.
   const [users, setUsers] = useState(() => USERS_DATA.map((u) => ({ ...u })));
+  useEffect(() => {
+    let alive = true;
+    fetchMembers().then((m) => { if (alive) setUsers(m); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [inviteOpen, setInviteOpen] = useState(false);
   const emptyInvite = { name: "", email: "", role: "Campaign Planner", access: "Editor", brandAccess: "All brands" };
   const [inv, setInv] = useState(emptyInvite);
@@ -78,11 +84,13 @@ export default function SettingsPage() {
   const inviteValid = inv.name.trim() !== "" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email.trim());
   const submitInvite = () => {
     if (!canEdit || !inviteValid) return;
-    setUsers((us) => [...us, {
+    const member = {
       name: inv.name.trim(), email: inv.email.trim(), role: inv.role.trim() || "Member",
       access: inv.access, brandAccess: inv.brandAccess, status: "Invited",
-      color: AVATAR_COLORS[us.length % AVATAR_COLORS.length],
-    }]);
+      color: AVATAR_COLORS[users.length % AVATAR_COLORS.length],
+    };
+    setUsers((us) => [...us, member]);
+    createMember(member);
     setInviteOpen(false);
     setInv(emptyInvite);
   };

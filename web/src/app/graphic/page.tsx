@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -8,11 +8,12 @@ import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
-import { BrandFilterValue, brandName } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   DESIGNERS, graphicKpis, graphicNeedsAttention,
 } from "@/lib/data/graphic";
+import { fetchGraphics, createGraphic, buildGraphic } from "@/lib/db/graphic";
 
 export default function GraphicPage() {
   const [view, setView] = useState<"board" | "list">("board");
@@ -20,8 +21,21 @@ export default function GraphicPage() {
   const [designer, setDesigner] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
   const [reqOpen, setReqOpen] = useState(false);
+  const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
 
-  const items = GRAPHICS.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer));
+  useEffect(() => {
+    let alive = true;
+    fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const addGraphic = async (g: Graphic) => {
+    setReqOpen(false);
+    setGraphics((gs) => [g, ...gs]);
+    await createGraphic(g);
+  };
+
+  const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer));
   const kpi = graphicKpis(items);
   const attention = graphicNeedsAttention(items);
 
@@ -96,7 +110,7 @@ export default function GraphicPage() {
       </div>
 
       {drawer && <GraphicDrawer g={drawer.g} initialTab={drawer.tab} onClose={() => setDrawer(null)} />}
-      {reqOpen && <RequestModal onClose={() => setReqOpen(false)} />}
+      {reqOpen && <RequestModal nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1} onClose={() => setReqOpen(false)} onCreate={addGraphic} />}
     </>
   );
 }
@@ -164,10 +178,27 @@ function ListView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =>
   );
 }
 
-function RequestModal({ onClose }: { onClose: () => void }) {
+const GFX_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
+
+function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (g: Graphic) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const CHANNELS = ["IG Feed", "IG Story", "IG Reel", "Facebook", "TikTok", "YouTube", "LINE OA", "Google", "Print", "In-Store", "Other"];
   const [chans, setChans] = useState<string[]>([]);
+  const [gBrand, setGBrand] = useState("TEPPEN");
+  const [gCampaign, setGCampaign] = useState("Wagyu Festival");
+  const [gTitle, setGTitle] = useState("");
+  const [gType, setGType] = useState("Key Visual");
+  const [gDue, setGDue] = useState("");
+  const [gDesigner, setGDesigner] = useState("Unassigned");
+  const [gRequester, setGRequester] = useState("");
+  const [gApprover, setGApprover] = useState("");
+
+  const submit = () => {
+    onCreate(buildGraphic({
+      id: nextId, b: GFX_BRAND_TO_ID[gBrand] ?? "teppen", campaign: gCampaign, title: gTitle.trim(),
+      type: gType, due: gDue, designer: gDesigner, requester: gRequester.trim(), approver: gApprover.trim(), channels: chans,
+    }));
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -176,13 +207,13 @@ function RequestModal({ onClose }: { onClose: () => void }) {
         <div className="text-[16px] font-extrabold mb-4">New Graphic Request</div>
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><select className={field}><option>Wagyu Festival</option><option>Cocktail Hour Launch</option><option>Rainy Season Promo</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={gBrand} onChange={(e) => setGBrand(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><select value={gCampaign} onChange={(e) => setGCampaign(e.target.value)} className={field}><option>Wagyu Festival</option><option>Cocktail Hour Launch</option><option>Rainy Season Promo</option></select></div>
           </div>
-          <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Request Title</label><input className={field} placeholder="e.g. Wagyu key visual" /></div>
+          <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Request Title</label><input value={gTitle} onChange={(e) => setGTitle(e.target.value)} className={field} placeholder="e.g. Wagyu key visual" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Asset Type</label><select className={field}><option>Key Visual</option><option>Poster</option><option>Carousel</option><option>Reel Cover</option><option>Story</option><option>LINE Rich Message</option></select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deadline</label><input type="date" className={field} /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Asset Type</label><select value={gType} onChange={(e) => setGType(e.target.value)} className={field}><option>Key Visual</option><option>Poster</option><option>Carousel</option><option>Reel Cover</option><option>Story</option><option>LINE Rich Message</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deadline</label><input value={gDue} onChange={(e) => setGDue(e.target.value)} type="date" className={field} /></div>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Channels &amp; sizes (choose multiple)</label>
@@ -205,13 +236,13 @@ function RequestModal({ onClose }: { onClose: () => void }) {
             ))}
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label><input className={field} placeholder="Name" /></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><select className={field}><option>Unassigned</option><option>Boss</option><option>Aom</option><option>New</option></select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><input className={field} placeholder="Name" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label><input value={gRequester} onChange={(e) => setGRequester(e.target.value)} className={field} placeholder="Name" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><select value={gDesigner} onChange={(e) => setGDesigner(e.target.value)} className={field}><option>Unassigned</option><option>Boss</option><option>Aom</option><option>New</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><input value={gApprover} onChange={(e) => setGApprover(e.target.value)} className={field} placeholder="Name" /></div>
           </div>
           <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Key message / notes</label><textarea rows={3} className={field} placeholder="Brief, mood direction, references…" /></div>
         </div>
-        <button onClick={onClose} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px]">Create Request</button>
+        <button onClick={submit} disabled={!gTitle.trim()} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Request</button>
       </div>
     </div>
   );

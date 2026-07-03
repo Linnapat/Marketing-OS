@@ -1,21 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
-import { BrandFilterValue, brandName } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
-import { REQUEST_TYPES, REQUESTS, STAGE_TONE, PRIORITY_TONE } from "@/lib/data/requests";
+import { REQUEST_TYPES, REQUESTS, RequestRow, STAGE_TONE, PRIORITY_TONE } from "@/lib/data/requests";
+import { fetchRequests, createRequest } from "@/lib/db/requests";
+
+const REQ_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
 
 export default function RequestCenterPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [type, setType] = useState("graphic");
   const [title, setTitle] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
+  const [requests, setRequests] = useState<RequestRow[]>(REQUESTS);
+  const [fBrand, setFBrand] = useState("TEPPEN");
+  const [fCampaign, setFCampaign] = useState(CAMPAIGNS[0]?.name ?? "");
+  const [fPriority, setFPriority] = useState("High");
+  const [fDue, setFDue] = useState("");
+  const [fApprover, setFApprover] = useState("");
 
-  const rows = REQUESTS.filter((r) => brand === "all" || r.b === brand);
+  useEffect(() => {
+    let alive = true;
+    fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [submitted]);
+
+  const submit = async () => {
+    const rt = REQUEST_TYPES.find((t) => t.key === type);
+    const id = `REQ-${1000 + Math.floor(Math.random() * 9000)}`;
+    const row: RequestRow = {
+      id, type: rt?.label ?? "Request", typeIcon: rt?.icon ?? "📌", title: title.trim(),
+      b: REQ_BRAND_TO_ID[fBrand] ?? "teppen", campaign: fCampaign, requester: "You",
+      approver: fApprover.trim() || "Aran P.", due: fDue.trim() || "TBD", stage: "Submitted", priority: fPriority as RequestRow["priority"],
+    };
+    await createRequest(row);
+    setSubmitted(id);
+  };
+
+  const rows = requests.filter((r) => brand === "all" || r.b === brand);
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 
   return (
@@ -52,17 +79,17 @@ export default function RequestCenterPage() {
               <div className="flex flex-col gap-4">
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Title <span className="text-status-red">*</span></label><input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Wagyu key visual for launch" /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select></div>
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><select className={field}>{CAMPAIGNS.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={fBrand} onChange={(e) => setFBrand(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><select value={fCampaign} onChange={(e) => setFCampaign(e.target.value)} className={field}>{CAMPAIGNS.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label><select className={field}><option>High</option><option>Med</option><option>Low</option></select></div>
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><input className={field} placeholder="Jul 5" /></div>
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><input className={field} placeholder="Aran P." /></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label><select value={fPriority} onChange={(e) => setFPriority(e.target.value)} className={field}><option>High</option><option>Med</option><option>Low</option></select></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><input value={fDue} onChange={(e) => setFDue(e.target.value)} className={field} placeholder="Jul 5" /></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><input value={fApprover} onChange={(e) => setFApprover(e.target.value)} className={field} placeholder="Aran P." /></div>
                 </div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Notes / brief</label><textarea rows={3} className={field} placeholder="What's needed, references, deliverables…" /></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attachment</label><div className="border-2 border-dashed border-line2 rounded-[10px] py-5 text-center text-[12px] text-faint">Drop reference file</div></div>
-                <button onClick={() => setSubmitted(`REQ-${String(1000 + REQUESTS.length + 1)}`)} disabled={!title.trim()} className="text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Submit Request</button>
+                <button onClick={submit} disabled={!title.trim()} className="text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Submit Request</button>
               </div>
             </>
           )}
