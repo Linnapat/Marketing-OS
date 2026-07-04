@@ -14,9 +14,10 @@ import { campaignTone } from "@/lib/status";
 import {
   CAMPAIGNS, STATUS_ORDER, READINESS_META, monthlySummary, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
-import { fetchCampaigns, createCampaign } from "@/lib/db/campaigns";
+import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
+import { useRole } from "@/lib/role";
 
-const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LINE", "Event / Store Activation"];
+const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LINE", "Event / Store Activation", "Seasonal Promotion", "Urgent promotion"];
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 
 export default function CampaignsPage() {
@@ -27,20 +28,21 @@ export default function CampaignsPage() {
   const [newOpen, setNewOpen] = useState(false);
   const emptyNew = { name: "", b: "teppen" as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
   const [nc, setNc] = useState(emptyNew);
-  // Custom campaign types the user adds — remembered on this device.
+  // Team-shared custom campaign types (from the database). Only admins can add.
+  const { role } = useRole();
+  const isAdmin = role === "CMO / Admin";
   const [customTypes, setCustomTypes] = useState<string[]>([]);
   const [addingType, setAddingType] = useState(false);
   const [newType, setNewType] = useState("");
-  useEffect(() => { try { const s = localStorage.getItem("mos_campaign_types"); if (s) setCustomTypes(JSON.parse(s)); } catch { /* ignore */ } }, []);
-  const typeOptions = [...CAMP_TYPES, ...customTypes];
+  useEffect(() => { fetchCampaignTypes().then(setCustomTypes).catch(() => {}); }, []);
+  const typeOptions = Array.from(new Set([...CAMP_TYPES, ...customTypes]));
   const addType = () => {
     const t = newType.trim();
     setAddingType(false); setNewType("");
-    if (!t) return;
+    if (!t || !isAdmin) return;
     if (!typeOptions.includes(t)) {
-      const next = [...customTypes, t];
-      setCustomTypes(next);
-      try { localStorage.setItem("mos_campaign_types", JSON.stringify(next)); } catch { /* ignore */ }
+      setCustomTypes((cs) => [...cs, t]);
+      addCampaignType(t);
     }
     setNc((n) => ({ ...n, campType: t }));
   };
@@ -254,15 +256,15 @@ export default function CampaignsPage() {
                 <div>
                   <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label>
                   <select value={nc.campType} onChange={(e) => setNc({ ...nc, campType: e.target.value })} className={field}>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
-                  {addingType ? (
+                  {isAdmin && (addingType ? (
                     <div className="flex gap-2 mt-2">
                       <input autoFocus value={newType} onChange={(e) => setNewType(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addType(); }} placeholder="New type name" className="flex-1 text-[13px] px-[10px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
                       <button onClick={addType} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3">Add</button>
                       <button onClick={() => { setAddingType(false); setNewType(""); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 bg-white">✕</button>
                     </div>
                   ) : (
-                    <button onClick={() => setAddingType(true)} className="text-[11.5px] font-semibold text-accent mt-[6px]">+ Add a custom type</button>
-                  )}
+                    <button onClick={() => setAddingType(true)} className="text-[11.5px] font-semibold text-accent mt-[6px]">+ Add a custom type <span className="text-faint font-normal">(admin)</span></button>
+                  ))}
                 </div>
               </div>
             </div>

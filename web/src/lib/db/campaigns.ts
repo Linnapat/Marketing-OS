@@ -31,6 +31,23 @@ export async function fetchCampaigns(): Promise<CampaignRow[]> {
   return (data as Row[]).map(toCampaign);
 }
 
+/** Team-shared custom campaign types (added by admins). Empty if not configured
+ *  or the table doesn't exist yet. */
+export async function fetchCampaignTypes(): Promise<string[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db.from("campaign_types").select("name").order("name");
+  if (error || !data) return [];
+  return data.map((r) => r.name as string);
+}
+
+/** Add a shared campaign type (admin only — the UI gates this). */
+export async function addCampaignType(name: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("campaign_types").upsert({ name });
+}
+
 /** Insert a new campaign; returns it. */
 export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   const db = supabase();
