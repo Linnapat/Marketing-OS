@@ -5,6 +5,8 @@ import Link from "next/link";
 import { CampaignDetail, deriveDetail } from "@/lib/data/campaigns";
 import { fetchCampaign } from "@/lib/db/campaigns";
 import { fetchCampaignHub, CampaignHub } from "@/lib/db/campaignHub";
+import { fetchCampaignBrief } from "@/lib/db/brief";
+import { CampaignBrief } from "@/lib/data/brief";
 import { CampaignDetailView } from "./CampaignDetailView";
 
 /** Renders the statically-derived detail (when the id is seeded) immediately,
@@ -13,6 +15,7 @@ export function CampaignDetailClient({ id, initialDetail }: { id: string; initia
   const [detail, setDetail] = useState<CampaignDetail | null>(initialDetail);
   const [loading, setLoading] = useState(!initialDetail);
   const [hub, setHub] = useState<CampaignHub | null>(null);
+  const [brief, setBrief] = useState<CampaignBrief | null>(null);
 
   const name = detail?.row.name;
   const reload = useCallback(() => {
@@ -26,6 +29,7 @@ export function CampaignDetailClient({ id, initialDetail }: { id: string; initia
       if (c) setDetail(deriveDetail(c));
       setLoading(false);
     }).catch(() => setLoading(false));
+    fetchCampaignBrief(id).then((b) => { if (alive) setBrief(b); }).catch(() => {});
     return () => { alive = false; };
   }, [id]);
 
@@ -41,5 +45,5 @@ export function CampaignDetailClient({ id, initialDetail }: { id: string; initia
       </div>
     );
   }
-  return <CampaignDetailView detail={detail} hub={hub} onReload={reload} />;
+  return <CampaignDetailView detail={detail} hub={hub} onReload={reload} brief={brief} onBriefChange={setBrief} />;
 }

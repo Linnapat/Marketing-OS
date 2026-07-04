@@ -10,8 +10,12 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { baht } from "@/lib/format";
 import { CampaignHub, HubStats, hubStats, createPlannerTasks } from "@/lib/db/campaignHub";
+import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
+import { logBriefApproval } from "@/lib/db/brief";
+import { useAuth } from "@/lib/auth";
+import { fmtDisplay } from "@/components/ui/DatePicker";
 
-export function CampaignDetailView({ detail, hub, onReload }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void }) {
+export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
   const [tab, setTab] = useState<CampaignTab>("overview");
   const c = detail.row;
   const s = hub ? hubStats(hub) : null;
@@ -95,14 +99,14 @@ export function CampaignDetailView({ detail, hub, onReload }: { detail: Campaign
 
       <div className="mt-5">
         {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} />}
-        {tab === "brief" && <BriefTab detail={detail} />}
+        {tab === "brief" && <BriefTab detail={detail} brief={brief} />}
         {tab === "planner" && <PlannerTab detail={detail} hub={hub} onReload={onReload} />}
         {tab === "content" && <ContentList hub={hub} />}
         {tab === "kol" && <KolList hub={hub} />}
         {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
         {tab === "budget" && <BudgetTab detail={detail} s={s} />}
         {tab === "assets" && <AssetsList hub={hub} />}
-        {tab === "approval" && <ApprovalTab detail={detail} />}
+        {tab === "approval" && <ApprovalTab detail={detail} brief={brief} onBriefChange={onBriefChange} />}
         {tab === "result" && <ResultTab detail={detail} />}
       </div>
     </>
@@ -226,7 +230,57 @@ function OverviewTab({ detail, hub, s }: { detail: CampaignDetail; hub: Campaign
   );
 }
 
-function BriefTab({ detail }: { detail: CampaignDetail }) {
+function BriefFromBuilder({ brief }: { brief: CampaignBrief }) {
+  const bs = budgetSummary(brief);
+  const field = (label: string, value: React.ReactNode) => (
+    <div><div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{label}</div><div className="text-[13.5px] text-ink">{value || "—"}</div></div>
+  );
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="flex flex-col gap-4">
+        <Panel title="Campaign Brief">
+          <div className="flex flex-col gap-4">
+            {field("Objective", brief.objective)}
+            {field("Period", `${fmtDisplay(brief.startDate)} – ${fmtDisplay(brief.endDate)}`)}
+            {field("Target Audience", brief.audience)}
+            {field("Main Message", brief.mainMessage)}
+            {field("Offer / Promotion", brief.offer)}
+            {field("Channels", brief.channels.join(", "))}
+            {field("Concept", brief.concept)}
+            {field("Key Visual Direction", brief.kvDirection)}
+            {field("Success Metrics", brief.successMetrics.join(", "))}
+            <div className="grid grid-cols-2 gap-4">{field("Planner", brief.plannerOwner)}{field("Approver", brief.approver)}</div>
+          </div>
+        </Panel>
+      </div>
+      <div className="flex flex-col gap-4">
+        <Panel title="Plan Summary">
+          <div className="grid grid-cols-2 gap-3">
+            {[["Content items", String(brief.content.length)], ["Graphics needed", String(brief.content.filter((c) => c.requiredGraphic).length)], ["KOL requirements", String(brief.kols.length)], ["Total budget", baht(brief.budget.total, { compact: true })]].map(([l, v]) => (
+              <div key={l} className="bg-ivory border border-line3 rounded-card p-3"><div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{l}</div><div className="text-[16px] font-bold text-ink">{v}</div></div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="Budget Allocation">
+          <div className="flex flex-col gap-2">
+            {bs.byBucket.filter((b) => b.amount > 0).map((b) => (
+              <div key={b.label} className="flex items-center gap-3">
+                <span className="text-[12px] text-muted w-36 flex-shrink-0">{b.label}</span>
+                <div className="flex-1 h-2 rounded-full bg-line overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, b.pct)}%`, background: "#B8945A" }} /></div>
+                <span className="text-[12px] font-bold text-ink w-16 text-right">{baht(b.amount, { compact: true })}</span>
+              </div>
+            ))}
+            {bs.byBucket.every((b) => b.amount === 0) && <div className="text-[12.5px] text-faint">ยังไม่ได้จัดสรรงบ</div>}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function BriefTab({ detail, brief }: { detail: CampaignDetail; brief?: CampaignBrief | null }) {
+  // When the campaign came from the Brief builder, show the real brief.
+  if (brief) return <BriefFromBuilder brief={brief} />;
   const fields = [
     { label: "Objective", value: detail.objective },
     { label: "Target Customer", value: detail.target },
@@ -500,29 +554,114 @@ function BudgetTab({ detail, s }: { detail: CampaignDetail; s: HubStats | null }
   );
 }
 
-function ApprovalTab({ detail }: { detail: CampaignDetail }) {
-  const chain = [
-    { role: "Planner", person: detail.row.owner, status: "Submitted", tone: "green" as const },
-    { role: "Brand Lead", person: "Mei T.", status: "Reviewed", tone: "green" as const },
-    { role: "CMO", person: "Linnapat D.", status: detail.row.nextApproval === "CMO" ? "Pending" : "Approved", tone: detail.row.nextApproval === "CMO" ? "gold" as const : "green" as const },
-  ];
+const BRIEF_TONE: Record<string, "neutral" | "gold" | "green" | "orange" | "blue"> = {
+  Draft: "neutral", "Ready for Review": "blue", "Waiting for Approval": "gold",
+  Approved: "green", "Need Revision": "orange", "In Progress": "blue", Completed: "green",
+};
+
+function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
+  const { member, user } = useAuth();
+  const reviewer = member?.name ?? user?.email ?? "CMO";
+  const [busy, setBusy] = useState(false);
+  const [revising, setRevising] = useState(false);
+  const [reason, setReason] = useState("");
+
+  // Only campaigns created through the Brief builder carry a brief; older ones
+  // fall back to the static chain view below.
+  if (!brief) {
+    const chain = [
+      { role: "Planner", person: detail.row.owner, status: "Submitted", tone: "green" as const },
+      { role: "Brand Lead", person: "Mei T.", status: "Reviewed", tone: "green" as const },
+      { role: "CMO", person: "Linnapat D.", status: detail.row.nextApproval === "CMO" ? "Pending" : "Approved", tone: detail.row.nextApproval === "CMO" ? "gold" as const : "green" as const },
+    ];
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="rounded-cardLg px-5 py-4" style={{ background: detail.row.nextApproval === "None" ? "#EEF4EE" : "#FBF8EE" }}>
+          <div className="text-[13px] font-bold" style={{ color: detail.row.nextApproval === "None" ? "#4E7A4E" : "#C68A1E" }}>
+            {detail.row.nextApproval === "None" ? "✓ Fully approved" : `Waiting for ${detail.row.nextApproval} approval`}
+          </div>
+        </div>
+        <Panel title="Approval Chain">
+          <div className="flex flex-col gap-3">
+            {chain.map((s, i) => (
+              <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: s.tone === "green" ? "#4E7A4E" : "#C68A1E" }}>{i + 1}</div>
+                <div className="flex-1"><div className="text-[13px] font-bold text-ink">{s.role}</div><div className="text-[11.5px] text-faint">{s.person}</div></div>
+                <StatusBadge tone={s.tone}>{s.status}</StatusBadge>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    );
+  }
+
+  const status = brief.status;
+  const act = async (nextStatus: string, action: string, comment?: string) => {
+    setBusy(true);
+    const entry = { action, by: reviewer, at: new Date().toISOString(), comment, from: status, to: nextStatus };
+    const next: CampaignBrief = { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] };
+    try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
+  };
+  const doRevision = () => {
+    const r = reason.trim(); if (!r) return;
+    act("Need Revision", "Requested revision", r);
+    setReason(""); setRevising(false);
+  };
+
+  const canSubmit = status === "Draft" || status === "Need Revision" || status === "Ready for Review";
+  const canApprove = status === "Waiting for Approval";
+  const canStart = status === "Approved";
+  const canComplete = status === "In Progress";
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-cardLg px-5 py-4" style={{ background: detail.row.nextApproval === "None" ? "#EEF4EE" : "#FBF8EE" }}>
-        <div className="text-[13px] font-bold" style={{ color: detail.row.nextApproval === "None" ? "#4E7A4E" : "#C68A1E" }}>
-          {detail.row.nextApproval === "None" ? "✓ Fully approved" : `Waiting for ${detail.row.nextApproval} approval`}
+      <div className="rounded-cardLg px-5 py-4 flex items-center justify-between gap-3" style={{ background: "#FBF9F4" }}>
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-faint mb-1">Campaign Brief Status</div>
+          <StatusBadge tone={BRIEF_TONE[status] ?? "neutral"}>{status}</StatusBadge>
         </div>
+        <div className="text-[11.5px] text-faint text-right">Planner {brief.plannerOwner || "—"}<br />Approver {brief.approver || "—"}</div>
       </div>
-      <Panel title="Approval Chain">
-        <div className="flex flex-col gap-3">
-          {chain.map((s, i) => (
-            <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: s.tone === "green" ? "#4E7A4E" : "#C68A1E" }}>{i + 1}</div>
-              <div className="flex-1"><div className="text-[13px] font-bold text-ink">{s.role}</div><div className="text-[11.5px] text-faint">{s.person}</div></div>
-              <StatusBadge tone={s.tone}>{s.status}</StatusBadge>
-            </div>
-          ))}
+
+      {/* Actions */}
+      {revising ? (
+        <Panel title="Request Revision">
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} autoFocus placeholder="ต้องแก้อะไรก่อนอนุมัติ?"
+            className="w-full text-[13px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none resize-none" />
+          <div className="flex gap-2 mt-2">
+            <button onClick={doRevision} disabled={!reason.trim() || busy} className="text-[13px] font-bold text-white rounded-[10px] px-4 py-[9px] disabled:opacity-40" style={{ background: "#C67A28" }}>Send Revision Request</button>
+            <button onClick={() => { setRevising(false); setReason(""); }} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4 py-[9px]">Cancel</button>
+          </div>
+        </Panel>
+      ) : (
+        <div className="flex gap-2 flex-wrap">
+          {canSubmit && <button onClick={() => act("Waiting for Approval", "Submitted for approval")} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px] disabled:opacity-40">Submit for Approval</button>}
+          {canApprove && <button onClick={() => act("Approved", "Approved")} disabled={busy} className="text-[13px] font-bold text-white rounded-[10px] px-5 py-[9px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>✓ Approve</button>}
+          {canApprove && <button onClick={() => setRevising(true)} disabled={busy} className="text-[13px] font-bold rounded-[10px] px-5 py-[9px] border-[1.5px] border-line2 text-status-orange disabled:opacity-40">↩ Request Revision</button>}
+          {canStart && <button onClick={() => act("In Progress", "Moved to In Progress")} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px] disabled:opacity-40">Mark In Progress</button>}
+          {canComplete && <button onClick={() => act("Completed", "Marked completed")} disabled={busy} className="text-[13px] font-bold text-white rounded-[10px] px-5 py-[9px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>Mark Completed</button>}
         </div>
+      )}
+
+      {/* Approval log */}
+      <Panel title="Approval Log">
+        {(!brief.approvalLog || brief.approvalLog.length === 0) ? (
+          <div className="text-[12.5px] text-faint py-2">ยังไม่มีประวัติ — เริ่มจากกด Submit for Approval</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {brief.approvalLog.slice().reverse().map((e, i) => (
+              <div key={i} className="flex items-start gap-3 py-2 border-b border-line4 last:border-0">
+                <div className="w-2 h-2 rounded-full mt-[6px] flex-shrink-0" style={{ background: /revision/i.test(e.action) ? "#C67A28" : /approv/i.test(e.action) ? "#4E7A4E" : "#9A9387" }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] font-bold text-ink">{e.action}{e.from && e.to ? <span className="text-faint font-normal"> · {e.from} → {e.to}</span> : null}</div>
+                  {e.comment && <div className="text-[12px] text-muted mt-[1px]">“{e.comment}”</div>}
+                  <div className="text-[11px] text-faint mt-[1px]">{e.by} · {new Date(e.at).toLocaleString()}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Panel>
     </div>
   );
