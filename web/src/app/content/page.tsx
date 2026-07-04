@@ -15,6 +15,7 @@ import {
 import { fetchContent, createContent } from "@/lib/db/content";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
 /** Row of platform badges (one per selected channel). */
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
@@ -208,7 +209,7 @@ function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCre
             </div>
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Owner</label>
-              <input value={owner} onChange={(e) => setOwner(e.target.value)} className={field} placeholder="Name" />
+              <OwnerSelect value={owner} onChange={setOwner} team="Planner" />
             </div>
           </div>
         </div>

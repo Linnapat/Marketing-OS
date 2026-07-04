@@ -14,6 +14,8 @@ import {
   DESIGNERS, graphicKpis, graphicNeedsAttention,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic } from "@/lib/db/graphic";
+import { DatePicker, fmtDisplay } from "@/components/ui/DatePicker";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
 export default function GraphicPage() {
   const [view, setView] = useState<"board" | "list">("board");
@@ -196,7 +198,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const submit = () => {
     onCreate(buildGraphic({
       id: nextId, b: GFX_BRAND_TO_ID[gBrand] ?? "teppen", campaign: gCampaign, title: gTitle.trim(),
-      type: gType, due: gDue, designer: gDesigner, requester: gRequester.trim(), approver: gApprover.trim(), channels: chans,
+      type: gType, due: fmtDisplay(gDue) || "TBD", designer: gDesigner, requester: gRequester.trim(), approver: gApprover.trim(), channels: chans,
     }));
   };
   return (
@@ -213,7 +215,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Request Title</label><input value={gTitle} onChange={(e) => setGTitle(e.target.value)} className={field} placeholder="e.g. Wagyu key visual" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Asset Type</label><select value={gType} onChange={(e) => setGType(e.target.value)} className={field}><option>Key Visual</option><option>Poster</option><option>Carousel</option><option>Reel Cover</option><option>Story</option><option>LINE Rich Message</option></select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deadline</label><input value={gDue} onChange={(e) => setGDue(e.target.value)} type="date" className={field} /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deadline</label><DatePicker value={gDue || null} onChange={setGDue} /></div>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Channels &amp; sizes (choose multiple)</label>
@@ -238,9 +240,9 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             ))}
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label><input value={gRequester} onChange={(e) => setGRequester(e.target.value)} className={field} placeholder="Name" /></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><select value={gDesigner} onChange={(e) => setGDesigner(e.target.value)} className={field}><option>Unassigned</option><option>Boss</option><option>Aom</option><option>New</option></select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><input value={gApprover} onChange={(e) => setGApprover(e.target.value)} className={field} placeholder="Name" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label><OwnerSelect value={gRequester} onChange={setGRequester} team="Planner" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><OwnerSelect value={gDesigner === "Unassigned" ? "" : gDesigner} onChange={(v) => setGDesigner(v || "Unassigned")} team="Creative" placeholder="Unassigned" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={gApprover} onChange={setGApprover} /></div>
           </div>
           <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Key message / notes</label><textarea rows={3} className={field} placeholder="Brief, mood direction, references…" /></div>
         </div>

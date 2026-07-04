@@ -18,6 +18,8 @@ import {
 import { fetchKols, createKol, buildKol } from "@/lib/db/kol";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
+import { DatePicker } from "@/components/ui/DatePicker";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
 const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"]] as const;
 type Tab = (typeof TABS)[number][0];
@@ -349,7 +351,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Posting Date</label>
-            <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} className={field} />
+            <DatePicker value={postingDate || null} onChange={setPostingDate} />
           </div>
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Contact Status</label>

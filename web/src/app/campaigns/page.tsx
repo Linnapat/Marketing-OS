@@ -24,6 +24,9 @@ export default function CampaignsPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
+  const [objective, setObjective] = useState<string>("all");
+  const [owner, setOwner] = useState<string>("all");
+  const [budgetBand, setBudgetBand] = useState<string>("all");
   const [campaigns, setCampaigns] = useState(CAMPAIGNS);
   const [newOpen, setNewOpen] = useState(false);
   const emptyNew = { name: "", b: "teppen" as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
@@ -77,8 +80,19 @@ export default function CampaignsPage() {
 
   const summary = monthlySummary(brand, campaigns);
 
-  const filtered = campaigns.filter(
-    (c) => (brand === "all" || c.b === brand) && (status === "all" || c.status === status),
+  const objectives = Array.from(new Set(campaigns.map((c) => c.campType).filter(Boolean)));
+  const owners = Array.from(new Set(campaigns.map((c) => c.owner).filter(Boolean)));
+  const inBand = (b: number) => budgetBand === "all"
+    || (budgetBand === "lt100" && b < 100000)
+    || (budgetBand === "100-300" && b >= 100000 && b <= 300000)
+    || (budgetBand === "gt300" && b > 300000);
+
+  const filtered = campaigns.filter((c) =>
+    (brand === "all" || c.b === brand) &&
+    (status === "all" || c.status === status) &&
+    (objective === "all" || c.campType === objective) &&
+    (owner === "all" || c.owner === owner) &&
+    inBand(c.budget),
   );
   const groups = STATUS_ORDER
     .map((s) => ({ status: s, rows: filtered.filter((c) => c.status === s) }))
@@ -176,6 +190,29 @@ export default function CampaignsPage() {
             {statusChips.map((s) => (
               <option key={s} value={s}>{s === "all" ? "All Statuses" : s}</option>
             ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-[9px]">
+          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Objective</span>
+          <select value={objective} onChange={(e) => setObjective(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
+            <option value="all">All Objectives</option>
+            {objectives.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-[9px]">
+          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Owner</span>
+          <select value={owner} onChange={(e) => setOwner(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
+            <option value="all">All Owners</option>
+            {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-[9px]">
+          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Budget</span>
+          <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
+            <option value="all">Any Budget</option>
+            <option value="lt100">&lt; ฿100K</option>
+            <option value="100-300">฿100K – ฿300K</option>
+            <option value="gt300">&gt; ฿300K</option>
           </select>
         </div>
       </div>
