@@ -6,16 +6,23 @@ import { ArrowLeft } from "lucide-react";
 import { CampaignDetail, CAMPAIGN_TABS, CAMPAIGN_TAB_LABELS, CampaignTab } from "@/lib/data/campaigns";
 import { campaignTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { baht } from "@/lib/format";
+import { CampaignHub, HubStats, hubStats, createPlannerTasks } from "@/lib/db/campaignHub";
 
-export function CampaignDetailView({ detail }: { detail: CampaignDetail }) {
+export function CampaignDetailView({ detail, hub, onReload }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void }) {
   const [tab, setTab] = useState<CampaignTab>("overview");
   const c = detail.row;
+  const s = hub ? hubStats(hub) : null;
+
+  // Management strip — real counts once the hub has loaded, else the row's stored values.
+  const strip = s
+    ? { total: s.total, done: s.done, inProgress: s.inProgress, blocked: s.blocked, waiting: s.waiting }
+    : { total: c.taskTotal, done: c.taskDone, inProgress: c.taskInProgress, blocked: c.taskBlocked, waiting: c.taskWaiting };
 
   return (
     <>
-      {/* Back */}
       <Link href="/campaigns" className="inline-flex items-center gap-1 text-[12.5px] text-faint hover:text-ink font-semibold mb-3">
         <ArrowLeft size={14} /> All campaigns
       </Link>
@@ -37,33 +44,29 @@ export function CampaignDetailView({ detail }: { detail: CampaignDetail }) {
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge tone={campaignTone(c.status)}>{c.status}</StatusBadge>
-          <StatusBadge tone={detail.hasResult ? "green" : "gold"}>
-            {detail.hasResult ? "✓ Ready" : "⚠ Needs attention"}
-          </StatusBadge>
+          <StatusBadge tone={detail.hasResult ? "green" : "gold"}>{detail.hasResult ? "✓ Ready" : "⚠ Needs attention"}</StatusBadge>
         </div>
       </div>
 
       {/* Management summary strip */}
-      <div className="mt-4 bg-panel text-white rounded-cardLg px-5 py-4 grid gap-4"
-        style={{ gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))" }}>
+      <div className="mt-4 bg-panel text-white rounded-cardLg px-5 py-4 grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))" }}>
         {[
-          { label: "Tasks", value: c.taskTotal, color: "#fff" },
-          { label: "Done", value: c.taskDone, color: "#9de09d" },
-          { label: "In Progress", value: c.taskInProgress, color: "#9bb8ef" },
-          { label: "Blocked", value: c.taskBlocked, color: c.taskBlocked ? "#f0a89f" : "#fff" },
-          { label: "Waiting", value: c.taskWaiting, color: "#e8c87d" },
+          { label: "Tasks", value: strip.total, color: "#fff" },
+          { label: "Done", value: strip.done, color: "#9de09d" },
+          { label: "In Progress", value: strip.inProgress, color: "#9bb8ef" },
+          { label: "Blocked", value: strip.blocked, color: strip.blocked ? "#f0a89f" : "#fff" },
+          { label: "Waiting", value: strip.waiting, color: "#e8c87d" },
           { label: "Overdue", value: c.taskOverdue, color: c.taskOverdue ? "#f0a89f" : "#fff" },
           { label: "Bottleneck", value: c.bottleneckTeam, color: "#e8c87d", small: true },
           { label: "Next Approval", value: c.nextApproval, color: "#B8945A", small: true },
-        ].map((s) => (
-          <div key={s.label}>
-            <div className="text-[9.5px] uppercase tracking-[0.06em] text-white/45 font-bold mb-[5px]">{s.label}</div>
-            <div className={`${s.small ? "text-[13px]" : "text-[22px]"} font-extrabold letter-tightest`} style={{ color: s.color }}>{s.value}</div>
+        ].map((x) => (
+          <div key={x.label}>
+            <div className="text-[9.5px] uppercase tracking-[0.06em] text-white/45 font-bold mb-[5px]">{x.label}</div>
+            <div className={`${x.small ? "text-[13px]" : "text-[22px]"} font-extrabold letter-tightest`} style={{ color: x.color }}>{x.value}</div>
           </div>
         ))}
       </div>
 
-      {/* Needs-result warning */}
       {detail.needsResult && (
         <div className="mt-4 rounded-card border px-4 py-3 flex items-center gap-3" style={{ background: "#FFF5F4", borderColor: "#F5C8C4" }}>
           <span className="text-[18px]">🚫</span>
@@ -79,35 +82,39 @@ export function CampaignDetailView({ detail }: { detail: CampaignDetail }) {
       <div className="mt-5 flex gap-1 overflow-x-auto border-b border-line pb-[2px]">
         {CAMPAIGN_TABS.map((t) => {
           const active = t === tab;
+          const count = s ? tabCount(t, s) : null;
           return (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
+            <button key={t} onClick={() => setTab(t)}
               className="text-[13px] font-semibold px-[14px] py-[9px] whitespace-nowrap border-b-2 -mb-[2px] transition"
-              style={active
-                ? { color: "#211F1C", borderColor: "#B8945A" }
-                : { color: "#9A9387", borderColor: "transparent" }}
-            >
-              {CAMPAIGN_TAB_LABELS[t]}
+              style={active ? { color: "#211F1C", borderColor: "#B8945A" } : { color: "#9A9387", borderColor: "transparent" }}>
+              {CAMPAIGN_TAB_LABELS[t]}{count ? <span className="ml-1 text-[11px] text-faint">{count}</span> : null}
             </button>
           );
         })}
       </div>
 
       <div className="mt-5">
-        {tab === "overview" && <OverviewTab detail={detail} />}
+        {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} />}
         {tab === "brief" && <BriefTab detail={detail} />}
-        {tab === "planner" && <PlannerTab detail={detail} />}
-        {tab === "content" && <EmptyLinked kind="content" />}
-        {tab === "kol" && <EmptyLinked kind="kol" />}
-        {tab === "ads" && <AdsTab detail={detail} />}
-        {tab === "budget" && <BudgetTab detail={detail} />}
-        {tab === "assets" && <AssetsTab />}
+        {tab === "planner" && <PlannerTab detail={detail} hub={hub} onReload={onReload} />}
+        {tab === "content" && <ContentList hub={hub} />}
+        {tab === "kol" && <KolList hub={hub} />}
+        {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
+        {tab === "budget" && <BudgetTab detail={detail} s={s} />}
+        {tab === "assets" && <AssetsList hub={hub} />}
         {tab === "approval" && <ApprovalTab detail={detail} />}
         {tab === "result" && <ResultTab detail={detail} />}
       </div>
     </>
   );
+}
+
+function tabCount(t: CampaignTab, s: HubStats): number | null {
+  if (t === "content") return s.content || null;
+  if (t === "kol") return s.kols || null;
+  if (t === "assets") return s.graphics || null;
+  if (t === "budget") return s.expenses || null;
+  return null;
 }
 
 function Panel({ title, children, className }: { title?: string; children: React.ReactNode; className?: string }) {
@@ -119,7 +126,7 @@ function Panel({ title, children, className }: { title?: string; children: React
   );
 }
 
-function OverviewTab({ detail }: { detail: CampaignDetail }) {
+function OverviewTab({ detail, hub, s }: { detail: CampaignDetail; hub: CampaignHub | null; s: HubStats | null }) {
   const c = detail.row;
   const kpis = [
     { label: "Budget", value: detail.budgetF },
@@ -130,6 +137,28 @@ function OverviewTab({ detail }: { detail: CampaignDetail }) {
     { label: "ROI", value: c.roi ? `${(c.roi - 1).toFixed(1)}×` : "—", color: detail.roiColor },
   ];
   const spendPct = c.budget ? Math.round((c.spend / c.budget) * 100) : 0;
+  const adsCount = hub ? hub.tasks.filter((t) => t.type === "Ads").length : 0;
+
+  // Readiness + linked modules derived from real counts.
+  const mark = (n: number) => (n > 0 ? { icon: "✓", color: "#4E7A4E" } : { icon: "—", color: "#9A9387" });
+  const readiness = [
+    { label: "Content Plan", ...mark(s?.content ?? 0) },
+    { label: "KOL Plan", ...mark(s?.kols ?? 0) },
+    { label: "Ads Plan", ...mark(adsCount) },
+    { label: "Artwork", ...mark(s?.graphics ?? 0) },
+    { label: "Result Report", ...(detail.hasResult ? { icon: "✓", color: "#4E7A4E" } : { icon: "—", color: "#9A9387" }) },
+  ];
+  const link = (icon: string, label: string, n: number, unit: string, iconBg: string) =>
+    ({ icon, label, sub: n > 0 ? `${n} ${unit}` : `No ${unit} yet`, status: n > 0 ? "Active" : "Missing", tone: (n > 0 ? "green" : "gold") as "green" | "gold", iconBg });
+  const moduleLinks = [
+    link("📝", "Content Calendar", s?.content ?? 0, "posts", "#EEF4EE"),
+    link("🤝", "KOL Plan", s?.kols ?? 0, "creators", "#FBF6ED"),
+    link("📢", "Ads Plan", adsCount, "ad tasks", "#EEF1F8"),
+    link("🎨", "Graphic / Asset", s?.graphics ?? 0, "artworks", "#F2EDE2"),
+    link("✅", "Approval Queue", s?.expenses ?? 0, "budget requests", "#FBF3F1"),
+    { icon: "📊", label: "Result / Report", sub: detail.hasResult ? "Report available" : "Report pending", status: detail.hasResult ? "Done" : "Pending", tone: (detail.hasResult ? "ink" : "neutral") as "ink" | "neutral", iconBg: "#EEF4EE" },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))" }}>
@@ -152,7 +181,7 @@ function OverviewTab({ detail }: { detail: CampaignDetail }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel title="Campaign Readiness">
           <div className="flex flex-col gap-[10px]">
-            {detail.readinessItems.map((r) => (
+            {readiness.map((r) => (
               <div key={r.label} className="flex items-center justify-between">
                 <span className="text-[13px] text-ink">{r.label}</span>
                 <span className="text-[15px] font-bold" style={{ color: r.color }}>{r.icon}</span>
@@ -162,17 +191,15 @@ function OverviewTab({ detail }: { detail: CampaignDetail }) {
         </Panel>
 
         <Panel title="Where is this campaign stuck?">
-          {detail.hasBottlenecks ? (
+          {(s?.blocked ?? 0) > 0 ? (
             <div className="flex flex-col gap-[10px]">
-              {detail.bottleneckItems.map((b, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-card bg-ivory border border-line3">
-                  <div className="flex-1">
-                    <div className="text-[13px] font-bold text-ink">{b.team}</div>
-                    <div className="text-[11.5px] text-faint">{b.issue}</div>
-                  </div>
-                  <StatusBadge tone={b.tone}>{b.severity}</StatusBadge>
+              <div className="flex items-center gap-3 p-3 rounded-card bg-ivory border border-line3">
+                <div className="flex-1">
+                  <div className="text-[13px] font-bold text-ink">{c.bottleneckTeam}</div>
+                  <div className="text-[11.5px] text-faint">{s?.blocked} item(s) blocked</div>
                 </div>
-              ))}
+                <StatusBadge tone="red">Blocked</StatusBadge>
+              </div>
               <div className="text-[11.5px] text-muted">Pending approver · <b>{c.nextApproval}</b></div>
             </div>
           ) : (
@@ -181,34 +208,9 @@ function OverviewTab({ detail }: { detail: CampaignDetail }) {
         </Panel>
       </div>
 
-      {/* Channel coverage */}
-      <Panel title="Channel Coverage">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            { title: "Online", items: detail.channelOnline },
-            { title: "Offline", items: detail.channelOffline },
-            { title: "Support", items: detail.channelSupport },
-          ].map((col) => (
-            <div key={col.title}>
-              <div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold mb-2">{col.title}</div>
-              <div className="flex flex-col gap-2">
-                {col.items.map((ch) => (
-                  <div key={ch.name} className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-[7px] flex items-center justify-center text-[10px] font-bold" style={{ background: ch.bg, color: ch.fg }}>{ch.icon}</span>
-                    <span className="text-[12.5px] text-ink flex-1">{ch.name}</span>
-                    <span className="text-[11px] text-faint">{ch.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Panel>
-
-      {/* Linked modules */}
       <Panel title="Linked Modules">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {detail.moduleLinks.map((m) => (
+          {moduleLinks.map((m) => (
             <div key={m.label} className="flex items-center gap-3 p-3 rounded-card bg-ivory border border-line3">
               <span className="w-7 h-7 rounded-[8px] flex items-center justify-center text-[14px]" style={{ background: m.iconBg }}>{m.icon}</span>
               <div className="flex-1 min-w-0">
@@ -274,9 +276,11 @@ function BriefTab({ detail }: { detail: CampaignDetail }) {
 const TEMPLATES = ["Lunch Awareness", "New Menu Launch", "Anniversary Event", "LINE Coupon", "Grand Opening", "CRM Repeater"];
 const TIMELINE = ["Brief", "Content", "Graphic", "KOL", "Ads", "Approval", "Launch", "Result"];
 
-function PlannerTab({ detail }: { detail: CampaignDetail }) {
+function PlannerTab({ detail, hub, onReload }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void }) {
   const [template, setTemplate] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const created = (hub?.content.length ?? 0) + (hub?.graphics.length ?? 0) + (hub?.kols.length ?? 0) > 0;
+
   const draftTasks = [
     { icon: "📝", label: "Content tasks", count: "4 tasks", module: "Content" },
     { icon: "🎨", label: "Graphic tasks", count: "3 tasks", module: "Graphic" },
@@ -285,9 +289,14 @@ function PlannerTab({ detail }: { detail: CampaignDetail }) {
     { icon: "💰", label: "Budget requests", count: "1 task", module: "Budget" },
     { icon: "📊", label: "Report tasks", count: "1 task", module: "Report" },
   ];
+
+  const confirm = async () => {
+    setBusy(true);
+    try { await createPlannerTasks(detail.row); onReload(); } finally { setBusy(false); }
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Dependency timeline */}
       <Panel title="Dependency Timeline">
         <div className="flex items-center gap-1 overflow-x-auto pb-1">
           {TIMELINE.map((step, i) => (
@@ -303,15 +312,20 @@ function PlannerTab({ detail }: { detail: CampaignDetail }) {
         </div>
       </Panel>
 
+      {created && (
+        <div className="rounded-card px-4 py-3 flex items-center gap-2 text-[12.5px] font-semibold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+          ✓ Tasks are live for this campaign — see the Content, KOL, Assets, and Budget tabs.
+        </div>
+      )}
+
       {!template ? (
         <Panel title="Choose a Campaign Template">
-          <div className="text-[12px] text-faint mb-4">Pick a template to auto-generate draft tasks across Content, Graphic, KOL, Ads, Budget, and Report — all sharing this campaign_id.</div>
+          <div className="text-[12px] text-faint mb-4">Pick a template to auto-generate real tasks across Content, Graphic, KOL, Ads, Budget, and Report — all linked to this campaign.</div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {TEMPLATES.map((t) => (
-              <button key={t} onClick={() => setTemplate(t)}
-                className="text-left p-4 rounded-card border border-line2 bg-ivory hover:border-accent hover:bg-accent-soft transition">
+              <button key={t} onClick={() => setTemplate(t)} className="text-left p-4 rounded-card border border-line2 bg-ivory hover:border-accent transition">
                 <div className="text-[13.5px] font-bold text-ink">{t}</div>
-                <div className="text-[11px] text-faint mt-1">Generates ~13 draft tasks</div>
+                <div className="text-[11px] text-faint mt-1">Generates ~13 tasks</div>
               </button>
             ))}
           </div>
@@ -320,22 +334,19 @@ function PlannerTab({ detail }: { detail: CampaignDetail }) {
         <Panel>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <button onClick={() => { setTemplate(null); setConfirmed(false); }} className="text-[12px] text-faint hover:text-ink font-semibold">← Change Template</button>
+              <button onClick={() => setTemplate(null)} className="text-[12px] text-faint hover:text-ink font-semibold">← Change Template</button>
               <span className="text-[13px] font-bold">{template}</span>
             </div>
-            {confirmed
-              ? <StatusBadge tone="green">✓ Tasks created</StatusBadge>
-              : <button onClick={() => setConfirmed(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">Confirm &amp; Create Tasks</button>}
+            <button onClick={confirm} disabled={busy} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px] disabled:opacity-50">
+              {busy ? "Creating…" : "Confirm & Create Tasks"}
+            </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {draftTasks.map((t) => (
               <div key={t.module} className="p-4 rounded-card border border-line3 bg-ivory">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[16px]">{t.icon}</span>
-                  <span className="text-[12.5px] font-bold text-ink">{t.module}</span>
-                </div>
+                <div className="flex items-center gap-2 mb-2"><span className="text-[16px]">{t.icon}</span><span className="text-[12.5px] font-bold text-ink">{t.module}</span></div>
                 <div className="text-[11.5px] text-muted">{t.count}</div>
-                <StatusBadge tone={confirmed ? "green" : "neutral"} className="mt-2">{confirmed ? "Live" : "Draft"}</StatusBadge>
+                <StatusBadge tone={created ? "green" : "neutral"} className="mt-2">{created ? "Live" : "Draft"}</StatusBadge>
               </div>
             ))}
           </div>
@@ -345,15 +356,72 @@ function PlannerTab({ detail }: { detail: CampaignDetail }) {
   );
 }
 
-function AdsTab({ detail }: { detail: CampaignDetail }) {
+/* ── Linked-record tabs (real data) ─────────────────────────────────── */
+function EmptyState({ title, note }: { title: string; note: string }) {
+  return (
+    <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-12 text-center">
+      <div>
+        <div className="text-[14px] font-bold text-ink">{title}</div>
+        <div className="text-[12px] text-faint mt-1 max-w-sm mx-auto">{note}</div>
+      </div>
+    </div>
+  );
+}
+
+function ContentList({ hub }: { hub: CampaignHub | null }) {
+  if (!hub) return <div className="py-10 text-center text-faint text-[13px]">Loading…</div>;
+  if (hub.content.length === 0) return <EmptyState title="No content planned" note="Content items linked to this campaign will appear here. Generate them from the Planner tab or add a post in the Content module." />;
+  return (
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      {hub.content.map((c) => (
+        <div key={c.id} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
+          <BrandDot brand={c.b} size={8} />
+          <div className="flex-1 min-w-0"><div className="text-[13px] font-bold truncate">{c.title}</div><div className="text-[11px] text-faint">Jul {c.day} · {c.time} · {c.owner}</div></div>
+          <StatusBadge tone="neutral">{c.status}</StatusBadge>
+          <StatusBadge tone={c.approvalStatus === "Approved" ? "green" : "gold"}>{c.approvalStatus}</StatusBadge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KolList({ hub }: { hub: CampaignHub | null }) {
+  if (!hub) return <div className="py-10 text-center text-faint text-[13px]">Loading…</div>;
+  if (hub.kols.length === 0) return <EmptyState title="No KOL assigned" note="Creators linked to this campaign will appear here. Assign them from the KOL module or the Planner tab." />;
+  return (
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      {hub.kols.map((k) => (
+        <div key={k.id} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
+          <BrandDot brand={k.b} size={8} />
+          <div className="flex-1 min-w-0"><div className="text-[13px] font-bold truncate">{k.name}</div><div className="text-[11px] text-faint">{k.kolType} · {k.owner}</div></div>
+          <StatusBadge tone="gold">{k.status}</StatusBadge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AssetsList({ hub }: { hub: CampaignHub | null }) {
+  if (!hub) return <div className="py-10 text-center text-faint text-[13px]">Loading…</div>;
+  if (hub.graphics.length === 0) return <EmptyState title="No assets yet" note="Graphic requests linked to this campaign will appear here. Create them from the Graphic module or the Planner tab." />;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {hub.graphics.map((g) => (
+        <div key={g.id} className="bg-surface border border-line rounded-cardLg p-4">
+          <div className="flex items-center gap-2 mb-1"><BrandDot brand={g.b} size={8} /><span className="text-[13.5px] font-bold truncate">{g.title}</span></div>
+          <div className="text-[11.5px] text-faint mb-2">{g.type} · {g.designer} · due {g.due}</div>
+          <div className="flex items-center gap-2"><StatusBadge tone="blue">{g.stage}</StatusBadge>{!g.briefComplete && <StatusBadge tone="gold">Brief incomplete</StatusBadge>}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | null }) {
   const c = detail.row;
   const adBudget = Math.round(c.budget * 0.4);
   const adSpend = Math.round(c.spend * 0.55);
-  const channels = [
-    { name: "Meta Ads", budget: Math.round(adBudget * 0.5), spent: Math.round(adSpend * 0.5), roas: c.roi ? (c.roi * 1.1).toFixed(1) : "—" },
-    { name: "Google Ads", budget: Math.round(adBudget * 0.3), spent: Math.round(adSpend * 0.3), roas: c.roi ? (c.roi * 0.8).toFixed(1) : "—" },
-    { name: "LINE Ads", budget: Math.round(adBudget * 0.2), spent: Math.round(adSpend * 0.2), roas: c.roi ? (c.roi * 0.9).toFixed(1) : "—" },
-  ];
+  const adsTasks = hub ? hub.tasks.filter((t) => t.type === "Ads") : [];
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))" }}>
@@ -361,7 +429,7 @@ function AdsTab({ detail }: { detail: CampaignDetail }) {
           { label: "Ads Budget", value: baht(adBudget, { compact: true }) },
           { label: "Ads Spent", value: baht(adSpend, { compact: true }) },
           { label: "Blended ROAS", value: c.roi ? `${c.roi}×` : "—" },
-          { label: "Channels", value: String(channels.length) },
+          { label: "Ad Tasks", value: String(adsTasks.length) },
         ].map((k) => (
           <div key={k.label} className="bg-surface border border-line rounded-card p-4">
             <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold mb-[6px]">{k.label}</div>
@@ -369,16 +437,12 @@ function AdsTab({ detail }: { detail: CampaignDetail }) {
           </div>
         ))}
       </div>
-      <Panel title="Ad Channels">
-        <div className="grid grid-cols-[2fr_1fr_1fr_0.8fr] px-2 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4">
-          <div>Channel</div><div>Budget</div><div>Spent</div><div>ROAS</div>
-        </div>
-        {channels.map((ch) => (
-          <div key={ch.name} className="grid grid-cols-[2fr_1fr_1fr_0.8fr] px-2 py-3 items-center border-b border-line4 last:border-0">
-            <div className="text-[13px] font-semibold text-ink">{ch.name}</div>
-            <div className="text-[13px] text-muted">{baht(ch.budget, { compact: true })}</div>
-            <div className="text-[13px] text-muted">{baht(ch.spent, { compact: true })}</div>
-            <div className="text-[13px] font-bold text-status-green">{ch.roas}×</div>
+      <Panel title="Ad Tasks">
+        {adsTasks.length === 0 ? <div className="text-[12.5px] text-faint py-3 text-center">No ad tasks yet — generate from the Planner tab.</div> : adsTasks.map((t) => (
+          <div key={t.id} className="flex items-center gap-3 py-3 border-b border-line4 last:border-0">
+            <span className="text-[15px]">📣</span>
+            <div className="flex-1 text-[13px] font-semibold">{t.title}</div>
+            <StatusBadge tone="neutral">{t.status}</StatusBadge>
           </div>
         ))}
       </Panel>
@@ -386,18 +450,16 @@ function AdsTab({ detail }: { detail: CampaignDetail }) {
   );
 }
 
-function BudgetTab({ detail }: { detail: CampaignDetail }) {
+function BudgetTab({ detail, s }: { detail: CampaignDetail; s: HubStats | null }) {
   const c = detail.row;
-  const planning = c.budget;
-  const approved = Math.round(c.budget * 0.9);
-  const actual = c.spend;
+  const requested = s?.expenseTotal ?? 0;
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
-          { label: "Planning Budget", value: baht(planning, { compact: true }), pct: 100, color: "#B8945A" },
-          { label: "Approved Budget", value: baht(approved, { compact: true }), pct: 90, color: "#3E5C9A" },
-          { label: "Actual Spend", value: baht(actual, { compact: true }), pct: planning ? Math.round((actual / planning) * 100) : 0, color: actual > approved ? "#B33A2E" : "#4E7A4E" },
+          { label: "Planning Budget", value: baht(c.budget, { compact: true }), pct: 100, color: "#B8945A" },
+          { label: "Requested", value: baht(requested, { compact: true }), pct: c.budget ? Math.round((requested / c.budget) * 100) : 0, color: "#3E5C9A" },
+          { label: "Actual Spend", value: baht(c.spend, { compact: true }), pct: c.budget ? Math.round((c.spend / c.budget) * 100) : 0, color: c.spend > c.budget ? "#B33A2E" : "#4E7A4E" },
         ].map((k) => (
           <div key={k.label} className="bg-surface border border-line rounded-card p-4">
             <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold mb-[6px]">{k.label}</div>
@@ -414,35 +476,6 @@ function BudgetTab({ detail }: { detail: CampaignDetail }) {
           </div>
         ))}
       </Panel>
-    </div>
-  );
-}
-
-function AssetsTab() {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {["Key Visual V2", "Reel Cover", "Menu Board"].map((a) => (
-        <div key={a} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-          <div className="h-32 flex items-center justify-center"
-            style={{ background: "repeating-linear-gradient(45deg,#F4EFE5,#F4EFE5 10px,#EFE9DC 10px,#EFE9DC 20px)" }}>
-            <span className="text-[11px] font-mono text-faint">artwork preview</span>
-          </div>
-          <div className="p-3">
-            <div className="text-[13px] font-bold text-ink">{a}</div>
-            <div className="flex items-center gap-2 mt-2">
-              <StatusBadge tone="green">Approved</StatusBadge>
-              <span className="text-[11px] text-accent font-semibold cursor-pointer">Drive ↗</span>
-              <span className="text-[11px] text-accent font-semibold cursor-pointer">Canva ↗</span>
-            </div>
-          </div>
-        </div>
-      ))}
-      <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-8 text-center">
-        <div>
-          <div className="text-[13px] font-bold text-faint">Drop asset link</div>
-          <div className="text-[11px] text-faint mt-1">Google Drive · Canva · final artwork</div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -465,10 +498,7 @@ function ApprovalTab({ detail }: { detail: CampaignDetail }) {
           {chain.map((s, i) => (
             <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
               <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: s.tone === "green" ? "#4E7A4E" : "#C68A1E" }}>{i + 1}</div>
-              <div className="flex-1">
-                <div className="text-[13px] font-bold text-ink">{s.role}</div>
-                <div className="text-[11.5px] text-faint">{s.person}</div>
-              </div>
+              <div className="flex-1"><div className="text-[13px] font-bold text-ink">{s.role}</div><div className="text-[11.5px] text-faint">{s.person}</div></div>
               <StatusBadge tone={s.tone}>{s.status}</StatusBadge>
             </div>
           ))}
@@ -503,20 +533,6 @@ function ResultTab({ detail }: { detail: CampaignDetail }) {
         <div className="text-[14px] font-bold text-ink">No result data yet</div>
         <div className="text-[12px] text-faint mt-1 max-w-sm mx-auto">Upload post links, revenue, and visit data once the campaign has run to compute ROI and ROAS.</div>
         <button className="mt-4 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">Upload Result Data</button>
-      </div>
-    </div>
-  );
-}
-
-function EmptyLinked({ kind }: { kind: "content" | "kol" }) {
-  const copy = kind === "content"
-    ? { title: "No content planned", note: "Content items linked to this campaign_id will appear here. Generate them from the Planner tab." }
-    : { title: "No KOL assigned", note: "Creators linked to this campaign_id will appear here. Assign them from the KOL module or the Planner tab." };
-  return (
-    <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-12 text-center">
-      <div>
-        <div className="text-[14px] font-bold text-ink">{copy.title}</div>
-        <div className="text-[12px] text-faint mt-1 max-w-sm mx-auto">{copy.note}</div>
       </div>
     </div>
   );
