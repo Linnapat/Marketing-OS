@@ -31,6 +31,20 @@ export async function fetchCampaigns(): Promise<CampaignRow[]> {
   return (data as Row[]).map(toCampaign);
 }
 
+/** Insert a new campaign; returns it. */
+export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
+  const db = supabase();
+  if (!db) return c;
+  await db.from("campaigns").insert({
+    id: c.id, name: c.name, brand: c.b, branch: c.branch, owner: c.owner, budget: c.budget, spend: c.spend,
+    roi: c.roi, dates: c.dates, status: c.status, camp_type: c.campType, readiness: c.readiness,
+    task_blocked: c.taskBlocked, task_waiting: c.taskWaiting, task_overdue: c.taskOverdue,
+    task_total: c.taskTotal, task_done: c.taskDone, task_in_progress: c.taskInProgress,
+    bottleneck_team: c.bottleneckTeam, next_approval: c.nextApproval,
+  });
+  return c;
+}
+
 /** A single campaign by id — for the detail page. */
 export async function fetchCampaign(id: string): Promise<CampaignRow | undefined> {
   const db = supabase();

@@ -5,23 +5,28 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
-import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
-import { BrandFilterValue, BrandId } from "@/lib/brands";
+import { BrandFilterValue, BrandId, BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
-  CAMPAIGNS, STATUS_ORDER, READINESS_META, monthlySummary,
+  CAMPAIGNS, STATUS_ORDER, READINESS_META, monthlySummary, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
-import { fetchCampaigns } from "@/lib/db/campaigns";
+import { fetchCampaigns, createCampaign } from "@/lib/db/campaigns";
+
+const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LINE", "Event / Store Activation"];
+const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 
 export default function CampaignsPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
   const [campaigns, setCampaigns] = useState(CAMPAIGNS);
+  const [newOpen, setNewOpen] = useState(false);
+  const emptyNew = { name: "", b: "teppen" as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
+  const [nc, setNc] = useState(emptyNew);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     Completed: true, Draft: true, Cancelled: true,
   });
@@ -31,6 +36,25 @@ export default function CampaignsPage() {
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  const addCampaign = async () => {
+    if (!nc.name.trim()) return;
+    const nextSeq = Math.max(0, ...campaigns.map((c) => Number(c.id.match(/(\d+)$/)?.[1] ?? 0))) + 1;
+    const row: CampaignRow = {
+      id: `CAM-2026-${String(nextSeq).padStart(4, "0")}`, name: nc.name.trim(), b: nc.b,
+      branch: nc.branch.trim() || "—", owner: nc.owner.trim() || "Unassigned",
+      budget: parseFloat(nc.budget) || 0, spend: 0, roi: 0, dates: nc.dates.trim() || "TBD",
+      status: nc.status, campType: nc.campType, readiness: "needs_attention" as Readiness,
+      taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
+      bottleneckTeam: "None", nextApproval: "CMO",
+    };
+    setNewOpen(false); setNc(emptyNew);
+    setCampaigns((cs) => [row, ...cs]);
+    setCollapsed((c) => ({ ...c, [row.status]: false }));
+    await createCampaign(row);
+  };
+
+  const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 
   const summary = monthlySummary(brand, campaigns);
 
@@ -49,6 +73,7 @@ export default function CampaignsPage() {
         eyebrow="Campaign Command Center"
         title="Campaigns"
         subtitle={`${filtered.length} campaigns · plan, track, and profit from every activation`}
+        right={<button onClick={() => setNewOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Campaign</button>}
       />
 
       {/* Monthly budget summary — dark card */}
@@ -110,8 +135,18 @@ export default function CampaignsPage() {
       <div className="mt-4">
         <DateFilterBar value={date} onChange={setDate} />
       </div>
-      <div className="mt-4 flex flex-col gap-3">
-        <BrandFilter value={brand} onChange={setBrand} />
+      <div className="mt-4 flex items-center gap-5 flex-wrap">
+        <div className="flex items-center gap-[9px]">
+          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Brand</span>
+          <select
+            value={brand}
+            onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
+            className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none"
+          >
+            <option value="all">All Brands</option>
+            {BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
+          </select>
+        </div>
         <div className="flex items-center gap-[9px]">
           <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Status</span>
           <select
@@ -176,6 +211,39 @@ export default function CampaignsPage() {
           );
         })}
       </div>
+
+      {/* New Campaign modal */}
+      {newOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setNewOpen(false)} />
+          <div className="relative bg-surface rounded-cardLg border border-line shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-4">
+              <div className="text-[16px] font-extrabold">New campaign</div>
+              <button onClick={() => setNewOpen(false)} className="text-[18px] text-faint leading-none -mt-1">✕</button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign name <span className="text-status-red">*</span></label><input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. Wagyu Festival" className={field} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId })} className={field}>{BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Branch</label><input value={nc.branch} onChange={(e) => setNc({ ...nc, branch: e.target.value })} placeholder="e.g. Thonglor" className={field} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Owner</label><input value={nc.owner} onChange={(e) => setNc({ ...nc, owner: e.target.value })} placeholder="Name" className={field} /></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Budget (฿)</label><input type="number" value={nc.budget} onChange={(e) => setNc({ ...nc, budget: e.target.value })} placeholder="0" className={field} /></div>
+              </div>
+              <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Dates</label><input value={nc.dates} onChange={(e) => setNc({ ...nc, dates: e.target.value })} placeholder="e.g. Jul 1 – Jul 31" className={field} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Status</label><select value={nc.status} onChange={(e) => setNc({ ...nc, status: e.target.value })} className={field}>{NEW_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label><select value={nc.campType} onChange={(e) => setNc({ ...nc, campType: e.target.value })} className={field}>{CAMP_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={addCampaign} disabled={!nc.name.trim()} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create campaign</button>
+              <button onClick={() => setNewOpen(false)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
