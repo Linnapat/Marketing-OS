@@ -13,6 +13,8 @@ import {
   CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS, itemPlatforms,
 } from "@/lib/data/content";
 import { fetchContent, createContent } from "@/lib/db/content";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
 
 /** Row of platform badges (one per selected channel). */
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
@@ -127,6 +129,18 @@ function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCre
   const [day, setDay] = useState("27");
   const [time, setTime] = useState("10:00");
   const [owner, setOwner] = useState("");
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // Campaigns for the chosen brand; clear the pick when it no longer fits.
+  const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
+  useEffect(() => {
+    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
+  }, [brandCampaigns, campaign]);
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const togglePlat = (p: string) => setPlats((ps) => ps.includes(p) ? ps.filter((x) => x !== p) : [...ps, p]);
@@ -178,7 +192,10 @@ function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCre
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
-            <input value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field} placeholder="e.g. Wagyu Festival" />
+            <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
+              <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+              {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>

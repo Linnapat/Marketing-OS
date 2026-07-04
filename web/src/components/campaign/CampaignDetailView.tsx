@@ -417,13 +417,32 @@ function AssetsList({ hub }: { hub: CampaignHub | null }) {
   );
 }
 
+const CREATIVE_APPROVED = /Approved|Delivered/i;
+
 function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | null }) {
   const c = detail.row;
   const adBudget = Math.round(c.budget * 0.4);
   const adSpend = Math.round(c.spend * 0.55);
   const adsTasks = hub ? hub.tasks.filter((t) => t.type === "Ads") : [];
+  // An ad can only run on an approved creative. Gate on the campaign's graphics.
+  const graphics = hub?.graphics ?? [];
+  const approvedCreatives = graphics.filter((g) => CREATIVE_APPROVED.test(g.stage));
+  const creativeReady = approvedCreatives.length > 0;
   return (
     <div className="flex flex-col gap-4">
+      {/* Creative gate — block/warn before ads go live */}
+      {adsTasks.length > 0 && (
+        creativeReady ? (
+          <div className="rounded-card px-4 py-3 flex items-center gap-2 text-[12.5px] font-semibold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+            ✓ {approvedCreatives.length} approved creative{approvedCreatives.length > 1 ? "s" : ""} ready — ads are cleared to launch.
+          </div>
+        ) : (
+          <div className="rounded-card px-4 py-3 text-[12.5px]" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+            <div className="font-bold mb-[2px]">⚠ No approved creative yet</div>
+            <div>Ads can&apos;t launch until at least one graphic for this campaign is Approved. {graphics.length === 0 ? "Create a graphic in the Assets tab." : `${graphics.length} graphic(s) in progress — approve one in the Approval chain.`}</div>
+          </div>
+        )
+      )}
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))" }}>
         {[
           { label: "Ads Budget", value: baht(adBudget, { compact: true }) },
@@ -442,6 +461,7 @@ function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | nu
           <div key={t.id} className="flex items-center gap-3 py-3 border-b border-line4 last:border-0">
             <span className="text-[15px]">📣</span>
             <div className="flex-1 text-[13px] font-semibold">{t.title}</div>
+            {!creativeReady && <StatusBadge tone="red">Creative pending</StatusBadge>}
             <StatusBadge tone="neutral">{t.status}</StatusBadge>
           </div>
         ))}

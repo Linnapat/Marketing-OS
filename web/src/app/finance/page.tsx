@@ -295,8 +295,16 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   const wht = Math.round(amt * 0.03);
   const net = amt + vat - wht;
   const cat = EXP_CATEGORIES.find((c) => c.key === catKey);
-  const remaining = cat ? cat.budget - cat.used : 0;
-  const overBudget = cat ? amt > remaining : false;
+  // Budget check: when a campaign is picked, measure against that campaign's own
+  // remaining budget (budget − spend); otherwise fall back to the category pool.
+  const selCampaign = campaigns.find((c) => c.name === campaign);
+  const check = selCampaign
+    ? { label: `Campaign · ${selCampaign.name}`, budget: selCampaign.budget, used: selCampaign.spend }
+    : cat
+    ? { label: `Category · ${cat.label}`, budget: cat.budget, used: cat.used }
+    : null;
+  const remaining = check ? check.budget - check.used : 0;
+  const overBudget = check ? amt > remaining : false;
   const route = amt >= 10000 ? "CMO + CFO" : "CMO only";
   const grandTotal = amt + vat + lines.reduce((s, l) => s + l.amount + Math.round(l.amount * l.vat / 100), 0);
 
@@ -446,16 +454,21 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
             ))}
             <div className="flex justify-between pt-3 text-[13.5px] font-bold"><span>Net Payable</span><span className="text-accent">{baht(net)}</span></div>
           </div>
-          {cat ? (
+          {check ? (
             <div className="rounded-cardLg p-5 border" style={{ background: overBudget ? "#FFF5F4" : "#EEF4EE", borderColor: overBudget ? "#F5C8C4" : "#C8E0C8" }}>
-              <div className="text-[13px] font-bold mb-3" style={{ color: overBudget ? "#B33A2E" : "#4E7A4E" }}>Budget Check</div>
-              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Budget</span><span className="font-semibold text-ink">{baht(cat.budget, { compact: true })}</span></div>
-              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Used</span><span className="font-semibold text-ink">{baht(cat.used, { compact: true })}</span></div>
-              <div className="text-[12px] text-muted flex justify-between mb-2"><span>Remaining</span><span className="font-semibold text-ink">{baht(remaining, { compact: true })}</span></div>
-              <Progress value={cat.budget ? (cat.used / cat.budget) * 100 : 0} color={overBudget ? "#B33A2E" : "#4E7A4E"} />
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[13px] font-bold" style={{ color: overBudget ? "#B33A2E" : "#4E7A4E" }}>Budget Check</div>
+                {overBudget && <span className="text-[10.5px] font-bold px-2 py-[2px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>Over budget</span>}
+              </div>
+              <div className="text-[11px] text-faint mb-2 truncate">{check.label}</div>
+              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Budget</span><span className="font-semibold text-ink">{baht(check.budget, { compact: true })}</span></div>
+              <div className="text-[12px] text-muted flex justify-between mb-1"><span>{selCampaign ? "Spent" : "Used"}</span><span className="font-semibold text-ink">{baht(check.used, { compact: true })}</span></div>
+              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Remaining</span><span className="font-semibold text-ink">{baht(remaining, { compact: true })}</span></div>
+              <div className="text-[12px] text-muted flex justify-between mb-2"><span>This request</span><span className="font-semibold" style={{ color: overBudget ? "#B33A2E" : "#211F1C" }}>{baht(amt, { compact: true })}</span></div>
+              <Progress value={check.budget ? Math.min(100, ((check.used + amt) / check.budget) * 100) : 0} color={overBudget ? "#B33A2E" : "#4E7A4E"} />
             </div>
           ) : (
-            <div className="bg-surface border border-line rounded-cardLg p-5 text-[12px] text-faint flex items-center justify-center text-center">Select a category to see the budget check</div>
+            <div className="bg-surface border border-line rounded-cardLg p-5 text-[12px] text-faint flex items-center justify-center text-center">Select a category or campaign to see the budget check</div>
           )}
           <div className="bg-surface border border-line rounded-cardLg p-5">
             <div className="text-[13px] font-bold mb-2">Approval Route</div>

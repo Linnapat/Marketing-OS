@@ -22,6 +22,8 @@ export interface Task {
   isQuickWin: boolean;
   nextAction: string;
   checklist: string[];
+  /** Ads-only: the media channel (Meta, Google, TikTok, LINE…). */
+  channel?: string;
 }
 
 export const STATUS_TONE: Record<string, Tone> = {

@@ -90,13 +90,13 @@ export async function createPlannerTasks(c: CampaignRow): Promise<void> {
       count: 1, budget: 0, deliverables: "", notes: "",
     }));
   }
-  const mkTask = (n: number, module: string, icon: string, color: string, type: string, title: string): Task => ({
+  const mkTask = (n: number, module: string, icon: string, color: string, type: string, title: string, channel?: string): Task => ({
     id: stamp + 100 + n, title, module, moduleIcon: icon, moduleColor: color, type,
     assignee: c.owner, brand: bn, campaign: c.name, status: "Todo", priority: "Med", group: "quickWins",
-    due: "TBD", blocker: null, pendingApprover: null, isQuickWin: false, nextAction: "Start when ready.", checklist: [],
+    due: "TBD", blocker: null, pendingApprover: null, isQuickWin: false, nextAction: "Start when ready.", checklist: [], channel,
   });
-  await createTaskDb(mkTask(1, "Ads", "📣", "#C68A1E", "Ads", `${c.name} — Ads setup`));
-  await createTaskDb(mkTask(2, "Ads", "📣", "#C68A1E", "Ads", `${c.name} — Ads optimization`));
+  await createTaskDb(mkTask(1, "Ads", "📣", "#C68A1E", "Ads", `${c.name} — Meta Ads setup`, "Meta"));
+  await createTaskDb(mkTask(2, "Ads", "📣", "#C68A1E", "Ads", `${c.name} — Google Ads optimization`, "Google"));
   await createTaskDb(mkTask(3, "Campaign", "📊", "#B33A2E", "Report", `${c.name} — Result report`));
 
   await createExpenseRequest({

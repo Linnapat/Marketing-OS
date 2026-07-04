@@ -10,6 +10,7 @@ import { platformIcon } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
+import { updateKol } from "@/lib/db/kol";
 
 const TABS = [
   ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
@@ -17,7 +18,7 @@ const TABS = [
 ] as const;
 type DrawerTab = (typeof TABS)[number][0];
 
-export function KolDrawer({ kol, initialTab = "profile", onClose }: { kol: Kol; initialTab?: DrawerTab; onClose: () => void }) {
+export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { kol: Kol; initialTab?: DrawerTab; onClose: () => void; onUpdate?: (k: Kol) => void }) {
   const [tab, setTab] = useState<DrawerTab>(initialTab);
   const [comments, setComments] = useState(() => KOL_COMMENTS.filter((c) => c.kolId === kol.id));
   const deliverables = DELIVERABLES.filter((d) => d.kolId === kol.id);
@@ -75,7 +76,7 @@ export function KolDrawer({ kol, initialTab = "profile", onClose }: { kol: Kol; 
           {tab === "deliverables" && <DeliverablesTab items={deliverables} />}
           {tab === "brief" && <BriefTab kol={kol} />}
           {tab === "contract" && <ContractTab kol={kol} />}
-          {tab === "results" && <ResultsTab kol={kol} />}
+          {tab === "results" && <ResultsTab kol={kol} onUpdate={onUpdate} />}
           {tab === "comments" && <CommentsTab comments={comments} onResolve={(id) => setComments((cs) => cs.map((c) => c.id === id ? { ...c, status: "Resolved" } : c))} />}
         </div>
       </div>
@@ -190,29 +191,69 @@ function ContractTab({ kol }: { kol: Kol }) {
   );
 }
 
-function ResultsTab({ kol }: { kol: Kol }) {
-  if (!kol.postLink && kol.actualReach === 0) return <Empty note="No results yet — fill in once the KOL has posted." />;
+function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
+  const [reach, setReach] = useState(kol.actualReach || 0);
+  const [eng, setEng] = useState(kol.actualEngagement || 0);
+  const [link, setLink] = useState(kol.postLink ?? "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Cost efficiency auto-derives from the entered actuals + the total cost.
+  const costPerReach = reach ? kol.totalCost / reach : 0;
+  const costPerEng = eng ? kol.totalCost / eng : 0;
   const cpv = kol.visits ? Math.round(kol.totalCost / kol.visits) : 0;
-  const kpis = [
-    ["Reach", fmtFollow(kol.actualReach)], ["Engagement", kol.engagement], ["Saves", kol.saves],
-    ["Shares", kol.shares], ["Visits", String(kol.visits)], ["CPV", cpv ? baht(cpv) : "—"],
-    ["ROI", kol.roi ? `${kol.roi}×` : "—"], ["Posted", kol.postedDate ?? "—"],
-  ];
+
+  const save = async () => {
+    setBusy(true);
+    const next: Kol = {
+      ...kol, actualReach: reach, actualEngagement: eng,
+      engagement: eng ? fmtFollow(eng) : kol.engagement,
+      postLink: link.trim() || null,
+      status: reach > 0 ? "Posted" : kol.status,
+    };
+    try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    finally { setBusy(false); }
+  };
+
+  const field = "w-full text-[13.5px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none";
   return (
     <div className="flex flex-col gap-4">
-      {kol.postLink && (
-        <div className="bg-surface border border-line rounded-card px-4 py-3 flex items-center justify-between">
-          <span className="text-[12px] text-muted truncate">{kol.postLink}</span>
-          <span className="text-[12px] text-accent font-semibold cursor-pointer flex-shrink-0">Open post ↗</span>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">Actual Reach</label>
+          <input type="number" value={reach || ""} onChange={(e) => setReach(parseInt(e.target.value) || 0)} className={field} placeholder="0" />
         </div>
-      )}
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">Actual Engagement</label>
+          <input type="number" value={eng || ""} onChange={(e) => setEng(parseInt(e.target.value) || 0)} className={field} placeholder="0" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-[11px] font-bold text-faint mb-[5px]">Result / Post Link</label>
+        <input value={link} onChange={(e) => setLink(e.target.value)} className={field} placeholder="https://…" />
+      </div>
+
+      {/* Auto-derived cost efficiency */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {kpis.map(([label, val]) => (
+        {[
+          ["Reach", fmtFollow(reach)], ["Engagement", eng ? fmtFollow(eng) : "—"],
+          ["Cost / Reach", costPerReach ? baht(Math.round(costPerReach * 100) / 100) : "—"],
+          ["Cost / Eng.", costPerEng ? baht(Math.round(costPerEng * 100) / 100) : "—"],
+          ["Visits", String(kol.visits)], ["CPV", cpv ? baht(cpv) : "—"],
+          ["ROI", kol.roi ? `${kol.roi}×` : "—"], ["Posted", kol.postedDate ?? "—"],
+        ].map(([label, val]) => (
           <div key={label} className="bg-surface border border-line rounded-card p-3">
             <div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{label}</div>
             <div className="text-[15px] font-bold text-ink">{val}</div>
           </div>
         ))}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">
+          {busy ? "Saving…" : "Save Results"}
+        </button>
+        {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ Saved</span>}
       </div>
     </div>
   );

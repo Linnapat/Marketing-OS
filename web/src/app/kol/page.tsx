@@ -16,6 +16,8 @@ import {
   kolKpis, kolAlerts, stageProgress,
 } from "@/lib/data/kol";
 import { fetchKols, createKol, buildKol } from "@/lib/db/kol";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
 
 const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"]] as const;
 type Tab = (typeof TABS)[number][0];
@@ -114,7 +116,17 @@ export default function KolPage() {
         {tab === "plan" && <KolPlan kols={kols} brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
       </div>
 
-      {drawer && <KolDrawer kol={drawer.kol} initialTab={drawer.tab} onClose={() => setDrawer(null)} />}
+      {drawer && (
+        <KolDrawer
+          kol={drawer.kol}
+          initialTab={drawer.tab}
+          onClose={() => setDrawer(null)}
+          onUpdate={(k) => {
+            setDrawer((d) => (d ? { ...d, kol: k } : d));
+            setKols((ks) => ks.map((x) => (x.id === k.id ? k : x)));
+          }}
+        />
+      )}
       {requestOpen && <RequestModal nextId={Math.max(0, ...kols.map((k) => k.id)) + 1} onClose={() => setRequestOpen(false)} onCreate={addKol} />}
     </>
   );
@@ -250,20 +262,42 @@ function KolPlan({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue
 
 const KOL_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
 
+const CONTACT_STATUSES = ["Prospect", "Contacted", "In Discussion", "Confirmed", "Declined"];
+
 function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (k: Kol) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const [campaign, setCampaign] = useState("Wagyu Festival");
   const [brandSel, setBrandSel] = useState("TEPPEN");
+  const [campaign, setCampaign] = useState("");
   const [kolType, setKolType] = useState("Food Blogger");
+  const [kolName, setKolName] = useState("");
+  const [handle, setHandle] = useState("");
   const [count, setCount] = useState("1");
   const [budget, setBudget] = useState("");
+  const [expReach, setExpReach] = useState("");
+  const [expEng, setExpEng] = useState("");
+  const [postingDate, setPostingDate] = useState("");
+  const [contactStatus, setContactStatus] = useState("Prospect");
   const [deliverables, setDeliverables] = useState("");
   const [notes, setNotes] = useState("");
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const brandId = KOL_BRAND_TO_ID[brandSel] ?? "teppen";
+  const brandCampaigns = campaigns.filter((c) => c.b === brandId);
+  useEffect(() => {
+    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
+  }, [brandCampaigns, campaign]);
 
   const submit = () => {
     onCreate(buildKol({
-      id: nextId, campaign, b: KOL_BRAND_TO_ID[brandSel] ?? "teppen", kolType,
+      id: nextId, campaign: campaign || "—", b: brandId, kolType,
       count: parseInt(count) || 1, budget: parseFloat(budget) || 0, deliverables, notes,
+      name: kolName, handle, expectedReach: parseInt(expReach) || 0,
+      expectedEngagement: parseInt(expEng) || 0, postingDate, contactStatus,
     }));
   };
 
@@ -274,13 +308,24 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
         <div className="text-[16px] font-extrabold mb-4">Request KOL</div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
-            <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}><option>Wagyu Festival</option><option>Father&apos;s Day Set</option><option>Cocktail Hour Launch</option></select>
-          </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
             <select value={brandSel} onChange={(e) => setBrandSel(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+            <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
+              <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+              {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">KOL Name</label>
+            <input value={kolName} onChange={(e) => setKolName(e.target.value)} className={field} placeholder="e.g. Tokyo Tom" />
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Page / Handle</label>
+            <input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or page URL" />
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">KOL Type</label>
@@ -291,8 +336,26 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <input type="number" value={count} onChange={(e) => setCount(e.target.value)} className={field} placeholder="1" />
           </div>
           <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Expected Reach</label>
+            <input type="number" value={expReach} onChange={(e) => setExpReach(e.target.value)} className={field} placeholder="e.g. 50000" />
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Expected Engagement</label>
+            <input type="number" value={expEng} onChange={(e) => setExpEng(e.target.value)} className={field} placeholder="e.g. 4000" />
+          </div>
+          <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Budget / creator</label>
             <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} className={field} placeholder="฿" />
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Posting Date</label>
+            <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} className={field} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Contact Status</label>
+            <select value={contactStatus} onChange={(e) => setContactStatus(e.target.value)} className={field}>
+              {CONTACT_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            </select>
           </div>
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deliverables</label>

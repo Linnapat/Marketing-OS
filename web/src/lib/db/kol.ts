@@ -27,19 +27,33 @@ export async function createKol(kol: Kol): Promise<Kol> {
   return kol;
 }
 
+/** Persist edits to a creator (results, contract status, etc). The whole Kol
+ *  round-trips through `data`; status is mirrored. Matched on the id in the blob. */
+export async function updateKol(kol: Kol): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("kols")
+    .update({ status: kol.status, data: kol })
+    .eq("data->>id", String(kol.id));
+}
+
 /** Build a full Kol from the sparse request form, filling sensible defaults. */
 export function buildKol(input: {
   id: number; campaign: string; b: BrandId; kolType: string; count: number;
   budget: number; deliverables: string; notes: string;
+  name?: string; handle?: string; expectedReach?: number; expectedEngagement?: number;
+  postingDate?: string; contactStatus?: string;
 }): Kol {
   return {
     id: input.id,
-    name: `New Request — ${input.kolType}`,
-    h: "@tbd", plat: "Instagram", b: input.b, branch: "—", campaign: input.campaign,
-    kolType: input.kolType, followers: 0, expectedReach: 0, actualReach: 0, visits: 0,
+    name: input.name?.trim() || `New Request — ${input.kolType}`,
+    h: input.handle?.trim() || "@tbd", plat: "Instagram", b: input.b, branch: "—", campaign: input.campaign,
+    kolType: input.kolType, followers: 0, expectedReach: input.expectedReach ?? 0, actualReach: 0, visits: 0,
     fee: input.budget, foodCost: 0, totalCost: input.budget * Math.max(1, input.count),
     owner: "Ken S.", ownerTeam: "KOL Team", pendingApprover: "Aran P.", currentBlocker: null,
-    status: "Prospect", waitingSince: null, postDueDate: "TBD", postedDate: null,
+    status: input.contactStatus || "Prospect", waitingSince: null, postDueDate: input.postingDate || "TBD", postedDate: null,
+    expectedEngagement: input.expectedEngagement ?? 0, actualEngagement: 0,
+    contactStatus: input.contactStatus || "Prospect", postingDate: input.postingDate || "TBD",
     openComments: 0, latestComment: "", isOverdue: false, couponCode: null,
     contractStatus: "Pending", quotationStatus: "Pending", invoiceStatus: "Pending",
     paymentStatus: "Unpaid", financeReqId: "—", paymentDue: "TBD", roi: 0,

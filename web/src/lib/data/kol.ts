@@ -54,6 +54,11 @@ export interface Kol {
   saves: string;
   shares: string;
   postLink: string | null;
+  /** Optional planning/result fields captured in the request + results stages. */
+  expectedEngagement?: number;
+  actualEngagement?: number;
+  contactStatus?: string;
+  postingDate?: string;
   stages: KolStage[];
 }
 
