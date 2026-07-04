@@ -7,6 +7,7 @@ import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent } from "@/lib/db/content";
 import { useAuth } from "@/lib/auth";
+import { DatePicker } from "@/components/ui/DatePicker";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
@@ -25,6 +26,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
   const [revising, setRevising] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState<string | null>(null);
 
   // Persist an approval action to the shared content_posts table and bubble
   // the fresh object up so the calendar reflects it without a refetch.
@@ -218,7 +220,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-[10px]">
-                <div><label className="block text-[11.5px] font-bold text-muted mb-[5px]">Schedule Date</label><input type="date" className={field} /></div>
+                <div><label className="block text-[11.5px] font-bold text-muted mb-[5px]">Schedule Date</label><DatePicker value={scheduleDate} onChange={(v) => setScheduleDate(v || null)} /></div>
                 <div><label className="block text-[11.5px] font-bold text-muted mb-[5px]">Schedule Time</label><input type="time" defaultValue={item.time} className={field} /></div>
               </div>
               <div>

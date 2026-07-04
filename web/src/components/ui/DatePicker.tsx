@@ -17,6 +17,14 @@ export function fmtDisplay(iso: string | null | undefined): string {
   return `${d}/${m}/${y}`;
 }
 
+const SHORT_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** ISO (YYYY-MM-DD) → "Jul 5" for compact chips / due labels. */
+export function fmtShort(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const [, m, d] = iso.split("-").map(Number);
+  return m ? `${SHORT_MON[m - 1]} ${d}` : "";
+}
+
 function parseIso(iso: string | null | undefined): { y: number; m: number; d: number } | null {
   if (!iso) return null;
   const [y, m, d] = iso.split("-").map(Number);

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, CSSProperties } from "react";
 import { TASKS, Task, PEOPLE, GREETINGS, CELEBRATIONS } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb } from "@/lib/db/tasks";
+import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 
 // ── Exact color maps from MyTasks.dc.html ──────────────────────────
 const TEAM_COLORS: Record<string, string> = {
@@ -457,7 +458,7 @@ function NewTaskModal({ owner, nextId, onClose, onCreate }: { owner: string; nex
   const [assignee, setAssignee] = useState(owner);
   const [brand, setBrand] = useState("Teppen");
   const [campaign, setCampaign] = useState("");
-  const [due, setDue] = useState("Jul 5");
+  const [dueIso, setDueIso] = useState("");
   const [priority, setPriority] = useState<"High" | "Med" | "Low">("Med");
   const [group, setGroup] = useState("doFirst");
   const [nextAction, setNextAction] = useState("");
@@ -465,7 +466,7 @@ function NewTaskModal({ owner, nextId, onClose, onCreate }: { owner: string; nex
   const create = () => {
     if (!title.trim()) return;
     const meta = TYPE_META[type];
-    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand, campaign: campaign.trim() || "—", status: "Todo", priority, group, due, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
+    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand, campaign: campaign.trim() || "—", status: "Todo", priority, group, due: fmtShort(dueIso) || "TBD", dueIso, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
   };
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
@@ -484,7 +485,7 @@ function NewTaskModal({ owner, nextId, onClose, onCreate }: { owner: string; nex
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><input value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field} placeholder="e.g. Wagyu Festival" /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><input value={due} onChange={(e) => setDue(e.target.value)} className={field} placeholder="Jul 5" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><DatePicker value={dueIso || null} onChange={setDueIso} /></div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label><select value={priority} onChange={(e) => setPriority(e.target.value as "High" | "Med" | "Low")} className={field}><option>High</option><option>Med</option><option>Low</option></select></div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Focus group</label><select value={group} onChange={(e) => setGroup(e.target.value)} className={field}>{GROUP_DEFS.filter((g) => g.id !== "done").map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select></div>
           </div>

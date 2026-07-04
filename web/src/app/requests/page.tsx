@@ -9,6 +9,8 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
 import { REQUEST_TYPES, REQUESTS, RequestRow, STAGE_TONE, PRIORITY_TONE } from "@/lib/data/requests";
 import { fetchRequests, createRequest } from "@/lib/db/requests";
+import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
 const REQ_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
 
@@ -36,7 +38,7 @@ export default function RequestCenterPage() {
     const row: RequestRow = {
       id, type: rt?.label ?? "Request", typeIcon: rt?.icon ?? "📌", title: title.trim(),
       b: REQ_BRAND_TO_ID[fBrand] ?? "teppen", campaign: fCampaign, requester: "You",
-      approver: fApprover.trim() || "Aran P.", due: fDue.trim() || "TBD", stage: "Submitted", priority: fPriority as RequestRow["priority"],
+      approver: fApprover.trim() || "Aran P.", due: fmtShort(fDue) || "TBD", stage: "Submitted", priority: fPriority as RequestRow["priority"],
     };
     await createRequest(row);
     setSubmitted(id);
@@ -84,8 +86,8 @@ export default function RequestCenterPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Priority</label><select value={fPriority} onChange={(e) => setFPriority(e.target.value)} className={field}><option>High</option><option>Med</option><option>Low</option></select></div>
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><input value={fDue} onChange={(e) => setFDue(e.target.value)} className={field} placeholder="Jul 5" /></div>
-                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><input value={fApprover} onChange={(e) => setFApprover(e.target.value)} className={field} placeholder="Aran P." /></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><DatePicker value={fDue || null} onChange={setFDue} /></div>
+                  <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={fApprover} onChange={setFApprover} /></div>
                 </div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Notes / brief</label><textarea rows={3} className={field} placeholder="What's needed, references, deliverables…" /></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attachment</label><div className="border-2 border-dashed border-line2 rounded-[10px] py-5 text-center text-[12px] text-faint">Drop reference file</div></div>
