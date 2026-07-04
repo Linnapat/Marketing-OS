@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { CampaignDetail, deriveDetail } from "@/lib/data/campaigns";
 import { fetchCampaign } from "@/lib/db/campaigns";
 import { fetchCampaignHub, CampaignHub } from "@/lib/db/campaignHub";
@@ -31,7 +32,14 @@ export function CampaignDetailClient({ id, initialDetail }: { id: string; initia
   useEffect(() => { reload(); }, [reload]);
 
   if (!detail) {
-    return <div className="py-24 text-center text-[13px] text-faint">{loading ? "Loading…" : "Campaign not found."}</div>;
+    if (loading) return <div className="py-24 text-center text-[13px] text-faint">Loading…</div>;
+    return (
+      <div className="py-24 flex flex-col items-center gap-4 text-center">
+        <div className="text-[15px] font-bold text-ink">ไม่พบแคมเปญนี้</div>
+        <div className="text-[13px] text-faint">แคมเปญที่คุณเปิดอาจถูกลบ หรือลิงก์ไม่ถูกต้อง</div>
+        <Link href="/campaigns" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">← กลับไปหน้า Campaigns</Link>
+      </div>
+    );
   }
   return <CampaignDetailView detail={detail} hub={hub} onReload={reload} />;
 }

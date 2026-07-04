@@ -28,6 +28,8 @@ export interface RequestRow {
   due: string;
   stage: string;
   priority: "High" | "Med" | "Low";
+  /** Reject / send-back history logged from the Approval Queue. */
+  feedback?: { stage: string; reason: string; by: string; at: string }[];
 }
 
 export const REQUESTS: RequestRow[] = [

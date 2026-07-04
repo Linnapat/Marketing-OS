@@ -5,12 +5,15 @@ import { clsx } from "@/lib/clsx";
 import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
-  PERM_MODULES, PERM_ROLES, BUDGET_THRESHOLDS, APPROVAL_RULES,
+  PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
   WF_MODULE_LABELS, STATUS_SETS, WfModule, NOTIF_CHANNELS, NOTIF_TRIGGERS,
   INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR, ROLE_OPTIONS,
 } from "@/lib/data/settings";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
+
+// Every branch across all brands — the scope options for a Branch Manager.
+const BRANCHES: string[] = BRANDS_DATA.flatMap((b) => b.branchList);
 
 function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
   return <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill whitespace-nowrap inline-block" style={{ color: fg, background: bg }}>{text}</span>;
@@ -258,12 +261,17 @@ export default function SettingsPage() {
             <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
               <table className="w-full text-left" style={{ borderCollapse: "collapse", minWidth: 720 }}>
                 <thead>
-                  <tr className="border-b border-line4"><th className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold px-4 py-3">Role</th>{PERM_MODULES.map((m) => <th key={m} className="text-[10px] uppercase tracking-[0.04em] text-faint font-bold px-2 py-3 text-center">{m}</th>)}</tr>
+                  <tr className="border-b border-line4"><th className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold px-4 py-3">Role</th><th className="text-[10px] uppercase tracking-[0.04em] text-faint font-bold px-2 py-3 text-center">Scope</th>{PERM_MODULES.map((m) => <th key={m} className="text-[10px] uppercase tracking-[0.04em] text-faint font-bold px-2 py-3 text-center">{m}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {PERM_ROLES.map((r, ri) => (
+                  {PERM_ROLES.map((r, ri) => {
+                    const sc = PERM_SCOPE_META[r.scope];
+                    return (
                     <tr key={r.role} className="border-b border-line4 last:border-0">
                       <td className="px-4 py-3"><div className="text-[13px] font-bold">{r.role}</div><div className="text-[11px] text-faint">{r.desc}</div></td>
+                      <td className="px-2 py-3 text-center">
+                        <span className="text-[10.5px] font-bold px-2 py-[3px] rounded-[6px] whitespace-nowrap" style={{ background: sc.b, color: sc.c }}>{sc.label}</span>
+                      </td>
                       {r.perms.map((_, mi) => {
                         const lvl = PERM_LEVELS[perm[ri][mi]];
                         return (
@@ -277,7 +285,8 @@ export default function SettingsPage() {
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -447,9 +456,15 @@ export default function SettingsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand access</label>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand / branch scope</label>
                   <select value={inv.brandAccess} onChange={(e) => setInv({ ...inv, brandAccess: e.target.value })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
-                    <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option><option>External only</option>
+                    <optgroup label="Brand">
+                      <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option>
+                    </optgroup>
+                    <optgroup label="Single branch">
+                      {BRANCHES.map((br) => <option key={br} value={`Branch · ${br}`}>Branch · {br}</option>)}
+                    </optgroup>
+                    <option>External only</option>
                   </select>
                 </div>
               </div>

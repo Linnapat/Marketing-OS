@@ -66,15 +66,25 @@ const AP: Perm = { l: "Approve", c: "#4E7A4E", b: "#EEF4EE" };
 const E: Perm = { l: "Edit", c: "#3E5C9A", b: "#EEF1F8" };
 const V: Perm = { l: "View", c: "#9A9387", b: "#F2F0EB" };
 const N: Perm = { l: "—", c: "#C0B8AD", b: "#F2F0EB" };
-export const PERM_ROLES: { role: string; desc: string; perms: Perm[] }[] = [
-  { role: "Admin / CMO", desc: "Full access", perms: [A, A, A, A, A, A, A] },
-  { role: "Brand Lead", desc: "Review & Approve", perms: [AP, AP, AP, V, AP, V, N] },
-  { role: "Planner", desc: "Create & Edit", perms: [E, V, V, V, E, E, N] },
-  { role: "Designer", desc: "Graphic module", perms: [V, E, N, N, V, N, N] },
-  { role: "KOL Specialist", desc: "KOL module", perms: [V, N, E, V, V, N, N] },
-  { role: "Finance", desc: "Budget & payments", perms: [V, N, N, A, N, N, N] },
-  { role: "Viewer", desc: "Read only", perms: [V, V, V, V, V, V, N] },
-  { role: "Agency (External)", desc: "External — task list only", perms: [N, E, N, N, E, N, N] },
+// Data scope a role can see/act on: whole org, a brand, a single branch, or
+// only their own records.
+export type PermScope = "All" | "Brand" | "Branch" | "Own";
+export const PERM_SCOPE_META: Record<PermScope, { label: string; c: string; b: string }> = {
+  All: { label: "All brands", c: "#B8945A", b: "#FBF6ED" },
+  Brand: { label: "Brand", c: "#3E5C9A", b: "#EEF1F8" },
+  Branch: { label: "Branch", c: "#4E7A4E", b: "#EEF4EE" },
+  Own: { label: "Own only", c: "#9A9387", b: "#F2F0EB" },
+};
+export const PERM_ROLES: { role: string; desc: string; scope: PermScope; perms: Perm[] }[] = [
+  { role: "Admin / CMO", desc: "Full access", scope: "All", perms: [A, A, A, A, A, A, A] },
+  { role: "Brand Lead", desc: "Review & Approve", scope: "Brand", perms: [AP, AP, AP, V, AP, V, N] },
+  { role: "Branch Manager", desc: "One branch — review & approve", scope: "Branch", perms: [AP, V, V, V, AP, V, N] },
+  { role: "Planner", desc: "Create & Edit", scope: "Brand", perms: [E, V, V, V, E, E, N] },
+  { role: "Designer", desc: "Graphic module", scope: "Own", perms: [V, E, N, N, V, N, N] },
+  { role: "KOL Specialist", desc: "KOL module", scope: "Own", perms: [V, N, E, V, V, N, N] },
+  { role: "Finance", desc: "Budget & payments", scope: "All", perms: [V, N, N, A, N, N, N] },
+  { role: "Viewer", desc: "Read only", scope: "Brand", perms: [V, V, V, V, V, V, N] },
+  { role: "Agency (External)", desc: "External — task list only", scope: "Own", perms: [N, E, N, N, E, N, N] },
 ];
 
 // Selectable positions when inviting a member. Each role carries a default
@@ -83,6 +93,7 @@ export const PERM_ROLES: { role: string; desc: string; perms: Perm[] }[] = [
 export const ROLE_OPTIONS: { role: string; access: "Admin" | "Editor" | "Viewer"; brand: string; external?: boolean }[] = [
   { role: "CMO / Admin", access: "Admin", brand: "All brands" },
   { role: "Brand Lead", access: "Editor", brand: "All brands" },
+  { role: "Branch Manager", access: "Editor", brand: "Single branch" },
   { role: "Campaign Planner", access: "Editor", brand: "All brands" },
   { role: "Senior Designer", access: "Editor", brand: "All brands" },
   { role: "KOL Specialist", access: "Editor", brand: "Touka" },

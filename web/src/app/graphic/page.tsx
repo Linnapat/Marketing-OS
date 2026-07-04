@@ -220,9 +220,11 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <div className="flex flex-wrap gap-2">
               {CHANNELS.map((ch) => {
                 const on = chans.includes(ch);
+                // Constant border width + font-weight so toggling never changes the
+                // chip's size (which was causing the row to reflow / shift).
                 return (
-                  <button key={ch} onClick={() => setChans((c) => on ? c.filter((x) => x !== ch) : [...c, ch])} className="text-[12px] px-[12px] py-[6px] rounded-pill"
-                    style={on ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
+                  <button key={ch} onClick={() => setChans((c) => on ? c.filter((x) => x !== ch) : [...c, ch])} className="text-[12px] font-semibold px-[12px] py-[6px] rounded-pill border transition-colors"
+                    style={on ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { color: "#6b6258", background: "#fff", borderColor: "#E5DECF" }}>
                     {ch}
                   </button>
                 );
