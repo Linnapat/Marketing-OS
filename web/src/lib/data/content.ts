@@ -24,6 +24,11 @@ export interface ContentItem {
   assetStatus: string;
   approvalStatus: string;
   publishStatus: string;
+  /** Approval trail — set when a reviewer acts on the post. */
+  approvedBy?: string;
+  approvedAt?: string;
+  feedbackRounds?: number;
+  feedback?: { round: number; reason: string; by: string; at: string }[];
 }
 
 export const CONTENT: ContentItem[] = [
@@ -46,6 +51,7 @@ export const CONTENT_STATUS_TONE: Record<string, Tone> = {
   // caption/asset/approval sub-statuses
   Missing: "red", Ready: "blue", Approved: "green", Final: "green", "No Asset": "red",
   "Waiting Feedback": "gold", "Scheduled in OS": "blue", Queued: "blue",
+  "Revision Requested": "orange",
 };
 
 export function contentTone(status: string): Tone {

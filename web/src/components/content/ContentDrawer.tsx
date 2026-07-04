@@ -5,18 +5,49 @@ import { X } from "lucide-react";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { updateContent } from "@/lib/db/content";
+import { useAuth } from "@/lib/auth";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export function ContentDrawer({ item, onClose }: { item: ContentItem; onClose: () => void }) {
+export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; onClose: () => void; onUpdate?: (next: ContentItem) => void }) {
   const [tab, setTab] = useState<DTab>("overview");
   const [caption, setCaption] = useState(item.caption);
   const [hashtags, setHashtags] = useState(item.hashtags);
   const [cta, setCta] = useState(item.cta);
   const warnings = contentWarnings(item);
+
+  const { member, user } = useAuth();
+  const reviewer = member?.name ?? user?.email ?? "CMO";
+  const [revising, setRevising] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Persist an approval action to the shared content_posts table and bubble
+  // the fresh object up so the calendar reflects it without a refetch.
+  const persist = async (next: ContentItem) => {
+    setBusy(true);
+    try { await updateContent(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+
+  const approve = () => persist({
+    ...item, approvalStatus: "Approved", status: item.status === "Draft" ? "Approved" : item.status,
+    approvedBy: reviewer, approvedAt: new Date().toISOString(),
+  });
+
+  const requestRevision = () => {
+    const r = reason.trim();
+    if (!r) return;
+    const round = (item.feedbackRounds ?? 0) + 1;
+    persist({
+      ...item, approvalStatus: "Revision Requested", feedbackRounds: round,
+      feedback: [...(item.feedback ?? []), { round, reason: r, by: reviewer, at: new Date().toISOString() }],
+    });
+    setReason(""); setRevising(false);
+  };
 
   const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none font-sans";
 
@@ -118,12 +149,54 @@ export function ContentDrawer({ item, onClose }: { item: ContentItem; onClose: (
               <div className="rounded-[14px] p-4" style={{ background: "#F7F4EE" }}>
                 <div className="text-[12px] font-bold tracking-[0.05em] uppercase text-faint mb-[10px]">Approval Status</div>
                 <StatusBadge tone={contentTone(item.approvalStatus)}>{item.approvalStatus}</StatusBadge>
-                <div className="text-[12.5px] text-faint mt-2">0 feedback round(s)</div>
+                <div className="text-[12.5px] text-faint mt-2">{item.feedbackRounds ?? 0} feedback round(s)</div>
+                {item.approvalStatus === "Approved" && item.approvedBy && (
+                  <div className="text-[12px] text-status-green font-semibold mt-1">
+                    ✓ Approved by {item.approvedBy}{item.approvedAt ? ` · ${new Date(item.approvedAt).toLocaleString()}` : ""}
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2">
-                <button className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] text-white" style={{ background: "#4E7A4E" }}>✓ Approve</button>
-                <button className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] border-[1.5px] border-line2 text-status-orange">↩ Request Revision</button>
-              </div>
+
+              {/* Feedback history */}
+              {item.feedback && item.feedback.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <div className="text-[11.5px] font-bold text-muted">Revision history</div>
+                  {item.feedback.slice().reverse().map((f) => (
+                    <div key={f.round} className="rounded-[11px] px-[13px] py-[10px] border-[1.5px]" style={{ borderColor: "#F0D9C0", background: "#FCF6EE" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11.5px] font-bold text-status-orange">Round {f.round}</span>
+                        <span className="text-[11px] text-faint">{f.by} · {new Date(f.at).toLocaleDateString()}</span>
+                      </div>
+                      <div className="text-[12.5px] text-ink">{f.reason}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {revising ? (
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11.5px] font-bold text-muted">Reason for revision <span className="text-status-red">*</span></label>
+                  <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} autoFocus
+                    placeholder="What needs to change before this can be approved?"
+                    className="w-full text-[13px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none resize-none" />
+                  <div className="flex gap-2">
+                    <button onClick={requestRevision} disabled={!reason.trim() || busy}
+                      className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] text-white disabled:opacity-40" style={{ background: "#C67A28" }}>
+                      {busy ? "Sending…" : "Send Revision Request"}
+                    </button>
+                    <button onClick={() => { setRevising(false); setReason(""); }} className="text-[13px] font-semibold py-[10px] px-4 rounded-[10px] border border-line2 text-muted">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={approve} disabled={busy || item.approvalStatus === "Approved"}
+                    className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] text-white disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                    {item.approvalStatus === "Approved" ? "✓ Approved" : busy ? "Saving…" : "✓ Approve"}
+                  </button>
+                  <button onClick={() => setRevising(true)} disabled={busy}
+                    className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] border-[1.5px] border-line2 text-status-orange disabled:opacity-40">↩ Request Revision</button>
+                </div>
+              )}
             </div>
           )}
 

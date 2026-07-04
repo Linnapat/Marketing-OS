@@ -18,6 +18,10 @@ import {
   BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, ExpenseRow, RequestRow,
 } from "@/lib/data/finance";
 import { fetchExpenseRequests, createExpenseRequest, approveExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { createRequest } from "@/lib/db/requests";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
+import { RequestRow as QueueRow } from "@/lib/data/requests";
 
 const TABS = [
   ["plan", "Budget Plan"],
@@ -238,22 +242,46 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   const [catKey, setCatKey] = useState("");
   const [amount, setAmount] = useState("");
   const [formBrand, setFormBrand] = useState("TEPPEN");
+  const [campaign, setCampaign] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [requests, setRequests] = useState<RequestRow[]>(REQUESTS);
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
 
   useEffect(() => {
     let alive = true;
     fetchExpenseRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, [submitted]);
 
+  const formBrandId = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
+  // Campaigns available for the chosen brand (cascade by brand).
+  const brandCampaigns = useMemo(
+    () => campaigns.filter((c) => c.b === formBrandId),
+    [campaigns, formBrandId],
+  );
+  // Reset the campaign choice when it no longer belongs to the selected brand.
+  useEffect(() => {
+    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
+  }, [brandCampaigns, campaign]);
+
   const submit = async () => {
+    const ref = `REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`;
     const row: RequestRow = {
-      category: cat?.label ?? "Expense", b: BRAND_NAME_TO_ID[formBrand] ?? "teppen",
-      campaign: "—", requested: amt, approved: 0, due: "—", status: "Waiting Approval",
+      category: cat?.label ?? "Expense", b: formBrandId,
+      campaign: campaign || "—", requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
     await createExpenseRequest(row);
-    setSubmitted(`REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`);
+    // Also drop a card into the shared Approval Queue (same table /approvals +
+    // the Dashboard's Pending Approval read from), stage "Submitted".
+    const queueRow: QueueRow = {
+      id: ref, type: "Budget", typeIcon: "฿",
+      title: `${cat?.label ?? "Expense"} · ${baht(amt)}`, b: formBrandId,
+      campaign: campaign || "—", requester: "You", approver: route,
+      due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
+    };
+    await createRequest(queueRow);
+    setSubmitted(ref);
   };
   // Additional line items
   const [lines, setLines] = useState<ExtraLine[]>([]);
@@ -326,6 +354,13 @@ function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Amount (฿) <span className="text-status-red">*</span></label>
                 <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className={field} />
               </div>
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+              <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
+                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+                {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

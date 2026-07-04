@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
@@ -15,10 +15,25 @@ import {
   OVERALL_KPIS, TEAM_RESULTS, TEAM_HEALTH, HEALTH_TONE,
   DASH_ALERTS, DASH_APPROVALS, TEAM_PULSE,
 } from "@/lib/data/dashboard";
+import { brandName } from "@/lib/brands";
+import { fetchRequests } from "@/lib/db/requests";
+import { RequestRow } from "@/lib/data/requests";
+
+// Stages that still need someone to act — what "Pending Approval" means.
+const PENDING_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
 
 export default function DashboardPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [pending, setPending] = useState<RequestRow[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchRequests()
+      .then((rs) => { if (alive) setPending(rs.filter((r) => PENDING_STAGES.has(r.stage))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   return (
     <>
@@ -148,21 +163,40 @@ export default function DashboardPage() {
         <div className="bg-surface border border-line rounded-cardLg p-[22px]">
           <div className="flex items-center justify-between mb-[14px]">
             <div className="text-[15px] font-bold">Pending Approval</div>
-            <span className="text-[11px] font-bold text-white bg-status-red rounded-pill px-[9px] py-[3px]">{DASH_APPROVALS.length}</span>
+            <span className="text-[11px] font-bold text-white bg-status-red rounded-pill px-[9px] py-[3px]">{pending ? pending.length : DASH_APPROVALS.length}</span>
           </div>
           <div>
-            {DASH_APPROVALS.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 py-[10px] border-b border-line4 last:border-0">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold truncate">{a.title}</div>
-                  <div className="flex items-center gap-2 mt-[2px] flex-wrap">
-                    <span className="text-[11px] text-faint">{a.meta}</span>
-                    <span className="text-[10.5px] font-semibold text-status-gold">{a.waiting}</span>
+            {pending ? (
+              pending.length === 0 ? (
+                <div className="text-[12.5px] text-faint py-6 text-center">Nothing waiting for approval right now.</div>
+              ) : (
+                pending.map((r) => (
+                  <Link key={r.id} href="/approvals" className="flex items-center gap-3 py-[10px] border-b border-line4 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold truncate">{r.typeIcon} {r.title}</div>
+                      <div className="flex items-center gap-2 mt-[2px] flex-wrap">
+                        <span className="text-[11px] text-faint">{brandName(r.b)}{r.campaign !== "—" ? ` · ${r.campaign}` : ""}</span>
+                        <span className="text-[10.5px] font-semibold text-status-gold">{r.stage}</span>
+                      </div>
+                    </div>
+                    <span className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-[11px] py-[5px] cursor-pointer whitespace-nowrap">Review</span>
+                  </Link>
+                ))
+              )
+            ) : (
+              DASH_APPROVALS.map((a, i) => (
+                <div key={i} className="flex items-center gap-3 py-[10px] border-b border-line4 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold truncate">{a.title}</div>
+                    <div className="flex items-center gap-2 mt-[2px] flex-wrap">
+                      <span className="text-[11px] text-faint">{a.meta}</span>
+                      <span className="text-[10.5px] font-semibold text-status-gold">{a.waiting}</span>
+                    </div>
                   </div>
+                  <span className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-[11px] py-[5px] cursor-pointer whitespace-nowrap">Review</span>
                 </div>
-                <span className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-[11px] py-[5px] cursor-pointer whitespace-nowrap">Review</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

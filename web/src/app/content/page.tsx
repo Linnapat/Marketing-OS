@@ -104,7 +104,16 @@ export default function ContentPage() {
         {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
       </div>
 
-      {open && <ContentDrawer item={open} onClose={() => setOpen(null)} />}
+      {open && (
+        <ContentDrawer
+          item={open}
+          onClose={() => setOpen(null)}
+          onUpdate={(next) => {
+            setOpen(next);
+            setPosts((ps) => ps.map((p) => (p.id === next.id ? next : p)));
+          }}
+        />
+      )}
       {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} />}
     </>
   );

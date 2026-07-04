@@ -30,3 +30,15 @@ export async function createContent(post: ContentItem): Promise<ContentItem> {
   if (error || !data) return post;
   return { ...post, id: `c${data.id}` };
 }
+
+/** Persist an edited post (approval action, caption edit, etc). The whole
+ *  object round-trips through the `data` jsonb; the status column is mirrored
+ *  so list queries stay accurate. Matched on the stable id inside the blob
+ *  (the same value fetchContent surfaces to the UI). */
+export async function updateContent(post: ContentItem): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("content_posts")
+    .update({ status: post.status, caption: post.caption, data: post })
+    .eq("data->>id", post.id);
+}
