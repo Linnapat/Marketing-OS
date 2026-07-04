@@ -92,7 +92,7 @@ export default function CampaignsPage() {
         eyebrow="Campaign Command Center"
         title="Campaigns"
         subtitle={`${filtered.length} campaigns · plan, track, and profit from every activation`}
-        right={<button onClick={() => setNewOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Campaign</button>}
+        right={<Link href="/campaigns/new" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Campaign</Link>}
       />
 
       {/* Monthly budget summary — dark card */}

@@ -24,6 +24,10 @@ export interface Task {
   checklist: string[];
   /** Ads-only: the media channel (Meta, Google, TikTok, LINE…). */
   channel?: string;
+  /** Auto-created from a Campaign Brief — links back to the source. */
+  relatedBrief?: string;
+  relatedGraphicId?: string;
+  dueIso?: string;
 }
 
 export const STATUS_TONE: Record<string, Tone> = {
