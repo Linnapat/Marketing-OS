@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState, CSSProperties } from "react";
+import Link from "next/link";
 import { TASKS, Task, PEOPLE, GREETINGS, CELEBRATIONS } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb } from "@/lib/db/tasks";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
+import { fetchRequests } from "@/lib/db/requests";
+import { RequestRow } from "@/lib/data/requests";
+import { brandName } from "@/lib/brands";
+
+// Stages / statuses that still need someone in the approval tier to act.
+const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
+const PENDING_CAMPAIGN = new Set(["Waiting for Approval", "Ready for Review"]);
 
 // ── Exact color maps from MyTasks.dc.html ──────────────────────────
 const TEAM_COLORS: Record<string, string> = {
@@ -48,8 +58,10 @@ const SCOPE_FILTERS = [
 ];
 
 export default function MyTasksPage() {
-  const [activeTab, setActiveTab] = useState<"myDay" | "team">("myDay");
+  const [activeTab, setActiveTab] = useState<"myDay" | "approval" | "team">("myDay");
   const [viewAs, setViewAs] = useState("Aran P.");
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [requests, setRequests] = useState<RequestRow[]>([]);
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
@@ -69,8 +81,22 @@ export default function MyTasksPage() {
       setTasks(tasks);
       setDoneIds(new Set(doneIds));
     }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // My Approval inbox — campaigns + requests where the current person is the
+  // approver (available to anyone in an approval tier).
+  const approvalCampaigns = useMemo(
+    () => campaigns.filter((c) => PENDING_CAMPAIGN.has(c.status)),
+    [campaigns],
+  );
+  const approvalRequests = useMemo(
+    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && r.approver === viewAs),
+    [requests, viewAs],
+  );
+  const approvalCount = approvalCampaigns.length + approvalRequests.length;
 
   const markDone = (id: number) => {
     setDoneIds((s) => new Set(s).add(id));
@@ -118,6 +144,9 @@ export default function MyTasksPage() {
           <button onClick={() => setNewOpen(true)} style={chip(true)}>+ New Task</button>
           <div className="w-px h-5 bg-line2 mx-1" />
           <span onClick={() => setActiveTab("myDay")} style={chip(activeTab === "myDay")}>My Day</span>
+          <span onClick={() => setActiveTab("approval")} style={chip(activeTab === "approval")} className="relative">
+            My Approval{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
+          </span>
           <span onClick={() => setActiveTab("team")} style={chip(activeTab === "team")}>Team View</span>
           <div className="w-px h-5 bg-line2 mx-1" />
           <div className="flex items-center gap-[6px] bg-white border border-line2 rounded-pill px-3 py-[5px]">
@@ -194,6 +223,8 @@ export default function MyTasksPage() {
             <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} />
           )}
         </div>
+      ) : activeTab === "approval" ? (
+        <MyApprovalView campaigns={approvalCampaigns} requests={approvalRequests} />
       ) : (
         <TeamView tasks={tasks} getStatus={getStatus} onSelect={(p) => { setViewAs(p); setActiveTab("myDay"); }} />
       )}
@@ -204,6 +235,72 @@ export default function MyTasksPage() {
         <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
           <span className="text-[18px]">🌿</span>
           <div><div className="text-[13.5px] font-bold">{celebration}</div><div className="text-[11.5px] mt-[2px]" style={{ color: "#C0B8AD" }}>Small wins count — keep it going.</div></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MyApprovalView({ campaigns, requests }: { campaigns: CampaignRow[]; requests: RequestRow[] }) {
+  const total = campaigns.length + requests.length;
+  if (total === 0) {
+    return (
+      <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
+        <div>
+          <div className="text-[15px] font-bold text-ink">ไม่มีงานรออนุมัติ 🎉</div>
+          <div className="text-[12.5px] text-faint mt-1">แคมเปญและคำขอที่รอคุณอนุมัติจะมาโผล่ที่นี่</div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-5">
+      {campaigns.length > 0 && (
+        <div>
+          <div className="flex items-center gap-[10px] mb-3">
+            <span className="text-[17px]">🎯</span>
+            <span className="text-[13.5px] font-bold">Campaigns waiting for approval</span>
+            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{campaigns.length}</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {campaigns.map((c) => (
+              <Link key={c.id} href={`/campaigns/${c.id}?tab=approval`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[13.5px] font-bold text-ink truncate">{c.name}</span>
+                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>{c.status}</span>
+                </div>
+                <div className="text-[11.5px] text-faint mb-3">{brandName(c.b)} · {c.branch || "—"} · {c.campType}</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11.5px] text-muted">Owner {c.owner}</span>
+                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+      {requests.length > 0 && (
+        <div>
+          <div className="flex items-center gap-[10px] mb-3">
+            <span className="text-[17px]">📋</span>
+            <span className="text-[13.5px] font-bold">Requests waiting for approval</span>
+            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>{requests.length}</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {requests.map((r) => (
+              <Link key={r.id} href="/approvals" className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[13.5px] font-bold text-ink truncate">{r.typeIcon} {r.title}</span>
+                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>{r.stage}</span>
+                </div>
+                <div className="text-[11.5px] text-faint mb-3">{brandName(r.b)} · {r.campaign} · {r.type}</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11.5px] text-muted">{r.requester} → {r.approver}</span>
+                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
     </div>

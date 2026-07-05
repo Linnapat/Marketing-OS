@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { CampaignDetail, CAMPAIGN_TABS, CAMPAIGN_TAB_LABELS, CampaignTab } from "@/lib/data/campaigns";
@@ -17,6 +17,12 @@ import { fmtDisplay } from "@/components/ui/DatePicker";
 
 export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
   const [tab, setTab] = useState<CampaignTab>("overview");
+  // Deep-link support: /campaigns/[id]?tab=approval opens that tab (client-only
+  // read so the statically-rendered page doesn't need a Suspense boundary).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && (CAMPAIGN_TABS as readonly string[]).includes(t)) setTab(t as CampaignTab);
+  }, []);
   const c = detail.row;
   const s = hub ? hubStats(hub) : null;
 
