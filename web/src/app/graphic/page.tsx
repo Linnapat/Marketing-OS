@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -22,9 +21,11 @@ import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { SELECT_STYLE } from "@/components/ui/selectStyle";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
+
 
 export default function GraphicPage() {
   const [view, setView] = useState<"board" | "list">("board");
@@ -105,21 +106,22 @@ export default function GraphicPage() {
       <div className="mt-5 flex items-center justify-between flex-wrap gap-3">
         <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }]} />
         <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-[7px]">
+          <label className="flex items-center gap-[7px]">
+            <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
+            <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
+              <option value="all">All Brands</option>
+              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-[7px]">
             <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
-            {["all", ...DESIGNERS].map((d) => {
-              const active = d === designer;
-              return (
-                <button key={d} onClick={() => setDesigner(d)} className="text-[12px] px-[12px] py-[5px] rounded-pill whitespace-nowrap"
-                  style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
-                  {d === "all" ? "All" : d}
-                </button>
-              );
-            })}
-          </div>
+            <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
+              <option value="all">All</option>
+              {DESIGNERS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
         </div>
       </div>
-      <div className="mt-3"><BrandFilter value={brand} onChange={setBrand} /></div>
 
       <div className="mt-5">
         {view === "board" ? <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} /> : <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}

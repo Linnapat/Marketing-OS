@@ -8,7 +8,8 @@ import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
-import { BrandFilterValue, BrandId, BRAND_ORDER, brandName } from "@/lib/brands";
+import { BrandFilterValue, BrandId, BRAND_ORDER, brandName, BRANDS } from "@/lib/brands";
+import { SELECT_STYLE_DARK } from "@/components/ui/selectStyle";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
@@ -116,24 +117,14 @@ export default function CampaignsPage() {
       <div className="mt-[14px] bg-panel text-white rounded-cardLg p-5">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div className="text-[13px] font-bold text-white/90">Monthly Budget → Result Summary</div>
-          <div className="flex items-center gap-[7px] flex-wrap">
-            {(["all", "teppen", "omakase", "mainichi", "touka"] as BrandFilterValue[]).map((k) => {
-              const label = k === "all" ? "All" : summary.bars.find((b) => b.id === k)?.name ?? k;
-              const active = k === brand;
-              return (
-                <button
-                  key={k}
-                  onClick={() => setBrand(k)}
-                  className="text-[12px] px-3 py-[5px] rounded-pill whitespace-nowrap transition"
-                  style={active
-                    ? { fontWeight: 700, background: "#fff", color: "#211F1C" }
-                    : { fontWeight: 500, border: "1px solid rgba(255,255,255,.18)", color: "rgba(255,255,255,.7)" }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+          <select
+            value={brand}
+            onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
+            style={SELECT_STYLE_DARK}
+          >
+            <option value="all">All Brands</option>
+            {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+          </select>
         </div>
         <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))" }}>
           {[
