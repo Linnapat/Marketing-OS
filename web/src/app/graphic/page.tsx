@@ -111,7 +111,17 @@ export default function GraphicPage() {
         {view === "board" ? <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} /> : <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
       </div>
 
-      {drawer && <GraphicDrawer g={drawer.g} initialTab={drawer.tab} onClose={() => setDrawer(null)} />}
+      {drawer && (
+        <GraphicDrawer
+          g={drawer.g}
+          initialTab={drawer.tab}
+          onClose={() => setDrawer(null)}
+          onUpdate={(ng) => {
+            setDrawer((d) => (d ? { ...d, g: ng } : d));
+            setGraphics((gs) => gs.map((x) => (x.id === ng.id ? ng : x)));
+          }}
+        />
+      )}
       {reqOpen && <RequestModal nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1} onClose={() => setReqOpen(false)} onCreate={addGraphic} />}
     </>
   );

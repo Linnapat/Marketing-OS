@@ -24,6 +24,16 @@ export async function createGraphic(g: Graphic): Promise<void> {
   });
 }
 
+/** Persist edits to a graphic (submitted work, stage moves, approvals). The full
+ *  object round-trips through `data`; stage is mirrored. Matched on the blob id. */
+export async function updateGraphic(g: Graphic): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("graphic_requests")
+    .update({ stage: g.stage, blocker: g.blocker, next_action: g.nextAction, data: g })
+    .eq("data->>id", String(g.id));
+}
+
 /** Build a full Graphic from the request form, filling sensible defaults. */
 export function buildGraphic(input: {
   id: number; b: BrandId; campaign: string; title: string; type: string;

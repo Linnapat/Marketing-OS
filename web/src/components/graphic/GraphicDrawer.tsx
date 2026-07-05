@@ -8,14 +8,18 @@ import {
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
+import { updateGraphic } from "@/lib/db/graphic";
+import { useAuth } from "@/lib/auth";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
 
-export function GraphicDrawer({ g, initialTab = "overview", onClose }: { g: Graphic; initialTab?: GTab; onClose: () => void }) {
+export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }: { g: Graphic; initialTab?: GTab; onClose: () => void; onUpdate?: (g: Graphic) => void }) {
   const [tab, setTab] = useState<GTab>(initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
   const versions = VERSIONS.filter((v) => v.gid === g.id);
+  const { member, user } = useAuth();
+  const designer = member?.name ?? user?.email ?? g.designer;
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefPct = Math.round((brief.filter((b) => b.ok).length / brief.length) * 100);
@@ -134,7 +138,7 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose }: { g: Grap
                   </div>
                 </div>
               ))}
-              <div className="border-2 border-dashed border-line2 rounded-card py-6 text-center text-[12px] text-faint">Upload / replace latest version</div>
+              <SubmitWork g={g} designer={designer} onUpdate={onUpdate} />
             </div>
           )}
 
@@ -185,6 +189,53 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose }: { g: Grap
               })}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Where the graphic team submits finished work: paste the artwork + source
+// links and Submit for Review — advances the stage to "Waiting Feedback" so the
+// requester (and then the approver) can review it. Persists to the request.
+function SubmitWork({ g, designer, onUpdate }: { g: Graphic; designer: string; onUpdate?: (g: Graphic) => void }) {
+  const [link, setLink] = useState(g.deliverableLink ?? "");
+  const [source, setSource] = useState(g.sourceLink ?? "");
+  const [busy, setBusy] = useState(false);
+  const submitted = /Waiting Feedback|Waiting Approval|Approved|Delivered/i.test(g.stage);
+  const field = "w-full text-[13px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none";
+
+  const submit = async () => {
+    if (!link.trim()) return;
+    setBusy(true);
+    const next: Graphic = {
+      ...g,
+      deliverableLink: link.trim(), sourceLink: source.trim() || g.sourceLink,
+      submittedBy: designer, submittedAt: new Date().toISOString(),
+      stage: "Waiting Feedback", blocker: null,
+      pendingApprover: g.requester, nextAction: "Requester to review submitted work",
+    };
+    try { await updateGraphic(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-card border border-line2 p-4" style={{ background: "#FBF9F4" }}>
+      <div className="text-[12.5px] font-bold text-ink mb-1">Submit work (graphic team)</div>
+      <div className="text-[11.5px] text-faint mb-3">วางลิงก์งานที่ทำเสร็จ แล้วกด Submit for Review — สถานะจะไปที่ “Waiting Feedback” ให้ผู้ขอรีวิว</div>
+      <div className="flex flex-col gap-2">
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[4px]">Artwork link <span className="text-status-red">*</span></label>
+          <input value={link} onChange={(e) => setLink(e.target.value)} className={field} placeholder="https://… (Drive / Figma / PNG)" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[4px]">Source file link</label>
+          <input value={source} onChange={(e) => setSource(e.target.value)} className={field} placeholder="https://… (AI / PSD / Figma)" />
+        </div>
+        <div className="flex items-center gap-3 mt-1">
+          <button onClick={submit} disabled={!link.trim() || busy} className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[9px] disabled:opacity-40" style={{ background: "#211F1C" }}>
+            {busy ? "Submitting…" : submitted ? "Re-submit for Review" : "Submit for Review"}
+          </button>
+          {submitted && <span className="text-[12px] font-semibold text-status-green">✓ ส่งแล้ว · {g.submittedBy || designer}</span>}
         </div>
       </div>
     </div>

@@ -28,6 +28,11 @@ export interface Graphic {
   platform: string;
   size: string;
   contentItem: string;
+  /** Work submitted by the graphic team (set when they Submit for Review). */
+  deliverableLink?: string;
+  sourceLink?: string;
+  submittedBy?: string;
+  submittedAt?: string;
 }
 
 const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
