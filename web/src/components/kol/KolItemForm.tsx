@@ -13,11 +13,14 @@ import {
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function KolItemForm({ item, onChange, branches = [], outOfRange }: {
+export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePage = false }: {
   item: BriefKolItem;
   onChange: (patch: Partial<BriefKolItem>) => void;
   branches?: string[];
   outOfRange?: (iso: string) => boolean;
+  /** Hide the KOL name / handle row — used at Request stage where the real page
+   *  isn't known yet (the specialist proposes it later). */
+  hidePage?: boolean;
 }) {
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const rate = engagementRate(item);
@@ -32,8 +35,8 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange }: {
 
   return (
     <div className="grid md:grid-cols-3 gap-3">
-      <div><label className={label}>KOL / Page Name</label><input value={item.name} onChange={(e) => onChange({ name: e.target.value })} className={field} placeholder="e.g. Tokyo Tom" /></div>
-      <div className="md:col-span-2"><label className={label}>Page / Handle <span className="text-faint font-normal">· @handle หรือ URL จริง</span></label><input value={item.handle} onChange={(e) => onChange({ handle: e.target.value })} className={field} placeholder="@handle or page URL" /></div>
+      {!hidePage && <div><label className={label}>KOL / Page Name</label><input value={item.name} onChange={(e) => onChange({ name: e.target.value })} className={field} placeholder="e.g. Tokyo Tom" /></div>}
+      {!hidePage && <div className="md:col-span-2"><label className={label}>Page / Handle <span className="text-faint font-normal">· @handle หรือ URL จริง</span></label><input value={item.handle} onChange={(e) => onChange({ handle: e.target.value })} className={field} placeholder="@handle or page URL" /></div>}
 
       <div><label className={label}>KOL Type</label><select value={item.kolType} onChange={(e) => onChange({ kolType: e.target.value })} className={field}>{KOL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
       <div className="md:col-span-3">

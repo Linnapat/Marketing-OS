@@ -18,7 +18,6 @@ import {
   kolKpis, kolAlerts, stageProgress,
 } from "@/lib/data/kol";
 import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
-import { searchKolProfiles, createKolProfile, tierFromFollowers, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefKolItem } from "@/lib/db/brief";
 import { createTaskDb } from "@/lib/db/tasks";
@@ -407,62 +406,31 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   // Same KOL-item template as the Campaign Builder's KOL Plan (syncs both ways).
   const [item, setItem] = useState<BriefKolItem>(() => emptyKolItem(nextId));
   const onChange = (patch: Partial<BriefKolItem>) => setItem((it) => ({ ...it, ...patch }));
-  // Master database picker — search existing profiles or create a new one.
-  const [masterId, setMasterId] = useState<string | null>(null);
-  const [mq, setMq] = useState("");
-  const [mResults, setMResults] = useState<KolMasterRow[]>([]);
-  const [mOpen, setMOpen] = useState(false);
-
   useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
-  // Debounced search against the master database while the picker is open.
-  useEffect(() => {
-    if (!mOpen) return;
-    let alive = true;
-    const t = setTimeout(() => {
-      searchKolProfiles(mq).then((r) => { if (alive) setMResults(r); }).catch(() => {});
-    }, 200);
-    return () => { alive = false; clearTimeout(t); };
-  }, [mq, mOpen]);
-
-  const pickMaster = (r: KolMasterRow) => {
-    setMasterId(r.kol_id);
-    onChange({ name: r.display_name, handle: r.primary_handle ?? "", kolType: r.kol_type || item.kolType, followers: r.total_followers ?? item.followers });
-    setMq(r.display_name);
-    setMOpen(false);
-  };
   const brandId = KOL_BRAND_TO_ID[brandSel] ?? "teppen";
   const brandCampaigns = campaigns.filter((c) => c.b === brandId);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
 
-  const canCreate = item.name.trim().length > 0 || !!masterId;
-  const submit = async () => {
+  // Requester specifies the requirement only — the real page (and the master-DB
+  // link) is proposed later by the KOL specialist, so there's no name/handle here.
+  const canCreate = (item.count || 0) > 0;
+  const submit = () => {
     if (!canCreate) return;
-    // Link to an existing master profile, or create one for a brand-new KOL so
-    // the request feeds the master database instead of writing a stray @tbd.
-    let linkedId = masterId ?? undefined;
-    if (!linkedId && item.name.trim()) {
-      linkedId = (await createKolProfile({
-        display_name: item.name.trim(), kol_type: item.kolType,
-        tier: tierFromFollowers(item.followers || undefined), handle_url: item.handle.trim() || undefined,
-        followers: item.followers || undefined,
-      })) ?? undefined;
-    }
     const expEng = (item.likes || 0) + (item.comments || 0) + (item.shares || 0) + (item.saves || 0) + (item.clicks || 0);
     const k = buildKol({
       id: nextId, campaign: campaign || "—", b: brandId, kolType: item.kolType,
       count: item.count || 1, budget: item.budget || 0,
       deliverables: item.contentRequired.join(" + "), notes: item.note,
-      name: item.name, handle: item.handle, expectedReach: item.expectedReach,
-      expectedEngagement: expEng, postingDate: item.postingStart,
-      followers: item.followers, owner: item.owner, requester, branch: item.area,
-      platform: item.platforms[0], masterKolId: linkedId,
+      expectedReach: item.expectedReach, expectedEngagement: expEng,
+      postingDate: item.postingStart, followers: item.followers,
+      owner: item.owner, requester, branch: item.area, platform: item.platforms[0],
     });
     onCreate(k, item, campaign.trim());
   };
@@ -473,37 +441,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
         <div className="text-[16px] font-extrabold mb-1">Request KOL</div>
-        <div className="text-[11.5px] text-faint mb-4">ฟอร์มเดียวกับ KOL Plan — เลือกจาก master database หรือพิมพ์ชื่อใหม่ · สร้างแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
-        <div className="relative mb-3">
-          <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Master database</label>
-          <input
-            value={mq}
-            onChange={(e) => { setMq(e.target.value); setMasterId(null); setMOpen(true); }}
-            onFocus={() => setMOpen(true)}
-            className={field}
-            placeholder="Search existing KOL by name or @handle…"
-          />
-          {mOpen && mResults.length > 0 && (
-            <div className="absolute z-10 mt-1 w-full bg-surface border border-line2 rounded-[10px] shadow-lg max-h-56 overflow-y-auto">
-              {mResults.map((r) => (
-                <button key={r.kol_id} onClick={() => pickMaster(r)} className="flex items-center justify-between gap-3 w-full text-left px-3 py-2 hover:bg-ivory">
-                  <span className="min-w-0">
-                    <span className="font-bold text-[13px]">{r.display_name}</span>
-                    <span className="text-faint text-[11.5px] ml-2">{r.primary_handle}</span>
-                  </span>
-                  <span className="flex items-center gap-2 text-[11px] shrink-0">
-                    {r.total_followers != null && <span className="text-faint">{fmtFollow(r.total_followers)}</span>}
-                    {r.rank_label && <span className="font-bold px-1.5 py-0.5 rounded bg-ivory">{r.rank_label}{r.rank_score != null ? ` · ${r.rank_score}` : ""}</span>}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {masterId && <div className="text-[11px] text-emerald-600 font-semibold mt-1">✓ Linked to master profile</div>}
-          {!masterId && mq.trim() && mResults.length === 0 && (
-            <div className="text-[11px] text-faint mt-1">No match — a new master profile will be created on submit.</div>
-          )}
-        </div>
+        <div className="text-[11.5px] text-faint mb-4">ระบุ requirement ที่ต้องการ (ยังไม่ต้องรู้ชื่อเพจ) — KOL specialist จะเสนอเพจจริงทีหลัง · ฟอร์มเดียวกับ KOL Plan และ sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
@@ -521,7 +459,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <OwnerSelect value={requester} onChange={setRequester} team="Planner" />
           </div>
         </div>
-        <KolItemForm item={item} onChange={onChange} />
+        <KolItemForm item={item} onChange={onChange} hidePage />
         <button onClick={submit} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create KOL Request</button>
       </div>
     </div>
