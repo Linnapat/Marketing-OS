@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
 import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
 import { EXPENSES, REQUESTS, EXP_CATEGORIES, STATUS_TONE, ExpenseRow, RequestRow } from "@/lib/data/finance";
-import { fetchExpenseRequests, createExpenseRequest } from "@/lib/db/finance";
+import { fetchExpenseRequests, fetchExpenses, createExpenseRequest } from "@/lib/db/finance";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createRequest } from "@/lib/db/requests";
@@ -274,13 +274,21 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
 
 /* ── Spending Log: table + Voucher button ──────────────────────────── */
 export function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; onVoucher: (e: ExpenseRow) => void }) {
-  const rows = EXPENSES.filter((e) => brand === "all" || e.b === brand);
+  // Real spending from the DB (empty on a fresh database), mock in demo mode.
+  const [all, setAll] = useState<ExpenseRow[]>(EXPENSES);
+  useEffect(() => {
+    let alive = true;
+    fetchExpenses().then((e) => { if (alive) setAll(e); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const rows = all.filter((e) => brand === "all" || e.b === brand);
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: "1.6fr 1.2fr 1.2fr 1fr 1fr 0.9fr 1fr" }}>
         <div>Vendor</div><div>Category</div><div>Brand</div><div>Amount</div><div>VAT</div><div>Status</div><div></div>
       </div>
+      {rows.length === 0 && <div className="text-[12.5px] text-faint text-center py-10">ยังไม่มีรายการใช้จ่าย</div>}
       {rows.map((e, i) => (
         <div key={i} className="grid grid-cols-1 md:grid-cols-[1.6fr_1.2fr_1.2fr_1fr_1fr_0.9fr_1fr] gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0">
           <div className="text-[13px] font-semibold text-ink">{e.vendor}<div className="text-[11px] text-faint md:hidden">{e.date}</div></div>

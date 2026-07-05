@@ -2,7 +2,7 @@
 // configured, else falls back to the mock list.
 
 import { supabase } from "@/lib/supabase";
-import { REQUESTS, RequestRow } from "@/lib/data/finance";
+import { REQUESTS, RequestRow, EXPENSES, ExpenseRow } from "@/lib/data/finance";
 import { BrandId } from "@/lib/brands";
 
 type Row = {
@@ -25,6 +25,17 @@ export async function fetchExpenseRequests(): Promise<ExpenseReq[]> {
   const { data, error } = await db.from("expense_requests").select("*").order("id", { ascending: false });
   if (error || !data) return REQUESTS.map((r) => ({ ...r }));
   return (data as Row[]).map(toReq);
+}
+
+type ExpRow = { id: number; vendor: string; category: string; brand: BrandId; amount: number; vat: number; date: string; status: string };
+
+/** Spending log — actual expenses from Supabase (empty on a fresh DB), else mock. */
+export async function fetchExpenses(): Promise<ExpenseRow[]> {
+  const db = supabase();
+  if (!db) return EXPENSES.map((e) => ({ ...e }));
+  const { data, error } = await db.from("expenses").select("*").order("id", { ascending: false });
+  if (error || !data) return EXPENSES.map((e) => ({ ...e }));
+  return (data as ExpRow[]).map((r) => ({ vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status }));
 }
 
 /** Mark a request approved (persists status + approved amount). */

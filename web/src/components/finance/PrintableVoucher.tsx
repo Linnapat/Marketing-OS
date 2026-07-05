@@ -57,7 +57,12 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, color: "#111", tableLayout: "fixed", lineHeight: 1.35 }}>
             <tbody>
               <tr>
-                <td rowSpan={5} style={{ border: cell, textAlign: "center", verticalAlign: "middle", padding: 3, width: "18%" }} />
+                {/* Company logo. Drop a real file at /public/company-logo.png to swap
+                    the text mark for <img src="/company-logo.png" style={{maxWidth:"90%",maxHeight:56}} />. */}
+                <td rowSpan={5} style={{ border: cell, textAlign: "center", verticalAlign: "middle", padding: 4, width: "18%" }}>
+                  <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: 1.5, color: "#1a3a6b", lineHeight: 1 }}>TEPPEN</div>
+                  <div style={{ fontSize: 8, letterSpacing: 3, color: "#B8945A", marginTop: 3, fontWeight: 700 }}>GROUP</div>
+                </td>
                 <td colSpan={3} style={{ border: cell, textAlign: "center", padding: "2px 6px", fontWeight: 700, fontSize: 11, color: "#1a3a6b" }}>14/2 ซอยสุขุมวิท 61 แขวงคลองตันเหนือ เขตวัฒนา กรุงเทพฯ 10110</td>
                 <td style={{ border: cell, textAlign: "right", padding: "2px 5px", fontSize: 9.5, color: "#555", verticalAlign: "top" }}>(สำนักงานใหญ่)</td>
               </tr>
