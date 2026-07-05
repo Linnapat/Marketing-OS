@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, ClipboardCheck, FolderOpen,
-  CalendarClock, Globe, Megaphone,
+  CalendarClock, Globe, Megaphone, Receipt,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,6 +24,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard, ready: true },
       { href: "/campaigns", label: "Campaigns", icon: Target, ready: true },
+      { href: "/expenses", label: "Expenses", icon: Receipt, ready: true },
       { href: "/finance", label: "Finance", icon: Wallet, ready: true },
     ],
   },

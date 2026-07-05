@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sarabun } from "next/font/google";
 import { bahtText, thb } from "@/lib/bahtText";
 import { ExpenseRow } from "@/lib/data/finance";
 import { brandName } from "@/lib/brands";
+import { getSavedSignature } from "@/lib/signature";
 
 const sarabun = Sarabun({ subsets: ["thai", "latin"], weight: ["400", "500", "600", "700"] });
 
@@ -15,6 +16,9 @@ const sarabun = Sarabun({ subsets: ["thai", "latin"], weight: ["400", "500", "60
 export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; onClose: () => void }) {
   const [type, setType] = useState<"PAYMENT" | "PETTY">("PAYMENT");
   const isPV = type === "PAYMENT";
+  // The approver's remembered signature flows straight into the voucher for print.
+  const [sig, setSig] = useState<string | null>(null);
+  useEffect(() => { setSig(getSavedSignature()); }, []);
 
   const amount = expense.amount;
   const items = [
@@ -106,7 +110,18 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
                 <td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้จัดทำ / วันที่</td>
                 <td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้อนุมัติ / วันที่</td>
               </tr>
-              <tr><td style={{ border: cell, height: 30 }} /><td style={{ border: cell, height: 30 }} /></tr>
+              <tr>
+                <td style={{ border: cell, height: 34 }} />
+                <td style={{ border: cell, height: 34, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+                  {sig && (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={sig} alt="ผู้อนุมัติ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
+                      <div style={{ fontSize: 8.5, color: "#555" }}>{expense.date} 2569</div>
+                    </>
+                  )}
+                </td>
+              </tr>
               <tr><td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้จ่ายเงิน / วันที่</td><td style={{ border: cell, background: "#fafafa" }} /></tr>
               <tr><td style={{ border: cell, height: 30 }} /><td style={{ border: cell, background: "#fafafa" }} /></tr>
             </tbody>

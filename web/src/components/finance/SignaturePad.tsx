@@ -2,8 +2,10 @@
 
 import { useRef, useState, useEffect } from "react";
 
-/** Canvas signature pad for online expense approval (mouse + touch). */
-export function SignaturePad({ onSave }: { onSave: () => void }) {
+/** Canvas signature pad for online expense approval (mouse + touch).
+ *  onSave receives the drawn signature as a PNG data URL so callers can persist
+ *  it and reuse it on later approvals. */
+export function SignaturePad({ onSave, confirmLabel = "Confirm & Approve" }: { onSave: (dataUrl: string) => void; confirmLabel?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const [hasInk, setHasInk] = useState(false);
@@ -65,12 +67,12 @@ export function SignaturePad({ onSave }: { onSave: () => void }) {
       <div className="flex items-center gap-2 mt-3">
         <button onClick={clear} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px]">Clear</button>
         <button
-          onClick={onSave}
+          onClick={() => onSave(canvasRef.current!.toDataURL("image/png"))}
           disabled={!hasInk}
           className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40"
           style={{ background: "#211F1C" }}
         >
-          Confirm &amp; Approve
+          {confirmLabel}
         </button>
       </div>
     </div>

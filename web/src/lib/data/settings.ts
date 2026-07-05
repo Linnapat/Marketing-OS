@@ -77,13 +77,13 @@ export const PERM_SCOPE_META: Record<PermScope, { label: string; c: string; b: s
 };
 export const PERM_ROLES: { role: string; desc: string; scope: PermScope; perms: Perm[] }[] = [
   { role: "Admin / CMO", desc: "Full access", scope: "All", perms: [A, A, A, A, A, A, A] },
-  { role: "Brand Lead", desc: "Review & Approve", scope: "Brand", perms: [AP, AP, AP, V, AP, V, N] },
-  { role: "Branch Manager", desc: "One branch — review & approve", scope: "Branch", perms: [AP, V, V, V, AP, V, N] },
-  { role: "Planner", desc: "Create & Edit", scope: "Brand", perms: [E, V, V, V, E, E, N] },
+  { role: "Brand Lead", desc: "Review & Approve", scope: "Brand", perms: [AP, AP, AP, N, AP, V, N] },
+  { role: "Branch Manager", desc: "One branch — review & approve", scope: "Branch", perms: [AP, V, V, N, AP, V, N] },
+  { role: "Planner", desc: "Create & Edit", scope: "Brand", perms: [E, V, V, N, E, E, N] },
   { role: "Designer", desc: "Graphic module", scope: "Own", perms: [V, E, N, N, V, N, N] },
-  { role: "KOL Specialist", desc: "KOL module", scope: "Own", perms: [V, N, E, V, V, N, N] },
+  { role: "KOL Specialist", desc: "KOL module", scope: "Own", perms: [V, N, E, N, V, N, N] },
   { role: "Finance", desc: "Budget & payments", scope: "All", perms: [V, N, N, A, N, N, N] },
-  { role: "Viewer", desc: "Read only", scope: "Brand", perms: [V, V, V, V, V, V, N] },
+  { role: "Viewer", desc: "Read only", scope: "Brand", perms: [V, V, V, N, V, V, N] },
   { role: "Agency (External)", desc: "External — task list only", scope: "Own", perms: [N, E, N, N, E, N, N] },
 ];
 

@@ -1,0 +1,46 @@
+// Module-level access, driven by the Settings → Permissions matrix.
+// The matrix (PERM_ROLES / PERM_MODULES) is the source of truth; an admin edits
+// it in Settings and it persists to Supabase. Nav + page gates read from here.
+
+import type { Role } from "@/lib/role";
+import { PERM_ROLES, PERM_MODULES } from "@/lib/data/settings";
+
+/** Shape returned by fetchPermissions(): role → module → level label. */
+export type PermMatrix = Record<string, Record<string, string>>;
+
+/** "None" permission level label (from PERM_ROLES' N entry). */
+export const PERM_NONE = "—";
+
+/** App role vocabulary (role.tsx) → the role label used in the perm matrix. */
+export const APP_ROLE_TO_PERM_ROLE: Record<Role, string> = {
+  "CMO / Admin": "Admin / CMO",
+  "Brand Lead": "Brand Lead",
+  "Content Planner": "Planner",
+  "Graphic / Creator": "Designer",
+  "KOL Specialist": "KOL Specialist",
+  "Finance": "Finance",
+  "CEO / Management": "Viewer",
+  "Agency (External)": "Agency (External)",
+};
+
+/** Default matrix built from the bundled PERM_ROLES (mock mode / pre-load). */
+export function defaultMatrix(): PermMatrix {
+  const m: PermMatrix = {};
+  for (const r of PERM_ROLES) {
+    m[r.role] = {};
+    r.perms.forEach((p, i) => { m[r.role][PERM_MODULES[i]] = p.l; });
+  }
+  return m;
+}
+
+/** Permission level for a role+module; falls back to the bundled defaults. */
+export function permLevel(matrix: PermMatrix | null, role: Role, module: string): string {
+  const permRole = APP_ROLE_TO_PERM_ROLE[role] ?? role;
+  const fallback = defaultMatrix();
+  return matrix?.[permRole]?.[module] ?? fallback[permRole]?.[module] ?? PERM_NONE;
+}
+
+/** Whether a role may see a module at all (any level above None). */
+export function canSeeModule(matrix: PermMatrix | null, role: Role, module: string): boolean {
+  return permLevel(matrix, role, module) !== PERM_NONE;
+}

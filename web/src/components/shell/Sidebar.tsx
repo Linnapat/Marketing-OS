@@ -7,18 +7,24 @@ import { NAV } from "@/lib/nav";
 import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
+import { useRole } from "@/lib/role";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { user, member, role, signOut } = useAuth();
+  const { can } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
   const displayRole = member?.role ?? "CMO / Admin";
   // External agency users only see their portal.
-  const groups = AUTH_REQUIRED && role === "Agency (External)"
+  const baseGroups = AUTH_REQUIRED && role === "Agency (External)"
     ? NAV.filter((g) => g.label === "External")
     : NAV;
+  // Finance is gated by the Settings Permissions matrix (see role.tsx `can`).
+  const groups = baseGroups
+    .map((g) => ({ ...g, items: g.items.filter((it) => it.href !== "/finance" || can("Finance")) }))
+    .filter((g) => g.items.length > 0);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);

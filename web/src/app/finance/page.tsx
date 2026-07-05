@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
@@ -9,24 +9,18 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { SignaturePad } from "@/components/finance/SignaturePad";
-import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
-import { BrandFilterValue, brandName, brandColor, BrandId } from "@/lib/brands";
+import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
 import { useRole, canSeeOperation } from "@/lib/role";
 import { baht } from "@/lib/format";
 import {
-  BUDGET_SECTIONS, SECTION_ICON, EXPENSES, REQUESTS, PNL, EXP_CATEGORIES,
-  BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, ExpenseRow, RequestRow,
+  BUDGET_SECTIONS, SECTION_ICON, REQUESTS, PNL,
+  BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, RequestRow,
 } from "@/lib/data/finance";
-import { fetchExpenseRequests, createExpenseRequest, approveExpenseRequest, ExpenseReq } from "@/lib/db/finance";
-import { createRequest } from "@/lib/db/requests";
-import { fetchCampaigns } from "@/lib/db/campaigns";
-import { CampaignRow } from "@/lib/data/campaigns";
-import { RequestRow as QueueRow } from "@/lib/data/requests";
+import { fetchExpenseRequests, approveExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 
 const TABS = [
   ["plan", "Budget Plan"],
-  ["request", "Expense Request"],
-  ["log", "Spending Log"],
   ["roi", "ROI / P&L"],
   ["approval", "Approval"],
 ] as const;
@@ -46,17 +40,11 @@ export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("plan");
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
-  const [pvExpense, setPvExpense] = useState<ExpenseRow | null>(null);
-  const { role } = useRole();
+  const { role, can } = useRole();
   const canOps = canSeeOperation(role);
 
   const exportCsv = () => {
-    if (tab === "log") {
-      download("spending-log.csv", buildCsv(
-        ["Vendor", "Category", "Brand", "Amount", "VAT", "Date", "Status"],
-        EXPENSES.filter((e) => brand === "all" || e.b === brand).map((e) => [e.vendor, e.category, brandName(e.b), e.amount, e.vat, e.date, e.status]),
-      ));
-    } else if (tab === "request" || tab === "approval") {
+    if (tab === "approval") {
       download("expense-requests.csv", buildCsv(
         ["Category", "Brand", "Campaign", "Requested", "Approved", "Due", "Status"],
         REQUESTS.filter((r) => brand === "all" || r.b === brand).map((r) => [r.category, brandName(r.b), r.campaign, r.requested, r.approved, r.due, r.status]),
@@ -73,6 +61,8 @@ export default function FinancePage() {
       ));
     }
   };
+
+  if (!can("Finance")) return <NoFinanceAccess />;
 
   return (
     <>
@@ -108,13 +98,23 @@ export default function FinancePage() {
 
       <div className="mt-5">
         {tab === "plan" && <BudgetPlanTab brand={brand} />}
-        {tab === "request" && <ExpenseRequestTab brand={brand} />}
-        {tab === "log" && <SpendingLogTab brand={brand} onVoucher={setPvExpense} />}
         {tab === "roi" && <RoiTab canOps={canOps} />}
         {tab === "approval" && <ApprovalTab brand={brand} />}
       </div>
+    </>
+  );
+}
 
-      {pvExpense && <PrintableVoucher expense={pvExpense} onClose={() => setPvExpense(null)} />}
+/** Shown when the current role isn't permitted to view Finance (Settings → Permissions). */
+function NoFinanceAccess() {
+  return (
+    <>
+      <PageHeader eyebrow="Finance & Budget" title="Finance" subtitle="Restricted module." />
+      <div className="mt-6 bg-surface border border-line rounded-cardLg p-10 text-center max-w-lg mx-auto">
+        <div className="text-[34px] mb-2">🔒</div>
+        <div className="text-[15px] font-bold text-ink">You don’t have access to Finance</div>
+        <div className="text-[13px] text-faint mt-1">Budget, P&amp;L and approvals are limited to Finance and Admin roles. Ask an admin to grant access in <b className="text-muted">Settings → Permissions</b>. For expense requests and spending, use the <b className="text-muted">Expenses</b> module.</div>
+      </div>
     </>
   );
 }
@@ -234,302 +234,6 @@ function BudgetProfitability({ rows, open, setOpen }: {
 }
 
 /* ── Expense Request: form + calculator + budget check + approval route ─ */
-interface ExtraLine { desc: string; amount: number; vat: number; }
-
-const BRAND_NAME_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
-
-function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
-  const [catKey, setCatKey] = useState("");
-  const [amount, setAmount] = useState("");
-  const [formBrand, setFormBrand] = useState("TEPPEN");
-  const [campaign, setCampaign] = useState("");
-  const [submitted, setSubmitted] = useState<string | null>(null);
-  const [requests, setRequests] = useState<RequestRow[]>(REQUESTS);
-  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    fetchExpenseRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
-    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
-    return () => { alive = false; };
-  }, [submitted]);
-
-  const formBrandId = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
-  // Campaigns available for the chosen brand (cascade by brand).
-  const brandCampaigns = useMemo(
-    () => campaigns.filter((c) => c.b === formBrandId),
-    [campaigns, formBrandId],
-  );
-  // Reset the campaign choice when it no longer belongs to the selected brand.
-  useEffect(() => {
-    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
-  }, [brandCampaigns, campaign]);
-
-  const submit = async () => {
-    const ref = `REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`;
-    const row: RequestRow = {
-      category: cat?.label ?? "Expense", b: formBrandId,
-      campaign: campaign || "—", requested: amt, approved: 0, due: "—", status: "Waiting Approval",
-    };
-    await createExpenseRequest(row);
-    // Also drop a card into the shared Approval Queue (same table /approvals +
-    // the Dashboard's Pending Approval read from), stage "Submitted".
-    const queueRow: QueueRow = {
-      id: ref, type: "Budget", typeIcon: "฿",
-      title: `${cat?.label ?? "Expense"} · ${baht(amt)}`, b: formBrandId,
-      campaign: campaign || "—", requester: "You", approver: route,
-      due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
-    };
-    await createRequest(queueRow);
-    setSubmitted(ref);
-  };
-  // Additional line items
-  const [lines, setLines] = useState<ExtraLine[]>([]);
-  const [lineOpen, setLineOpen] = useState(false);
-  const [lineDesc, setLineDesc] = useState("");
-  const [lineAmount, setLineAmount] = useState("");
-  const [lineVat, setLineVat] = useState(0);
-
-  const amt = parseFloat(amount) || 0;
-  const vat = Math.round(amt * 0.07);
-  const wht = Math.round(amt * 0.03);
-  const net = amt + vat - wht;
-  const cat = EXP_CATEGORIES.find((c) => c.key === catKey);
-  // Budget check: when a campaign is picked, measure against that campaign's own
-  // remaining budget (budget − spend); otherwise fall back to the category pool.
-  const selCampaign = campaigns.find((c) => c.name === campaign);
-  const check = selCampaign
-    ? { label: `Campaign · ${selCampaign.name}`, budget: selCampaign.budget, used: selCampaign.spend }
-    : cat
-    ? { label: `Category · ${cat.label}`, budget: cat.budget, used: cat.used }
-    : null;
-  const remaining = check ? check.budget - check.used : 0;
-  const overBudget = check ? amt > remaining : false;
-  const route = amt >= 10000 ? "CMO + CFO" : "CMO only";
-  const grandTotal = amt + vat + lines.reduce((s, l) => s + l.amount + Math.round(l.amount * l.vat / 100), 0);
-
-  const grouped = useMemo(() => {
-    const g: Record<string, typeof EXP_CATEGORIES> = {};
-    EXP_CATEGORIES.forEach((c) => { (g[c.group] ||= []).push(c); });
-    return g;
-  }, []);
-
-  const addLine = () => {
-    const a = parseFloat(lineAmount) || 0;
-    if (!lineDesc || a <= 0) return;
-    setLines((ls) => [...ls, { desc: lineDesc, amount: a, vat: lineVat }]);
-    setLineDesc(""); setLineAmount(""); setLineVat(0); setLineOpen(false);
-  };
-
-  if (submitted) {
-    return (
-      <div className="bg-surface border border-line rounded-cardLg p-10 text-center max-w-lg mx-auto">
-        <div className="text-[40px] mb-2">✓</div>
-        <div className="text-[16px] font-bold text-ink">Request submitted</div>
-        <div className="text-[13px] text-faint mt-1">Reference <b className="text-ink">{submitted}</b> · {lines.length + 1} line item(s) · routed to {route}</div>
-        <button onClick={() => { setSubmitted(null); setAmount(""); setCatKey(""); setLines([]); }} className="mt-5 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">New Request</button>
-      </div>
-    );
-  }
-
-  const field = "w-full text-[14px] px-[13px] py-[11px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const lineField = "w-full text-[13px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none";
-
-  return (
-    <div className="flex flex-col lg:flex-row gap-4">
-      {/* LEFT: form */}
-      <div className="flex-1 min-w-0 flex flex-col gap-4">
-        <div className="bg-surface border border-line rounded-cardLg p-5">
-          <div className="text-[13px] font-bold mb-4">New Expense Request</div>
-          <div className="flex flex-col gap-4">
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category <span className="text-status-red">*</span></label>
-              <select value={catKey} onChange={(e) => setCatKey(e.target.value)} className={field}>
-                <option value="">Select category…</option>
-                {Object.entries(grouped).map(([group, items]) => (
-                  <optgroup key={group} label={group}>
-                    {items.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-                <select value={formBrand} onChange={(e) => setFormBrand(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
-              </div>
-              <div>
-                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Amount (฿) <span className="text-status-red">*</span></label>
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className={field} />
-              </div>
-            </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
-              <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
-                {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Vendor</label>
-                <input className={field} placeholder="Vendor name" />
-              </div>
-              <div>
-                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Payment Type</label>
-                <select className={field}><option>Bank Transfer</option><option>Cash</option><option>Credit Card</option><option>Cheque</option></select>
-              </div>
-            </div>
-
-            {/* Additional Line Items */}
-            <div className="border border-line2 rounded-[14px] overflow-hidden">
-              <div className="flex items-center justify-between px-[14px] py-[11px]" style={{ background: "#FAFAF7", borderBottom: "1px solid #EEE8DE" }}>
-                <div className="text-[12px] font-bold text-muted">Additional Line Items{lines.length ? ` · ${lines.length}` : ""}</div>
-                <button onClick={() => setLineOpen((o) => !o)} className="text-[12px] font-bold px-3 py-[5px] rounded-[8px] bg-panel text-white">+ Add Line</button>
-              </div>
-              {lines.length > 0 && (
-                <div>
-                  {lines.map((el, i) => (
-                    <div key={i} className="flex items-center gap-[10px] px-[14px] py-[10px] bg-surface border-b border-line4">
-                      <div className="w-[22px] h-[22px] rounded-[6px] flex items-center justify-center text-[11px] font-bold flex-shrink-0" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>{i + 1}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-semibold truncate">{el.desc}</div>
-                        <div className="text-[11px] text-faint">Extra line · VAT {el.vat}%</div>
-                      </div>
-                      <div className="text-[13px] font-bold text-ink whitespace-nowrap">{baht(el.amount + Math.round(el.amount * el.vat / 100))}</div>
-                      <button onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} className="text-[13px] text-[#C0B8AD] px-[6px]">✕</button>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-center px-[14px] py-[10px]" style={{ background: "#F7F4EE" }}>
-                    <div className="text-[12px] font-bold text-faint">Total (all lines incl. primary)</div>
-                    <div className="text-[15px] font-extrabold text-accent">{baht(grandTotal)}</div>
-                  </div>
-                </div>
-              )}
-              {lineOpen && (
-                <div className="p-[14px] bg-surface flex flex-col gap-[10px]" style={{ borderTop: "1px solid #EEE8DE" }}>
-                  <div className="grid gap-[10px]" style={{ gridTemplateColumns: "1.5fr 1fr 0.8fr" }}>
-                    <div>
-                      <label className="block text-[11px] font-bold text-muted mb-[5px]">Description</label>
-                      <input value={lineDesc} onChange={(e) => setLineDesc(e.target.value)} placeholder="e.g. Food support cost" className={lineField} />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-muted mb-[5px]">Amount (฿)</label>
-                      <input type="number" value={lineAmount} onChange={(e) => setLineAmount(e.target.value)} placeholder="0" className={lineField} />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-muted mb-[5px]">VAT</label>
-                      <select value={lineVat} onChange={(e) => setLineVat(parseInt(e.target.value))} className={lineField}><option value={0}>0%</option><option value={7}>7%</option></select>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={addLine} className="flex-1 text-center text-[13px] font-bold py-[9px] rounded-[9px] bg-panel text-white">Confirm Line</button>
-                    <button onClick={() => setLineOpen(false)} className="text-[13px] font-semibold py-[9px] px-4 rounded-[9px] border border-line2 text-muted bg-white">Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attach quotation</label>
-              <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">Drop file here or click to upload</div>
-            </div>
-            <button
-              onClick={submit}
-              disabled={!catKey || amt <= 0}
-              className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
-              Submit for Approval
-            </button>
-          </div>
-        </div>
-
-        {/* calculator + budget check + route */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-surface border border-line rounded-cardLg p-5">
-            <div className="text-[13px] font-bold mb-3">Amount Breakdown</div>
-            {[["Amount", baht(amt)], ["VAT 7%", `+ ${baht(vat)}`], ["WHT 3%", `− ${baht(wht)}`]].map(([l, v]) => (
-              <div key={l} className="flex justify-between py-[6px] text-[12.5px] border-b border-line4">
-                <span className="text-muted">{l}</span><span className="text-ink font-semibold">{v}</span>
-              </div>
-            ))}
-            <div className="flex justify-between pt-3 text-[13.5px] font-bold"><span>Net Payable</span><span className="text-accent">{baht(net)}</span></div>
-          </div>
-          {check ? (
-            <div className="rounded-cardLg p-5 border" style={{ background: overBudget ? "#FFF5F4" : "#EEF4EE", borderColor: overBudget ? "#F5C8C4" : "#C8E0C8" }}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-[13px] font-bold" style={{ color: overBudget ? "#B33A2E" : "#4E7A4E" }}>Budget Check</div>
-                {overBudget && <span className="text-[10.5px] font-bold px-2 py-[2px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>Over budget</span>}
-              </div>
-              <div className="text-[11px] text-faint mb-2 truncate">{check.label}</div>
-              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Budget</span><span className="font-semibold text-ink">{baht(check.budget, { compact: true })}</span></div>
-              <div className="text-[12px] text-muted flex justify-between mb-1"><span>{selCampaign ? "Spent" : "Used"}</span><span className="font-semibold text-ink">{baht(check.used, { compact: true })}</span></div>
-              <div className="text-[12px] text-muted flex justify-between mb-1"><span>Remaining</span><span className="font-semibold text-ink">{baht(remaining, { compact: true })}</span></div>
-              <div className="text-[12px] text-muted flex justify-between mb-2"><span>This request</span><span className="font-semibold" style={{ color: overBudget ? "#B33A2E" : "#211F1C" }}>{baht(amt, { compact: true })}</span></div>
-              <Progress value={check.budget ? Math.min(100, ((check.used + amt) / check.budget) * 100) : 0} color={overBudget ? "#B33A2E" : "#4E7A4E"} />
-            </div>
-          ) : (
-            <div className="bg-surface border border-line rounded-cardLg p-5 text-[12px] text-faint flex items-center justify-center text-center">Select a category or campaign to see the budget check</div>
-          )}
-          <div className="bg-surface border border-line rounded-cardLg p-5">
-            <div className="text-[13px] font-bold mb-2">Approval Route</div>
-            <div className="text-[12.5px] text-muted">Amount {amt >= 10000 ? "≥" : "<"} ฿10,000 → <b className="text-ink">{route}</b></div>
-          </div>
-        </div>
-      </div>
-
-      {/* RIGHT: Recent Requests */}
-      <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
-        <div className="text-[15px] font-bold">Recent Requests</div>
-        {requests.filter((r) => brand === "all" || r.b === brand).map((r, i) => (
-          <div key={i} className="bg-surface border border-line rounded-card p-4">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <BrandDot brand={r.b} size={9} />
-                <div className="text-[13.5px] font-bold truncate">{r.category}</div>
-              </div>
-              <StatusBadge tone={STATUS_TONE[r.status] ?? "gold"}>{r.status}</StatusBadge>
-            </div>
-            <div className="text-[12px] text-faint mb-3">{brandName(r.b)} · {r.campaign}</div>
-            <div className="grid grid-cols-3 gap-[6px]">
-              {[["Requested", baht(r.requested, { compact: true }), "#211F1C"], ["Approved", r.approved ? baht(r.approved, { compact: true }) : "—", r.approved ? "#4E7A4E" : "#9A9387"], ["Due", r.due, "#211F1C"]].map(([l, v, c]) => (
-                <div key={l}>
-                  <div className="text-[10px] text-faint font-bold uppercase tracking-[0.04em] mb-[3px]">{l}</div>
-                  <div className="text-[13px] font-bold" style={{ color: c }}>{v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Spending Log: table + Voucher button ──────────────────────────── */
-function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; onVoucher: (e: ExpenseRow) => void }) {
-  const rows = EXPENSES.filter((e) => brand === "all" || e.b === brand);
-  return (
-    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-      <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "1.6fr 1.2fr 1.2fr 1fr 1fr 0.9fr 1fr" }}>
-        <div>Vendor</div><div>Category</div><div>Brand</div><div>Amount</div><div>VAT</div><div>Status</div><div></div>
-      </div>
-      {rows.map((e, i) => (
-        <div key={i} className="grid grid-cols-1 md:grid-cols-[1.6fr_1.2fr_1.2fr_1fr_1fr_0.9fr_1fr] gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0">
-          <div className="text-[13px] font-semibold text-ink">{e.vendor}<div className="text-[11px] text-faint md:hidden">{e.date}</div></div>
-          <div className="text-[12.5px] text-muted">{e.category}</div>
-          <div className="flex items-center gap-[6px] text-[12px] text-muted"><BrandDot brand={e.b} size={7} />{brandName(e.b)}</div>
-          <div className="text-[13px] font-semibold text-ink">{baht(e.amount, { compact: true })}</div>
-          <div className="text-[12.5px] text-muted">{e.vat ? baht(e.vat) : "—"}</div>
-          <div><StatusBadge tone={STATUS_TONE[e.status] ?? "neutral"}>{e.status}</StatusBadge></div>
-          <div><button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Voucher ↗</button></div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── ROI / P&L: collapsible category + line-item breakdown ─────────── */
 function RoiTab({ canOps }: { canOps: boolean }) {
   const [open, setOpen] = useState<Record<string, boolean>>({ digital: true });
   return (
@@ -602,19 +306,37 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const [signing, setSigning] = useState<number | null>(null);
   const [allReqs, setAllReqs] = useState<ExpenseReq[]>(REQUESTS);
+  // Remembered signature — sign once, then later approvals only need a Confirm.
+  const [sig, setSig] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
+    setSig(getSavedSignature());
     fetchExpenseRequests().then((r) => { if (alive) setAllReqs(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const rows = allReqs.map((r, i) => ({ r, i })).filter(({ r }) => brand === "all" || r.b === brand);
+  const approve = (i: number, r: ExpenseReq) => {
+    setApproved((a) => ({ ...a, [i]: true }));
+    setSigning(null);
+    approveExpenseRequest(r._id, r.requested);
+  };
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-[12px] text-faint">
-        {allReqs.filter((r, i) => !approved[i] && r.status === "Waiting Approval").length} request(s) waiting for your signature.
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-[12px] text-faint">
+          {allReqs.filter((r, i) => !approved[i] && r.status === "Waiting Approval").length} request(s) waiting for your approval.
+        </div>
+        {sig && (
+          <div className="flex items-center gap-2 text-[11.5px] text-muted">
+            <span className="font-semibold">✍️ Signature on file</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={sig} alt="signature" className="h-6 border border-line3 rounded bg-white" />
+            <button onClick={() => { clearSignature(); setSig(null); }} className="font-bold text-accent">Change</button>
+          </div>
+        )}
       </div>
       {rows.map(({ r, i }) => {
         const isApproved = approved[i] || r.status !== "Waiting Approval";
@@ -630,16 +352,18 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
               </div>
               {isApproved ? (
                 <StatusBadge tone="green">✓ Approved</StatusBadge>
+              ) : sig ? (
+                <button onClick={() => approve(i, r)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">✓ Confirm &amp; Approve</button>
               ) : (
                 <button onClick={() => setSigning(signing === i ? null : i)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">
                   {signing === i ? "Cancel" : "✓ Approve"}
                 </button>
               )}
             </div>
-            {signing === i && !isApproved && (
+            {signing === i && !isApproved && !sig && (
               <div className="mt-4 pt-4 border-t border-line4">
-                <div className="text-[12px] font-semibold text-muted mb-2">Sign to approve this request</div>
-                <SignaturePad onSave={() => { setApproved((a) => ({ ...a, [i]: true })); setSigning(null); approveExpenseRequest(r._id, r.requested); }} />
+                <div className="text-[12px] font-semibold text-muted mb-2">Sign once — we’ll remember it for next time</div>
+                <SignaturePad confirmLabel="Save signature &amp; Approve" onSave={(dataUrl) => { saveSignature(dataUrl); setSig(dataUrl); approve(i, r); }} />
               </div>
             )}
           </div>
