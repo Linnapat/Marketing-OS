@@ -8,7 +8,9 @@ import { Kpi } from "@/components/ui/KpiCard";
 import { Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
 import type { Member } from "@/lib/db/settings";
-import { BRAND_ORDER } from "@/lib/brands";
+import { ContentItem } from "@/lib/data/content";
+import { Graphic } from "@/lib/data/graphic";
+import { BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 
 // ── Finance ────────────────────────────────────────────────────────────────
@@ -78,6 +80,34 @@ export function dashboardFromDb(campaigns: CampaignRow[], tasks: Task[], kols: K
   ];
 
   return { budgetTotal, spentTotal, usedPct, kpis, needsAttention };
+}
+
+// ── Dashboard feed — aggregate pending/attention across every module ─────────
+export interface FeedItem { id: string; title: string; meta: string; module: string; href: string; }
+export interface DashFeed { pendingApproval: FeedItem[]; needsAttention: FeedItem[]; }
+
+/** Real "Pending Approval" + "Needs Attention" pulled from Campaigns, Content,
+ *  Graphics and Tasks — so the Dashboard reflects every module, not just one. */
+export function dashboardFeed(campaigns: CampaignRow[], content: ContentItem[], graphics: Graphic[], tasks: Task[]): DashFeed {
+  const pendingApproval: FeedItem[] = [];
+  const needsAttention: FeedItem[] = [];
+
+  for (const c of campaigns) {
+    if (c.status === "Waiting for Approval") pendingApproval.push({ id: `cam-${c.id}`, title: c.name, meta: `${brandName(c.b)} · Campaign`, module: "Campaign", href: `/campaigns/${c.id}` });
+    else if (c.readiness === "needs_attention" && (c.taskBlocked > 0 || c.taskOverdue > 0)) needsAttention.push({ id: `cam-${c.id}`, title: c.name, meta: `${brandName(c.b)} · ${c.taskBlocked} blocked · ${c.taskOverdue} overdue`, module: "Campaign", href: `/campaigns/${c.id}` });
+  }
+  for (const c of content) {
+    if (c.status === "Waiting Approval" || c.approvalStatus === "Waiting Approval") pendingApproval.push({ id: `ct-${c.id}`, title: c.title, meta: `${brandName(c.b)} · Content`, module: "Content", href: "/content" });
+    else if (c.assetStatus === "Waiting Design") needsAttention.push({ id: `ct-${c.id}`, title: c.title, meta: `${brandName(c.b)} · Waiting Design`, module: "Content", href: "/content" });
+  }
+  for (const g of graphics) {
+    if (g.stage === "Waiting Approval") pendingApproval.push({ id: `gr-${g.id}`, title: g.title, meta: `${brandName(g.b)} · Graphic`, module: "Graphic", href: "/graphic" });
+    else if (["Revision Requested", "Brief Incomplete", "Waiting Feedback"].includes(g.stage)) needsAttention.push({ id: `gr-${g.id}`, title: g.title, meta: `${brandName(g.b)} · ${g.stage}`, module: "Graphic", href: "/graphic" });
+  }
+  for (const t of tasks) {
+    if (t.status === "Stuck" || t.blocker) needsAttention.push({ id: `tk-${t.id}`, title: t.title, meta: `${t.brand} · ${t.blocker || "Stuck"}`, module: "Task", href: "/my-tasks" });
+  }
+  return { pendingApproval, needsAttention };
 }
 
 // ── Team Workload ────────────────────────────────────────────────────────────

@@ -62,6 +62,14 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   return c;
 }
 
+/** Update a campaign's status (used by the temporary approve/reject action while
+ *  the dedicated Approval Queue module is still coming soon). */
+export async function updateCampaignStatus(id: string, status: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("campaigns").update({ status }).eq("id", id);
+}
+
 /** A single campaign by id — for the detail page. */
 export async function fetchCampaign(id: string): Promise<CampaignRow | undefined> {
   const db = supabase();

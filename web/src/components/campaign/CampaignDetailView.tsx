@@ -12,6 +12,7 @@ import { baht } from "@/lib/format";
 import { CampaignHub, HubStats, hubStats, createPlannerTasks } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval } from "@/lib/db/brief";
+import { updateCampaignStatus } from "@/lib/db/campaigns";
 import { useAuth } from "@/lib/auth";
 import { fmtDisplay } from "@/components/ui/DatePicker";
 
@@ -25,6 +26,16 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   }, []);
   const c = detail.row;
   const s = hub ? hubStats(hub) : null;
+  // Temporary approval action while the Approval Queue module is "SOON": the CMO /
+  // Admin (or the named approver) can approve or send back, so campaigns never get
+  // stuck permanently in "Waiting for Approval".
+  const { role, member } = useAuth();
+  const [approving, setApproving] = useState(false);
+  const canApprove = role === "CMO / Admin" || role === "Brand Lead" || member?.name === c.nextApproval;
+  const decide = async (status: string) => {
+    setApproving(true);
+    try { await updateCampaignStatus(c.id, status); onReload(); } finally { setApproving(false); }
+  };
 
   // Management strip — real counts once the hub has loaded, else the row's stored values.
   const strip = s
@@ -76,6 +87,22 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
           </div>
         ))}
       </div>
+
+      {c.status === "Waiting for Approval" && (
+        <div className="mt-4 rounded-card border px-4 py-3 flex items-center gap-3 flex-wrap" style={{ background: "#FBF8EE", borderColor: "#E8CCA0" }}>
+          <span className="text-[18px]">🕓</span>
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-[13px] font-bold" style={{ color: "#8A6D1E" }}>Waiting for Approval · {c.nextApproval}</div>
+            <div className="text-[11.5px] text-muted">{canApprove ? "อนุมัติเพื่อเริ่มแคมเปญ หรือส่งกลับให้แก้ไข (Approval Queue module กำลังจะมา)" : "รอผู้อนุมัติดำเนินการ — ระหว่างนี้ยังไม่ค้างถาวร ผู้อนุมัติ/Admin กดได้จากหน้านี้"}</div>
+          </div>
+          {canApprove && (
+            <div className="flex gap-2">
+              <button disabled={approving} onClick={() => decide("Draft")} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px] bg-surface disabled:opacity-40">↩ Send back to Draft</button>
+              <button disabled={approving} onClick={() => decide("Active")} className="text-[12px] font-bold text-white rounded-[8px] px-4 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{approving ? "…" : "✓ Approve & Activate"}</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {detail.needsResult && (
         <div className="mt-4 rounded-card border px-4 py-3 flex items-center gap-3" style={{ background: "#FFF5F4", borderColor: "#F5C8C4" }}>
