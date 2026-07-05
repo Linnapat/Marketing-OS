@@ -11,7 +11,7 @@ import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
-import { logCollaboration } from "@/lib/db/kolMaster";
+import { logCollaboration, ensureKolProfile } from "@/lib/db/kolMaster";
 
 const TABS = [
   ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
@@ -98,6 +98,8 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
+  const [name, setName] = useState(kol.name);
+  const [handle, setHandle] = useState(kol.h);
   const [kolType, setKolType] = useState(kol.kolType);
   const [followers, setFollowers] = useState(kol.followers || 0);
   const [avgReach, setAvgReach] = useState(kol.expectedReach || 0);
@@ -108,12 +110,15 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const dirty = kolType !== kol.kolType || followers !== (kol.followers || 0) || avgReach !== (kol.expectedReach || 0)
-    || audienceFit !== kol.audienceFit || contentStyle !== kol.contentStyle || pastCollab !== kol.pastCollab || contactInfo !== kol.contactInfo;
+  const dirty = name !== kol.name || handle !== kol.h || kolType !== kol.kolType || followers !== (kol.followers || 0)
+    || avgReach !== (kol.expectedReach || 0) || audienceFit !== kol.audienceFit || contentStyle !== kol.contentStyle
+    || pastCollab !== kol.pastCollab || contactInfo !== kol.contactInfo;
 
   const save = async () => {
     setBusy(true);
-    const next: Kol = { ...kol, kolType, followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab, contactInfo };
+    // Once the specialist fills the real page, upsert it into the master library.
+    const masterKolId = await ensureKolProfile({ masterKolId: kol.masterKolId, name, handle, kolType, followers, platform: kol.plat }).catch(() => kol.masterKolId);
+    const next: Kol = { ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType, followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab, contactInfo, masterKolId: masterKolId ?? kol.masterKolId };
     try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000); }
     finally { setBusy(false); }
   };
@@ -124,7 +129,10 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const audienceOptions = AUDIENCE.includes(audienceFit) ? AUDIENCE : [audienceFit, ...AUDIENCE];
   return (
     <div className="flex flex-col gap-4">
+      {kol.masterKolId && <div className="text-[11px] font-semibold text-status-green">✓ In KOL Database</div>}
       <div className="grid grid-cols-2 gap-4">
+        <div><label className={lbl}>KOL / Page Name</label><input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="e.g. Tokyo Tom" /></div>
+        <div><label className={lbl}>Page / Handle</label><input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or URL" /></div>
         <div><label className={lbl}>KOL Type</label><input value={kolType} onChange={(e) => setKolType(e.target.value)} className={field} placeholder="e.g. Food Blogger" /></div>
         <div><label className={lbl}>Followers</label><input type="number" value={followers || ""} onChange={(e) => setFollowers(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
         <div><label className={lbl}>Avg Reach</label><input type="number" value={avgReach || ""} onChange={(e) => setAvgReach(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>

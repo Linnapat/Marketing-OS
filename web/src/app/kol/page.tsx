@@ -18,7 +18,7 @@ import {
   kolKpis, kolAlerts, stageProgress,
 } from "@/lib/data/kol";
 import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
-import { searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
+import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefKolItem } from "@/lib/db/brief";
 import { createTaskDb } from "@/lib/db/tasks";
@@ -69,7 +69,9 @@ export default function KolPage() {
   // Specialist submits work in the row → update the KOL and drop a "Need Approval"
   // task into the requester's task list, due within 3 days.
   const submitRow = async (kol: Kol, link: string) => {
-    const next: Kol = { ...kol, postLink: link.trim() || kol.postLink, status: "Waiting Review" };
+    // Safety net: if the KOL already has a real page, make sure it's in the library.
+    const masterKolId = await ensureKolProfile({ masterKolId: kol.masterKolId, name: kol.name, handle: kol.h, kolType: kol.kolType, followers: kol.followers, platform: kol.plat }).catch(() => kol.masterKolId);
+    const next: Kol = { ...kol, postLink: link.trim() || kol.postLink, status: "Waiting Review", masterKolId: masterKolId ?? kol.masterKolId };
     setKols((ks) => ks.map((x) => (x.id === kol.id ? next : x)));
     await updateKol(next);
     const requester = kol.requester || kol.owner;

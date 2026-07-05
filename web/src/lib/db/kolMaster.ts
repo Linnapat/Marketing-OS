@@ -96,6 +96,24 @@ export async function createKolProfile(input: {
   return kolId;
 }
 
+/** Ensure a master profile exists once a campaign KOL's real page is known
+ *  (specialist filled name + handle). Creates it + a first channel and returns
+ *  the linked kol_id; returns the existing id, or undefined for placeholder pages. */
+export async function ensureKolProfile(input: {
+  masterKolId?: string; name: string; handle: string; kolType: string; followers: number; platform: string;
+}): Promise<string | undefined> {
+  if (input.masterKolId) return input.masterKolId;
+  const handle = (input.handle || "").trim();
+  const name = (input.name || "").trim();
+  if (!handle || handle.toLowerCase() === "@tbd") return undefined;
+  if (!name || /^new request/i.test(name)) return undefined;
+  return (await createKolProfile({
+    display_name: name, kol_type: input.kolType,
+    tier: tierFromFollowers(input.followers || undefined),
+    handle_url: handle, followers: input.followers || undefined, platform: input.platform,
+  })) ?? undefined;
+}
+
 /** Log a completed collaboration, then recompute the cached rank. */
 export async function logCollaboration(input: {
   kol_id: string;
