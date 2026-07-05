@@ -59,7 +59,13 @@ export const READINESS_META: Record<Readiness, { label: string; tone: Tone }> = 
   blocked: { label: "⛔ Blocked", tone: "red" },
 };
 
-export const STATUS_ORDER = ["Active", "In Progress", "Waiting Approval", "Planning", "Draft", "Completed", "Cancelled"];
+export const STATUS_ORDER = [
+  "Active", "In Progress",
+  // Campaign Brief workflow statuses (from the builder) — must be listed here or
+  // campaigns in these states have no group to render in on the list.
+  "Ready for Review", "Waiting for Approval", "Need Revision", "Approved",
+  "Waiting Approval", "Planning", "Draft", "Completed", "Cancelled",
+];
 
 // ── Per-brand brief maps (verbatim from the design) ──────────────────
 const OBJ: Record<BrandId, string> = { teppen: "New Visit", omakase: "Awareness", mainichi: "CRM / LINE Coupon", touka: "Sales Conversion" };

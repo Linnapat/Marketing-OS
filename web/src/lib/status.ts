@@ -19,6 +19,11 @@ export const CAMPAIGN_STATUS_TONE: Record<string, Tone> = {
   Planning: "blue",
   "In Progress": "blue",
   "Waiting Approval": "gold",
+  // Campaign Brief workflow statuses
+  "Ready for Review": "blue",
+  "Waiting for Approval": "gold",
+  "Need Revision": "orange",
+  Approved: "green",
   Active: "green",
   Completed: "ink",
   Cancelled: "red",
