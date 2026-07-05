@@ -27,6 +27,7 @@ export default function CampaignsPage() {
   const [objective, setObjective] = useState<string>("all");
   const [owner, setOwner] = useState<string>("all");
   const [budgetBand, setBudgetBand] = useState<string>("all");
+  const [branchFilter, setBranchFilter] = useState<string>("all");
   const [campaigns, setCampaigns] = useState(CAMPAIGNS);
   const [newOpen, setNewOpen] = useState(false);
   const emptyNew = { name: "", b: "teppen" as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
@@ -82,6 +83,8 @@ export default function CampaignsPage() {
 
   const objectives = Array.from(new Set(campaigns.map((c) => c.campType).filter(Boolean)));
   const owners = Array.from(new Set(campaigns.map((c) => c.owner).filter(Boolean)));
+  // Branches may be comma-joined (multi-branch campaigns); split for the filter.
+  const allBranches = Array.from(new Set(campaigns.flatMap((c) => (c.branch || "").split(",").map((s) => s.trim())).filter((s) => s && s !== "—")));
   const inBand = (b: number) => budgetBand === "all"
     || (budgetBand === "lt100" && b < 100000)
     || (budgetBand === "100-300" && b >= 100000 && b <= 300000)
@@ -92,6 +95,7 @@ export default function CampaignsPage() {
     (status === "all" || c.status === status) &&
     (objective === "all" || c.campType === objective) &&
     (owner === "all" || c.owner === owner) &&
+    (branchFilter === "all" || (c.branch || "").split(",").map((s) => s.trim()).includes(branchFilter)) &&
     inBand(c.budget),
   );
   const groups = STATUS_ORDER
@@ -207,6 +211,13 @@ export default function CampaignsPage() {
           </select>
         </div>
         <div className="flex items-center gap-[9px]">
+          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Branch</span>
+          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
+            <option value="all">All Branches</option>
+            {allBranches.map((br) => <option key={br} value={br}>{br}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-[9px]">
           <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Budget</span>
           <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
             <option value="all">Any Budget</option>
@@ -247,6 +258,12 @@ export default function CampaignsPage() {
                       <div>
                         <div className="text-[13.5px] font-bold text-ink">{c.name}</div>
                         <div className="text-[11px] text-faint mt-[1px]">{c.campType} · {c.dates}</div>
+                        {c.taskTotal > 0 && (
+                          <div className="flex items-center gap-2 mt-[5px] max-w-[200px]">
+                            <div className="flex-1 h-[5px] rounded-full bg-line overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.round((c.taskDone / c.taskTotal) * 100)}%`, background: "#4E7A4E" }} /></div>
+                            <span className="text-[10.5px] font-bold text-faint whitespace-nowrap">{c.taskDone}/{c.taskTotal} tasks</span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-[6px] text-[12px] text-muted">
                         <BrandDot brand={c.b} size={7} />{c.branch}
