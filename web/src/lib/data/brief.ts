@@ -259,26 +259,27 @@ export function budgetSummary(brief: CampaignBrief): BudgetSummary {
 }
 
 // ── Guideline checklist (bound to real fields) ────────────────────────────
-export interface GuidelineItem { key: string; label: string; done: boolean }
+/** must = blocks Submit (mirrors validateSubmit); !must = nice-to-have, warn only. */
+export interface GuidelineItem { key: string; label: string; done: boolean; must: boolean }
 
 export function guidelineChecklist(brief: CampaignBrief): GuidelineItem[] {
   const b = brief;
   return [
-    { key: "objective", label: "Campaign objective ชัดเจนหรือยัง", done: !!b.objective },
-    { key: "audience", label: "Target audience คือใคร", done: !!b.audience.trim() },
-    { key: "message", label: "Main message คืออะไร", done: !!b.mainMessage.trim() },
-    { key: "offer", label: "Offer / Promotion มีหรือไม่", done: !!b.offer.trim() },
-    { key: "branch", label: "Branch ที่ใช้ campaign (อย่างน้อย 1 สาขา)", done: b.branches.length > 0 },
-    { key: "channel", label: "Channel ที่ต้องใช้มีอะไรบ้าง", done: b.channels.length > 0 },
-    { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0 },
-    { key: "kpi", label: "KPI ที่วัดผลคืออะไร", done: b.successMetrics.length > 0 },
-    { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบทุก platform", done: b.content.length > 0 && b.content.every((c) => c.platforms.length > 0 && c.platforms.every((p) => c.assets.some((a) => a.platform === p))) },
-    { key: "graphic", label: "ต้องใช้ Graphic กี่ชิ้น", done: b.content.some((c) => c.requiredGraphic) },
-    { key: "kol", label: "ต้องใช้ KOL กี่คน / กี่เพจ", done: b.kols.length > 0 },
-    { key: "ads", label: "ต้องใช้ Ads platform ไหน", done: b.budget.adsByPlatform.some((a) => a.amount > 0) },
-    { key: "crm", label: "ต้องมี CRM / LINE OA ไหม", done: b.channels.some((c) => /crm|line oa/i.test(c)) || b.budget.crm > 0 },
-    { key: "launch", label: "Launch date กำหนดแล้วหรือยัง", done: !!b.launchDate },
-    { key: "approval", label: "Approver (CMO) กำหนดแล้วหรือยัง", done: !!b.approver.trim() },
+    { key: "objective", label: "Campaign objective ชัดเจนหรือยัง", done: !!b.objective, must: true },
+    { key: "audience", label: "Target audience คือใคร", done: !!b.audience.trim(), must: true },
+    { key: "message", label: "Main message คืออะไร", done: !!b.mainMessage.trim(), must: true },
+    { key: "offer", label: "Offer / Promotion มีหรือไม่", done: !!b.offer.trim(), must: true },
+    { key: "branch", label: "Branch ที่ใช้ campaign (อย่างน้อย 1 สาขา)", done: b.branches.length > 0, must: true },
+    { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0, must: true },
+    { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบทุก platform", done: b.content.length > 0 && b.content.every((c) => c.platforms.length > 0 && c.platforms.every((p) => c.assets.some((a) => a.platform === p))), must: true },
+    { key: "launch", label: "Launch date กำหนดแล้วหรือยัง", done: !!b.launchDate, must: true },
+    { key: "approval", label: "Approver (CMO) กำหนดแล้วหรือยัง", done: !!b.approver.trim(), must: true },
+    { key: "channel", label: "Channel ที่ต้องใช้มีอะไรบ้าง", done: b.channels.length > 0, must: false },
+    { key: "kpi", label: "KPI ที่วัดผลคืออะไร", done: b.successMetrics.length > 0, must: false },
+    { key: "graphic", label: "ต้องใช้ Graphic กี่ชิ้น", done: b.content.some((c) => c.requiredGraphic), must: false },
+    { key: "kol", label: "ต้องใช้ KOL กี่คน / กี่เพจ", done: b.kols.length > 0, must: false },
+    { key: "ads", label: "ต้องใช้ Ads platform ไหน", done: b.budget.adsByPlatform.some((a) => a.amount > 0), must: false },
+    { key: "crm", label: "ต้องมี CRM / LINE OA ไหม", done: b.channels.some((c) => /crm|line oa/i.test(c)) || b.budget.crm > 0, must: false },
   ];
 }
 
@@ -308,7 +309,7 @@ export function validateSubmit(brief: CampaignBrief): string[] {
     c.platforms.forEach((p) => {
       if (!c.assets.some((a) => a.platform === p)) e.push(`Please select asset size for ${p}`);
     });
-    if (!c.referenceBriefLink.trim()) e.push(`Please add a Reference Brief Link for “${tag}”`);
+    // Reference Brief Link is optional — a real link often isn't known at planning time.
   });
   return e;
 }
@@ -316,19 +317,25 @@ export function validateSubmit(brief: CampaignBrief): string[] {
 // ── Task / graphic preview ────────────────────────────────────────────────
 export interface TaskPreview { kind: string; icon: string; count: number; detail: string }
 
+// Mirrors saveCampaignBrief exactly: 1 content task per content item, 1 graphic
+// task per content-with-graphic, 1 per KOL, 1 per funded ads platform, 1 CRM
+// (if used), 1 result report — so the preview total == the tasks actually created.
 export function taskPreview(brief: CampaignBrief): TaskPreview[] {
-  // Creative tasks are per Platform + Asset Size pair across all content items.
-  const creativePairs = brief.content.filter((c) => c.requiredGraphic).flatMap((c) => c.assets);
-  const videos = brief.content.filter((c) => c.requiredVideo).length;
+  const withGraphic = brief.content.filter((c) => c.requiredGraphic);
+  const creativePairs = withGraphic.flatMap((c) => c.assets);
   const adsPlatforms = brief.budget.adsByPlatform.filter((a) => a.amount > 0).length || (brief.budget.ads > 0 ? 1 : 0);
   const crm = brief.channels.some((c) => /crm|line oa/i.test(c)) || brief.budget.crm > 0 ? 1 : 0;
   const out: TaskPreview[] = [];
   if (brief.content.length) out.push({ kind: "Content Tasks", icon: "📝", count: brief.content.length, detail: `${brief.content.length} content item(s)` });
-  if (creativePairs.length) out.push({ kind: "Creative / Graphic Tasks", icon: "🎨", count: creativePairs.length, detail: creativePairs.map((a) => `${a.platform} ${a.size.split(" ")[0]}`).slice(0, 4).join(", ") + (creativePairs.length > 4 ? "…" : "") });
-  if (videos) out.push({ kind: "Video Tasks", icon: "🎬", count: videos, detail: `จาก content ที่ต้องใช้ video` });
+  if (withGraphic.length) out.push({ kind: "Creative / Graphic Tasks", icon: "🎨", count: withGraphic.length, detail: `${withGraphic.length} request · ${creativePairs.length} asset(s)` });
   if (brief.kols.length) out.push({ kind: "KOL Tasks", icon: "🤝", count: brief.kols.length, detail: `${brief.kols.reduce((s, k) => s + (k.count || 0), 0)} creator/page` });
   if (adsPlatforms) out.push({ kind: "Ads Setup Tasks", icon: "📣", count: adsPlatforms, detail: `${adsPlatforms} platform` });
   if (crm) out.push({ kind: "CRM Task", icon: "💬", count: 1, detail: "LINE OA / CRM" });
   out.push({ kind: "Result Report", icon: "📊", count: 1, detail: "Campaign result tracking" });
   return out;
+}
+
+/** Total tasks that Submit will create — single source for the preview count. */
+export function plannedTaskTotal(brief: CampaignBrief): number {
+  return taskPreview(brief).reduce((s, t) => s + t.count, 0);
 }

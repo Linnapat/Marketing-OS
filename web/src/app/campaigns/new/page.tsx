@@ -17,7 +17,7 @@ import {
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
   kolBudgetTotal, withSyncedKolBudget,
-  BriefContentItem, BriefKolItem,
+  BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { saveCampaignBrief } from "@/lib/db/brief";
 import { baht } from "@/lib/format";
@@ -36,6 +36,21 @@ function newCampaignId(): string {
   return `CAM-${n.getFullYear()}-${String(rnd).padStart(4, "0")}`;
 }
 
+// Step-1 (Overview) required-field check → { fieldKey: message }, in visual order.
+function overviewErrors(b: CampaignBrief): Record<string, string> {
+  const e: Record<string, string> = {};
+  if (!b.name.trim()) e.name = "กรุณากรอกชื่อแคมเปญ";
+  if (b.branches.length === 0) e.branches = "กรุณาเลือกอย่างน้อย 1 สาขา";
+  if (!b.startDate) e.startDate = "กรุณาเลือก Start Date";
+  if (!b.endDate) e.endDate = "กรุณาเลือก End Date";
+  else if (b.startDate && b.endDate < b.startDate) e.endDate = "End Date ต้องไม่ก่อน Start Date";
+  if (!b.launchDate) e.launchDate = "กรุณาเลือก Launch Date";
+  if (!b.audience.trim()) e.audience = "กรุณากรอก Target Audience";
+  if (!b.mainMessage.trim()) e.mainMessage = "กรุณากรอก Key Message";
+  if (!b.offer.trim()) e.offer = "กรุณากรอก Main Offer";
+  return e;
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
@@ -44,6 +59,8 @@ export default function NewCampaignPage() {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [seq, setSeq] = useState(1);
+  const [triedNext, setTriedNext] = useState(false); // show step-1 inline errors after first Next
+  const [ackWarn, setAckWarn] = useState(false);      // acknowledge unresolved warnings before Submit
 
   const set = <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => setBrief((b) => ({ ...b, [k]: v }));
   const nextSeq = () => { const s = seq; setSeq((x) => x + 1); return s; };
@@ -57,7 +74,6 @@ export default function NewCampaignPage() {
   const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
   const preview = useMemo(() => taskPreview(brief), [brief]);
   const errors = useMemo(() => validateSubmit(brief), [brief]);
-  const checklistDone = checklist.filter((c) => c.done).length;
 
   const outOfRange = (iso: string) => iso && brief.startDate && brief.endDate && (iso < brief.startDate || iso > brief.endDate);
   const rangeWarnings = useMemo(() => {
@@ -67,7 +83,21 @@ export default function NewCampaignPage() {
     return w;
   }, [brief]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canSubmit = errors.length === 0;
+  const allWarnings = [...bs.warnings, ...rangeWarnings];
+  const ovErrors = triedNext ? overviewErrors(brief) : {};
+  // Submit is blocked by hard errors AND by unresolved warnings unless acknowledged.
+  const canSubmit = errors.length === 0 && (allWarnings.length === 0 || ackWarn);
+
+  // Next validates step 1 inline: scroll to the first missing field instead of failing silently.
+  const goNext = () => {
+    if (step === 0) {
+      setTriedNext(true);
+      const e = overviewErrors(brief);
+      const first = Object.keys(e)[0];
+      if (first) { setTimeout(() => document.getElementById(`ov-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); return; }
+    }
+    setStep((s) => Math.min(STEPS.length - 1, s + 1));
+  };
 
   const finalize = (status: CampaignBrief["status"], log: CampaignBrief["approvalLog"], now: string): CampaignBrief =>
     withSyncedKolBudget({ ...brief, branch: brief.branches.join(", "), status, approvalLog: log, createdAt: now });
@@ -110,20 +140,20 @@ export default function NewCampaignPage() {
       </div>
 
       <div className="mt-5 max-w-[900px]">
-        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} />}
+        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} />}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
         {step === 2 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} onEditKol={() => setStep(2)} />}
-        {step === 4 && <Preview preview={preview} warnings={[...bs.warnings, ...rangeWarnings]} />}
-        {step === 5 && <Guideline checklist={checklist} done={checklistDone} />}
-        {step === 6 && <Submit brief={brief} errors={errors} checklistDone={checklistDone} total={checklist.length} />}
+        {step === 4 && <Preview preview={preview} warnings={allWarnings} />}
+        {step === 5 && <Guideline checklist={checklist} />}
+        {step === 6 && <Submit brief={brief} errors={errors} warnings={allWarnings} ack={ackWarn} onAck={setAckWarn} checklist={checklist} />}
       </div>
 
       <div className="mt-6 max-w-[900px] flex items-center justify-between">
         <button disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}
           className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4 py-[9px] bg-surface disabled:opacity-40">← Back</button>
         {step < STEPS.length - 1 ? (
-          <button onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+          <button onClick={goNext}
             className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px]">Next →</button>
         ) : (
           <div className="flex gap-2">
@@ -162,10 +192,13 @@ function Chips({ options, value, onChange }: { options: readonly string[]; value
 }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
-function Overview({ brief, set, setBrief, branches, planner }: {
+function Overview({ brief, set, setBrief, branches, planner, errors }: {
   brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
+  errors: Record<string, string>;
 }) {
+  const errBorder = { borderColor: "#B33A2E", background: "#FFF7F6" };
+  const errText = "text-[11px] text-status-red font-semibold mt-1";
   const toggleBranch = (br: string) => setBrief((b) => ({ ...b, branches: b.branches.includes(br) ? b.branches.filter((x) => x !== br) : [...b.branches, br] }));
   const toggleMetric = (m: string) => setBrief((b) => ({ ...b, successMetrics: b.successMetrics.includes(m) ? b.successMetrics.filter((x) => x !== m) : [...b.successMetrics, m] }));
   const setGoal = (m: string, v: string) => setBrief((b) => ({ ...b, successGoals: { ...b.successGoals, [m]: v } }));
@@ -173,9 +206,10 @@ function Overview({ brief, set, setBrief, branches, planner }: {
   return (
     <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
       <div className="grid md:grid-cols-2 gap-4">
-        <div className="md:col-span-2">
+        <div className="md:col-span-2" id="ov-name">
           <label className={label}>Campaign Name <span className="text-status-red">*</span></label>
-          <input value={brief.name} onChange={(e) => set("name", e.target.value)} className={field} placeholder="เช่น Wagyu Festival — July" autoFocus />
+          <input value={brief.name} onChange={(e) => set("name", e.target.value)} className={field} style={errors.name ? errBorder : undefined} placeholder="เช่น Wagyu Festival — July" autoFocus />
+          {errors.name && <p className={errText}>{errors.name}</p>}
         </div>
         <div>
           <label className={label}>Brand</label>
@@ -184,8 +218,9 @@ function Overview({ brief, set, setBrief, branches, planner }: {
           </select>
         </div>
         {/* Branch — directly under Brand */}
-        <div>
+        <div id="ov-branches">
           <label className={label}>Branch <span className="text-status-red">*</span> <span className="text-faint font-normal">· หลายสาขา ({brief.branches.length})</span></label>
+          {errors.branches && <p className={errText + " mb-1"}>{errors.branches}</p>}
           <div className="flex flex-wrap gap-2">
             {branches.length === 0 && <span className="text-[12px] text-faint">ไม่มีสาขาสำหรับแบรนด์นี้</span>}
             {branches.map((br) => {
@@ -243,31 +278,36 @@ function Overview({ brief, set, setBrief, branches, planner }: {
         </div>
 
         {/* Dates */}
-        <div>
+        <div id="ov-startDate">
           <label className={label}>Start Date <span className="text-status-red">*</span></label>
-          <DatePicker value={brief.startDate || null} onChange={(v) => set("startDate", v)} max={brief.endDate || undefined} />
+          <DatePicker value={brief.startDate || null} onChange={(v) => set("startDate", v)} max={brief.endDate || undefined} invalid={!!errors.startDate} />
+          {errors.startDate && <p className={errText}>{errors.startDate}</p>}
         </div>
-        <div>
+        <div id="ov-endDate">
           <label className={label}>End Date <span className="text-status-red">*</span></label>
-          <DatePicker value={brief.endDate || null} onChange={(v) => set("endDate", v)} min={brief.startDate || undefined} invalid={endInvalid} />
-          {endInvalid && <div className="text-[11px] text-status-red font-semibold mt-1">End Date ต้องไม่ก่อน Start Date</div>}
+          <DatePicker value={brief.endDate || null} onChange={(v) => set("endDate", v)} min={brief.startDate || undefined} invalid={endInvalid || !!errors.endDate} />
+          {(errors.endDate || endInvalid) && <div className="text-[11px] text-status-red font-semibold mt-1">{errors.endDate || "End Date ต้องไม่ก่อน Start Date"}</div>}
         </div>
-        <div>
+        <div id="ov-launchDate">
           <label className={label}>Launch Date <span className="text-status-red">*</span></label>
-          <DatePicker value={brief.launchDate || null} onChange={(v) => set("launchDate", v)} min={brief.startDate || undefined} max={brief.endDate || undefined} />
+          <DatePicker value={brief.launchDate || null} onChange={(v) => set("launchDate", v)} min={brief.startDate || undefined} max={brief.endDate || undefined} invalid={!!errors.launchDate} />
+          {errors.launchDate && <p className={errText}>{errors.launchDate}</p>}
         </div>
 
-        <div className="md:col-span-2">
+        <div className="md:col-span-2" id="ov-audience">
           <label className={label}>Target Audience <span className="text-status-red">*</span></label>
-          <input value={brief.audience} onChange={(e) => set("audience", e.target.value)} className={field} placeholder="เช่น คนทำงานย่านทองหล่อ 25–40 ชอบอาหารญี่ปุ่น" />
+          <input value={brief.audience} onChange={(e) => set("audience", e.target.value)} className={field} style={errors.audience ? errBorder : undefined} placeholder="เช่น คนทำงานย่านทองหล่อ 25–40 ชอบอาหารญี่ปุ่น" />
+          {errors.audience && <p className={errText}>{errors.audience}</p>}
         </div>
-        <div>
+        <div id="ov-mainMessage">
           <label className={label}>Key Message <span className="text-status-red">*</span></label>
-          <input value={brief.mainMessage} onChange={(e) => set("mainMessage", e.target.value)} className={field} placeholder="ข้อความหลักที่อยากสื่อ" />
+          <input value={brief.mainMessage} onChange={(e) => set("mainMessage", e.target.value)} className={field} style={errors.mainMessage ? errBorder : undefined} placeholder="ข้อความหลักที่อยากสื่อ" />
+          {errors.mainMessage && <p className={errText}>{errors.mainMessage}</p>}
         </div>
-        <div>
+        <div id="ov-offer">
           <label className={label}>Main Offer <span className="text-status-red">*</span></label>
-          <input value={brief.offer} onChange={(e) => set("offer", e.target.value)} className={field} placeholder="เช่น ลด 20% / เซ็ตพิเศษ" />
+          <input value={brief.offer} onChange={(e) => set("offer", e.target.value)} className={field} style={errors.offer ? errBorder : undefined} placeholder="เช่น ลด 20% / เซ็ตพิเศษ" />
+          {errors.offer && <p className={errText}>{errors.offer}</p>}
         </div>
         <div className="md:col-span-2">
           <label className={label}>Channels</label>
@@ -291,21 +331,30 @@ function Overview({ brief, set, setBrief, branches, planner }: {
 }
 
 // ── Step 2 ──────────────────────────────────────────────────────────────────
-function Guideline({ checklist, done }: { checklist: { key: string; label: string; done: boolean }[]; done: number }) {
+function GuidelineRow(c: GuidelineItem) {
   return (
-    <Panel title="Campaign Guideline Checklist" hint="เช็กแบบ real-time จากข้อมูลที่กรอกจริง — Submit Campaign ต้องครบทุก required field (Save Draft ไม่บังคับ)">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="flex-1 h-2 rounded-full bg-line overflow-hidden"><div className="h-full rounded-full" style={{ width: `${(done / checklist.length) * 100}%`, background: "#4E7A4E" }} /></div>
-        <span className="text-[12.5px] font-bold text-muted">{done}/{checklist.length}</span>
+    <div key={c.key} className="flex items-center gap-[10px] px-[13px] py-[10px] rounded-[10px]" style={{ background: c.done ? "#EEF4EE" : "#FAF8F4", border: `1px solid ${c.done ? "#C8E0C8" : "#EEE8DE"}` }}>
+      <span className="text-[15px]">{c.done ? "✅" : "⬜"}</span>
+      <span className="text-[12.5px] font-medium" style={{ color: c.done ? "#4E7A4E" : "#6b6258" }}>{c.label}</span>
+    </div>
+  );
+}
+
+function Guideline({ checklist }: { checklist: GuidelineItem[] }) {
+  const must = checklist.filter((c) => c.must);
+  const nice = checklist.filter((c) => !c.must);
+  const mustDone = must.filter((c) => c.done).length;
+  const niceDone = nice.filter((c) => c.done).length;
+  const mustOk = mustDone === must.length;
+  return (
+    <Panel title="Campaign Guideline Checklist" hint="Must-have ต้องครบถึงจะ Submit ได้ · Nice-to-have แนะนำแต่ไม่บังคับ (แจ้งเตือนอย่างเดียว)">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[13px] font-bold" style={{ color: mustOk ? "#4E7A4E" : "#B33A2E" }}>Must-have {mustDone}/{must.length}</span>
+        <span className="text-[11.5px] font-semibold" style={{ color: mustOk ? "#4E7A4E" : "#B33A2E" }}>{mustOk ? "— ครบแล้ว พร้อม Submit" : "— ยังไม่ครบ · Submit ไม่ได้"}</span>
       </div>
-      <div className="grid md:grid-cols-2 gap-2">
-        {checklist.map((c) => (
-          <div key={c.key} className="flex items-center gap-[10px] px-[13px] py-[10px] rounded-[10px]" style={{ background: c.done ? "#EEF4EE" : "#FAF8F4", border: `1px solid ${c.done ? "#C8E0C8" : "#EEE8DE"}` }}>
-            <span className="text-[15px]">{c.done ? "✅" : "⬜"}</span>
-            <span className="text-[12.5px] font-medium" style={{ color: c.done ? "#4E7A4E" : "#6b6258" }}>{c.label}</span>
-          </div>
-        ))}
-      </div>
+      <div className="grid md:grid-cols-2 gap-2 mb-5">{must.map(GuidelineRow)}</div>
+      <div className="text-[13px] font-bold text-muted mb-2">Nice-to-have {niceDone}/{nice.length} <span className="text-[11.5px] text-faint font-normal">— แนะนำ ไม่บล็อก Submit</span></div>
+      <div className="grid md:grid-cols-2 gap-2">{nice.map(GuidelineRow)}</div>
     </Panel>
   );
 }
@@ -474,7 +523,7 @@ function Budget({ brief, setBrief, bs, onEditKol }: { brief: CampaignBrief; setB
 function Preview({ preview, warnings }: { preview: ReturnType<typeof taskPreview>; warnings: string[] }) {
   const total = preview.reduce((s, p) => s + p.count, 0);
   return (
-    <Panel title="Auto Task Preview" hint={`ระบบจะสร้างงานเหล่านี้ให้อัตโนมัติเมื่อกด Submit — รวม ${total} รายการ (Creative แยกตาม Platform + Asset Size)`}>
+    <Panel title="Auto Task Preview" hint={`ระบบจะสร้างงานเหล่านี้ให้อัตโนมัติเมื่อกด Submit — รวม ${total} รายการ (ตรงกับที่สร้างจริง)`}>
       <div className="grid md:grid-cols-2 gap-3">
         {preview.map((p) => (
           <div key={p.kind} className="flex items-center gap-3 border border-line2 rounded-card p-4 bg-ivory">
@@ -493,18 +542,20 @@ function Preview({ preview, warnings }: { preview: ReturnType<typeof taskPreview
 }
 
 // ── Step 7 ──────────────────────────────────────────────────────────────────
-function Submit({ brief, errors, checklistDone, total }: {
-  brief: CampaignBrief; errors: string[]; checklistDone: number; total: number;
+function Submit({ brief, errors, warnings, ack, onAck, checklist }: {
+  brief: CampaignBrief; errors: string[]; warnings: string[]; ack: boolean; onAck: (v: boolean) => void; checklist: GuidelineItem[];
 }) {
+  const must = checklist.filter((c) => c.must);
+  const mustDone = must.filter((c) => c.done).length;
   return (
-    <Panel title="Review & Submit" hint="Submit ต้องกรอก required field ครบ — Save Draft เก็บไว้แก้ต่อได้แม้ยังไม่ครบ">
+    <Panel title="Review & Submit" hint="Submit ต้องกรอก required field ครบ และไม่มี warning ค้าง — Save Draft เก็บไว้แก้ต่อได้แม้ยังไม่ครบ">
       <div className="grid md:grid-cols-2 gap-3 mb-4">
         {[
           ["Campaign", brief.name || "—"], ["Brand", brandName(brief.b)], ["Type / Objective", `${brief.campaignType} · ${brief.objective}`],
           ["Branches", brief.branches.join(", ") || "—"], ["Period", `${brief.startDate || "—"} → ${brief.endDate || "—"}`],
           ["Launch", brief.launchDate || "—"], ["Priority", brief.priority], ["Content items", String(brief.content.length)],
           ["KOL requirements", String(brief.kols.length)], ["Total budget", baht(brief.budget.total, { compact: true })],
-          ["Approver", brief.approver || "—"], ["Guideline", `${checklistDone}/${total} checked`],
+          ["Approver", brief.approver || "—"], ["Guideline (must-have)", `${mustDone}/${must.length}`],
         ].map(([l, v]) => (
           <div key={l} className="flex items-center justify-between border-b border-line4 py-2">
             <span className="text-[12px] text-faint font-semibold">{l}</span><span className="text-[13px] font-bold text-ink text-right">{v}</span>
@@ -519,8 +570,18 @@ function Submit({ brief, errors, checklistDone, total }: {
             {errors.map((e, i) => <li key={i} className="text-[12.5px] text-status-red flex items-start gap-2"><span>•</span><span>{e}</span></li>)}
           </ul>
         </div>
+      ) : warnings.length > 0 ? (
+        <div className="rounded-card px-4 py-3" style={{ background: "#FBF6ED", border: "1px solid #EDCC7A" }}>
+          <div className="text-[12.5px] font-bold mb-2" style={{ color: "#8A6D1E" }}>⚠ มี {warnings.length} warning ที่ยังไม่ได้แก้ — ตรวจสอบก่อน Submit:</div>
+          <ul className="flex flex-col gap-[5px] mb-3">
+            {warnings.map((w, i) => <li key={i} className="text-[12.5px] flex items-start gap-2" style={{ color: "#8A6D1E" }}><span>•</span><span>{w}</span></li>)}
+          </ul>
+          <label className="flex items-center gap-2 text-[12.5px] font-semibold cursor-pointer" style={{ color: "#8A6D1E" }}>
+            <input type="checkbox" checked={ack} onChange={(e) => onAck(e.target.checked)} /> รับทราบ warning เหล่านี้และยืนยัน Submit ต่อ
+          </label>
+        </div>
       ) : (
-        <div className="rounded-card px-4 py-3 text-[12.5px] font-bold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>✓ ครบทุก required field — พร้อม Submit Campaign</div>
+        <div className="rounded-card px-4 py-3 text-[12.5px] font-bold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>✓ ครบทุก required field และไม่มี warning ค้าง — พร้อม Submit Campaign</div>
       )}
     </Panel>
   );

@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContent } from "./content";
@@ -37,7 +37,8 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
 
   const row: CampaignRow = {
     id: brief.id, name: brief.name, b: brief.b, branch: brief.branch,
-    owner: brief.plannerOwner || "Unassigned", budget: brief.budget.total, spend: 0, roi: 0,
+    // spend seeds Finance "Committed" — the amount allocated across buckets at plan time.
+    owner: brief.plannerOwner || "Unassigned", budget: brief.budget.total, spend: budgetSummary(brief).allocated, roi: 0,
     dates: fmtRange(brief.startDate, brief.endDate), status: brief.status,
     campType: brief.campaignType || brief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
@@ -109,7 +110,9 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     await createKol(buildKol({
       id: stamp + 900 + n, campaign: brief.name, b: brief.b, kolType: kr.kolType,
       count: kr.count || 1, budget: kr.budget || 0, deliverables: kr.contentRequired.join(" + "),
-      notes: kr.note, name: kr.name || undefined, expectedReach: kr.expectedReach, expectedEngagement: expEng,
+      notes: kr.note, name: kr.name || undefined, handle: kr.handle || undefined,
+      followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
+      owner: kr.owner, branch: kr.area, platform: kr.platforms[0],
       postingDate: labelDate(kr.postingStart), contactStatus: "Prospect",
     })); kols++;
     await createTaskDb(mkTask(++n, {
@@ -121,7 +124,9 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
 
   // ── Ads setup tasks (one per funded platform) ──────────────────────────────
   const adsPlatforms = brief.budget.adsByPlatform.filter((a) => a.amount > 0);
-  const adsList = adsPlatforms.length ? adsPlatforms : (brief.budget.ads > 0 ? [{ platform: "Ads", amount: brief.budget.ads }] : []);
+  // Fall back to a real ad channel (Facebook / Instagram / …) rather than a generic "Ads".
+  const adChannel = brief.channels.find((c) => /facebook|instagram|tiktok|google|youtube|line/i.test(c));
+  const adsList = adsPlatforms.length ? adsPlatforms : (brief.budget.ads > 0 ? [{ platform: adChannel ?? "Ads", amount: brief.budget.ads }] : []);
   for (const a of adsList) {
     await createTaskDb(mkTask(++n, {
       title: `Ads setup — ${a.platform}`, type: "Ads", moduleIcon: "📣", moduleColor: "#C68A1E",
