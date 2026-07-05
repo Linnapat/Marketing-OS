@@ -26,11 +26,13 @@ const isActive = (m: Member) => (m.status || "").toLowerCase() === "active";
 let _cache: Member[] | null = null;
 
 export function OwnerSelect({
-  value, onChange, team = "all", placeholder = "Select owner", disabled, invalid, className,
+  value, onChange, team = "all", roleMatch, placeholder = "Select owner", disabled, invalid, className,
 }: {
   value: string;
   onChange: (name: string) => void;
   team?: OwnerTeam;
+  /** Optional role-name filter (e.g. /cmo|admin/i for the CMO-only approver). */
+  roleMatch?: RegExp;
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
@@ -46,7 +48,9 @@ export function OwnerSelect({
   }, []);
 
   const active = members.filter(isActive);
-  const scoped = team === "all" ? active : active.filter((m) => memberTeam(m.role) === team);
+  const scoped = active
+    .filter((m) => team === "all" || memberTeam(m.role) === team)
+    .filter((m) => !roleMatch || roleMatch.test(m.role));
   // Never hide a value that's already set even if it's out of the current scope.
   const list = value && !scoped.some((m) => m.name === value)
     ? [...scoped, ...active.filter((m) => m.name === value)]

@@ -38,7 +38,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     id: brief.id, name: brief.name, b: brief.b, branch: brief.branch,
     owner: brief.plannerOwner || "Unassigned", budget: brief.budget.total, spend: 0, roi: 0,
     dates: fmtRange(brief.startDate, brief.endDate), status: brief.status,
-    campType: brief.objective, readiness: "needs_attention",
+    campType: brief.campaignType || brief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
     bottleneckTeam: "None", nextApproval: brief.approver || "CMO",
   };
@@ -74,37 +74,41 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     }));
 
     if (ci.requiredGraphic) {
+      // One creative/graphic per Platform + Asset Size pair.
       const gid = stamp + 500 + n;
+      const sizeTag = ci.assetSize ? ` (${ci.assetSize})` : "";
       const g: Graphic = {
         ...buildGraphic({
-          id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
+          id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.platform}${sizeTag}`,
           type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
           requester: brief.plannerOwner, approver: brief.approver, channels: [ci.platform],
         }),
         stage: "Waiting for Creative",
-        nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${brief.mainMessage || "—"}`,
+        size: ci.assetSize || "—",
+        nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
         contentItem: ci.title || "—",
       };
       await createGraphic(g); graphics++;
       await createTaskDb(mkTask(++n, {
-        title: `Graphic — ${ci.title || ci.type}`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
+        title: `Graphic — ${ci.title || ci.type} · ${ci.platform}${sizeTag}`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
         owner: ci.creativeOwner, priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-        relatedGraphicId: String(gid), nextAction: `Deliver artwork for ${ci.platform}`,
+        channel: ci.platform, relatedGraphicId: String(gid), nextAction: `Deliver ${ci.assetSize || "artwork"} for ${ci.platform}`,
       }));
     }
   }
 
   // ── KOL requirements → KOL requests + KOL tasks ────────────────────────────
   for (const kr of brief.kols) {
+    const expEng = (kr.likes || 0) + (kr.comments || 0) + (kr.shares || 0) + (kr.saves || 0) + (kr.clicks || 0);
     await createKol(buildKol({
       id: stamp + 900 + n, campaign: brief.name, b: brief.b, kolType: kr.kolType,
       count: kr.count || 1, budget: kr.budget || 0, deliverables: kr.contentRequired.join(" + "),
-      notes: kr.note, expectedReach: kr.expectedReach, expectedEngagement: kr.expectedEngagement,
+      notes: kr.note, name: kr.name || undefined, expectedReach: kr.expectedReach, expectedEngagement: expEng,
       postingDate: labelDate(kr.postingStart), contactStatus: "Prospect",
     })); kols++;
     await createTaskDb(mkTask(++n, {
-      title: `KOL — ${kr.kolType} × ${kr.count}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
-      owner: kr.owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart,
+      title: `KOL — ${kr.name || kr.kolType} × ${kr.count}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
+      owner: kr.owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platform,
       nextAction: `${kr.area || "—"} · reach ${kr.expectedReach.toLocaleString()}`,
     }));
   }

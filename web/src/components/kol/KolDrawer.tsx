@@ -202,6 +202,9 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const costPerReach = reach ? kol.totalCost / reach : 0;
   const costPerEng = eng ? kol.totalCost / eng : 0;
   const cpv = kol.visits ? Math.round(kol.totalCost / kol.visits) : 0;
+  // Engagement rate: engagement ÷ reach, falling back to followers. Always %.
+  const engBase = reach > 0 ? reach : (kol.followers || 0);
+  const engRate = engBase ? (eng / engBase) * 100 : 0;
 
   const save = async () => {
     setBusy(true);
@@ -237,6 +240,7 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           ["Reach", fmtFollow(reach)], ["Engagement", eng ? fmtFollow(eng) : "—"],
+          ["Eng. Rate", engBase ? `${engRate.toFixed(2)}%` : "—"],
           ["Cost / Reach", costPerReach ? baht(Math.round(costPerReach * 100) / 100) : "—"],
           ["Cost / Eng.", costPerEng ? baht(Math.round(costPerEng * 100) / 100) : "—"],
           ["Visits", String(kol.visits)], ["CPV", cpv ? baht(cpv) : "—"],

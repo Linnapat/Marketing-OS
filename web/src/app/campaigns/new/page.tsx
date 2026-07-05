@@ -3,26 +3,25 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Plus, Copy, Trash2 } from "lucide-react";
+import { Plus, Copy, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
-import { BrandDot } from "@/components/ui/BrandDot";
 import { BRAND_ORDER, BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA } from "@/lib/data/settings";
 import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem,
-  OBJECTIVES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, KOL_TYPES, KOL_CONTENT,
-  CHANNELS, ADS_PLATFORMS, PRIORITIES, budgetSummary, guidelineChecklist, taskPreview,
+  OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor,
+  KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT, CHANNELS, ADS_PLATFORMS, PRIORITIES,
+  budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
+  engagementRate, fmtPct, kolBudgetTotal, withSyncedKolBudget,
   BriefContentItem, BriefKolItem,
 } from "@/lib/data/brief";
 import { saveCampaignBrief } from "@/lib/db/brief";
 import { baht } from "@/lib/format";
 
-const STEPS = [
-  "Campaign Overview", "Guideline Checklist", "Content Plan",
-  "KOL Plan", "Budget Allocation", "Auto Task Preview", "Submit",
-];
+const STEPS = ["Campaign Overview", "Guideline Checklist", "Content Plan", "KOL Plan", "Budget Allocation", "Auto Task Preview", "Submit"];
+const CMO_ROLE = /cmo|admin/i;
 
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
@@ -48,28 +47,34 @@ export default function NewCampaignPage() {
   const bs = useMemo(() => budgetSummary(brief), [brief]);
   const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
   const preview = useMemo(() => taskPreview(brief), [brief]);
+  const errors = useMemo(() => validateSubmit(brief), [brief]);
   const checklistDone = checklist.filter((c) => c.done).length;
 
-  // Publish / posting dates outside the campaign period → soft warnings.
   const outOfRange = (iso: string) => iso && brief.startDate && brief.endDate && (iso < brief.startDate || iso > brief.endDate);
   const rangeWarnings = useMemo(() => {
     const w: string[] = [];
     brief.content.forEach((c) => { if (outOfRange(c.publishDate)) w.push(`Content “${c.title || "—"}” publish date อยู่นอกช่วง campaign`); });
-    brief.kols.forEach((k) => { if (outOfRange(k.postingStart)) w.push(`KOL ${k.kolType} posting date อยู่นอกช่วง campaign`); });
+    brief.kols.forEach((k) => { if (outOfRange(k.postingStart)) w.push(`KOL ${k.name || k.kolType} posting date อยู่นอกช่วง campaign`); });
     return w;
   }, [brief]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canSubmit = brief.name.trim() && brief.startDate && brief.endDate && brief.plannerOwner;
+  const canSubmit = errors.length === 0;
+
+  const finalize = (status: CampaignBrief["status"], log: CampaignBrief["approvalLog"], now: string): CampaignBrief =>
+    withSyncedKolBudget({ ...brief, branch: brief.branches.join(", "), status, approvalLog: log, createdAt: now });
 
   const submit = async (asDraft: boolean) => {
-    if (!brief.name.trim()) { setStep(0); return; }
+    // Save Draft is exempt from validation; Submit is blocked when required
+    // fields are missing.
+    if (!asDraft && errors.length) { setStep(6); return; }
+    if (asDraft && !brief.name.trim()) { setStep(0); return; }
     setBusy(true);
     const now = new Date().toISOString();
     const status = asDraft ? "Draft" : "Waiting for Approval";
-    const log = asDraft ? brief.approvalLog : [...brief.approvalLog, { action: "Submitted for approval", by: brief.plannerOwner || "Planner", at: now }];
-    const finalBrief: CampaignBrief = { ...brief, status, approvalLog: log, createdAt: now };
+    const logEntry = { action: "Submitted for approval", by: brief.plannerOwner || "Planner", at: now };
+    const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
-      await saveCampaignBrief(finalBrief);
+      await saveCampaignBrief(finalize(status, log, now));
       router.push(`/campaigns/${brief.id}`);
     } catch { setBusy(false); }
   };
@@ -83,7 +88,6 @@ export default function NewCampaignPage() {
         right={<Link href="/campaigns" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">← Campaigns</Link>}
       />
 
-      {/* Stepper */}
       <div className="mt-4 flex items-center gap-1 overflow-x-auto pb-1">
         {STEPS.map((s, i) => (
           <button key={s} onClick={() => setStep(i)} className="flex items-center gap-2 flex-shrink-0">
@@ -96,16 +100,15 @@ export default function NewCampaignPage() {
       </div>
 
       <div className="mt-5 max-w-[900px]">
-        {step === 0 && <Overview brief={brief} set={set} branches={branches} />}
+        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} />}
         {step === 1 && <Guideline checklist={checklist} done={checklistDone} />}
         {step === 2 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
         {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
-        {step === 4 && <Budget brief={brief} setBrief={setBrief} bs={bs} />}
+        {step === 4 && <Budget brief={brief} setBrief={setBrief} bs={bs} onEditKol={() => setStep(3)} />}
         {step === 5 && <Preview preview={preview} warnings={[...bs.warnings, ...rangeWarnings]} />}
-        {step === 6 && <Submit brief={brief} set={set} canSubmit={!!canSubmit} busy={busy} onSubmit={submit} checklistDone={checklistDone} total={checklist.length} />}
+        {step === 6 && <Submit brief={brief} errors={errors} checklistDone={checklistDone} total={checklist.length} />}
       </div>
 
-      {/* Footer nav */}
       <div className="mt-6 max-w-[900px] flex items-center justify-between">
         <button disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}
           className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4 py-[9px] bg-surface disabled:opacity-40">← Back</button>
@@ -127,8 +130,7 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
   return (
     <div className="bg-surface border border-line rounded-cardLg p-5 mb-4">
       <div className="text-[14px] font-bold mb-1">{title}</div>
-      {hint && <div className="text-[12px] text-faint mb-4">{hint}</div>}
-      {!hint && <div className="mb-4" />}
+      {hint ? <div className="text-[12px] text-faint mb-4">{hint}</div> : <div className="mb-4" />}
       {children}
     </div>
   );
@@ -150,91 +152,121 @@ function Chips({ options, value, onChange }: { options: readonly string[]; value
 }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
-function Overview({ brief, set, branches }: { brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void; branches: string[] }) {
+function Overview({ brief, set, setBrief, branches }: {
+  brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
+  setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[];
+}) {
+  const toggleBranch = (br: string) => setBrief((b) => ({ ...b, branches: b.branches.includes(br) ? b.branches.filter((x) => x !== br) : [...b.branches, br] }));
+  const endInvalid = !!brief.startDate && !!brief.endDate && brief.endDate < brief.startDate;
   return (
-    <>
-      <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className={label}>Campaign Name <span className="text-status-red">*</span></label>
-            <input value={brief.name} onChange={(e) => set("name", e.target.value)} className={field} placeholder="เช่น Wagyu Festival — July" autoFocus />
-          </div>
-          <div>
-            <label className={label}>Brand</label>
-            <select value={brief.b} onChange={(e) => set("b", e.target.value as BrandId)} className={field}>
-              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={label}>Branch</label>
-            <select value={brief.branch} onChange={(e) => set("branch", e.target.value)} className={field}>
-              <option value="">All branches</option>
-              {branches.map((br) => <option key={br} value={br}>{br}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={label}>Objective</label>
-            <select value={brief.objective} onChange={(e) => set("objective", e.target.value)} className={field}>
-              {OBJECTIVES.map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={label}>Start Date <span className="text-status-red">*</span></label>
-              <DatePicker value={brief.startDate || null} onChange={(v) => set("startDate", v)} max={brief.endDate || undefined} />
-            </div>
-            <div>
-              <label className={label}>End Date <span className="text-status-red">*</span></label>
-              <DatePicker value={brief.endDate || null} onChange={(v) => set("endDate", v)} min={brief.startDate || undefined}
-                invalid={!!brief.startDate && !!brief.endDate && brief.endDate < brief.startDate} />
-            </div>
-          </div>
-          <div className="md:col-span-2">
-            <label className={label}>Target Audience</label>
-            <input value={brief.audience} onChange={(e) => set("audience", e.target.value)} className={field} placeholder="เช่น คนทำงานย่านทองหล่อ 25–40 ชอบอาหารญี่ปุ่น" />
-          </div>
-          <div>
-            <label className={label}>Main Message</label>
-            <input value={brief.mainMessage} onChange={(e) => set("mainMessage", e.target.value)} className={field} placeholder="ข้อความหลักที่อยากสื่อ" />
-          </div>
-          <div>
-            <label className={label}>Offer / Promotion</label>
-            <input value={brief.offer} onChange={(e) => set("offer", e.target.value)} className={field} placeholder="เช่น ลด 20% / เซ็ตพิเศษ" />
-          </div>
-          <div className="md:col-span-2">
-            <label className={label}>Channels</label>
-            <Chips options={CHANNELS} value={brief.channels} onChange={(v) => set("channels", v)} />
-          </div>
-          <div>
-            <label className={label}>Campaign Concept</label>
-            <textarea value={brief.concept} onChange={(e) => set("concept", e.target.value)} rows={3} className={field} placeholder="ไอเดีย/ธีมของแคมเปญ" />
-          </div>
-          <div>
-            <label className={label}>Key Visual Direction</label>
-            <textarea value={brief.kvDirection} onChange={(e) => set("kvDirection", e.target.value)} rows={3} className={field} placeholder="โทน สี มู้ด อ้างอิงภาพ" />
-          </div>
-          <div className="md:col-span-2">
-            <label className={label}>Success Metrics</label>
-            <Chips options={SUCCESS_METRICS} value={brief.successMetrics} onChange={(v) => set("successMetrics", v)} />
-          </div>
-          <div>
-            <label className={label}>Planner Owner <span className="text-status-red">*</span></label>
-            <OwnerSelect value={brief.plannerOwner} onChange={(v) => set("plannerOwner", v)} team="Planner" placeholder="เลือก planner" />
-          </div>
-          <div>
-            <label className={label}>Approver</label>
-            <OwnerSelect value={brief.approver} onChange={(v) => set("approver", v)} placeholder="เลือกผู้อนุมัติ" />
+    <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="md:col-span-2">
+          <label className={label}>Campaign Name <span className="text-status-red">*</span></label>
+          <input value={brief.name} onChange={(e) => set("name", e.target.value)} className={field} placeholder="เช่น Wagyu Festival — July" autoFocus />
+        </div>
+        <div>
+          <label className={label}>Brand</label>
+          <select value={brief.b} onChange={(e) => setBrief((b) => ({ ...b, b: e.target.value as BrandId, branches: [] }))} className={field}>
+            {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>Campaign Type</label>
+          <select value={brief.campaignType} onChange={(e) => set("campaignType", e.target.value)} className={field}>
+            {CAMPAIGN_TYPES.map((t) => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>Objective</label>
+          <select value={brief.objective} onChange={(e) => set("objective", e.target.value)} className={field}>
+            {OBJECTIVES.map((o) => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>Campaign Priority</label>
+          <select value={brief.priority} onChange={(e) => set("priority", e.target.value)} className={field}>
+            {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </div>
+
+        {/* Branch multi-select */}
+        <div className="md:col-span-2">
+          <label className={label}>Branch <span className="text-status-red">*</span> <span className="text-faint font-normal">· เลือกได้หลายสาขา ({brief.branches.length})</span></label>
+          <div className="flex flex-wrap gap-2">
+            {branches.length === 0 && <span className="text-[12px] text-faint">ไม่มีสาขาสำหรับแบรนด์นี้</span>}
+            {branches.map((br) => {
+              const on = brief.branches.includes(br);
+              return (
+                <label key={br} className="flex items-center gap-2 text-[12.5px] font-semibold px-[11px] py-[7px] rounded-[9px] border cursor-pointer"
+                  style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                  <input type="checkbox" checked={on} onChange={() => toggleBranch(br)} /> {br}
+                </label>
+              );
+            })}
           </div>
         </div>
-      </Panel>
-    </>
+
+        {/* Dates */}
+        <div>
+          <label className={label}>Start Date <span className="text-status-red">*</span></label>
+          <DatePicker value={brief.startDate || null} onChange={(v) => set("startDate", v)} max={brief.endDate || undefined} />
+        </div>
+        <div>
+          <label className={label}>End Date <span className="text-status-red">*</span></label>
+          <DatePicker value={brief.endDate || null} onChange={(v) => set("endDate", v)} min={brief.startDate || undefined} invalid={endInvalid} />
+          {endInvalid && <div className="text-[11px] text-status-red font-semibold mt-1">End Date ต้องไม่ก่อน Start Date</div>}
+        </div>
+        <div>
+          <label className={label}>Launch Date <span className="text-status-red">*</span></label>
+          <DatePicker value={brief.launchDate || null} onChange={(v) => set("launchDate", v)} min={brief.startDate || undefined} max={brief.endDate || undefined} />
+        </div>
+        <div>
+          <label className={label}>Approver (CMO) <span className="text-status-red">*</span></label>
+          <OwnerSelect value={brief.approver} onChange={(v) => set("approver", v)} roleMatch={CMO_ROLE} placeholder="เลือก CMO" />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={label}>Target Audience <span className="text-status-red">*</span></label>
+          <input value={brief.audience} onChange={(e) => set("audience", e.target.value)} className={field} placeholder="เช่น คนทำงานย่านทองหล่อ 25–40 ชอบอาหารญี่ปุ่น" />
+        </div>
+        <div>
+          <label className={label}>Key Message <span className="text-status-red">*</span></label>
+          <input value={brief.mainMessage} onChange={(e) => set("mainMessage", e.target.value)} className={field} placeholder="ข้อความหลักที่อยากสื่อ" />
+        </div>
+        <div>
+          <label className={label}>Main Offer <span className="text-status-red">*</span></label>
+          <input value={brief.offer} onChange={(e) => set("offer", e.target.value)} className={field} placeholder="เช่น ลด 20% / เซ็ตพิเศษ" />
+        </div>
+        <div className="md:col-span-2">
+          <label className={label}>Channels</label>
+          <Chips options={CHANNELS} value={brief.channels} onChange={(v) => set("channels", v)} />
+        </div>
+        <div>
+          <label className={label}>Campaign Concept</label>
+          <textarea value={brief.concept} onChange={(e) => set("concept", e.target.value)} rows={3} className={field} placeholder="ไอเดีย/ธีมของแคมเปญ" />
+        </div>
+        <div>
+          <label className={label}>Key Visual Direction</label>
+          <textarea value={brief.kvDirection} onChange={(e) => set("kvDirection", e.target.value)} rows={3} className={field} placeholder="โทน สี มู้ด อ้างอิงภาพ" />
+        </div>
+        <div className="md:col-span-2">
+          <label className={label}>Success Metrics</label>
+          <Chips options={SUCCESS_METRICS} value={brief.successMetrics} onChange={(v) => set("successMetrics", v)} />
+        </div>
+        <div className="md:col-span-2">
+          <label className={label}>Planner Owner <span className="text-status-red">*</span></label>
+          <OwnerSelect value={brief.plannerOwner} onChange={(v) => set("plannerOwner", v)} team="Planner" placeholder="เลือก planner" />
+        </div>
+      </div>
+    </Panel>
   );
 }
 
 // ── Step 2 ──────────────────────────────────────────────────────────────────
 function Guideline({ checklist, done }: { checklist: { key: string; label: string; done: boolean }[]; done: number }) {
   return (
-    <Panel title="Campaign Guideline Checklist" hint="ตัวช่วยเช็คให้คิดครบ — ไม่บังคับ ยังสร้างแคมเปญได้แม้ยังไม่ครบ">
+    <Panel title="Campaign Guideline Checklist" hint="เช็กแบบ real-time จากข้อมูลที่กรอกจริง — Submit Campaign ต้องครบทุก required field (Save Draft ไม่บังคับ)">
       <div className="flex items-center gap-2 mb-4">
         <div className="flex-1 h-2 rounded-full bg-line overflow-hidden"><div className="h-full rounded-full" style={{ width: `${(done / checklist.length) * 100}%`, background: "#4E7A4E" }} /></div>
         <span className="text-[12.5px] font-bold text-muted">{done}/{checklist.length}</span>
@@ -259,39 +291,68 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
   const add = () => setBrief((b) => ({ ...b, content: [...b.content, { ...emptyContentItem(nextSeq()) }] }));
   const dup = (id: string) => setBrief((b) => { const src = b.content.find((c) => c.id === id); return src ? { ...b, content: [...b.content, { ...src, id: `ci-${nextSeq()}` }] } : b; });
   const rm = (id: string) => setBrief((b) => ({ ...b, content: b.content.filter((c) => c.id !== id) }));
+  // Changing platform clears the asset size (sizes are platform-specific).
+  const setPlatform = (id: string, platform: string) => upd(id, { platform, assetSize: "" });
 
   return (
-    <Panel title="Content Plan" hint="Planner กำหนดจำนวน content เองได้ — เพิ่ม/ทำซ้ำ/ลบ ได้อิสระ">
+    <Panel title="Content Plan" hint="Planner กำหนดจำนวน content เองได้ — เลือก Platform แล้วต้องเลือก Asset Size + กรอก brief ให้ครบก่อน submit">
       <div className="flex flex-col gap-3">
-        {brief.content.map((c, i) => (
-          <div key={c.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[12px] font-bold text-muted">Content #{i + 1}</span>
-              <div className="flex gap-1">
-                <button onClick={() => dup(c.id)} title="Duplicate" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
-                <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
+        {brief.content.map((c, i) => {
+          const sizes = assetSizesFor(c.platform);
+          return (
+            <div key={c.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[12px] font-bold text-muted">Content #{i + 1}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => dup(c.id)} title="Duplicate" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
+                  <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
+                </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={c.title} onChange={(e) => upd(c.id, { title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
+                <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={c.subHead} onChange={(e) => upd(c.id, { subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
+                <div><label className={label}>Content Type</label><select value={c.type} onChange={(e) => upd(c.id, { type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+                <div><label className={label}>Platform</label><select value={c.platform} onChange={(e) => setPlatform(c.id, e.target.value)} className={field}>{CONTENT_PLATFORMS.map((t) => <option key={t}>{t}</option>)}</select></div>
+                <div>
+                  <label className={label}>Asset Size <span className="text-status-red">*</span></label>
+                  <select value={c.assetSize} onChange={(e) => upd(c.id, { assetSize: e.target.value })} className={field} style={!c.assetSize ? { borderColor: "#E9B8B2" } : undefined}>
+                    <option value="">{`Select size for ${c.platform}…`}</option>
+                    {sizes.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div><label className={label}>Publish Date</label><DatePicker value={c.publishDate || null} onChange={(v) => upd(c.id, { publishDate: v })} invalid={!!outOfRange(c.publishDate)} /></div>
+                <div><label className={label}>Priority</label><select value={c.priority} onChange={(e) => upd(c.id, { priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
+                <div><label className={label}>Caption Owner <span className="text-faint font-normal">· Creative</span></label><OwnerSelect value={c.captionOwner} onChange={(v) => upd(c.id, { captionOwner: v })} team="Creative" /></div>
+                <div><label className={label}>Creative Owner <span className="text-faint font-normal">· Creative</span></label><OwnerSelect value={c.creativeOwner} onChange={(v) => upd(c.id, { creativeOwner: v })} team="Creative" /></div>
+                <div className="flex items-end gap-4">
+                  <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredGraphic} onChange={(e) => upd(c.id, { requiredGraphic: e.target.checked })} /> Required Graphic</label>
+                  <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredVideo} onChange={(e) => upd(c.id, { requiredVideo: e.target.checked })} /> Required Video</label>
+                </div>
+
+                {/* Content brief block */}
+                <div className="md:col-span-2 mt-1 pt-3 border-t border-line3 grid md:grid-cols-2 gap-3">
+                  <div><label className={label}>Main Message (item)</label><input value={c.mainMessage} onChange={(e) => upd(c.id, { mainMessage: e.target.value })} className={field} /></div>
+                  <div><label className={label}>Caption Direction</label><input value={c.captionDirection} onChange={(e) => upd(c.id, { captionDirection: e.target.value })} className={field} /></div>
+                  <div><label className={label}>CTA</label><input value={c.cta} onChange={(e) => upd(c.id, { cta: e.target.value })} className={field} placeholder="เช่น จองโต๊ะ / สั่งเลย" /></div>
+                  <div><label className={label}>Product / Menu Highlight</label><input value={c.productHighlight} onChange={(e) => upd(c.id, { productHighlight: e.target.value })} className={field} /></div>
+                  <div><label className={label}>Mood &amp; Tone</label><input value={c.moodTone} onChange={(e) => upd(c.id, { moodTone: e.target.value })} className={field} /></div>
+                  <div><label className={label}>Mandatory Text</label><input value={c.mandatoryText} onChange={(e) => upd(c.id, { mandatoryText: e.target.value })} className={field} placeholder="ข้อความบังคับ เช่น เงื่อนไขโปร" /></div>
+                  <div className="md:col-span-2"><label className={label}>Do / Don&apos;t</label><input value={c.doDont} onChange={(e) => upd(c.id, { doDont: e.target.value })} className={field} /></div>
+                  <div><label className={label}>Reference Brief Link <span className="text-status-red">*</span></label><input value={c.referenceBriefLink} onChange={(e) => upd(c.id, { referenceBriefLink: e.target.value })} className={field} placeholder="https://…" /></div>
+                  <div><label className={label}>Reference Image Link</label><input value={c.referenceImageLink} onChange={(e) => upd(c.id, { referenceImageLink: e.target.value })} className={field} placeholder="https://…" /></div>
+                  <div><label className={label}>Google Drive Link</label><input value={c.driveLink} onChange={(e) => upd(c.id, { driveLink: e.target.value })} className={field} placeholder="https://drive…" /></div>
+                  <div><label className={label}>Competitor / Inspiration Link</label><input value={c.competitorLink} onChange={(e) => upd(c.id, { competitorLink: e.target.value })} className={field} placeholder="https://…" /></div>
+                  <div className="md:col-span-2"><label className={label}>Note</label><input value={c.note} onChange={(e) => upd(c.id, { note: e.target.value })} className={field} /></div>
+                </div>
               </div>
             </div>
-            <div className="grid md:grid-cols-2 gap-3">
-              <div className="md:col-span-2"><label className={label}>Content Title</label><input value={c.title} onChange={(e) => upd(c.id, { title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
-              <div><label className={label}>Content Type</label><select value={c.type} onChange={(e) => upd(c.id, { type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-              <div><label className={label}>Platform</label><select value={c.platform} onChange={(e) => upd(c.id, { platform: e.target.value })} className={field}>{CONTENT_PLATFORMS.map((t) => <option key={t}>{t}</option>)}</select></div>
-              <div><label className={label}>Publish Date</label><DatePicker value={c.publishDate || null} onChange={(v) => upd(c.id, { publishDate: v })} invalid={!!outOfRange(c.publishDate)} /></div>
-              <div><label className={label}>Priority</label><select value={c.priority} onChange={(e) => upd(c.id, { priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
-              <div><label className={label}>Caption Owner</label><OwnerSelect value={c.captionOwner} onChange={(v) => upd(c.id, { captionOwner: v })} team="Planner" /></div>
-              <div><label className={label}>Creative Owner</label><OwnerSelect value={c.creativeOwner} onChange={(v) => upd(c.id, { creativeOwner: v })} team="Creative" /></div>
-              <div className="flex items-end gap-4">
-                <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredGraphic} onChange={(e) => upd(c.id, { requiredGraphic: e.target.checked })} /> Required Graphic</label>
-                <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredVideo} onChange={(e) => upd(c.id, { requiredVideo: e.target.checked })} /> Required Video</label>
-              </div>
-              <div><label className={label}>Status</label><input value={c.status} onChange={(e) => upd(c.id, { status: e.target.value })} className={field} placeholder="Planned" /></div>
-              <div className="md:col-span-2"><label className={label}>Note</label><input value={c.note} onChange={(e) => upd(c.id, { note: e.target.value })} className={field} placeholder="รายละเอียดเพิ่มเติม" /></div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {brief.content.length === 0 && <div className="text-[12.5px] text-faint text-center py-6 border border-dashed border-line2 rounded-[12px]">ยังไม่มี content — กด “Add Content Item”</div>}
       </div>
-      <button onClick={add} className="mt-3 flex items-center gap-2 text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]"><Plus size={14} /> Add Content Item</button>
+      <div className="flex gap-2 mt-3">
+        <button onClick={add} className="flex items-center gap-2 text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]"><Plus size={14} /> Add Content Item</button>
+      </div>
     </Panel>
   );
 }
@@ -307,60 +368,93 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
 
   return (
-    <Panel title="KOL Plan" hint="Planner กำหนดจำนวน KOL / เพจ เองได้ — เพิ่ม/ทำซ้ำ/ลบ">
+    <Panel title="KOL Plan" hint="Planner กำหนดจำนวน KOL / เพจ เองได้ — engagement rate คำนวณอัตโนมัติ · งบจะ sync ไป Budget Allocation">
       <div className="flex flex-col gap-3">
-        {brief.kols.map((k, i) => (
-          <div key={k.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[12px] font-bold text-muted">KOL Requirement #{i + 1}</span>
-              <div className="flex gap-1">
-                <button onClick={() => dup(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
-                <button onClick={() => rm(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
+        {brief.kols.map((k, i) => {
+          const rate = engagementRate(k);
+          return (
+            <div key={k.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[12px] font-bold text-muted">KOL Requirement #{i + 1}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => dup(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
+                  <button onClick={() => rm(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
+                </div>
+              </div>
+              <div className="grid md:grid-cols-3 gap-3">
+                <div className="md:col-span-2"><label className={label}>KOL Name / Page Name</label><input value={k.name} onChange={(e) => upd(k.id, { name: e.target.value })} className={field} placeholder="เช่น @tokyo.tom" /></div>
+                <div><label className={label}>Platform</label><select value={k.platform} onChange={(e) => upd(k.id, { platform: e.target.value })} className={field}>{KOL_PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select></div>
+                <div><label className={label}>KOL Type</label><select value={k.kolType} onChange={(e) => upd(k.id, { kolType: e.target.value })} className={field}>{KOL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+                <div><label className={label}># Creator / Page</label><input value={k.count || ""} onChange={(e) => upd(k.id, { count: num(e.target.value) })} className={field} placeholder="1" /></div>
+                <div><label className={label}>Follower</label><input value={k.followers || ""} onChange={(e) => upd(k.id, { followers: num(e.target.value) })} className={field} placeholder="100000" /></div>
+                <div><label className={label}>Expected Reach</label><input value={k.expectedReach || ""} onChange={(e) => upd(k.id, { expectedReach: num(e.target.value) })} className={field} placeholder="50000" /></div>
+                <div><label className={label}>Budget</label><input value={k.budget || ""} onChange={(e) => upd(k.id, { budget: num(e.target.value) })} className={field} placeholder="฿" /></div>
+                <div><label className={label}>Branch / Area</label><select value={k.area} onChange={(e) => upd(k.id, { area: e.target.value })} className={field}><option value="">—</option>{branches.map((br) => <option key={br}>{br}</option>)}</select></div>
+
+                {/* Engagement metric breakdown */}
+                <div className="md:col-span-3 mt-1 pt-3 border-t border-line3">
+                  <div className="text-[11.5px] font-bold text-muted mb-2">Engagement metric</div>
+                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                    {(["likes", "comments", "shares", "saves", "clicks", "views"] as const).map((m) => (
+                      <div key={m}>
+                        <label className="block text-[10.5px] font-bold text-faint mb-[4px] capitalize">{m}</label>
+                        <input value={k[m] || ""} onChange={(e) => upd(k.id, { [m]: num(e.target.value) } as Partial<BriefKolItem>)} className="w-full text-[13px] px-[10px] py-[8px] rounded-[9px] border border-line2 bg-surface outline-none" placeholder="0" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 text-[12px] font-semibold" style={{ color: rate > 0 ? "#4E7A4E" : "#9A9387" }}>
+                    Engagement rate: <b>{fmtPct(rate)}</b> <span className="text-faint font-normal">= (Like+Comment+Share+Save+Click) ÷ {k.expectedReach > 0 ? "Reach" : "Follower"}</span>
+                  </div>
+                </div>
+
+                <div><label className={label}>Posting Start</label><DatePicker value={k.postingStart || null} onChange={(v) => upd(k.id, { postingStart: v })} max={k.postingEnd || undefined} invalid={!!outOfRange(k.postingStart)} /></div>
+                <div><label className={label}>Posting End</label><DatePicker value={k.postingEnd || null} onChange={(v) => upd(k.id, { postingEnd: v })} min={k.postingStart || undefined} /></div>
+                <div><label className={label}>Owner <span className="text-faint font-normal">· KOL team</span></label><OwnerSelect value={k.owner} onChange={(v) => upd(k.id, { owner: v })} team="KOL" /></div>
+                <div className="md:col-span-3"><label className={label}>Content Required</label><Chips options={KOL_CONTENT} value={k.contentRequired} onChange={(v) => upd(k.id, { contentRequired: v })} /></div>
+                <div className="md:col-span-3"><label className={label}>Note</label><input value={k.note} onChange={(e) => upd(k.id, { note: e.target.value })} className={field} /></div>
               </div>
             </div>
-            <div className="grid md:grid-cols-3 gap-3">
-              <div><label className={label}>KOL Type</label><select value={k.kolType} onChange={(e) => upd(k.id, { kolType: e.target.value })} className={field}>{KOL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-              <div><label className={label}># Creator / Page</label><input value={k.count || ""} onChange={(e) => upd(k.id, { count: num(e.target.value) })} className={field} placeholder="1" /></div>
-              <div><label className={label}>Budget</label><input value={k.budget || ""} onChange={(e) => upd(k.id, { budget: num(e.target.value) })} className={field} placeholder="฿" /></div>
-              <div><label className={label}>Expected Reach</label><input value={k.expectedReach || ""} onChange={(e) => upd(k.id, { expectedReach: num(e.target.value) })} className={field} placeholder="50000" /></div>
-              <div><label className={label}>Expected Engagement</label><input value={k.expectedEngagement || ""} onChange={(e) => upd(k.id, { expectedEngagement: num(e.target.value) })} className={field} placeholder="4000" /></div>
-              <div><label className={label}>Branch / Area</label><select value={k.area} onChange={(e) => upd(k.id, { area: e.target.value })} className={field}><option value="">—</option>{branches.map((br) => <option key={br}>{br}</option>)}</select></div>
-              <div><label className={label}>Posting Start</label><DatePicker value={k.postingStart || null} onChange={(v) => upd(k.id, { postingStart: v })} max={k.postingEnd || undefined} invalid={!!outOfRange(k.postingStart)} /></div>
-              <div><label className={label}>Posting End</label><DatePicker value={k.postingEnd || null} onChange={(v) => upd(k.id, { postingEnd: v })} min={k.postingStart || undefined} /></div>
-              <div><label className={label}>Owner</label><OwnerSelect value={k.owner} onChange={(v) => upd(k.id, { owner: v })} team="KOL" /></div>
-              <div className="md:col-span-3"><label className={label}>Content Required</label><Chips options={KOL_CONTENT} value={k.contentRequired} onChange={(v) => upd(k.id, { contentRequired: v })} /></div>
-              <div className="md:col-span-3"><label className={label}>Note</label><input value={k.note} onChange={(e) => upd(k.id, { note: e.target.value })} className={field} /></div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {brief.kols.length === 0 && <div className="text-[12.5px] text-faint text-center py-6 border border-dashed border-line2 rounded-[12px]">ยังไม่มี KOL — กด “Add KOL Requirement”</div>}
       </div>
-      <button onClick={add} className="mt-3 flex items-center gap-2 text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]"><Plus size={14} /> Add KOL Requirement</button>
+      <div className="flex items-center justify-between mt-3">
+        <button onClick={add} className="flex items-center gap-2 text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]"><Plus size={14} /> Add KOL Requirement</button>
+        <div className="text-[12.5px] font-bold text-muted">KOL Budget รวม: <span className="text-ink">{baht(kolBudgetTotal(brief), { compact: true })}</span></div>
+      </div>
     </Panel>
   );
 }
 
 // ── Step 5 ──────────────────────────────────────────────────────────────────
-function Budget({ brief, setBrief, bs }: { brief: CampaignBrief; setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; bs: ReturnType<typeof budgetSummary> }) {
+function Budget({ brief, setBrief, bs, onEditKol }: { brief: CampaignBrief; setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; bs: ReturnType<typeof budgetSummary>; onEditKol: () => void }) {
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const setB = (patch: Partial<CampaignBrief["budget"]>) => setBrief((b) => ({ ...b, budget: { ...b.budget, ...patch } }));
   const setAds = (i: number, patch: Partial<{ platform: string; amount: number }>) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.map((a, j) => j === i ? { ...a, ...patch } : a) } }));
   const addAds = () => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: [...b.budget.adsByPlatform, { platform: ADS_PLATFORMS[0], amount: 0 }] } }));
   const rmAds = (i: number) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.filter((_, j) => j !== i) } }));
-  const buckets: [string, keyof CampaignBrief["budget"]][] = [
-    ["Ads Budget", "ads"], ["KOL Budget", "kol"], ["Graphic / Production", "graphic"],
-    ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
+  const kolBudget = kolBudgetTotal(brief);
+  const otherBuckets: [string, keyof CampaignBrief["budget"]][] = [
+    ["Ads Budget", "ads"], ["Graphic / Production", "graphic"], ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
   ];
 
   return (
     <>
-      <Panel title="Budget Allocation" hint="ใส่งบรวมแล้วเกลี่ยไปแต่ละส่วน — ระบบคำนวณคงเหลือ + % และเตือนถ้าเกิน/ไม่ครบ">
+      <Panel title="Budget Allocation" hint="ใส่งบรวมแล้วเกลี่ยไปแต่ละส่วน — KOL Budget sync จาก KOL Plan (แก้ไม่ได้ตรงนี้)">
         <div className="mb-4">
-          <label className={label}>Total Campaign Budget</label>
+          <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· รวม KOL อัตโนมัติ</span></label>
           <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
         </div>
         <div className="grid md:grid-cols-3 gap-3">
-          {buckets.map(([lbl, key]) => (
+          {/* KOL — read-only, synced */}
+          <div>
+            <label className={label}>KOL Budget <span className="text-faint font-normal">· auto</span></label>
+            <div className="flex items-center gap-2">
+              <input value={baht(kolBudget)} readOnly disabled className={`${field} bg-line4 cursor-not-allowed opacity-80`} />
+            </div>
+            <button onClick={onEditKol} className="mt-[6px] text-[11.5px] font-bold text-accent">Edit in KOL Plan →</button>
+          </div>
+          {otherBuckets.map(([lbl, key]) => (
             <div key={key}><label className={label}>{lbl}</label><input value={(brief.budget[key] as number) || ""} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)} className={field} placeholder="฿" /></div>
           ))}
         </div>
@@ -383,7 +477,7 @@ function Budget({ brief, setBrief, bs }: { brief: CampaignBrief; setBrief: React
       <Panel title="Allocation Summary">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           {[
-            ["Total", baht(brief.budget.total, { compact: true }), "#211F1C"],
+            ["Total", baht(Math.max(brief.budget.total, bs.allocated), { compact: true }), "#211F1C"],
             ["Allocated", baht(bs.allocated, { compact: true }), "#3E5C9A"],
             ["Remaining", baht(bs.remaining, { compact: true }), bs.remaining < 0 ? "#B33A2E" : "#4E7A4E"],
             ["Ads by platform", baht(bs.adsAllocated, { compact: true }), bs.adsMismatch ? "#B33A2E" : "#211F1C"],
@@ -417,7 +511,7 @@ function Budget({ brief, setBrief, bs }: { brief: CampaignBrief; setBrief: React
 function Preview({ preview, warnings }: { preview: ReturnType<typeof taskPreview>; warnings: string[] }) {
   const total = preview.reduce((s, p) => s + p.count, 0);
   return (
-    <Panel title="Auto Task Preview" hint={`ระบบจะสร้างงานเหล่านี้ให้อัตโนมัติเมื่อกด Submit — รวม ${total} รายการ ผูกกับแคมเปญนี้`}>
+    <Panel title="Auto Task Preview" hint={`ระบบจะสร้างงานเหล่านี้ให้อัตโนมัติเมื่อกด Submit — รวม ${total} รายการ (Creative แยกตาม Platform + Asset Size)`}>
       <div className="grid md:grid-cols-2 gap-3">
         {preview.map((p) => (
           <div key={p.kind} className="flex items-center gap-3 border border-line2 rounded-card p-4 bg-ivory">
@@ -436,29 +530,35 @@ function Preview({ preview, warnings }: { preview: ReturnType<typeof taskPreview
 }
 
 // ── Step 7 ──────────────────────────────────────────────────────────────────
-function Submit({ brief, set, canSubmit, busy, onSubmit, checklistDone, total }: {
-  brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
-  canSubmit: boolean; busy: boolean; onSubmit: (draft: boolean) => void; checklistDone: number; total: number;
+function Submit({ brief, errors, checklistDone, total }: {
+  brief: CampaignBrief; errors: string[]; checklistDone: number; total: number;
 }) {
   return (
-    <Panel title="Review & Submit" hint="ตรวจสอบก่อนสร้าง — Save Draft ไว้แก้ต่อ หรือ Submit เพื่อส่งอนุมัติและแตกงานอัตโนมัติ">
+    <Panel title="Review & Submit" hint="Submit ต้องกรอก required field ครบ — Save Draft เก็บไว้แก้ต่อได้แม้ยังไม่ครบ">
       <div className="grid md:grid-cols-2 gap-3 mb-4">
         {[
-          ["Campaign", brief.name || "—"], ["Brand", brandName(brief.b)], ["Objective", brief.objective],
-          ["Period", `${brief.startDate || "—"} → ${brief.endDate || "—"}`], ["Content items", String(brief.content.length)],
+          ["Campaign", brief.name || "—"], ["Brand", brandName(brief.b)], ["Type / Objective", `${brief.campaignType} · ${brief.objective}`],
+          ["Branches", brief.branches.join(", ") || "—"], ["Period", `${brief.startDate || "—"} → ${brief.endDate || "—"}`],
+          ["Launch", brief.launchDate || "—"], ["Priority", brief.priority], ["Content items", String(brief.content.length)],
           ["KOL requirements", String(brief.kols.length)], ["Total budget", baht(brief.budget.total, { compact: true })],
-          ["Guideline", `${checklistDone}/${total} checked`],
+          ["Approver", brief.approver || "—"], ["Guideline", `${checklistDone}/${total} checked`],
         ].map(([l, v]) => (
           <div key={l} className="flex items-center justify-between border-b border-line4 py-2">
-            <span className="text-[12px] text-faint font-semibold">{l}</span><span className="text-[13px] font-bold text-ink">{v}</span>
+            <span className="text-[12px] text-faint font-semibold">{l}</span><span className="text-[13px] font-bold text-ink text-right">{v}</span>
           </div>
         ))}
       </div>
-      {!canSubmit && <div className="text-[12.5px] text-status-orange font-semibold mb-3">ต้องกรอกอย่างน้อย: ชื่อแคมเปญ, วันเริ่ม/สิ้นสุด, Planner owner ก่อน Submit</div>}
-      <div className="flex items-center gap-3">
-        <span className="text-[12px] font-bold text-faint">Status</span>
-        <span className="text-[12px] font-bold px-3 py-[5px] rounded-pill" style={{ background: "#F2F0EB", color: "#6b6258" }}>{brief.status}</span>
-      </div>
+
+      {errors.length > 0 ? (
+        <div className="rounded-card px-4 py-3" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
+          <div className="text-[12.5px] font-bold text-status-red mb-2">ต้องแก้ {errors.length} จุดก่อน Submit Campaign:</div>
+          <ul className="flex flex-col gap-[5px]">
+            {errors.map((e, i) => <li key={i} className="text-[12.5px] text-status-red flex items-start gap-2"><span>•</span><span>{e}</span></li>)}
+          </ul>
+        </div>
+      ) : (
+        <div className="rounded-card px-4 py-3 text-[12.5px] font-bold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>✓ ครบทุก required field — พร้อม Submit Campaign</div>
+      )}
     </Panel>
   );
 }
