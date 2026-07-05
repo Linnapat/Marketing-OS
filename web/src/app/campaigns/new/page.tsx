@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Copy, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { useAuth } from "@/lib/auth";
 import { BRAND_ORDER, BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA } from "@/lib/data/settings";
 import {
@@ -20,7 +21,8 @@ import {
 import { saveCampaignBrief } from "@/lib/db/brief";
 import { baht } from "@/lib/format";
 
-const STEPS = ["Campaign Overview", "Guideline Checklist", "Content Plan", "KOL Plan", "Budget Allocation", "Auto Task Preview", "Submit"];
+// Guideline sits just before Submit — a final pre-flight, not an early gate.
+const STEPS = ["Campaign Overview", "Content Plan", "KOL Plan", "Budget Allocation", "Auto Task Preview", "Guideline Checklist", "Submit"];
 const CMO_ROLE = /cmo|admin/i;
 
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
@@ -34,6 +36,7 @@ function newCampaignId(): string {
 
 export default function NewCampaignPage() {
   const router = useRouter();
+  const { member, user } = useAuth();
   const [id] = useState(newCampaignId);
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id) }));
   const [step, setStep] = useState(0);
@@ -42,6 +45,10 @@ export default function NewCampaignPage() {
 
   const set = <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => setBrief((b) => ({ ...b, [k]: v }));
   const nextSeq = () => { const s = seq; setSeq((x) => x + 1); return s; };
+
+  // Planner = the logged-in user (auto, read-only). Keep it synced to auth.
+  const me = member?.name ?? user?.email ?? "";
+  useEffect(() => { if (me) setBrief((b) => ({ ...b, plannerOwner: me })); }, [me]);
 
   const branches = useMemo(() => BRANDS_DATA.find((d) => d.key === brief.b)?.branchList ?? [], [brief.b]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
@@ -75,7 +82,8 @@ export default function NewCampaignPage() {
     const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
       await saveCampaignBrief(finalize(status, log, now));
-      router.push(`/campaigns/${brief.id}`);
+      // Land on the list so the new campaign is visible in context immediately.
+      router.push("/campaigns");
     } catch { setBusy(false); }
   };
 
@@ -100,12 +108,12 @@ export default function NewCampaignPage() {
       </div>
 
       <div className="mt-5 max-w-[900px]">
-        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} />}
-        {step === 1 && <Guideline checklist={checklist} done={checklistDone} />}
-        {step === 2 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
-        {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
-        {step === 4 && <Budget brief={brief} setBrief={setBrief} bs={bs} onEditKol={() => setStep(3)} />}
-        {step === 5 && <Preview preview={preview} warnings={[...bs.warnings, ...rangeWarnings]} />}
+        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} />}
+        {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
+        {step === 2 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
+        {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} onEditKol={() => setStep(2)} />}
+        {step === 4 && <Preview preview={preview} warnings={[...bs.warnings, ...rangeWarnings]} />}
+        {step === 5 && <Guideline checklist={checklist} done={checklistDone} />}
         {step === 6 && <Submit brief={brief} errors={errors} checklistDone={checklistDone} total={checklist.length} />}
       </div>
 
@@ -152,11 +160,13 @@ function Chips({ options, value, onChange }: { options: readonly string[]; value
 }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
-function Overview({ brief, set, setBrief, branches }: {
+function Overview({ brief, set, setBrief, branches, planner }: {
   brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
-  setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[];
+  setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
 }) {
   const toggleBranch = (br: string) => setBrief((b) => ({ ...b, branches: b.branches.includes(br) ? b.branches.filter((x) => x !== br) : [...b.branches, br] }));
+  const toggleMetric = (m: string) => setBrief((b) => ({ ...b, successMetrics: b.successMetrics.includes(m) ? b.successMetrics.filter((x) => x !== m) : [...b.successMetrics, m] }));
+  const setGoal = (m: string, v: string) => setBrief((b) => ({ ...b, successGoals: { ...b.successGoals, [m]: v } }));
   const endInvalid = !!brief.startDate && !!brief.endDate && brief.endDate < brief.startDate;
   return (
     <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
@@ -188,6 +198,30 @@ function Overview({ brief, set, setBrief, branches }: {
           <select value={brief.priority} onChange={(e) => set("priority", e.target.value)} className={field}>
             {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
           </select>
+        </div>
+
+        {/* Success Metrics — multi-select + goal per metric, sitting under Objective */}
+        <div className="md:col-span-2">
+          <label className={label}>Success Metrics <span className="text-faint font-normal">· เลือกได้หลายตัว แล้วใส่เป้าหมาย</span></label>
+          <div className="flex flex-wrap gap-2">
+            {SUCCESS_METRICS.map((m) => {
+              const on = brief.successMetrics.includes(m);
+              return (
+                <button key={m} type="button" onClick={() => toggleMetric(m)} className="text-[12px] font-semibold px-[12px] py-[6px] rounded-pill border transition-colors"
+                  style={on ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { color: "#6b6258", background: "#fff", borderColor: "#E5DECF" }}>{m}</button>
+              );
+            })}
+          </div>
+          {brief.successMetrics.length > 0 && (
+            <div className="grid sm:grid-cols-2 gap-2 mt-3">
+              {brief.successMetrics.map((m) => (
+                <div key={m} className="flex items-center gap-2">
+                  <span className="text-[12px] font-semibold text-muted w-28 flex-shrink-0">{m} goal</span>
+                  <input value={brief.successGoals[m] ?? ""} onChange={(e) => setGoal(m, e.target.value)} className="flex-1 text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="เช่น 50000 / 3.5%" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Branch multi-select */}
@@ -251,12 +285,8 @@ function Overview({ brief, set, setBrief, branches }: {
           <textarea value={brief.kvDirection} onChange={(e) => set("kvDirection", e.target.value)} rows={3} className={field} placeholder="โทน สี มู้ด อ้างอิงภาพ" />
         </div>
         <div className="md:col-span-2">
-          <label className={label}>Success Metrics</label>
-          <Chips options={SUCCESS_METRICS} value={brief.successMetrics} onChange={(v) => set("successMetrics", v)} />
-        </div>
-        <div className="md:col-span-2">
-          <label className={label}>Planner Owner <span className="text-status-red">*</span></label>
-          <OwnerSelect value={brief.plannerOwner} onChange={(v) => set("plannerOwner", v)} team="Planner" placeholder="เลือก planner" />
+          <label className={label}>Planner <span className="text-faint font-normal">· คุณ (ผู้ที่ล็อกอิน)</span></label>
+          <input value={planner || "—"} readOnly disabled className={`${field} bg-line4 cursor-not-allowed opacity-80`} />
         </div>
       </div>
     </Panel>
@@ -291,14 +321,20 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
   const add = () => setBrief((b) => ({ ...b, content: [...b.content, { ...emptyContentItem(nextSeq()) }] }));
   const dup = (id: string) => setBrief((b) => { const src = b.content.find((c) => c.id === id); return src ? { ...b, content: [...b.content, { ...src, id: `ci-${nextSeq()}` }] } : b; });
   const rm = (id: string) => setBrief((b) => ({ ...b, content: b.content.filter((c) => c.id !== id) }));
-  // Changing platform clears the asset size (sizes are platform-specific).
-  const setPlatform = (id: string, platform: string) => upd(id, { platform, assetSize: "" });
+  // Toggle a platform (adds/removes it and clears its asset pairs when removed).
+  const togglePlatform = (c: BriefContentItem, p: string) => {
+    const on = c.platforms.includes(p);
+    upd(c.id, { platforms: on ? c.platforms.filter((x) => x !== p) : [...c.platforms, p], assets: on ? c.assets.filter((a) => a.platform !== p) : c.assets });
+  };
+  const toggleAsset = (c: BriefContentItem, platform: string, size: string) => {
+    const has = c.assets.some((a) => a.platform === platform && a.size === size);
+    upd(c.id, { assets: has ? c.assets.filter((a) => !(a.platform === platform && a.size === size)) : [...c.assets, { platform, size }] });
+  };
 
   return (
-    <Panel title="Content Plan" hint="Planner กำหนดจำนวน content เองได้ — เลือก Platform แล้วต้องเลือก Asset Size + กรอก brief ให้ครบก่อน submit">
+    <Panel title="Content Plan" hint="เลือก Platform ได้หลายที่ (ช่องติ๊ก) แล้วเลือก Asset Size ของแต่ละ platform — Owner ทีม Creative จะเลือกทีหลัง">
       <div className="flex flex-col gap-3">
         {brief.content.map((c, i) => {
-          const sizes = assetSizesFor(c.platform);
           return (
             <div key={c.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
               <div className="flex items-center justify-between mb-3">
@@ -312,21 +348,43 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
                 <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={c.title} onChange={(e) => upd(c.id, { title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
                 <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={c.subHead} onChange={(e) => upd(c.id, { subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
                 <div><label className={label}>Content Type</label><select value={c.type} onChange={(e) => upd(c.id, { type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-                <div><label className={label}>Platform</label><select value={c.platform} onChange={(e) => setPlatform(c.id, e.target.value)} className={field}>{CONTENT_PLATFORMS.map((t) => <option key={t}>{t}</option>)}</select></div>
-                <div>
-                  <label className={label}>Asset Size <span className="text-status-red">*</span></label>
-                  <select value={c.assetSize} onChange={(e) => upd(c.id, { assetSize: e.target.value })} className={field} style={!c.assetSize ? { borderColor: "#E9B8B2" } : undefined}>
-                    <option value="">{`Select size for ${c.platform}…`}</option>
-                    {sizes.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
                 <div><label className={label}>Publish Date</label><DatePicker value={c.publishDate || null} onChange={(v) => upd(c.id, { publishDate: v })} invalid={!!outOfRange(c.publishDate)} /></div>
                 <div><label className={label}>Priority</label><select value={c.priority} onChange={(e) => upd(c.id, { priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
-                <div><label className={label}>Caption Owner <span className="text-faint font-normal">· Creative</span></label><OwnerSelect value={c.captionOwner} onChange={(v) => upd(c.id, { captionOwner: v })} team="Creative" /></div>
-                <div><label className={label}>Creative Owner <span className="text-faint font-normal">· Creative</span></label><OwnerSelect value={c.creativeOwner} onChange={(v) => upd(c.id, { creativeOwner: v })} team="Creative" /></div>
                 <div className="flex items-end gap-4">
                   <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredGraphic} onChange={(e) => upd(c.id, { requiredGraphic: e.target.checked })} /> Required Graphic</label>
                   <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredVideo} onChange={(e) => upd(c.id, { requiredVideo: e.target.checked })} /> Required Video</label>
+                </div>
+
+                {/* Platform + Asset Size — multi-select checkboxes */}
+                <div className="md:col-span-2">
+                  <label className={label}>Platforms &amp; Asset Sizes <span className="text-status-red">*</span> <span className="text-faint font-normal">· ติ๊กได้หลาย platform หลายขนาด</span></label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {CONTENT_PLATFORMS.map((p) => {
+                      const on = c.platforms.includes(p);
+                      return (
+                        <label key={p} className="flex items-center gap-2 text-[12px] font-semibold px-[11px] py-[6px] rounded-[9px] border cursor-pointer"
+                          style={on ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                          <input type="checkbox" checked={on} onChange={() => togglePlatform(c, p)} /> {p}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {c.platforms.map((p) => (
+                    <div key={p} className="mb-2 pl-2 border-l-2" style={{ borderColor: "#E5DECF" }}>
+                      <div className="text-[11.5px] font-bold text-muted mb-1">{p} · sizes {!c.assets.some((a) => a.platform === p) && <span className="text-status-red font-normal">(เลือกอย่างน้อย 1)</span>}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {assetSizesFor(p).map((s) => {
+                          const on = c.assets.some((a) => a.platform === p && a.size === s);
+                          return (
+                            <label key={s} className="flex items-center gap-[6px] text-[11.5px] font-semibold px-[10px] py-[5px] rounded-pill border cursor-pointer"
+                              style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                              <input type="checkbox" checked={on} onChange={() => toggleAsset(c, p, s)} /> {s}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Content brief block */}
@@ -335,7 +393,6 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
                   <div><label className={label}>Caption Direction</label><input value={c.captionDirection} onChange={(e) => upd(c.id, { captionDirection: e.target.value })} className={field} /></div>
                   <div><label className={label}>CTA</label><input value={c.cta} onChange={(e) => upd(c.id, { cta: e.target.value })} className={field} placeholder="เช่น จองโต๊ะ / สั่งเลย" /></div>
                   <div><label className={label}>Product / Menu Highlight</label><input value={c.productHighlight} onChange={(e) => upd(c.id, { productHighlight: e.target.value })} className={field} /></div>
-                  <div><label className={label}>Mood &amp; Tone</label><input value={c.moodTone} onChange={(e) => upd(c.id, { moodTone: e.target.value })} className={field} /></div>
                   <div><label className={label}>Mandatory Text</label><input value={c.mandatoryText} onChange={(e) => upd(c.id, { mandatoryText: e.target.value })} className={field} placeholder="ข้อความบังคับ เช่น เงื่อนไขโปร" /></div>
                   <div className="md:col-span-2"><label className={label}>Do / Don&apos;t</label><input value={c.doDont} onChange={(e) => upd(c.id, { doDont: e.target.value })} className={field} /></div>
                   <div><label className={label}>Reference Brief Link <span className="text-status-red">*</span></label><input value={c.referenceBriefLink} onChange={(e) => upd(c.id, { referenceBriefLink: e.target.value })} className={field} placeholder="https://…" /></div>
@@ -383,8 +440,21 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
               </div>
               <div className="grid md:grid-cols-3 gap-3">
                 <div className="md:col-span-2"><label className={label}>KOL Name / Page Name</label><input value={k.name} onChange={(e) => upd(k.id, { name: e.target.value })} className={field} placeholder="เช่น @tokyo.tom" /></div>
-                <div><label className={label}>Platform</label><select value={k.platform} onChange={(e) => upd(k.id, { platform: e.target.value })} className={field}>{KOL_PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select></div>
                 <div><label className={label}>KOL Type</label><select value={k.kolType} onChange={(e) => upd(k.id, { kolType: e.target.value })} className={field}>{KOL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+                <div className="md:col-span-3">
+                  <label className={label}>Platform <span className="text-faint font-normal">· ติ๊กได้หลาย platform</span></label>
+                  <div className="flex flex-wrap gap-2">
+                    {KOL_PLATFORMS.map((p) => {
+                      const on = k.platforms.includes(p);
+                      return (
+                        <label key={p} className="flex items-center gap-2 text-[12px] font-semibold px-[11px] py-[6px] rounded-[9px] border cursor-pointer"
+                          style={on ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                          <input type="checkbox" checked={on} onChange={() => upd(k.id, { platforms: on ? k.platforms.filter((x) => x !== p) : [...k.platforms, p] })} /> {p}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div><label className={label}># Creator / Page</label><input value={k.count || ""} onChange={(e) => upd(k.id, { count: num(e.target.value) })} className={field} placeholder="1" /></div>
                 <div><label className={label}>Follower</label><input value={k.followers || ""} onChange={(e) => upd(k.id, { followers: num(e.target.value) })} className={field} placeholder="100000" /></div>
                 <div><label className={label}>Expected Reach</label><input value={k.expectedReach || ""} onChange={(e) => upd(k.id, { expectedReach: num(e.target.value) })} className={field} placeholder="50000" /></div>
@@ -435,7 +505,7 @@ function Budget({ brief, setBrief, bs, onEditKol }: { brief: CampaignBrief; setB
   const rmAds = (i: number) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.filter((_, j) => j !== i) } }));
   const kolBudget = kolBudgetTotal(brief);
   const otherBuckets: [string, keyof CampaignBrief["budget"]][] = [
-    ["Ads Budget", "ads"], ["Graphic / Production", "graphic"], ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
+    ["Graphic / Production", "graphic"], ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
   ];
 
   return (
@@ -459,7 +529,17 @@ function Budget({ brief, setBrief, bs, onEditKol }: { brief: CampaignBrief; setB
           ))}
         </div>
 
-        <div className="mt-5">
+        {/* Ads Budget total sits right next to its per-platform breakdown */}
+        <div className="mt-5 rounded-[12px] border border-line2 p-4" style={{ background: "#FBF9F4" }}>
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+            <div>
+              <label className={label}>Ads Budget (total)</label>
+              <input value={brief.budget.ads || ""} onChange={(e) => setB({ ads: num(e.target.value) })} className={`${field} max-w-[220px]`} placeholder="฿" />
+            </div>
+            <div className="text-[12px] font-semibold" style={{ color: bs.adsMismatch ? "#B33A2E" : "#4E7A4E" }}>
+              รวมตาม platform: {baht(bs.adsAllocated, { compact: true })}{bs.adsMismatch ? " ⚠ ไม่ตรงกับงบรวม" : " ✓"}
+            </div>
+          </div>
           <div className="text-[12.5px] font-bold text-muted mb-2">Ads Budget by Platform</div>
           <div className="flex flex-col gap-2">
             {brief.budget.adsByPlatform.map((a, i) => (

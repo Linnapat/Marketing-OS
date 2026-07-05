@@ -65,16 +65,17 @@ export const BRIEF_STATUSES = [
 export type BriefStatus = (typeof BRIEF_STATUSES)[number];
 
 // ── Row types ─────────────────────────────────────────────────────────────
+/** A chosen platform + asset size pair (content can target several). */
+export interface AssetTarget { platform: string; size: string; }
+
 export interface BriefContentItem {
   id: string;
   title: string;
   subHead: string;
   type: string;
-  platform: string;
-  assetSize: string;
+  platforms: string[];      // multi-select
+  assets: AssetTarget[];    // platform+size pairs (checkbox grid)
   publishDate: string;      // ISO
-  captionOwner: string;     // Creative team
-  creativeOwner: string;    // Creative team
   requiredGraphic: boolean;
   requiredVideo: boolean;
   priority: string;
@@ -84,7 +85,6 @@ export interface BriefContentItem {
   mainMessage: string;
   cta: string;
   productHighlight: string;
-  moodTone: string;
   mandatoryText: string;
   doDont: string;
   referenceBriefLink: string;
@@ -97,7 +97,7 @@ export interface BriefContentItem {
 export interface BriefKolItem {
   id: string;
   name: string;             // KOL / page name
-  platform: string;
+  platforms: string[];      // multi-select
   kolType: string;
   followers: number;
   count: number;
@@ -155,7 +155,8 @@ export interface CampaignBrief {
   concept: string;
   kvDirection: string;
   successMetrics: string[];
-  plannerOwner: string;
+  successGoals: Record<string, string>;   // metric → goal value
+  plannerOwner: string;                    // auto = logged-in user
   approver: string;         // CMO only
   content: BriefContentItem[];
   kols: BriefKolItem[];
@@ -168,10 +169,10 @@ export interface CampaignBrief {
 // ── Factories ─────────────────────────────────────────────────────────────
 export function emptyContentItem(seq: number): BriefContentItem {
   return {
-    id: `ci-${seq}`, title: "", subHead: "", type: CONTENT_TYPES[0], platform: CONTENT_PLATFORMS[0],
-    assetSize: "", publishDate: "", captionOwner: "", creativeOwner: "", requiredGraphic: true,
+    id: `ci-${seq}`, title: "", subHead: "", type: CONTENT_TYPES[0], platforms: [],
+    assets: [], publishDate: "", requiredGraphic: true,
     requiredVideo: false, priority: "Med", status: "Planned",
-    captionDirection: "", mainMessage: "", cta: "", productHighlight: "", moodTone: "",
+    captionDirection: "", mainMessage: "", cta: "", productHighlight: "",
     mandatoryText: "", doDont: "", referenceBriefLink: "", referenceImageLink: "",
     driveLink: "", competitorLink: "", note: "",
   };
@@ -179,7 +180,7 @@ export function emptyContentItem(seq: number): BriefContentItem {
 
 export function emptyKolItem(seq: number): BriefKolItem {
   return {
-    id: `kr-${seq}`, name: "", platform: KOL_PLATFORMS[0], kolType: KOL_TYPES[0], followers: 0,
+    id: `kr-${seq}`, name: "", platforms: [], kolType: KOL_TYPES[0], followers: 0,
     count: 1, expectedReach: 0, likes: 0, comments: 0, shares: 0, saves: 0, clicks: 0, views: 0,
     budget: 0, area: "", contentRequired: ["Reel"], postingStart: "", postingEnd: "",
     owner: "", status: "Planned", note: "",
@@ -195,7 +196,7 @@ export function emptyBrief(id: string): CampaignBrief {
     id, name: "", b: "teppen", branch: "", branches: [], objective: OBJECTIVES[0],
     campaignType: CAMPAIGN_TYPES[0], priority: "Med", startDate: "", endDate: "", launchDate: "",
     audience: "", mainMessage: "", offer: "", channels: [], concept: "", kvDirection: "",
-    successMetrics: [], plannerOwner: "", approver: "", content: [], kols: [], budget: emptyBudget(),
+    successMetrics: [], successGoals: {}, plannerOwner: "", approver: "", content: [], kols: [], budget: emptyBudget(),
     status: "Draft", approvalLog: [], createdAt: "",
   };
 }
@@ -270,7 +271,7 @@ export function guidelineChecklist(brief: CampaignBrief): GuidelineItem[] {
     { key: "channel", label: "Channel ที่ต้องใช้มีอะไรบ้าง", done: b.channels.length > 0 },
     { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0 },
     { key: "kpi", label: "KPI ที่วัดผลคืออะไร", done: b.successMetrics.length > 0 },
-    { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบ", done: b.content.length > 0 && b.content.every((c) => !!c.assetSize) },
+    { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบทุก platform", done: b.content.length > 0 && b.content.every((c) => c.platforms.length > 0 && c.platforms.every((p) => c.assets.some((a) => a.platform === p))) },
     { key: "graphic", label: "ต้องใช้ Graphic กี่ชิ้น", done: b.content.some((c) => c.requiredGraphic) },
     { key: "kol", label: "ต้องใช้ KOL กี่คน / กี่เพจ", done: b.kols.length > 0 },
     { key: "ads", label: "ต้องใช้ Ads platform ไหน", done: b.budget.adsByPlatform.some((a) => a.amount > 0) },
@@ -292,7 +293,7 @@ export function validateSubmit(brief: CampaignBrief): string[] {
   if (!brief.startDate || !brief.endDate) e.push("Please select the Campaign Period (start and end date)");
   if (brief.startDate && brief.endDate && brief.endDate < brief.startDate) e.push("End Date must not be before Start Date");
   if (!brief.launchDate) e.push("Please select a Launch Date");
-  if (!brief.plannerOwner) e.push("Please select an Owner (Planner)");
+  // Planner is auto (the logged-in user) and read-only — not a manual blocker.
   if (!brief.approver) e.push("Please select an Approver (CMO)");
   if (!brief.audience.trim()) e.push("Please enter the Target Audience");
   if (!brief.mainMessage.trim()) e.push("Please enter the Key Message");
@@ -303,7 +304,10 @@ export function validateSubmit(brief: CampaignBrief): string[] {
     const tag = c.title.trim() || `Content #${i + 1}`;
     if (!c.title.trim()) e.push(`Please enter a Content Title for Content #${i + 1}`);
     if (!c.subHead.trim()) e.push(`Please enter a Sub Head for “${tag}”`);
-    if (!c.assetSize) e.push(`Please select asset size for ${c.platform}`);
+    if (c.platforms.length === 0) e.push(`Please select at least one platform for “${tag}”`);
+    c.platforms.forEach((p) => {
+      if (!c.assets.some((a) => a.platform === p)) e.push(`Please select asset size for ${p}`);
+    });
     if (!c.referenceBriefLink.trim()) e.push(`Please add a Reference Brief Link for “${tag}”`);
   });
   return e;
@@ -313,14 +317,14 @@ export function validateSubmit(brief: CampaignBrief): string[] {
 export interface TaskPreview { kind: string; icon: string; count: number; detail: string }
 
 export function taskPreview(brief: CampaignBrief): TaskPreview[] {
-  // Creative tasks are per Platform + Asset Size pair, not just per content item.
-  const creativePairs = brief.content.filter((c) => c.requiredGraphic && c.assetSize);
+  // Creative tasks are per Platform + Asset Size pair across all content items.
+  const creativePairs = brief.content.filter((c) => c.requiredGraphic).flatMap((c) => c.assets);
   const videos = brief.content.filter((c) => c.requiredVideo).length;
   const adsPlatforms = brief.budget.adsByPlatform.filter((a) => a.amount > 0).length || (brief.budget.ads > 0 ? 1 : 0);
   const crm = brief.channels.some((c) => /crm|line oa/i.test(c)) || brief.budget.crm > 0 ? 1 : 0;
   const out: TaskPreview[] = [];
   if (brief.content.length) out.push({ kind: "Content Tasks", icon: "📝", count: brief.content.length, detail: `${brief.content.length} content item(s)` });
-  if (creativePairs.length) out.push({ kind: "Creative / Graphic Tasks", icon: "🎨", count: creativePairs.length, detail: creativePairs.map((c) => `${c.platform} ${c.assetSize.split(" ")[0]}`).slice(0, 4).join(", ") + (creativePairs.length > 4 ? "…" : "") });
+  if (creativePairs.length) out.push({ kind: "Creative / Graphic Tasks", icon: "🎨", count: creativePairs.length, detail: creativePairs.map((a) => `${a.platform} ${a.size.split(" ")[0]}`).slice(0, 4).join(", ") + (creativePairs.length > 4 ? "…" : "") });
   if (videos) out.push({ kind: "Video Tasks", icon: "🎬", count: videos, detail: `จาก content ที่ต้องใช้ video` });
   if (brief.kols.length) out.push({ kind: "KOL Tasks", icon: "🤝", count: brief.kols.length, detail: `${brief.kols.reduce((s, k) => s + (k.count || 0), 0)} creator/page` });
   if (adsPlatforms) out.push({ kind: "Ads Setup Tasks", icon: "📣", count: adsPlatforms, detail: `${adsPlatforms} platform` });

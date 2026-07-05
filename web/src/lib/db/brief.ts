@@ -59,41 +59,47 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   // ── Content items → content posts + graphic requests + content/graphic tasks ─
   let n = 0;
   for (const ci of brief.content) {
+    const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
     const post: ContentItem = {
       id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || 1, time: "10:00", title: ci.title || `${brief.name} — Content ${n + 1}`,
-      b: brief.b, plat: ci.platform, platforms: [ci.platform], status: ci.status || "Draft", campaign: brief.name,
-      owner: ci.captionOwner || brief.plannerOwner || "Unassigned", caption: "", hashtags: "", cta: "",
+      b: brief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: brief.name,
+      // Owner is assigned later inside the Creative team — leave unassigned here.
+      owner: "Unassigned", caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: ci.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
     await createContent(post); content++;
     await createTaskDb(mkTask(++n, {
       title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
-      owner: ci.captionOwner, priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-      nextAction: `${ci.platform} · publish ${labelDate(ci.publishDate) || "TBD"}`,
+      owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+      nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
     }));
 
     if (ci.requiredGraphic) {
-      // One creative/graphic per Platform + Asset Size pair.
-      const gid = stamp + 500 + n;
-      const sizeTag = ci.assetSize ? ` (${ci.assetSize})` : "";
-      const g: Graphic = {
-        ...buildGraphic({
-          id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.platform}${sizeTag}`,
-          type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
-          requester: brief.plannerOwner, approver: brief.approver, channels: [ci.platform],
-        }),
-        stage: "Waiting for Creative",
-        size: ci.assetSize || "—",
-        nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
-        contentItem: ci.title || "—",
-      };
-      await createGraphic(g); graphics++;
-      await createTaskDb(mkTask(++n, {
-        title: `Graphic — ${ci.title || ci.type} · ${ci.platform}${sizeTag}`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
-        owner: ci.creativeOwner, priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-        channel: ci.platform, relatedGraphicId: String(gid), nextAction: `Deliver ${ci.assetSize || "artwork"} for ${ci.platform}`,
-      }));
+      // One creative/graphic per Platform + Asset Size pair. Fall back to the
+      // platforms themselves when no explicit size pairs were chosen.
+      const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
+      for (const a of pairs) {
+        const gid = stamp + 500 + n;
+        const sizeTag = a.size ? ` (${a.size})` : "";
+        const g: Graphic = {
+          ...buildGraphic({
+            id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${a.platform}${sizeTag}`,
+            type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
+            requester: brief.plannerOwner, approver: brief.approver, channels: [a.platform],
+          }),
+          stage: "Waiting for Creative",
+          size: a.size || "—",
+          nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
+          contentItem: ci.title || "—",
+        };
+        await createGraphic(g); graphics++;
+        await createTaskDb(mkTask(++n, {
+          title: `Graphic — ${ci.title || ci.type} · ${a.platform}${sizeTag}`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
+          owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+          channel: a.platform, relatedGraphicId: String(gid), nextAction: `Deliver ${a.size || "artwork"} for ${a.platform}`,
+        }));
+      }
     }
   }
 
@@ -108,7 +114,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     })); kols++;
     await createTaskDb(mkTask(++n, {
       title: `KOL — ${kr.name || kr.kolType} × ${kr.count}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
-      owner: kr.owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platform,
+      owner: kr.owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platforms.join(", "),
       nextAction: `${kr.area || "—"} · reach ${kr.expectedReach.toLocaleString()}`,
     }));
   }
