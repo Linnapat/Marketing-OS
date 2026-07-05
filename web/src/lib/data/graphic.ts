@@ -28,11 +28,49 @@ export interface Graphic {
   platform: string;
   size: string;
   contentItem: string;
-  /** Work submitted by the graphic team (set when they Submit for Review). */
+  /** Per-asset deliverables (Platform × Asset Size from the content brief).
+   *  The graphic team submits a link per row; the requester approves per row. */
+  deliverables?: GraphicDeliverable[];
+  /** Legacy single-link submit (kept for back-compat with older rows). */
   deliverableLink?: string;
   sourceLink?: string;
   submittedBy?: string;
   submittedAt?: string;
+}
+
+export interface GraphicDeliverable {
+  platform: string;
+  size: string;
+  refLink: string;          // reference brief link carried from the content item
+  assetLink: string;
+  sourceLink: string;
+  status: string;           // Not submitted | Waiting review | Revision | Approved
+  version: number;
+  submittedBy: string;
+  submittedAt: string;
+  feedback: { reason: string; by: string; at: string }[];
+}
+
+export function emptyDeliverable(platform: string, size: string, refLink = ""): GraphicDeliverable {
+  return { platform, size, refLink, assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] };
+}
+
+/** Progress rollup for a request's deliverables. */
+export function deliverableProgress(g: Graphic) {
+  const d = g.deliverables ?? [];
+  const submitted = d.filter((x) => x.status !== "Not submitted").length;
+  const approved = d.filter((x) => x.status === "Approved").length;
+  return { total: d.length, submitted, approved, ready: d.length > 0 && approved === d.length };
+}
+
+/** Derive the request stage from its deliverables (values stay within STAGE_ORDER). */
+export function stageFromDeliverables(g: Graphic): string {
+  const d = g.deliverables ?? [];
+  if (!d.length) return g.stage;
+  if (d.every((x) => x.status === "Approved")) return "Approved";
+  if (d.some((x) => x.status === "Revision")) return "Revision Requested";
+  if (d.some((x) => x.status === "Waiting review")) return "Waiting Feedback";
+  return "New Request";
 }
 
 const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
@@ -42,7 +80,11 @@ const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
     { id: 2, title: "Rainy season promo banner", b: "mainichi", campaign: "Rainy Season Promo", due: "Jul 3", designer: "Unassigned", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: false, pendingApprover: "—", blocker: "Brief incomplete", waitingSince: "Jun 29", nextAction: "Complete brief then assign", platform: "IG + FB Feed", size: "1080×1080", contentItem: "Rainy season main post" },
   ]},
   { col: "In Progress", cards: [
-    { id: 3, title: "Wagyu menu board", b: "teppen", campaign: "Wagyu Festival", due: "Jun 29", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "In-Store", priority: "High", fb: 1, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "Waiting requester review", waitingSince: "Jun 27", nextAction: "Upload V2 for review", platform: "In-store · A2 board", size: "594×420mm", contentItem: "Menu board display" },
+    { id: 3, title: "Wagyu menu board", b: "teppen", campaign: "Wagyu Festival", due: "Jun 29", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "In-Store", priority: "High", fb: 1, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "Waiting requester review", waitingSince: "Jun 27", nextAction: "Upload V2 for review", platform: "In-store · A2 board", size: "594×420mm", contentItem: "Menu board display", deliverables: [
+      { platform: "Instagram", size: "1:1 (1080×1080)", refLink: "https://brief.example/wagyu", assetLink: "https://drive.example/wagyu-ig-1x1.png", sourceLink: "", status: "Approved", version: 2, submittedBy: "Boss", submittedAt: "2026-06-28T10:00:00Z", feedback: [] },
+      { platform: "Instagram", size: "9:16 (1080×1920)", refLink: "https://brief.example/wagyu", assetLink: "https://figma.example/wagyu-story", sourceLink: "", status: "Waiting review", version: 1, submittedBy: "Boss", submittedAt: "2026-06-29T09:00:00Z", feedback: [] },
+      { platform: "Facebook", size: "16:9 (1200×628)", refLink: "https://brief.example/wagyu", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] },
+    ] },
     { id: 4, title: "Lunch set carousel", b: "mainichi", campaign: "Rainy Season Promo", due: "Jun 28", designer: "Aom", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "Med", fb: 0, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 25", nextAction: "Complete V1 design", platform: "IG Carousel", size: "1080×1080 ×5", contentItem: "Lunch promotion carousel" },
     { id: 5, title: "Cocktail hour reel cover", b: "touka", campaign: "Cocktail Hour Launch", due: "Jul 1", designer: "Boss", requester: "Ploy R.", approver: "Ploy R.", type: "Reel Cover", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 28", nextAction: "Design in progress", platform: "IG Reels", size: "1080×1920", contentItem: "Cocktail reel thumbnail" },
   ]},

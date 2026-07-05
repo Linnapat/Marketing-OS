@@ -10,6 +10,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContent } from "./content";
 import { createGraphic, buildGraphic } from "./graphic";
+import { emptyDeliverable } from "@/lib/data/graphic";
 import { createKol, buildKol } from "./kol";
 import { createTaskDb } from "./tasks";
 import { ContentItem } from "@/lib/data/content";
@@ -76,30 +77,29 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     }));
 
     if (ci.requiredGraphic) {
-      // One creative/graphic per Platform + Asset Size pair. Fall back to the
-      // platforms themselves when no explicit size pairs were chosen.
+      // ONE graphic request per content item, carrying a deliverable per
+      // Platform × Asset Size the content needs. The requester (Planner) approves.
+      const gid = stamp + 500 + n;
       const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
-      for (const a of pairs) {
-        const gid = stamp + 500 + n;
-        const sizeTag = a.size ? ` (${a.size})` : "";
-        const g: Graphic = {
-          ...buildGraphic({
-            id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${a.platform}${sizeTag}`,
-            type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
-            requester: brief.plannerOwner, approver: brief.approver, channels: [a.platform],
-          }),
-          stage: "Waiting for Creative",
-          size: a.size || "—",
-          nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
-          contentItem: ci.title || "—",
-        };
-        await createGraphic(g); graphics++;
-        await createTaskDb(mkTask(++n, {
-          title: `Graphic — ${ci.title || ci.type} · ${a.platform}${sizeTag}`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
-          owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-          channel: a.platform, relatedGraphicId: String(gid), nextAction: `Deliver ${a.size || "artwork"} for ${a.platform}`,
-        }));
-      }
+      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", ci.referenceBriefLink || ""));
+      const g: Graphic = {
+        ...buildGraphic({
+          id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
+          type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
+          requester: brief.plannerOwner, approver: brief.plannerOwner, channels: plats,
+        }),
+        stage: "New Request",
+        size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
+        deliverables,
+        nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
+        contentItem: ci.title || "—",
+      };
+      await createGraphic(g); graphics++;
+      await createTaskDb(mkTask(++n, {
+        title: `Graphic — ${ci.title || ci.type} (${deliverables.length} asset)`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
+        owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+        channel: plats.join(", "), relatedGraphicId: String(gid), nextAction: `Deliver ${deliverables.length} asset(s)`,
+      }));
     }
   }
 

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import {
-  Graphic, FEEDBACK, VERSIONS, stageTone, PRIORITY_TONE, briefFields,
+  Graphic, GraphicDeliverable, FEEDBACK, VERSIONS, stageTone, PRIORITY_TONE, briefFields,
+  deliverableProgress, stageFromDeliverables,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -117,29 +118,29 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
           )}
 
           {tab === "assets" && (
-            <div className="flex flex-col gap-3">
-              {versions.length === 0 && <div className="text-[13px] text-faint text-center py-8">No versions uploaded yet.</div>}
-              {versions.map((v, i) => (
-                <div key={i} className="bg-surface border border-line rounded-card p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[13.5px] font-bold">{v.name}</span>
-                      {v.isLatest && <StatusBadge tone="blue">Latest</StatusBadge>}
+            (g.deliverables && g.deliverables.length > 0)
+              ? <DeliverablesEditor g={g} me={designer} onUpdate={onUpdate} />
+              : (
+                <div className="flex flex-col gap-3">
+                  {versions.length === 0 && <div className="text-[13px] text-faint text-center py-8">No versions uploaded yet.</div>}
+                  {versions.map((v, i) => (
+                    <div key={i} className="bg-surface border border-line rounded-card p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13.5px] font-bold">{v.name}</span>
+                          {v.isLatest && <StatusBadge tone="blue">Latest</StatusBadge>}
+                        </div>
+                        <StatusBadge tone={v.approvalStatus === "Approved" ? "green" : v.approvalStatus.includes("Rejected") || v.approvalStatus.includes("revision") ? "red" : "gold"}>{v.approvalStatus}</StatusBadge>
+                      </div>
+                      <div className="flex items-center gap-4 text-[11.5px] text-faint">
+                        <span>Uploaded by {v.uploadedBy}</span><span>{v.uploadedAt}</span>
+                        {v.feedbackCount > 0 && <span className="text-status-red font-semibold">💬 {v.feedbackCount}</span>}
+                      </div>
                     </div>
-                    <StatusBadge tone={v.approvalStatus === "Approved" ? "green" : v.approvalStatus.includes("Rejected") || v.approvalStatus.includes("revision") ? "red" : "gold"}>{v.approvalStatus}</StatusBadge>
-                  </div>
-                  <div className="flex items-center gap-4 text-[11.5px] text-faint">
-                    <span>Uploaded by {v.uploadedBy}</span><span>{v.uploadedAt}</span>
-                    {v.feedbackCount > 0 && <span className="text-status-red font-semibold">💬 {v.feedbackCount}</span>}
-                  </div>
-                  <div className="flex gap-3 mt-2">
-                    <span className="text-[11.5px] text-accent font-semibold cursor-pointer">Open artwork ↗</span>
-                    <span className="text-[11.5px] text-accent font-semibold cursor-pointer">Source file ↗</span>
-                  </div>
+                  ))}
+                  <SubmitWork g={g} designer={designer} onUpdate={onUpdate} />
                 </div>
-              ))}
-              <SubmitWork g={g} designer={designer} onUpdate={onUpdate} />
-            </div>
+              )
           )}
 
           {tab === "feedback" && (
@@ -195,9 +196,105 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
   );
 }
 
-// Where the graphic team submits finished work: paste the artwork + source
-// links and Submit for Review — advances the stage to "Waiting Feedback" so the
-// requester (and then the approver) can review it. Persists to the request.
+const DEL_TONE: Record<string, "neutral" | "gold" | "green" | "red"> = {
+  "Not submitted": "neutral", "Waiting review": "gold", Revision: "red", Approved: "green",
+};
+
+// Deliverable-level board: one row per Platform × Asset Size from the content
+// brief. The graphic team pastes a link + source per row and submits it; the
+// requester approves or sends it back — each row moves independently.
+function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpdate?: (g: Graphic) => void }) {
+  const [dels, setDels] = useState<GraphicDeliverable[]>(() => (g.deliverables ?? []).map((d) => ({ ...d })));
+  const [revising, setRevising] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const prog = deliverableProgress({ ...g, deliverables: dels });
+
+  const persist = (next: GraphicDeliverable[]) => {
+    setDels(next);
+    const ng: Graphic = { ...g, deliverables: next };
+    ng.stage = stageFromDeliverables(ng);
+    ng.blocker = prog.ready ? null : g.blocker;
+    ng.nextAction = stageFromDeliverables(ng) === "Approved" ? "Ready to deploy — attach to Content Calendar" : g.nextAction;
+    updateGraphic(ng); onUpdate?.(ng);
+  };
+  const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
+  const submit = (i: number) => {
+    const d = dels[i];
+    if (!d.assetLink.trim()) return;
+    persist(dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: new Date().toISOString() } : x));
+  };
+  const approve = (i: number) => persist(dels.map((x, j) => j === i ? { ...x, status: "Approved" } : x));
+  const sendBack = (i: number) => {
+    const r = reason.trim(); if (!r) return;
+    persist(dels.map((x, j) => j === i ? { ...x, status: "Revision", feedback: [...x.feedback, { reason: r, by: me, at: new Date().toISOString() }] } : x));
+    setReason(""); setRevising(null);
+  };
+
+  const inp = "w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none";
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="text-[12.5px] font-bold text-muted">Deliverables · {dels.length} asset</div>
+        <StatusBadge tone={prog.ready ? "green" : "gold"}>{prog.ready ? "Ready to deploy" : `${prog.approved}/${prog.total} approved`}</StatusBadge>
+      </div>
+
+      {dels.map((d, i) => {
+        const editable = d.status === "Not submitted" || d.status === "Revision";
+        const inReview = d.status === "Waiting review";
+        return (
+          <div key={i} className="bg-surface border border-line rounded-card p-4">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div><span className="text-[13.5px] font-bold">{d.platform}</span> <span className="text-[12px] text-faint">· {d.size}</span></div>
+              <div className="flex items-center gap-2">
+                {d.version > 0 && <span className="text-[10.5px] font-bold text-faint">v{d.version}</span>}
+                <StatusBadge tone={DEL_TONE[d.status] ?? "neutral"}>{d.status}</StatusBadge>
+              </div>
+            </div>
+            {d.refLink && <a href={d.refLink} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Reference brief ↗</a>}
+
+            {editable ? (
+              <div className="flex flex-col gap-2 mt-2">
+                {d.status === "Revision" && d.feedback.length > 0 && (
+                  <div className="text-[12px] rounded-[8px] px-3 py-2" style={{ background: "#FBECEA", color: "#B33A2E" }}>↩ {d.feedback[d.feedback.length - 1].reason}</div>
+                )}
+                <input value={d.assetLink} onChange={(e) => patch(i, { assetLink: e.target.value })} className={inp} placeholder="Artwork link (Drive / Figma / PNG) *" />
+                <input value={d.sourceLink} onChange={(e) => patch(i, { sourceLink: e.target.value })} className={inp} placeholder="Source file link" />
+                <button onClick={() => submit(i)} disabled={!d.assetLink.trim()} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>{d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}</button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 mt-2">
+                <div className="flex items-center gap-3 text-[11.5px]">
+                  <a href={d.assetLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Open artwork ↗</a>
+                  {d.sourceLink && <a href={d.sourceLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Source ↗</a>}
+                  <span className="text-faint">by {d.submittedBy}</span>
+                </div>
+                {inReview && (
+                  revising === i ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} autoFocus placeholder="เหตุผลที่ต้องแก้…" className="w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none resize-none" />
+                      <div className="flex gap-2">
+                        <button onClick={() => sendBack(i)} disabled={!reason.trim()} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#C67A28" }}>Send Back</button>
+                        <button onClick={() => { setRevising(null); setReason(""); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px]">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button onClick={() => approve(i)} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px]" style={{ background: "#4E7A4E" }}>✓ Approve</button>
+                      <button onClick={() => setRevising(i)} className="text-[12px] font-bold text-status-orange border-[1.5px] border-line2 rounded-[8px] px-3 py-[7px]">↩ Request Revision</button>
+                      <span className="self-center text-[11px] text-faint">requester: {g.requester}</span>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Legacy single-link submit for graphics created before deliverables existed.
 function SubmitWork({ g, designer, onUpdate }: { g: Graphic; designer: string; onUpdate?: (g: Graphic) => void }) {
   const [link, setLink] = useState(g.deliverableLink ?? "");
   const [source, setSource] = useState(g.sourceLink ?? "");
