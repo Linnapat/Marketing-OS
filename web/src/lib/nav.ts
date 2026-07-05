@@ -24,8 +24,6 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard, ready: true },
       { href: "/campaigns", label: "Campaigns", icon: Target, ready: true },
-      { href: "/expenses", label: "Expenses", icon: Receipt, ready: true },
-      { href: "/finance", label: "Finance", icon: Wallet, ready: true },
     ],
   },
   {
@@ -38,6 +36,8 @@ export const NAV: NavGroup[] = [
       { href: "/requests", label: "Request Center", icon: Inbox, ready: false },
       { href: "/approvals", label: "Approval Queue", icon: ClipboardCheck, ready: false },
       { href: "/assets", label: "Asset Library", icon: FolderOpen, ready: true },
+      { href: "/expenses", label: "Expenses", icon: Receipt, ready: true },
+      { href: "/finance", label: "Finance", icon: Wallet, ready: true },
     ],
   },
   {

@@ -11,6 +11,7 @@ import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
+import { logCollaboration } from "@/lib/db/kolMaster";
 
 const TABS = [
   ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
@@ -230,6 +231,30 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const [link, setLink] = useState(kol.postLink ?? "");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  // "Log to master" — extra fields the collaboration-history record needs.
+  const [onTime, setOnTime] = useState(true);
+  const [feedback, setFeedback] = useState(0); // 0 = not rated
+  const [logging, setLogging] = useState(false);
+  const [logged, setLogged] = useState(false);
+
+  const logToMaster = async () => {
+    if (!kol.masterKolId) return;
+    setLogging(true);
+    try {
+      await logCollaboration({
+        kol_id: kol.masterKolId,
+        brand: kol.b,
+        fee_paid: kol.fee || undefined,
+        deliverables: kol.contentStyle || undefined,
+        actual_reach: reach || undefined,
+        actual_engagement: eng || undefined,
+        roas: kol.roi || undefined,
+        on_time_delivery: onTime,
+        brand_feedback_score: feedback || undefined,
+      });
+      setLogged(true); setTimeout(() => setLogged(false), 2500);
+    } finally { setLogging(false); }
+  };
 
   // Cost efficiency auto-derives from the entered actuals + the total cost.
   const costPerReach = reach ? kol.totalCost / reach : 0;
@@ -291,6 +316,42 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
           {busy ? "Saving…" : "Save Results"}
         </button>
         {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ Saved</span>}
+      </div>
+
+      {/* Log to master database — records a collaboration and recomputes rank. */}
+      <div className="border-t border-line pt-4 mt-1">
+        <div className="text-[12.5px] font-extrabold text-ink mb-1">Log to master database</div>
+        <div className="text-[11.5px] text-faint mb-3">บันทึกผลงานจริงเข้าประวัติของ KOL รายนี้ แล้วคำนวณ Rank ใหม่ (ใช้ตอนเลือกครั้งต่อไป)</div>
+        {kol.masterKolId ? (
+          <>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-[11px] font-bold text-faint mb-[5px]">On-time delivery</label>
+                <select value={onTime ? "yes" : "no"} onChange={(e) => setOnTime(e.target.value === "yes")} className={field}>
+                  <option value="yes">ตรงเวลา</option>
+                  <option value="no">ล่าช้า</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-faint mb-[5px]">Brand feedback (1–5)</label>
+                <select value={feedback} onChange={(e) => setFeedback(parseInt(e.target.value))} className={field}>
+                  <option value={0}>ยังไม่ให้คะแนน</option>
+                  {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{"⭐️".repeat(n)} ({n})</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={logToMaster} disabled={logging} className="text-[13px] font-bold text-panel border border-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">
+                {logging ? "Logging…" : "Log & recompute rank"}
+              </button>
+              {logged && <span className="text-[12.5px] font-semibold text-status-green">✓ Logged · rank updated</span>}
+            </div>
+          </>
+        ) : (
+          <div className="text-[11.5px] text-faint bg-surface border border-line rounded-card p-3">
+            KOL รายนี้ยังไม่ได้เชื่อมกับ master profile — สร้างผ่านฟอร์ม Request KOL (ค้นหา/สร้างใหม่) เพื่อให้บันทึกประวัติได้
+          </div>
+        )}
       </div>
     </div>
   );

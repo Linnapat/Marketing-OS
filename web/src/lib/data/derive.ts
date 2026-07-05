@@ -7,6 +7,7 @@ import { BudgetBrand, PnlRow, RequestRow } from "@/lib/data/finance";
 import { Kpi } from "@/components/ui/KpiCard";
 import { Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
+import type { Member } from "@/lib/db/settings";
 import { BRAND_ORDER } from "@/lib/brands";
 import { baht } from "@/lib/format";
 
@@ -77,4 +78,61 @@ export function dashboardFromDb(campaigns: CampaignRow[], tasks: Task[], kols: K
   ];
 
   return { budgetTotal, spentTotal, usedPct, kpis, needsAttention };
+}
+
+// ── Team Workload ────────────────────────────────────────────────────────────
+export type Load = "healthy" | "busy" | "needsSupport";
+
+export interface TeamMemberView {
+  name: string;
+  role: string;
+  color: string;
+  open: number;
+  done: number;
+  inProgress: number;
+  waiting: number;
+  stuck: number;
+  overdue: number;
+  load: Load;
+}
+
+export interface TeamView {
+  members: TeamMemberView[];
+  pulse: { healthy: number; busy: number; needsSupport: number; stuckTasks: number; overdue: number; done: number };
+}
+
+/** Per-person workload derived from real tasks (matched on assignee name).
+ *  Load is a task-count heuristic — there's no stored capacity target. */
+export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[]): TeamView {
+  const today = new Date().toISOString().slice(0, 10);
+  const done = (t: Task) => doneIds.includes(t.id) || t.status === "Done";
+  const isStuck = (t: Task) => t.status === "Stuck" || !!t.blocker;
+  const isOverdue = (t: Task) => !done(t) && !!t.dueIso && t.dueIso < today;
+
+  const view: TeamMemberView[] = members.map((m) => {
+    const mine = tasks.filter((t) => t.assignee === m.name);
+    const open = mine.filter((t) => !done(t)).length;
+    return {
+      name: m.name, role: m.role, color: m.color,
+      open,
+      done: mine.filter(done).length,
+      inProgress: mine.filter((t) => t.status === "In Progress").length,
+      waiting: mine.filter((t) => t.status === "Waiting" || t.status === "Need Approval").length,
+      stuck: mine.filter(isStuck).length,
+      overdue: mine.filter(isOverdue).length,
+      load: open >= 8 ? "needsSupport" : open >= 5 ? "busy" : "healthy",
+    };
+  });
+
+  return {
+    members: view,
+    pulse: {
+      healthy: view.filter((v) => v.load === "healthy").length,
+      busy: view.filter((v) => v.load === "busy").length,
+      needsSupport: view.filter((v) => v.load === "needsSupport").length,
+      stuckTasks: tasks.filter(isStuck).length,
+      overdue: tasks.filter(isOverdue).length,
+      done: tasks.filter(done).length,
+    },
+  };
 }
