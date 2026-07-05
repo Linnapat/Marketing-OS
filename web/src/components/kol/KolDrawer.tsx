@@ -6,7 +6,7 @@ import {
   Kol, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow,
 } from "@/lib/data/kol";
 import { brandName, brandColor } from "@/lib/brands";
-import { platformIcon } from "@/lib/platforms";
+import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
@@ -41,7 +41,10 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
                   <span className="text-[17px] font-extrabold">{kol.name}</span>
                   <span className="w-[22px] h-[22px] rounded-[6px] flex items-center justify-center text-[9px] font-bold" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
                 </div>
-                <div className="text-[12px] text-white/50">{kol.h} · {brandName(kol.b)} · {kol.campaign}</div>
+                <div className="text-[12px] text-white/50">
+                  {channelUrl(kol.plat, kol.h)
+                    ? <a href={channelUrl(kol.plat, kol.h)!} target="_blank" rel="noreferrer" className="text-white/80 font-semibold hover:underline">{kol.h} ↗</a>
+                    : kol.h} · {brandName(kol.b)} · {kol.campaign}</div>
               </div>
             </div>
             <button onClick={onClose} className="text-white/60 hover:text-white"><X size={20} /></button>

@@ -97,6 +97,7 @@ export interface BriefContentItem {
 export interface BriefKolItem {
   id: string;
   name: string;             // KOL / page name
+  handle: string;           // @handle or page URL (real page, once proposed)
   platforms: string[];      // multi-select
   kolType: string;
   followers: number;
@@ -180,7 +181,7 @@ export function emptyContentItem(seq: number): BriefContentItem {
 
 export function emptyKolItem(seq: number): BriefKolItem {
   return {
-    id: `kr-${seq}`, name: "", platforms: [], kolType: KOL_TYPES[0], followers: 0,
+    id: `kr-${seq}`, name: "", handle: "", platforms: [], kolType: KOL_TYPES[0], followers: 0,
     count: 1, expectedReach: 0, likes: 0, comments: 0, shares: 0, saves: 0, clicks: 0, views: 0,
     budget: 0, area: "", contentRequired: ["Reel"], postingStart: "", postingEnd: "",
     owner: "", status: "Planned", note: "",

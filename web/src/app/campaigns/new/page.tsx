@@ -6,17 +6,17 @@ import Link from "next/link";
 import { Plus, Copy, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DatePicker } from "@/components/ui/DatePicker";
-import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
+import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
 import { BRAND_ORDER, BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA } from "@/lib/data/settings";
 import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem,
   OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor,
-  KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT, CHANNELS, ADS_PLATFORMS, PRIORITIES,
+  CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
-  engagementRate, fmtPct, kolBudgetTotal, withSyncedKolBudget,
+  kolBudgetTotal, withSyncedKolBudget,
   BriefContentItem, BriefKolItem,
 } from "@/lib/data/brief";
 import { saveCampaignBrief } from "@/lib/db/brief";
@@ -353,69 +353,22 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
   const add = () => setBrief((b) => ({ ...b, kols: [...b.kols, { ...emptyKolItem(nextSeq()) }] }));
   const dup = (id: string) => setBrief((b) => { const src = b.kols.find((k) => k.id === id); return src ? { ...b, kols: [...b.kols, { ...src, id: `kr-${nextSeq()}` }] } : b; });
   const rm = (id: string) => setBrief((b) => ({ ...b, kols: b.kols.filter((k) => k.id !== id) }));
-  const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
 
   return (
     <Panel title="KOL Plan" hint="Planner กำหนดจำนวน KOL / เพจ เองได้ — engagement rate คำนวณอัตโนมัติ · งบจะ sync ไป Budget Allocation">
       <div className="flex flex-col gap-3">
-        {brief.kols.map((k, i) => {
-          const rate = engagementRate(k);
-          return (
-            <div key={k.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[12px] font-bold text-muted">KOL Requirement #{i + 1}</span>
-                <div className="flex gap-1">
-                  <button onClick={() => dup(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
-                  <button onClick={() => rm(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
-                </div>
-              </div>
-              <div className="grid md:grid-cols-3 gap-3">
-                <div><label className={label}>KOL Type</label><select value={k.kolType} onChange={(e) => upd(k.id, { kolType: e.target.value })} className={field}>{KOL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-                <div className="md:col-span-3">
-                  <label className={label}>Platform <span className="text-faint font-normal">· ติ๊กได้หลาย platform</span></label>
-                  <div className="flex flex-wrap gap-2">
-                    {KOL_PLATFORMS.map((p) => {
-                      const on = k.platforms.includes(p);
-                      return (
-                        <label key={p} className="flex items-center gap-2 text-[12px] font-semibold px-[11px] py-[6px] rounded-[9px] border cursor-pointer"
-                          style={on ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
-                          <input type="checkbox" checked={on} onChange={() => upd(k.id, { platforms: on ? k.platforms.filter((x) => x !== p) : [...k.platforms, p] })} /> {p}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="md:col-span-3"><label className={label}>Content Required</label><Chips options={KOL_CONTENT} value={k.contentRequired} onChange={(v) => upd(k.id, { contentRequired: v })} /></div>
-                <div><label className={label}># Creator / Page</label><input value={k.count || ""} onChange={(e) => upd(k.id, { count: num(e.target.value) })} className={field} placeholder="1" /></div>
-                <div><label className={label}>Follower</label><input value={k.followers || ""} onChange={(e) => upd(k.id, { followers: num(e.target.value) })} className={field} placeholder="100000" /></div>
-                <div><label className={label}>Expected Reach</label><input value={k.expectedReach || ""} onChange={(e) => upd(k.id, { expectedReach: num(e.target.value) })} className={field} placeholder="50000" /></div>
-                <div><label className={label}>Budget</label><input value={k.budget || ""} onChange={(e) => upd(k.id, { budget: num(e.target.value) })} className={field} placeholder="฿" /></div>
-                <div><label className={label}>Branch / Area</label><select value={k.area} onChange={(e) => upd(k.id, { area: e.target.value })} className={field}><option value="">—</option>{branches.map((br) => <option key={br}>{br}</option>)}</select></div>
-
-                {/* Engagement metric breakdown */}
-                <div className="md:col-span-3 mt-1 pt-3 border-t border-line3">
-                  <div className="text-[11.5px] font-bold text-muted mb-2">Engagement metric</div>
-                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                    {(["likes", "comments", "shares", "saves", "clicks", "views"] as const).map((m) => (
-                      <div key={m}>
-                        <label className="block text-[10.5px] font-bold text-faint mb-[4px] capitalize">{m}</label>
-                        <input value={k[m] || ""} onChange={(e) => upd(k.id, { [m]: num(e.target.value) } as Partial<BriefKolItem>)} className="w-full text-[13px] px-[10px] py-[8px] rounded-[9px] border border-line2 bg-surface outline-none" placeholder="0" />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-2 text-[12px] font-semibold" style={{ color: rate > 0 ? "#4E7A4E" : "#9A9387" }}>
-                    Engagement rate: <b>{fmtPct(rate)}</b> <span className="text-faint font-normal">= (Like+Comment+Share+Save+Click) ÷ {k.expectedReach > 0 ? "Reach" : "Follower"}</span>
-                  </div>
-                </div>
-
-                <div><label className={label}>Posting Start</label><DatePicker value={k.postingStart || null} onChange={(v) => upd(k.id, { postingStart: v })} max={k.postingEnd || undefined} invalid={!!outOfRange(k.postingStart)} /></div>
-                <div><label className={label}>Posting End</label><DatePicker value={k.postingEnd || null} onChange={(v) => upd(k.id, { postingEnd: v })} min={k.postingStart || undefined} /></div>
-                <div><label className={label}>Owner <span className="text-faint font-normal">· KOL team</span></label><OwnerSelect value={k.owner} onChange={(v) => upd(k.id, { owner: v })} team="KOL" /></div>
-                <div className="md:col-span-3"><label className={label}>Note</label><input value={k.note} onChange={(e) => upd(k.id, { note: e.target.value })} className={field} /></div>
+        {brief.kols.map((k, i) => (
+          <div key={k.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[12px] font-bold text-muted">KOL Requirement #{i + 1}</span>
+              <div className="flex gap-1">
+                <button onClick={() => dup(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
+                <button onClick={() => rm(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
               </div>
             </div>
-          );
-        })}
+            <KolItemForm item={k} onChange={(patch) => upd(k.id, patch)} branches={branches} outOfRange={(iso) => !!outOfRange(iso)} />
+          </div>
+        ))}
         {brief.kols.length === 0 && <div className="text-[12.5px] text-faint text-center py-6 border border-dashed border-line2 rounded-[12px]">ยังไม่มี KOL — กด “Add KOL Requirement”</div>}
       </div>
       <div className="flex items-center justify-between mt-3">

@@ -21,7 +21,7 @@ export async function createKol(kol: Kol): Promise<Kol> {
   const { data, error } = await db.from("kols").insert({
     name: kol.name, handle: kol.h, brand: kol.b, campaign: kol.campaign, tier: kol.kolType,
     platform: kol.plat, followers: kol.followers, rate: kol.fee, status: kol.status,
-    owner: kol.owner, data: kol,
+    owner: kol.owner, kol_id: kol.masterKolId ?? null, data: kol,
   }).select("id").single();
   if (error || !data) return kol;
   return kol;
@@ -43,14 +43,18 @@ export function buildKol(input: {
   budget: number; deliverables: string; notes: string;
   name?: string; handle?: string; expectedReach?: number; expectedEngagement?: number;
   postingDate?: string; contactStatus?: string;
+  masterKolId?: string; platform?: string; followers?: number;
+  owner?: string; requester?: string; branch?: string;
 }): Kol {
   return {
     id: input.id,
     name: input.name?.trim() || `New Request — ${input.kolType}`,
-    h: input.handle?.trim() || "@tbd", plat: "Instagram", b: input.b, branch: "—", campaign: input.campaign,
-    kolType: input.kolType, followers: 0, expectedReach: input.expectedReach ?? 0, actualReach: 0, visits: 0,
+    masterKolId: input.masterKolId,
+    requester: input.requester?.trim() || undefined,
+    h: input.handle?.trim() || "@tbd", plat: input.platform || "Instagram", b: input.b, branch: input.branch?.trim() || "—", campaign: input.campaign,
+    kolType: input.kolType, followers: input.followers ?? 0, expectedReach: input.expectedReach ?? 0, actualReach: 0, visits: 0,
     fee: input.budget, foodCost: 0, totalCost: input.budget * Math.max(1, input.count),
-    owner: "Ken S.", ownerTeam: "KOL Team", pendingApprover: "Aran P.", currentBlocker: null,
+    owner: input.owner?.trim() || "Ken S.", ownerTeam: "KOL Team", pendingApprover: "Aran P.", currentBlocker: null,
     status: input.contactStatus || "Prospect", waitingSince: null, postDueDate: input.postingDate || "TBD", postedDate: null,
     expectedEngagement: input.expectedEngagement ?? 0, actualEngagement: 0,
     contactStatus: input.contactStatus || "Prospect", postingDate: input.postingDate || "TBD",

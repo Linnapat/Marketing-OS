@@ -1,32 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { KolDrawer } from "@/components/kol/KolDrawer";
+import { KolItemForm } from "@/components/kol/KolItemForm";
+import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { BrandFilterValue, BrandId, brandName, brandColor } from "@/lib/brands";
-import { platformIcon } from "@/lib/platforms";
+import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
 import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, initials, fmtFollow,
   kolKpis, kolAlerts, stageProgress,
 } from "@/lib/data/kol";
-import { fetchKols, createKol, buildKol } from "@/lib/db/kol";
+import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
+import { searchKolProfiles, createKolProfile, tierFromFollowers, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { appendBriefKolItem } from "@/lib/db/brief";
+import { createTaskDb } from "@/lib/db/tasks";
+import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
 
-const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"]] as const;
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : "TBD"; }
+/** ISO date n days from today — used for the ≤3-day approval due date. */
+function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+/** Stages where the specialist can still submit work from the row. */
+const SUBMITTABLE = (status: string) => !["Completed", "Posted"].includes(status);
+
+const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"], ["performance", "Performance"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 export default function KolPage() {
   const [tab, setTab] = useState<Tab>("list");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [campaign, setCampaign] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ kol: Kol; tab: "profile" | "comments" } | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
   const [kols, setKols] = useState<Kol[]>(KOLS);
@@ -37,13 +51,41 @@ export default function KolPage() {
     return () => { alive = false; };
   }, []);
 
-  const addKol = async (k: Kol) => {
+  // Campaign filter options follow the brand filter; reset when out of range.
+  const campaignOptions = useMemo(
+    () => Array.from(new Set(kols.filter((k) => brand === "all" || k.b === brand).map((k) => k.campaign).filter((c) => c && c !== "—"))).sort(),
+    [kols, brand],
+  );
+  useEffect(() => { if (campaign !== "all" && !campaignOptions.includes(campaign)) setCampaign("all"); }, [campaignOptions, campaign]);
+
+  // Create a request: persist the Kol AND sync it back into the campaign's KOL Plan.
+  const addKol = async (k: Kol, item: BriefKolItem | null, campaignName: string) => {
     setRequestOpen(false);
     const created = await createKol(k);
     setKols((ks) => [created, ...ks]);
+    if (item && campaignName && campaignName !== "—") appendBriefKolItem(campaignName, item).catch(() => {});
   };
 
-  const filtered = kols.filter((k) => brand === "all" || k.b === brand);
+  // Specialist submits work in the row → update the KOL and drop a "Need Approval"
+  // task into the requester's task list, due within 3 days.
+  const submitRow = async (kol: Kol, link: string) => {
+    const next: Kol = { ...kol, postLink: link.trim() || kol.postLink, status: "Waiting Review" };
+    setKols((ks) => ks.map((x) => (x.id === kol.id ? next : x)));
+    await updateKol(next);
+    const requester = kol.requester || kol.owner;
+    const dueIso = plusDaysIso(3);
+    const task: Task = {
+      id: Date.now(), title: `Approve KOL — ${kol.name}`, module: "KOL", moduleIcon: "🌟", moduleColor: "#B5577E",
+      type: "KOL", assignee: requester, brand: brandName(kol.b), campaign: kol.campaign,
+      status: "Need Approval", priority: "High", group: "needApproval", due: labelDate(dueIso),
+      blocker: null, pendingApprover: requester, isQuickWin: false,
+      nextAction: `Review proposed KOL ${kol.name} (${kol.h}) and approve within 3 days.`,
+      checklist: [], dueIso,
+    };
+    await createTaskDb(task);
+  };
+
+  const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign));
   const kpi = kolKpis(filtered);
   const alerts = kolAlerts(filtered);
 
@@ -65,7 +107,16 @@ export default function KolPage() {
         right={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ Request KOL</button>}
       />
 
-      <div className="mt-4"><BrandFilter value={brand} onChange={setBrand} /></div>
+      <div className="mt-4 flex items-center gap-4 flex-wrap">
+        <BrandFilter value={brand} onChange={setBrand} />
+        <label className="flex items-center gap-[7px]">
+          <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Campaign</span>
+          <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE}>
+            <option value="all">All Campaigns</option>
+            {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      </div>
 
       {/* KPI strip */}
       <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))" }}>
@@ -113,9 +164,10 @@ export default function KolPage() {
       </div>
 
       <div className="mt-5">
-        {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-        {tab === "pipeline" && <PipelineList kols={kols} brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-        {tab === "plan" && <KolPlan kols={kols} brand={brand} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onSubmitWork={submitRow} />}
+        {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
       </div>
 
       {drawer && (
@@ -134,44 +186,66 @@ export default function KolPage() {
   );
 }
 
-function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
+function CreatorRow({ kol, onOpen, onSubmitWork }: { kol: Kol; onOpen: (k: Kol) => void; onSubmitWork: (k: Kol, link: string) => Promise<void> }) {
   const pi = platformIcon(kol.plat);
   const { idx } = stageProgress(kol.status);
+  const url = channelUrl(kol.plat, kol.h);
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!link.trim() || busy) return;
+    setBusy(true);
+    try { await onSubmitWork(kol, link); setLink(""); } finally { setBusy(false); }
+  };
   return (
-    <button onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.4fr_1fr_1fr_1.4fr] gap-y-2 px-5 py-[13px] items-center text-left border-b border-line4 last:border-0 hover:bg-ivory/60 transition">
-      <div className="flex items-center gap-3">
-        <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: brandColor(kol.b) }}>{initials(kol.name)}</span>
-        <div className="min-w-0">
-          <div className="flex items-center gap-[6px]">
-            <span className="text-[13.5px] font-bold text-ink truncate">{kol.name}</span>
-            <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+    <div className="border-b border-line4 last:border-0">
+      <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.4fr_1fr_1fr_1.4fr] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition">
+        <div className="flex items-center gap-3">
+          <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: brandColor(kol.b) }}>{initials(kol.name)}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-[6px]">
+              <span className="text-[13.5px] font-bold text-ink truncate">{kol.name}</span>
+              <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+            </div>
+            <div className="text-[11px] text-faint truncate">
+              {url ? <a href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-accent font-semibold hover:underline">{kol.h} ↗</a> : kol.h} · {brandName(kol.b)}
+            </div>
           </div>
-          <div className="text-[11px] text-faint truncate">{kol.h} · {brandName(kol.b)}</div>
+        </div>
+        <div className="text-[12px] text-muted">{kol.campaign}<div className="text-[10.5px] text-faint">Due {kol.postDueDate}</div></div>
+        <div className="text-[12.5px] text-muted">{fmtFollow(kol.followers)}<div className="text-[10.5px] text-faint">followers</div></div>
+        <div className="text-[13px] font-semibold text-ink">{baht(kol.fee, { compact: true })}</div>
+        <div>
+          <StatusBadge tone={kolTone(kol.status)}>{kol.status}</StatusBadge>
+          <div className="flex gap-[2px] mt-2">
+            {ALL_STAGES.map((_, i) => (
+              <span key={i} className="h-[4px] flex-1 rounded-full" style={{ background: i < idx ? "#B8945A" : i === idx ? "#211F1C" : "#ECE6DA" }} />
+            ))}
+          </div>
         </div>
       </div>
-      <div className="text-[12px] text-muted">{kol.campaign}<div className="text-[10.5px] text-faint">Due {kol.postDueDate}</div></div>
-      <div className="text-[12.5px] text-muted">{fmtFollow(kol.followers)}<div className="text-[10.5px] text-faint">followers</div></div>
-      <div className="text-[13px] font-semibold text-ink">{baht(kol.fee, { compact: true })}</div>
-      <div>
-        <StatusBadge tone={kolTone(kol.status)}>{kol.status}</StatusBadge>
-        <div className="flex gap-[2px] mt-2">
-          {ALL_STAGES.map((_, i) => (
-            <span key={i} className="h-[4px] flex-1 rounded-full" style={{ background: i < idx ? "#B8945A" : i === idx ? "#211F1C" : "#ECE6DA" }} />
-          ))}
+      {SUBMITTABLE(kol.status) && (
+        <div className="flex items-center gap-2 px-5 pb-3 -mt-[2px]" onClick={(e) => e.stopPropagation()}>
+          <span className="text-[11px] text-faint">🔗</span>
+          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste post / draft link and submit for review…"
+            className="flex-1 text-[12px] px-3 py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+          <button onClick={submit} disabled={!link.trim() || busy} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-4 py-[7px] disabled:opacity-40 whitespace-nowrap">{busy ? "…" : "Submit"}</button>
         </div>
-      </div>
-    </button>
+      )}
+    </div>
   );
 }
 
-function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }) {
+function CreatorList({ list, onOpen, onSubmitWork }: { list: Kol[]; onOpen: (k: Kol) => void; onSubmitWork: (k: Kol, link: string) => Promise<void> }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: "2fr 1.4fr 1fr 1fr 1.4fr" }}>
         <div>Creator</div><div>Campaign</div><div>Followers</div><div>Fee</div><div>Stage</div>
       </div>
-      {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}
+      {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} onSubmitWork={onSubmitWork} />)}
+      {list.length === 0 && <div className="text-[12.5px] text-faint text-center py-8">No creators match these filters.</div>}
     </div>
   );
 }
@@ -262,54 +336,175 @@ function KolPlan({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue
   );
 }
 
+// Per-creator performance grouped by campaign, with a campaign roll-up total —
+// so the same campaign's KOLs are compared individually and summed once.
+function KolPerformance({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }) {
+  const groups = useMemo(() => {
+    const m = new Map<string, Kol[]>();
+    for (const k of list) { const c = k.campaign || "—"; const arr = m.get(c); if (arr) arr.push(k); else m.set(c, [k]); }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [list]);
+  const rate = (k: Kol) => { const base = k.actualReach || k.expectedReach || k.followers || 0; return base ? ((k.actualEngagement || 0) / base) * 100 : 0; };
+  const cols = "1.8fr 1fr 1fr 1fr 1fr 0.8fr";
+  if (list.length === 0) return <div className="text-[12.5px] text-faint text-center py-10">No performance data for these filters.</div>;
+  return (
+    <div className="flex flex-col gap-4">
+      {groups.map(([campaign, ks]) => {
+        const reach = ks.reduce((s, k) => s + (k.actualReach || 0), 0);
+        const eng = ks.reduce((s, k) => s + (k.actualEngagement || 0), 0);
+        const fee = ks.reduce((s, k) => s + k.fee, 0);
+        const roiVals = ks.filter((k) => k.roi > 0).map((k) => k.roi);
+        const avgRoi = roiVals.length ? roiVals.reduce((s, v) => s + v, 0) / roiVals.length : 0;
+        const blended = reach ? (eng / reach) * 100 : 0;
+        return (
+          <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-line4">
+              <span className="text-[13px] font-bold text-ink">{campaign}</span>
+              <span className="text-[11.5px] text-faint">· {ks.length} creator{ks.length > 1 ? "s" : ""}</span>
+            </div>
+            <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+              <div>Creator</div><div>Reach</div><div>Engagement</div><div>Eng. Rate</div><div>Fee</div><div>ROAS</div>
+            </div>
+            {ks.map((k) => {
+              const pi = platformIcon(k.plat);
+              return (
+                <button key={k.id} onClick={() => onOpen(k)} className="w-full grid gap-y-1 px-5 py-[11px] items-center text-left border-b border-line4 last:border-0 hover:bg-ivory/60" style={{ gridTemplateColumns: cols }}>
+                  <span className="flex items-center gap-2 text-[13px] font-semibold text-ink min-w-0">
+                    <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+                    <span className="truncate">{k.name}</span>
+                  </span>
+                  <span className="text-[12.5px] text-muted">{fmtFollow(k.actualReach || 0)}</span>
+                  <span className="text-[12.5px] text-muted">{fmtFollow(k.actualEngagement || 0)}</span>
+                  <span className="text-[12.5px] text-muted">{fmtPct(rate(k))}</span>
+                  <span className="text-[12.5px] font-semibold text-ink">{baht(k.fee, { compact: true })}</span>
+                  <span className="text-[12.5px] font-semibold" style={{ color: k.roi >= 1 ? "#4E7A4E" : "#9A9387" }}>{k.roi ? `${k.roi.toFixed(1)}×` : "—"}</span>
+                </button>
+              );
+            })}
+            <div className="grid px-5 py-3 items-center bg-ivory/70 text-ink font-bold" style={{ gridTemplateColumns: cols }}>
+              <span className="text-[12px]">Campaign total</span>
+              <span className="text-[12.5px]">{fmtFollow(reach)}</span>
+              <span className="text-[12.5px]">{fmtFollow(eng)}</span>
+              <span className="text-[12.5px]">{fmtPct(blended)}</span>
+              <span className="text-[12.5px]">{baht(fee, { compact: true })}</span>
+              <span className="text-[12.5px]">{avgRoi ? `${avgRoi.toFixed(1)}×` : "—"}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const KOL_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
 
-const CONTACT_STATUSES = ["Prospect", "Contacted", "In Discussion", "Confirmed", "Declined"];
-
-function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (k: Kol) => void }) {
+function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (k: Kol, item: BriefKolItem, campaign: string) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const [brandSel, setBrandSel] = useState("TEPPEN");
   const [campaign, setCampaign] = useState("");
-  const [kolType, setKolType] = useState("Food Blogger");
-  const [kolName, setKolName] = useState("");
-  const [handle, setHandle] = useState("");
-  const [count, setCount] = useState("1");
-  const [budget, setBudget] = useState("");
-  const [expReach, setExpReach] = useState("");
-  const [expEng, setExpEng] = useState("");
-  const [postingDate, setPostingDate] = useState("");
-  const [contactStatus, setContactStatus] = useState("Prospect");
-  const [deliverables, setDeliverables] = useState("");
-  const [notes, setNotes] = useState("");
+  const [requester, setRequester] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Same KOL-item template as the Campaign Builder's KOL Plan (syncs both ways).
+  const [item, setItem] = useState<BriefKolItem>(() => emptyKolItem(nextId));
+  const onChange = (patch: Partial<BriefKolItem>) => setItem((it) => ({ ...it, ...patch }));
+  // Master database picker — search existing profiles or create a new one.
+  const [masterId, setMasterId] = useState<string | null>(null);
+  const [mq, setMq] = useState("");
+  const [mResults, setMResults] = useState<KolMasterRow[]>([]);
+  const [mOpen, setMOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Debounced search against the master database while the picker is open.
+  useEffect(() => {
+    if (!mOpen) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      searchKolProfiles(mq).then((r) => { if (alive) setMResults(r); }).catch(() => {});
+    }, 200);
+    return () => { alive = false; clearTimeout(t); };
+  }, [mq, mOpen]);
+
+  const pickMaster = (r: KolMasterRow) => {
+    setMasterId(r.kol_id);
+    onChange({ name: r.display_name, handle: r.primary_handle ?? "", kolType: r.kol_type || item.kolType, followers: r.total_followers ?? item.followers });
+    setMq(r.display_name);
+    setMOpen(false);
+  };
   const brandId = KOL_BRAND_TO_ID[brandSel] ?? "teppen";
   const brandCampaigns = campaigns.filter((c) => c.b === brandId);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
 
-  const submit = () => {
-    onCreate(buildKol({
-      id: nextId, campaign: campaign || "—", b: brandId, kolType,
-      count: parseInt(count) || 1, budget: parseFloat(budget) || 0, deliverables, notes,
-      name: kolName, handle, expectedReach: parseInt(expReach) || 0,
-      expectedEngagement: parseInt(expEng) || 0, postingDate, contactStatus,
-    }));
+  const canCreate = item.name.trim().length > 0 || !!masterId;
+  const submit = async () => {
+    if (!canCreate) return;
+    // Link to an existing master profile, or create one for a brand-new KOL so
+    // the request feeds the master database instead of writing a stray @tbd.
+    let linkedId = masterId ?? undefined;
+    if (!linkedId && item.name.trim()) {
+      linkedId = (await createKolProfile({
+        display_name: item.name.trim(), kol_type: item.kolType,
+        tier: tierFromFollowers(item.followers || undefined), handle_url: item.handle.trim() || undefined,
+        followers: item.followers || undefined,
+      })) ?? undefined;
+    }
+    const expEng = (item.likes || 0) + (item.comments || 0) + (item.shares || 0) + (item.saves || 0) + (item.clicks || 0);
+    const k = buildKol({
+      id: nextId, campaign: campaign || "—", b: brandId, kolType: item.kolType,
+      count: item.count || 1, budget: item.budget || 0,
+      deliverables: item.contentRequired.join(" + "), notes: item.note,
+      name: item.name, handle: item.handle, expectedReach: item.expectedReach,
+      expectedEngagement: expEng, postingDate: item.postingStart,
+      followers: item.followers, owner: item.owner, requester, branch: item.area,
+      platform: item.platforms[0], masterKolId: linkedId,
+    });
+    onCreate(k, item, campaign.trim());
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-surface rounded-cardLg w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-[16px] font-extrabold mb-4">Request KOL</div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="text-[16px] font-extrabold mb-1">Request KOL</div>
+        <div className="text-[11.5px] text-faint mb-4">ฟอร์มเดียวกับ KOL Plan — เลือกจาก master database หรือพิมพ์ชื่อใหม่ · สร้างแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
+        <div className="relative mb-3">
+          <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Master database</label>
+          <input
+            value={mq}
+            onChange={(e) => { setMq(e.target.value); setMasterId(null); setMOpen(true); }}
+            onFocus={() => setMOpen(true)}
+            className={field}
+            placeholder="Search existing KOL by name or @handle…"
+          />
+          {mOpen && mResults.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-surface border border-line2 rounded-[10px] shadow-lg max-h-56 overflow-y-auto">
+              {mResults.map((r) => (
+                <button key={r.kol_id} onClick={() => pickMaster(r)} className="flex items-center justify-between gap-3 w-full text-left px-3 py-2 hover:bg-ivory">
+                  <span className="min-w-0">
+                    <span className="font-bold text-[13px]">{r.display_name}</span>
+                    <span className="text-faint text-[11.5px] ml-2">{r.primary_handle}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-[11px] shrink-0">
+                    {r.total_followers != null && <span className="text-faint">{fmtFollow(r.total_followers)}</span>}
+                    {r.rank_label && <span className="font-bold px-1.5 py-0.5 rounded bg-ivory">{r.rank_label}{r.rank_score != null ? ` · ${r.rank_score}` : ""}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {masterId && <div className="text-[11px] text-emerald-600 font-semibold mt-1">✓ Linked to master profile</div>}
+          {!masterId && mq.trim() && mResults.length === 0 && (
+            <div className="text-[11px] text-faint mt-1">No match — a new master profile will be created on submit.</div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
             <select value={brandSel} onChange={(e) => setBrandSel(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
@@ -321,54 +516,13 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
               {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">KOL Name</label>
-            <input value={kolName} onChange={(e) => setKolName(e.target.value)} className={field} placeholder="e.g. Tokyo Tom" />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Page / Handle</label>
-            <input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or page URL" />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">KOL Type</label>
-            <select value={kolType} onChange={(e) => setKolType(e.target.value)} className={field}><option>Food Blogger</option><option>Food Vlogger</option><option>Micro Influencer</option></select>
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]"># Creators</label>
-            <input type="number" value={count} onChange={(e) => setCount(e.target.value)} className={field} placeholder="1" />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Expected Reach</label>
-            <input type="number" value={expReach} onChange={(e) => setExpReach(e.target.value)} className={field} placeholder="e.g. 50000" />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Expected Engagement</label>
-            <input type="number" value={expEng} onChange={(e) => setExpEng(e.target.value)} className={field} placeholder="e.g. 4000" />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Budget / creator</label>
-            <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} className={field} placeholder="฿" />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Posting Date</label>
-            <DatePicker value={postingDate || null} onChange={setPostingDate} />
-          </div>
           <div className="col-span-2">
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Contact Status</label>
-            <select value={contactStatus} onChange={(e) => setContactStatus(e.target.value)} className={field}>
-              {CONTACT_STATUSES.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Deliverables</label>
-            <input value={deliverables} onChange={(e) => setDeliverables(e.target.value)} className={field} placeholder="1 Reel + 3 Stories" />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={field} rows={3} placeholder="Brief, target audience, posting period…" />
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester <span className="text-faint font-normal">· งาน approve จะเด้งเข้า task list ของคนนี้</span></label>
+            <OwnerSelect value={requester} onChange={setRequester} team="Planner" />
           </div>
         </div>
-        <button onClick={submit} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px]">Create KOL Request</button>
+        <KolItemForm item={item} onChange={onChange} />
+        <button onClick={submit} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create KOL Request</button>
       </div>
     </div>
   );

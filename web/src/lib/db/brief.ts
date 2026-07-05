@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContent } from "./content";
@@ -191,6 +191,20 @@ export async function appendBriefItem(campaignName: string, item: BriefContentIt
   const brief = await fetchCampaignBrief(camp.id);
   if (!brief) return;
   brief.content = [...brief.content, { ...item, id: `ci-cal-${Date.now()}` }];
+  await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
+}
+
+/** Two-way sync for KOL: a "Request KOL" created in the KOL module (using the
+ *  same KOL-item form as the Campaign Builder's KOL Plan) is written back into
+ *  its campaign's KOL Plan. No-op when the campaign has no brief / Supabase off. */
+export async function appendBriefKolItem(campaignName: string, item: BriefKolItem): Promise<void> {
+  const db = supabase();
+  if (!db || !campaignName || campaignName === "—") return;
+  const camp = (await fetchCampaigns()).find((c) => c.name === campaignName);
+  if (!camp) return;
+  const brief = await fetchCampaignBrief(camp.id);
+  if (!brief) return;
+  brief.kols = [...brief.kols, { ...item, id: `kr-req-${Date.now()}` }];
   await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
 }
 

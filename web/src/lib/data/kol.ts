@@ -59,6 +59,10 @@ export interface Kol {
   actualEngagement?: number;
   contactStatus?: string;
   postingDate?: string;
+  /** Who requested this KOL (the campaign side). Approval tasks route back here. */
+  requester?: string;
+  /** Link to the campaign-independent master profile (kol_profiles.kol_id). */
+  masterKolId?: string;
   stages: KolStage[];
 }
 
