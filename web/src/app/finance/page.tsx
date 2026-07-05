@@ -10,13 +10,12 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { SignaturePad } from "@/components/finance/SignaturePad";
 import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
-import { useRole, canSeeOperation } from "@/lib/role";
+import { useRole } from "@/lib/role";
 import { baht } from "@/lib/format";
-import {
-  BUDGET_SECTIONS, SECTION_ICON, REQUESTS, PNL,
-  BUDGET_BY_BRAND, BUDGET_BY_CATEGORY, STATUS_TONE, buildCsv, RequestRow,
-} from "@/lib/data/finance";
+import { REQUESTS, buildCsv, PnlRow } from "@/lib/data/finance";
 import { fetchExpenseRequests, approveExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { financeFromDb, FinanceView } from "@/lib/data/derive";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 
 const TABS = [
@@ -40,8 +39,17 @@ export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("plan");
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
-  const { role, can } = useRole();
-  const canOps = canSeeOperation(role);
+  const { can } = useRole();
+  // Budget + P&L derive from real campaigns / expense requests (empty on a fresh DB).
+  const [fin, setFin] = useState<FinanceView | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchCampaigns(), fetchExpenseRequests()])
+      .then(([c, r]) => { if (alive) setFin(financeFromDb(c, r)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const exportCsv = () => {
     if (tab === "approval") {
@@ -49,15 +57,11 @@ export default function FinancePage() {
         ["Category", "Brand", "Campaign", "Requested", "Approved", "Due", "Status"],
         REQUESTS.filter((r) => brand === "all" || r.b === brand).map((r) => [r.category, brandName(r.b), r.campaign, r.requested, r.approved, r.due, r.status]),
       ));
-    } else if (tab === "roi") {
-      download("budget-breakdown.csv", buildCsv(
-        ["Section", "Item", "Budget", "Actual", "Remaining", "Used %"],
-        BUDGET_SECTIONS.filter((s) => canOps || s.key !== "operation").flatMap((s) => s.items.map((i) => [s.label, i.name, i.budget, i.actual, i.budget - i.actual, (i.budget ? Math.round((i.actual / Math.abs(i.budget)) * 100) : 0) + "%"])),
-      ));
     } else {
+      const pnl = (fin?.pnl ?? []).filter((p) => brand === "all" || p.b === brand);
       download("campaign-pnl.csv", buildCsv(
         ["Campaign", "Brand", "Revenue", "Budget", "Expense", "Gross Profit", "ROI", "ROAS"],
-        PNL.filter((p) => brand === "all" || p.b === brand).map((p) => [p.name, brandName(p.b), p.revenue, p.budget, p.expense, p.revenue - p.expense, p.roi + "x", p.roas + "x"]),
+        pnl.map((p) => [p.name, brandName(p.b), p.revenue, p.budget, p.expense, p.revenue - p.expense, p.roi + "x", p.roas + "x"]),
       ));
     }
   };
@@ -97,8 +101,8 @@ export default function FinancePage() {
       </div>
 
       <div className="mt-5">
-        {tab === "plan" && <BudgetPlanTab brand={brand} />}
-        {tab === "roi" && <RoiTab canOps={canOps} />}
+        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} />}
+        {tab === "roi" && <RoiTab brand={brand} fin={fin} />}
         {tab === "approval" && <ApprovalTab brand={brand} />}
       </div>
     </>
@@ -120,11 +124,13 @@ function NoFinanceAccess() {
 }
 
 /* ── Budget Plan: allocation + campaign-level profitability ─────────── */
-function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
+function BudgetPlanTab({ brand, fin }: { brand: BrandFilterValue; fin: FinanceView | null }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const rows = PNL.filter((p) => brand === "all" || p.b === brand);
-  const brandAlloc = BUDGET_BY_BRAND.filter((b) => brand === "all" || b.b === brand);
-  const maxCat = Math.max(...BUDGET_BY_CATEGORY.map((c) => c.amount));
+  if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
+  const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
+  const brandAlloc = fin.byBrand.filter((b) => brand === "all" || b.b === brand);
+  const cats = fin.byCategory;
+  const maxCat = Math.max(1, ...cats.map((c) => c.amount));
 
   return (
     <div className="flex flex-col gap-4">
@@ -132,12 +138,12 @@ function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
       <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
         <div className="rounded-card p-[18px]" style={{ background: "#211F1C", color: "#fff" }}>
           <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
-          <div className="text-[25px] font-bold mt-[6px]">฿4.50M</div>
+          <div className="text-[25px] font-bold mt-[6px]">{baht(fin.totalPlan, { compact: true })}</div>
         </div>
-        {[["Committed", "฿2.84M"], ["Available", "฿1.66M"]].map(([l, v]) => (
+        {([["Committed", fin.committed], ["Available", fin.available]] as const).map(([l, v]) => (
           <div key={l} className="bg-surface border border-line rounded-card p-[18px]">
             <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
-            <div className="text-[25px] font-bold mt-[6px] text-ink">{v}</div>
+            <div className="text-[25px] font-bold mt-[6px] text-ink">{baht(v, { compact: true })}</div>
           </div>
         ))}
       </div>
@@ -148,7 +154,7 @@ function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
           <div className="text-[15px] font-bold mb-4">Allocation by brand</div>
           <div className="flex flex-col gap-[15px]">
             {brandAlloc.map((b) => {
-              const pct = Math.round((b.spent / b.plan) * 100);
+              const pct = b.plan ? Math.round((b.spent / b.plan) * 100) : 0;
               return (
                 <div key={b.b}>
                   <div className="flex justify-between text-[12.5px] mb-[5px]">
@@ -159,12 +165,13 @@ function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
                 </div>
               );
             })}
+            {brandAlloc.length === 0 && <div className="text-[12.5px] text-faint py-2">No campaign budgets yet.</div>}
           </div>
         </div>
         <div className="bg-surface border border-line rounded-cardLg p-5">
           <div className="text-[15px] font-bold mb-4">By category</div>
           <div className="flex flex-col gap-[15px]">
-            {BUDGET_BY_CATEGORY.map((c) => (
+            {cats.map((c) => (
               <div key={c.name}>
                 <div className="flex justify-between text-[12.5px] mb-[5px]">
                   <span className="font-semibold">{c.name}</span>
@@ -173,6 +180,7 @@ function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
                 <Progress value={Math.round((c.amount / maxCat) * 100)} color="#B8945A" height={8} />
               </div>
             ))}
+            {cats.length === 0 && <div className="text-[12.5px] text-faint py-2">No spending logged yet.</div>}
           </div>
         </div>
       </div>
@@ -183,9 +191,9 @@ function BudgetPlanTab({ brand }: { brand: BrandFilterValue }) {
 }
 
 function BudgetProfitability({ rows, open, setOpen }: {
-  rows: typeof PNL; open: Record<string, boolean>; setOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  rows: PnlRow[]; open: Record<string, boolean>; setOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }) {
-  const detail = (p: (typeof PNL)[number]) => [
+  const detail = (p: PnlRow) => [
     { label: "Content & Creative", budget: Math.round(p.budget * 0.15), actual: Math.round(p.expense * 0.12) },
     { label: "KOL / Influencer", budget: Math.round(p.budget * 0.25), actual: Math.round(p.expense * 0.28) },
     { label: "Paid Ads", budget: Math.round(p.budget * 0.4), actual: Math.round(p.expense * 0.42) },
@@ -229,74 +237,48 @@ function BudgetProfitability({ rows, open, setOpen }: {
           </div>
         );
       })}
+      {rows.length === 0 && <div className="px-5 py-8 text-[12.5px] text-faint text-center">No campaigns yet — add one to see profitability.</div>}
     </div>
   );
 }
 
-/* ── Expense Request: form + calculator + budget check + approval route ─ */
-function RoiTab({ canOps }: { canOps: boolean }) {
-  const [open, setOpen] = useState<Record<string, boolean>>({ digital: true });
+/* ── Campaign P&L (real, derived from campaigns) ──────────────────── */
+function RoiTab({ brand, fin }: { brand: BrandFilterValue; fin: FinanceView | null }) {
+  if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
+  const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
+  if (rows.length === 0) return <div className="text-[13px] text-faint text-center py-12 bg-surface border border-line rounded-cardLg">No campaign P&amp;L yet — add a campaign to see ROI.</div>;
+  const tot = rows.reduce((a, p) => ({ revenue: a.revenue + p.revenue, budget: a.budget + p.budget, expense: a.expense + p.expense }), { revenue: 0, budget: 0, expense: 0 });
+  const totRoi = tot.expense ? tot.revenue / tot.expense : 0;
+  const cols = "2fr 1.1fr 1.1fr 1.1fr 1.1fr 0.8fr 0.8fr";
   return (
-    <div className="flex flex-col gap-3">
-      {BUDGET_SECTIONS.map((sec) => {
-        // Operation costs (salary, bonus, incentives) are CMO-only.
-        if (sec.key === "operation" && !canOps) {
-          return (
-            <div key={sec.key} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-              <div className="flex items-center gap-3 px-5 py-[14px]">
-                <span className="text-[16px] grayscale opacity-60">{SECTION_ICON[sec.key]}</span>
-                <div className="flex-1">
-                  <div className="text-[13.5px] font-bold text-faint flex items-center gap-2">
-                    {sec.label} <span className="text-[11px]">🔒</span>
-                  </div>
-                  <div className="text-[11px] text-faint">Restricted — visible to CMO / Admin only</div>
-                </div>
-                <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-faint border border-line2 rounded-pill px-[9px] py-[3px]">
-                  CMO only
-                </span>
-              </div>
-            </div>
-          );
-        }
-        const budget = sec.items.reduce((s, i) => s + i.budget, 0);
-        const actual = sec.items.reduce((s, i) => s + i.actual, 0);
-        const remaining = budget - actual;
-        const usedPct = budget ? Math.round((actual / budget) * 100) : 0;
-        const isOpen = open[sec.key];
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">Campaign P&amp;L</div>
+      <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+        <div>Campaign</div><div>Revenue</div><div>Budget</div><div>Expense</div><div>Gross</div><div>ROI</div><div>ROAS</div>
+      </div>
+      {rows.map((p) => {
+        const gp = p.revenue - p.expense;
         return (
-          <div key={sec.key} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            <button onClick={() => setOpen((o) => ({ ...o, [sec.key]: !o[sec.key] }))} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-ivory/60 text-left">
-              {isOpen ? <ChevronDown size={16} className="text-faint" /> : <ChevronRight size={16} className="text-faint" />}
-              <span className="text-[16px]">{SECTION_ICON[sec.key]}</span>
-              <div className="flex-1">
-                <div className="text-[13.5px] font-bold text-ink">{sec.label}</div>
-                <div className="text-[11px] text-faint">{sec.sub}</div>
-              </div>
-              <div className="hidden sm:flex items-center gap-5 text-[12px]">
-                <span className="text-muted">Budget <b className="text-ink">{baht(budget, { compact: true })}</b></span>
-                <span className="text-muted">Actual <b className="text-ink">{baht(actual, { compact: true })}</b></span>
-                <span style={{ color: remaining < 0 ? "#B33A2E" : "#4E7A4E" }}>Left <b>{baht(remaining, { compact: true })}</b></span>
-              </div>
-              <div className="w-24"><Progress value={usedPct} color={usedPct > 90 ? "#B33A2E" : "#B8945A"} /></div>
-            </button>
-            {isOpen && (
-              <div className="border-t border-line4">
-                {sec.items.map((it) => {
-                  const pct = it.budget ? Math.round((it.actual / Math.abs(it.budget)) * 100) : 0;
-                  return (
-                    <div key={it.name} className="grid grid-cols-[2fr_1fr_1fr_1.2fr] gap-2 px-5 py-[9px] items-center border-b border-line4 last:border-0 text-[12.5px]">
-                      <span className="text-ink">{it.name}</span>
-                      <span className="text-muted">{baht(it.budget, { compact: true })}</span>
-                      <span className="text-ink font-semibold">{baht(it.actual, { compact: true })}</span>
-                      <div className="flex items-center gap-2"><Progress value={pct} color={pct > 90 ? "#B33A2E" : "#C68A1E"} /><span className="text-[11px] text-faint w-8 text-right">{pct}%</span></div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <div key={p.name} className="grid px-5 py-3 items-center border-b border-line4 last:border-0" style={{ gridTemplateColumns: cols }}>
+            <span className="flex items-center gap-[7px] text-[13px] font-bold text-ink"><BrandDot brand={p.b} size={7} />{p.name}</span>
+            <span className="text-[13px] text-ink">{baht(p.revenue, { compact: true })}</span>
+            <span className="text-[13px] text-muted">{baht(p.budget, { compact: true })}</span>
+            <span className="text-[13px] text-muted">{baht(p.expense, { compact: true })}</span>
+            <span className="text-[13px] font-semibold" style={{ color: gp >= 0 ? "#4E7A4E" : "#B33A2E" }}>{baht(gp, { compact: true })}</span>
+            <span className="text-[13px] font-bold" style={{ color: p.roi < 1 ? "#B33A2E" : "#4E7A4E" }}>{p.roi}×</span>
+            <span className="text-[13px] text-ink">{p.roas}×</span>
           </div>
         );
       })}
+      <div className="grid px-5 py-3 items-center bg-ivory/70 font-bold" style={{ gridTemplateColumns: cols }}>
+        <span className="text-[12px]">Total</span>
+        <span className="text-[13px]">{baht(tot.revenue, { compact: true })}</span>
+        <span className="text-[13px]">{baht(tot.budget, { compact: true })}</span>
+        <span className="text-[13px]">{baht(tot.expense, { compact: true })}</span>
+        <span className="text-[13px]">{baht(tot.revenue - tot.expense, { compact: true })}</span>
+        <span className="text-[13px]">{totRoi ? totRoi.toFixed(1) + "×" : "—"}</span>
+        <span></span>
+      </div>
     </div>
   );
 }
