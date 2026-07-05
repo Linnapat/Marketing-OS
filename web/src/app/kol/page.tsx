@@ -18,6 +18,7 @@ import {
   kolKpis, kolAlerts, stageProgress,
 } from "@/lib/data/kol";
 import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
+import { searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefKolItem } from "@/lib/db/brief";
 import { createTaskDb } from "@/lib/db/tasks";
@@ -33,7 +34,7 @@ function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getD
 /** Stages where the specialist can still submit work from the row. */
 const SUBMITTABLE = (status: string) => !["Completed", "Posted"].includes(status);
 
-const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"], ["performance", "Performance"]] as const;
+const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Database"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 export default function KolPage() {
@@ -167,6 +168,7 @@ export default function KolPage() {
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "database" && <KolDatabase />}
       </div>
 
       {drawer && (
@@ -391,6 +393,62 @@ function KolPerformance({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => voi
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Campaign-independent KOL master library (kol_profiles) — search + rank badges.
+function KolDatabase() {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<KolMasterRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    const t = setTimeout(() => {
+      searchKolProfiles(q, 100)
+        .then((r) => { if (alive) { setRows(r); setLoading(false); } })
+        .catch(() => { if (alive) setLoading(false); });
+    }, 200);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q]);
+  const cols = "1.8fr 1.4fr 1fr 0.9fr 1fr 1.2fr 0.9fr";
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"
+          className="flex-1 min-w-[220px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+        <span className="text-[12px] text-faint">{rows.length} profile{rows.length === 1 ? "" : "s"}</span>
+      </div>
+      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+        <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+          <div>KOL / Page</div><div>Handle</div><div>Type</div><div>Tier</div><div>Followers</div><div>Platforms</div><div>Rank</div>
+        </div>
+        {rows.map((r) => {
+          const url = channelUrl(r.platforms?.[0] ?? "Instagram", r.primary_handle ?? "");
+          return (
+            <div key={r.kol_id} className="grid gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0" style={{ gridTemplateColumns: cols }}>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
+                <span className="text-[13px] font-bold text-ink truncate">{r.display_name}</span>
+              </span>
+              <span className="text-[12px] text-faint truncate">{url ? <a href={url} target="_blank" rel="noreferrer" className="text-accent font-semibold hover:underline">{r.primary_handle} ↗</a> : (r.primary_handle ?? "—")}</span>
+              <span className="text-[12px] text-muted">{r.kol_type ?? "—"}</span>
+              <span className="text-[12px] text-muted">{r.tier ?? "—"}</span>
+              <span className="text-[12.5px] text-muted">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
+              <span className="text-[11.5px] text-muted truncate">{(r.platforms ?? []).join(", ") || "—"}</span>
+              <span>{r.rank_label
+                ? <span className="text-[11px] font-bold px-[8px] py-[2px] rounded-pill bg-ivory border border-line3">{r.rank_label}{r.rank_score != null ? ` · ${r.rank_score}` : ""}</span>
+                : <span className="text-[12px] text-faint">—</span>}</span>
+            </div>
+          );
+        })}
+        {rows.length === 0 && (
+          <div className="text-[12.5px] text-faint text-center py-10">
+            {loading ? "Loading…" : "ยังไม่มี KOL ในคลัง — โปรไฟล์จะสะสมเมื่อเริ่มทำงานกับ KOL แต่ละราย"}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
