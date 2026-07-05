@@ -24,7 +24,7 @@ export default function CampaignsPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
-  const [objective, setObjective] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
   const [owner, setOwner] = useState<string>("all");
   const [budgetBand, setBudgetBand] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
@@ -81,7 +81,6 @@ export default function CampaignsPage() {
 
   const summary = monthlySummary(brand, campaigns);
 
-  const objectives = Array.from(new Set(campaigns.map((c) => c.campType).filter(Boolean)));
   const owners = Array.from(new Set(campaigns.map((c) => c.owner).filter(Boolean)));
   // Branches may be comma-joined (multi-branch campaigns); split for the filter.
   const allBranches = Array.from(new Set(campaigns.flatMap((c) => (c.branch || "").split(",").map((s) => s.trim())).filter((s) => s && s !== "—")));
@@ -93,7 +92,7 @@ export default function CampaignsPage() {
   const filtered = campaigns.filter((c) =>
     (brand === "all" || c.b === brand) &&
     (status === "all" || c.status === status) &&
-    (objective === "all" || c.campType === objective) &&
+    (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
     (owner === "all" || c.owner === owner) &&
     (branchFilter === "all" || (c.branch || "").split(",").map((s) => s.trim()).includes(branchFilter)) &&
     inBand(c.budget),
@@ -197,11 +196,9 @@ export default function CampaignsPage() {
           </select>
         </div>
         <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Objective</span>
-          <select value={objective} onChange={(e) => setObjective(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
-            <option value="all">All Objectives</option>
-            {objectives.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Search</span>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นชื่อแคมเปญ…"
+            className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] outline-none w-[200px]" />
         </div>
         <div className="flex items-center gap-[9px]">
           <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Owner</span>

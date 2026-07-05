@@ -23,7 +23,8 @@ import { baht } from "@/lib/format";
 
 // Guideline sits just before Submit — a final pre-flight, not an early gate.
 const STEPS = ["Campaign Overview", "Content Plan", "KOL Plan", "Budget Allocation", "Auto Task Preview", "Guideline Checklist", "Submit"];
-const CMO_ROLE = /cmo|admin/i;
+// There is a single campaign approver (the CMO) — assigned automatically.
+const CMO_NAME = "Linnapat D.";
 
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
@@ -38,7 +39,7 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
   const [id] = useState(newCampaignId);
-  const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id) }));
+  const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [seq, setSeq] = useState(1);
@@ -181,6 +182,22 @@ function Overview({ brief, set, setBrief, branches, planner }: {
             {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
           </select>
         </div>
+        {/* Branch — directly under Brand */}
+        <div>
+          <label className={label}>Branch <span className="text-status-red">*</span> <span className="text-faint font-normal">· หลายสาขา ({brief.branches.length})</span></label>
+          <div className="flex flex-wrap gap-2">
+            {branches.length === 0 && <span className="text-[12px] text-faint">ไม่มีสาขาสำหรับแบรนด์นี้</span>}
+            {branches.map((br) => {
+              const on = brief.branches.includes(br);
+              return (
+                <label key={br} className="flex items-center gap-2 text-[12px] font-semibold px-[10px] py-[6px] rounded-[9px] border cursor-pointer"
+                  style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                  <input type="checkbox" checked={on} onChange={() => toggleBranch(br)} /> {br}
+                </label>
+              );
+            })}
+          </div>
+        </div>
         <div>
           <label className={label}>Campaign Type</label>
           <select value={brief.campaignType} onChange={(e) => set("campaignType", e.target.value)} className={field}>
@@ -224,23 +241,6 @@ function Overview({ brief, set, setBrief, branches, planner }: {
           )}
         </div>
 
-        {/* Branch multi-select */}
-        <div className="md:col-span-2">
-          <label className={label}>Branch <span className="text-status-red">*</span> <span className="text-faint font-normal">· เลือกได้หลายสาขา ({brief.branches.length})</span></label>
-          <div className="flex flex-wrap gap-2">
-            {branches.length === 0 && <span className="text-[12px] text-faint">ไม่มีสาขาสำหรับแบรนด์นี้</span>}
-            {branches.map((br) => {
-              const on = brief.branches.includes(br);
-              return (
-                <label key={br} className="flex items-center gap-2 text-[12.5px] font-semibold px-[11px] py-[7px] rounded-[9px] border cursor-pointer"
-                  style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
-                  <input type="checkbox" checked={on} onChange={() => toggleBranch(br)} /> {br}
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Dates */}
         <div>
           <label className={label}>Start Date <span className="text-status-red">*</span></label>
@@ -254,10 +254,6 @@ function Overview({ brief, set, setBrief, branches, planner }: {
         <div>
           <label className={label}>Launch Date <span className="text-status-red">*</span></label>
           <DatePicker value={brief.launchDate || null} onChange={(v) => set("launchDate", v)} min={brief.startDate || undefined} max={brief.endDate || undefined} />
-        </div>
-        <div>
-          <label className={label}>Approver (CMO) <span className="text-status-red">*</span></label>
-          <OwnerSelect value={brief.approver} onChange={(v) => set("approver", v)} roleMatch={CMO_ROLE} placeholder="เลือก CMO" />
         </div>
 
         <div className="md:col-span-2">
@@ -439,7 +435,6 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
                 </div>
               </div>
               <div className="grid md:grid-cols-3 gap-3">
-                <div className="md:col-span-2"><label className={label}>KOL Name / Page Name</label><input value={k.name} onChange={(e) => upd(k.id, { name: e.target.value })} className={field} placeholder="เช่น @tokyo.tom" /></div>
                 <div><label className={label}>KOL Type</label><select value={k.kolType} onChange={(e) => upd(k.id, { kolType: e.target.value })} className={field}>{KOL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
                 <div className="md:col-span-3">
                   <label className={label}>Platform <span className="text-faint font-normal">· ติ๊กได้หลาย platform</span></label>
@@ -455,6 +450,7 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
                     })}
                   </div>
                 </div>
+                <div className="md:col-span-3"><label className={label}>Content Required</label><Chips options={KOL_CONTENT} value={k.contentRequired} onChange={(v) => upd(k.id, { contentRequired: v })} /></div>
                 <div><label className={label}># Creator / Page</label><input value={k.count || ""} onChange={(e) => upd(k.id, { count: num(e.target.value) })} className={field} placeholder="1" /></div>
                 <div><label className={label}>Follower</label><input value={k.followers || ""} onChange={(e) => upd(k.id, { followers: num(e.target.value) })} className={field} placeholder="100000" /></div>
                 <div><label className={label}>Expected Reach</label><input value={k.expectedReach || ""} onChange={(e) => upd(k.id, { expectedReach: num(e.target.value) })} className={field} placeholder="50000" /></div>
@@ -480,7 +476,6 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
                 <div><label className={label}>Posting Start</label><DatePicker value={k.postingStart || null} onChange={(v) => upd(k.id, { postingStart: v })} max={k.postingEnd || undefined} invalid={!!outOfRange(k.postingStart)} /></div>
                 <div><label className={label}>Posting End</label><DatePicker value={k.postingEnd || null} onChange={(v) => upd(k.id, { postingEnd: v })} min={k.postingStart || undefined} /></div>
                 <div><label className={label}>Owner <span className="text-faint font-normal">· KOL team</span></label><OwnerSelect value={k.owner} onChange={(v) => upd(k.id, { owner: v })} team="KOL" /></div>
-                <div className="md:col-span-3"><label className={label}>Content Required</label><Chips options={KOL_CONTENT} value={k.contentRequired} onChange={(v) => upd(k.id, { contentRequired: v })} /></div>
                 <div className="md:col-span-3"><label className={label}>Note</label><input value={k.note} onChange={(e) => upd(k.id, { note: e.target.value })} className={field} /></div>
               </div>
             </div>

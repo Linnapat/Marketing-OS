@@ -293,8 +293,7 @@ export function validateSubmit(brief: CampaignBrief): string[] {
   if (!brief.startDate || !brief.endDate) e.push("Please select the Campaign Period (start and end date)");
   if (brief.startDate && brief.endDate && brief.endDate < brief.startDate) e.push("End Date must not be before Start Date");
   if (!brief.launchDate) e.push("Please select a Launch Date");
-  // Planner is auto (the logged-in user) and read-only — not a manual blocker.
-  if (!brief.approver) e.push("Please select an Approver (CMO)");
+  // Planner (logged-in user) and Approver (the single CMO) are both auto-set.
   if (!brief.audience.trim()) e.push("Please enter the Target Audience");
   if (!brief.mainMessage.trim()) e.push("Please enter the Key Message");
   if (!brief.offer.trim()) e.push("Please enter the Main Offer");
