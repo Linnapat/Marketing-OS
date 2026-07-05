@@ -5,9 +5,9 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { createCampaign } from "./campaigns";
+import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContent } from "./content";
 import { createGraphic, buildGraphic } from "./graphic";
 import { createKol, buildKol } from "./kol";
@@ -178,6 +178,30 @@ export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | nu
   const { data, error } = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
   if (error || !data?.data) return null;
   return data.data as CampaignBrief;
+}
+
+/** Two-way sync: a New Post created in the Content Calendar is written back into
+ *  its campaign's Content Plan (the brief). No-op when the campaign has no brief
+ *  (e.g. not created via the builder) or Supabase isn't configured. */
+export async function appendPostToBrief(campaignName: string, post: {
+  title: string; platforms?: string[]; plat: string; day: number; time?: string;
+}): Promise<void> {
+  const db = supabase();
+  if (!db || !campaignName || campaignName === "—") return;
+  const camp = (await fetchCampaigns()).find((c) => c.name === campaignName);
+  if (!camp) return;
+  const brief = await fetchCampaignBrief(camp.id);
+  if (!brief) return;
+  const seq = brief.content.length + 1;
+  const item: BriefContentItem = {
+    ...emptyContentItem(seq),
+    id: `ci-cal-${Date.now()}`,
+    title: post.title,
+    platforms: post.platforms?.length ? post.platforms : [post.plat],
+    publishDate: `2026-07-${String(Math.max(1, Math.min(31, post.day))).padStart(2, "0")}`,
+  };
+  brief.content = [...brief.content, item];
+  await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
 }
 
 /** Append an approval-log entry + status change to a saved brief. */

@@ -14,6 +14,7 @@ import {
 } from "@/lib/data/content";
 import { fetchContent, createContent } from "@/lib/db/content";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { appendPostToBrief } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
@@ -46,6 +47,8 @@ export default function ContentPage() {
   const [open, setOpen] = useState<ContentItem | null>(null);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [newOpen, setNewOpen] = useState(false);
+  const [newDay, setNewDay] = useState<number | null>(null);
+  const openNew = (day?: number) => { setNewDay(day ?? null); setNewOpen(true); };
 
   useEffect(() => {
     let alive = true;
@@ -60,6 +63,10 @@ export default function ContentPage() {
     setNewOpen(false);
     const created = await createContent(p);
     setPosts((ps) => [created, ...ps]);
+    // Two-way sync: write the new post back into its campaign's Content Plan.
+    if (p.campaign && p.campaign !== "—") {
+      appendPostToBrief(p.campaign, { title: p.title, platforms: p.platforms, plat: p.plat, day: p.day, time: p.time }).catch(() => {});
+    }
   };
 
   return (
@@ -68,7 +75,7 @@ export default function ContentPage() {
         eyebrow="Content Command Center"
         title="Content Calendar"
         subtitle={`${items.length} posts this month · plan, caption, approve, schedule, publish`}
-        right={<button onClick={() => setNewOpen(true)} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]">+ New Post</button>}
+        right={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]">+ New Post</button>}
       />
 
       {/* Brand overview cards */}
@@ -101,9 +108,9 @@ export default function ContentPage() {
       </div>
 
       <div className="mt-5">
-        {view === "month" && <MonthView items={items} onOpen={setOpen} />}
+        {view === "month" && <MonthView items={items} onOpen={setOpen} onNew={openNew} />}
         {view === "week" && <WeekView items={items} onOpen={setOpen} />}
-        {view === "list" && <ListView items={items} onOpen={setOpen} />}
+        {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} />}
         {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
       </div>
 
@@ -117,17 +124,17 @@ export default function ContentPage() {
           }}
         />
       )}
-      {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} />}
+      {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} initialDay={newDay} />}
     </>
   );
 }
 
-function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCreate: (p: ContentItem) => void; count: number }) {
+function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () => void; onCreate: (p: ContentItem) => void; count: number; initialDay?: number | null }) {
   const [title, setTitle] = useState("");
   const [b, setB] = useState<BrandId>("teppen");
   const [plats, setPlats] = useState<string[]>([PLATFORMS[0]]);
   const [campaign, setCampaign] = useState("");
-  const [day, setDay] = useState("27");
+  const [day, setDay] = useState(initialDay ? String(initialDay) : "27");
   const [time, setTime] = useState("10:00");
   const [owner, setOwner] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -219,7 +226,7 @@ function NewPostModal({ onClose, onCreate, count }: { onClose: () => void; onCre
   );
 }
 
-function MonthView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: ContentItem) => void }) {
+function MonthView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
   const cells: (number | null)[] = [
     ...Array(JULY_FIRST_DOW).fill(null),
     ...Array.from({ length: DAYS_IN_JULY }, (_, i) => i + 1),
@@ -233,8 +240,13 @@ function MonthView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Conten
         {cells.map((day, i) => {
           const dayItems = day ? items.filter((c) => c.day === day) : [];
           return (
-            <div key={i} className="min-h-[104px] border-r border-b border-line4 p-[6px] last:border-r-0" style={{ background: day ? "#fff" : "#FBF9F4" }}>
-              {day && <div className="text-[11px] font-bold text-faint mb-1 px-1">{day}</div>}
+            <div key={i} className="group min-h-[104px] border-r border-b border-line4 p-[6px] last:border-r-0 relative" style={{ background: day ? "#fff" : "#FBF9F4" }}>
+              {day && (
+                <div className="flex items-center justify-between mb-1 px-1">
+                  <span className="text-[11px] font-bold text-faint">{day}</span>
+                  <button onClick={() => onNew(day)} title="New post" className="opacity-0 group-hover:opacity-100 transition text-[13px] leading-none text-accent font-bold w-4 h-4 flex items-center justify-center">+</button>
+                </div>
+              )}
               <div className="flex flex-col gap-[3px]">
                 {dayItems.map((c) => (
                   <button key={c.id} onClick={() => onOpen(c)} className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition" style={{ background: "#FAF8F4", border: "1px solid #F0EBE0" }}>
@@ -281,9 +293,13 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
   );
 }
 
-function ListView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: ContentItem) => void }) {
+function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
+        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule</span>
+        <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ New Post</button>
+      </div>
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: "60px 2fr 1.2fr 1fr 1fr 1fr 1fr" }}>
         <div>Date</div><div>Content</div><div>Campaign</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
