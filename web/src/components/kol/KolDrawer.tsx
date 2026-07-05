@@ -74,7 +74,7 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5">
-          {tab === "profile" && <ProfileTab kol={kol} />}
+          {tab === "profile" && <ProfileTab kol={kol} onUpdate={onUpdate} />}
           {tab === "campaign" && <CampaignTab kol={kol} />}
           {tab === "deliverables" && <DeliverablesTab items={deliverables} />}
           {tab === "brief" && <BriefTab kol={kol} />}
@@ -96,16 +96,46 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function ProfileTab({ kol }: { kol: Kol }) {
+function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
+  const [kolType, setKolType] = useState(kol.kolType);
+  const [followers, setFollowers] = useState(kol.followers || 0);
+  const [avgReach, setAvgReach] = useState(kol.expectedReach || 0);
+  const [audienceFit, setAudienceFit] = useState(kol.audienceFit);
+  const [contentStyle, setContentStyle] = useState(kol.contentStyle);
+  const [pastCollab, setPastCollab] = useState(kol.pastCollab);
+  const [contactInfo, setContactInfo] = useState(kol.contactInfo);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const dirty = kolType !== kol.kolType || followers !== (kol.followers || 0) || avgReach !== (kol.expectedReach || 0)
+    || audienceFit !== kol.audienceFit || contentStyle !== kol.contentStyle || pastCollab !== kol.pastCollab || contactInfo !== kol.contactInfo;
+
+  const save = async () => {
+    setBusy(true);
+    const next: Kol = { ...kol, kolType, followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab, contactInfo };
+    try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    finally { setBusy(false); }
+  };
+
+  const field = "w-full text-[13.5px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none";
+  const lbl = "block text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]";
+  const AUDIENCE = ["Very High", "High", "Medium", "Low", "TBD"];
+  const audienceOptions = AUDIENCE.includes(audienceFit) ? AUDIENCE : [audienceFit, ...AUDIENCE];
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <Field label="KOL Type" value={kol.kolType} />
-      <Field label="Followers" value={fmtFollow(kol.followers)} />
-      <Field label="Avg Reach" value={fmtFollow(kol.expectedReach)} />
-      <Field label="Audience Fit" value={kol.audienceFit} />
-      <div className="col-span-2"><Field label="Content Style" value={kol.contentStyle} /></div>
-      <div className="col-span-2"><Field label="Past Collaboration" value={kol.pastCollab} /></div>
-      <div className="col-span-2"><Field label="Contact / Agency" value={kol.contactInfo} /></div>
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div><label className={lbl}>KOL Type</label><input value={kolType} onChange={(e) => setKolType(e.target.value)} className={field} placeholder="e.g. Food Blogger" /></div>
+        <div><label className={lbl}>Followers</label><input type="number" value={followers || ""} onChange={(e) => setFollowers(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
+        <div><label className={lbl}>Avg Reach</label><input type="number" value={avgReach || ""} onChange={(e) => setAvgReach(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
+        <div><label className={lbl}>Audience Fit</label><select value={audienceFit} onChange={(e) => setAudienceFit(e.target.value)} className={field}>{audienceOptions.map((a) => <option key={a}>{a}</option>)}</select></div>
+      </div>
+      <div><label className={lbl}>Content Style</label><input value={contentStyle} onChange={(e) => setContentStyle(e.target.value)} className={field} placeholder="e.g. Food photography + short video" /></div>
+      <div><label className={lbl}>Past Collaboration</label><input value={pastCollab} onChange={(e) => setPastCollab(e.target.value)} className={field} placeholder="e.g. Wagyu teaser Jun 2025 — 3.8× ROI" /></div>
+      <div><label className={lbl}>Contact / Agency</label><input value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className={field} placeholder="Agency / email / phone" /></div>
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={busy || !dirty} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">{busy ? "Saving…" : "Save Profile"}</button>
+        {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ Saved</span>}
+      </div>
     </div>
   );
 }
