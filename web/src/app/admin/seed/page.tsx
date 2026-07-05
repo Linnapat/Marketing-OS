@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRole } from "@/lib/role";
 
 // Browser-friendly one-time seeding tool. Paste the service_role key and click
 // Seed — it POSTs to /api/admin/seed. The key stays in this tab and is sent
 // only to your own API over HTTPS. Delete/ignore this page after seeding.
 export default function AdminSeedPage() {
+  const { role } = useRole();
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -34,6 +36,19 @@ export default function AdminSeedPage() {
       setBusy(false);
     }
   };
+
+  // Admin-only: seeding writes to every table, so keep it off-limits to others.
+  if (role !== "CMO / Admin") {
+    return (
+      <div style={{ maxWidth: 620, margin: "0 auto", padding: "40px 20px", fontFamily: "system-ui, sans-serif" }}>
+        <div style={{ background: "#F5EFE4", border: "1px solid #E8D5AA", borderRadius: 12, padding: "24px", textAlign: "center" }}>
+          <div style={{ fontSize: 30, marginBottom: 8 }}>🔒</div>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>Admin only</div>
+          <div style={{ fontSize: 13, color: "#6b6258", marginTop: 6 }}>This database seeding tool is restricted to CMO / Admin.</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 620, margin: "0 auto", padding: "40px 20px", fontFamily: "system-ui, sans-serif" }}>
