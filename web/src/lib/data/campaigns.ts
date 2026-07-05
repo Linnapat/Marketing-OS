@@ -206,10 +206,11 @@ export function monthlySummary(brandFilter: BrandId | "all", list: CampaignRow[]
   const camps = list.filter((c) => brandFilter === "all" || c.b === brandFilter);
   const budget = camps.reduce((s, c) => s + c.budget, 0);
   const spend = camps.reduce((s, c) => s + c.spend, 0);
-  const rev = camps.reduce((s, c) => s + (c.roi > 0 && c.spend > 0 ? c.spend * c.roi : c.budget * 2.8), 0);
+  // Revenue only from campaigns with a real ROI — no fabricated multiplier.
+  const rev = camps.reduce((s, c) => s + (c.roi > 0 && c.spend > 0 ? c.spend * c.roi : 0), 0);
   const gp = Math.round(rev * 0.38);
-  const roiCamps = camps.filter((c) => c.roi > 0);
-  const avgRoas = roiCamps.length ? roiCamps.reduce((s, c) => s + c.roi, 0) / roiCamps.length : 2.8;
+  const roiCamps = camps.filter((c) => c.roi > 0 && c.spend > 0);
+  const avgRoas = roiCamps.length ? roiCamps.reduce((s, c) => s + c.roi, 0) / roiCamps.length : 0;
   const bars = (["teppen", "omakase", "mainichi", "touka"] as BrandId[]).map((k) => ({
     id: k,
     name: brandName(k),
@@ -223,8 +224,8 @@ export function monthlySummary(brandFilter: BrandId | "all", list: CampaignRow[]
     spendPct: budget ? Math.round((spend / budget) * 100) : 0,
     revenue: baht(Math.round(rev), { compact: true }),
     gp: baht(gp, { compact: true }),
-    roas: `${avgRoas.toFixed(1)}×`,
-    roasColor: avgRoas >= 3 ? "#7DC87D" : avgRoas >= 2 ? "#E8C87D" : "#F4A080",
+    roas: avgRoas > 0 ? `${avgRoas.toFixed(1)}×` : "—",
+    roasColor: avgRoas >= 3 ? "#7DC87D" : avgRoas >= 2 ? "#E8C87D" : avgRoas > 0 ? "#F4A080" : "#9A9387",
     count: camps.length,
     activeCount: camps.filter((c) => ["Active", "In Progress"].includes(c.status)).length,
     bars: bars.map((b) => ({ ...b, budgetF: baht(b.budget, { compact: true }), barW: Math.round((b.budget / maxB) * 100) })),

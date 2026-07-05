@@ -94,7 +94,9 @@ export function brandOverview(source: ContentItem[] = CONTENT): BrandCard[] {
       total: items.length,
       scheduled: items.filter((c) => c.status === "Scheduled").length,
       waitApproval: items.filter((c) => c.status === "Waiting Approval").length,
-      missingAsset: items.filter((c) => c.assetStatus === "No Asset" || c.assetStatus === "Missing Asset").length,
+      // Asset still owed = any pending-design state (same assetStatus shown in the
+      // detail modal). "No Asset" means no graphic is needed, so it doesn't count.
+      missingAsset: items.filter((c) => ["Waiting Design", "Missing Asset", "Missing", "In Progress"].includes(c.assetStatus)).length,
       failed: items.filter((c) => c.status === "Failed").length,
     };
   });
