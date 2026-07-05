@@ -7,6 +7,7 @@ import { Plus, Copy, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { useAuth } from "@/lib/auth";
 import { BRAND_ORDER, BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA } from "@/lib/data/settings";
@@ -317,15 +318,6 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
   const add = () => setBrief((b) => ({ ...b, content: [...b.content, { ...emptyContentItem(nextSeq()) }] }));
   const dup = (id: string) => setBrief((b) => { const src = b.content.find((c) => c.id === id); return src ? { ...b, content: [...b.content, { ...src, id: `ci-${nextSeq()}` }] } : b; });
   const rm = (id: string) => setBrief((b) => ({ ...b, content: b.content.filter((c) => c.id !== id) }));
-  // Toggle a platform (adds/removes it and clears its asset pairs when removed).
-  const togglePlatform = (c: BriefContentItem, p: string) => {
-    const on = c.platforms.includes(p);
-    upd(c.id, { platforms: on ? c.platforms.filter((x) => x !== p) : [...c.platforms, p], assets: on ? c.assets.filter((a) => a.platform !== p) : c.assets });
-  };
-  const toggleAsset = (c: BriefContentItem, platform: string, size: string) => {
-    const has = c.assets.some((a) => a.platform === platform && a.size === size);
-    upd(c.id, { assets: has ? c.assets.filter((a) => !(a.platform === platform && a.size === size)) : [...c.assets, { platform, size }] });
-  };
 
   return (
     <Panel title="Content Plan" hint="เลือก Platform ได้หลายที่ (ช่องติ๊ก) แล้วเลือก Asset Size ของแต่ละ platform — Owner ทีม Creative จะเลือกทีหลัง">
@@ -340,64 +332,7 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
                   <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
                 </div>
               </div>
-              <div className="grid md:grid-cols-2 gap-3">
-                <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={c.title} onChange={(e) => upd(c.id, { title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
-                <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={c.subHead} onChange={(e) => upd(c.id, { subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
-                <div><label className={label}>Content Type</label><select value={c.type} onChange={(e) => upd(c.id, { type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-                <div><label className={label}>Publish Date</label><DatePicker value={c.publishDate || null} onChange={(v) => upd(c.id, { publishDate: v })} invalid={!!outOfRange(c.publishDate)} /></div>
-                <div><label className={label}>Priority</label><select value={c.priority} onChange={(e) => upd(c.id, { priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
-                <div className="flex items-end gap-4">
-                  <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredGraphic} onChange={(e) => upd(c.id, { requiredGraphic: e.target.checked })} /> Required Graphic</label>
-                  <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={c.requiredVideo} onChange={(e) => upd(c.id, { requiredVideo: e.target.checked })} /> Required Video</label>
-                </div>
-
-                {/* Platform + Asset Size — multi-select checkboxes */}
-                <div className="md:col-span-2">
-                  <label className={label}>Platforms &amp; Asset Sizes <span className="text-status-red">*</span> <span className="text-faint font-normal">· ติ๊กได้หลาย platform หลายขนาด</span></label>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {CONTENT_PLATFORMS.map((p) => {
-                      const on = c.platforms.includes(p);
-                      return (
-                        <label key={p} className="flex items-center gap-2 text-[12px] font-semibold px-[11px] py-[6px] rounded-[9px] border cursor-pointer"
-                          style={on ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
-                          <input type="checkbox" checked={on} onChange={() => togglePlatform(c, p)} /> {p}
-                        </label>
-                      );
-                    })}
-                  </div>
-                  {c.platforms.map((p) => (
-                    <div key={p} className="mb-2 pl-2 border-l-2" style={{ borderColor: "#E5DECF" }}>
-                      <div className="text-[11.5px] font-bold text-muted mb-1">{p} · sizes {!c.assets.some((a) => a.platform === p) && <span className="text-status-red font-normal">(เลือกอย่างน้อย 1)</span>}</div>
-                      <div className="flex flex-wrap gap-2">
-                        {assetSizesFor(p).map((s) => {
-                          const on = c.assets.some((a) => a.platform === p && a.size === s);
-                          return (
-                            <label key={s} className="flex items-center gap-[6px] text-[11.5px] font-semibold px-[10px] py-[5px] rounded-pill border cursor-pointer"
-                              style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
-                              <input type="checkbox" checked={on} onChange={() => toggleAsset(c, p, s)} /> {s}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Content brief block */}
-                <div className="md:col-span-2 mt-1 pt-3 border-t border-line3 grid md:grid-cols-2 gap-3">
-                  <div><label className={label}>Main Message (item)</label><input value={c.mainMessage} onChange={(e) => upd(c.id, { mainMessage: e.target.value })} className={field} /></div>
-                  <div><label className={label}>Caption Direction</label><input value={c.captionDirection} onChange={(e) => upd(c.id, { captionDirection: e.target.value })} className={field} /></div>
-                  <div><label className={label}>CTA</label><input value={c.cta} onChange={(e) => upd(c.id, { cta: e.target.value })} className={field} placeholder="เช่น จองโต๊ะ / สั่งเลย" /></div>
-                  <div><label className={label}>Product / Menu Highlight</label><input value={c.productHighlight} onChange={(e) => upd(c.id, { productHighlight: e.target.value })} className={field} /></div>
-                  <div><label className={label}>Mandatory Text</label><input value={c.mandatoryText} onChange={(e) => upd(c.id, { mandatoryText: e.target.value })} className={field} placeholder="ข้อความบังคับ เช่น เงื่อนไขโปร" /></div>
-                  <div className="md:col-span-2"><label className={label}>Do / Don&apos;t</label><input value={c.doDont} onChange={(e) => upd(c.id, { doDont: e.target.value })} className={field} /></div>
-                  <div><label className={label}>Reference Brief Link <span className="text-status-red">*</span></label><input value={c.referenceBriefLink} onChange={(e) => upd(c.id, { referenceBriefLink: e.target.value })} className={field} placeholder="https://…" /></div>
-                  <div><label className={label}>Reference Image Link</label><input value={c.referenceImageLink} onChange={(e) => upd(c.id, { referenceImageLink: e.target.value })} className={field} placeholder="https://…" /></div>
-                  <div><label className={label}>Google Drive Link</label><input value={c.driveLink} onChange={(e) => upd(c.id, { driveLink: e.target.value })} className={field} placeholder="https://drive…" /></div>
-                  <div><label className={label}>Competitor / Inspiration Link</label><input value={c.competitorLink} onChange={(e) => upd(c.id, { competitorLink: e.target.value })} className={field} placeholder="https://…" /></div>
-                  <div className="md:col-span-2"><label className={label}>Note</label><input value={c.note} onChange={(e) => upd(c.id, { note: e.target.value })} className={field} /></div>
-                </div>
-              </div>
+              <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} />
             </div>
           );
         })}

@@ -14,9 +14,10 @@ import {
 } from "@/lib/data/content";
 import { fetchContent, createContent } from "@/lib/db/content";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { appendPostToBrief } from "@/lib/db/brief";
+import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { ContentItemForm } from "@/components/content/ContentItemForm";
+import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 
 /** Row of platform badges (one per selected channel). */
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
@@ -59,14 +60,12 @@ export default function ContentPage() {
   const items = useMemo(() => posts.filter((c) => brand === "all" || c.b === brand), [posts, brand]);
   const cards = useMemo(() => brandOverview(posts), [posts]);
 
-  const addPost = async (p: ContentItem) => {
+  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string) => {
     setNewOpen(false);
     const created = await createContent(p);
     setPosts((ps) => [created, ...ps]);
-    // Two-way sync: write the new post back into its campaign's Content Plan.
-    if (p.campaign && p.campaign !== "—") {
-      appendPostToBrief(p.campaign, { title: p.title, platforms: p.platforms, plat: p.plat, day: p.day, time: p.time }).catch(() => {});
-    }
+    // Two-way sync: write the full content-item back into its campaign's Content Plan.
+    if (campaign && campaign !== "—") appendBriefItem(campaign, briefItem).catch(() => {});
   };
 
   return (
@@ -129,96 +128,74 @@ export default function ContentPage() {
   );
 }
 
-function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () => void; onCreate: (p: ContentItem) => void; count: number; initialDay?: number | null }) {
-  const [title, setTitle] = useState("");
+function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string) => void; count: number; initialDay?: number | null }) {
   const [b, setB] = useState<BrandId>("teppen");
-  const [plats, setPlats] = useState<string[]>([PLATFORMS[0]]);
   const [campaign, setCampaign] = useState("");
-  const [day, setDay] = useState(initialDay ? String(initialDay) : "27");
   const [time, setTime] = useState("10:00");
-  const [owner, setOwner] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Same content-item "template" as the Campaign Builder's Content Plan.
+  const [item, setItem] = useState<BriefContentItem>(() => {
+    const it = emptyContentItem(1);
+    return initialDay ? { ...it, publishDate: `2026-07-${String(initialDay).padStart(2, "0")}` } : it;
+  });
+  const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
 
   useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  // Campaigns for the chosen brand; clear the pick when it no longer fits.
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const togglePlat = (p: string) => setPlats((ps) => ps.includes(p) ? ps.filter((x) => x !== p) : [...ps, p]);
-  const canCreate = title.trim() && plats.length > 0;
+  const canCreate = item.title.trim() && item.platforms.length > 0;
   const create = () => {
     if (!canCreate) return;
-    const d = Math.max(1, Math.min(31, parseInt(day) || 1));
-    onCreate({
+    const day = item.publishDate ? Math.max(1, Math.min(31, Number(item.publishDate.split("-")[2]) || 1)) : (initialDay ?? 27);
+    const post: ContentItem = {
       id: `c${String(count + 1).padStart(2, "0")}-new`,
-      day: d, time, title: title.trim(), b, plat: plats[0], platforms: plats, status: "Draft",
-      campaign: campaign.trim() || "—", owner: owner.trim() || "Unassigned",
+      day, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
+      status: "Draft", campaign: campaign.trim() || "—", owner: "Unassigned",
       caption: "", hashtags: "", cta: "",
-      captionStatus: "Missing", assetStatus: "No Asset", approvalStatus: "Draft", publishStatus: "Draft",
-    });
+      captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
+      approvalStatus: "Draft", publishStatus: "Draft",
+    };
+    onCreate(post, item, campaign.trim());
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-surface rounded-cardLg w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-[16px] font-extrabold mb-4">New Post</div>
+        <div className="text-[16px] font-extrabold mb-1">New Post</div>
+        <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — บันทึกแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="flex flex-col gap-4">
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Content Title <span className="text-status-red">*</span></label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Wagyu weekend teaser" autoFocus />
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-            <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
-              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Platforms <span className="text-status-red">*</span> <span className="text-faint font-normal">· choose one or more</span></label>
-            <div className="flex flex-wrap gap-2">
-              {PLATFORMS.map((p) => {
-                const on = plats.includes(p);
-                const pi = platIcon(p);
-                return (
-                  <button key={p} onClick={() => togglePlat(p)} className="flex items-center gap-[6px] text-[12px] px-[11px] py-[6px] rounded-pill transition"
-                    style={on ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>
-                    <span className="rounded-[4px] flex items-center justify-center font-bold" style={{ width: 15, height: 15, fontSize: 7, background: pi.bg, color: pi.fg }}>{pi.icon}</span>
-                    {p}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
-            <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-              <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
-              {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
+          {/* Calendar context: brand, campaign, time */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Day (July)</label>
-              <input type="number" min={1} max={31} value={day} onChange={(e) => setDay(e.target.value)} className={field} />
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
+              <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
+                {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+              <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
+                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+                {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Time</label>
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} />
             </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Owner</label>
-              <OwnerSelect value={owner} onChange={setOwner} team="Planner" />
-            </div>
           </div>
+          {/* Shared content-item template */}
+          <ContentItemForm item={item} onChange={onChange} />
         </div>
         <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
       </div>
