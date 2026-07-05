@@ -2,8 +2,10 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, deliverableProgress } from "@/lib/data/graphic";
 import { BrandId } from "@/lib/brands";
+import { fetchContent, updateContent } from "./content";
+import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
@@ -32,6 +34,30 @@ export async function updateGraphic(g: Graphic): Promise<void> {
   await db.from("graphic_requests")
     .update({ stage: g.stage, blocker: g.blocker, next_action: g.nextAction, data: g })
     .eq("data->>id", String(g.id));
+}
+
+/** When every deliverable of a graphic is approved, attach the approved asset
+ *  links to the linked Content Calendar post and mark its asset ready. Matched
+ *  by campaign + content-item title. No-op when nothing lines up or the graphic
+ *  isn't fully approved yet. Safe to call on every deliverable save. */
+export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentItem | null> {
+  if (!deliverableProgress(g).ready) return null;
+  const assets = (g.deliverables ?? [])
+    .filter((d) => d.status === "Approved" && d.assetLink)
+    .map((d) => ({ platform: d.platform, size: d.size, link: d.assetLink }));
+  if (!assets.length) return null;
+
+  const posts = await fetchContent();
+  const key = (s: string) => (s || "").trim().toLowerCase();
+  const post = posts.find(
+    (c) => key(c.campaign) === key(g.campaign) &&
+      (key(c.title) === key(g.contentItem) || (g.contentItem && key(g.title).includes(key(c.title)))),
+  );
+  if (!post) return null;
+
+  const next = attachApprovedAssets(post, assets);
+  await updateContent(next);
+  return next;
 }
 
 /** Build a full Graphic from the request form, filling sensible defaults. */

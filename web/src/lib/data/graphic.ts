@@ -55,6 +55,15 @@ export function emptyDeliverable(platform: string, size: string, refLink = ""): 
   return { platform, size, refLink, assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] };
 }
 
+/** For graphics created before deliverables existed, derive rows from the
+ *  request's platform + size fields so the deliverable board still works. */
+export function deriveDeliverables(g: Graphic): GraphicDeliverable[] {
+  const plats = (g.platform || "").split(/[+,/]/).map((s) => s.trim()).filter(Boolean);
+  const sizes = (g.size || "").split(/[·,]/).map((s) => s.trim()).filter(Boolean);
+  const list = plats.length ? plats : ["Asset"];
+  return list.map((p, i) => emptyDeliverable(p, sizes.length === list.length ? sizes[i] : (sizes.join(" · ") || "—")));
+}
+
 /** Progress rollup for a request's deliverables. */
 export function deliverableProgress(g: Graphic) {
   const d = g.deliverables ?? [];

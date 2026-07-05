@@ -29,6 +29,12 @@ export interface ContentItem {
   approvedAt?: string;
   feedbackRounds?: number;
   feedback?: { round: number; reason: string; by: string; at: string }[];
+  /** Approved graphic deliverables attached from the Graphic Request module.
+   *  Populated automatically once every deliverable of the linked graphic is approved. */
+  assets?: { platform: string; size: string; link: string }[];
+  /** Manual-publish trail — set when someone clicks Publish in the Content Calendar. */
+  publishedBy?: string;
+  publishedAt?: string;
 }
 
 export const CONTENT: ContentItem[] = [
@@ -115,4 +121,32 @@ export function preflight(c: ContentItem): { label: string; ok: boolean }[] {
     { label: "Permission valid", ok: false },
     { label: "Approval completed", ok: c.approvalStatus === "Approved" },
   ];
+}
+
+/** Manual-publish gate. Auto-publish is deferred (no Meta), so publishing is a
+ *  manual action — but only allowed once the creative is actually ready:
+ *  caption ready + asset approved + content approved. Account/permission checks
+ *  are skipped here because the post is published by hand outside the OS. */
+export function canPublish(c: ContentItem): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!["Ready", "Approved"].includes(c.captionStatus)) reasons.push("Caption ยังไม่พร้อม (ต้อง Ready/Approved)");
+  if (!["Approved", "Final"].includes(c.assetStatus)) reasons.push("Asset ยังไม่พร้อม — รอทีมกราฟฟิกส่ง & อนุมัติครบ");
+  if (c.approvalStatus !== "Approved") reasons.push("Content ยังไม่ถูกอนุมัติ");
+  if (["Published", "Scheduled in OS", "Queued"].includes(c.publishStatus)) reasons.push("โพสต์นี้ publish/queue ไปแล้ว");
+  return { ok: reasons.length === 0, reasons };
+}
+
+/** Attach approved graphic deliverables to a content post and mark its asset
+ *  ready. Returns a fresh object (no mutation) so callers can persist + bubble up. */
+export function attachApprovedAssets(
+  c: ContentItem,
+  assets: { platform: string; size: string; link: string }[],
+): ContentItem {
+  const clean = assets.filter((a) => a.link);
+  return {
+    ...c,
+    assets: clean,
+    assetStatus: clean.length ? "Approved" : c.assetStatus,
+    status: c.status === "Waiting Design" ? "Draft" : c.status,
+  };
 }

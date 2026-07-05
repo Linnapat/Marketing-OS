@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import {
-  Graphic, GraphicDeliverable, FEEDBACK, VERSIONS, stageTone, PRIORITY_TONE, briefFields,
-  deliverableProgress, stageFromDeliverables,
+  Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
+  deliverableProgress, stageFromDeliverables, deriveDeliverables,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
-import { updateGraphic } from "@/lib/db/graphic";
+import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
@@ -18,7 +18,6 @@ type GTab = (typeof TABS)[number][0];
 export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }: { g: Graphic; initialTab?: GTab; onClose: () => void; onUpdate?: (g: Graphic) => void }) {
   const [tab, setTab] = useState<GTab>(initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
-  const versions = VERSIONS.filter((v) => v.gid === g.id);
   const { member, user } = useAuth();
   const designer = member?.name ?? user?.email ?? g.designer;
   const openFb = feedback.filter((f) => f.status === "Open").length;
@@ -117,31 +116,7 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
             </div>
           )}
 
-          {tab === "assets" && (
-            (g.deliverables && g.deliverables.length > 0)
-              ? <DeliverablesEditor g={g} me={designer} onUpdate={onUpdate} />
-              : (
-                <div className="flex flex-col gap-3">
-                  {versions.length === 0 && <div className="text-[13px] text-faint text-center py-8">No versions uploaded yet.</div>}
-                  {versions.map((v, i) => (
-                    <div key={i} className="bg-surface border border-line rounded-card p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13.5px] font-bold">{v.name}</span>
-                          {v.isLatest && <StatusBadge tone="blue">Latest</StatusBadge>}
-                        </div>
-                        <StatusBadge tone={v.approvalStatus === "Approved" ? "green" : v.approvalStatus.includes("Rejected") || v.approvalStatus.includes("revision") ? "red" : "gold"}>{v.approvalStatus}</StatusBadge>
-                      </div>
-                      <div className="flex items-center gap-4 text-[11.5px] text-faint">
-                        <span>Uploaded by {v.uploadedBy}</span><span>{v.uploadedAt}</span>
-                        {v.feedbackCount > 0 && <span className="text-status-red font-semibold">💬 {v.feedbackCount}</span>}
-                      </div>
-                    </div>
-                  ))}
-                  <SubmitWork g={g} designer={designer} onUpdate={onUpdate} />
-                </div>
-              )
-          )}
+          {tab === "assets" && <DeliverablesEditor g={g} me={designer} onUpdate={onUpdate} />}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
@@ -204,7 +179,8 @@ const DEL_TONE: Record<string, "neutral" | "gold" | "green" | "red"> = {
 // brief. The graphic team pastes a link + source per row and submits it; the
 // requester approves or sends it back — each row moves independently.
 function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpdate?: (g: Graphic) => void }) {
-  const [dels, setDels] = useState<GraphicDeliverable[]>(() => (g.deliverables ?? []).map((d) => ({ ...d })));
+  const [dels, setDels] = useState<GraphicDeliverable[]>(() =>
+    g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
   const [revising, setRevising] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const prog = deliverableProgress({ ...g, deliverables: dels });
@@ -212,10 +188,13 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
   const persist = (next: GraphicDeliverable[]) => {
     setDels(next);
     const ng: Graphic = { ...g, deliverables: next };
+    const ready = deliverableProgress(ng).ready;
     ng.stage = stageFromDeliverables(ng);
-    ng.blocker = prog.ready ? null : g.blocker;
-    ng.nextAction = stageFromDeliverables(ng) === "Approved" ? "Ready to deploy — attach to Content Calendar" : g.nextAction;
+    ng.blocker = ready ? null : g.blocker;
+    ng.nextAction = ready ? "Ready to deploy — attached to Content Calendar" : g.nextAction;
     updateGraphic(ng); onUpdate?.(ng);
+    // Fully approved → push approved asset links onto the linked content post.
+    if (ready) syncApprovedAssetsToContent(ng).catch(() => {});
   };
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
   const submit = (i: number) => {
@@ -290,51 +269,6 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// Legacy single-link submit for graphics created before deliverables existed.
-function SubmitWork({ g, designer, onUpdate }: { g: Graphic; designer: string; onUpdate?: (g: Graphic) => void }) {
-  const [link, setLink] = useState(g.deliverableLink ?? "");
-  const [source, setSource] = useState(g.sourceLink ?? "");
-  const [busy, setBusy] = useState(false);
-  const submitted = /Waiting Feedback|Waiting Approval|Approved|Delivered/i.test(g.stage);
-  const field = "w-full text-[13px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none";
-
-  const submit = async () => {
-    if (!link.trim()) return;
-    setBusy(true);
-    const next: Graphic = {
-      ...g,
-      deliverableLink: link.trim(), sourceLink: source.trim() || g.sourceLink,
-      submittedBy: designer, submittedAt: new Date().toISOString(),
-      stage: "Waiting Feedback", blocker: null,
-      pendingApprover: g.requester, nextAction: "Requester to review submitted work",
-    };
-    try { await updateGraphic(next); onUpdate?.(next); } finally { setBusy(false); }
-  };
-
-  return (
-    <div className="rounded-card border border-line2 p-4" style={{ background: "#FBF9F4" }}>
-      <div className="text-[12.5px] font-bold text-ink mb-1">Submit work (graphic team)</div>
-      <div className="text-[11.5px] text-faint mb-3">วางลิงก์งานที่ทำเสร็จ แล้วกด Submit for Review — สถานะจะไปที่ “Waiting Feedback” ให้ผู้ขอรีวิว</div>
-      <div className="flex flex-col gap-2">
-        <div>
-          <label className="block text-[11px] font-bold text-faint mb-[4px]">Artwork link <span className="text-status-red">*</span></label>
-          <input value={link} onChange={(e) => setLink(e.target.value)} className={field} placeholder="https://… (Drive / Figma / PNG)" />
-        </div>
-        <div>
-          <label className="block text-[11px] font-bold text-faint mb-[4px]">Source file link</label>
-          <input value={source} onChange={(e) => setSource(e.target.value)} className={field} placeholder="https://… (AI / PSD / Figma)" />
-        </div>
-        <div className="flex items-center gap-3 mt-1">
-          <button onClick={submit} disabled={!link.trim() || busy} className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[9px] disabled:opacity-40" style={{ background: "#211F1C" }}>
-            {busy ? "Submitting…" : submitted ? "Re-submit for Review" : "Submit for Review"}
-          </button>
-          {submitted && <span className="text-[12px] font-semibold text-status-green">✓ ส่งแล้ว · {g.submittedBy || designer}</span>}
-        </div>
-      </div>
     </div>
   );
 }

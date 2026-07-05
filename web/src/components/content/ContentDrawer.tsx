@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent } from "@/lib/db/content";
@@ -49,6 +49,15 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
       feedback: [...(item.feedback ?? []), { round, reason: r, by: reviewer, at: new Date().toISOString() }],
     });
     setReason(""); setRevising(false);
+  };
+
+  const gate = canPublish(item);
+  const publish = () => {
+    if (!gate.ok) return;
+    persist({
+      ...item, publishStatus: "Published", status: "Published",
+      publishedBy: reviewer, publishedAt: new Date().toISOString(),
+    });
   };
 
   const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none font-sans";
@@ -208,6 +217,30 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                 <div className="text-[12px] font-bold mb-1" style={{ color: "#1E3A8A" }}>Future Publish Integration</div>
                 <div className="text-[12px]" style={{ color: "#3B6BF5" }}>Meta connection not connected · Ready for future auto-publish once integrated.</div>
               </div>
+
+              {/* Approved assets attached from the Graphic Request module */}
+              <div>
+                <div className="text-[11.5px] font-bold text-muted mb-2">Approved assets {item.assets?.length ? `(${item.assets.length})` : ""}</div>
+                {item.assets && item.assets.length > 0 ? (
+                  <div className="flex flex-col gap-[7px]">
+                    {item.assets.map((a, i) => (
+                      <a key={i} href={a.link} target="_blank" rel="noreferrer"
+                        className="flex items-center justify-between px-[13px] py-[10px] rounded-[10px] border-[1.5px] hover:bg-ivory"
+                        style={{ borderColor: "#BFE0C4", background: "#F3FAF3" }}>
+                        <div className="flex items-center gap-[9px] min-w-0">
+                          <span className="text-[14px]">✅</span>
+                          <div className="min-w-0"><div className="text-[12.5px] font-semibold truncate">{a.platform}</div><div className="text-[11px] text-faint">{a.size}</div></div>
+                        </div>
+                        <span className="text-[11.5px] font-bold text-status-green flex-shrink-0">Open ↗</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[12px] text-faint px-[13px] py-[10px] rounded-[10px]" style={{ background: "#F7F4EE" }}>
+                    ยังไม่มี asset — จะแนบอัตโนมัติเมื่อทีมกราฟฟิกส่งงานและอนุมัติครบทุกชิ้นใน Graphic Request
+                  </div>
+                )}
+              </div>
               <div>
                 <div className="text-[11.5px] font-bold text-muted mb-2">Select channels</div>
                 <div className="flex flex-col gap-[7px]">
@@ -234,8 +267,31 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                   ))}
                 </div>
               </div>
-              <button className="text-[13.5px] font-bold py-3 rounded-[11px] cursor-not-allowed" style={{ background: "#E8E2D6", color: "#9A9387" }}>Auto-publish available after Meta connection</button>
-              <button className="text-[13.5px] font-bold py-3 rounded-[11px] bg-panel text-white">Save Schedule · Manual Post</button>
+              <button disabled className="text-[13.5px] font-bold py-3 rounded-[11px] cursor-not-allowed" style={{ background: "#E8E2D6", color: "#9A9387" }}>Auto-publish available after Meta connection</button>
+
+              {item.publishStatus === "Published" ? (
+                <div className="rounded-[11px] px-[14px] py-3 text-center" style={{ background: "#EFF7EF", border: "1px solid #BFE0C4" }}>
+                  <div className="text-[13px] font-bold text-status-green">✓ Published{item.publishedBy ? ` · ${item.publishedBy}` : ""}</div>
+                  {item.publishedAt && <div className="text-[11px] text-faint mt-[2px]">{new Date(item.publishedAt).toLocaleString()}</div>}
+                  <div className="text-[11.5px] text-faint mt-[3px]">โพสต์ด้วยมือแล้ว — บันทึกสถานะไว้ในระบบ</div>
+                </div>
+              ) : (
+                <>
+                  <button onClick={publish} disabled={!gate.ok || busy}
+                    className="text-[13.5px] font-bold py-3 rounded-[11px] text-white disabled:cursor-not-allowed"
+                    style={{ background: gate.ok ? "#211F1C" : "#E8E2D6", color: gate.ok ? "#fff" : "#9A9387" }}>
+                    {busy ? "Publishing…" : gate.ok ? "🚀 Mark as Published (manual)" : "🔒 Publish locked"}
+                  </button>
+                  {!gate.ok && (
+                    <div className="rounded-[10px] px-[13px] py-[10px]" style={{ background: "#FBF3F1", border: "1px solid #E8C5BC" }}>
+                      <div className="text-[11px] font-bold text-status-red mb-1">ยังกด Publish ไม่ได้ — ต้องผ่าน:</div>
+                      {gate.reasons.map((r) => (
+                        <div key={r} className="text-[12px] text-status-red font-semibold flex items-center gap-[6px]"><span>⚠</span><span>{r}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
