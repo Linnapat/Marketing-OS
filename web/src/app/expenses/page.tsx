@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";
 import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
 import { ExpenseRequestTab, SpendingLogTab } from "@/components/finance/ExpenseTabs";
 import { BrandFilterValue, brandName } from "@/lib/brands";
-import { EXPENSES, REQUESTS, buildCsv, ExpenseRow } from "@/lib/data/finance";
+import { buildCsv, ExpenseRow } from "@/lib/data/finance";
+import { fetchExpenses, fetchExpenseRequests } from "@/lib/db/finance";
 
 function download(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
@@ -27,16 +28,21 @@ export default function ExpensesPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [pvExpense, setPvExpense] = useState<ExpenseRow | null>(null);
 
-  const exportCsv = () => {
+  // Export what the page actually shows: real DB rows, current brand + period.
+  const exportCsv = async () => {
     if (tab === "log") {
+      const all = await fetchExpenses();
       download("spending-log.csv", buildCsv(
         ["Vendor", "Category", "Brand", "Amount", "VAT", "Date", "Status"],
-        EXPENSES.filter((e) => brand === "all" || e.b === brand).map((e) => [e.vendor, e.category, brandName(e.b), e.amount, e.vat, e.date, e.status]),
+        all.filter((e) => (brand === "all" || e.b === brand) && inDateFilter(date, e.date))
+          .map((e) => [e.vendor, e.category, brandName(e.b), e.amount, e.vat, e.date, e.status]),
       ));
     } else {
+      const all = await fetchExpenseRequests();
       download("expense-requests.csv", buildCsv(
-        ["Category", "Brand", "Campaign", "Requested", "Approved", "Due", "Status"],
-        REQUESTS.filter((r) => brand === "all" || r.b === brand).map((r) => [r.category, brandName(r.b), r.campaign, r.requested, r.approved, r.due, r.status]),
+        ["Ref", "Category", "Brand", "Campaign", "Requester", "Vendor", "Requested", "Approved", "Status", "Created"],
+        all.filter((r) => (brand === "all" || r.b === brand) && inDateFilter(date, r.createdAt))
+          .map((r) => [r.ref ?? "", r.category, brandName(r.b), r.campaign, r.requester ?? "", r.vendor ?? "", r.requested, r.approved, r.status, r.createdAt?.slice(0, 10) ?? ""]),
       ));
     }
   };
@@ -64,8 +70,8 @@ export default function ExpensesPage() {
       </div>
 
       <div className="mt-5">
-        {tab === "request" && <ExpenseRequestTab brand={brand} />}
-        {tab === "log" && <SpendingLogTab brand={brand} onVoucher={setPvExpense} />}
+        {tab === "request" && <ExpenseRequestTab brand={brand} date={date} />}
+        {tab === "log" && <SpendingLogTab brand={brand} date={date} onVoucher={setPvExpense} />}
       </div>
 
       {pvExpense && <PrintableVoucher expense={pvExpense} onClose={() => setPvExpense(null)} />}

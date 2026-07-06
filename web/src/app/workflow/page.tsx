@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useRole } from "@/lib/role";
@@ -8,6 +8,7 @@ import {
   WORK_SECTIONS, MONTH_NAMES, monthMeta, isWeekendDate, projectMarks,
   applyOverrides, nextValue, TEMPLATE_YEAR, TEMPLATE_MONTH,
 } from "@/lib/data/workflow";
+import { fetchWorkflowState, saveWorkflowState } from "@/lib/db/workflowState";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
@@ -22,13 +23,39 @@ export default function WorkCalendarPage() {
   // Default to the real current month (falls back to the July 2026 template month).
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
-  const [done, setDone] = useState<Record<string, boolean>>({});
+  const [overrides, setOverridesRaw] = useState<Record<string, string>>({});
+  const [done, setDoneRaw] = useState<Record<string, boolean>>({});
   const [view, setView] = useState<"grid" | "agenda">("grid");
   const [edit, setEdit] = useState(false);
 
   const { role } = useRole();
   const canEdit = role === "CMO / Admin";
+
+  // Load the shared calendar state once, then persist every change — the
+  // overrides and checkmarks used to evaporate on refresh.
+  const stateRef = useRef({ overrides, done });
+  stateRef.current = { overrides, done };
+  useEffect(() => {
+    let alive = true;
+    fetchWorkflowState().then((s) => {
+      if (alive && s) { setOverridesRaw(s.overrides); setDoneRaw(s.done); }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const setOverrides: typeof setOverridesRaw = (action) => {
+    setOverridesRaw((prev) => {
+      const next = typeof action === "function" ? action(prev) : action;
+      saveWorkflowState({ overrides: next, done: stateRef.current.done });
+      return next;
+    });
+  };
+  const setDone: typeof setDoneRaw = (action) => {
+    setDoneRaw((prev) => {
+      const next = typeof action === "function" ? action(prev) : action;
+      saveWorkflowState({ overrides: stateRef.current.overrides, done: next });
+      return next;
+    });
+  };
 
   const monthKey = `${ym.y}-${ym.m}`;
   const meta = useMemo(() => monthMeta(ym.y, ym.m), [ym]);

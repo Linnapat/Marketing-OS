@@ -39,4 +39,19 @@ alter table expenses         add column if not exists created_at     timestamptz
 alter table expenses         add column if not exists reimburse_type text;
 alter table expenses         add column if not exists wht            numeric default 0;
 
+-- ── workflow_state.sql — Work Calendar overrides + checkmarks persist ──
+create table if not exists workflow_state (
+  id         integer primary key default 1 check (id = 1),
+  overrides  jsonb default '{}'::jsonb,
+  done       jsonb default '{}'::jsonb,
+  updated_at timestamptz default now()
+);
+alter table workflow_state enable row level security;
+drop policy if exists demo_all on workflow_state;
+create policy demo_all on workflow_state for all using (true) with check (true);
+
+-- ── agency_email — scope external tasks to a specific agency login ──
+alter table agency_tasks add column if not exists agency_email text;
+
 -- ✅ Done. All migrations are idempotent — running again is harmless.
+-- 🔐 For production security (RLS + auth role hook) run security_p1.sql next.

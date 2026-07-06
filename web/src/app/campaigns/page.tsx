@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
@@ -22,7 +21,6 @@ const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LI
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 
 export default function CampaignsPage() {
-  const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
@@ -159,9 +157,6 @@ export default function CampaignsPage() {
       </div>
 
       {/* Filters */}
-      <div className="mt-4">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
       <div className="mt-4 flex items-center gap-5 flex-wrap">
         <div className="flex items-center gap-[9px]">
           <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Brand</span>

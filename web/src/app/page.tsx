@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { BrandFilterValue } from "@/lib/brands";
@@ -24,7 +23,6 @@ import { fetchExpenseRequests, ExpenseReq } from "@/lib/db/finance";
 interface RawData { c: CampaignRow[]; t: Task[]; k: Kol[]; ct: ContentItem[]; g: Graphic[]; er: ExpenseReq[] }
 
 export default function DashboardPage() {
-  const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [raw, setRaw] = useState<RawData | null>(null);
 
@@ -62,9 +60,6 @@ export default function DashboardPage() {
         ) : undefined}
       />
 
-      <div className="mt-[14px]">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
       <div className="mt-5 mb-5">
         <BrandFilter value={brand} onChange={setBrand} />
       </div>

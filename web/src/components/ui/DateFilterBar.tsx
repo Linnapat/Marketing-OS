@@ -16,13 +16,41 @@ export interface DateFilter {
   end: string;
 }
 
+const now = new Date();
 export const DEFAULT_DATE_FILTER: DateFilter = {
   mode: "month",
-  month: 6, // July (current date in the designs is July 2026)
-  year: 2026,
-  start: "2026-07-01",
-  end: "2026-07-31",
+  month: now.getMonth(),
+  year: now.getFullYear(),
+  start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
+  end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
 };
+
+/* ── Actually filtering with the selected period ─────────────────────── */
+const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/** Parse the date formats rows carry: ISO timestamps/dates and short display
+ *  strings like "Jul 5" (assumed current year). Null when unparseable. */
+export function parseRowDate(v?: string | null): Date | null {
+  if (!v) return null;
+  const iso = new Date(v);
+  if (!isNaN(+iso) && /\d{4}/.test(v)) return iso;
+  const m = /^([A-Za-z]{3})\w*\s+(\d{1,2})$/.exec(v.trim());
+  if (!m) return null;
+  const mi = MONTHS_SHORT.indexOf(m[1].toLowerCase());
+  return mi < 0 ? null : new Date(new Date().getFullYear(), mi, Number(m[2]));
+}
+
+/** Whether a row belongs to the selected period. Undated rows stay visible so
+ *  data never silently disappears. */
+export function inDateFilter(f: DateFilter, v?: string | null): boolean {
+  const d = parseRowDate(v);
+  if (!d) return true;
+  if (f.mode === "month") return d.getFullYear() === f.year && d.getMonth() === f.month;
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const s = f.start ? new Date(`${f.start}T00:00:00`).getTime() : -Infinity;
+  const e = f.end ? new Date(`${f.end}T23:59:59`).getTime() : Infinity;
+  return t >= s && t <= e;
+}
 
 /**
  * The unified period selector reused across Finance, Campaigns, KOL, Dashboard —

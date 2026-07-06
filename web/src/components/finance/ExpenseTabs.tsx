@@ -4,6 +4,7 @@
 // own "Expenses" page so day-to-day spending is reachable without Finance access.
 
 import { useEffect, useMemo, useState } from "react";
+import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
@@ -29,7 +30,7 @@ const REIMBURSE_TYPES = ["Petty Cash", "Payment Voucher"];
 // Vendor suggestions for the searchable field — distinct past vendors + free text.
 const VENDORS = Array.from(new Set(EXPENSES.map((e) => e.vendor))).sort();
 
-export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
+export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; date?: DateFilter }) {
   const [catKey, setCatKey] = useState("");
   const [amount, setAmount] = useState("");
   const [formBrand, setFormBrand] = useState("TEPPEN");
@@ -260,7 +261,7 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
       {/* RIGHT: Recent Requests */}
       <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
         <div className="text-[15px] font-bold">Recent Requests</div>
-        {requests.filter((r) => brand === "all" || r.b === brand).map((r, i) => {
+        {requests.filter((r) => (brand === "all" || r.b === brand) && (!date || inDateFilter(date, r.createdAt))).map((r, i) => {
           const wait = daysWaiting(r.createdAt);
           return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
@@ -297,7 +298,7 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
 }
 
 /* ── Spending Log: table + Voucher button ──────────────────────────── */
-export function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; onVoucher: (e: ExpenseRow) => void }) {
+export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterValue; date?: DateFilter; onVoucher: (e: ExpenseRow) => void }) {
   // Real spending from the DB (empty on a fresh database), mock in demo mode.
   const [all, setAll] = useState<ExpenseLogRow[]>(EXPENSES);
   useEffect(() => {
@@ -305,7 +306,7 @@ export function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; 
     fetchExpenses().then((e) => { if (alive) setAll(e); }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  const rows = all.filter((e) => brand === "all" || e.b === brand);
+  const rows = all.filter((e) => (brand === "all" || e.b === brand) && (!date || inDateFilter(date, e.date)));
   const markPaid = (row: ExpenseLogRow) => {
     setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x)));
     markExpensePaid(row._id);

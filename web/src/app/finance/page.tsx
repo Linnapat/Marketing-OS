@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -12,7 +11,7 @@ import { SignaturePad } from "@/components/finance/SignaturePad";
 import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
 import { useRole } from "@/lib/role";
 import { baht } from "@/lib/format";
-import { REQUESTS, buildCsv, PnlRow } from "@/lib/data/finance";
+import { buildCsv, PnlRow } from "@/lib/data/finance";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { useAuth } from "@/lib/auth";
@@ -39,7 +38,6 @@ function download(filename: string, content: string) {
 
 export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("plan");
-  const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const { can } = useRole();
   // Budget + P&L derive from real campaigns / expense requests (empty on a fresh DB).
@@ -53,11 +51,14 @@ export default function FinancePage() {
     return () => { alive = false; };
   }, []);
 
-  const exportCsv = () => {
+  // Export the real rows the page shows, not the bundled mock data.
+  const exportCsv = async () => {
     if (tab === "approval") {
+      const all = await fetchExpenseRequests();
       download("expense-requests.csv", buildCsv(
-        ["Category", "Brand", "Campaign", "Requested", "Approved", "Due", "Status"],
-        REQUESTS.filter((r) => brand === "all" || r.b === brand).map((r) => [r.category, brandName(r.b), r.campaign, r.requested, r.approved, r.due, r.status]),
+        ["Ref", "Category", "Brand", "Campaign", "Requester", "Vendor", "Requested", "Approved", "Status", "Created"],
+        all.filter((r) => brand === "all" || r.b === brand)
+          .map((r) => [r.ref ?? "", r.category, brandName(r.b), r.campaign, r.requester ?? "", r.vendor ?? "", r.requested, r.approved, r.status, r.createdAt?.slice(0, 10) ?? ""]),
       ));
     } else {
       const pnl = (fin?.pnl ?? []).filter((p) => brand === "all" || p.b === brand);
@@ -78,9 +79,6 @@ export default function FinancePage() {
         subtitle="Budget planning, expense requests, spending, and campaign P&L — in Thai Baht."
       />
 
-      <div className="mt-[14px]">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
       <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
         <BrandFilter value={brand} onChange={setBrand} />
         <button onClick={exportCsv} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">
@@ -292,7 +290,7 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [rejecting, setRejecting] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [rejected, setRejected] = useState<Record<number, boolean>>({});
-  const [allReqs, setAllReqs] = useState<ExpenseReq[]>(REQUESTS);
+  const [allReqs, setAllReqs] = useState<ExpenseReq[]>([]);
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
   // Remembered signature — sign once, then later approvals only need a Confirm.

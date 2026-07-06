@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter } from "@/components/ui/DateFilterBar";
 import { SectionLabel } from "@/components/ui/Card";
 import { Progress } from "@/components/ui/Progress";
 import { CAPACITY_META, initials } from "@/lib/data/workload";
@@ -12,7 +11,6 @@ import { fetchMembers } from "@/lib/db/settings";
 import { fetchTasks } from "@/lib/db/tasks";
 
 export default function TeamWorkloadPage() {
-  const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [drawer, setDrawer] = useState<TeamMemberView | null>(null);
   const [team, setTeam] = useState<TeamView | null>(null);
 
@@ -45,8 +43,6 @@ export default function TeamWorkloadPage() {
         title="Team Workload & Support"
         subtitle="See who is busy, who is stuck, and where the team needs support today."
       />
-
-      <div className="mt-[14px]"><DateFilterBar value={date} onChange={setDate} /></div>
 
       {/* Team Pulse */}
       <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))" }}>
