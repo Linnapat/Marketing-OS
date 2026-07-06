@@ -97,7 +97,7 @@ export const BUDGET_BY_CATEGORY: { name: string; amount: number }[] = [
   { name: "Print", amount: 160000 },
 ];
 
-export interface ExpenseRow { vendor: string; category: string; b: BrandId; amount: number; vat: number; date: string; status: string; }
+export interface ExpenseRow { vendor: string; category: string; b: BrandId; amount: number; vat: number; date: string; status: string; reimburseType?: string; wht?: number; }
 export const EXPENSES: ExpenseRow[] = [
   { vendor: "Studio Mori", category: "Production", b: "teppen", amount: 85000, vat: 5950, date: "Jun 12", status: "Paid" },
   { vendor: "Meta Ads", category: "Paid Ads", b: "omakase", amount: 42000, vat: 2940, date: "Jun 20", status: "Paid" },

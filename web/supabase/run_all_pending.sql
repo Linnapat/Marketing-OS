@@ -35,4 +35,8 @@ alter table expense_requests add column if not exists created_at     timestamptz
 alter table expense_requests add column if not exists approved_at    timestamptz;
 alter table expenses         add column if not exists created_at     timestamptz default now();
 
+-- ── expenses_p2.sql — voucher follows the reimbursement type ──
+alter table expenses         add column if not exists reimburse_type text;
+alter table expenses         add column if not exists wht            numeric default 0;
+
 -- ✅ Done. All migrations are idempotent — running again is harmless.

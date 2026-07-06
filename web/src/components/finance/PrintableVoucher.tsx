@@ -14,7 +14,11 @@ const sarabun = Sarabun({ subsets: ["thai", "latin"], weight: ["400", "500", "60
  * Full-screen overlay with a Payment / Petty Cash toggle and native print.
  */
 export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; onClose: () => void }) {
-  const [type, setType] = useState<"PAYMENT" | "PETTY">("PAYMENT");
+  // Header follows the reimbursement type chosen on the expense request; the
+  // toggle stays as a manual override (older rows have no stored type → Payment).
+  const [type, setType] = useState<"PAYMENT" | "PETTY">(
+    expense.reimburseType === "Petty Cash" ? "PETTY" : "PAYMENT",
+  );
   const isPV = type === "PAYMENT";
   // The approver's remembered signature flows straight into the voucher for print.
   const [sig, setSig] = useState<string | null>(null);
@@ -29,8 +33,10 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
     { desc: "", dept: "", amount: null as number | null },
   ];
   const subtotal = items.reduce((s, i) => s + (i.amount || 0), 0);
-  const wht = Math.round(subtotal * 0.03 * 100) / 100;
-  const vat = Math.round(subtotal * 0.07 * 100) / 100;
+  // Actual VAT / WHT amounts from the request (0 when the requester didn't
+  // tick them) — not a blanket 7% / 3% on every voucher.
+  const wht = Number(expense.wht ?? 0);
+  const vat = Number(expense.vat ?? 0);
   const total = subtotal - wht + vat;
 
   const pvNo = `PV-2569-${String(Math.floor(1000 + (amount % 9000))).padStart(5, "0")}`;
@@ -98,8 +104,8 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
               <tr><td style={{ border: cell, padding: "2px 6px", fontWeight: 600, fontSize: 10 }}>Brand</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{brandName(expense.b)}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell }} /></tr>
               <tr><td style={{ border: cell, padding: "2px 6px", fontWeight: 600, fontSize: 10 }}>Branch</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>สำนักงานใหญ่</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell }} /></tr>
 
-              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี ณ ที่จ่าย</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>3 %</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{thb(wht)}</td></tr>
-              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>7 %</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{thb(vat)}</td></tr>
+              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี ณ ที่จ่าย</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{wht > 0 ? "3 %" : "—"}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{wht > 0 ? thb(wht) : ""}</td></tr>
+              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{vat > 0 ? "7 %" : "—"}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{vat > 0 ? thb(vat) : ""}</td></tr>
 
               <tr>
                 <td style={{ border: cell, padding: "3px 6px", fontWeight: 700, fontSize: 10, background: "#eef4ea" }}>รวม (ตัวอักษร)</td>

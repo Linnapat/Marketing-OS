@@ -48,7 +48,7 @@ export async function fetchExpenseRequests(): Promise<ExpenseReq[]> {
   return (data as Row[]).map(toReq);
 }
 
-type ExpRow = { id: number; vendor: string; category: string; brand: BrandId; amount: number; vat: number; date: string; status: string };
+type ExpRow = { id: number; vendor: string; category: string; brand: BrandId; amount: number; vat: number; date: string; status: string; reimburse_type?: string | null; wht?: number | null };
 
 /** A spending-log row that also carries its DB id (for Mark Paid). */
 export type ExpenseLogRow = ExpenseRow & { _id?: number };
@@ -59,7 +59,7 @@ export async function fetchExpenses(): Promise<ExpenseLogRow[]> {
   if (!db) return EXPENSES.map((e) => ({ ...e }));
   const { data, error } = await db.from("expenses").select("*").order("id", { ascending: false });
   if (error || !data) return EXPENSES.map((e) => ({ ...e }));
-  return (data as ExpRow[]).map((r) => ({ _id: r.id, vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status }));
+  return (data as ExpRow[]).map((r) => ({ _id: r.id, vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status, reimburseType: r.reimburse_type ?? undefined, wht: Number(r.wht ?? 0) }));
 }
 
 const shortDate = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -73,10 +73,16 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
   await db.from("expense_requests").update({ status: "Approved", approved }).eq("id", req._id);
   // Separate so a DB missing the migration still keeps the approval.
   await db.from("expense_requests").update({ approved_at: new Date().toISOString() }).eq("id", req._id);
-  await db.from("expenses").insert({
+  const { data: exp } = await db.from("expenses").insert({
     vendor: req.vendor || req.category, category: req.category, brand: req.b,
     amount: approved, vat: req.vatAmt ?? 0, date: shortDate(), status: "Unpaid",
-  });
+  }).select("id").single();
+  // Separate so a DB missing expenses_p2.sql still gets the base spending row.
+  if (exp?.id !== undefined) {
+    await db.from("expenses").update({
+      reimburse_type: req.reimburseType ?? null, wht: req.whtAmt ?? 0,
+    }).eq("id", exp.id);
+  }
   if (req.ref) await db.from("requests").update({ stage: "Approved" }).eq("id", req.ref);
 }
 
