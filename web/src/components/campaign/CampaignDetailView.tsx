@@ -14,6 +14,7 @@ import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval } from "@/lib/db/brief";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
 import { useAuth } from "@/lib/auth";
+import { notify } from "@/lib/notify";
 import { fmtDisplay } from "@/components/ui/DatePicker";
 
 export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
@@ -635,6 +636,10 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
     const entry = { action, by: reviewer, at: new Date().toISOString(), comment, from: status, to: nextStatus };
     const next: CampaignBrief = { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] };
     try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
+    // Approval-flow steps ping the team on LINE/email.
+    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || "CMO"}`, "/my-tasks");
+    else if (nextStatus === "Approved") notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
+    else if (nextStatus === "Need Revision") notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — โดย ${reviewer}`, "/campaigns");
   };
   const doRevision = () => {
     const r = reason.trim(); if (!r) return;

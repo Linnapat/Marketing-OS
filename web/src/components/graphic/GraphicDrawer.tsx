@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
+import { notify } from "@/lib/notify";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
@@ -194,18 +195,23 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
     ng.nextAction = ready ? "Ready to deploy — attached to Content Calendar" : g.nextAction;
     updateGraphic(ng); onUpdate?.(ng);
     // Fully approved → push approved asset links onto the linked content post.
-    if (ready) syncApprovedAssetsToContent(ng).catch(() => {});
+    if (ready) {
+      syncApprovedAssetsToContent(ng).catch(() => {});
+      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content");
+    }
   };
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
   const submit = (i: number) => {
     const d = dels[i];
     if (!d.assetLink.trim()) return;
     persist(dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: new Date().toISOString() } : x));
+    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, "/graphic");
   };
   const approve = (i: number) => persist(dels.map((x, j) => j === i ? { ...x, status: "Approved" } : x));
   const sendBack = (i: number) => {
     const r = reason.trim(); if (!r) return;
     persist(dels.map((x, j) => j === i ? { ...x, status: "Revision", feedback: [...x.feedback, { reason: r, by: me, at: new Date().toISOString() }] } : x));
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${dels[i]?.platform ?? ""} — ${r} · โดย ${me}`, "/graphic");
     setReason(""); setRevising(null);
   };
 

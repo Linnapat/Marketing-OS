@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
-import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg } from "@/lib/db/settings";
+import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
@@ -57,8 +57,22 @@ export default function SettingsPage() {
   const canEdit = role === "CMO / Admin";
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
-  const [channels, setChannels] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_CHANNELS.map((c) => [c.key, c.def])));
-  const [triggers, setTriggers] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_TRIGGERS.map((t) => [t.key, t.def])));
+  // Notification toggles persist to org_settings; /api/notify honors them.
+  const [channels, setChannelsRaw] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_CHANNELS.map((c) => [c.key, c.def])));
+  const [triggers, setTriggersRaw] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_TRIGGERS.map((t) => [t.key, t.def])));
+  const setChannels = (fn: (s: Record<string, boolean>) => Record<string, boolean>) =>
+    setChannelsRaw((prev) => { const next = fn(prev); saveNotifSettings({ channels: next, triggers }); return next; });
+  const setTriggers = (fn: (s: Record<string, boolean>) => Record<string, boolean>) =>
+    setTriggersRaw((prev) => { const next = fn(prev); saveNotifSettings({ channels, triggers: next }); return next; });
+  useEffect(() => {
+    let alive = true;
+    fetchNotifSettings().then((s) => {
+      if (!alive || !s) return;
+      setChannelsRaw((d) => ({ ...d, ...s.channels }));
+      setTriggersRaw((d) => ({ ...d, ...s.triggers }));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // Editable permission matrix (role × module) as level indices.
   const [perm, setPerm] = useState<number[][]>(() => PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l))));
   const [permDirty, setPermDirty] = useState(false);

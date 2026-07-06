@@ -57,6 +57,35 @@ export async function savePermissions(rows: PermRow[]): Promise<void> {
   await db.from("permissions").upsert(rows.map((r) => ({ role: r.role, descr: r.descr, perms: r.perms })));
 }
 
+/* ── Notification toggles (channels + triggers) ─────────────────────── */
+// Stored as JSON blobs in the org_settings kv table; /api/notify reads the
+// same keys server-side to decide whether to send.
+export interface NotifSettings { channels: Record<string, boolean>; triggers: Record<string, boolean> }
+
+export async function fetchNotifSettings(): Promise<NotifSettings | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data, error } = await db.from("org_settings").select("key, value").in("key", ["notif_channels", "notif_triggers"]);
+  if (error || !data) return null;
+  const get = (k: string): Record<string, boolean> | null => {
+    const row = data.find((r) => r.key === k);
+    if (!row) return null;
+    try { return JSON.parse(row.value as string); } catch { return null; }
+  };
+  const channels = get("notif_channels"), triggers = get("notif_triggers");
+  if (!channels && !triggers) return null;
+  return { channels: channels ?? {}, triggers: triggers ?? {} };
+}
+
+export async function saveNotifSettings(s: NotifSettings): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("org_settings").upsert([
+    { key: "notif_channels", label: "Notification channels", value: JSON.stringify(s.channels) },
+    { key: "notif_triggers", label: "Notification triggers", value: JSON.stringify(s.triggers) },
+  ]);
+}
+
 /* ── Organization fields ────────────────────────────────────────────── */
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 

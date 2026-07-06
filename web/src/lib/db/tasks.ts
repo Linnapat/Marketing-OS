@@ -4,6 +4,7 @@
 import { supabase } from "@/lib/supabase";
 import { TASKS, Task } from "@/lib/data/tasks";
 import { BRANDS, BRAND_ORDER, BrandId } from "@/lib/brands";
+import { notify } from "@/lib/notify";
 
 const DEFAULT_DONE = [1, 4, 7, 8, 12, 14, 18, 20];
 
@@ -27,6 +28,7 @@ export async function fetchTasks(): Promise<{ tasks: Task[]; doneIds: number[] }
 
 /** Insert a newly created task. Fire-and-forget. */
 export async function createTaskDb(t: Task): Promise<void> {
+  notify("newTask", `🗒️ งานใหม่: ${t.title}`, `มอบหมายให้ ${t.assignee} · ${t.brand} · due ${t.due}`, "/my-tasks");
   const db = supabase();
   if (!db) return;
   await db.from("tasks").insert({
@@ -51,4 +53,7 @@ export async function updateTaskDb(id: number, patch: Partial<Task>): Promise<vo
 }
 
 export const markDoneDb = (id: number) => updateTaskDb(id, { status: "Done" });
-export const reassignDb = (id: number, to: string) => updateTaskDb(id, { assignee: to });
+export const reassignDb = (id: number, to: string) => {
+  notify("newTask", `🔁 งาน #${id} ถูกส่งต่อให้ ${to}`, undefined, "/my-tasks");
+  return updateTaskDb(id, { assignee: to });
+};

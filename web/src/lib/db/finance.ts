@@ -8,6 +8,8 @@
 import { supabase } from "@/lib/supabase";
 import { REQUESTS, RequestRow, EXPENSES, ExpenseRow } from "@/lib/data/finance";
 import { BrandId } from "@/lib/brands";
+import { notify } from "@/lib/notify";
+import { baht } from "@/lib/format";
 
 type Row = {
   id: number; category: string; brand: BrandId; campaign: string | null;
@@ -68,6 +70,8 @@ const shortDate = () => new Date().toLocaleDateString("en-US", { month: "short",
  *  approved spend into the Spending Log as "Unpaid" (Finance marks it Paid
  *  after the actual payment), and move the linked queue card to Approved. */
 export async function approveExpenseRequest(req: ExpenseReq, approved: number): Promise<void> {
+  notify("approved", `✅ อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
+    `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
   const db = supabase();
   if (!db || req._id === undefined) return;
   await db.from("expense_requests").update({ status: "Approved", approved }).eq("id", req._id);
@@ -89,6 +93,8 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
 /** Reject a request with a mandatory reason; the linked queue card goes back
  *  to Revision with the reason on its feedback history. */
 export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: string): Promise<void> {
+  notify("rejected", `↩️ ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
+    `เหตุผล: ${reason} — โดย ${by}${req.requester ? ` → ${req.requester} แก้แล้ว submit ใหม่` : ""}`, "/expenses");
   const db = supabase();
   if (!db || req._id === undefined) return;
   await db.from("expense_requests").update({ status: "Rejected" }).eq("id", req._id);

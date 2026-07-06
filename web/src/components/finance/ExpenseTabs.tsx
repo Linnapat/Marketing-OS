@@ -16,6 +16,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { createRequest } from "@/lib/db/requests";
 import { RequestRow as QueueRow } from "@/lib/data/requests";
 import { useAuth } from "@/lib/auth";
+import { notify } from "@/lib/notify";
 
 /** Days a request has been waiting, from its created_at (needs expenses_p1.sql). */
 export function daysWaiting(createdAt?: string): number | null {
@@ -82,6 +83,10 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
     };
     await createRequest(queueRow);
+    // ปิดช่องว่าง "แจ้งกลุ่ม LINE เอง" — ระบบแจ้งผู้อนุมัติให้ทันที
+    notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${cat?.label ?? "Expense"}`,
+      `${baht(amt)} (${reimburseType})${vendor ? ` · ${vendor}` : ""} · โดย ${requesterName} → รอ ${route} อนุมัติ`,
+      "/my-tasks");
     setSubmitted(ref);
   };
   // Additional line items

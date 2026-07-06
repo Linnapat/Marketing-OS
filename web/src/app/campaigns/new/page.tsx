@@ -20,6 +20,7 @@ import {
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { saveCampaignBrief } from "@/lib/db/brief";
+import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
 
 // Guideline sits just before Submit — a final pre-flight, not an early gate.
@@ -114,6 +115,7 @@ export default function NewCampaignPage() {
     const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
       await saveCampaignBrief(finalize(status, log, now));
+      if (!asDraft) notify("approval", `🎯 แคมเปญใหม่รออนุมัติ: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || "CMO"} อนุมัติใน My Tasks`, "/my-tasks");
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch { setBusy(false); }

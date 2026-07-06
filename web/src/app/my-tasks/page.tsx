@@ -5,6 +5,7 @@ import Link from "next/link";
 import { TASKS, Task, PEOPLE, GREETINGS, CELEBRATIONS, PERSON_ROLE, daysUntilDue, isDueToday, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
+import { notify } from "@/lib/notify";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -593,6 +594,7 @@ function TaskDrawer({ t, status, me, people, colorOf, onClose, onDone, onReassig
       status: "Stuck", group: "stuck", blocker: `${me} — ${helpMsg.trim()}`,
       comments: [...(t.comments ?? []), { by: me, text: `🆘 ${helpMsg.trim()}`, at: new Date().toISOString() }],
     });
+    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), "/my-tasks");
     setAsking(false); setHelpMsg("");
   };
   const requestRevision = () => {

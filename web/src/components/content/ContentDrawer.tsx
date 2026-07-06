@@ -7,6 +7,7 @@ import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent } from "@/lib/db/content";
 import { useAuth } from "@/lib/auth";
+import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -58,6 +59,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
       ...item, publishStatus: "Published", status: "Published",
       publishedBy: reviewer, publishedAt: new Date().toISOString(),
     });
+    notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
   };
 
   const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none font-sans";
