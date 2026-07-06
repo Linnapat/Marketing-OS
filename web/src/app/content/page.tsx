@@ -15,9 +15,13 @@ import {
 import { fetchContent, createContent } from "@/lib/db/content";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
+import { createGraphic, buildGraphic } from "@/lib/db/graphic";
+import { Graphic, emptyDeliverable } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
+import { useAuth } from "@/lib/auth";
+import { notify } from "@/lib/notify";
 
 /** Row of platform badges (one per selected channel). */
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
@@ -42,6 +46,9 @@ const JULY_FIRST_DOW = 3;
 const DAYS_IN_JULY = 31;
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const labelDate = (iso: string) => { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
+
 export default function ContentPage() {
   const [view, setView] = useState<View>("month");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
@@ -50,6 +57,8 @@ export default function ContentPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [newDay, setNewDay] = useState<number | null>(null);
   const openNew = (day?: number) => { setNewDay(day ?? null); setNewOpen(true); };
+  const { member, user } = useAuth();
+  const me = member?.name || user?.email?.split("@")[0] || "You";
 
   useEffect(() => {
     let alive = true;
@@ -66,6 +75,30 @@ export default function ContentPage() {
     setPosts((ps) => [created, ...ps]);
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
     if (campaign && campaign !== "—") appendBriefItem(campaign, briefItem).catch(() => {});
+    // "Required Graphic" checked → drop a linked request into the Graphic
+    // module (one deliverable per Platform × Asset Size). When every
+    // deliverable is approved there, the asset links flow back onto THIS post
+    // automatically (matched by campaign + content-item title) and unlock the
+    // Publish gate. Unchecked = "No Asset": no request, publish without one.
+    if (briefItem.requiredGraphic) {
+      const plats = briefItem.platforms.length ? briefItem.platforms : [p.plat];
+      const pairs = briefItem.assets.length ? briefItem.assets : plats.map((pl) => ({ platform: pl, size: "" }));
+      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", briefItem.referenceBriefLink || ""));
+      const g: Graphic = {
+        ...buildGraphic({
+          id: Date.now(), b: p.b, campaign: p.campaign, title: p.title,
+          type: briefItem.type, due: labelDate(briefItem.publishDate) || "TBD",
+          designer: "Unassigned", requester: me, approver: me, channels: plats,
+        }),
+        stage: "New Request",
+        size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
+        deliverables,
+        nextAction: `Deliver ${deliverables.length} asset(s)`,
+        contentItem: p.title,
+      };
+      createGraphic(g).catch(() => {});
+      notify("newTask", `🎨 คำขอกราฟฟิกใหม่: ${p.title}`, `${deliverables.length} asset · ${plats.join(", ")} · จาก Content Calendar โดย ${me}`, "/graphic");
+    }
   };
 
   return (

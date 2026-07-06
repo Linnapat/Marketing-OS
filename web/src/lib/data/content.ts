@@ -132,7 +132,9 @@ export function preflight(c: ContentItem): { label: string; ok: boolean }[] {
 export function canPublish(c: ContentItem): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (!["Ready", "Approved"].includes(c.captionStatus)) reasons.push("Caption ยังไม่พร้อม (ต้อง Ready/Approved)");
-  if (!["Approved", "Final"].includes(c.assetStatus)) reasons.push("Asset ยังไม่พร้อม — รอทีมกราฟฟิกส่ง & อนุมัติครบ");
+  // "No Asset" = the post explicitly needs no graphic (text/repost) — it may
+  // publish without waiting on the Graphic module.
+  if (!["Approved", "Final", "No Asset"].includes(c.assetStatus)) reasons.push("Asset ยังไม่พร้อม — รอทีมกราฟฟิกส่ง & อนุมัติครบ");
   if (c.approvalStatus !== "Approved") reasons.push("Content ยังไม่ถูกอนุมัติ");
   if (["Published", "Scheduled in OS", "Queued"].includes(c.publishStatus)) reasons.push("โพสต์นี้ publish/queue ไปแล้ว");
   return { ok: reasons.length === 0, reasons };

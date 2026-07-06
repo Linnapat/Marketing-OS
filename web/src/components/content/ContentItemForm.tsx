@@ -36,9 +36,14 @@ export function ContentItemForm({ item, onChange, outOfRange }: {
       <div><label className={label}>Content Type</label><select value={item.type} onChange={(e) => onChange({ type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
       <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
       <div><label className={label}>Priority</label><select value={item.priority} onChange={(e) => onChange({ priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
-      <div className="flex items-end gap-4">
-        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredGraphic} onChange={(e) => onChange({ requiredGraphic: e.target.checked })} /> Required Graphic</label>
-        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredVideo} onChange={(e) => onChange({ requiredVideo: e.target.checked })} /> Required Video</label>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-end gap-4">
+          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredGraphic} onChange={(e) => onChange({ requiredGraphic: e.target.checked })} /> Required Graphic</label>
+          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredVideo} onChange={(e) => onChange({ requiredVideo: e.target.checked })} /> Required Video</label>
+        </div>
+        <div className="text-[11px] text-faint">
+          {item.requiredGraphic ? "ติ๊กไว้ = ส่งเข้า Graphic Request อัตโนมัติ · โพสต์จะ publish ได้เมื่องานกราฟฟิกอนุมัติครบ" : "ไม่ติ๊ก = ไม่ต้องใช้กราฟฟิก · publish ได้โดยไม่ต้องรอ asset"}
+        </div>
       </div>
 
       {/* Platform + Asset Size — multi-select checkboxes */}
