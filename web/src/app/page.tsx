@@ -19,8 +19,9 @@ import { fetchTasks } from "@/lib/db/tasks";
 import { fetchKols } from "@/lib/db/kol";
 import { fetchContent } from "@/lib/db/content";
 import { fetchGraphics } from "@/lib/db/graphic";
+import { fetchExpenseRequests, ExpenseReq } from "@/lib/db/finance";
 
-interface RawData { c: CampaignRow[]; t: Task[]; k: Kol[]; ct: ContentItem[]; g: Graphic[] }
+interface RawData { c: CampaignRow[]; t: Task[]; k: Kol[]; ct: ContentItem[]; g: Graphic[]; er: ExpenseReq[] }
 
 export default function DashboardPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
@@ -29,8 +30,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchCampaigns(), fetchTasks(), fetchKols(), fetchContent(), fetchGraphics()])
-      .then(([c, t, k, ct, g]) => { if (alive) setRaw({ c, t: t.tasks, k, ct, g }); })
+    Promise.all([fetchCampaigns(), fetchTasks(), fetchKols(), fetchContent(), fetchGraphics(), fetchExpenseRequests()])
+      .then(([c, t, k, ct, g, er]) => { if (alive) setRaw({ c, t: t.tasks, k, ct, g, er }); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -40,7 +41,7 @@ export default function DashboardPage() {
   // Brand filter narrows every module; KPIs + the pending/attention feed follow.
   const dash = useMemo(() => (raw ? dashboardFromDb(raw.c.filter(inBrand), raw.t, raw.k.filter(inBrand)) : null), [raw, brand]);
   const feed = useMemo(
-    () => (raw ? dashboardFeed(raw.c.filter(inBrand), raw.ct.filter(inBrand), raw.g.filter(inBrand), raw.t) : null),
+    () => (raw ? dashboardFeed(raw.c.filter(inBrand), raw.ct.filter(inBrand), raw.g.filter(inBrand), raw.t, raw.er.filter(inBrand)) : null),
     [raw, brand],
   );
 

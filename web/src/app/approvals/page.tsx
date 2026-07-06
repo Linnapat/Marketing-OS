@@ -6,7 +6,7 @@ export default function ApprovalQueuePage() {
   return (
     <ComingSoon
       title="Approval Queue"
-      note="กำลังจัดเตรียม — จะเปิดใช้งานเร็ว ๆ นี้ ระหว่างนี้อนุมัติงบ/ค่าใช้จ่ายได้ที่ Finance › Approval"
+      note="กำลังจัดเตรียม — จะเปิดใช้งานเร็ว ๆ นี้ ระหว่างนี้อนุมัติงบ/ค่าใช้จ่ายได้ที่ My Tasks › My Approval"
     />
   );
 }

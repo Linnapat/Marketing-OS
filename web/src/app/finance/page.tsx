@@ -13,7 +13,9 @@ import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
 import { useRole } from "@/lib/role";
 import { baht } from "@/lib/format";
 import { REQUESTS, buildCsv, PnlRow } from "@/lib/data/finance";
-import { fetchExpenseRequests, approveExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { daysWaiting } from "@/components/finance/ExpenseTabs";
+import { useAuth } from "@/lib/auth";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { financeFromDb, FinanceView } from "@/lib/data/derive";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
@@ -287,7 +289,12 @@ function RoiTab({ brand, fin }: { brand: BrandFilterValue; fin: FinanceView | nu
 function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const [signing, setSigning] = useState<number | null>(null);
+  const [rejecting, setRejecting] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const [rejected, setRejected] = useState<Record<number, boolean>>({});
   const [allReqs, setAllReqs] = useState<ExpenseReq[]>(REQUESTS);
+  const { member, user } = useAuth();
+  const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
   // Remembered signature — sign once, then later approvals only need a Confirm.
   const [sig, setSig] = useState<string | null>(null);
 
@@ -302,14 +309,21 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const approve = (i: number, r: ExpenseReq) => {
     setApproved((a) => ({ ...a, [i]: true }));
     setSigning(null);
-    approveExpenseRequest(r._id, r.requested);
+    approveExpenseRequest(r, r.requested);
+  };
+  const reject = (i: number, r: ExpenseReq) => {
+    if (!reason.trim()) return;
+    setRejected((a) => ({ ...a, [i]: true }));
+    setRejecting(null);
+    rejectExpenseRequest(r, reason.trim(), approverName);
+    setReason("");
   };
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-[12px] text-faint">
-          {allReqs.filter((r, i) => !approved[i] && r.status === "Waiting Approval").length} request(s) waiting for your approval.
+          {allReqs.filter((r, i) => !approved[i] && !rejected[i] && r.status === "Waiting Approval").length} request(s) waiting for your approval.
         </div>
         {sig && (
           <div className="flex items-center gap-2 text-[11.5px] text-muted">
@@ -321,7 +335,10 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
         )}
       </div>
       {rows.map(({ r, i }) => {
-        const isApproved = approved[i] || r.status !== "Waiting Approval";
+        const isRejected = rejected[i] || r.status === "Rejected";
+        const isApproved = !isRejected && (approved[i] || r.status !== "Waiting Approval");
+        const isPending = !isApproved && !isRejected;
+        const wait = daysWaiting(r.createdAt);
         return (
           <div key={i} className="bg-surface border border-line rounded-cardLg p-5">
             <div className="flex items-center gap-4 flex-wrap">
@@ -330,22 +347,43 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
                   <BrandDot brand={r.b} size={8} />
                   <span className="text-[14px] font-bold text-ink">{r.category}</span>
                 </div>
-                <div className="text-[12px] text-faint mt-1">{r.campaign} · due {r.due} · requested {baht(r.requested, { compact: true })}</div>
+                <div className="text-[12px] text-faint mt-1">
+                  {r.campaign}{r.requester ? <> · โดย {r.requester}</> : null} · requested {baht(r.requested, { compact: true })}
+                  {isPending && wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
+                </div>
               </div>
-              {isApproved ? (
+              {isRejected ? (
+                <StatusBadge tone="red">✕ Rejected</StatusBadge>
+              ) : isApproved ? (
                 <StatusBadge tone="green">✓ Approved</StatusBadge>
-              ) : sig ? (
-                <button onClick={() => approve(i, r)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">✓ Confirm &amp; Approve</button>
               ) : (
-                <button onClick={() => setSigning(signing === i ? null : i)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">
-                  {signing === i ? "Cancel" : "✓ Approve"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setRejecting(rejecting === i ? null : i); setSigning(null); }} className="text-[12.5px] font-bold rounded-[9px] px-4 py-[8px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+                    {rejecting === i ? "Cancel" : "✕ Reject"}
+                  </button>
+                  {sig ? (
+                    <button onClick={() => approve(i, r)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">✓ Confirm &amp; Approve</button>
+                  ) : (
+                    <button onClick={() => { setSigning(signing === i ? null : i); setRejecting(null); }} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">
+                      {signing === i ? "Cancel" : "✓ Approve"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-            {signing === i && !isApproved && !sig && (
+            {signing === i && isPending && !sig && (
               <div className="mt-4 pt-4 border-t border-line4">
                 <div className="text-[12px] font-semibold text-muted mb-2">Sign once — we’ll remember it for next time</div>
                 <SignaturePad confirmLabel="Save signature &amp; Approve" onSave={(dataUrl) => { saveSignature(dataUrl); setSig(dataUrl); approve(i, r); }} />
+              </div>
+            )}
+            {rejecting === i && isPending && (
+              <div className="mt-4 pt-4 border-t border-line4 flex gap-2 flex-wrap items-center">
+                <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น) เช่น ขอใบเสนอราคาก่อน" autoFocus
+                  className="flex-1 min-w-[220px] text-[13px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+                <button onClick={() => reject(i, r)} disabled={!reason.trim()} className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
+                  Reject &amp; Send back
+                </button>
               </div>
             )}
           </div>

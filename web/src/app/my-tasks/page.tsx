@@ -10,6 +10,11 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
 import { brandName } from "@/lib/brands";
+import { baht } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
+import { useRole } from "@/lib/role";
+import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { daysWaiting } from "@/components/finance/ExpenseTabs";
 
 // Stages / statuses that still need someone in the approval tier to act.
 const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
@@ -62,6 +67,11 @@ export default function MyTasksPage() {
   const [viewAs, setViewAs] = useState("Aran P.");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
+  const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
+  const { role } = useRole();
+  // Expense approvals are a role gate (CMO), not a person filter — Marketing
+  // expenses route to the CMO tier only (no CFO).
+  const canApproveExpense = role === "CMO / Admin" || role === "Finance";
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
@@ -83,6 +93,7 @@ export default function MyTasksPage() {
     }).catch(() => {});
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
+    fetchExpenseRequests().then((r) => { if (alive) setExpenseReqs(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -93,10 +104,26 @@ export default function MyTasksPage() {
     [campaigns],
   );
   const approvalRequests = useMemo(
-    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && r.approver === viewAs),
+    // Budget cards are excluded — they're shown as actionable expense requests below.
+    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && r.approver === viewAs && r.type !== "Budget"),
     [requests, viewAs],
   );
-  const approvalCount = approvalCampaigns.length + approvalRequests.length;
+  const approvalExpenses = useMemo(
+    () => (canApproveExpense ? expenseReqs.filter((r) => r.status === "Waiting Approval") : []),
+    [expenseReqs, canApproveExpense],
+  );
+  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length;
+  // Approve / reject inline — sync the row locally so the card updates at once.
+  const { member, user } = useAuth();
+  const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
+  const approveExpense = (r: ExpenseReq) => {
+    setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Approved", approved: x.requested } : x)));
+    approveExpenseRequest(r, r.requested);
+  };
+  const rejectExpense = (r: ExpenseReq, reason: string) => {
+    setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Rejected", rejectReason: reason } : x)));
+    rejectExpenseRequest(r, reason, approverName);
+  };
 
   const markDone = (id: number) => {
     setDoneIds((s) => new Set(s).add(id));
@@ -224,7 +251,7 @@ export default function MyTasksPage() {
           )}
         </div>
       ) : activeTab === "approval" ? (
-        <MyApprovalView campaigns={approvalCampaigns} requests={approvalRequests} />
+        <MyApprovalView campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} onApprove={approveExpense} onReject={rejectExpense} />
       ) : (
         <TeamView tasks={tasks} getStatus={getStatus} onSelect={(p) => { setViewAs(p); setActiveTab("myDay"); }} />
       )}
@@ -241,20 +268,35 @@ export default function MyTasksPage() {
   );
 }
 
-function MyApprovalView({ campaigns, requests }: { campaigns: CampaignRow[]; requests: RequestRow[] }) {
-  const total = campaigns.length + requests.length;
+function MyApprovalView({ campaigns, requests, expenses, onApprove, onReject }: {
+  campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[];
+  onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
+}) {
+  const total = campaigns.length + requests.length + expenses.length;
   if (total === 0) {
     return (
       <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
         <div>
           <div className="text-[15px] font-bold text-ink">ไม่มีงานรออนุมัติ 🎉</div>
-          <div className="text-[12.5px] text-faint mt-1">แคมเปญและคำขอที่รอคุณอนุมัติจะมาโผล่ที่นี่</div>
+          <div className="text-[12.5px] text-faint mt-1">แคมเปญ คำขอ และการเบิกงบที่รอคุณอนุมัติจะมาโผล่ที่นี่</div>
         </div>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-5">
+      {expenses.length > 0 && (
+        <div>
+          <div className="flex items-center gap-[10px] mb-3">
+            <span className="text-[17px]">฿</span>
+            <span className="text-[13.5px] font-bold">Expense requests waiting for approval</span>
+            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>{expenses.length}</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {expenses.map((r) => <ExpenseApprovalCard key={r._id ?? r.ref ?? r.category} r={r} onApprove={onApprove} onReject={onReject} />)}
+          </div>
+        </div>
+      )}
       {campaigns.length > 0 && (
         <div>
           <div className="flex items-center gap-[10px] mb-3">
@@ -301,6 +343,52 @@ function MyApprovalView({ campaigns, requests }: { campaigns: CampaignRow[]; req
               </Link>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Inline expense-request approval card — approve or send back with a reason,
+ *  right from My Tasks (the CMO's daily surface) instead of a separate queue. */
+function ExpenseApprovalCard({ r, onApprove, onReject }: {
+  r: ExpenseReq; onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const wait = daysWaiting(r.createdAt);
+  return (
+    <div className="bg-surface border border-line rounded-card p-4">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="text-[13.5px] font-bold text-ink truncate">฿ {r.category}</span>
+        <span className="text-[15px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
+      </div>
+      <div className="text-[11.5px] text-faint mb-3">
+        {brandName(r.b)} · {r.campaign}
+        {r.requester ? <> · โดย {r.requester}</> : null}
+        {r.vendor ? <> · {r.vendor}</> : null}
+        {wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
+      </div>
+      {rejecting ? (
+        <div className="flex flex-col gap-2">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น)" autoFocus
+            className="w-full text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+          <div className="flex gap-2">
+            <button onClick={() => reason.trim() && onReject(r, reason.trim())} disabled={!reason.trim()}
+              className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
+              Reject &amp; Send back
+            </button>
+            <button onClick={() => setRejecting(false)} className="text-[12px] font-semibold px-3 rounded-[9px] border border-line2 text-muted bg-white">Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button onClick={() => onApprove(r)} className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px]" style={{ background: "#4E7A4E" }}>
+            Approve ✓
+          </button>
+          <button onClick={() => setRejecting(true)} className="text-[12px] font-bold px-3 rounded-[9px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+            ✕ Reject
+          </button>
         </div>
       )}
     </div>

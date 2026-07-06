@@ -9,11 +9,19 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
 import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
 import { EXPENSES, REQUESTS, EXP_CATEGORIES, STATUS_TONE, ExpenseRow, RequestRow } from "@/lib/data/finance";
-import { fetchExpenseRequests, fetchExpenses, createExpenseRequest } from "@/lib/db/finance";
+import { fetchExpenseRequests, fetchExpenses, createExpenseRequest, markExpensePaid, ExpenseReq, ExpenseLogRow } from "@/lib/db/finance";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createRequest } from "@/lib/db/requests";
 import { RequestRow as QueueRow } from "@/lib/data/requests";
+import { useAuth } from "@/lib/auth";
+
+/** Days a request has been waiting, from its created_at (needs expenses_p1.sql). */
+export function daysWaiting(createdAt?: string): number | null {
+  if (!createdAt) return null;
+  const d = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000);
+  return d >= 0 ? d : null;
+}
 
 interface ExtraLine { desc: string; amount: number; vat: number; }
 const BRAND_NAME_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
@@ -32,8 +40,11 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   const [applyVat, setApplyVat] = useState(true);
   const [applyWht, setApplyWht] = useState(true);
   const [submitted, setSubmitted] = useState<string | null>(null);
-  const [requests, setRequests] = useState<RequestRow[]>(REQUESTS);
+  const [requests, setRequests] = useState<ExpenseReq[]>(REQUESTS);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const { member, user } = useAuth();
+  // Real requester name from the signed-in account (demo mode falls back).
+  const requesterName = member?.name || user?.email?.split("@")[0] || "You";
 
   useEffect(() => {
     let alive = true;
@@ -54,18 +65,19 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   }, [brandCampaigns, campaign]);
 
   const submit = async () => {
-    const ref = `REQ-2026-${String(Math.floor(1000 + amt % 9000)).padStart(4, "0")}`;
+    // Unique reference — time-based so equal amounts never collide.
+    const ref = `REQ-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
     const row: RequestRow = {
       category: cat?.label ?? "Expense", b: formBrandId,
       campaign: campaign || "—", requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
-    await createExpenseRequest(row);
-    // Also drop a card into the shared Approval Queue (same table /approvals +
-    // the Dashboard's Pending Approval read from), stage "Submitted".
+    await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht });
+    // Also drop a card into the shared Approval Queue (same table My Tasks ›
+    // My Approval + the Dashboard's Pending Approval read from), stage "Submitted".
     const queueRow: QueueRow = {
       id: ref, type: "Budget", typeIcon: "฿",
       title: `${cat?.label ?? "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
-      campaign: campaign || "—", requester: "You", approver: route,
+      campaign: campaign || "—", requester: requesterName, approver: route,
       due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
     };
     await createRequest(queueRow);
@@ -83,7 +95,8 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
   const wht = applyWht ? Math.round(amt * 0.03) : 0;
   const net = amt + vat - wht;
   const cat = EXP_CATEGORIES.find((c) => c.key === catKey);
-  const route = amt >= 10000 ? "CMO + CFO" : "CMO only";
+  // Marketing expenses are approved by the CMO alone (no CFO tier).
+  const route = "CMO";
   const grandTotal = amt + vat + lines.reduce((s, l) => s + l.amount + Math.round(l.amount * l.vat / 100), 0);
 
   const grouped = useMemo(() => {
@@ -247,7 +260,9 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
       {/* RIGHT: Recent Requests */}
       <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
         <div className="text-[15px] font-bold">Recent Requests</div>
-        {requests.filter((r) => brand === "all" || r.b === brand).map((r, i) => (
+        {requests.filter((r) => brand === "all" || r.b === brand).map((r, i) => {
+          const wait = daysWaiting(r.createdAt);
+          return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -256,7 +271,16 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
               </div>
               <StatusBadge tone={STATUS_TONE[r.status] ?? "gold"}>{r.status}</StatusBadge>
             </div>
-            <div className="text-[12px] text-faint mb-3">{brandName(r.b)} · {r.campaign}</div>
+            <div className="text-[12px] text-faint mb-3">
+              {brandName(r.b)} · {r.campaign}
+              {r.requester ? <> · โดย {r.requester}</> : null}
+              {r.status === "Waiting Approval" && wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
+            </div>
+            {r.status === "Rejected" && r.rejectReason && (
+              <div className="text-[11.5px] rounded-[8px] px-3 py-2 mb-3" style={{ background: "#FFF5F4", color: "#B33A2E" }}>
+                ตีกลับ: {r.rejectReason}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-[6px]">
               {[["Requested", baht(r.requested, { compact: true }), "#211F1C"], ["Approved", r.approved ? baht(r.approved, { compact: true }) : "—", r.approved ? "#4E7A4E" : "#9A9387"], ["Due", r.due, "#211F1C"]].map(([l, v, c]) => (
                 <div key={l}>
@@ -266,7 +290,7 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
               ))}
             </div>
           </div>
-        ))}
+        );})}
       </div>
     </div>
   );
@@ -275,13 +299,17 @@ export function ExpenseRequestTab({ brand }: { brand: BrandFilterValue }) {
 /* ── Spending Log: table + Voucher button ──────────────────────────── */
 export function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; onVoucher: (e: ExpenseRow) => void }) {
   // Real spending from the DB (empty on a fresh database), mock in demo mode.
-  const [all, setAll] = useState<ExpenseRow[]>(EXPENSES);
+  const [all, setAll] = useState<ExpenseLogRow[]>(EXPENSES);
   useEffect(() => {
     let alive = true;
     fetchExpenses().then((e) => { if (alive) setAll(e); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const rows = all.filter((e) => brand === "all" || e.b === brand);
+  const markPaid = (row: ExpenseLogRow) => {
+    setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x)));
+    markExpensePaid(row._id);
+  };
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
@@ -297,7 +325,12 @@ export function SpendingLogTab({ brand, onVoucher }: { brand: BrandFilterValue; 
           <div className="text-[13px] font-semibold text-ink">{baht(e.amount, { compact: true })}</div>
           <div className="text-[12.5px] text-muted">{e.vat ? baht(e.vat) : "—"}</div>
           <div><StatusBadge tone={STATUS_TONE[e.status] ?? "neutral"}>{e.status}</StatusBadge></div>
-          <div><button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Voucher ↗</button></div>
+          <div className="flex items-center gap-[6px]">
+            <button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Voucher ↗</button>
+            {e.status === "Unpaid" && (
+              <button onClick={() => markPaid(e)} className="text-[11.5px] font-bold text-white rounded-[8px] px-3 py-[5px]" style={{ background: "#4E7A4E" }}>Mark Paid ✓</button>
+            )}
+          </div>
         </div>
       ))}
     </div>

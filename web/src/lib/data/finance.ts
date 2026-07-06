@@ -143,7 +143,7 @@ export const EXP_CATEGORIES: ExpCategory[] = [
 ];
 
 export const STATUS_TONE: Record<string, Tone> = {
-  Paid: "green", Approved: "green", Pending: "gold", Unpaid: "red", "Waiting Approval": "gold",
+  Paid: "green", Approved: "green", Pending: "gold", Unpaid: "red", "Waiting Approval": "gold", Rejected: "red",
 };
 
 export function csvEscape(v: string | number): string {

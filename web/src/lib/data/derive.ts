@@ -87,10 +87,15 @@ export interface FeedItem { id: string; title: string; meta: string; module: str
 export interface DashFeed { pendingApproval: FeedItem[]; needsAttention: FeedItem[]; }
 
 /** Real "Pending Approval" + "Needs Attention" pulled from Campaigns, Content,
- *  Graphics and Tasks — so the Dashboard reflects every module, not just one. */
-export function dashboardFeed(campaigns: CampaignRow[], content: ContentItem[], graphics: Graphic[], tasks: Task[]): DashFeed {
+ *  Graphics, Tasks and Expense requests — so the Dashboard reflects every
+ *  module, not just one. Expense rows link to My Tasks › My Approval. */
+export function dashboardFeed(campaigns: CampaignRow[], content: ContentItem[], graphics: Graphic[], tasks: Task[], expenseReqs: RequestRow[] = []): DashFeed {
   const pendingApproval: FeedItem[] = [];
   const needsAttention: FeedItem[] = [];
+
+  expenseReqs.forEach((r, i) => {
+    if (r.status === "Waiting Approval") pendingApproval.push({ id: `exp-${i}`, title: `${r.category} · ${baht(r.requested, { compact: true })}`, meta: `${brandName(r.b)} · Expense`, module: "Expenses", href: "/my-tasks" });
+  });
 
   for (const c of campaigns) {
     if (c.status === "Waiting for Approval") pendingApproval.push({ id: `cam-${c.id}`, title: c.name, meta: `${brandName(c.b)} · Campaign`, module: "Campaign", href: `/campaigns/${c.id}` });
