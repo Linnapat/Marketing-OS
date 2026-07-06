@@ -32,6 +32,9 @@ export interface AgencyTask {
   brief: string;   // read-only brief from the internal team
   link: string;    // agency-editable deliverable link
   note: string;    // agency-editable message to the team
+  /** Which external user this task belongs to (members.email). Empty/legacy
+   *  rows are visible to every agency user until assigned. */
+  agencyEmail?: string;
 }
 
 export const AGENCY_TASKS: AgencyTask[] = [

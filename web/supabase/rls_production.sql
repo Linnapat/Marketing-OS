@@ -1,6 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════
 -- Marketing OS — PRODUCTION Row Level Security (template)
 --
+-- ⚠ SUPERSEDED: use security_p1.sql instead — it bundles this + the auth hook
+--   + agency_email scoping in one idempotent run.
+--
 -- The demo ships with open policies (anyone with the anon key can read/write).
 -- That's fine while the app is gated by Vercel Deployment Protection (only your
 -- team can reach the site). Apply this file when you add Supabase Auth (real

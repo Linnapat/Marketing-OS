@@ -44,3 +44,27 @@ export function permLevel(matrix: PermMatrix | null, role: Role, module: string)
 export function canSeeModule(matrix: PermMatrix | null, role: Role, module: string): boolean {
   return permLevel(matrix, role, module) !== PERM_NONE;
 }
+
+/** Permission-matrix module guarding each route prefix. Routes not listed
+ *  (Dashboard, My Tasks, Team, Work Calendar, Agency Portal) are open to every
+ *  internal role; the Agency role is confined to /agency separately. */
+const ROUTE_MODULE: [prefix: string, module: string][] = [
+  ["/campaigns", "Campaign"],
+  ["/requests", "Campaign"],
+  ["/approvals", "Campaign"],
+  ["/ads", "Campaign"],
+  ["/content", "Content"],
+  ["/graphic", "Graphic"],
+  ["/assets", "Graphic"],
+  ["/kol", "KOL"],
+  ["/finance", "Finance"],
+  ["/expenses", "Finance"],
+  ["/settings", "Settings"],
+  ["/admin", "Settings"],
+];
+
+/** The matrix module a route belongs to, or null when the route is ungated. */
+export function moduleForPath(pathname: string): string | null {
+  const hit = ROUTE_MODULE.find(([p]) => pathname === p || pathname.startsWith(p + "/"));
+  return hit ? hit[1] : null;
+}

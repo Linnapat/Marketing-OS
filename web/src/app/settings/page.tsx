@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
+import { useRole } from "@/lib/role";
 import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
@@ -41,10 +42,6 @@ const PERM_LEVELS: { l: string; c: string; b: string }[] = [
 ];
 const levelIndex = (label: string) => Math.max(0, PERM_LEVELS.findIndex((p) => p.l === label));
 
-// The current viewer's role. CMO / Admin can edit everything in Settings.
-const CURRENT_ROLE = "CMO / Admin";
-const canEdit = CURRENT_ROLE === "CMO / Admin";
-
 // Avatar colors assigned to newly invited members.
 const AVATAR_COLORS = ["#7A5C9E", "#2E7D74", "#B33A2E", "#C68A1E", "#3E5C9A", "#4E7A4E", "#B5577E"];
 const ACCESS_STYLE: Record<string, { fg: string; bg: string }> = {
@@ -54,6 +51,10 @@ const ACCESS_STYLE: Record<string, { fg: string; bg: string }> = {
 };
 
 export default function SettingsPage() {
+  // Only the real CMO / Admin role may edit anything in Settings — everyone
+  // else gets the read-only view. Driven by auth (or the demo role switcher).
+  const { role } = useRole();
+  const canEdit = role === "CMO / Admin";
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
   const [channels, setChannels] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_CHANNELS.map((c) => [c.key, c.def])));
@@ -157,7 +158,7 @@ export default function SettingsPage() {
           <div className="text-[12.5px]" style={{ color: canEdit ? "#8A6A2E" : "#6b6258" }}>
             {canEdit
               ? <>Signed in as <b>CMO / Admin</b> — you can edit everything here, including view and edit permissions.</>
-              : <>Read-only. Only <b>CMO / Admin</b> can change settings.</>}
+              : <>Read-only for <b>{role}</b>. Only <b>CMO / Admin</b> can change settings.</>}
           </div>
         </div>
 

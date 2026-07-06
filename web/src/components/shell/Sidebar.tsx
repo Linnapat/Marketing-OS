@@ -8,6 +8,7 @@ import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
+import { moduleForPath } from "@/lib/permissions";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
 
@@ -17,13 +18,14 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { can } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
   const displayRole = member?.role ?? "CMO / Admin";
-  // External agency users only see their portal.
-  const baseGroups = AUTH_REQUIRED && role === "Agency (External)"
+  // External agency users only see their portal (demo role-switcher included).
+  const baseGroups = role === "Agency (External)"
     ? NAV.filter((g) => g.label === "External")
     : NAV;
-  // Finance is gated by the Settings Permissions matrix (see role.tsx `can`).
+  // Every item is gated by the Settings Permissions matrix via its module —
+  // same map the page gate uses, so nav and pages never disagree.
   const groups = baseGroups
-    .map((g) => ({ ...g, items: g.items.filter((it) => it.href !== "/finance" || can("Finance")) }))
+    .map((g) => ({ ...g, items: g.items.filter((it) => { const m = moduleForPath(it.href); return !m || can(m); }) }))
     .filter((g) => g.items.length > 0);
 
   const isActive = (href: string) =>

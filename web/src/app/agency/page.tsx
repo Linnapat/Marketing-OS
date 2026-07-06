@@ -10,20 +10,27 @@ import {
   AGENCY_TYPES, AgencyStatus, AgencyTask,
 } from "@/lib/data/agency";
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
+import { useAuth } from "@/lib/auth";
+import { useRole } from "@/lib/role";
 
 export default function AgencyPortalPage() {
   const [tasks, setTasks] = useState<AgencyTask[]>(() => AGENCY_TASKS.map((t) => ({ ...t })));
   const [filter, setFilter] = useState<"all" | AgencyStatus>("all");
   const [newOpen, setNewOpen] = useState(false);
-  const empty = { title: "", b: "teppen" as BrandId, campaign: "", type: "Graphic", due: "" };
+  const empty = { title: "", b: "teppen" as BrandId, campaign: "", type: "Graphic", due: "", agencyEmail: "" };
   const [nt, setNt] = useState(empty);
+  const { member, user } = useAuth();
+  const { role } = useRole();
+  // Agency users see only their own tasks (+ unassigned); internal staff see all.
+  const isAgency = role === "Agency (External)";
+  const myEmail = member?.email ?? user?.email ?? "";
 
   // Load from Supabase (falls back to the mock already in state).
   useEffect(() => {
     let alive = true;
-    fetchAgencyTasks().then((t) => { if (alive) setTasks(t); }).catch(() => {});
+    fetchAgencyTasks(isAgency ? myEmail : undefined).then((t) => { if (alive) setTasks(t); }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [isAgency, myEmail]);
 
   const rows = tasks.filter((t) => filter === "all" || t.status === filter);
   const counts = useMemo(() => ({
@@ -44,6 +51,9 @@ export default function AgencyPortalPage() {
     const draft: Omit<AgencyTask, "id"> = {
       title: nt.title.trim(), b: nt.b, campaign: nt.campaign.trim() || "—", type: nt.type,
       status: "To Do", due: nt.due.trim() || "TBD", brief: "", link: "", note: "",
+      // Agency-created tasks are stamped with their own email; internal staff
+      // can assign a specific agency user (blank = visible to all agencies).
+      agencyEmail: (isAgency ? myEmail : nt.agencyEmail.trim()) || undefined,
     };
     setNewOpen(false);
     setNt(empty);
@@ -139,6 +149,12 @@ export default function AgencyPortalPage() {
                   <input value={nt.due} onChange={(e) => setNt({ ...nt, due: e.target.value })} placeholder="Jul 15" className={field} />
                 </div>
               </div>
+              {!isAgency && (
+                <div>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Agency user (email)</label>
+                  <input value={nt.agencyEmail} onChange={(e) => setNt({ ...nt, agencyEmail: e.target.value })} placeholder="เว้นว่าง = ทุก agency เห็นงานนี้" className={field} />
+                </div>
+              )}
             </div>
             <div className="flex gap-2 mt-6">
               <button onClick={addTask} disabled={!nt.title.trim()} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40 disabled:cursor-default">Add task</button>

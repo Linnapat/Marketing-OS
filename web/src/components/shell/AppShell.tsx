@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Lock } from "lucide-react";
 import { SidebarContent } from "./Sidebar";
-import { RoleProvider } from "@/lib/role";
+import { RoleProvider, useRole } from "@/lib/role";
 import { AuthProvider, useAuth, AUTH_REQUIRED } from "@/lib/auth";
+import { moduleForPath } from "@/lib/permissions";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -87,8 +88,41 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       {/* Content */}
       <main className="lg:pl-[248px]">
-        <div className="max-w-content mx-auto px-5 sm:px-6 pt-5 pb-16">{children}</div>
+        <div className="max-w-content mx-auto px-5 sm:px-6 pt-5 pb-16">
+          <ModuleGate>{children}</ModuleGate>
+        </div>
       </main>
+    </div>
+  );
+}
+
+/** Central page gate: every route is checked against the Settings → Permissions
+ *  matrix (via its module), and the external Agency role is confined to /agency
+ *  even in demo mode. Individual pages don't need their own guards. */
+function ModuleGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const { role, can } = useRole();
+
+  if (role === "Agency (External)" && !pathname.startsWith("/agency")) {
+    return <NoAccess title="External workspace only" detail="บัญชี Agency เข้าถึงได้เฉพาะ Agency Portal — งานภายใน (แคมเปญ งบ KOL รายงาน) ถูกปิดไว้" />;
+  }
+  const mod = moduleForPath(pathname);
+  if (mod && !can(mod)) {
+    return <NoAccess title={`No access to ${mod}`} detail={`สิทธิ์ของ ${role} สำหรับโมดูล ${mod} ถูกตั้งเป็น "—" ใน Settings → Permissions — ติดต่อ CMO / Admin หากต้องการเข้าถึง`} />;
+  }
+  return <>{children}</>;
+}
+
+function NoAccess({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="bg-surface border border-line rounded-cardLg p-10 max-w-md text-center">
+        <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ background: "#F2F0EB" }}>
+          <Lock size={20} className="text-faint" />
+        </div>
+        <div className="text-[16px] font-extrabold text-ink mb-2">{title}</div>
+        <div className="text-[13px] text-muted leading-[1.6]">{detail}</div>
+      </div>
     </div>
   );
 }
