@@ -118,11 +118,8 @@ export const DELIVERABLES: Deliverable[] = [
 
 export interface Specialist { name: string; init: string; color: string; kols: number; active: number; done: number; waiting: number; comments: number; pct: number; }
 
-export const SPECIALISTS: Specialist[] = [
-  { name: "Ken S.", init: "KS", color: "#3E5C9A", kols: 3, active: 2, done: 1, waiting: 1, comments: 3, pct: 67 },
-  { name: "Ploy R.", init: "PR", color: "#B5577E", kols: 1, active: 1, done: 0, waiting: 0, comments: 0, pct: 33 },
-  { name: "Nok W.", init: "NW", color: "#6b6258", kols: 2, active: 0, done: 1, waiting: 0, comments: 0, pct: 50 },
-];
+// Cleared for go-live — the specialist dashboard is empty until wired to live data.
+export const SPECIALISTS: Specialist[] = [];
 
 export function initials(name: string): string {
   return (name.slice(0, 1) + (name.split(" ")[1] || "").slice(0, 1)).toUpperCase();
