@@ -28,7 +28,43 @@ export interface Task {
   relatedBrief?: string;
   relatedGraphicId?: string;
   dueIso?: string;
+  /** Indices of checklist items already ticked off. */
+  checklistDone?: number[];
+  /** Lightweight comment thread, stored with the task. */
+  comments?: { by: string; text: string; at: string }[];
 }
+
+/* ── Real-date helpers ──────────────────────────────────────────────────
+ * Tasks carry either an ISO date (dueIso, set by the New Task form) or a
+ * legacy display string like "Jul 2". Resolve both against the actual
+ * calendar so Today/This-week grouping and due colors stay true over time. */
+const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+export function dueDate(t: Pick<Task, "due" | "dueIso">): Date | null {
+  if (t.dueIso) {
+    const d = new Date(`${t.dueIso}T00:00:00`);
+    if (!isNaN(+d)) return d;
+  }
+  const m = /^([A-Za-z]{3})\w*\s+(\d{1,2})$/.exec((t.due || "").trim());
+  if (!m) return null;
+  const mi = MONTHS_SHORT.indexOf(m[1].toLowerCase());
+  if (mi < 0) return null;
+  return new Date(new Date().getFullYear(), mi, Number(m[2]));
+}
+
+/** Whole days from today to the due date (negative = overdue), null if undated. */
+export function daysUntilDue(t: Pick<Task, "due" | "dueIso">): number | null {
+  const d = dueDate(t);
+  if (!d) return null;
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return Math.round((day(d) - day(new Date())) / 86400000);
+}
+
+export const isDueToday = (t: Pick<Task, "due" | "dueIso">) => daysUntilDue(t) === 0;
+export const isDueThisWeek = (t: Pick<Task, "due" | "dueIso">) => {
+  const n = daysUntilDue(t);
+  return n !== null && n >= 0 && n <= 6;
+};
 
 export const STATUS_TONE: Record<string, Tone> = {
   Done: "green", "In Progress": "blue", Waiting: "gold", "Need Approval": "green",
