@@ -24,6 +24,9 @@ export async function createKol(kol: Kol): Promise<Kol> {
     owner: kol.owner, kol_id: kol.masterKolId ?? null, data: kol,
   }).select("id").single();
   if (error || !data) return kol;
+  // campaign_id is added by kol_content_integrity.sql; set it in a second step so
+  // the row still saves on a DB that hasn't run the migration yet.
+  if (kol.campaignId) await db.from("kols").update({ campaign_id: kol.campaignId }).eq("id", data.id);
   return kol;
 }
 

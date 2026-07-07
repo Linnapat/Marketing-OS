@@ -75,5 +75,26 @@ console.log("Content — approve/publish gating");
   check("Publish ok when caption+asset+approval done", canPublish(c({ captionStatus: "Approved", assetStatus: "Approved", approvalStatus: "Approved" })).ok);
 }
 
+console.log("Idempotency — source-id keys");
+{
+  // Simulate createXIfNew's guard: a set of already-materialised source ids.
+  const seen = new Set<string>();
+  const tryCreate = (key: string) => { if (seen.has(key)) return false; seen.add(key); return true; };
+  // First submit of a 3-page KOL requirement kr1.
+  const keys = [1, 2, 3].map((p) => `kr1#${p}`);
+  const first = keys.map(tryCreate);
+  check("first submit creates all 3 pages", first.every(Boolean) && seen.size === 3);
+  // Retry the same submit — nothing new.
+  const retry = keys.map(tryCreate);
+  check("retry creates 0 (idempotent)", retry.every((x) => x === false) && seen.size === 3);
+  // Content idempotency key is (campaign, contentItem) → one per item.
+  const cseen = new Set<string>();
+  const c1 = tryCreateKey(cseen, "camp1::ci1");
+  const c1again = tryCreateKey(cseen, "camp1::ci1");
+  check("content item creates once, retry no-op", c1 && !c1again);
+}
+
+function tryCreateKey(set: Set<string>, key: string) { if (set.has(key)) return false; set.add(key); return true; }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
