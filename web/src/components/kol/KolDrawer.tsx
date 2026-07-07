@@ -15,10 +15,12 @@ import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
 import { logCollaboration, ensureKolProfile, searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
+import { createTaskDb } from "@/lib/db/tasks";
+import { Task } from "@/lib/data/tasks";
 
 const TABS = [
   ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
-  ["brief", "Brief & Assets"], ["contract", "Contract"], ["results", "Results"], ["comments", "Comments"],
+  ["brief", "Brief & Assets"], ["results", "Results"], ["comments", "Comments"],
 ] as const;
 type DrawerTab = (typeof TABS)[number][0];
 
@@ -30,11 +32,9 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   const openCount = comments.filter((c) => c.status === "Open").length;
   const currentStage = normalizeStage(kol.status);
   const workStages = ["Producing", "In Review", "Approved", "Posted", "Completed"];
-  const contractStages = ["Negotiating", "Contract Signed", ...workStages];
   const visibleTabs = TABS.filter(([id]) => {
     if (id === "profile" || id === "campaign" || id === "comments") return true;
     if (id === "deliverables" || id === "brief") return workStages.includes(currentStage);
-    if (id === "contract") return contractStages.includes(currentStage);
     if (id === "results") return currentStage === "Posted" || currentStage === "Completed";
     return false;
   });
@@ -99,7 +99,6 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           {tab === "campaign" && <CampaignTab kol={kol} />}
           {tab === "deliverables" && <DeliverablesTab items={deliverables} />}
           {tab === "brief" && <BriefTab kol={kol} />}
-          {tab === "contract" && <ContractTab kol={kol} onUpdate={onUpdate} />}
           {tab === "results" && <ResultsTab kol={kol} onUpdate={onUpdate} />}
           {tab === "comments" && <CommentsTab comments={comments} onResolve={(id) => setComments((cs) => cs.map((c) => c.id === id ? { ...c, status: "Resolved" } : c))} />}
         </div>
@@ -268,11 +267,39 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
 
   const save = async () => {
     setBusy(true);
-    // Once the specialist fills the real page, upsert it into the master library.
+    // One final submit: save profile + proposal, then route it back to the
+    // original requester in My Approval. Repeated clicks reuse the same task id.
     const masterKolId = await ensureKolProfile({ masterKolId: selectedMasterId, name, handle, kolType, followers, platform: kol.plat }).catch(() => selectedMasterId);
-    const next: Kol = { ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType, followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab, contactInfo, masterKolId: masterKolId ?? kol.masterKolId };
-    try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    finally { setBusy(false); }
+    const taskId = kol.proposalApprovalTaskId ?? Date.now();
+    const requester = (kol.requester || kol.pendingApprover || "").trim();
+    const next: Kol = {
+      ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType,
+      followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab,
+      contactInfo, masterKolId: masterKolId ?? kol.masterKolId,
+      quotationStatus: "Pending Approval",
+      proposalApprovalTaskId: taskId,
+      proposalSubmittedAt: new Date().toISOString(),
+    };
+    try {
+      await updateKol(next);
+      if (!kol.proposalApprovalTaskId && requester && requester !== "Unassigned" && requester !== "—") {
+        const due = new Date(); due.setDate(due.getDate() + 3);
+        const task: Task = {
+          id: taskId, title: `Approve KOL proposal — ${next.name}`,
+          module: "KOL", moduleIcon: "🌟", moduleColor: "#B5577E", type: "KOL",
+          assignee: requester, brand: brandName(next.b), campaign: next.campaign,
+          status: "Need Approval", priority: "High", group: "needApproval",
+          due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+          dueIso: due.toISOString().slice(0, 10), blocker: null,
+          pendingApprover: requester, isQuickWin: false,
+          nextAction: `Review profile, platforms and proposal budget ${baht(next.fee, { compact: true })}. Approve or request revision.`,
+          checklist: ["Check KOL profile & followers", "Check platforms / links", "Check proposal budget & food support"],
+          relatedKolId: next.id, approvalKind: "kolProposal",
+        };
+        await createTaskDb(task);
+      }
+      onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } finally { setBusy(false); }
   };
 
   const field = "w-full text-[13.5px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none";
@@ -313,9 +340,14 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       <div><label className={lbl}>Content Style</label><input value={contentStyle} onChange={(e) => setContentStyle(e.target.value)} className={field} placeholder="e.g. Food photography + short video" /></div>
       <div><label className={lbl}>Past Collaboration</label><input value={pastCollab} onChange={(e) => setPastCollab(e.target.value)} className={field} placeholder="e.g. Wagyu teaser Jun 2025 — 3.8× ROI" /></div>
       <div><label className={lbl}>Contact / Agency</label><input value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className={field} placeholder="Agency / email / phone" /></div>
-      <div className="flex items-center gap-3">
-        <button onClick={save} disabled={busy || !dirty} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">{busy ? "Saving…" : "Save Profile"}</button>
-        {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ Saved</span>}
+      <div className="border-t border-line pt-4">
+        <div className="text-[13px] font-extrabold text-ink mb-3">Proposal & Contract</div>
+        <ContractTab kol={kol} onUpdate={onUpdate} embedded />
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={save} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">{busy ? "Submitting…" : "Submit Profile & Proposal"}</button>
+        {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ ส่งไป My Approval แล้ว</span>}
+        {!kol.requester && <span className="text-[11px] text-status-red">ไม่พบ Requester — ระบบจะใช้ Approver ที่กำหนดไว้แทน</span>}
       </div>
     </div>
   );
@@ -383,9 +415,10 @@ function BriefTab({ kol }: { kol: Kol }) {
 const CONTRACT_OPTS = ["Pending", "Sent", "Signed"];
 // KOL deals use a rate card / proposal rather than a formal vendor quotation.
 const RATECARD_OPTS = ["Pending", "Received", "Approved"];
-function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
+function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?: (k: Kol) => void; embedded?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [proposalBudget, setProposalBudget] = useState(kol.fee || 0);
+  const [foodSupport, setFoodSupport] = useState(kol.foodCost || 0);
   const isPaid = /paid/i.test(kol.paymentStatus);
   const set = async (patch: Partial<Kol>) => {
     setBusy(true);
@@ -394,7 +427,11 @@ function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void 
   };
   const saveProposalBudget = async () => {
     const fee = Math.max(0, proposalBudget || 0);
-    await set({ fee, totalCost: fee + (kol.foodCost || 0) });
+    await set({ fee, totalCost: fee + Math.max(0, foodSupport || 0) });
+  };
+  const saveFoodSupport = async () => {
+    const foodCost = Math.max(0, foodSupport || 0);
+    await set({ foodCost, totalCost: Math.max(0, proposalBudget || 0) + foodCost });
   };
   const selCls = "text-[12px] font-semibold px-[10px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none";
   return (
@@ -442,14 +479,27 @@ function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void 
           <span className="text-[11px] text-status-gold">{busy ? "Saving…" : "บันทึกอัตโนมัติ"}</span>
         </div>
         <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-accent-border">
-          <Field label="Food Support" value={baht(kol.foodCost, { compact: true })} />
-          <Field label="Total Cost" value={baht(proposalBudget + (kol.foodCost || 0), { compact: true })} />
+          <div>
+            <label className="block text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Food Support</label>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-bold text-ink">฿</span>
+              <input type="number" min={0} value={foodSupport || ""}
+                onChange={(e) => setFoodSupport(Number(e.target.value) || 0)}
+                onBlur={saveFoodSupport}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                className="w-full text-[13px] font-semibold px-3 py-2 rounded-[9px] border border-accent-border bg-white outline-none"
+                placeholder="ค่าอาหาร / สินค้าสนับสนุน" />
+            </div>
+          </div>
+          <Field label="Total Cost" value={baht(proposalBudget + foodSupport, { compact: true })} />
         </div>
       </div>
       <Field label="Payment Due" value={kol.paymentDue} />
-      <a href="/expenses" className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[10px] text-center">
-        {isPaid ? "ดูรายการใน Finance / Expenses →" : "เปิดคำขอเบิก/ชำระเงินใน Finance / Expenses →"}
-      </a>
+      {!embedded && (
+        <a href="/expenses" className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[10px] text-center">
+          {isPaid ? "ดูรายการใน Finance / Expenses →" : "เปิดคำขอเบิก/ชำระเงินใน Finance / Expenses →"}
+        </a>
+      )}
     </div>
   );
 }
