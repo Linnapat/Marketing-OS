@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
 import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
 import { EXPENSES, REQUESTS, EXP_CATEGORIES, STATUS_TONE, ExpenseRow, RequestRow } from "@/lib/data/finance";
-import { fetchExpenseRequests, fetchExpenses, createExpenseRequest, markExpensePaid, ExpenseReq, ExpenseLogRow } from "@/lib/db/finance";
+import { fetchExpenseRequests, fetchExpenses, createExpenseRequest, markExpensePaid, submitExpenseDraft, ExpenseReq, ExpenseLogRow } from "@/lib/db/finance";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createRequest } from "@/lib/db/requests";
@@ -54,6 +54,12 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, [submitted]);
+
+  // Draft rows come from approved campaign budgets — one click sends them on.
+  const submitDraft = async (r: ExpenseReq) => {
+    setRequests((rs) => rs.map((x) => (x === r ? { ...x, status: "Waiting Approval" } : x)));
+    await submitExpenseDraft(r);
+  };
 
   const formBrandId = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
   // Campaigns available for the chosen brand (cascade by brand).
@@ -287,6 +293,12 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
               <div className="text-[11.5px] rounded-[8px] px-3 py-2 mb-3" style={{ background: "#FFF5F4", color: "#B33A2E" }}>
                 ตีกลับ: {r.rejectReason}
               </div>
+            )}
+            {r.status === "Draft" && (
+              <button onClick={() => submitDraft(r)}
+                className="w-full text-[12px] font-bold text-white rounded-[8px] py-[7px] mb-3" style={{ background: "#211F1C" }}>
+                ส่งขออนุมัติ →
+              </button>
             )}
             <div className="grid grid-cols-3 gap-[6px]">
               {[["Requested", baht(r.requested, { compact: true }), "#211F1C"], ["Approved", r.approved ? baht(r.approved, { compact: true }) : "—", r.approved ? "#4E7A4E" : "#9A9387"], ["Due", r.due, "#211F1C"]].map(([l, v, c]) => (

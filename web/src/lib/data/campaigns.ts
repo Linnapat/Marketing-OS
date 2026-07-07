@@ -139,12 +139,10 @@ export function deriveDetail(c: CampaignRow): CampaignDetail {
       { label: "END DATE", value: end ?? "—" },
       { label: "PUBLISH START", value: start ?? "—" },
     ],
+    // Only the real total — bucket lines come from the campaign's brief (see
+    // BudgetTab); fabricating a % split here misled Finance.
     budgetLines: [
       { label: "Total Planning Budget", value: baht(c.budget, { compact: true }) },
-      { label: "Content Budget", value: baht(Math.round(c.budget * 0.1), { compact: true }) },
-      { label: "KOL Budget", value: baht(Math.round(c.budget * 0.2), { compact: true }) },
-      { label: "Ads Budget", value: baht(Math.round(c.budget * 0.4), { compact: true }) },
-      { label: "Production Budget", value: baht(Math.round(c.budget * 0.15), { compact: true }) },
     ],
     kpiChips: ["Visit +20%", "ROAS ≥ 3.0×", c.roi > 0 ? `Actual: ${c.roi}×` : "ROI pending"],
     kpiRows: [

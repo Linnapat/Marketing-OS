@@ -178,6 +178,18 @@ async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
   await db.from("campaigns").update({ data: brief }).eq("id", brief.id);
 }
 
+/** All saved briefs keyed by campaign name — one query, for pages that show
+ *  budget breakdowns across many campaigns (Finance). */
+export async function fetchAllBriefs(): Promise<Record<string, CampaignBrief>> {
+  const db = supabase();
+  if (!db) return {};
+  const { data, error } = await db.from("campaigns").select("name,data");
+  if (error || !data) return {};
+  const out: Record<string, CampaignBrief> = {};
+  for (const r of data) if (r.data) out[r.name as string] = r.data as CampaignBrief;
+  return out;
+}
+
 /** Read a saved brief back (campaigns.data). Returns null when unavailable. */
 export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | null> {
   const db = supabase();
@@ -210,9 +222,20 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
   const camp = (await fetchCampaigns()).find((c) => c.name === campaignName);
   if (!camp) return;
   const brief = await fetchCampaignBrief(camp.id);
-  if (!brief) return;
+  if (!brief) {
+    // Campaign has no brief (created outside the wizard) — the fee must still
+    // count toward the campaign's committed budget, not vanish.
+    const spend = (camp.spend || 0) + (item.budget || 0);
+    await db.from("campaigns").update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id);
+    return;
+  }
   brief.kols = [...brief.kols, { ...item, id: `kr-req-${Date.now()}` }];
-  await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
+  // Re-derive the campaign's committed budget so the row (Budget/Spend shown on
+  // the Campaigns list, detail header, Finance) moves together with the plan.
+  const s = budgetSummary(brief);
+  await db.from("campaigns").update({
+    data: brief, spend: s.allocated, budget: Math.max(brief.budget.total || 0, s.allocated),
+  }).eq("id", camp.id);
 }
 
 /** Append an approval-log entry + status change to a saved brief. */

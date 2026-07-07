@@ -144,20 +144,35 @@ export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[]):
   const isStuck = (t: Task) => t.status === "Stuck" || !!t.blocker;
   const isOverdue = (t: Task) => !done(t) && !!t.dueIso && t.dueIso < today;
 
-  const view: TeamMemberView[] = members.map((m) => {
-    const mine = tasks.filter((t) => t.assignee === m.name);
+  const bucket = (mine: Task[]) => {
     const open = mine.filter((t) => !done(t)).length;
     return {
-      name: m.name, role: m.role, color: m.color,
       open,
       done: mine.filter(done).length,
       inProgress: mine.filter((t) => t.status === "In Progress").length,
       waiting: mine.filter((t) => t.status === "Waiting" || t.status === "Need Approval").length,
       stuck: mine.filter(isStuck).length,
       overdue: mine.filter(isOverdue).length,
-      load: open >= 8 ? "needsSupport" : open >= 5 ? "busy" : "healthy",
+      load: (open >= 8 ? "needsSupport" : open >= 5 ? "busy" : "healthy") as Load,
     };
-  });
+  };
+
+  const view: TeamMemberView[] = members.map((m) => ({
+    name: m.name, role: m.role, color: m.color,
+    ...bucket(tasks.filter((t) => t.assignee === m.name)),
+  }));
+
+  // Work assigned to nobody — or to a name that isn't a real member — is still
+  // load the team must absorb. Surface it as its own row instead of letting it
+  // vanish from the summary.
+  const known = new Set(members.map((m) => m.name));
+  const orphans = tasks.filter((t) => !known.has(t.assignee));
+  if (orphans.length) {
+    view.push({
+      name: "Unassigned", role: "งานที่ยังไม่มีเจ้าของจริงในระบบ — ต้องมีคนรับ", color: "#9A9387",
+      ...bucket(orphans),
+    });
+  }
 
   return {
     members: view,

@@ -114,6 +114,16 @@ export async function markExpensePaid(id: number | undefined): Promise<void> {
   await db.from("expenses").update({ status: "Paid" }).eq("id", id);
 }
 
+/** Submit a Draft expense request (auto-created from an approved campaign
+ *  budget) into the approval flow. */
+export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
+  const db = supabase();
+  if (!db || req._id === undefined) return;
+  await db.from("expense_requests").update({ status: "Waiting Approval" }).eq("id", req._id);
+  notify("approval", `📥 คำขอเบิกงบจากงบแคมเปญ · ${req.category}`,
+    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, "/my-tasks");
+}
+
 /** Insert a new expense request; extended columns go in a second update so the
  *  base row survives on a DB that hasn't run expenses_p1.sql yet. */
 export async function createExpenseRequest(r: RequestRow, extra?: {

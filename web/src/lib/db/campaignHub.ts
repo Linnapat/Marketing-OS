@@ -8,6 +8,7 @@ import { fetchKols, createKol, buildKol } from "./kol";
 import { fetchGraphics, createGraphic, buildGraphic } from "./graphic";
 import { fetchTasks, createTaskDb } from "./tasks";
 import { fetchExpenseRequests, createExpenseRequest } from "./finance";
+import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { ContentItem } from "@/lib/data/content";
 import { Kol } from "@/lib/data/kol";
 import { Graphic } from "@/lib/data/graphic";
@@ -64,6 +65,26 @@ export function hubStats(hub: CampaignHub): HubStats {
   };
 }
 
+/** When a campaign brief is approved, pre-open one Draft expense request per
+ *  funded budget bucket so Finance doesn't re-key the plan by hand. Skips
+ *  buckets that already have a request for this campaign (safe to call twice).
+ *  Returns how many drafts were created. */
+export async function createBudgetExpenseDrafts(c: CampaignRow, brief: CampaignBrief): Promise<number> {
+  const buckets = budgetSummary(brief).byBucket.filter((b) => b.amount > 0);
+  if (!buckets.length) return 0;
+  const existing = (await fetchExpenseRequests()).filter((e) => e.campaign === c.name);
+  let created = 0;
+  for (const b of buckets) {
+    if (existing.some((e) => e.category === b.label)) continue;
+    await createExpenseRequest(
+      { category: b.label, b: c.b, campaign: c.name, requested: b.amount, approved: 0, due: "—", status: "Draft" },
+      { requester: brief.plannerOwner || c.owner },
+    );
+    created++;
+  }
+  return created;
+}
+
 /** Generate the Planner's starter tasks for a campaign — real records tagged
  *  with the campaign name so they show up across every module. */
 export async function createPlannerTasks(c: CampaignRow): Promise<void> {
@@ -99,8 +120,10 @@ export async function createPlannerTasks(c: CampaignRow): Promise<void> {
   await createTaskDb(mkTask(2, "Ads", "📣", "#C68A1E", "Ads", `${c.name} — Google Ads optimization`, "Google"));
   await createTaskDb(mkTask(3, "Campaign", "📊", "#B33A2E", "Report", `${c.name} — Result report`));
 
+  // Draft for the full planning budget — the team adjusts and submits it, rather
+  // than the old fabricated 40% figure going straight to approval.
   await createExpenseRequest({
-    category: "Campaign budget", b: c.b, campaign: c.name, requested: Math.round(c.budget * 0.4),
-    approved: 0, due: "TBD", status: "Waiting Approval",
+    category: "Campaign budget", b: c.b, campaign: c.name, requested: c.budget,
+    approved: 0, due: "TBD", status: "Draft",
   });
 }

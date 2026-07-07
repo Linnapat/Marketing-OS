@@ -68,8 +68,10 @@ export function buildGraphic(input: {
   return {
     id: input.id, stage: "Brief", title: input.title || "New request", b: input.b, campaign: input.campaign,
     due: input.due || "TBD", designer: input.designer || "Unassigned", requester: input.requester || "You",
-    approver: input.approver || "Aran P.", type: input.type, priority: "Med", fb: 0, openFb: 0,
-    isOverdue: false, briefComplete: false, pendingApprover: input.approver || "Aran P.",
+    // Approver falls back to the requester (a real person in the flow) — never a
+    // name that doesn't exist in Settings › Users & Roles.
+    approver: input.approver || input.requester || "Unassigned", type: input.type, priority: "Med", fb: 0, openFb: 0,
+    isOverdue: false, briefComplete: false, pendingApprover: input.approver || input.requester || "Unassigned",
     blocker: null, waitingSince: null, nextAction: "Complete the brief to start design.",
     platform: input.channels.join(", ") || "—", size: "—", contentItem: input.title || "—",
   };

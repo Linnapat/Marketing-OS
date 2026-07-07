@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { baht } from "@/lib/format";
-import { CampaignHub, HubStats, hubStats, createPlannerTasks } from "@/lib/db/campaignHub";
+import { CampaignHub, HubStats, hubStats, createPlannerTasks, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval } from "@/lib/db/brief";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
@@ -138,7 +138,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
         {tab === "content" && <ContentList hub={hub} />}
         {tab === "kol" && <KolList hub={hub} />}
         {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
-        {tab === "budget" && <BudgetTab detail={detail} s={s} />}
+        {tab === "budget" && <BudgetTab detail={detail} s={s} brief={brief} />}
         {tab === "assets" && <AssetsList hub={hub} />}
         {tab === "approval" && <ApprovalTab detail={detail} brief={brief} onBriefChange={onBriefChange} />}
         {tab === "result" && <ResultTab detail={detail} />}
@@ -558,9 +558,18 @@ function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | nu
   );
 }
 
-function BudgetTab({ detail, s }: { detail: CampaignDetail; s: HubStats | null }) {
+function BudgetTab({ detail, s, brief }: { detail: CampaignDetail; s: HubStats | null; brief?: CampaignBrief | null }) {
   const c = detail.row;
   const requested = s?.expenseTotal ?? 0;
+  // Breakdown from the campaign's actual brief allocation; campaigns without a
+  // brief only have a total — never a fabricated split.
+  const bs = brief ? budgetSummary(brief) : null;
+  const lines = bs
+    ? [
+        { label: "Total Planning Budget", value: baht(Math.max(brief!.budget.total || 0, bs.allocated), { compact: true }) },
+        ...bs.byBucket.filter((b) => b.amount > 0).map((b) => ({ label: `${b.label} Budget`, value: baht(b.amount, { compact: true }) })),
+      ]
+    : detail.budgetLines;
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -577,7 +586,7 @@ function BudgetTab({ detail, s }: { detail: CampaignDetail; s: HubStats | null }
         ))}
       </div>
       <Panel title="Planning Budget Breakdown">
-        {detail.budgetLines.map((b) => (
+        {lines.map((b) => (
           <div key={b.label} className="flex items-center justify-between py-[10px] border-b border-line4 last:border-0">
             <span className="text-[13px] text-ink">{b.label}</span>
             <span className="text-[13px] font-semibold text-ink">{b.value}</span>
@@ -638,7 +647,13 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
     try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
     // Approval-flow steps ping the team on LINE/email.
     if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || "CMO"}`, "/my-tasks");
-    else if (nextStatus === "Approved") notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
+    else if (nextStatus === "Approved") {
+      notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
+      // Approved budget flows straight into Finance as Draft expense requests —
+      // one per funded bucket — so the finance team never re-keys the plan.
+      const drafts = await createBudgetExpenseDrafts(detail.row, next).catch(() => 0);
+      if (drafts > 0) notify("approval", `💰 เปิด Draft เบิกงบ ${drafts} รายการจากงบแคมเปญ: ${brief.name}`, `ตามงบที่อนุมัติ — ตรวจและกดส่งอนุมัติได้ในโมดูล Expenses`, "/expenses");
+    }
     else if (nextStatus === "Need Revision") notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — โดย ${reviewer}`, "/campaigns");
   };
   const doRevision = () => {

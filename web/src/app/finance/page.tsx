@@ -17,6 +17,8 @@ import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { useAuth } from "@/lib/auth";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { financeFromDb, FinanceView } from "@/lib/data/derive";
+import { fetchAllBriefs } from "@/lib/db/brief";
+import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 
 const TABS = [
@@ -42,11 +44,13 @@ export default function FinancePage() {
   const { can } = useRole();
   // Budget + P&L derive from real campaigns / expense requests (empty on a fresh DB).
   const [fin, setFin] = useState<FinanceView | null>(null);
+  const [reqs, setReqs] = useState<ExpenseReq[]>([]);
+  const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
 
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchCampaigns(), fetchExpenseRequests()])
-      .then(([c, r]) => { if (alive) setFin(financeFromDb(c, r)); })
+    Promise.all([fetchCampaigns(), fetchExpenseRequests(), fetchAllBriefs()])
+      .then(([c, r, b]) => { if (alive) { setFin(financeFromDb(c, r)); setReqs(r); setBriefs(b); } })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -101,7 +105,7 @@ export default function FinancePage() {
       </div>
 
       <div className="mt-5">
-        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} />}
+        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} />}
         {tab === "roi" && <RoiTab brand={brand} fin={fin} />}
         {tab === "approval" && <ApprovalTab brand={brand} />}
       </div>
@@ -124,7 +128,7 @@ function NoFinanceAccess() {
 }
 
 /* ── Budget Plan: allocation + campaign-level profitability ─────────── */
-function BudgetPlanTab({ brand, fin }: { brand: BrandFilterValue; fin: FinanceView | null }) {
+function BudgetPlanTab({ brand, fin, reqs, briefs }: { brand: BrandFilterValue; fin: FinanceView | null; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief> }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
   const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
@@ -185,21 +189,31 @@ function BudgetPlanTab({ brand, fin }: { brand: BrandFilterValue; fin: FinanceVi
         </div>
       </div>
 
-      <BudgetProfitability rows={rows} open={open} setOpen={setOpen} />
+      <BudgetProfitability rows={rows} open={open} setOpen={setOpen} reqs={reqs} briefs={briefs} />
     </div>
   );
 }
 
-function BudgetProfitability({ rows, open, setOpen }: {
+function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
   rows: PnlRow[]; open: Record<string, boolean>; setOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief>;
 }) {
-  const detail = (p: PnlRow) => [
-    { label: "Content & Creative", budget: Math.round(p.budget * 0.15), actual: Math.round(p.expense * 0.12) },
-    { label: "KOL / Influencer", budget: Math.round(p.budget * 0.25), actual: Math.round(p.expense * 0.28) },
-    { label: "Paid Ads", budget: Math.round(p.budget * 0.4), actual: Math.round(p.expense * 0.42) },
-    { label: "Production", budget: Math.round(p.budget * 0.12), actual: Math.round(p.expense * 0.1) },
-    { label: "Event & Other", budget: Math.round(p.budget * 0.08), actual: Math.round(p.expense * 0.08) },
-  ];
+  // Real breakdown: Budget side = the campaign brief's bucket allocation;
+  // Actual side = expense requests logged against the campaign, by category.
+  const detail = (p: PnlRow) => {
+    const brief = briefs[p.name];
+    const planned = brief ? budgetSummary(brief).byBucket.filter((b) => b.amount > 0) : [];
+    const actualByCat = new Map<string, number>();
+    for (const r of reqs.filter((r) => r.campaign === p.name)) {
+      actualByCat.set(r.category, (actualByCat.get(r.category) || 0) + (r.approved || r.requested || 0));
+    }
+    const labels = [...new Set([...planned.map((b) => b.label), ...actualByCat.keys()])];
+    return labels.map((label) => ({
+      label,
+      budget: planned.find((b) => b.label === label)?.amount ?? 0,
+      actual: actualByCat.get(label) ?? 0,
+    }));
+  };
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">Campaign-level Profitability</div>
@@ -225,6 +239,9 @@ function BudgetProfitability({ rows, open, setOpen }: {
             </button>
             {isOpen && (
               <div className="bg-ivory px-5 py-2 border-t border-line4">
+                {detail(p).length === 0 && (
+                  <div className="py-[7px] text-[12px] text-faint">No breakdown yet — this campaign has no brief allocation or logged expenses.</div>
+                )}
                 {detail(p).map((d) => (
                   <div key={d.label} className="grid grid-cols-[2fr_1fr_1fr] gap-2 py-[7px] text-[12px]">
                     <span className="text-muted">{d.label}</span>
