@@ -17,6 +17,7 @@ import { createRequest } from "@/lib/db/requests";
 import { RequestRow as QueueRow } from "@/lib/data/requests";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
+import { getAppSetting } from "@/lib/db/appSettings";
 
 /** Days a request has been waiting, from its created_at (needs expenses_p1.sql). */
 export function daysWaiting(createdAt?: string): number | null {
@@ -77,7 +78,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     // Unique reference — time-based so equal amounts never collide.
     const ref = `REQ-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
     const row: RequestRow = {
-      category: cat?.label ?? "Expense", b: formBrandId,
+      category: catKey || "Expense", b: formBrandId,
       campaign, requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
     await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht });
@@ -85,13 +86,13 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     // My Approval + the Dashboard's Pending Approval read from), stage "Submitted".
     const queueRow: QueueRow = {
       id: ref, type: "Budget", typeIcon: "฿",
-      title: `${cat?.label ?? "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
+      title: `${catKey || "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
       campaign, requester: requesterName, approver: route,
       due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
     };
     await createRequest(queueRow);
     // ปิดช่องว่าง "แจ้งกลุ่ม LINE เอง" — ระบบแจ้งผู้อนุมัติให้ทันที
-    notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${cat?.label ?? "Expense"}`,
+    notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${catKey || "Expense"}`,
       `${baht(amt)} (${reimburseType})${vendor ? ` · ${vendor}` : ""} · โดย ${requesterName} → รอ ${route} อนุมัติ`,
       "/my-tasks");
     setSubmitted(ref);
@@ -107,16 +108,41 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const vat = applyVat ? Math.round(amt * 0.07) : 0;
   const wht = applyWht ? Math.round(amt * 0.03) : 0;
   const net = amt + vat - wht;
-  const cat = EXP_CATEGORIES.find((c) => c.key === catKey);
+  // catKey now holds the category NAME directly (so it matches the budget sheet).
   // Marketing expenses are approved by the CMO alone (no CFO tier).
   const route = "CMO";
   const grandTotal = amt + vat + lines.reduce((s, l) => s + l.amount + Math.round(l.amount * l.vat / 100), 0);
 
-  const grouped = useMemo(() => {
-    const g: Record<string, typeof EXP_CATEGORIES> = {};
-    EXP_CATEGORIES.forEach((c) => { (g[c.group] ||= []).push(c); });
-    return g;
+  // Category options come from the SAME budget Google Sheet the P&L uses, so a
+  // request's category always lines up with a budgeted category. Falls back to
+  // the built-in list until the sheet is connected.
+  const [sheetGroups, setSheetGroups] = useState<{ group: string; cats: string[] }[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting("budget_sheet_url").then(async (url) => {
+      if (!url) return;
+      try {
+        const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url)}`);
+        const j = await res.json();
+        if (!alive || !res.ok || !Array.isArray(j.rows)) return;
+        const map = new Map<string, Set<string>>();
+        for (const r of j.rows as { category: string; group?: string }[]) {
+          const g = (r.group || "Other").trim() || "Other";
+          if (!map.has(g)) map.set(g, new Set());
+          map.get(g)!.add(r.category);
+        }
+        if (map.size) setSheetGroups([...map.entries()].map(([group, s]) => ({ group, cats: [...s].sort() })));
+      } catch { /* keep fallback */ }
+    }).catch(() => {});
+    return () => { alive = false; };
   }, []);
+
+  const grouped = useMemo(() => {
+    if (sheetGroups) return sheetGroups;
+    const g: Record<string, string[]> = {};
+    EXP_CATEGORIES.forEach((c) => { (g[c.group] ||= []).push(c.label); });
+    return Object.entries(g).map(([group, cats]) => ({ group, cats }));
+  }, [sheetGroups]);
 
   const addLine = () => {
     const a = parseFloat(lineAmount) || 0;
@@ -150,12 +176,13 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category <span className="text-status-red">*</span></label>
               <select value={catKey} onChange={(e) => setCatKey(e.target.value)} className={field}>
                 <option value="">Select category…</option>
-                {Object.entries(grouped).map(([group, items]) => (
+                {grouped.map(({ group, cats }) => (
                   <optgroup key={group} label={group}>
-                    {items.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                    {cats.map((c) => <option key={c} value={c}>{c}</option>)}
                   </optgroup>
                 ))}
               </select>
+              {sheetGroups && <div className="text-[10.5px] text-faint mt-[4px]">หมวดจาก Budget Sheet — ตรงกับ P&amp;L by Category</div>}
             </div>
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">ประเภทการเบิกเงิน / Reimbursement Type</label>
