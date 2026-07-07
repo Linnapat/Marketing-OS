@@ -181,14 +181,20 @@ export function fmtFollow(n: number): string {
 
 /** KPI strip + needs-attention list for a filtered KOL set. */
 export function kolKpis(list: Kol[]) {
-  const active = list.filter((k) => !["Completed", "Cancelled", "Paused"].includes(k.status)).length;
-  const waitingReview = list.filter((k) => k.status === "Waiting Review" || k.status === "Draft Submitted").length;
+  const stage = (k: Kol) => normalizeStage(k.status);
+  const total = list.length;
+  // "Active" = genuinely in-flight production, not merely "not completed".
+  const active = list.filter((k) => ["Producing", "In Review", "Approved", "Posted"].includes(stage(k))).length;
+  const prospect = list.filter((k) => ["Request", "Owner Assigned", "Negotiating", "Contract Signed"].includes(stage(k))).length;
+  const inReview = list.filter((k) => stage(k) === "In Review").length;
+  const posted = list.filter((k) => stage(k) === "Posted").length;
+  const completed = list.filter((k) => stage(k) === "Completed").length;
   const openComments = list.reduce((s, k) => s + k.openComments, 0);
   const fees = list.reduce((s, k) => s + k.fee, 0);
   const expReach = list.reduce((s, k) => s + k.expectedReach, 0);
   const roiK = list.filter((k) => k.roi > 0);
   const avgRoas = roiK.length ? roiK.reduce((s, k) => s + k.roi, 0) / roiK.length : 0;
-  return { active, waitingReview, openComments, fees, expReach, avgRoas };
+  return { total, active, prospect, waitingReview: inReview, inReview, posted, completed, openComments, fees, expReach, avgRoas };
 }
 
 export function kolAlerts(list: Kol[]): Kol[] {

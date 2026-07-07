@@ -101,11 +101,13 @@ export default function KolPage() {
   const alerts = kolAlerts(filtered);
 
   const KPIS: { label: string; value: string; tone?: string; dark?: boolean }[] = [
-    { label: "Active Creators", value: String(kpi.active) },
-    { label: "Waiting Review", value: String(kpi.waitingReview), tone: "gold" },
-    { label: "Open Comments", value: String(kpi.openComments), tone: kpi.openComments ? "red" : undefined },
-    { label: "Total Fees", value: baht(kpi.fees, { compact: true }) },
-    { label: "Expected Reach", value: fmtFollow(kpi.expReach) },
+    // "Total Requests" = every KOL request row; "Active" = only in-flight
+    // (Producing/In Review/Approved/Posted), so the numbers can't mislead.
+    { label: "Total Requests", value: String(kpi.total) },
+    { label: "Active", value: String(kpi.active), tone: "gold" },
+    { label: "In Review", value: String(kpi.inReview), tone: kpi.inReview ? "gold" : undefined },
+    { label: "Posted", value: String(kpi.posted), tone: "green" },
+    { label: "Completed", value: String(kpi.completed) },
     { label: "Avg ROAS", value: kpi.avgRoas ? `${kpi.avgRoas.toFixed(1)}×` : "—", dark: true },
   ];
 
@@ -446,6 +448,9 @@ function KolDatabase() {
   const cols = "1.8fr 1.4fr 1fr 0.9fr 1fr 1.2fr 0.9fr";
   return (
     <div className="flex flex-col gap-3">
+      <div className="rounded-card px-4 py-[10px] text-[11.5px]" style={{ background: "#EEF1F8", border: "1px solid #D5DEEF", color: "#3E5C9A" }}>
+        <b>KOL Library</b> = ทะเบียนกลางของ KOL (Master Profile) ไม่ผูกแคมเปญ — ใช้ค้นและดึงมาใช้ซ้ำ พร้อมประวัติผลงาน/rank สะสมข้ามแคมเปญ · ต่างจาก <b>Request List</b> ที่เป็นดีลราย KOL ต่อ 1 แคมเปญ
+      </div>
       <div className="flex items-center gap-3 flex-wrap">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"
           className="flex-1 min-w-[220px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />

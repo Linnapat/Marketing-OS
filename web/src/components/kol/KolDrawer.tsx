@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import {
-  Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, ALL_STAGES, normalizeStage, kolPosts, postsTotals,
+  Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals,
 } from "@/lib/data/kol";
 import { KOL_PLATFORMS } from "@/lib/data/brief";
+import { allowedStages, canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults } from "@/lib/kolFlow";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
@@ -30,7 +31,7 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-y-0 right-0 w-full max-w-[560px] bg-ivory shadow-2xl flex flex-col">
+      <div className="absolute inset-y-0 right-0 w-full max-w-[720px] bg-ivory shadow-2xl flex flex-col">
         {/* Header */}
         <div className="bg-panel text-white px-6 pt-5 pb-4">
           <div className="flex items-start justify-between">
@@ -49,7 +50,7 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
                     : kol.h} · {brandName(kol.b)} · {kol.campaign}</div>
               </div>
             </div>
-            <button onClick={onClose} className="text-white/60 hover:text-white"><X size={20} /></button>
+            <button onClick={onClose} aria-label="Close KOL detail" className="text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0"><X size={18} /></button>
           </div>
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <StatusBadge tone={kolTone(kol.status)}>{kol.status}</StatusBadge>
@@ -59,13 +60,16 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-4 overflow-x-auto border-b border-line bg-surface">
+        {/* Next-action bar — what to do now + missing prerequisites. */}
+        <NextActionBar kol={kol} />
+
+        {/* Tabs — horizontally scrollable so they never overflow the drawer. */}
+        <div className="flex gap-1 px-4 overflow-x-auto border-b border-line bg-surface flex-shrink-0" style={{ scrollbarWidth: "thin" }}>
           {TABS.map(([id, label]) => {
             const active = id === tab;
             return (
               <button key={id} onClick={() => setTab(id)}
-                className="text-[12.5px] font-semibold px-[11px] py-[10px] whitespace-nowrap border-b-2 -mb-[1px] flex items-center gap-[6px]"
+                className="text-[12.5px] font-semibold px-[11px] py-[10px] whitespace-nowrap border-b-2 -mb-[1px] flex items-center gap-[6px] flex-shrink-0"
                 style={active ? { color: "#211F1C", borderColor: "#B8945A" } : { color: "#9A9387", borderColor: "transparent" }}>
                 {label}
                 {id === "comments" && openCount > 0 && <span className="text-[9.5px] font-bold px-[6px] rounded-pill bg-status-red text-white">{openCount}</span>}
@@ -74,8 +78,8 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           })}
         </div>
 
-        {/* Stage + link control — the primary status update, always visible so
-            each page (row) is advanced and gets its post link on its own. */}
+        {/* Stage advance + Deliverable links — the primary status controls,
+            always visible so each page (row) is driven on its own. */}
         <StageBar kol={kol} onUpdate={onUpdate} />
 
         {/* Body */}
@@ -93,12 +97,36 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   );
 }
 
-// Advance this KOL through the 7 consolidated stages, and manage its per-platform
-// posts (each with its own link) below. Saves immediately; moving into "In
-// Review" raises the approval task (handled by the parent's onUpdate).
+// Next-action bar: what to do now + the exact prerequisites blocking the next
+// stage. Always at the top of the drawer body.
+function NextActionBar({ kol }: { kol: Kol }) {
+  const ns = nextStage(kol);
+  const missing = ns ? prerequisitesFor(ns, kol) : [];
+  return (
+    <div className="bg-ivory border-b border-line px-4 py-[10px]">
+      <div className="flex items-start gap-2">
+        <span className="text-[13px]">🧭</span>
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold">Next action</div>
+          <div className="text-[12.5px] text-ink font-semibold">{nextActionFor(kol)}</div>
+          {missing.length > 0 && (
+            <div className="text-[11px] text-status-red mt-[3px]">ยังขาด: {missing.join(" · ")}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Advance this KOL through the guarded lifecycle, and manage its per-platform
+// posts (each with its own link). Every stage change is validated by
+// canTransition (same rule the backend enforces) — invalid targets are disabled.
 function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [posts, setPosts] = useState<KolPost[]>(() => kolPosts(kol));
   const [busy, setBusy] = useState(false);
+  const stages = allowedStages(kol);
+  const ns = nextStage(kol);
+  const advanceGate = ns ? canTransition(kol, ns) : { ok: false, reason: "อยู่ขั้นสุดท้ายแล้ว" };
 
   const persist = async (nextPosts: KolPost[]) => {
     const totals = postsTotals(nextPosts);
@@ -107,8 +135,10 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
   const setStage = async (stage: string) => {
+    const gate = canTransition(kol, stage);
+    if (!gate.ok) { alert(`เปลี่ยนเป็น "${stage}" ไม่ได้:\n${gate.reason ?? ""}`); return; }
     setBusy(true);
-    const next: Kol = { ...kol, status: stage };
+    const next: Kol = { ...kol, status: stage, currentBlocker: hasOwner(kol) ? null : kol.currentBlocker };
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
   const editPost = (i: number, patch: Partial<KolPost>) => setPosts((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
@@ -117,30 +147,43 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
 
   return (
     <div className="bg-surface border-b border-line px-4 py-3 flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Stage</span>
         <select value={normalizeStage(kol.status)} disabled={busy} onChange={(e) => setStage(e.target.value)}
           className="text-[12.5px] font-semibold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none">
-          {ALL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+          {stages.map(({ stage, ok }) => <option key={stage} value={stage} disabled={!ok}>{stage}{ok ? "" : " 🔒"}</option>)}
         </select>
-        <button onClick={addPost} className="ml-auto text-[11.5px] font-bold text-accent">+ Add platform</button>
+        {ns && (
+          <button onClick={() => setStage(ns)} disabled={busy || !advanceGate.ok}
+            title={advanceGate.ok ? "" : advanceGate.reason}
+            className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px] disabled:opacity-40">
+            → {ns}
+          </button>
+        )}
       </div>
-      {/* Per-platform post links — one row each, pulled below the stage. */}
-      <div className="flex flex-col gap-[6px]">
-        {posts.map((p, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <select value={p.platform} onChange={(e) => editPost(i, { platform: e.target.value })} onBlur={() => persist(posts)}
-              className="text-[12px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none">
-              {[...new Set([p.platform, ...KOL_PLATFORMS])].map((pl) => <option key={pl} value={pl}>{pl}</option>)}
-            </select>
-            <input value={p.link} onChange={(e) => editPost(i, { link: e.target.value })} onBlur={() => persist(posts)}
-              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-              placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
-            {p.link && <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-[11px] text-accent font-bold">↗</a>}
-            <button onClick={() => removePost(i)} className="text-[12px] text-status-red font-bold">✕</button>
-          </div>
-        ))}
-        {posts.length === 0 && <div className="text-[11.5px] text-faint">ยังไม่มีโพสต์ — กด <b>+ Add platform</b> เพื่อเพิ่มลิงก์ต่อ platform</div>}
+
+      {/* Deliverables — per-platform post/draft links, each tracked on its own. */}
+      <div>
+        <div className="flex items-center justify-between mb-[6px]">
+          <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Deliverables · Post / Draft links</span>
+          <button onClick={addPost} className="text-[11.5px] font-bold text-accent">+ Add platform</button>
+        </div>
+        <div className="flex flex-col gap-[6px]">
+          {posts.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select value={p.platform} onChange={(e) => editPost(i, { platform: e.target.value })} onBlur={() => persist(posts)}
+                className="text-[12px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none">
+                {[...new Set([p.platform, ...KOL_PLATFORMS])].map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+              </select>
+              <input value={p.link} onChange={(e) => editPost(i, { link: e.target.value })} onBlur={() => persist(posts)}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+              {p.link && <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-[11px] text-accent font-bold">↗</a>}
+              <button onClick={() => removePost(i)} className="text-[12px] text-status-red font-bold" aria-label="Remove post">✕</button>
+            </div>
+          ))}
+          {posts.length === 0 && <div className="text-[11.5px] text-faint">ยังไม่มีโพสต์ — กด <b>+ Add platform</b> เพื่อเพิ่มลิงก์ต่อ platform (จำเป็นก่อนส่ง In Review)</div>}
+        </div>
       </div>
     </div>
   );
@@ -330,16 +373,22 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const engBase = reach > 0 ? reach : (kol.followers || 0);
   const engRate = engBase ? (eng / engBase) * 100 : 0;
 
+  // Results may only be saved once Posted/Completed with a final link — the
+  // stage itself is advanced (with its own guards) in the Stage bar, not here.
+  const gate = canSaveResults({ ...kol, postLink: link.trim() || kol.postLink });
   const save = async () => {
+    if (!gate.ok) { alert(gate.reason ?? "บันทึกผลยังไม่ได้"); return; }
     setBusy(true);
     const next: Kol = {
       ...kol, actualReach: reach, actualEngagement: eng,
       engagement: eng ? fmtFollow(eng) : kol.engagement,
       postLink: link.trim() || null,
-      status: reach > 0 ? "Posted" : kol.status,
     };
-    try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    finally { setBusy(false); }
+    try {
+      await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000);
+      // Completed collaboration → keep the KOL Library / master history current.
+      if (normalizeStage(kol.status) === "Completed" && kol.masterKolId) logToMaster().catch(() => {});
+    } finally { setBusy(false); }
   };
 
   const field = "w-full text-[13.5px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none";
@@ -377,11 +426,12 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         ))}
       </div>
 
-      <div className="flex items-center gap-3">
-        <button onClick={save} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={save} disabled={busy || !gate.ok} title={gate.ok ? "" : gate.reason} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">
           {busy ? "Saving…" : "Save Results"}
         </button>
         {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ Saved</span>}
+        {!gate.ok && <span className="text-[11.5px] text-status-red">{gate.reason}</span>}
       </div>
 
       {/* Log to master database — records a collaboration and recomputes rank. */}
