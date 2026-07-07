@@ -261,10 +261,6 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     setLibraryRows([]);
   };
 
-  const dirty = name !== kol.name || handle !== kol.h || kolType !== kol.kolType || followers !== (kol.followers || 0)
-    || avgReach !== (kol.expectedReach || 0) || audienceFit !== kol.audienceFit || contentStyle !== kol.contentStyle
-    || pastCollab !== kol.pastCollab || contactInfo !== kol.contactInfo;
-
   const save = async () => {
     setBusy(true);
     // One final submit: save profile + proposal, then route it back to the
