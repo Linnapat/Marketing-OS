@@ -350,6 +350,15 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [list]);
 
+  const [collapsedCampaigns, setCollapsedCampaigns] = useState<Set<string>>(new Set());
+  const toggleCampaign = (campaign: string) => {
+    setCollapsedCampaigns((current) => {
+      const next = new Set(current);
+      if (next.has(campaign)) next.delete(campaign); else next.add(campaign);
+      return next;
+    });
+  };
+
   // Update one post's result numbers (state only, so typing is smooth); the DB
   // write happens on blur. Keeps top-level actuals = sum of posts.
   const editPostResult = (k: Kol, idx: number, patch: Partial<KolPost>) => {
@@ -370,16 +379,22 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
         const cFee = ks.reduce((s, k) => s + k.fee, 0);
         const roiVals = ks.filter((k) => k.roi > 0).map((k) => k.roi);
         const avgRoi = roiVals.length ? roiVals.reduce((s, v) => s + v, 0) / roiVals.length : 0;
+        const collapsed = collapsedCampaigns.has(campaign);
         return (
           <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
             <div className="flex items-center gap-2 px-5 py-3 border-b border-line4">
               <span className="text-[13px] font-bold text-ink">{campaign}</span>
               <span className="text-[11.5px] text-faint">· {ks.length} creator{ks.length > 1 ? "s" : ""}</span>
+              <button type="button" onClick={() => toggleCampaign(campaign)}
+                aria-expanded={!collapsed}
+                className="ml-auto text-[11.5px] font-bold text-panel bg-white border border-line2 rounded-[8px] px-3 py-[6px] hover:border-panel transition">
+                {collapsed ? "ขยาย ＋" : "ยุบ −"}
+              </button>
             </div>
-            <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+            {!collapsed && <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
               <div>Creator · Post</div><div className="text-right">Reach</div><div className="text-right">Engagement</div><div className="text-right">Eng. Rate</div><div className="text-right">Fee</div><div className="text-right">ROAS</div>
-            </div>
-            {ks.map((k) => {
+            </div>}
+            {!collapsed && ks.map((k) => {
               const posts = kolPosts(k);
               const kt = postsTotals(posts);
               const pi = platformIcon(k.plat);
@@ -417,14 +432,14 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                 </div>
               );
             })}
-            <div className="grid px-5 py-3 items-center bg-ivory/70 text-ink font-bold" style={{ gridTemplateColumns: cols }}>
+            {!collapsed && <div className="grid px-5 py-3 items-center bg-ivory/70 text-ink font-bold" style={{ gridTemplateColumns: cols }}>
               <span className="text-[12px]">Campaign total</span>
               <span className="text-[12.5px] text-right">{fmtFollow(cReach)}</span>
               <span className="text-[12.5px] text-right">{fmtFollow(cEng)}</span>
               <span className="text-[12.5px] text-right">{fmtPct(rate(cReach, cEng))}</span>
               <span className="text-[12.5px] text-right">{baht(cFee, { compact: true })}</span>
               <span className="text-[12.5px] text-right">{avgRoi ? `${avgRoi.toFixed(1)}×` : "—"}</span>
-            </div>
+            </div>}
           </div>
         );
       })}
