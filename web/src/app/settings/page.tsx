@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, BudgetThreshold, ModuleRule } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
@@ -29,7 +30,31 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 const TIMEZONES = ["Asia/Bangkok (UTC+7)", "Asia/Singapore (UTC+8)", "Asia/Tokyo (UTC+9)", "Asia/Jakarta (UTC+7)", "Asia/Ho_Chi_Minh (UTC+7)", "UTC"];
 const CURRENCIES = ["Thai Baht (฿ THB)", "US Dollar ($ USD)", "Euro (€ EUR)", "Japanese Yen (¥ JPY)", "Singapore Dollar (S$ SGD)"];
 const DATE_FORMATS = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "D MMM YYYY"];
+const SHORT_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const selCls = "w-full text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none";
+
+/** ISO date → "1 Apr 2026" for the fiscal-year display string. */
+function fiscalLabel(iso: string): string {
+  const [y, m, d] = (iso || "").split("-").map(Number);
+  return y && m && d ? `${d} ${SHORT_MON[m - 1]} ${y}` : "";
+}
+
+/** Parse a saved fiscal-year string into [startIso, endIso]. Handles the new
+ *  "1 Apr 2026 — 31 Dec 2026" and the old month-only "April 2026 — December 2026"
+ *  (start → first of month, end → last of month). */
+function parseFiscalRange(value: string): [string, string] {
+  const parts = value.split(/[—–]/).map((s) => s.trim());
+  const thisYear = new Date().getFullYear();
+  const one = (s: string, isEnd: boolean): string => {
+    const year = Number(s.match(/\d{4}/)?.[0]) || thisYear;
+    const monIdx = MONTHS_FULL.findIndex((m) => new RegExp(m, "i").test(s));
+    const shortIdx = SHORT_MON.findIndex((m) => new RegExp(`\\b${m}\\b`, "i").test(s));
+    const mi = monIdx >= 0 ? monIdx : shortIdx >= 0 ? shortIdx : (isEnd ? 11 : 0);
+    const day = Number(s.match(/\b(\d{1,2})\b/)?.[1]) || (isEnd ? new Date(year, mi + 1, 0).getDate() : 1);
+    return `${year}-${String(mi + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  };
+  return [one(parts[0] ?? "", false), one(parts[1] ?? parts[0] ?? "", true)];
+}
 
 /** Editor for one org field, keyed off its label so dates/times/enums get the
  *  right control. Everything still composes back into the same display string
@@ -81,23 +106,16 @@ function OrgFieldEditor({ label, value, onChange }: { label: string; value: stri
   }
 
   if (l === "fiscal year") {
-    // Parse "April 2026 — December 2026" (year optional on the start side).
-    const months = value.match(new RegExp(MONTHS_FULL.join("|"), "g")) ?? ["January", "December"];
-    const years = value.match(/\d{4}/g) ?? [String(new Date().getFullYear())];
-    const startM = months[0] ?? "January", endM = months[1] ?? "December";
-    const startY = years[0] ?? String(new Date().getFullYear());
-    const endY = years[1] ?? startY;
-    const set = (sm: string, sy: string, em: string, ey: string) => onChange(`${sm} ${sy} — ${em} ${ey}`);
-    const yearOpts = Array.from({ length: 7 }, (_, i) => String(2024 + i));
-    const mSel = (v: string, on: (x: string) => void) => <select value={v} onChange={(e) => on(e.target.value)} className="text-[13.5px] px-[9px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">{MONTHS_FULL.map((m) => <option key={m}>{m}</option>)}</select>;
-    const ySel = (v: string, on: (x: string) => void) => <select value={v} onChange={(e) => on(e.target.value)} className="text-[13.5px] px-[9px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">{[...new Set([v, ...yearOpts])].sort().map((y) => <option key={y}>{y}</option>)}</select>;
+    // Full calendar control — CMO picks the exact start & end day. Parses the
+    // saved string back into ISO (handles "1 Apr 2026 — 31 Dec 2026" and the
+    // older month-only "April 2026 — December 2026").
+    const [startIso, endIso] = parseFiscalRange(value);
+    const set = (s: string, e: string) => onChange(`${fiscalLabel(s)} — ${fiscalLabel(e)}`);
     return (
       <div className="flex items-center gap-[6px] flex-wrap">
-        {mSel(startM, (m) => set(m, startY, endM, endY))}
-        {ySel(startY, (y) => set(startM, y, endM, endY))}
+        <div className="min-w-[150px]"><DatePicker value={startIso} onChange={(v) => set(v, endIso)} placeholder="Start date" /></div>
         <span className="text-[13px] text-faint">—</span>
-        {mSel(endM, (m) => set(startM, startY, m, endY))}
-        {ySel(endY, (y) => set(startM, startY, endM, y))}
+        <div className="min-w-[150px]"><DatePicker value={endIso} min={startIso} onChange={(v) => set(startIso, v)} placeholder="End date" /></div>
       </div>
     );
   }
