@@ -8,7 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-/** Turn a normal share link into the CSV-export URL for the same tab. */
+/** Turn a normal share link into a CSV URL for the same tab. Uses the gviz
+ *  endpoint — the plain /export endpoint rejects some link-shared sheets. */
 function csvUrl(shareUrl: string): string | null {
   try {
     const u = new URL(shareUrl);
@@ -16,7 +17,7 @@ function csvUrl(shareUrl: string): string | null {
     const m = u.pathname.match(/\/spreadsheets\/d\/([\w-]+)/);
     if (!m) return null;
     const gid = u.hash.match(/gid=(\d+)/)?.[1] ?? u.searchParams.get("gid") ?? "0";
-    return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv&gid=${gid}`;
+    return `https://docs.google.com/spreadsheets/d/${m[1]}/gviz/tq?tqx=out:csv&gid=${gid}`;
   } catch {
     return null;
   }
