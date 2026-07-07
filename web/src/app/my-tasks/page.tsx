@@ -285,7 +285,7 @@ export default function MyTasksPage() {
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
-      {newOpen && <NewTaskModal owner={viewAs} people={people} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
+      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
           <span className="text-[18px]">🌿</span>
@@ -747,7 +747,7 @@ const TYPE_META: Record<string, { module: string; icon: string; color: string }>
   Ads: { module: "Ads", icon: "📣", color: "#C68A1E" }, Report: { module: "Campaign", icon: "🎯", color: "#B33A2E" }, Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
 };
 
-function NewTaskModal({ owner, people, nextId, onClose, onCreate }: { owner: string; people: Person[]; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
+function NewTaskModal({ owner, people, campaigns, nextId, onClose, onCreate }: { owner: string; people: Person[]; campaigns: CampaignRow[]; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState("Content");
   const [assignee, setAssignee] = useState(owner);
@@ -758,10 +758,16 @@ function NewTaskModal({ owner, people, nextId, onClose, onCreate }: { owner: str
   const [group, setGroup] = useState("doFirst");
   const [nextAction, setNextAction] = useState("");
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  // Real campaigns for the chosen brand (modal's brand is the display name).
+  const brandCampaigns = useMemo(() => campaigns.filter((c) => brandName(c.b) === brand), [campaigns, brand]);
+  useEffect(() => {
+    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
+  }, [brandCampaigns, campaign]);
+  const canCreate = title.trim() && campaign.trim();
   const create = () => {
-    if (!title.trim()) return;
+    if (!canCreate) return;
     const meta = TYPE_META[type];
-    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand, campaign: campaign.trim() || "—", status: "Todo", priority, group, due: fmtShort(dueIso) || "TBD", dueIso, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
+    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand, campaign: campaign.trim(), status: "Todo", priority, group, due: fmtShort(dueIso) || "TBD", dueIso, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
   };
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
@@ -777,7 +783,7 @@ function NewTaskModal({ owner, people, nextId, onClose, onCreate }: { owner: str
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={brand} onChange={(e) => setBrand(e.target.value)} className={field}><option>Teppen</option><option>Omakase</option><option>Mainichi</option><option>Touka</option></select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><input value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field} placeholder="e.g. Wagyu Festival" /></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label><select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}><option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>{brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><DatePicker value={dueIso || null} onChange={setDueIso} /></div>
@@ -786,7 +792,7 @@ function NewTaskModal({ owner, people, nextId, onClose, onCreate }: { owner: str
           </div>
           <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Next action</label><input value={nextAction} onChange={(e) => setNextAction(e.target.value)} className={field} placeholder="One clear next step…" /></div>
         </div>
-        <button onClick={create} disabled={!title.trim()} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Task</button>
+        <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Task</button>
       </div>
     </div>
   );

@@ -67,11 +67,12 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   }, [brandCampaigns, campaign]);
 
   const submit = async () => {
+    if (!campaign) return;
     // Unique reference — time-based so equal amounts never collide.
     const ref = `REQ-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
     const row: RequestRow = {
       category: cat?.label ?? "Expense", b: formBrandId,
-      campaign: campaign || "—", requested: amt, approved: 0, due: "—", status: "Waiting Approval",
+      campaign, requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
     await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht });
     // Also drop a card into the shared Approval Queue (same table My Tasks ›
@@ -79,7 +80,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     const queueRow: QueueRow = {
       id: ref, type: "Budget", typeIcon: "฿",
       title: `${cat?.label ?? "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
-      campaign: campaign || "—", requester: requesterName, approver: route,
+      campaign, requester: requesterName, approver: route,
       due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
     };
     await createRequest(queueRow);
@@ -167,7 +168,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
               </div>
             </div>
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
                 <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -246,7 +247,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             </div>
             <button
               onClick={submit}
-              disabled={!catKey || amt <= 0}
+              disabled={!catKey || amt <= 0 || !campaign}
               className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
               Submit for Approval
             </button>

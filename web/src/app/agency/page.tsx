@@ -47,9 +47,9 @@ export default function AgencyPortalPage() {
   };
 
   const addTask = async () => {
-    if (!nt.title.trim()) return;
+    if (!nt.title.trim() || !nt.campaign.trim()) return;
     const draft: Omit<AgencyTask, "id"> = {
-      title: nt.title.trim(), b: nt.b, campaign: nt.campaign.trim() || "—", type: nt.type,
+      title: nt.title.trim(), b: nt.b, campaign: nt.campaign.trim(), type: nt.type,
       status: "To Do", due: nt.due.trim() || "TBD", brief: "", link: "", note: "",
       // Agency-created tasks are stamped with their own email; internal staff
       // can assign a specific agency user (blank = visible to all agencies).
@@ -141,7 +141,7 @@ export default function AgencyPortalPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
                   <input value={nt.campaign} onChange={(e) => setNt({ ...nt, campaign: e.target.value })} placeholder="Campaign name" className={field} />
                 </div>
                 <div>
@@ -157,7 +157,7 @@ export default function AgencyPortalPage() {
               )}
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={addTask} disabled={!nt.title.trim()} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40 disabled:cursor-default">Add task</button>
+              <button onClick={addTask} disabled={!nt.title.trim() || !nt.campaign.trim()} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40 disabled:cursor-default">Add task</button>
               <button onClick={() => setNewOpen(false)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
             </div>
           </div>

@@ -227,7 +227,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
 
-  const canCreate = item.title.trim() && item.platforms.length > 0;
+  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
   const submit = () => {
     if (!canCreate) return;
     const plats = item.platforms;
@@ -236,7 +236,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const approverName = approver.trim() || requester.trim();
     const g: Graphic = {
       ...buildGraphic({
-        id: nextId, b, campaign: campaign.trim() || "—", title: item.title.trim(),
+        id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
         type: item.type, due: labelDate(item.publishDate) || "TBD", designer,
         requester: requester.trim() || "You", approver: approverName, channels: plats,
       }),
@@ -249,7 +249,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const day = item.publishDate ? Math.max(1, Math.min(31, Number(item.publishDate.split("-")[2]) || 1)) : 27;
     const post: ContentItem = {
       id: `c${nextId}-gfx`, day, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
-      status: "Draft", campaign: campaign.trim() || "—", owner: "Unassigned", caption: "", hashtags: "", cta: "",
+      status: "Draft", campaign: campaign.trim(), owner: "Unassigned", caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
     };
     onCreate(g, post, item, campaign.trim());
@@ -272,7 +272,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
               </select>
             </div>
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
                 <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}

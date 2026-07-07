@@ -184,14 +184,14 @@ function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () =>
   }, [brandCampaigns, campaign]);
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const canCreate = item.title.trim() && item.platforms.length > 0;
+  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
   const create = () => {
     if (!canCreate) return;
     const day = item.publishDate ? Math.max(1, Math.min(31, Number(item.publishDate.split("-")[2]) || 1)) : (initialDay ?? 27);
     const post: ContentItem = {
       id: `c${String(count + 1).padStart(2, "0")}-new`,
       day, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
-      status: "Draft", campaign: campaign.trim() || "—", owner: "Unassigned",
+      status: "Draft", campaign: campaign.trim(), owner: "Unassigned",
       caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
@@ -216,7 +216,7 @@ function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () =>
               </select>
             </div>
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
                 <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
