@@ -24,6 +24,9 @@ function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
 // Roles that can sit in an approval chain (superset of Users & Roles + finance tiers).
 const APPROVER_ROLES = ["Requester", "Brand Lead", "CMO", "CFO", "CEO", "Finance", "Campaign Planner", "Senior Designer", "KOL Specialist"];
 
+// "Jul 7, 2026" — the stamp new/edited templates carry.
+const todayLabel = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
 /** Editable list of tag pills (branches, team members). Read-only shows plain
  *  pills; edit mode adds an ✕ per pill and a small input to append. */
 function BranchEditor({ branches, editable, placeholder = "branch", onChange }: { branches: string[]; editable: boolean; placeholder?: string; onChange: (next: string[]) => void }) {
@@ -278,6 +281,14 @@ export default function SettingsPage() {
   const editStatuses = (mod: WfModule, next: WfStatus[]) => { setStatusSets((s) => ({ ...s, [mod]: next.map((x, i) => ({ ...x, order: i + 1 })) })); setWfDirty(true); };
   const persistWorkflow = () => { saveJsonSetting("workflow_status", "Workflow statuses", statusSets); setWfEdit(false); setWfDirty(false); };
 
+  // Editable Templates (JSON blob in org_settings).
+  type TemplateCfg = typeof TEMPLATES[number];
+  const [templates, setTemplates] = useState<TemplateCfg[]>(() => TEMPLATES.map((t) => ({ ...t })));
+  const [tplEdit, setTplEdit] = useState(false);
+  const [tplDirty, setTplDirty] = useState(false);
+  const editTpl = (i: number, patch: Partial<TemplateCfg>) => { setTemplates((ts) => ts.map((t, j) => j === i ? { ...t, ...patch, updated: todayLabel() } : t)); setTplDirty(true); };
+  const persistTemplates = () => { saveJsonSetting("templates_config", "Templates", templates); setTplEdit(false); setTplDirty(false); };
+
   // Edit-existing-member modal.
   const [editUser, setEditUser] = useState<{ orig: string; m: Member } | null>(null);
 
@@ -300,6 +311,7 @@ export default function SettingsPage() {
     fetchJsonSetting<BrandCfg[]>("brands_config").then((b) => { if (alive && b?.length) setBrands(b); }).catch(() => {});
     fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (alive && t?.length) setTeams(t); }).catch(() => {});
     fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (alive && w) setStatusSets((cur) => ({ ...cur, ...w })); }).catch(() => {});
+    fetchJsonSetting<TemplateCfg[]>("templates_config").then((t) => { if (alive && t?.length) setTemplates(t); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   // Team members (invitable) — loaded from Supabase when configured.
@@ -623,7 +635,10 @@ export default function SettingsPage() {
                             <input type="number" min={0} value={r[k]} onChange={(e) => { const v = Number(e.target.value) || 0; setRules((rs) => rs.map((x, i) => i === ri ? { ...x, [k]: v } : x)); setApprDirty(true); }} className="w-[52px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />d</label>
                         ))}
                         <label className="flex items-center gap-1">backup
-                          <input value={r.backup} onChange={(e) => { setRules((rs) => rs.map((x, i) => i === ri ? { ...x, backup: e.target.value } : x)); setApprDirty(true); }} className="w-[110px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" /></label>
+                          <select value={r.backup} onChange={(e) => { setRules((rs) => rs.map((x, i) => i === ri ? { ...x, backup: e.target.value } : x)); setApprDirty(true); }} className="text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none">
+                            <option value="">— none —</option>
+                            {[...new Set([r.backup, ...users.map((u) => u.name)])].filter(Boolean).map((n) => <option key={n} value={n}>{n}</option>)}
+                          </select></label>
                       </div>
                     ) : (
                       <div className="text-[11.5px] text-faint">SLA {r.sla}d · escalate {r.escalate}d · remind every {r.remind}d · backup {r.backup}</div>
@@ -741,15 +756,38 @@ export default function SettingsPage() {
         )}
 
         {section === "templates" && (
-          <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            {TEMPLATES.map((t) => (
-              <div key={t.name} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_0.8fr] gap-y-1 items-center px-5 py-3 border-b border-line4 last:border-0">
-                <div><div className="text-[13.5px] font-bold">{t.name}</div><div className="text-[11.5px] text-faint">{t.desc}</div></div>
-                <div>{typePill(t.module)}</div>
-                <div className="text-[12px] text-faint">Updated {t.updated}</div>
-                <div><Pill text={t.status} fg={t.status === "Active" ? "#4E7A4E" : "#C68A1E"} bg={t.status === "Active" ? "#EEF4EE" : "#FBF8EE"} /></div>
+          <div className="flex flex-col gap-3">
+            {canEdit && (
+              <div className="flex items-center justify-end gap-2">
+                {tplEdit ? (
+                  <>
+                    <button onClick={() => { setTemplates(TEMPLATES.map((t) => ({ ...t }))); setTplEdit(false); setTplDirty(false); fetchJsonSetting<TemplateCfg[]>("templates_config").then((t) => { if (t?.length) setTemplates(t); }); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">Cancel</button>
+                    <button onClick={() => { setTemplates((ts) => [...ts, { name: "New template", desc: "", module: "Campaign", updated: todayLabel(), status: "Draft" }]); setTplDirty(true); }} className="text-[12px] font-bold text-accent border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">+ Add template</button>
+                    <button onClick={persistTemplates} disabled={!tplDirty} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">Save changes</button>
+                  </>
+                ) : <button onClick={() => setTplEdit(true)} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px]">✏️ Edit templates</button>}
               </div>
-            ))}
+            )}
+            <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+              {templates.map((t, i) => (
+                <div key={i} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_0.8fr_auto] gap-y-1 gap-x-3 items-center px-5 py-3 border-b border-line4 last:border-0">
+                  {tplEdit ? (
+                    <div>
+                      <input value={t.name} onChange={(e) => editTpl(i, { name: e.target.value })} className="w-full text-[13.5px] font-bold px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none mb-1" />
+                      <input value={t.desc} placeholder="description" onChange={(e) => editTpl(i, { desc: e.target.value })} className="w-full text-[11.5px] text-faint px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                    </div>
+                  ) : <div><div className="text-[13.5px] font-bold">{t.name}</div><div className="text-[11.5px] text-faint">{t.desc}</div></div>}
+                  <div>{tplEdit
+                    ? <select value={t.module} onChange={(e) => editTpl(i, { module: e.target.value })} className="text-[12px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none">{["Campaign", "Graphic", "KOL", "Content", "CRM", "Settings"].map((m) => <option key={m}>{m}</option>)}</select>
+                    : typePill(t.module)}</div>
+                  <div className="text-[12px] text-faint">Updated {t.updated}</div>
+                  <div>{tplEdit
+                    ? <select value={t.status} onChange={(e) => editTpl(i, { status: e.target.value })} className="text-[12px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none"><option>Active</option><option>Draft</option></select>
+                    : <Pill text={t.status} fg={t.status === "Active" ? "#4E7A4E" : "#C68A1E"} bg={t.status === "Active" ? "#EEF4EE" : "#FBF8EE"} />}</div>
+                  {tplEdit && <button onClick={() => { setTemplates((ts) => ts.filter((_, j) => j !== i)); setTplDirty(true); }} className="text-[12px] text-status-red font-bold justify-self-end">✕</button>}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
