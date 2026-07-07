@@ -66,11 +66,28 @@ export interface Kol {
   stages: KolStage[];
 }
 
+// Consolidated 7-stage lifecycle (was 15). Fewer, clearer steps for the drawer
+// dropdown; legacy records are folded in via normalizeStage().
 export const ALL_STAGES = [
-  "Prospect", "Shortlisted", "Negotiating", "Contract Pending", "Contract Signed",
-  "Brief Sent", "Content Creating", "Draft Submitted", "Waiting Review",
-  "Revision Requested", "Approved to Post", "Scheduled", "Posted", "Reporting", "Completed",
+  "Prospect", "Negotiating", "Contract Signed", "Producing", "In Review", "Posted", "Completed",
 ];
+
+// Map any legacy status onto the 7 consolidated stages. Unknown/new values and
+// the special "Paused" pass through unchanged.
+const STAGE_MAP: Record<string, string> = {
+  Prospect: "Prospect", Shortlisted: "Prospect",
+  Negotiating: "Negotiating", "Contract Pending": "Negotiating",
+  "Contract Signed": "Contract Signed",
+  "Brief Sent": "Producing", "Content Creating": "Producing",
+  "Draft Submitted": "In Review", "Waiting Review": "In Review",
+  "Revision Requested": "In Review", "Approved to Post": "In Review", Scheduled: "In Review",
+  Posted: "Posted",
+  Reporting: "Completed", Completed: "Completed",
+};
+
+export function normalizeStage(status: string): string {
+  return STAGE_MAP[status] ?? status;
+}
 
 export const KOLS: Kol[] = [
   { id: 0, name: "Nong Aim", h: "@nongaim.eats", plat: "Instagram", b: "teppen", branch: "Thonglor", campaign: "Wagyu Festival", kolType: "Food Blogger", followers: 320000, expectedReach: 580000, actualReach: 420000, visits: 210, fee: 45000, foodCost: 5000, totalCost: 50000, owner: "Ken S.", ownerTeam: "KOL Team", pendingApprover: "Aran P.", currentBlocker: null, status: "Waiting Review", waitingSince: "Jun 25", postDueDate: "Jun 28", postedDate: null, openComments: 2, latestComment: "Caption too long", isOverdue: false, couponCode: "WAGYU2026", contractStatus: "Signed", quotationStatus: "Approved", invoiceStatus: "Pending", paymentStatus: "Unpaid", financeReqId: "REQ-001", paymentDue: "Jul 5", roi: 3.2, audienceFit: "High", contentStyle: "Food photography + short video", contactInfo: "Agency: CreatorHub · ken@creatorhub.co", pastCollab: "Wagyu teaser Jun 2025 — 3.8× ROI", objective: "Store Visit + Awareness", target: "BKK diners 28–45", keyMsg: "Taste the finest Wagyu in BKK", offer: "Wagyu Omakase set ฿2,990", postingPeriod: "Jun 25 – Jun 28", engagement: "18.2K", saves: "3.4K", shares: "1.2K", postLink: null,
@@ -148,6 +165,6 @@ export function kolAlerts(list: Kol[]): Kol[] {
 }
 
 export function stageProgress(status: string): { idx: number; total: number } {
-  const idx = ALL_STAGES.indexOf(status);
+  const idx = ALL_STAGES.indexOf(normalizeStage(status));
   return { idx: idx >= 0 ? idx : 0, total: ALL_STAGES.length };
 }

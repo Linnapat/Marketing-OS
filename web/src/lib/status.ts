@@ -36,6 +36,7 @@ export function campaignTone(status: string): Tone {
 // KOL / deliverable / comment statuses → tone, from kolStatusMap in the design.
 export const KOL_STATUS_TONE: Record<string, Tone> = {
   Prospect: "neutral", Shortlisted: "blue", Negotiating: "gold",
+  Producing: "blue", "In Review": "gold",
   "Contract Pending": "gold", "Contract Signed": "green", "Brief Sent": "blue",
   "Content Creating": "blue", "Draft Submitted": "gold", "Waiting Review": "gold",
   "Revision Requested": "red", "Approved to Post": "green", Scheduled: "green",

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import {
-  Kol, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow,
+  Kol, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, ALL_STAGES, normalizeStage,
 } from "@/lib/data/kol";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
@@ -73,6 +73,10 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           })}
         </div>
 
+        {/* Stage + link control — the primary status update, always visible so
+            each page (row) is advanced and gets its post link on its own. */}
+        <StageBar kol={kol} onUpdate={onUpdate} />
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5">
           {tab === "profile" && <ProfileTab kol={kol} onUpdate={onUpdate} />}
@@ -83,6 +87,44 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           {tab === "results" && <ResultsTab kol={kol} onUpdate={onUpdate} />}
           {tab === "comments" && <CommentsTab comments={comments} onResolve={(id) => setComments((cs) => cs.map((c) => c.id === id ? { ...c, status: "Resolved" } : c))} />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Advance this KOL through the 7 consolidated stages and attach its post/draft
+// link. Saves immediately; moving into "In Review" raises the approval task
+// (handled by the parent's onUpdate).
+function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
+  const [link, setLink] = useState(kol.postLink || "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const setStage = async (stage: string) => {
+    setBusy(true);
+    const next: Kol = { ...kol, status: stage };
+    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+  const saveLink = async () => {
+    if (link.trim() === (kol.postLink || "")) return;
+    setBusy(true);
+    const next: Kol = { ...kol, postLink: link.trim() };
+    try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 1500); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-surface border-b border-line px-4 py-3 flex items-center gap-2 flex-wrap">
+      <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Stage</span>
+      <select value={normalizeStage(kol.status)} disabled={busy} onChange={(e) => setStage(e.target.value)}
+        className="text-[12.5px] font-semibold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none">
+        {ALL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+        <span className="text-[11px] text-faint">🔗</span>
+        <input value={link} onChange={(e) => setLink(e.target.value)} onBlur={saveLink}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+        {saved && <span className="text-[11px] font-semibold text-status-green">✓</span>}
       </div>
     </div>
   );

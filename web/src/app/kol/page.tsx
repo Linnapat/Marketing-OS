@@ -15,7 +15,7 @@ import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
 import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, initials, fmtFollow,
-  kolKpis, kolAlerts, stageProgress,
+  kolKpis, kolAlerts, stageProgress, normalizeStage,
 } from "@/lib/data/kol";
 import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
 import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
@@ -33,9 +33,7 @@ function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d]
 /** ISO date n days from today — used for the ≤3-day approval due date. */
 function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 /** Stages where the specialist can still submit work from the row. */
-const SUBMITTABLE = (status: string) => !["Completed", "Posted"].includes(status);
-
-const TABS = [["list", "Creator List"], ["pipeline", "Pipeline"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Database"]] as const;
+const TABS = [["list", "KOL / Creator Request List"], ["pipeline", "Status"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 export default function KolPage() {
@@ -60,22 +58,19 @@ export default function KolPage() {
   );
   useEffect(() => { if (campaign !== "all" && !campaignOptions.includes(campaign)) setCampaign("all"); }, [campaignOptions, campaign]);
 
-  // Create a request: persist the Kol AND sync it back into the campaign's KOL Plan.
-  const addKol = async (k: Kol, item: BriefKolItem | null, campaignName: string) => {
+  // Create a request: persist EACH requested page as its own row (a request for
+  // 5 pages = 5 independently-trackable records), then sync ONE requirement item
+  // back into the campaign's KOL Plan.
+  const addKol = async (kolsToCreate: Kol[], item: BriefKolItem | null, campaignName: string) => {
     setRequestOpen(false);
-    const created = await createKol(k);
-    setKols((ks) => [created, ...ks]);
+    const created = await Promise.all(kolsToCreate.map((k) => createKol(k)));
+    setKols((ks) => [...created, ...ks]);
     if (item && campaignName && campaignName !== "—") appendBriefKolItem(campaignName, item).catch(() => {});
   };
 
-  // Specialist submits work in the row → update the KOL and drop a "Need Approval"
-  // task into the requester's task list, due within 3 days.
-  const submitRow = async (kol: Kol, link: string) => {
-    // Safety net: if the KOL already has a real page, make sure it's in the library.
-    const masterKolId = await ensureKolProfile({ masterKolId: kol.masterKolId, name: kol.name, handle: kol.h, kolType: kol.kolType, followers: kol.followers, platform: kol.plat }).catch(() => kol.masterKolId);
-    const next: Kol = { ...kol, postLink: link.trim() || kol.postLink, status: "Waiting Review", masterKolId: masterKolId ?? kol.masterKolId };
-    setKols((ks) => ks.map((x) => (x.id === kol.id ? next : x)));
-    await updateKol(next);
+  // Drop a "Need Approval" task into the requester's task list, due in 3 days —
+  // fired when a KOL first moves into the "In Review" stage.
+  const createReviewTask = async (kol: Kol) => {
     const requester = kol.requester || kol.owner;
     const dueIso = plusDaysIso(3);
     const task: Task = {
@@ -87,6 +82,16 @@ export default function KolPage() {
       checklist: [], dueIso,
     };
     await createTaskDb(task);
+  };
+
+  // Drawer saves flow through here: update the row, and when a KOL first enters
+  // "In Review" (draft submitted for approval), raise the approval task.
+  const handleKolUpdate = (next: Kol) => {
+    const prev = kols.find((k) => k.id === next.id);
+    setKols((ks) => ks.map((x) => (x.id === next.id ? next : x)));
+    if (prev && normalizeStage(prev.status) !== "In Review" && normalizeStage(next.status) === "In Review") {
+      createReviewTask(next).catch(() => {});
+    }
   };
 
   const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
@@ -173,7 +178,7 @@ export default function KolPage() {
       </div>
 
       <div className="mt-5">
-        {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onSubmitWork={submitRow} />}
+        {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
@@ -187,7 +192,7 @@ export default function KolPage() {
           onClose={() => setDrawer(null)}
           onUpdate={(k) => {
             setDrawer((d) => (d ? { ...d, kol: k } : d));
-            setKols((ks) => ks.map((x) => (x.id === k.id ? k : x)));
+            handleKolUpdate(k);
           }}
         />
       )}
@@ -196,18 +201,10 @@ export default function KolPage() {
   );
 }
 
-function CreatorRow({ kol, onOpen, onSubmitWork }: { kol: Kol; onOpen: (k: Kol) => void; onSubmitWork: (k: Kol, link: string) => Promise<void> }) {
+function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
   const pi = platformIcon(kol.plat);
   const { idx } = stageProgress(kol.status);
   const url = channelUrl(kol.plat, kol.h);
-  const [link, setLink] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!link.trim() || busy) return;
-    setBusy(true);
-    try { await onSubmitWork(kol, link); setLink(""); } finally { setBusy(false); }
-  };
   return (
     <div className="border-b border-line4 last:border-0">
       <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.4fr_1fr_1fr_1.4fr] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition">
@@ -235,26 +232,18 @@ function CreatorRow({ kol, onOpen, onSubmitWork }: { kol: Kol; onOpen: (k: Kol) 
           </div>
         </div>
       </div>
-      {SUBMITTABLE(kol.status) && (
-        <div className="flex items-center gap-2 px-5 pb-3 -mt-[2px]" onClick={(e) => e.stopPropagation()}>
-          <span className="text-[11px] text-faint">🔗</span>
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste post / draft link and submit for review…"
-            className="flex-1 text-[12px] px-3 py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
-          <button onClick={submit} disabled={!link.trim() || busy} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-4 py-[7px] disabled:opacity-40 whitespace-nowrap">{busy ? "…" : "Submit"}</button>
-        </div>
-      )}
     </div>
   );
 }
 
-function CreatorList({ list, onOpen, onSubmitWork }: { list: Kol[]; onOpen: (k: Kol) => void; onSubmitWork: (k: Kol, link: string) => Promise<void> }) {
+function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: "2fr 1.4fr 1fr 1fr 1.4fr" }}>
         <div>Creator</div><div>Campaign</div><div>Followers</div><div>Fee</div><div>Stage</div>
       </div>
-      {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} onSubmitWork={onSubmitWork} />)}
+      {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}
       {list.length === 0 && <div className="text-[12.5px] text-faint text-center py-8">No creators match these filters.</div>}
     </div>
   );
@@ -263,7 +252,7 @@ function CreatorList({ list, onOpen, onSubmitWork }: { list: Kol[]; onOpen: (k: 
 function PipelineList({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
   const stages = [...ALL_STAGES, "Paused"];
   const groups = stages
-    .map((st) => ({ stage: st, kols: kols.filter((k) => k.status === st && (brand === "all" || k.b === brand)) }))
+    .map((st) => ({ stage: st, kols: kols.filter((k) => normalizeStage(k.status) === st && (brand === "all" || k.b === brand)) }))
     .filter((g) => g.kols.length > 0);
   return (
     <div className="flex flex-col gap-3">
@@ -464,7 +453,7 @@ function KolDatabase() {
 
 const KOL_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
 
-function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (k: Kol, item: BriefKolItem, campaign: string) => void }) {
+function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (kols: Kol[], item: BriefKolItem, campaign: string) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const [brandSel, setBrandSel] = useState("TEPPEN");
   const [campaign, setCampaign] = useState("");
@@ -487,19 +476,28 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
 
   // Requester specifies the requirement only — the real page (and the master-DB
   // link) is proposed later by the KOL specialist, so there's no name/handle here.
-  const canCreate = (item.count || 0) > 0;
+  const count = Math.max(1, item.count || 1);
+  const canCreate = count > 0;
   const submit = () => {
     if (!canCreate) return;
     const expEng = (item.likes || 0) + (item.comments || 0) + (item.shares || 0) + (item.saves || 0) + (item.clicks || 0);
-    const k = buildKol({
-      id: nextId, campaign: campaign || "—", b: brandId, kolType: item.kolType,
-      count: item.count || 1, budget: item.budget || 0,
-      deliverables: item.contentRequired.join(" + "), notes: item.note,
-      expectedReach: item.expectedReach, expectedEngagement: expEng,
-      postingDate: item.postingStart, followers: item.followers,
-      owner: item.owner, requester, branch: item.area, platform: item.platforms[0],
+    // A request for N pages becomes N independent rows so each page is tracked,
+    // reviewed, and updated on its own. Budget is per-page (fee each), so the
+    // requirement's total budget is split evenly.
+    const perPageBudget = Math.round((item.budget || 0) / count);
+    const kols = Array.from({ length: count }, (_, i) => {
+      const k = buildKol({
+        id: nextId + i, campaign: campaign || "—", b: brandId, kolType: item.kolType,
+        count: 1, budget: perPageBudget,
+        deliverables: item.contentRequired.join(" + "), notes: item.note,
+        expectedReach: item.expectedReach, expectedEngagement: expEng,
+        postingDate: item.postingStart, followers: item.followers,
+        owner: item.owner, requester, branch: item.area, platform: item.platforms[0],
+      });
+      // Label each page distinctly when more than one was requested.
+      return count > 1 ? { ...k, name: `${k.name} #${i + 1}` } : k;
     });
-    onCreate(k, item, campaign.trim());
+    onCreate(kols, item, campaign.trim());
   };
 
   return (
