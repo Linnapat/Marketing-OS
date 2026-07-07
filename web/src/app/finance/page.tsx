@@ -20,6 +20,7 @@ import { financeFromDb, FinanceView } from "@/lib/data/derive";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
+import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter as PeriodFilter, inDateFilter, filterMonthKeys, MONTHS } from "@/components/ui/DateFilterBar";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 
 const TABS = [
@@ -33,16 +34,17 @@ type Tab = (typeof TABS)[number][0];
 export interface SheetBudgetRow { month: string; category: string; budget: number; }
 interface CatPnlRow { category: string; budget: number; requested: number; approved: number; }
 
-/** One row per category for the selected month: Budget (sheet) vs the real
- *  expense requests logged that month. Brand filter applies to actuals only —
- *  the sheet's budgets are company-wide per category. */
-function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], month: string, brand: BrandFilterValue): CatPnlRow[] {
+/** One row per category for the selected period: Budget (sheet months covered
+ *  by the period, summed) vs the real expense requests logged in the period.
+ *  Brand filter applies to actuals only — sheet budgets are company-wide. */
+function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodFilter, brand: BrandFilterValue): CatPnlRow[] {
+  const monthKeys = new Set(filterMonthKeys(f));
   const budgets = new Map<string, number>();
-  for (const r of sheetRows) if (r.month === month) budgets.set(r.category, (budgets.get(r.category) || 0) + r.budget);
+  for (const r of sheetRows) if (monthKeys.has(r.month)) budgets.set(r.category, (budgets.get(r.category) || 0) + r.budget);
   const requested = new Map<string, number>();
   const approved = new Map<string, number>();
   for (const r of reqs) {
-    if (r.createdAt?.slice(0, 7) !== month || (brand !== "all" && r.b !== brand)) continue;
+    if (!r.createdAt || !inDateFilter(f, r.createdAt) || (brand !== "all" && r.b !== brand)) continue;
     if (r.status !== "Draft" && r.status !== "Rejected") requested.set(r.category, (requested.get(r.category) || 0) + (r.requested || 0));
     approved.set(r.category, (approved.get(r.category) || 0) + (r.approved || 0));
   }
@@ -79,7 +81,7 @@ export default function FinancePage() {
   const [sheetUrl, setSheetUrl] = useState("");
   const [sheetRows, setSheetRows] = useState<SheetBudgetRow[]>([]);
   const [sheetStatus, setSheetStatus] = useState<string>("");
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [period, setPeriod] = useState<PeriodFilter>(DEFAULT_DATE_FILTER);
 
   const loadSheet = async (url: string) => {
     if (!url.trim()) { setSheetRows([]); setSheetStatus(""); return; }
@@ -122,10 +124,11 @@ export default function FinancePage() {
           .map((r) => [r.ref ?? "", r.category, brandName(r.b), r.campaign, r.requester ?? "", r.vendor ?? "", r.requested, r.approved, r.status, r.createdAt?.slice(0, 10) ?? ""]),
       ));
     } else if (tab === "roi") {
-      const rows = categoryPnl(sheetRows, reqs, month, brand);
-      download(`category-pnl-${month}.csv`, buildCsv(
-        ["Month", "Category", "Budget", "Requested", "Approved", "Remaining"],
-        rows.map((r) => [month, r.category, r.budget, r.requested, r.approved, r.budget - r.approved]),
+      const rows = categoryPnl(sheetRows, reqs, period, brand);
+      const label = filterMonthKeys(period).join("_") || "period";
+      download(`category-pnl-${label}.csv`, buildCsv(
+        ["Period", "Category", "Budget", "Requested", "Approved", "Remaining"],
+        rows.map((r) => [label, r.category, r.budget, r.requested, r.approved, r.budget - r.approved]),
       ));
     } else {
       const pnl = (fin?.pnl ?? []).filter((p) => brand === "all" || p.b === brand);
@@ -171,7 +174,7 @@ export default function FinancePage() {
         {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} />}
         {tab === "roi" && (
           <CategoryPnlTab
-            brand={brand} reqs={reqs} sheetRows={sheetRows} month={month} setMonth={setMonth}
+            brand={brand} reqs={reqs} sheetRows={sheetRows} period={period} setPeriod={setPeriod}
             sheetUrl={sheetUrl} onSaveUrl={saveSheetUrl} onReload={() => loadSheet(sheetUrl)} status={sheetStatus}
           />
         )}
@@ -328,27 +331,17 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
 }
 
 /* ── P&L by Category — monthly budgets from the Finance Google Sheet ── */
-function CategoryPnlTab({ brand, reqs, sheetRows, month, setMonth, sheetUrl, onSaveUrl, onReload, status }: {
+function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, onSaveUrl, onReload, status }: {
   brand: BrandFilterValue; reqs: ExpenseReq[]; sheetRows: SheetBudgetRow[];
-  month: string; setMonth: (m: string) => void;
+  period: PeriodFilter; setPeriod: (f: PeriodFilter) => void;
   sheetUrl: string; onSaveUrl: (url: string) => void; onReload: () => void; status: string;
 }) {
   const [urlDraft, setUrlDraft] = useState(sheetUrl);
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
 
-  // Months worth showing: everything in the sheet + months with real expenses + now.
-  const months = [...new Set([
-    ...sheetRows.map((r) => r.month),
-    ...reqs.map((r) => r.createdAt?.slice(0, 7)).filter((m): m is string => !!m),
-    new Date().toISOString().slice(0, 7),
-  ])].sort().reverse();
-
-  const rows = categoryPnl(sheetRows, reqs, month, brand);
+  const rows = categoryPnl(sheetRows, reqs, period, brand);
   const tot = rows.reduce((a, r) => ({ budget: a.budget + r.budget, requested: a.requested + r.requested, approved: a.approved + r.approved }), { budget: 0, requested: 0, approved: 0 });
-  const monthLabel = (m: string) => {
-    const [y, mo] = m.split("-").map(Number);
-    return `${["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][mo - 1]} ${y + 543}`;
-  };
+  const periodLabel = period.mode === "month" ? `${MONTHS[period.month]} ${period.year}` : `${period.start} → ${period.end}`;
   const cols = "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.4fr";
 
   return (
@@ -371,19 +364,13 @@ function CategoryPnlTab({ brand, reqs, sheetRows, month, setMonth, sheetUrl, onS
         {status && <div className="text-[12px] mt-2" style={{ color: status.startsWith("⚠") ? "#B33A2E" : "#4E7A4E" }}>{status}</div>}
       </div>
 
-      {/* Month picker */}
-      <div className="flex items-center gap-2">
-        <span className="text-[12.5px] font-bold text-muted">เดือน</span>
-        <select value={month} onChange={(e) => setMonth(e.target.value)}
-          className="text-[13px] px-[12px] py-[8px] rounded-[10px] border border-line2 bg-white outline-none">
-          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
-        {brand !== "all" && <span className="text-[11.5px] text-faint">· ตัวกรองแบรนด์มีผลกับยอดเบิกจริงเท่านั้น (งบใน sheet เป็นภาพรวม)</span>}
-      </div>
+      {/* Period picker — day-level range up to whole months/years */}
+      <DateFilterBar value={period} onChange={setPeriod}
+        trailing={brand !== "all" ? <span>ตัวกรองแบรนด์มีผลกับยอดเบิกจริงเท่านั้น</span> : undefined} />
 
       {/* Category table */}
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-        <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">P&amp;L by Category · {monthLabel(month)}</div>
+        <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">P&amp;L by Category · {periodLabel}</div>
         <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
           <div>Category</div><div>Budget</div><div>เบิกแล้ว</div><div>อนุมัติแล้ว</div><div>คงเหลือ</div><div>ใช้ไป</div>
         </div>
@@ -407,7 +394,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, month, setMonth, sheetUrl, onS
         })}
         {rows.length === 0 && (
           <div className="px-5 py-10 text-[12.5px] text-faint text-center">
-            ยังไม่มีข้อมูลเดือนนี้ — {sheetUrl ? "เพิ่มงบเดือนนี้ใน Google Sheet แล้วกดโหลดใหม่" : "เชื่อม Google Sheet ด้านบนเพื่อตั้งงบรายหมวด"}
+            ยังไม่มีข้อมูลช่วงนี้ — {sheetUrl ? "เพิ่มงบช่วงนี้ใน Google Sheet แล้วกดโหลดใหม่" : "เชื่อม Google Sheet ด้านบนเพื่อตั้งงบรายหมวด"}
           </div>
         )}
         {rows.length > 0 && (

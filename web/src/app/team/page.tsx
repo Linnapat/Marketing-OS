@@ -1,26 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionLabel } from "@/components/ui/Card";
 import { Progress } from "@/components/ui/Progress";
 import { CAPACITY_META, initials } from "@/lib/data/workload";
 import { teamFromDb, TeamView, TeamMemberView } from "@/lib/data/derive";
-import { fetchMembers } from "@/lib/db/settings";
+import { fetchMembers, Member } from "@/lib/db/settings";
 import { fetchTasks } from "@/lib/db/tasks";
+import { Task } from "@/lib/data/tasks";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 
 export default function TeamWorkloadPage() {
   const [drawer, setDrawer] = useState<TeamMemberView | null>(null);
-  const [team, setTeam] = useState<TeamView | null>(null);
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  const [raw, setRaw] = useState<{ m: Member[]; t: { tasks: Task[]; doneIds: number[] } } | null>(null);
 
   useEffect(() => {
     let alive = true;
     Promise.all([fetchMembers(), fetchTasks()])
-      .then(([m, t]) => { if (alive) setTeam(teamFromDb(m, t.tasks, t.doneIds)); })
+      .then(([m, t]) => { if (alive) setRaw({ m, t }); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Workload for the selected period only (by task due date; undated stay in).
+  const team: TeamView | null = useMemo(
+    () => (raw ? teamFromDb(raw.m, raw.t.tasks.filter((t) => inDateFilter(date, t.dueIso || t.due)), raw.t.doneIds) : null),
+    [raw, date],
+  );
 
   const members = team?.members ?? [];
   const p = team?.pulse;
@@ -43,6 +52,11 @@ export default function TeamWorkloadPage() {
         title="Team Workload & Support"
         subtitle="See who is busy, who is stuck, and where the team needs support today."
       />
+
+      {/* Period filter — workload for the selected period (by due date) */}
+      <div className="mt-4">
+        <DateFilterBar value={date} onChange={setDate} />
+      </div>
 
       {/* Team Pulse */}
       <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))" }}>

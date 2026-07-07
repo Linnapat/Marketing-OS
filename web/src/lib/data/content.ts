@@ -8,6 +8,9 @@ import { Tone } from "@/lib/status";
 export interface ContentItem {
   id: string;
   day: number;
+  /** Full publish date (YYYY-MM-DD). Legacy rows only carry `day` — they were
+   *  authored against the July 2026 wall calendar (see contentDateIso). */
+  dateIso?: string;
   time: string;
   title: string;
   b: BrandId;
@@ -62,6 +65,12 @@ export const CONTENT_STATUS_TONE: Record<string, Tone> = {
 
 export function contentTone(status: string): Tone {
   return CONTENT_STATUS_TONE[status] ?? "neutral";
+}
+
+/** Effective publish date. Legacy rows without dateIso were planned on the
+ *  July 2026 calendar, so they resolve there instead of floating month-to-month. */
+export function contentDateIso(c: ContentItem): string {
+  return c.dateIso ?? `2026-07-${String(c.day || 1).padStart(2, "0")}`;
 }
 
 /** All channels for an item — the multi-select array, or [plat] as fallback. */

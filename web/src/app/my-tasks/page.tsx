@@ -7,6 +7,7 @@ import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
@@ -163,7 +164,8 @@ export default function MyTasksPage() {
   const createTask = (t: Task) => { setTasks((ts) => [t, ...ts]); setNewOpen(false); createTaskDb(t); };
   const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
-  const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs), [tasks, viewAs]);
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date]);
   const [greetText, greetSubtext] = GREETINGS[viewAs] ?? [`Good to see you, ${viewAs.split(" ")[0]} 🌿`, "Let's move things forward today."];
 
   // Today's focus = due today or overdue (real calendar) or stuck.
@@ -190,7 +192,7 @@ export default function MyTasksPage() {
   return (
     <div style={{ paddingBottom: 40 }}>
       {/* HEADER */}
-      <div className="flex items-start justify-between flex-wrap gap-3 mb-[22px]">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
         <div>
           <div className="text-[22px] font-extrabold tracking-[-0.02em]">My Tasks</div>
           <div className="text-[12.5px] text-faint mt-[2px]">Personal workspace · Team overview · Approvals</div>
@@ -215,6 +217,11 @@ export default function MyTasksPage() {
               : { fontSize: 11, fontWeight: 500, padding: "4px 10px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" }}>{p.split(" ")[0]}</span>;
           })}
         </div>
+      </div>
+
+      {/* Period filter — by task due date; undated tasks stay visible */}
+      <div className="mb-[18px]">
+        <DateFilterBar value={date} onChange={setDate} />
       </div>
 
       {activeTab === "myDay" ? (
@@ -281,7 +288,7 @@ export default function MyTasksPage() {
       ) : activeTab === "approval" ? (
         <MyApprovalView campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} onApprove={approveExpense} onReject={rejectExpense} />
       ) : (
-        <TeamView tasks={tasks} getStatus={getStatus} people={people} onSelect={(p) => { pickViewAs(p); setActiveTab("myDay"); }} />
+        <TeamView tasks={tasks.filter((t) => inDateFilter(date, t.dueIso || t.due))} getStatus={getStatus} people={people} onSelect={(p) => { pickViewAs(p); setActiveTab("myDay"); }} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}

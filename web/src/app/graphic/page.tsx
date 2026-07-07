@@ -13,6 +13,7 @@ import {
   DESIGNERS, graphicKpis, graphicNeedsAttention, emptyDeliverable,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic } from "@/lib/db/graphic";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { createContent } from "@/lib/db/content";
 import { appendBriefItem } from "@/lib/db/brief";
@@ -33,6 +34,7 @@ export default function GraphicPage() {
   const [designer, setDesigner] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
   const [reqOpen, setReqOpen] = useState(false);
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function GraphicPage() {
     if (briefItem && campaign && campaign !== "—") appendBriefItem(campaign, briefItem).catch(() => {});
   };
 
-  const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer));
+  const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
   const kpi = graphicKpis(items);
   const attention = graphicNeedsAttention(items);
 
@@ -121,6 +123,11 @@ export default function GraphicPage() {
             </select>
           </label>
         </div>
+      </div>
+
+      {/* Period filter — by request due date; undated requests stay visible */}
+      <div className="mt-3">
+        <DateFilterBar value={date} onChange={setDate} />
       </div>
 
       <div className="mt-5">
@@ -246,9 +253,10 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
       nextAction: `Deliver ${deliverables.length} asset(s)`,
       contentItem: item.title.trim() || "—",
     };
-    const day = item.publishDate ? Math.max(1, Math.min(31, Number(item.publishDate.split("-")[2]) || 1)) : 27;
+    const iso = item.publishDate || new Date().toISOString().slice(0, 10);
+    const day = Math.max(1, Math.min(31, Number(iso.split("-")[2]) || 1));
     const post: ContentItem = {
-      id: `c${nextId}-gfx`, day, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
+      id: `c${nextId}-gfx`, day, dateIso: iso, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
       status: "Draft", campaign: campaign.trim(), owner: "Unassigned", caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
     };

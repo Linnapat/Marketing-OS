@@ -19,11 +19,13 @@ import { fetchKols } from "@/lib/db/kol";
 import { fetchContent } from "@/lib/db/content";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchExpenseRequests, ExpenseReq } from "@/lib/db/finance";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
 
 interface RawData { c: CampaignRow[]; t: Task[]; k: Kol[]; ct: ContentItem[]; g: Graphic[]; er: ExpenseReq[] }
 
 export default function DashboardPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [raw, setRaw] = useState<RawData | null>(null);
 
   useEffect(() => {
@@ -36,12 +38,21 @@ export default function DashboardPage() {
 
   const inBrand = <T extends { b: BrandFilterValue }>(x: T) => brand === "all" || x.b === brand;
 
-  // Brand filter narrows every module; KPIs + the pending/attention feed follow.
-  const dash = useMemo(() => (raw ? dashboardFromDb(raw.c.filter(inBrand), raw.t, raw.k.filter(inBrand)) : null), [raw, brand]);
-  const feed = useMemo(
-    () => (raw ? dashboardFeed(raw.c.filter(inBrand), raw.ct.filter(inBrand), raw.g.filter(inBrand), raw.t, raw.er.filter(inBrand)) : null),
-    [raw, brand],
-  );
+  // Brand + period filters narrow every module; KPIs + the feed follow.
+  // Campaigns match when their running dates overlap the period; other rows by
+  // their own date (due / posting / created); undated rows stay visible.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const view = useMemo(() => (raw ? {
+    c: raw.c.filter(inBrand).filter((c) => rangeInFilter(date, c.dates)),
+    t: raw.t.filter((t) => inDateFilter(date, t.dueIso || t.due)),
+    k: raw.k.filter(inBrand).filter((k) => inDateFilter(date, k.postDueDate ?? k.postingDate)),
+    ct: raw.ct.filter(inBrand),
+    g: raw.g.filter(inBrand).filter((g) => inDateFilter(date, g.due)),
+    er: raw.er.filter(inBrand).filter((e) => inDateFilter(date, e.createdAt)),
+  } : null), [raw, brand, date]);
+
+  const dash = useMemo(() => (view ? dashboardFromDb(view.c, view.t, view.k) : null), [view]);
+  const feed = useMemo(() => (view ? dashboardFeed(view.c, view.ct, view.g, view.t, view.er) : null), [view]);
 
   const attention = feed?.needsAttention ?? [];
   const pending = feed?.pendingApproval ?? null;
@@ -60,8 +71,13 @@ export default function DashboardPage() {
         ) : undefined}
       />
 
-      <div className="mt-5 mb-5">
+      <div className="mt-5 mb-3">
         <BrandFilter value={brand} onChange={setBrand} />
+      </div>
+
+      {/* Period filter — narrows every KPI and feed below */}
+      <div className="mb-5">
+        <DateFilterBar value={date} onChange={setDate} />
       </div>
 
       {/* Overall KPIs — derived from real campaigns / tasks / KOLs */}

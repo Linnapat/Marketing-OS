@@ -65,7 +65,8 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     const post: ContentItem = {
       // No publish date yet → fall back to the campaign Start Date (stays inside the
       // campaign window) rather than day 1 of the month.
-      id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || dayOf(brief.startDate) || 1, time: "10:00", title: ci.title || `${brief.name} — Content ${n + 1}`,
+      id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || dayOf(brief.startDate) || 1,
+      dateIso: ci.publishDate || brief.startDate || undefined, time: "10:00", title: ci.title || `${brief.name} — Content ${n + 1}`,
       b: brief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: brief.name,
       // Owner is assigned later inside the Creative team — leave unassigned here.
       owner: "Unassigned", caption: "", hashtags: "", cta: "",

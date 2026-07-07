@@ -12,10 +12,12 @@ import {
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 
 export default function AgencyPortalPage() {
   const [tasks, setTasks] = useState<AgencyTask[]>(() => AGENCY_TASKS.map((t) => ({ ...t })));
   const [filter, setFilter] = useState<"all" | AgencyStatus>("all");
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [newOpen, setNewOpen] = useState(false);
   const empty = { title: "", b: "teppen" as BrandId, campaign: "", type: "Graphic", due: "", agencyEmail: "" };
   const [nt, setNt] = useState(empty);
@@ -32,7 +34,7 @@ export default function AgencyPortalPage() {
     return () => { alive = false; };
   }, [isAgency, myEmail]);
 
-  const rows = tasks.filter((t) => filter === "all" || t.status === filter);
+  const rows = tasks.filter((t) => (filter === "all" || t.status === filter) && inDateFilter(date, t.due));
   const counts = useMemo(() => ({
     total: tasks.length,
     open: tasks.filter((t) => t.status !== "Approved").length,
@@ -88,6 +90,11 @@ export default function AgencyPortalPage() {
             <div className="text-[24px] font-bold mt-[3px]" style={{ color: dark ? "#fff" : (c as string) }}>{v as number}</div>
           </div>
         ))}
+      </div>
+
+      {/* Period filter — by task due date; undated tasks stay visible */}
+      <div className="mt-4">
+        <DateFilterBar value={date} onChange={setDate} />
       </div>
 
       {/* Status filter */}

@@ -25,6 +25,7 @@ import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -43,6 +44,7 @@ export default function KolPage() {
   const [campaign, setCampaign] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ kol: Kol; tab: "profile" | "comments" } | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [kols, setKols] = useState<Kol[]>(KOLS);
 
   useEffect(() => {
@@ -87,7 +89,7 @@ export default function KolPage() {
     await createTaskDb(task);
   };
 
-  const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign));
+  const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
   const kpi = kolKpis(filtered);
   const alerts = kolAlerts(filtered);
 
@@ -118,6 +120,11 @@ export default function KolPage() {
             {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
+      </div>
+
+      {/* Period filter — by post due date; undated collaborations stay visible */}
+      <div className="mt-3">
+        <DateFilterBar value={date} onChange={setDate} />
       </div>
 
       {/* KPI strip */}

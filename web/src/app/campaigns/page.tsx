@@ -16,6 +16,7 @@ import {
 } from "@/lib/data/campaigns";
 import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
 import { useRole } from "@/lib/role";
+import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
 
 const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LINE", "Event / Store Activation", "Seasonal Promotion", "Urgent promotion"];
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
@@ -27,6 +28,7 @@ export default function CampaignsPage() {
   const [owner, setOwner] = useState<string>("all");
   const [budgetBand, setBudgetBand] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState(CAMPAIGNS);
   const [newOpen, setNewOpen] = useState(false);
   const emptyNew = { name: "", b: "teppen" as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
@@ -94,7 +96,8 @@ export default function CampaignsPage() {
     (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
     (owner === "all" || c.owner === owner) &&
     (branchFilter === "all" || (c.branch || "").split(",").map((s) => s.trim()).includes(branchFilter)) &&
-    inBand(c.budget),
+    inBand(c.budget) &&
+    rangeInFilter(date, c.dates),
   );
   const groups = STATUS_ORDER
     .map((s) => ({ status: s, rows: filtered.filter((c) => c.status === s) }))
@@ -110,6 +113,11 @@ export default function CampaignsPage() {
         subtitle={`${filtered.length} campaigns · plan, track, and profit from every activation`}
         right={<Link href="/campaigns/new" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Campaign</Link>}
       />
+
+      {/* Period filter — filters the campaign list by its running dates */}
+      <div className="mt-[14px]">
+        <DateFilterBar value={date} onChange={setDate} />
+      </div>
 
       {/* Monthly budget summary — dark card */}
       <div className="mt-[14px] bg-panel text-white rounded-cardLg p-5">

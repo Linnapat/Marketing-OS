@@ -10,8 +10,9 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { BrandFilterValue, brandName, BRAND_ORDER, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS, itemPlatforms,
+  CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS, itemPlatforms, contentDateIso,
 } from "@/lib/data/content";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent } from "@/lib/db/content";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
@@ -41,9 +42,6 @@ function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
 }
 
 type View = "month" | "week" | "list" | "queue";
-// July 2026 starts on a Wednesday (index 3, Sun=0).
-const JULY_FIRST_DOW = 3;
-const DAYS_IN_JULY = 31;
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -52,11 +50,11 @@ const labelDate = (iso: string) => { if (!iso) return ""; const [, m, d] = iso.s
 export default function ContentPage() {
   const [view, setView] = useState<View>("month");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [open, setOpen] = useState<ContentItem | null>(null);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [newOpen, setNewOpen] = useState(false);
-  const [newDay, setNewDay] = useState<number | null>(null);
-  const openNew = (day?: number) => { setNewDay(day ?? null); setNewOpen(true); };
+  const [newIso, setNewIso] = useState<string | null>(null);
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
 
@@ -66,7 +64,17 @@ export default function ContentPage() {
     return () => { alive = false; };
   }, []);
 
-  const items = useMemo(() => posts.filter((c) => brand === "all" || c.b === brand), [posts, brand]);
+  // The month the grid shows: the filter month, or the range's starting month.
+  const gy = date.mode === "month" ? date.year : Number((date.start || "2026-07-01").slice(0, 4));
+  const gm = date.mode === "month" ? date.month : Number((date.start || "2026-07-01").slice(5, 7)) - 1;
+  const ymKey = `${gy}-${String(gm + 1).padStart(2, "0")}`;
+
+  const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
+
+  const items = useMemo(
+    () => posts.filter((c) => (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
+    [posts, brand, date],
+  );
   const cards = useMemo(() => brandOverview(posts), [posts]);
 
   const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string) => {
@@ -139,9 +147,14 @@ export default function ContentPage() {
         <BrandFilter value={brand} onChange={setBrand} label="" />
       </div>
 
+      {/* Period filter — drives the calendar month and every view below */}
+      <div className="mt-3">
+        <DateFilterBar value={date} onChange={setDate} />
+      </div>
+
       <div className="mt-5">
-        {view === "month" && <MonthView items={items} onOpen={setOpen} onNew={openNew} />}
-        {view === "week" && <WeekView items={items} onOpen={setOpen} />}
+        {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} />}
+        {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} />}
         {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} />}
         {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
       </div>
@@ -156,12 +169,12 @@ export default function ContentPage() {
           }}
         />
       )}
-      {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} initialDay={newDay} />}
+      {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} initialIso={newIso} />}
     </>
   );
 }
 
-function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string) => void; count: number; initialDay?: number | null }) {
+function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string) => void; count: number; initialIso?: string | null }) {
   const [b, setB] = useState<BrandId>("teppen");
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
@@ -169,7 +182,7 @@ function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () =>
   // Same content-item "template" as the Campaign Builder's Content Plan.
   const [item, setItem] = useState<BriefContentItem>(() => {
     const it = emptyContentItem(1);
-    return initialDay ? { ...it, publishDate: `2026-07-${String(initialDay).padStart(2, "0")}` } : it;
+    return initialIso ? { ...it, publishDate: initialIso } : it;
   });
   const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
 
@@ -187,10 +200,11 @@ function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () =>
   const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
   const create = () => {
     if (!canCreate) return;
-    const day = item.publishDate ? Math.max(1, Math.min(31, Number(item.publishDate.split("-")[2]) || 1)) : (initialDay ?? 27);
+    const iso = item.publishDate || initialIso || new Date().toISOString().slice(0, 10);
+    const day = Math.max(1, Math.min(31, Number(iso.split("-")[2]) || 1));
     const post: ContentItem = {
       id: `c${String(count + 1).padStart(2, "0")}-new`,
-      day, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
+      day, dateIso: iso, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
       status: "Draft", campaign: campaign.trim(), owner: "Unassigned",
       caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
@@ -236,10 +250,13 @@ function NewPostModal({ onClose, onCreate, count, initialDay }: { onClose: () =>
   );
 }
 
-function MonthView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
+function MonthView({ items, year, month, onOpen, onNew }: { items: ContentItem[]; year: number; month: number; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const ymKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const cells: (number | null)[] = [
-    ...Array(JULY_FIRST_DOW).fill(null),
-    ...Array.from({ length: DAYS_IN_JULY }, (_, i) => i + 1),
+    ...Array(firstDow).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -248,7 +265,7 @@ function MonthView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c:
       </div>
       <div className="grid grid-cols-7">
         {cells.map((day, i) => {
-          const dayItems = day ? items.filter((c) => c.day === day) : [];
+          const dayItems = day ? items.filter((c) => contentDateIso(c) === `${ymKey}-${String(day).padStart(2, "0")}`) : [];
           return (
             <div key={i} className="group min-h-[104px] border-r border-b border-line4 p-[6px] last:border-r-0 relative" style={{ background: day ? "#fff" : "#FBF9F4" }}>
               {day && (
@@ -273,14 +290,14 @@ function MonthView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c:
   );
 }
 
-function WeekView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: ContentItem) => void }) {
-  const byDay = [...new Set(items.map((c) => c.day))].sort((a, b) => a - b);
+function WeekView({ items, monthName, onOpen }: { items: ContentItem[]; monthName: string; onOpen: (c: ContentItem) => void }) {
+  const byDate = [...new Set(items.map((c) => contentDateIso(c)))].sort();
   return (
     <div className="flex flex-col gap-3">
-      {byDay.map((day) => (
-        <div key={day} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-          <div className="px-5 py-2 text-[12px] font-bold border-b border-line4">July {day}</div>
-          {items.filter((c) => c.day === day).sort((a, b) => a.time.localeCompare(b.time)).map((c) => <Row key={c.id} c={c} onOpen={onOpen} />)}
+      {byDate.map((iso) => (
+        <div key={iso} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div className="px-5 py-2 text-[12px] font-bold border-b border-line4">{labelDate(iso) || `${monthName} ${Number(iso.slice(8, 10))}`}</div>
+          {items.filter((c) => contentDateIso(c) === iso).sort((a, b) => a.time.localeCompare(b.time)).map((c) => <Row key={c.id} c={c} onOpen={onOpen} />)}
         </div>
       ))}
     </div>
@@ -348,7 +365,7 @@ function QueueView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Conten
               <PlatBadges item={c} size={18} />
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold truncate">{c.title}</div>
-                <div className="text-[11px] text-faint">{brandName(c.b)} · July {c.day}, {c.time}</div>
+                <div className="text-[11px] text-faint">{brandName(c.b)} · {labelDate(contentDateIso(c))}, {c.time}</div>
               </div>
               <StatusBadge tone={contentTone(c.publishStatus)}>{c.publishStatus}</StatusBadge>
               <button onClick={() => onOpen(c)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Open ↗</button>

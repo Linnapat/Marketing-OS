@@ -52,6 +52,42 @@ export function inDateFilter(f: DateFilter, v?: string | null): boolean {
   return t >= s && t <= e;
 }
 
+/** The filter window as [start, end] epoch ms. */
+export function filterWindow(f: DateFilter): [number, number] {
+  if (f.mode === "month") {
+    return [new Date(f.year, f.month, 1).getTime(), new Date(f.year, f.month + 1, 0, 23, 59, 59).getTime()];
+  }
+  return [
+    f.start ? new Date(`${f.start}T00:00:00`).getTime() : -Infinity,
+    f.end ? new Date(`${f.end}T23:59:59`).getTime() : Infinity,
+  ];
+}
+
+/** Whether a date-range row (e.g. a campaign "Jul 1 – Jul 31") overlaps the
+ *  selected period. Rows with no parseable start stay visible. */
+export function rangeInFilter(f: DateFilter, range?: string | null): boolean {
+  const [startV, endV] = (range ?? "").split(/[–—-]/).map((s) => s.trim());
+  const s = parseRowDate(startV);
+  if (!s) return true;
+  const e = parseRowDate(endV) ?? s;
+  const [ws, we] = filterWindow(f);
+  return s.getTime() <= we && e.getTime() >= ws;
+}
+
+/** Month keys (YYYY-MM) covered by the selected period — for monthly budgets. */
+export function filterMonthKeys(f: DateFilter): string[] {
+  if (f.mode === "month") return [`${f.year}-${String(f.month + 1).padStart(2, "0")}`];
+  if (!f.start || !f.end) return [];
+  const out: string[] = [];
+  const s = new Date(`${f.start}T00:00:00`), e = new Date(`${f.end}T00:00:00`);
+  const cur = new Date(s.getFullYear(), s.getMonth(), 1);
+  while (cur <= e && out.length < 60) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return out;
+}
+
 /**
  * The unified period selector reused across Finance, Campaigns, KOL, Dashboard —
  * Month/Range segmented control + ‹ › nav + month/year selects + "This month".
