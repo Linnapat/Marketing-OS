@@ -60,7 +60,19 @@ export async function searchKolProfiles(q: string, limit = 8): Promise<KolMaster
   if (q.trim()) query = query.ilike("display_name", `%${q.trim()}%`);
   const { data, error } = await query;
   if (error || !data) return [];
-  return data as KolMasterRow[];
+  const rows = data as KolMasterRow[];
+
+  // Some existing master-view rows predate the follower roll-up. Enrich missing
+  // totals from the linked channels so selecting a Library result fills the form.
+  const missingIds = rows.filter((r) => !r.total_followers).map((r) => r.kol_id);
+  if (!missingIds.length) return rows;
+  const { data: channels } = await db.from("kol_channels").select("kol_id, followers").in("kol_id", missingIds);
+  if (!channels) return rows;
+  const followerByKol = new Map<string, number>();
+  for (const c of channels as { kol_id: string; followers: number | null }[]) {
+    followerByKol.set(c.kol_id, Math.max(followerByKol.get(c.kol_id) ?? 0, c.followers ?? 0));
+  }
+  return rows.map((r) => ({ ...r, total_followers: r.total_followers || followerByKol.get(r.kol_id) || 0 }));
 }
 
 /** Create a new master profile (+ optional first channel). Returns its kol_id. */
