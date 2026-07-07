@@ -23,6 +23,89 @@ function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
 // Roles that can sit in an approval chain (superset of Users & Roles + finance tiers).
 const APPROVER_ROLES = ["Requester", "Brand Lead", "CMO", "CFO", "CEO", "Finance", "Campaign Planner", "Senior Designer", "KOL Specialist"];
 
+// ── Organization field editors — pickers instead of free text ─────────────
+const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const TIMEZONES = ["Asia/Bangkok (UTC+7)", "Asia/Singapore (UTC+8)", "Asia/Tokyo (UTC+9)", "Asia/Jakarta (UTC+7)", "Asia/Ho_Chi_Minh (UTC+7)", "UTC"];
+const CURRENCIES = ["Thai Baht (฿ THB)", "US Dollar ($ USD)", "Euro (€ EUR)", "Japanese Yen (¥ JPY)", "Singapore Dollar (S$ SGD)"];
+const DATE_FORMATS = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "D MMM YYYY"];
+const selCls = "w-full text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none";
+
+/** Editor for one org field, keyed off its label so dates/times/enums get the
+ *  right control. Everything still composes back into the same display string
+ *  the read view and DB already use — no schema change. */
+function OrgFieldEditor({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const l = label.toLowerCase();
+
+  if (l === "timezone") return <select value={value} onChange={(e) => onChange(e.target.value)} className={selCls}>{[...new Set([value, ...TIMEZONES])].map((t) => <option key={t} value={t}>{t}</option>)}</select>;
+  if (l === "currency") return <select value={value} onChange={(e) => onChange(e.target.value)} className={selCls}>{[...new Set([value, ...CURRENCIES])].map((t) => <option key={t} value={t}>{t}</option>)}</select>;
+  if (l === "date format") return <select value={value} onChange={(e) => onChange(e.target.value)} className={selCls}>{[...new Set([value, ...DATE_FORMATS])].map((t) => <option key={t} value={t}>{t}</option>)}</select>;
+
+  if (l === "vat rate") {
+    const n = parseFloat(value) || 0;
+    const included = !/exclud/i.test(value);
+    return (
+      <div className="flex items-center gap-2">
+        <input type="number" min={0} max={100} step={0.5} value={n} onChange={(e) => onChange(`${Number(e.target.value) || 0}% — ${included ? "included in" : "excluded from"} total`)} className="w-[80px] text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+        <span className="text-[13px] text-faint">%</span>
+        <select value={included ? "in" : "ex"} onChange={(e) => onChange(`${n}% — ${e.target.value === "in" ? "included in" : "excluded from"} total`)} className="text-[13px] px-2 py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">
+          <option value="in">included in total</option>
+          <option value="ex">excluded from total</option>
+        </select>
+      </div>
+    );
+  }
+
+  if (l === "working hours") {
+    const [a = "10:00", b = "19:00"] = value.split(/[—–-]/).map((s) => s.trim());
+    const set = (start: string, end: string) => onChange(`${start} — ${end}`);
+    return (
+      <div className="flex items-center gap-2">
+        <input type="time" value={a} onChange={(e) => set(e.target.value, b)} className="text-[14px] px-[11px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+        <span className="text-[13px] text-faint">—</span>
+        <input type="time" value={b} onChange={(e) => set(a, e.target.value)} className="text-[14px] px-[11px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+      </div>
+    );
+  }
+
+  if (l === "working days") {
+    const [a = "Monday", b = "Friday"] = value.split(/[—–-]/).map((s) => s.trim());
+    const set = (start: string, end: string) => onChange(`${start} — ${end}`);
+    return (
+      <div className="flex items-center gap-2">
+        <select value={WEEKDAYS.includes(a) ? a : "Monday"} onChange={(e) => set(e.target.value, b)} className="text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">{WEEKDAYS.map((d) => <option key={d}>{d}</option>)}</select>
+        <span className="text-[13px] text-faint">—</span>
+        <select value={WEEKDAYS.includes(b) ? b : "Friday"} onChange={(e) => set(a, e.target.value)} className="text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">{WEEKDAYS.map((d) => <option key={d}>{d}</option>)}</select>
+      </div>
+    );
+  }
+
+  if (l === "fiscal year") {
+    // Parse "April 2026 — December 2026" (year optional on the start side).
+    const months = value.match(new RegExp(MONTHS_FULL.join("|"), "g")) ?? ["January", "December"];
+    const years = value.match(/\d{4}/g) ?? [String(new Date().getFullYear())];
+    const startM = months[0] ?? "January", endM = months[1] ?? "December";
+    const startY = years[0] ?? String(new Date().getFullYear());
+    const endY = years[1] ?? startY;
+    const set = (sm: string, sy: string, em: string, ey: string) => onChange(`${sm} ${sy} — ${em} ${ey}`);
+    const yearOpts = Array.from({ length: 7 }, (_, i) => String(2024 + i));
+    const mSel = (v: string, on: (x: string) => void) => <select value={v} onChange={(e) => on(e.target.value)} className="text-[13.5px] px-[9px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">{MONTHS_FULL.map((m) => <option key={m}>{m}</option>)}</select>;
+    const ySel = (v: string, on: (x: string) => void) => <select value={v} onChange={(e) => on(e.target.value)} className="text-[13.5px] px-[9px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none">{[...new Set([v, ...yearOpts])].sort().map((y) => <option key={y}>{y}</option>)}</select>;
+    return (
+      <div className="flex items-center gap-[6px] flex-wrap">
+        {mSel(startM, (m) => set(m, startY, endM, endY))}
+        {ySel(startY, (y) => set(startM, y, endM, endY))}
+        <span className="text-[13px] text-faint">—</span>
+        {mSel(endM, (m) => set(startM, startY, m, endY))}
+        {ySel(endY, (y) => set(startM, startY, endM, y))}
+      </div>
+    );
+  }
+
+  // Company name + anything else → plain text.
+  return <input value={value} onChange={(e) => onChange(e.target.value)} className={selCls} />;
+}
+
 /** Approval chain as ordered pills. Read-only shows arrows between roles; in
  *  edit mode each pill can be removed and a role appended from a dropdown. */
 function ChainEditor({ chain, editable, onChange }: { chain: string[]; editable: boolean; onChange: (chain: string[]) => void }) {
@@ -240,7 +323,7 @@ export default function SettingsPage() {
                 <div key={f.label}>
                   <div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{f.label}</div>
                   {orgEdit
-                    ? <input value={f.value} onChange={(e) => setOrg((o) => o.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} className="w-full text-[14px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+                    ? <OrgFieldEditor label={f.label} value={f.value} onChange={(v) => setOrg((o) => o.map((x, j) => (j === i ? { ...x, value: v } : x)))} />
                     : <div className="text-[14px] font-semibold text-ink">{f.value}</div>}
                 </div>
               ))}
