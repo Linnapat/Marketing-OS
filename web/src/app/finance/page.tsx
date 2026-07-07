@@ -19,14 +19,43 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { financeFromDb, FinanceView } from "@/lib/data/derive";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 
 const TABS = [
   ["plan", "Budget Plan"],
-  ["roi", "ROI / P&L"],
+  ["roi", "P&L by Category"],
   ["approval", "Approval"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
+
+/* ── Monthly category budgets from the Finance Google Sheet ─────────── */
+export interface SheetBudgetRow { month: string; category: string; budget: number; }
+interface CatPnlRow { category: string; budget: number; requested: number; approved: number; }
+
+/** One row per category for the selected month: Budget (sheet) vs the real
+ *  expense requests logged that month. Brand filter applies to actuals only —
+ *  the sheet's budgets are company-wide per category. */
+function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], month: string, brand: BrandFilterValue): CatPnlRow[] {
+  const budgets = new Map<string, number>();
+  for (const r of sheetRows) if (r.month === month) budgets.set(r.category, (budgets.get(r.category) || 0) + r.budget);
+  const requested = new Map<string, number>();
+  const approved = new Map<string, number>();
+  for (const r of reqs) {
+    if (r.createdAt?.slice(0, 7) !== month || (brand !== "all" && r.b !== brand)) continue;
+    if (r.status !== "Draft" && r.status !== "Rejected") requested.set(r.category, (requested.get(r.category) || 0) + (r.requested || 0));
+    approved.set(r.category, (approved.get(r.category) || 0) + (r.approved || 0));
+  }
+  const cats = [...new Set([...budgets.keys(), ...requested.keys(), ...approved.keys()])];
+  return cats
+    .map((category) => ({
+      category,
+      budget: budgets.get(category) || 0,
+      requested: requested.get(category) || 0,
+      approved: approved.get(category) || 0,
+    }))
+    .sort((a, b) => b.budget - a.budget || b.requested - a.requested);
+}
 
 function download(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
@@ -46,12 +75,40 @@ export default function FinancePage() {
   const [fin, setFin] = useState<FinanceView | null>(null);
   const [reqs, setReqs] = useState<ExpenseReq[]>([]);
   const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+  // Monthly category budgets live in a Google Sheet the Finance team edits.
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [sheetRows, setSheetRows] = useState<SheetBudgetRow[]>([]);
+  const [sheetStatus, setSheetStatus] = useState<string>("");
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+
+  const loadSheet = async (url: string) => {
+    if (!url.trim()) { setSheetRows([]); setSheetStatus(""); return; }
+    setSheetStatus("กำลังโหลด…");
+    try {
+      const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url.trim())}`);
+      const j = await res.json();
+      if (!res.ok || j.error) { setSheetRows([]); setSheetStatus(`⚠ ${j.error ?? "โหลดไม่สำเร็จ"}`); return; }
+      setSheetRows(j.rows ?? []);
+      setSheetStatus(`✓ โหลดงบ ${j.rows?.length ?? 0} รายการจาก Google Sheet`);
+    } catch {
+      setSheetRows([]); setSheetStatus("⚠ เชื่อมต่อไม่ได้ — ลองใหม่อีกครั้ง");
+    }
+  };
+
+  const saveSheetUrl = async (url: string) => {
+    setSheetUrl(url);
+    await setAppSetting("budget_sheet_url", url.trim());
+    await loadSheet(url);
+  };
 
   useEffect(() => {
     let alive = true;
     Promise.all([fetchCampaigns(), fetchExpenseRequests(), fetchAllBriefs()])
       .then(([c, r, b]) => { if (alive) { setFin(financeFromDb(c, r)); setReqs(r); setBriefs(b); } })
       .catch(() => {});
+    getAppSetting("budget_sheet_url").then((u) => {
+      if (alive && u) { setSheetUrl(u); loadSheet(u); }
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -63,6 +120,12 @@ export default function FinancePage() {
         ["Ref", "Category", "Brand", "Campaign", "Requester", "Vendor", "Requested", "Approved", "Status", "Created"],
         all.filter((r) => brand === "all" || r.b === brand)
           .map((r) => [r.ref ?? "", r.category, brandName(r.b), r.campaign, r.requester ?? "", r.vendor ?? "", r.requested, r.approved, r.status, r.createdAt?.slice(0, 10) ?? ""]),
+      ));
+    } else if (tab === "roi") {
+      const rows = categoryPnl(sheetRows, reqs, month, brand);
+      download(`category-pnl-${month}.csv`, buildCsv(
+        ["Month", "Category", "Budget", "Requested", "Approved", "Remaining"],
+        rows.map((r) => [month, r.category, r.budget, r.requested, r.approved, r.budget - r.approved]),
       ));
     } else {
       const pnl = (fin?.pnl ?? []).filter((p) => brand === "all" || p.b === brand);
@@ -106,7 +169,12 @@ export default function FinancePage() {
 
       <div className="mt-5">
         {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} />}
-        {tab === "roi" && <RoiTab brand={brand} fin={fin} />}
+        {tab === "roi" && (
+          <CategoryPnlTab
+            brand={brand} reqs={reqs} sheetRows={sheetRows} month={month} setMonth={setMonth}
+            sheetUrl={sheetUrl} onSaveUrl={saveSheetUrl} onReload={() => loadSheet(sheetUrl)} status={sheetStatus}
+          />
+        )}
         {tab === "approval" && <ApprovalTab brand={brand} />}
       </div>
     </>
@@ -259,42 +327,99 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
   );
 }
 
-/* ── Campaign P&L (real, derived from campaigns) ──────────────────── */
-function RoiTab({ brand, fin }: { brand: BrandFilterValue; fin: FinanceView | null }) {
-  if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
-  const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
-  if (rows.length === 0) return <div className="text-[13px] text-faint text-center py-12 bg-surface border border-line rounded-cardLg">No campaign P&amp;L yet — add a campaign to see ROI.</div>;
-  const tot = rows.reduce((a, p) => ({ revenue: a.revenue + p.revenue, budget: a.budget + p.budget, expense: a.expense + p.expense }), { revenue: 0, budget: 0, expense: 0 });
-  const totRoi = tot.expense ? tot.revenue / tot.expense : 0;
-  const cols = "2fr 1.1fr 1.1fr 1.1fr 1.1fr 0.8fr 0.8fr";
+/* ── P&L by Category — monthly budgets from the Finance Google Sheet ── */
+function CategoryPnlTab({ brand, reqs, sheetRows, month, setMonth, sheetUrl, onSaveUrl, onReload, status }: {
+  brand: BrandFilterValue; reqs: ExpenseReq[]; sheetRows: SheetBudgetRow[];
+  month: string; setMonth: (m: string) => void;
+  sheetUrl: string; onSaveUrl: (url: string) => void; onReload: () => void; status: string;
+}) {
+  const [urlDraft, setUrlDraft] = useState(sheetUrl);
+  useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
+
+  // Months worth showing: everything in the sheet + months with real expenses + now.
+  const months = [...new Set([
+    ...sheetRows.map((r) => r.month),
+    ...reqs.map((r) => r.createdAt?.slice(0, 7)).filter((m): m is string => !!m),
+    new Date().toISOString().slice(0, 7),
+  ])].sort().reverse();
+
+  const rows = categoryPnl(sheetRows, reqs, month, brand);
+  const tot = rows.reduce((a, r) => ({ budget: a.budget + r.budget, requested: a.requested + r.requested, approved: a.approved + r.approved }), { budget: 0, requested: 0, approved: 0 });
+  const monthLabel = (m: string) => {
+    const [y, mo] = m.split("-").map(Number);
+    return `${["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][mo - 1]} ${y + 543}`;
+  };
+  const cols = "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.4fr";
+
   return (
-    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-      <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">Campaign P&amp;L</div>
-      <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
-        <div>Campaign</div><div>Revenue</div><div>Budget</div><div>Expense</div><div>Gross</div><div>ROI</div><div>ROAS</div>
+    <div className="flex flex-col gap-4">
+      {/* Google Sheet connection */}
+      <div className="bg-surface border border-line rounded-cardLg p-5">
+        <div className="text-[13px] font-bold mb-1">งบประมาณรายเดือนจาก Google Sheet</div>
+        <div className="text-[11.5px] text-faint mb-3">
+          แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
+          คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท)</b> — แก้งบใน sheet แล้วกดโหลดใหม่ได้เลย
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"
+            className="flex-1 min-w-[260px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+          <button onClick={() => onSaveUrl(urlDraft)} disabled={!urlDraft.trim() || urlDraft === sheetUrl}
+            className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 disabled:opacity-40">บันทึก & โหลด</button>
+          {sheetUrl && <button onClick={onReload} className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 bg-white">โหลดใหม่</button>}
+          {sheetUrl && <a href={sheetUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 py-[8px] bg-white">เปิด Sheet ↗</a>}
+        </div>
+        {status && <div className="text-[12px] mt-2" style={{ color: status.startsWith("⚠") ? "#B33A2E" : "#4E7A4E" }}>{status}</div>}
       </div>
-      {rows.map((p) => {
-        const gp = p.revenue - p.expense;
-        return (
-          <div key={p.name} className="grid px-5 py-3 items-center border-b border-line4 last:border-0" style={{ gridTemplateColumns: cols }}>
-            <span className="flex items-center gap-[7px] text-[13px] font-bold text-ink"><BrandDot brand={p.b} size={7} />{p.name}</span>
-            <span className="text-[13px] text-ink">{baht(p.revenue, { compact: true })}</span>
-            <span className="text-[13px] text-muted">{baht(p.budget, { compact: true })}</span>
-            <span className="text-[13px] text-muted">{baht(p.expense, { compact: true })}</span>
-            <span className="text-[13px] font-semibold" style={{ color: gp >= 0 ? "#4E7A4E" : "#B33A2E" }}>{baht(gp, { compact: true })}</span>
-            <span className="text-[13px] font-bold" style={{ color: p.roi < 1 ? "#B33A2E" : "#4E7A4E" }}>{p.roi}×</span>
-            <span className="text-[13px] text-ink">{p.roas}×</span>
+
+      {/* Month picker */}
+      <div className="flex items-center gap-2">
+        <span className="text-[12.5px] font-bold text-muted">เดือน</span>
+        <select value={month} onChange={(e) => setMonth(e.target.value)}
+          className="text-[13px] px-[12px] py-[8px] rounded-[10px] border border-line2 bg-white outline-none">
+          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        {brand !== "all" && <span className="text-[11.5px] text-faint">· ตัวกรองแบรนด์มีผลกับยอดเบิกจริงเท่านั้น (งบใน sheet เป็นภาพรวม)</span>}
+      </div>
+
+      {/* Category table */}
+      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+        <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">P&amp;L by Category · {monthLabel(month)}</div>
+        <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+          <div>Category</div><div>Budget</div><div>เบิกแล้ว</div><div>อนุมัติแล้ว</div><div>คงเหลือ</div><div>ใช้ไป</div>
+        </div>
+        {rows.map((r) => {
+          const remaining = r.budget - r.approved;
+          const pct = r.budget ? Math.round((r.approved / r.budget) * 100) : 0;
+          const over = r.budget > 0 && r.approved > r.budget;
+          return (
+            <div key={r.category} className="grid px-5 py-3 items-center gap-y-1 border-b border-line4 last:border-0" style={{ gridTemplateColumns: cols }}>
+              <span className="text-[13px] font-bold text-ink">{r.category}</span>
+              <span className="text-[13px] text-muted">{r.budget ? baht(r.budget, { compact: true }) : "—"}</span>
+              <span className="text-[13px] text-ink">{baht(r.requested, { compact: true })}</span>
+              <span className="text-[13px] font-semibold" style={{ color: r.approved ? "#4E7A4E" : "#9A9387" }}>{baht(r.approved, { compact: true })}</span>
+              <span className="text-[13px] font-semibold" style={{ color: over ? "#B33A2E" : "#211F1C" }}>{r.budget ? baht(remaining, { compact: true }) : "—"}</span>
+              <span className="flex items-center gap-2">
+                <span className="flex-1"><Progress value={Math.min(100, pct)} color={over ? "#B33A2E" : pct > 85 ? "#C68A1E" : "#4E7A4E"} height={7} /></span>
+                <span className="text-[11.5px] font-bold w-[42px] text-right" style={{ color: over ? "#B33A2E" : "#6b6258" }}>{r.budget ? `${pct}%` : "—"}</span>
+              </span>
+            </div>
+          );
+        })}
+        {rows.length === 0 && (
+          <div className="px-5 py-10 text-[12.5px] text-faint text-center">
+            ยังไม่มีข้อมูลเดือนนี้ — {sheetUrl ? "เพิ่มงบเดือนนี้ใน Google Sheet แล้วกดโหลดใหม่" : "เชื่อม Google Sheet ด้านบนเพื่อตั้งงบรายหมวด"}
           </div>
-        );
-      })}
-      <div className="grid px-5 py-3 items-center bg-ivory/70 font-bold" style={{ gridTemplateColumns: cols }}>
-        <span className="text-[12px]">Total</span>
-        <span className="text-[13px]">{baht(tot.revenue, { compact: true })}</span>
-        <span className="text-[13px]">{baht(tot.budget, { compact: true })}</span>
-        <span className="text-[13px]">{baht(tot.expense, { compact: true })}</span>
-        <span className="text-[13px]">{baht(tot.revenue - tot.expense, { compact: true })}</span>
-        <span className="text-[13px]">{totRoi ? totRoi.toFixed(1) + "×" : "—"}</span>
-        <span></span>
+        )}
+        {rows.length > 0 && (
+          <div className="grid px-5 py-3 items-center bg-ivory/70 font-bold" style={{ gridTemplateColumns: cols }}>
+            <span className="text-[12px]">Total</span>
+            <span className="text-[13px]">{baht(tot.budget, { compact: true })}</span>
+            <span className="text-[13px]">{baht(tot.requested, { compact: true })}</span>
+            <span className="text-[13px]">{baht(tot.approved, { compact: true })}</span>
+            <span className="text-[13px]" style={{ color: tot.approved > tot.budget && tot.budget > 0 ? "#B33A2E" : "#211F1C" }}>{baht(tot.budget - tot.approved, { compact: true })}</span>
+            <span></span>
+          </div>
+        )}
       </div>
     </div>
   );
