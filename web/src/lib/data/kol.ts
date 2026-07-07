@@ -61,6 +61,9 @@ export interface Kol {
   postingDate?: string;
   /** Who requested this KOL (the campaign side). Approval tasks route back here. */
   requester?: string;
+  /** Idempotency link to the proposal approval task created on submit. */
+  proposalApprovalTaskId?: number;
+  proposalSubmittedAt?: string;
   /** Link to the campaign-independent master profile (kol_profiles.kol_id). */
   masterKolId?: string;
   /** Real relational links (no name matching). campaignId ties back to the
