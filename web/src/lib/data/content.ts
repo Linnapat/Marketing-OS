@@ -130,6 +130,36 @@ export function contentWarnings(c: ContentItem): string[] {
 }
 
 /** Preflight checklist for the Publish tab. */
+/** What still blocks this post from being APPROVED. Empty = ready for approval.
+ *  Enforced in the UI (disabled button) AND the db layer (approveContent). */
+export function contentApproveBlockers(c: ContentItem): string[] {
+  const r: string[] = [];
+  if (!(c.title || "").trim()) r.push("ใส่ชื่อโพสต์");
+  if (itemPlatforms(c).length === 0) r.push("เลือกอย่างน้อย 1 platform");
+  if (!(c.campaign || "").trim() || c.campaign === "—") r.push("ผูกกับ Campaign");
+  if (!["Ready", "Approved"].includes(c.captionStatus)) r.push("Caption ยังไม่พร้อม (ต้อง Ready)");
+  // "No Asset" = deliberately no graphic; otherwise the graphic must be approved.
+  if (!["Approved", "Final", "No Asset"].includes(c.assetStatus)) r.push("Asset ยังไม่ถูกอนุมัติครบ");
+  return r;
+}
+
+export const contentReadyForApproval = (c: ContentItem): boolean => contentApproveBlockers(c).length === 0;
+
+/** When a Draft post becomes ready, move it into "Waiting Approval" so it shows
+ *  up in My Approval automatically. Idempotent; never downgrades an approved post. */
+export function advanceApprovalState(c: ContentItem): ContentItem {
+  if (c.approvalStatus === "Approved") return c;
+  const ready = contentReadyForApproval(c);
+  if (ready && c.approvalStatus !== "Waiting Approval") {
+    return { ...c, approvalStatus: "Waiting Approval", status: c.status === "Draft" ? "Waiting Approval" : c.status };
+  }
+  if (!ready && c.approvalStatus === "Waiting Approval") {
+    // Became not-ready again (e.g. caption reverted) → pull back to Draft.
+    return { ...c, approvalStatus: "Draft" };
+  }
+  return c;
+}
+
 export function preflight(c: ContentItem): { label: string; ok: boolean }[] {
   return [
     { label: "Caption ready", ok: ["Ready", "Approved"].includes(c.captionStatus) },

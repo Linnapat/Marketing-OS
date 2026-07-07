@@ -2,7 +2,7 @@
 // `data` jsonb column, so every UI field round-trips losslessly.
 
 import { supabase } from "@/lib/supabase";
-import { CONTENT, ContentItem } from "@/lib/data/content";
+import { CONTENT, ContentItem, contentApproveBlockers, canPublish } from "@/lib/data/content";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
 
 const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
@@ -65,4 +65,27 @@ export async function updateContent(post: ContentItem): Promise<void> {
   await db.from("content_posts")
     .update({ status: post.status, caption: post.caption, data: post })
     .eq("data->>id", post.id);
+}
+
+/** Backend-enforced Approve: re-checks the prerequisites (never trusts the
+ *  disabled button) before persisting the approval. Returns the reasons when
+ *  blocked so the UI can show exactly what's missing. */
+export async function approveContent(post: ContentItem, by: string): Promise<{ ok: boolean; reasons: string[]; post: ContentItem }> {
+  const reasons = contentApproveBlockers(post);
+  if (reasons.length) return { ok: false, reasons, post };
+  const next: ContentItem = {
+    ...post, approvalStatus: "Approved", status: post.status === "Draft" || post.status === "Waiting Approval" ? "Approved" : post.status,
+    approvedBy: by, approvedAt: new Date().toISOString(),
+  };
+  await updateContent(next);
+  return { ok: true, reasons: [], post: next };
+}
+
+/** Backend-enforced Publish: re-checks the publish gate before persisting. */
+export async function publishContent(post: ContentItem, by: string): Promise<{ ok: boolean; reasons: string[]; post: ContentItem }> {
+  const gate = canPublish(post);
+  if (!gate.ok) return { ok: false, reasons: gate.reasons, post };
+  const next: ContentItem = { ...post, publishStatus: "Published", status: "Published", publishedBy: by, publishedAt: new Date().toISOString() };
+  await updateContent(next);
+  return { ok: true, reasons: [], post: next };
 }

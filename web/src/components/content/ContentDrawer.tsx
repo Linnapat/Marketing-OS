@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { updateContent } from "@/lib/db/content";
+import { updateContent, approveContent, publishContent } from "@/lib/db/content";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -36,10 +36,21 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     try { await updateContent(next); onUpdate?.(next); } finally { setBusy(false); }
   };
 
-  const approve = () => persist({
-    ...item, approvalStatus: "Approved", status: item.status === "Draft" ? "Approved" : item.status,
-    approvedBy: reviewer, approvedAt: new Date().toISOString(),
-  });
+  // Save caption/hashtags/cta; "Mark Ready" flips captionStatus and, if the post
+  // is now fully ready, advanceApprovalState pushes it into My Approval.
+  const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta }));
+  const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, captionStatus: "Ready" }));
+
+  const approveBlockers = contentApproveBlockers(item);
+  const approve = async () => {
+    setBusy(true);
+    try {
+      const res = await approveContent(item, reviewer);
+      if (!res.ok) { alert("ยัง Approve ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
+      onUpdate?.(res.post);
+      notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    } finally { setBusy(false); }
+  };
 
   const requestRevision = () => {
     const r = reason.trim();
@@ -53,13 +64,14 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
   };
 
   const gate = canPublish(item);
-  const publish = () => {
-    if (!gate.ok) return;
-    persist({
-      ...item, publishStatus: "Published", status: "Published",
-      publishedBy: reviewer, publishedAt: new Date().toISOString(),
-    });
-    notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+  const publish = async () => {
+    setBusy(true);
+    try {
+      const res = await publishContent(item, reviewer);
+      if (!res.ok) { alert("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
+      onUpdate?.(res.post);
+      notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    } finally { setBusy(false); }
   };
 
   const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none font-sans";
@@ -150,10 +162,10 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                 <input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="e.g. Reserve now via link in bio" className={field} />
               </div>
               <div className="flex gap-2">
-                <button className="flex-1 text-[13.5px] font-bold py-[11px] rounded-[10px] bg-panel text-white">Save Caption</button>
-                <button className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted">Mark Ready</button>
+                <button onClick={saveCaption} disabled={busy} className="flex-1 text-[13.5px] font-bold py-[11px] rounded-[10px] bg-panel text-white disabled:opacity-40">{busy ? "Saving…" : "Save Caption"}</button>
+                <button onClick={markCaptionReady} disabled={busy || !caption.trim()} className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted disabled:opacity-40">Mark Ready</button>
               </div>
-              <div className="text-[11.5px] text-faint">Last edited by {item.owner}</div>
+              <div className="text-[11.5px] text-faint">Last edited by {item.owner}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
             </div>
           )}
 
@@ -201,13 +213,21 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                   </div>
                 </div>
               ) : (
-                <div className="flex gap-2">
-                  <button onClick={approve} disabled={busy || item.approvalStatus === "Approved"}
-                    className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] text-white disabled:opacity-40" style={{ background: "#4E7A4E" }}>
-                    {item.approvalStatus === "Approved" ? "✓ Approved" : busy ? "Saving…" : "✓ Approve"}
-                  </button>
-                  <button onClick={() => setRevising(true)} disabled={busy}
-                    className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] border-[1.5px] border-line2 text-status-orange disabled:opacity-40">↩ Request Revision</button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button onClick={approve} disabled={busy || item.approvalStatus === "Approved" || approveBlockers.length > 0}
+                      className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] text-white disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                      {item.approvalStatus === "Approved" ? "✓ Approved" : busy ? "Saving…" : "✓ Approve"}
+                    </button>
+                    <button onClick={() => setRevising(true)} disabled={busy}
+                      className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] border-[1.5px] border-line2 text-status-orange disabled:opacity-40">↩ Request Revision</button>
+                  </div>
+                  {item.approvalStatus !== "Approved" && approveBlockers.length > 0 && (
+                    <div className="text-[11px] rounded-[8px] px-3 py-2" style={{ background: "#FFF5F4", color: "#B33A2E" }}>
+                      <div className="font-bold mb-[2px]">ยัง Approve ไม่ได้ — ต้องผ่าน:</div>
+                      <ul className="list-disc pl-4">{approveBlockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
