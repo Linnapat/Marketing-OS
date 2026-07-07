@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
   Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals,
@@ -14,7 +14,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
-import { logCollaboration, ensureKolProfile } from "@/lib/db/kolMaster";
+import { logCollaboration, ensureKolProfile, searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
 
 const TABS = [
   ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
@@ -188,7 +188,10 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
           <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Post / Draft links</div>
           <div className="text-[10.5px] text-faint">เพิ่ม Platform ที่เสนอได้ตั้งแต่ขั้นเจรจา เพื่อใช้ทำ Proposal</div>
         </div>
-        <button onClick={addPost} disabled={busy} className="text-[11.5px] font-bold text-accent disabled:opacity-40">+ Add platform</button>
+        <button onClick={addPost} disabled={busy}
+          className="text-[12px] font-bold text-panel bg-white border border-panel rounded-[9px] px-3 py-[7px] shadow-sm hover:bg-ivory disabled:opacity-40">
+          + Add Platform / Link
+        </button>
       </div>
       <div className="flex flex-col gap-[6px]">
         {posts.map((p, i) => (
@@ -199,7 +202,7 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
             </select>
             <input value={p.link} onChange={(e) => editPost(i, { link: e.target.value })} onBlur={() => persist(posts)}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-              placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+              placeholder="Proposal / draft / post link (optional)…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
             {p.link && <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-[11px] text-accent font-bold">↗</a>}
             <button onClick={() => removePost(i)} className="text-[12px] text-status-red font-bold" aria-label="Remove post">✕</button>
           </div>
@@ -231,6 +234,33 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const [contactInfo, setContactInfo] = useState(kol.contactInfo);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [libraryRows, setLibraryRows] = useState<KolMasterRow[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [selectedMasterId, setSelectedMasterId] = useState(kol.masterKolId);
+
+  useEffect(() => {
+    let alive = true;
+    const q = libraryQuery.trim();
+    if (q.length < 2) { setLibraryRows([]); setLibraryLoading(false); return; }
+    setLibraryLoading(true);
+    const timer = setTimeout(() => {
+      searchKolProfiles(q, 8)
+        .then((rows) => { if (alive) { setLibraryRows(rows); setLibraryLoading(false); } })
+        .catch(() => { if (alive) { setLibraryRows([]); setLibraryLoading(false); } });
+    }, 200);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [libraryQuery]);
+
+  const chooseLibraryKol = (row: KolMasterRow) => {
+    setName(row.display_name || "");
+    setHandle(row.primary_handle || "");
+    setKolType(row.kol_type || "");
+    setFollowers(row.total_followers || 0);
+    setSelectedMasterId(row.kol_id);
+    setLibraryQuery(row.display_name || row.primary_handle || "");
+    setLibraryRows([]);
+  };
 
   const dirty = name !== kol.name || handle !== kol.h || kolType !== kol.kolType || followers !== (kol.followers || 0)
     || avgReach !== (kol.expectedReach || 0) || audienceFit !== kol.audienceFit || contentStyle !== kol.contentStyle
@@ -239,7 +269,7 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const save = async () => {
     setBusy(true);
     // Once the specialist fills the real page, upsert it into the master library.
-    const masterKolId = await ensureKolProfile({ masterKolId: kol.masterKolId, name, handle, kolType, followers, platform: kol.plat }).catch(() => kol.masterKolId);
+    const masterKolId = await ensureKolProfile({ masterKolId: selectedMasterId, name, handle, kolType, followers, platform: kol.plat }).catch(() => selectedMasterId);
     const next: Kol = { ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType, followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab, contactInfo, masterKolId: masterKolId ?? kol.masterKolId };
     try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000); }
     finally { setBusy(false); }
@@ -251,7 +281,27 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const audienceOptions = AUDIENCE.includes(audienceFit) ? AUDIENCE : [audienceFit, ...AUDIENCE];
   return (
     <div className="flex flex-col gap-4">
-      {kol.masterKolId && <div className="text-[11px] font-semibold text-status-green">✓ In KOL Database</div>}
+      <div className="rounded-card border border-line bg-surface p-3">
+        <label className={lbl}>Search KOL Library</label>
+        <input value={libraryQuery} onChange={(e) => setLibraryQuery(e.target.value)}
+          className={field} placeholder="พิมพ์ชื่อหรือ @handle เพื่อดึงข้อมูลเดิม…" />
+        {libraryLoading && <div className="text-[11px] text-faint mt-2">กำลังค้นหา…</div>}
+        {libraryRows.length > 0 && (
+          <div className="mt-2 border border-line rounded-[9px] overflow-hidden bg-white">
+            {libraryRows.map((row) => (
+              <button key={row.kol_id} type="button" onClick={() => chooseLibraryKol(row)}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b border-line4 last:border-0 hover:bg-ivory">
+                <span className="min-w-0">
+                  <span className="block text-[12.5px] font-bold text-ink truncate">{row.display_name}</span>
+                  <span className="block text-[11px] text-faint truncate">{row.primary_handle || "ไม่มี handle"} · {row.kol_type || "ไม่ระบุประเภท"}</span>
+                </span>
+                <span className="text-[11px] font-bold text-accent flex-shrink-0">เลือก →</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedMasterId && <div className="text-[11px] font-semibold text-status-green mt-2">✓ เชื่อมกับ KOL Library แล้ว</div>}
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div><label className={lbl}>KOL / Page Name</label><input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="e.g. Tokyo Tom" /></div>
         <div><label className={lbl}>Page / Handle</label><input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or URL" /></div>
@@ -335,11 +385,16 @@ const CONTRACT_OPTS = ["Pending", "Sent", "Signed"];
 const RATECARD_OPTS = ["Pending", "Received", "Approved"];
 function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [busy, setBusy] = useState(false);
+  const [proposalBudget, setProposalBudget] = useState(kol.fee || 0);
   const isPaid = /paid/i.test(kol.paymentStatus);
   const set = async (patch: Partial<Kol>) => {
     setBusy(true);
     const next = { ...kol, ...patch } as Kol;
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+  const saveProposalBudget = async () => {
+    const fee = Math.max(0, proposalBudget || 0);
+    await set({ fee, totalCost: fee + (kol.foodCost || 0) });
   };
   const selCls = "text-[12px] font-semibold px-[10px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none";
   return (
@@ -374,10 +429,22 @@ function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void 
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Fee (committed)" value={baht(kol.fee, { compact: true })} />
-        <Field label="Food Support" value={baht(kol.foodCost, { compact: true })} />
-        <Field label="Total Cost" value={baht(kol.totalCost, { compact: true })} />
+      <div className="rounded-card border border-accent-border bg-status-goldBg p-3">
+        <label className="block text-[10.5px] uppercase tracking-[0.05em] text-status-gold font-bold mb-[5px]">Proposal Budget (Total)</label>
+        <div className="flex items-center gap-2">
+          <span className="text-[14px] font-bold text-ink">฿</span>
+          <input type="number" min={0} value={proposalBudget || ""}
+            onChange={(e) => setProposalBudget(Number(e.target.value) || 0)}
+            onBlur={saveProposalBudget}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            className="flex-1 text-[14px] font-bold px-3 py-2 rounded-[9px] border border-accent-border bg-white outline-none"
+            placeholder="ใส่งบที่เสนอทั้งหมด" />
+          <span className="text-[11px] text-status-gold">{busy ? "Saving…" : "บันทึกอัตโนมัติ"}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-accent-border">
+          <Field label="Food Support" value={baht(kol.foodCost, { compact: true })} />
+          <Field label="Total Cost" value={baht(proposalBudget + (kol.foodCost || 0), { compact: true })} />
+        </div>
       </div>
       <Field label="Payment Due" value={kol.paymentDue} />
       <a href="/expenses" className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[10px] text-center">
