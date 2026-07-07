@@ -35,7 +35,7 @@ export function prerequisitesFor(stage: string, k: Kol): string[] {
       break;
     case "Contract Signed":
       if (!contractSigned(k)) missing.push("เซ็นสัญญา (Contract) ให้เรียบร้อย");
-      if (!quotationApproved(k)) missing.push("อนุมัติใบเสนอราคา (Quotation)");
+      if (!quotationApproved(k)) missing.push("อนุมัติ Rate Card / Proposal");
       break;
     case "In Review":
       if (!hasPostLink(k)) missing.push("แนบ Draft / Post link ก่อนส่งรีวิว");
@@ -91,7 +91,7 @@ export function nextActionFor(k: Kol): string {
   switch (s) {
     case "Request": return hasOwner(k) ? "มอบหมาย Owner แล้ว — เลื่อนไป Owner Assigned" : "มอบหมาย Owner (KOL team) ให้คำขอนี้";
     case "Owner Assigned": return "เริ่มเจรจากับ KOL → เลื่อนไป Negotiating";
-    case "Negotiating": return "ปิดดีล: เซ็นสัญญา + อนุมัติใบเสนอราคา → Contract Signed";
+    case "Negotiating": return "ปิดดีล: เซ็นสัญญา + อนุมัติ Rate Card → Contract Signed";
     case "Contract Signed": return "ส่ง brief และเริ่มผลิตงาน → Producing";
     case "Producing": return "แนบ Draft/Post link แล้วส่งรีวิว → In Review";
     case "In Review": return "รอผู้อนุมัติ Approve หรือ Request Revision";

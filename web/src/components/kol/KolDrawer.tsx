@@ -310,7 +310,8 @@ function BriefTab({ kol }: { kol: Kol }) {
 // Contract + Quotation are the KOL team's to set (they gate Contract Signed).
 // Invoice + Payment mirror Finance — read-only here, actioned via the CTA.
 const CONTRACT_OPTS = ["Pending", "Sent", "Signed"];
-const QUOTATION_OPTS = ["Pending", "Sent", "Approved"];
+// KOL deals use a rate card / proposal rather than a formal vendor quotation.
+const RATECARD_OPTS = ["Pending", "Received", "Approved"];
 function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [busy, setBusy] = useState(false);
   const isPaid = /paid/i.test(kol.paymentStatus);
@@ -335,9 +336,9 @@ function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void 
           </select>
         </div>
         <div className="flex items-center justify-between bg-surface border border-line rounded-card px-4 py-[10px]">
-          <div><div className="text-[13px] text-ink font-semibold">Quotation</div><div className="text-[10.5px] text-faint">ต้องเป็น Approved เพื่อไป Contract Signed</div></div>
+          <div><div className="text-[13px] text-ink font-semibold">Rate Card / Proposal</div><div className="text-[10.5px] text-faint">ต้องเป็น Approved เพื่อไป Contract Signed</div></div>
           <select value={kol.quotationStatus} disabled={busy} onChange={(e) => set({ quotationStatus: e.target.value })} className={selCls}>
-            {[...new Set([kol.quotationStatus, ...QUOTATION_OPTS])].map((o) => <option key={o} value={o}>{o}</option>)}
+            {[...new Set([kol.quotationStatus, ...RATECARD_OPTS])].map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
         </div>
       </div>
