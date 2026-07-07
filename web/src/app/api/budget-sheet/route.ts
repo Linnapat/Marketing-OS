@@ -98,18 +98,55 @@ export async function GET(req: NextRequest) {
   const rows: { month: string; category: string; budget: number; group?: string }[] = [];
 
   if (isLedger) {
-    const hasBrandRows = grid.slice(1).some((r) => (r[iEntity] ?? "").trim().toLowerCase() === "brand");
+    // Sections that aren't real category budgets (KPIs, notes, transfers).
+    const EXCLUDE_SECTIONS = new Set(["performance", "budget allocation", "inter-brand allocation"]);
+    // Rollup / total line-items that would double-count against their children.
+    const EXCLUDE_ITEMS = new Set([
+      "ต้นทุนในการขาย/ค่าโฆษณา", "total", "grand total", "digital marketing", "operation",
+      "adminstration", "administration", "outsouce", "outsource", "system",
+    ]);
+    // Normalise sheet line-items to the app's canonical category names so budget
+    // lines up exactly with actual spend per category.
+    const ALIAS: Record<string, string> = {
+      "facebook/instagram ads": "Facebook / Instagram Ads",
+      "google ads/ppc": "Google Ads / PPC",
+      "line ads": "LINE Ads",
+      "kol": "KOL / Influencer",
+      "tiktok": "TikTok Ads",
+      "youtube ads": "YouTube Ads",
+      "food cost (kol/photo shooting)": "Food cost / Photo shoot",
+      "event": "Event / Activation",
+      "website (clound)": "Website (Cloud)",
+      "ค่าเช่าออฟฟิศ marketing (rental office)": "Office Rent",
+      "outsouce ": "Agency Fee",
+    };
+
+    // Google Sheets sometimes embeds control chars (e.g.  around a slash);
+    // strip them so exclusion/alias matching is reliable and labels are clean.
+    const clean = (s: string) => (s ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
+    type Raw = { section: string; entity: string; month: string; category: string; budget: number };
+    const raws: Raw[] = [];
     for (const r of grid.slice(1)) {
       const rowType = iRowType >= 0 ? (r[iRowType] ?? "").trim().toLowerCase() : "detail";
-      if (iRowType >= 0 && rowType !== "detail") continue;               // skip subtotal/summary
-      const entity = iEntity >= 0 ? (r[iEntity] ?? "").trim().toLowerCase() : "";
-      if (hasBrandRows && iEntity >= 0 && entity !== "brand") continue;   // one cut only → no double count
+      if (iRowType >= 0 && rowType !== "detail") continue;              // only real line items
+      const section = clean(r[iSection] ?? "");
+      if (EXCLUDE_SECTIONS.has(section.toLowerCase())) continue;        // drop KPI/allocation sections
+      const rawItem = clean(r[iLineItem] ?? "");
+      if (EXCLUDE_ITEMS.has(rawItem.toLowerCase())) continue;          // drop rollups/totals
       const month = normMonth(r[iMonth >= 0 ? iMonth : 2] ?? "");
-      const category = (r[iLineItem] ?? "").trim();
       const budget = Number(String(r[iAmount] ?? "").replace(/[^\d.-]/g, ""));
-      if (/^\d{4}-\d{2}$/.test(month) && category && Number.isFinite(budget) && budget >= 0) {
-        rows.push({ month, category, budget, group: iSection >= 0 ? (r[iSection] ?? "").trim() : undefined });
-      }
+      if (!/^\d{4}-\d{2}$/.test(month) || !rawItem || !Number.isFinite(budget) || budget < 0) continue;
+      const category = ALIAS[rawItem.toLowerCase()] ?? rawItem;
+      raws.push({ section, entity: (r[iEntity] ?? "").trim().toLowerCase(), month, category, budget });
+    }
+    // Per-section dedup: Digital Marketing carries both a Brand and a Department
+    // cut of the same money — keep Brand there; sections with only a Department
+    // cut (Adminstration, Outsouce) keep Department. Prevents both double-count
+    // and dropped rows.
+    const brandSections = new Set(raws.filter((x) => x.entity === "brand").map((x) => x.section));
+    for (const x of raws) {
+      if (brandSections.has(x.section) && x.entity && x.entity !== "brand") continue;
+      rows.push({ month: x.month, category: x.category, budget: x.budget, group: x.section });
     }
   } else {
     // Simple schema: month | category | budget (positional, or by header).
