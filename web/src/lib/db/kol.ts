@@ -55,6 +55,43 @@ export async function createKolIfNew(kol: Kol, existing?: Set<string>): Promise<
   return { created: true, kol: created };
 }
 
+/** All KOL rows linked to a campaign (by the relational campaignId in the blob). */
+export async function fetchKolsForCampaign(campaignId: string): Promise<Kol[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db.from("kols").select("data").filter("data->>campaignId", "eq", campaignId);
+  if (error || !data) return [];
+  return data.map((r) => r.data as Kol).filter(Boolean);
+}
+
+// Fields that come FROM the requirement (KOL Plan) and should be overwritten on
+// an edit; everything else (workflow progress, the specialist's real page,
+// contract/finance, posts, actual results) is preserved.
+const REQUIREMENT_FIELDS: (keyof Kol)[] = [
+  "kolType", "plat", "fee", "totalCost", "expectedReach", "expectedEngagement",
+  "branch", "contentStyle", "objective", "target", "keyMsg", "offer",
+  "postDueDate", "postingDate", "postingPeriod", "owner", "pendingApprover", "campaign", "b",
+];
+
+/** Live two-way sync (Campaign Builder → KOL rows): create the row if new, else
+ *  overwrite ONLY its requirement fields on the existing row so re-submitting an
+ *  edited KOL Plan updates the pages without wiping their progress. */
+export async function upsertKolRequirement(reqKol: Kol, existingRows: Kol[]): Promise<{ created: boolean }> {
+  const key = reqKol.sourceKolRequirementId;
+  const existing = key ? existingRows.find((k) => k.sourceKolRequirementId === key) : undefined;
+  if (!existing) {
+    await createKol(reqKol);
+    existingRows.push(reqKol);
+    return { created: true };
+  }
+  const merged = { ...existing };
+  for (const f of REQUIREMENT_FIELDS) (merged as Record<string, unknown>)[f] = reqKol[f];
+  // Keep owner only if the row hadn't been given a real one yet.
+  if (existing.owner && existing.owner !== "Unassigned") merged.owner = existing.owner;
+  await updateKol(merged);
+  return { created: false };
+}
+
 /** Persist edits to a creator (results, contract status, etc). The whole Kol
  *  round-trips through `data`; status is mirrored. Matched on the id in the blob. */
 export async function updateKol(kol: Kol): Promise<void> {

@@ -406,7 +406,7 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
   const rm = (id: string) => setBrief((b) => ({ ...b, kols: b.kols.filter((k) => k.id !== id) }));
 
   return (
-    <Panel title="KOL Plan" hint="Planner กำหนดจำนวน KOL / เพจ เองได้ — engagement rate คำนวณอัตโนมัติ · งบจะ sync ไป Budget Allocation">
+    <Panel title="KOL Plan" hint="ระบุ requirement (ยังไม่ต้องรู้ชื่อเพจ) — specialist เสนอเพจจริงทีหลัง · ฟอร์มเดียวกับ Request KOL · งบ sync ไป Budget Allocation">
       <div className="flex flex-col gap-3">
         {brief.kols.map((k, i) => (
           <div key={k.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
@@ -417,7 +417,7 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
                 <button onClick={() => rm(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
               </div>
             </div>
-            <KolItemForm item={k} onChange={(patch) => upd(k.id, patch)} branches={branches} outOfRange={(iso) => !!outOfRange(iso)} />
+            <KolItemForm item={k} onChange={(patch) => upd(k.id, patch)} branches={branches} outOfRange={(iso) => !!outOfRange(iso)} hidePage />
           </div>
         ))}
         {brief.kols.length === 0 && <div className="text-[12.5px] text-faint text-center py-6 border border-dashed border-line2 rounded-[12px]">ยังไม่มี KOL — กด “Add KOL Requirement”</div>}

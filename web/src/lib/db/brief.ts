@@ -11,7 +11,8 @@ import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
 import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic } from "./graphic";
 import { emptyDeliverable } from "@/lib/data/graphic";
-import { createKolIfNew, fetchKolSourceIds, buildKol } from "./kol";
+import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
+import { Kol } from "@/lib/data/kol";
 import { resolveKolAssignment } from "./assignments";
 import { createTaskDb } from "./tasks";
 import { ContentItem } from "@/lib/data/content";
@@ -50,10 +51,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
 
   // Idempotency: what's already been materialised for this campaign, so a repeat
   // Submit / retry creates nothing new. Keyed by real source ids, not names.
-  const [contentSeen, graphicSeen, kolSeen, kolAssign] = await Promise.all([
+  const [contentSeen, graphicSeen, kolRows, kolAssign] = await Promise.all([
     fetchContentSourceIds(brief.id),
     fetchGraphicSourceIds(brief.id),
-    fetchKolSourceIds(brief.id),
+    fetchKolsForCampaign(brief.id),
     resolveKolAssignment(),
   ]);
 
@@ -148,7 +149,9 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         objective: brief.objective, target: brief.audience, keyMsg: brief.mainMessage, offer: brief.offer,
         dueDate: labelDate(kr.postingStart),
       });
-      const madeKol = await createKolIfNew(kol, kolSeen);
+      // Upsert: new page → create; existing (same source id) → refresh its
+      // requirement fields while preserving workflow progress (live two-way).
+      const madeKol = await upsertKolRequirement(kol, kolRows);
       if (madeKol.created) kols++;
     }
     await createTaskDb(mkTask(++n, {
@@ -224,6 +227,35 @@ export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | nu
   const { data, error } = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
   if (error || !data?.data) return null;
   return data.data as CampaignBrief;
+}
+
+/** Reverse two-way sync (KOL row → Campaign Builder KOL Plan): when a KOL that
+ *  came from a brief requirement is edited, recompute that requirement item from
+ *  its live sibling rows (count, budget, platform, and the specialist's proposed
+ *  page when there's a single one). No-op for manual/unlinked KOLs. */
+export async function syncBriefKolFromRows(kol: Kol): Promise<void> {
+  const db = supabase();
+  if (!db || !kol.campaignId || !kol.sourceKolRequirementId) return;
+  const baseId = kol.sourceKolRequirementId.split("#")[0];
+  const brief = await fetchCampaignBrief(kol.campaignId);
+  if (!brief) return;
+  const item = brief.kols.find((k) => k.id === baseId);
+  if (!item) return; // manual Request-KOL rows don't map to a builder item
+
+  const siblings = (await fetchKolsForCampaign(kol.campaignId))
+    .filter((k) => (k.sourceKolRequirementId || "").split("#")[0] === baseId);
+  if (!siblings.length) return;
+
+  item.count = siblings.length;
+  item.budget = siblings.reduce((s, k) => s + (k.fee || 0), 0);
+  item.platforms = Array.from(new Set(siblings.map((k) => k.plat).filter(Boolean)));
+  // When the requirement resolved to a single real page, surface it back.
+  if (siblings.length === 1) {
+    const only = siblings[0];
+    if (only.name && !/^new request/i.test(only.name)) item.name = only.name;
+    if (only.h && only.h !== "@tbd") item.handle = only.h;
+  }
+  await db.from("campaigns").update({ data: brief }).eq("id", kol.campaignId);
 }
 
 /** Two-way sync: a New Post created in the Content Calendar (using the same

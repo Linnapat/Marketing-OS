@@ -21,7 +21,7 @@ import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
 import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { appendBriefKolItem } from "@/lib/db/brief";
+import { appendBriefKolItem, syncBriefKolFromRows } from "@/lib/db/brief";
 import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -94,6 +94,8 @@ export default function KolPage() {
     if (prev && normalizeStage(prev.status) !== "In Review" && normalizeStage(next.status) === "In Review") {
       createReviewTask(next).catch(() => {});
     }
+    // Reverse two-way sync: reflect the edit back into the campaign's KOL Plan.
+    syncBriefKolFromRows(next).catch(() => {});
   };
 
   const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
