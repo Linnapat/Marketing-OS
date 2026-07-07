@@ -102,6 +102,17 @@ export async function updateKol(kol: Kol): Promise<void> {
     .eq("data->>id", String(kol.id));
 }
 
+/** Approve a submitted KOL proposal from My Approval. */
+export async function approveKolProposal(kolId: number): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const { data } = await db.from("kols").select("data").eq("data->>id", String(kolId)).maybeSingle();
+  const kol = data?.data as Kol | undefined;
+  if (!kol) return;
+  const next: Kol = { ...kol, quotationStatus: "Approved", currentBlocker: null };
+  await db.from("kols").update({ status: next.status, data: next }).eq("data->>id", String(kolId));
+}
+
 /** Build a full Kol from the request form. Owner/Approver default to
  *  "Unassigned" (never a demo user); campaign context is copied verbatim so no
  *  field shows "TBD" when the Campaign Builder already has the value. */

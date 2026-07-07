@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
+import { approveKolProposal } from "@/lib/db/kol";
 
 // Stages / statuses that still need someone in the approval tier to act.
 const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
@@ -124,7 +125,11 @@ export default function MyTasksPage() {
     () => (canApproveExpense ? expenseReqs.filter((r) => r.status === "Waiting Approval") : []),
     [expenseReqs, canApproveExpense],
   );
-  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length;
+  const approvalTasks = useMemo(
+    () => tasks.filter((t) => t.assignee === viewAs && !doneIds.has(t.id) && t.status === "Need Approval"),
+    [tasks, viewAs, doneIds],
+  );
+  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length;
   // Approve / reject inline — sync the row locally so the card updates at once.
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
@@ -154,6 +159,10 @@ export default function MyTasksPage() {
   };
 
   const markDone = (id: number) => {
+    const task = tasks.find((t) => t.id === id);
+    if (task?.approvalKind === "kolProposal" && task.relatedKolId != null) {
+      approveKolProposal(task.relatedKolId).catch(() => {});
+    }
     setDoneIds((s) => new Set(s).add(id));
     setDrawerId(null);
     markDoneDb(id);
@@ -286,7 +295,7 @@ export default function MyTasksPage() {
           )}
         </div>
       ) : activeTab === "approval" ? (
-        <MyApprovalView campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} onApprove={approveExpense} onReject={rejectExpense} />
+        <MyApprovalView campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
       ) : (
         <TeamView tasks={tasks.filter((t) => inDateFilter(date, t.dueIso || t.due))} getStatus={getStatus} people={people} onSelect={(p) => { pickViewAs(p); setActiveTab("myDay"); }} />
       )}
@@ -303,11 +312,12 @@ export default function MyTasksPage() {
   );
 }
 
-function MyApprovalView({ campaigns, requests, expenses, onApprove, onReject }: {
-  campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[];
+function MyApprovalView({ campaigns, requests, expenses, tasks, onOpenTask, onApprove, onReject }: {
+  campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
+  onOpenTask: (id: number) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
-  const total = campaigns.length + requests.length + expenses.length;
+  const total = campaigns.length + requests.length + expenses.length + tasks.length;
   if (total === 0) {
     return (
       <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
@@ -320,6 +330,30 @@ function MyApprovalView({ campaigns, requests, expenses, onApprove, onReject }: 
   }
   return (
     <div className="flex flex-col gap-5">
+      {tasks.length > 0 && (
+        <div>
+          <div className="flex items-center gap-[10px] mb-3">
+            <span className="text-[17px]">🌟</span>
+            <span className="text-[13.5px] font-bold">KOL proposals waiting for approval</span>
+            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#F0F7F0", color: "#4E7A4E" }}>{tasks.length}</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {tasks.map((t) => (
+              <button key={t.id} onClick={() => onOpenTask(t.id)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition text-left">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[13.5px] font-bold text-ink truncate">{t.title}</span>
+                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#F0F7F0", color: "#4E7A4E" }}>Need Approval</span>
+                </div>
+                <div className="text-[11.5px] text-faint mb-3">{t.brand} · {t.campaign}</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11.5px] text-muted">Requested for {t.assignee}</span>
+                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {expenses.length > 0 && (
         <div>
           <div className="flex items-center gap-[10px] mb-3">
