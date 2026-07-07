@@ -393,6 +393,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
               const posts = kolPosts(k);
               const kt = postsTotals(posts);
               const pi = platformIcon(k.plat);
+              const creatorCollapsed = collapsedCreators.has(k.id);
               return (
                 <div key={k.id} className="border-b border-line4 last:border-0">
                   {/* Creator subtotal row */}
