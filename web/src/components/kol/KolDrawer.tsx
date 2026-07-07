@@ -6,11 +6,12 @@ import {
   Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals,
 } from "@/lib/data/kol";
 import { KOL_PLATFORMS } from "@/lib/data/brief";
-import { allowedStages, canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults } from "@/lib/kolFlow";
+import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults } from "@/lib/kolFlow";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
 import { logCollaboration, ensureKolProfile } from "@/lib/db/kolMaster";
@@ -27,6 +28,16 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   const deliverables = DELIVERABLES.filter((d) => d.kolId === kol.id);
   const pi = platformIcon(kol.plat);
   const openCount = comments.filter((c) => c.status === "Open").length;
+  const currentStage = normalizeStage(kol.status);
+  const workStages = ["Producing", "In Review", "Approved", "Posted", "Completed"];
+  const contractStages = ["Negotiating", "Contract Signed", ...workStages];
+  const visibleTabs = TABS.filter(([id]) => {
+    if (id === "profile" || id === "campaign" || id === "comments") return true;
+    if (id === "deliverables" || id === "brief") return workStages.includes(currentStage);
+    if (id === "contract") return contractStages.includes(currentStage);
+    if (id === "results") return currentStage === "Posted" || currentStage === "Completed";
+    return false;
+  });
 
   return (
     <div className="fixed inset-0 z-50">
@@ -61,11 +72,11 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
         </div>
 
         {/* Next-action bar — what to do now + missing prerequisites. */}
-        <NextActionBar kol={kol} />
+        <NextActionBar kol={kol} onUpdate={onUpdate} />
 
         {/* Tabs — horizontally scrollable so they never overflow the drawer. */}
         <div className="flex gap-1 px-4 overflow-x-auto border-b border-line bg-surface flex-shrink-0" style={{ scrollbarWidth: "thin" }}>
-          {TABS.map(([id, label]) => {
+          {visibleTabs.map(([id, label]) => {
             const active = id === tab;
             return (
               <button key={id} onClick={() => setTab(id)}
@@ -99,18 +110,50 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
 
 // Next-action bar: what to do now + the exact prerequisites blocking the next
 // stage. Always at the top of the drawer body.
-function NextActionBar({ kol }: { kol: Kol }) {
+function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const ns = nextStage(kol);
   const missing = ns ? prerequisitesFor(ns, kol) : [];
+  const [busy, setBusy] = useState(false);
+  const ownerMissing = !hasOwner(kol);
+
+  const saveOwner = async (owner: string) => {
+    const next: Kol = { ...kol, owner, currentBlocker: owner.trim() ? null : kol.currentBlocker };
+    setBusy(true);
+    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+
+  const advance = async () => {
+    if (!ns) return;
+    const gate = canTransition(kol, ns);
+    if (!gate.ok) return;
+    const next: Kol = { ...kol, status: ns, currentBlocker: hasOwner(kol) ? null : kol.currentBlocker };
+    setBusy(true);
+    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+
   return (
-    <div className="bg-ivory border-b border-line px-4 py-[10px]">
-      <div className="flex items-start gap-2">
-        <span className="text-[13px]">🧭</span>
-        <div className="min-w-0">
+    <div className="bg-ivory border-b border-line px-4 py-3">
+      <div className="flex items-start gap-3">
+        <span className="text-[14px] mt-[1px]">🧭</span>
+        <div className="min-w-0 flex-1">
           <div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold">Next action</div>
           <div className="text-[12.5px] text-ink font-semibold">{nextActionFor(kol)}</div>
-          {missing.length > 0 && (
-            <div className="text-[11px] text-status-red mt-[3px]">ยังขาด: {missing.join(" · ")}</div>
+          {ownerMissing ? (
+            <div className="mt-2 max-w-[320px]">
+              <OwnerSelect value="" onChange={saveOwner} team="KOL" />
+              <div className="text-[10.5px] text-faint mt-1">เลือกผู้รับผิดชอบแล้วระบบจะบันทึกทันที</div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              {ns && (
+                <button onClick={advance} disabled={busy || missing.length > 0}
+                  title={missing.length ? `ยังขาด: ${missing.join(" · ")}` : ""}
+                  className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px] disabled:opacity-40">
+                  {busy ? "Saving…" : `Continue → ${ns}`}
+                </button>
+              )}
+              {missing.length > 0 && <span className="text-[11px] text-status-red">ยังขาด: {missing.join(" · ")}</span>}
+            </div>
           )}
         </div>
       </div>
@@ -124,9 +167,7 @@ function NextActionBar({ kol }: { kol: Kol }) {
 function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [posts, setPosts] = useState<KolPost[]>(() => kolPosts(kol));
   const [busy, setBusy] = useState(false);
-  const stages = allowedStages(kol);
-  const ns = nextStage(kol);
-  const advanceGate = ns ? canTransition(kol, ns) : { ok: false, reason: "อยู่ขั้นสุดท้ายแล้ว" };
+  const showDeliverables = ["Producing", "In Review", "Approved", "Posted", "Completed"].includes(normalizeStage(kol.status));
 
   const persist = async (nextPosts: KolPost[]) => {
     const totals = postsTotals(nextPosts);
@@ -134,56 +175,36 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
     setBusy(true);
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
-  const setStage = async (stage: string) => {
-    const gate = canTransition(kol, stage);
-    if (!gate.ok) { alert(`เปลี่ยนเป็น "${stage}" ไม่ได้:\n${gate.reason ?? ""}`); return; }
-    setBusy(true);
-    const next: Kol = { ...kol, status: stage, currentBlocker: hasOwner(kol) ? null : kol.currentBlocker };
-    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
-  };
   const editPost = (i: number, patch: Partial<KolPost>) => setPosts((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const addPost = () => setPosts((ps) => [...ps, { platform: KOL_PLATFORMS[0], link: "" }]);
   const removePost = (i: number) => { const next = posts.filter((_, j) => j !== i); setPosts(next); persist(next); };
 
-  return (
-    <div className="bg-surface border-b border-line px-4 py-3 flex flex-col gap-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Stage</span>
-        <select value={normalizeStage(kol.status)} disabled={busy} onChange={(e) => setStage(e.target.value)}
-          className="text-[12.5px] font-semibold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none">
-          {stages.map(({ stage, ok }) => <option key={stage} value={stage} disabled={!ok}>{stage}{ok ? "" : " 🔒"}</option>)}
-        </select>
-        {ns && (
-          <button onClick={() => setStage(ns)} disabled={busy || !advanceGate.ok}
-            title={advanceGate.ok ? "" : advanceGate.reason}
-            className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px] disabled:opacity-40">
-            → {ns}
-          </button>
-        )}
-      </div>
+  if (!showDeliverables) return null;
 
-      {/* Deliverables — per-platform post/draft links, each tracked on its own. */}
-      <div>
-        <div className="flex items-center justify-between mb-[6px]">
-          <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Deliverables · Post / Draft links</span>
-          <button onClick={addPost} className="text-[11.5px] font-bold text-accent">+ Add platform</button>
+  return (
+    <div className="bg-surface border-b border-line px-4 py-3">
+      <div className="flex items-center justify-between mb-[6px]">
+        <div>
+          <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Post / Draft links</div>
+          <div className="text-[10.5px] text-faint">เพิ่มเมื่อเริ่มผลิตงานแล้วเท่านั้น</div>
         </div>
-        <div className="flex flex-col gap-[6px]">
-          {posts.map((p, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <select value={p.platform} onChange={(e) => editPost(i, { platform: e.target.value })} onBlur={() => persist(posts)}
-                className="text-[12px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none">
-                {[...new Set([p.platform, ...KOL_PLATFORMS])].map((pl) => <option key={pl} value={pl}>{pl}</option>)}
-              </select>
-              <input value={p.link} onChange={(e) => editPost(i, { link: e.target.value })} onBlur={() => persist(posts)}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
-              {p.link && <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-[11px] text-accent font-bold">↗</a>}
-              <button onClick={() => removePost(i)} className="text-[12px] text-status-red font-bold" aria-label="Remove post">✕</button>
-            </div>
-          ))}
-          {posts.length === 0 && <div className="text-[11.5px] text-faint">ยังไม่มีโพสต์ — กด <b>+ Add platform</b> เพื่อเพิ่มลิงก์ต่อ platform (จำเป็นก่อนส่ง In Review)</div>}
-        </div>
+        <button onClick={addPost} disabled={busy} className="text-[11.5px] font-bold text-accent disabled:opacity-40">+ Add platform</button>
+      </div>
+      <div className="flex flex-col gap-[6px]">
+        {posts.map((p, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <select value={p.platform} onChange={(e) => editPost(i, { platform: e.target.value })} onBlur={() => persist(posts)}
+              className="text-[12px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none">
+              {[...new Set([p.platform, ...KOL_PLATFORMS])].map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+            </select>
+            <input value={p.link} onChange={(e) => editPost(i, { link: e.target.value })} onBlur={() => persist(posts)}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+            {p.link && <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-[11px] text-accent font-bold">↗</a>}
+            <button onClick={() => removePost(i)} className="text-[12px] text-status-red font-bold" aria-label="Remove post">✕</button>
+          </div>
+        ))}
+        {posts.length === 0 && <div className="text-[11.5px] text-faint">ยังไม่มีโพสต์ — เพิ่ม platform และลิงก์ก่อนส่ง In Review</div>}
       </div>
     </div>
   );
