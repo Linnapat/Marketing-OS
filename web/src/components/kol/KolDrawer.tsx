@@ -25,7 +25,7 @@ const TABS = [
 type DrawerTab = (typeof TABS)[number][0];
 
 export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { kol: Kol; initialTab?: DrawerTab; onClose: () => void; onUpdate?: (k: Kol) => void }) {
-  const [tab, setTab] = useState<DrawerTab>(initialTab);
+  const [tab, setTab] = useState<DrawerTab>(initialTab === "comments" ? "profile" : initialTab);
   const [comments, setComments] = useState(() => KOL_COMMENTS.filter((c) => c.kolId === kol.id));
   const deliverables = DELIVERABLES.filter((d) => d.kolId === kol.id);
   const pi = platformIcon(kol.plat);
@@ -33,7 +33,8 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   const currentStage = normalizeStage(kol.status);
   const workStages = ["Producing", "In Review", "Approved", "Posted", "Completed"];
   const visibleTabs = TABS.filter(([id]) => {
-    if (id === "profile" || id === "campaign" || id === "comments") return true;
+    if (id === "profile") return true;
+    if (id === "campaign" || id === "comments") return false;
     if (id === "deliverables" || id === "brief") return workStages.includes(currentStage);
     if (id === "results") return currentStage === "Posted" || currentStage === "Completed";
     return false;
@@ -88,10 +89,6 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
             );
           })}
         </div>
-
-        {/* Stage advance + Deliverable links — the primary status controls,
-            always visible so each page (row) is driven on its own. */}
-        <StageBar kol={kol} onUpdate={onUpdate} />
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5">
@@ -328,6 +325,9 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       <div className="grid grid-cols-2 gap-4">
         <div><label className={lbl}>KOL / Page Name</label><input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="e.g. Tokyo Tom" /></div>
         <div><label className={lbl}>Page / Handle</label><input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or URL" /></div>
+        <div className="col-span-2 -mx-1">
+          <StageBar kol={kol} onUpdate={onUpdate} />
+        </div>
         <div><label className={lbl}>KOL Type</label><input value={kolType} onChange={(e) => setKolType(e.target.value)} className={field} placeholder="e.g. Food Blogger" /></div>
         <div><label className={lbl}>Followers</label><input type="number" value={followers || ""} onChange={(e) => setFollowers(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
         <div><label className={lbl}>Avg Reach</label><input type="number" value={avgReach || ""} onChange={(e) => setAvgReach(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
