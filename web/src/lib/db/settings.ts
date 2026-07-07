@@ -34,6 +34,37 @@ export async function createMember(m: Member): Promise<void> {
   });
 }
 
+/** Edit an existing member. Email is the PK, so pass origEmail when the email
+ *  itself changed (delete the old row, insert the new). */
+export async function updateMember(m: Member, origEmail?: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  if (origEmail && origEmail !== m.email) await db.from("members").delete().eq("email", origEmail);
+  await createMember(m);
+}
+
+export async function deleteMember(email: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("members").delete().eq("email", email);
+}
+
+/* ── Generic team-shared JSON settings (org_settings kv) ─────────────── */
+// Used by Brands, Teams, and Workflow Status editors. Each is one JSON blob.
+export async function fetchJsonSetting<T>(key: string): Promise<T | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data, error } = await db.from("org_settings").select("value").eq("key", key).maybeSingle();
+  if (error || !data?.value) return null;
+  try { return JSON.parse(data.value as string) as T; } catch { return null; }
+}
+
+export async function saveJsonSetting<T>(key: string, label: string, value: T): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("org_settings").upsert({ key, label, value: JSON.stringify(value) });
+}
+
 /* ── Permissions matrix ─────────────────────────────────────────────── */
 export interface PermRow { role: string; descr: string; perms: { module: string; level: string }[] }
 

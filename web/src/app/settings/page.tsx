@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
 import { DatePicker } from "@/components/ui/DatePicker";
-import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, BudgetThreshold, ModuleRule } from "@/lib/db/settings";
+import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
-  WF_MODULE_LABELS, STATUS_SETS, WfModule, NOTIF_CHANNELS, NOTIF_TRIGGERS,
+  WF_MODULE_LABELS, STATUS_SETS, WfModule, WfStatus, NOTIF_CHANNELS, NOTIF_TRIGGERS,
   INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR, ROLE_OPTIONS,
 } from "@/lib/data/settings";
 
@@ -23,6 +23,27 @@ function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
 
 // Roles that can sit in an approval chain (superset of Users & Roles + finance tiers).
 const APPROVER_ROLES = ["Requester", "Brand Lead", "CMO", "CFO", "CEO", "Finance", "Campaign Planner", "Senior Designer", "KOL Specialist"];
+
+/** Editable list of tag pills (branches, team members). Read-only shows plain
+ *  pills; edit mode adds an ✕ per pill and a small input to append. */
+function BranchEditor({ branches, editable, placeholder = "branch", onChange }: { branches: string[]; editable: boolean; placeholder?: string; onChange: (next: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  if (!editable) {
+    return <div className="flex flex-wrap gap-[6px]">{branches.map((br) => <span key={br} className="text-[11px] font-semibold text-muted bg-ivory border border-line3 rounded-pill px-[9px] py-[3px]">{br}</span>)}{!branches.length && <span className="text-[11px] text-faint">—</span>}</div>;
+  }
+  const add = () => { const v = draft.trim(); if (v && !branches.includes(v)) onChange([...branches, v]); setDraft(""); };
+  return (
+    <div className="flex flex-wrap items-center gap-[6px]">
+      {branches.map((br, i) => (
+        <span key={i} className="flex items-center gap-1 text-[11px] font-semibold text-muted bg-ivory border border-line3 rounded-pill px-[9px] py-[3px]">
+          {br}<button onClick={() => onChange(branches.filter((_, j) => j !== i))} className="text-faint hover:text-status-red font-bold">×</button>
+        </span>
+      ))}
+      <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} onBlur={add}
+        placeholder={`+ ${placeholder}`} className="text-[11px] w-[92px] px-[8px] py-[3px] rounded-pill border border-line2 bg-white outline-none" />
+    </div>
+  );
+}
 
 // ── Organization field editors — pickers instead of free text ─────────────
 const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -233,6 +254,33 @@ export default function SettingsPage() {
   const [apprDirty, setApprDirty] = useState(false);
   const persistApproval = () => { saveApprovalMatrix({ thresholds, rules }); setApprEdit(false); setApprDirty(false); };
 
+  // Editable Brands & Branches (persisted as a JSON blob in org_settings).
+  type BrandCfg = typeof BRANDS_DATA[number];
+  const [brands, setBrands] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
+  const [brandsEdit, setBrandsEdit] = useState(false);
+  const [brandsDirty, setBrandsDirty] = useState(false);
+  const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
+  const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands); setBrandsEdit(false); setBrandsDirty(false); };
+
+  // Editable Teams (JSON blob in org_settings).
+  type TeamCfg = typeof TEAMS_DATA[number];
+  const [teams, setTeams] = useState<TeamCfg[]>(() => TEAMS_DATA.map((t) => ({ ...t, members: [...t.members] })));
+  const [teamsEdit, setTeamsEdit] = useState(false);
+  const [teamsDirty, setTeamsDirty] = useState(false);
+  const editTeam = (i: number, patch: Partial<TeamCfg>) => { setTeams((ts) => ts.map((t, j) => j === i ? { ...t, ...patch } : t)); setTeamsDirty(true); };
+  const persistTeams = () => { saveJsonSetting("teams_config", "Teams", teams); setTeamsEdit(false); setTeamsDirty(false); };
+
+  // Editable Workflow Status per module (JSON blob in org_settings).
+  const [statusSets, setStatusSets] = useState<Record<WfModule, WfStatus[]>>(() =>
+    Object.fromEntries((Object.keys(STATUS_SETS) as WfModule[]).map((m) => [m, STATUS_SETS[m].map((s) => ({ ...s }))])) as Record<WfModule, WfStatus[]>);
+  const [wfEdit, setWfEdit] = useState(false);
+  const [wfDirty, setWfDirty] = useState(false);
+  const editStatuses = (mod: WfModule, next: WfStatus[]) => { setStatusSets((s) => ({ ...s, [mod]: next.map((x, i) => ({ ...x, order: i + 1 })) })); setWfDirty(true); };
+  const persistWorkflow = () => { saveJsonSetting("workflow_status", "Workflow statuses", statusSets); setWfEdit(false); setWfDirty(false); };
+
+  // Edit-existing-member modal.
+  const [editUser, setEditUser] = useState<{ orig: string; m: Member } | null>(null);
+
   // Load saved permissions + org from Supabase.
   useEffect(() => {
     let alive = true;
@@ -249,6 +297,9 @@ export default function SettingsPage() {
       if (m.thresholds.length) setThresholds(m.thresholds);
       if (m.rules.length) setRules(m.rules);
     }).catch(() => {});
+    fetchJsonSetting<BrandCfg[]>("brands_config").then((b) => { if (alive && b?.length) setBrands(b); }).catch(() => {});
+    fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (alive && t?.length) setTeams(t); }).catch(() => {});
+    fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (alive && w) setStatusSets((cur) => ({ ...cur, ...w })); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   // Team members (invitable) — loaded from Supabase when configured.
@@ -350,34 +401,87 @@ export default function SettingsPage() {
         )}
 
         {section === "brands" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {BRANDS_DATA.map((b) => (
-              <div key={b.key} className="bg-surface border border-line rounded-cardLg p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="w-9 h-9 rounded-[10px]" style={{ background: b.color }} />
-                  <div className="flex-1"><div className="text-[14.5px] font-bold">{b.name}</div><div className="text-[11.5px] text-faint">Lead · {b.lead}</div></div>
-                  <span className="text-[12px] text-accent font-bold cursor-pointer">Edit</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {[["Branches", b.branches], ["Campaigns", b.campaigns], ["Budget", b.budget]].map(([l, v]) => (
-                    <div key={l as string} className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{v}</div><div className="text-[9.5px] text-faint font-bold uppercase">{l as string}</div></div>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-[6px]">{b.branchList.map((br) => <span key={br} className="text-[11px] text-muted bg-ivory border border-line3 rounded-pill px-[9px] py-[3px]">{br}</span>)}</div>
+          <div className="flex flex-col gap-3">
+            {canEdit && (
+              <div className="flex items-center justify-end gap-2">
+                {brandsEdit ? (
+                  <>
+                    <button onClick={() => { setBrands(BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] }))); setBrandsEdit(false); setBrandsDirty(false); fetchJsonSetting<BrandCfg[]>("brands_config").then((b) => { if (b?.length) setBrands(b); }); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">Cancel</button>
+                    <button onClick={() => { setBrands((bs) => [...bs, { key: `brand-${Date.now()}`, name: "New brand", color: "#B8945A", lead: "", branches: 0, campaigns: 0, budget: "฿0", branchList: [] }]); setBrandsDirty(true); }} className="text-[12px] font-bold text-accent border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">+ Add brand</button>
+                    <button onClick={persistBrands} disabled={!brandsDirty} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">Save changes</button>
+                  </>
+                ) : <button onClick={() => setBrandsEdit(true)} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px]">✏️ Edit brands</button>}
               </div>
-            ))}
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {brands.map((b, i) => (
+                <div key={b.key} className="bg-surface border border-line rounded-cardLg p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    {brandsEdit
+                      ? <input type="color" value={b.color} onChange={(e) => editBrand(i, { color: e.target.value })} className="w-9 h-9 rounded-[10px] border border-line2 bg-transparent cursor-pointer" />
+                      : <span className="w-9 h-9 rounded-[10px]" style={{ background: b.color }} />}
+                    <div className="flex-1">
+                      {brandsEdit ? (
+                        <>
+                          <input value={b.name} onChange={(e) => editBrand(i, { name: e.target.value })} className="w-full text-[14.5px] font-bold px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none mb-1" />
+                          <input value={b.lead} placeholder="Lead" onChange={(e) => editBrand(i, { lead: e.target.value })} className="w-full text-[11.5px] text-faint px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                        </>
+                      ) : <><div className="text-[14.5px] font-bold">{b.name}</div><div className="text-[11.5px] text-faint">Lead · {b.lead || "—"}</div></>}
+                    </div>
+                    {brandsEdit && <button onClick={() => { setBrands((bs) => bs.filter((_, j) => j !== i)); setBrandsDirty(true); }} className="text-[13px] text-status-red font-bold">✕</button>}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{b.branchList.length}</div><div className="text-[9.5px] text-faint font-bold uppercase">Branches</div></div>
+                    <div className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{b.campaigns}</div><div className="text-[9.5px] text-faint font-bold uppercase">Campaigns</div></div>
+                    <div className="bg-ivory border border-line3 rounded-card p-2 text-center">
+                      {brandsEdit
+                        ? <input value={b.budget} onChange={(e) => editBrand(i, { budget: e.target.value })} className="w-full text-[13px] font-extrabold text-center px-1 py-[2px] rounded-[6px] border border-line2 bg-white outline-none" />
+                        : <div className="text-[14px] font-extrabold">{b.budget}</div>}
+                      <div className="text-[9.5px] text-faint font-bold uppercase">Budget</div>
+                    </div>
+                  </div>
+                  <BranchEditor branches={b.branchList} editable={brandsEdit} onChange={(branchList) => editBrand(i, { branchList })} />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {section === "teams" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {TEAMS_DATA.map((t) => (
-              <div key={t.name} className="bg-surface border border-line rounded-cardLg p-5">
-                <div className="flex items-center gap-2 mb-2"><span className="text-[18px]">{t.icon}</span><div className="text-[14.5px] font-bold">{t.name}</div><span className="ml-auto text-[11.5px] text-faint">Lead · {t.lead}</span></div>
-                <div className="text-[12px] text-muted mb-3">{t.scope}</div>
-                <div className="flex flex-wrap gap-[6px]">{t.members.map((m) => <span key={m} className="text-[11px] font-semibold text-muted bg-ivory border border-line3 rounded-pill px-[9px] py-[3px]">{m}</span>)}</div>
+          <div className="flex flex-col gap-3">
+            {canEdit && (
+              <div className="flex items-center justify-end gap-2">
+                {teamsEdit ? (
+                  <>
+                    <button onClick={() => { setTeams(TEAMS_DATA.map((t) => ({ ...t, members: [...t.members] }))); setTeamsEdit(false); setTeamsDirty(false); fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (t?.length) setTeams(t); }); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">Cancel</button>
+                    <button onClick={() => { setTeams((ts) => [...ts, { icon: "👥", name: "New team", lead: "", scope: "", members: [] }]); setTeamsDirty(true); }} className="text-[12px] font-bold text-accent border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">+ Add team</button>
+                    <button onClick={persistTeams} disabled={!teamsDirty} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">Save changes</button>
+                  </>
+                ) : <button onClick={() => setTeamsEdit(true)} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px]">✏️ Edit teams</button>}
               </div>
-            ))}
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {teams.map((t, i) => (
+                <div key={i} className="bg-surface border border-line rounded-cardLg p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    {teamsEdit
+                      ? <input value={t.icon} onChange={(e) => editTeam(i, { icon: e.target.value })} className="w-9 text-[18px] text-center px-1 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                      : <span className="text-[18px]">{t.icon}</span>}
+                    {teamsEdit
+                      ? <input value={t.name} onChange={(e) => editTeam(i, { name: e.target.value })} className="flex-1 text-[14.5px] font-bold px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                      : <div className="text-[14.5px] font-bold flex-1">{t.name}</div>}
+                    {teamsEdit
+                      ? <input value={t.lead} placeholder="Lead" onChange={(e) => editTeam(i, { lead: e.target.value })} className="w-[110px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                      : <span className="text-[11.5px] text-faint">Lead · {t.lead || "—"}</span>}
+                    {teamsEdit && <button onClick={() => { setTeams((ts) => ts.filter((_, j) => j !== i)); setTeamsDirty(true); }} className="text-[13px] text-status-red font-bold">✕</button>}
+                  </div>
+                  {teamsEdit
+                    ? <input value={t.scope} placeholder="Scope / responsibilities" onChange={(e) => editTeam(i, { scope: e.target.value })} className="w-full text-[12px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none mb-3" />
+                    : <div className="text-[12px] text-muted mb-3">{t.scope}</div>}
+                  <BranchEditor branches={t.members} editable={teamsEdit} placeholder="member" onChange={(members) => editTeam(i, { members })} />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -392,12 +496,18 @@ export default function SettingsPage() {
               const acc = ACCESS_STYLE[u.access] ?? ACCESS_STYLE.Viewer;
               const invited = u.status === "Invited";
               return (
-                <div key={u.email} className="grid grid-cols-1 md:grid-cols-[2fr_1.3fr_1fr_1.2fr_0.8fr] gap-y-1 items-center px-5 py-3 border-b border-line4 last:border-0">
+                <div key={u.email} className="grid grid-cols-1 md:grid-cols-[2fr_1.3fr_1fr_1.2fr_0.8fr_auto] gap-y-1 items-center px-5 py-3 border-b border-line4 last:border-0">
                   <div className="flex items-center gap-3"><span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold" style={{ background: u.color }}>{initials(u.name)}</span><div><div className="text-[13.5px] font-bold">{u.name}</div><div className="text-[11px] text-faint">{u.email}</div></div></div>
                   <div className="text-[12.5px] text-muted">{u.role}</div>
                   <div><Pill text={u.access} fg={acc.fg} bg={acc.bg} /></div>
                   <div className="text-[12px] text-muted">{u.brandAccess}</div>
                   <div><Pill text={u.status} fg={invited ? "#C68A1E" : "#4E7A4E"} bg={invited ? "#FBF8EE" : "#EEF4EE"} /></div>
+                  {canEdit && (
+                    <div className="flex items-center gap-2 justify-end">
+                      <button onClick={() => setEditUser({ orig: u.email, m: { ...u } })} className="text-[11.5px] font-bold text-accent">Edit</button>
+                      <button onClick={() => { if (confirm(`ลบ ${u.name} ออกจากทีม?`)) { setUsers((us) => us.filter((x) => x.email !== u.email)); deleteMember(u.email); } }} className="text-[11.5px] font-bold text-status-red">Delete</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -527,24 +637,56 @@ export default function SettingsPage() {
 
         {section === "workflow" && (
           <div>
-            <div className="flex gap-2 mb-4 flex-wrap">
-              {(Object.keys(WF_MODULE_LABELS) as WfModule[]).map((m) => {
-                const active = m === wfModule;
-                return <button key={m} onClick={() => setWfModule(m)} className="text-[12px] px-[14px] py-[6px] rounded-pill" style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{WF_MODULE_LABELS[m]}</button>;
-              })}
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {(Object.keys(WF_MODULE_LABELS) as WfModule[]).map((m) => {
+                  const active = m === wfModule;
+                  return <button key={m} onClick={() => setWfModule(m)} className="text-[12px] px-[14px] py-[6px] rounded-pill" style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{WF_MODULE_LABELS[m]}</button>;
+                })}
+              </div>
+              {canEdit && (
+                <div className="flex items-center gap-2">
+                  {wfEdit ? (
+                    <>
+                      <button onClick={() => { setStatusSets(Object.fromEntries((Object.keys(STATUS_SETS) as WfModule[]).map((m) => [m, STATUS_SETS[m].map((s) => ({ ...s }))])) as Record<WfModule, WfStatus[]>); setWfEdit(false); setWfDirty(false); fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (w) setStatusSets((cur) => ({ ...cur, ...w })); }); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">Cancel</button>
+                      <button onClick={persistWorkflow} disabled={!wfDirty} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">Save changes</button>
+                    </>
+                  ) : <button onClick={() => setWfEdit(true)} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px]">✏️ Edit statuses</button>}
+                </div>
+              )}
             </div>
             <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-              {STATUS_SETS[wfModule].map((s) => {
+              {statusSets[wfModule].map((s, si) => {
                 const tone = s.type === "Done" ? ["#4E7A4E", "#EEF4EE"] : s.type === "Waiting" ? ["#C68A1E", "#FBF8EE"] : s.type === "Cancelled" ? ["#B33A2E", "#FFF5F4"] : ["#3E5C9A", "#EEF1F8"];
+                const list = statusSets[wfModule];
+                const move = (dir: number) => { const j = si + dir; if (j < 0 || j >= list.length) return; const next = [...list]; [next[si], next[j]] = [next[j], next[si]]; editStatuses(wfModule, next); };
                 return (
-                  <div key={s.order} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
+                  <div key={si} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
                     <span className="text-[11px] font-bold text-faint w-5">{s.order}</span>
-                    <span className="w-3 h-3 rounded-full" style={{ background: s.color }} />
-                    <span className="text-[13.5px] font-semibold flex-1">{s.name}</span>
-                    <Pill text={s.type} fg={tone[0]} bg={tone[1]} />
+                    {wfEdit
+                      ? <input type="color" value={s.color} onChange={(e) => editStatuses(wfModule, list.map((x, j) => j === si ? { ...x, color: e.target.value } : x))} className="w-6 h-6 rounded-full border border-line2 bg-transparent cursor-pointer p-0" />
+                      : <span className="w-3 h-3 rounded-full" style={{ background: s.color }} />}
+                    {wfEdit
+                      ? <input value={s.name} onChange={(e) => editStatuses(wfModule, list.map((x, j) => j === si ? { ...x, name: e.target.value } : x))} className="flex-1 text-[13.5px] font-semibold px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                      : <span className="text-[13.5px] font-semibold flex-1">{s.name}</span>}
+                    {wfEdit ? (
+                      <select value={s.type} onChange={(e) => editStatuses(wfModule, list.map((x, j) => j === si ? { ...x, type: e.target.value } : x))} className="text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none">
+                        {["Active", "Waiting", "Done", "Cancelled"].map((t) => <option key={t}>{t}</option>)}
+                      </select>
+                    ) : <Pill text={s.type} fg={tone[0]} bg={tone[1]} />}
+                    {wfEdit && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => move(-1)} disabled={si === 0} className="text-[12px] text-faint disabled:opacity-30">↑</button>
+                        <button onClick={() => move(1)} disabled={si === list.length - 1} className="text-[12px] text-faint disabled:opacity-30">↓</button>
+                        <button onClick={() => editStatuses(wfModule, list.filter((_, j) => j !== si))} className="text-[12px] text-status-red font-bold ml-1">✕</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
+              {wfEdit && (
+                <button onClick={() => editStatuses(wfModule, [...statusSets[wfModule], { order: statusSets[wfModule].length + 1, name: "New status", color: "#9A9387", type: "Active" }])} className="w-full text-[12px] font-bold text-accent py-3 hover:bg-ivory/50">+ Add status</button>
+              )}
             </div>
           </div>
         )}
@@ -676,6 +818,66 @@ export default function SettingsPage() {
               <button onClick={submitInvite} disabled={!inviteValid}
                 className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40 disabled:cursor-default">Send invite</button>
               <button onClick={() => setInviteOpen(false)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit member modal */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setEditUser(null)} />
+          <div className="relative bg-surface rounded-cardLg border border-line shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-start justify-between mb-5">
+              <div className="text-[16px] font-extrabold">Edit member</div>
+              <button onClick={() => setEditUser(null)} className="text-[18px] text-faint leading-none -mt-1">✕</button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Full name</label>
+                <input value={editUser.m.name} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, name: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Email</label>
+                <input value={editUser.m.email} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, email: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Role / position</label>
+                <select value={editUser.m.role} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, role: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                  {ROLE_OPTIONS.map((o) => <option key={o.role} value={o.role}>{o.role}{o.external ? " · external" : ""}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Access level</label>
+                  <select value={editUser.m.access} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, access: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                    <option>Admin</option><option>Editor</option><option>Viewer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Status</label>
+                  <select value={editUser.m.status} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, status: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                    <option>Active</option><option>Invited</option><option>Suspended</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand / branch scope</label>
+                <select value={editUser.m.brandAccess} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, brandAccess: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+                  <optgroup label="Brand">
+                    <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option>
+                  </optgroup>
+                  <optgroup label="Single branch">
+                    {BRANCHES.map((br) => <option key={br} value={`Branch · ${br}`}>Branch · {br}</option>)}
+                  </optgroup>
+                  <option>External only</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={() => { if (!editUser) return; const { orig, m } = editUser; setUsers((us) => us.map((x) => x.email === orig ? m : x)); updateMember(m, orig); setEditUser(null); }} disabled={!editUser.m.name.trim() || !editUser.m.email.trim()}
+                className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Save changes</button>
+              <button onClick={() => setEditUser(null)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
             </div>
           </div>
         </div>
