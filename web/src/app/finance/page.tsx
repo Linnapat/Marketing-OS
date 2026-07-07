@@ -337,6 +337,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   sheetUrl: string; onSaveUrl: (url: string) => void; onReload: () => void; status: string;
 }) {
   const [urlDraft, setUrlDraft] = useState(sheetUrl);
+  const [openCat, setOpenCat] = useState<Record<string, boolean>>({});
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
 
   const rows = categoryPnl(sheetRows, reqs, period, brand);
@@ -378,17 +379,40 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
           const remaining = r.budget - r.approved;
           const pct = r.budget ? Math.round((r.approved / r.budget) * 100) : 0;
           const over = r.budget > 0 && r.approved > r.budget;
+          const isOpen = openCat[r.category];
+          // Drill-down: the expense requests (with their campaigns) that make up
+          // this category's actual, for the selected period + brand.
+          const contrib = reqs.filter((x) => x.category === r.category && x.createdAt && inDateFilter(period, x.createdAt) && (brand === "all" || x.b === brand) && x.status !== "Draft" && x.status !== "Rejected");
+          const byCampaign = new Map<string, { requested: number; approved: number }>();
+          for (const x of contrib) { const k = x.campaign || "—"; const v = byCampaign.get(k) ?? { requested: 0, approved: 0 }; v.requested += x.requested || 0; v.approved += x.approved || 0; byCampaign.set(k, v); }
           return (
-            <div key={r.category} className="grid px-5 py-3 items-center gap-y-1 border-b border-line4 last:border-0" style={{ gridTemplateColumns: cols }}>
-              <span className="text-[13px] font-bold text-ink">{r.category}</span>
-              <span className="text-[13px] text-muted">{r.budget ? baht(r.budget, { compact: true }) : "—"}</span>
-              <span className="text-[13px] text-ink">{baht(r.requested, { compact: true })}</span>
-              <span className="text-[13px] font-semibold" style={{ color: r.approved ? "#4E7A4E" : "#9A9387" }}>{baht(r.approved, { compact: true })}</span>
-              <span className="text-[13px] font-semibold" style={{ color: over ? "#B33A2E" : "#211F1C" }}>{r.budget ? baht(remaining, { compact: true }) : "—"}</span>
-              <span className="flex items-center gap-2">
-                <span className="flex-1"><Progress value={Math.min(100, pct)} color={over ? "#B33A2E" : pct > 85 ? "#C68A1E" : "#4E7A4E"} height={7} /></span>
-                <span className="text-[11.5px] font-bold w-[42px] text-right" style={{ color: over ? "#B33A2E" : "#6b6258" }}>{r.budget ? `${pct}%` : "—"}</span>
-              </span>
+            <div key={r.category} className="border-b border-line4 last:border-0">
+              <button onClick={() => setOpenCat((o) => ({ ...o, [r.category]: !o[r.category] }))} className="w-full grid px-5 py-3 items-center gap-y-1 text-left hover:bg-ivory/50" style={{ gridTemplateColumns: cols }}>
+                <span className="text-[13px] font-bold text-ink flex items-center gap-[6px]"><span className="text-faint text-[10px] w-3">{contrib.length ? (isOpen ? "▾" : "▸") : ""}</span>{r.category}</span>
+                <span className="text-[13px] text-muted">{r.budget ? baht(r.budget, { compact: true }) : "—"}</span>
+                <span className="text-[13px] text-ink">{baht(r.requested, { compact: true })}{contrib.length ? <span className="text-[10.5px] text-faint"> · {byCampaign.size} camp.</span> : null}</span>
+                <span className="text-[13px] font-semibold" style={{ color: r.approved ? "#4E7A4E" : "#9A9387" }}>{baht(r.approved, { compact: true })}</span>
+                <span className="text-[13px] font-semibold" style={{ color: over ? "#B33A2E" : "#211F1C" }}>{r.budget ? baht(remaining, { compact: true }) : "—"}</span>
+                <span className="flex items-center gap-2">
+                  <span className="flex-1"><Progress value={Math.min(100, pct)} color={over ? "#B33A2E" : pct > 85 ? "#C68A1E" : "#4E7A4E"} height={7} /></span>
+                  <span className="text-[11.5px] font-bold w-[42px] text-right" style={{ color: over ? "#B33A2E" : "#6b6258" }}>{r.budget ? `${pct}%` : "—"}</span>
+                </span>
+              </button>
+              {isOpen && (
+                <div className="bg-ivory/60 px-5 pb-3 pt-1">
+                  {byCampaign.size === 0 ? (
+                    <div className="text-[11.5px] text-faint py-1 pl-6">ยังไม่มีคำขอเบิกในหมวดนี้สำหรับช่วงที่เลือก</div>
+                  ) : [...byCampaign.entries()].sort((a, b) => b[1].approved - a[1].approved).map(([camp, v]) => (
+                    <div key={camp} className="grid px-1 py-[5px] items-center text-[12px] border-b border-line4/60 last:border-0" style={{ gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.4fr" }}>
+                      <span className="pl-6 text-muted truncate">🎯 {camp}</span>
+                      <span></span>
+                      <span className="text-ink">{baht(v.requested, { compact: true })}</span>
+                      <span className="font-semibold" style={{ color: v.approved ? "#4E7A4E" : "#9A9387" }}>{baht(v.approved, { compact: true })}</span>
+                      <span></span><span></span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

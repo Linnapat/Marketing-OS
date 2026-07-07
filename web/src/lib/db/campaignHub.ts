@@ -9,6 +9,7 @@ import { fetchGraphics, createGraphic, buildGraphic } from "./graphic";
 import { fetchTasks, createTaskDb } from "./tasks";
 import { fetchExpenseRequests, createExpenseRequest } from "./finance";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
+import { canonicalBucket, canonicalAdsPlatform } from "@/lib/data/financeCategories";
 import { ContentItem } from "@/lib/data/content";
 import { Kol } from "@/lib/data/kol";
 import { Graphic } from "@/lib/data/graphic";
@@ -73,13 +74,31 @@ export async function createBudgetExpenseDrafts(c: CampaignRow, brief: CampaignB
   const buckets = budgetSummary(brief).byBucket.filter((b) => b.amount > 0);
   if (!buckets.length) return 0;
   const existing = (await fetchExpenseRequests()).filter((e) => e.campaign === c.name);
-  let created = 0;
+  const requester = brief.plannerOwner || c.owner;
+  // Draft rows use canonical category names (matching the budget sheet) so the
+  // P&L by Category aligns actual vs budget. The "Ads" bucket is split into one
+  // draft per funded platform (Facebook/Instagram → "Facebook / Instagram Ads", …).
+  const drafts: { category: string; amount: number }[] = [];
   for (const b of buckets) {
-    if (existing.some((e) => e.category === b.label)) continue;
+    if (b.label === "Ads") {
+      const platforms = brief.budget.adsByPlatform.filter((a) => a.amount > 0);
+      if (platforms.length) {
+        for (const p of platforms) drafts.push({ category: canonicalAdsPlatform(p.platform), amount: p.amount });
+      } else {
+        drafts.push({ category: "Facebook / Instagram Ads", amount: b.amount });
+      }
+    } else {
+      drafts.push({ category: canonicalBucket(b.label), amount: b.amount });
+    }
+  }
+  let created = 0;
+  for (const d of drafts) {
+    if (d.amount <= 0 || existing.some((e) => e.category === d.category)) continue;
     await createExpenseRequest(
-      { category: b.label, b: c.b, campaign: c.name, requested: b.amount, approved: 0, due: "—", status: "Draft" },
-      { requester: brief.plannerOwner || c.owner },
+      { category: d.category, b: c.b, campaign: c.name, requested: d.amount, approved: 0, due: "—", status: "Draft" },
+      { requester },
     );
+    existing.push({ category: d.category, b: c.b, campaign: c.name, requested: d.amount, approved: 0, due: "—", status: "Draft" });
     created++;
   }
   return created;
