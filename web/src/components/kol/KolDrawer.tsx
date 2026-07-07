@@ -167,7 +167,7 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
 function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [posts, setPosts] = useState<KolPost[]>(() => kolPosts(kol));
   const [busy, setBusy] = useState(false);
-  const showDeliverables = ["Producing", "In Review", "Approved", "Posted", "Completed"].includes(normalizeStage(kol.status));
+  const showDeliverables = ["Negotiating", "Contract Signed", "Producing", "In Review", "Approved", "Posted", "Completed"].includes(normalizeStage(kol.status));
 
   const persist = async (nextPosts: KolPost[]) => {
     const totals = postsTotals(nextPosts);
@@ -186,7 +186,7 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
       <div className="flex items-center justify-between mb-[6px]">
         <div>
           <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Post / Draft links</div>
-          <div className="text-[10.5px] text-faint">เพิ่มเมื่อเริ่มผลิตงานแล้วเท่านั้น</div>
+          <div className="text-[10.5px] text-faint">เพิ่ม Platform ที่เสนอได้ตั้งแต่ขั้นเจรจา เพื่อใช้ทำ Proposal</div>
         </div>
         <button onClick={addPost} disabled={busy} className="text-[11.5px] font-bold text-accent disabled:opacity-40">+ Add platform</button>
       </div>
