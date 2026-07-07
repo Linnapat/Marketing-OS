@@ -51,7 +51,7 @@ export default function DashboardPage() {
     er: raw.er.filter(inBrand).filter((e) => inDateFilter(date, e.createdAt)),
   } : null), [raw, brand, date]);
 
-  const dash = useMemo(() => (view ? dashboardFromDb(view.c, view.t, view.k) : null), [view]);
+  const dash = useMemo(() => (view ? dashboardFromDb(view.c, view.t, view.k, view.er) : null), [view]);
   const feed = useMemo(() => (view ? dashboardFeed(view.c, view.ct, view.g, view.t, view.er) : null), [view]);
 
   const attention = feed?.needsAttention ?? [];

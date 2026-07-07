@@ -311,10 +311,13 @@ function ContractTab({ kol }: { kol: Kol }) {
   const rows: [string, string][] = [
     ["Contract", kol.contractStatus], ["Quotation", kol.quotationStatus], ["Invoice", kol.invoiceStatus], ["Payment", kol.paymentStatus],
   ];
+  const isPaid = /paid/i.test(kol.paymentStatus);
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-accent-soft border border-accent-border rounded-card p-3 text-[11.5px] text-status-gold">
-        Finance status is read-only here — linked from request <b>{kol.financeReqId}</b>. Manage payment in the Finance module.
+      {/* Fee is a plan/commitment — it is NOT actual spend until an approved
+          expense/payment exists in Finance. */}
+      <div className="rounded-card p-3 text-[11.5px]" style={{ background: "#FBF8EE", border: "1px solid #E8CCA0", color: "#8A6D1E" }}>
+        ค่าตัว KOL นับเป็น <b>Committed (แผน)</b> เท่านั้น — ยังไม่ถือเป็น Actual Spend จนกว่าจะมี Expense/Payment ที่อนุมัติใน Finance
       </div>
       <div className="flex flex-col gap-2">
         {rows.map(([k, v]) => (
@@ -325,11 +328,15 @@ function ContractTab({ kol }: { kol: Kol }) {
         ))}
       </div>
       <div className="grid grid-cols-3 gap-3">
-        <Field label="Fee" value={baht(kol.fee, { compact: true })} />
+        <Field label="Fee (committed)" value={baht(kol.fee, { compact: true })} />
         <Field label="Food Support" value={baht(kol.foodCost, { compact: true })} />
         <Field label="Total Cost" value={baht(kol.totalCost, { compact: true })} />
       </div>
       <Field label="Payment Due" value={kol.paymentDue} />
+      {/* CTA to Finance — where the real expense/payment is raised & approved. */}
+      <a href="/expenses" className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[10px] text-center">
+        {isPaid ? "ดูรายการใน Finance / Expenses →" : "เปิดคำขอเบิก/ชำระเงินใน Finance / Expenses →"}
+      </a>
     </div>
   );
 }

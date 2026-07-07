@@ -62,20 +62,25 @@ export interface DashboardView {
 
 const ACTIVE_CAMPAIGN = new Set(["Active", "In Progress", "In progress", "Ready", "Waiting Approval"]);
 
-export function dashboardFromDb(campaigns: CampaignRow[], tasks: Task[], kols: Kol[]): DashboardView {
+export function dashboardFromDb(campaigns: CampaignRow[], tasks: Task[], kols: Kol[], expenseReqs: RequestRow[] = []): DashboardView {
   const budgetTotal = campaigns.reduce((s, c) => s + (c.budget || 0), 0);
-  const spentTotal = campaigns.reduce((s, c) => s + (c.spend || 0), 0);
+  // "Committed" = planned allocation across campaigns (includes KOL fees).
+  const committedTotal = campaigns.reduce((s, c) => s + (c.spend || 0), 0);
+  // "Actual Spend" = only money with an APPROVED expense/payment behind it —
+  // KOL fees never count here until an expense request is approved.
+  const spentTotal = expenseReqs.filter((r) => /approved|paid/i.test(r.status)).reduce((s, r) => s + (r.approved || r.requested || 0), 0);
   const usedPct = budgetTotal ? Math.round((spentTotal / budgetTotal) * 100) : 0;
+  const committedPct = budgetTotal ? Math.round((committedTotal / budgetTotal) * 100) : 0;
   const activeCampaigns = campaigns.filter((c) => ACTIVE_CAMPAIGN.has(c.status)).length;
   const openTasks = tasks.filter((t) => t.status !== "Done").length;
   const needsAttention = tasks.filter((t) => t.status === "Stuck" || !!t.blocker).slice(0, 6);
 
   const kpis: Kpi[] = [
     { label: "Total Budget", value: baht(budgetTotal, { compact: true }) },
-    { label: "Spent", value: baht(spentTotal, { compact: true }), meta: `${usedPct}% used` },
+    { label: "Committed", value: baht(committedTotal, { compact: true }), meta: `${committedPct}% planned` },
+    { label: "Actual Spend", value: baht(spentTotal, { compact: true }), meta: `${usedPct}% approved` },
     { label: "Active Campaigns", value: String(activeCampaigns) },
     { label: "Open Tasks", value: String(openTasks), valColor: openTasks ? "#C68A1E" : undefined },
-    { label: "KOL / Creators", value: String(kols.length) },
     { label: "Campaigns", value: String(campaigns.length), dark: true, cardBg: "#211F1C", labelColor: "#B8945A", valColor: "#fff" },
   ];
 
