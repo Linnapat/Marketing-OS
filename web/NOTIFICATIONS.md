@@ -52,7 +52,7 @@
 
 ## 3) ลิงก์ในข้อความ
 
-ตั้ง `NEXT_PUBLIC_APP_URL` = URL production (เช่น `https://marketing-os.vercel.app`) เพื่อให้ข้อความแนบลิงก์กดเปิดหน้าที่เกี่ยวข้องได้เลย
+ตั้ง `NEXT_PUBLIC_APP_URL` = URL production คือ `https://marketing-os-linnapats-projects.vercel.app` (ระวัง: `marketing-os.vercel.app` เฉยๆ เป็นโปรเจกต์ของคนอื่น ไม่ใช่ของเรา) เพื่อให้ข้อความแนบลิงก์กดเปิดหน้าที่เกี่ยวข้องได้เลย
 
 ## ทดสอบ
 
