@@ -86,6 +86,37 @@ export async function saveNotifSettings(s: NotifSettings): Promise<void> {
   ]);
 }
 
+/* ── Approval Matrix (budget thresholds + module rules) ─────────────── */
+// Stored as JSON blobs in the org_settings kv table. Editable by CMO / Admin.
+export interface BudgetThreshold { range: string; approver: string; chain: string[] }
+export interface ModuleRule { icon: string; module: string; sla: number; escalate: number; remind: number; backup: string; chain: string[] }
+export interface ApprovalMatrix { thresholds: BudgetThreshold[]; rules: ModuleRule[] }
+
+export async function fetchApprovalMatrix(): Promise<ApprovalMatrix | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data, error } = await db.from("org_settings").select("key, value").in("key", ["approval_thresholds", "approval_rules"]);
+  if (error || !data) return null;
+  const get = <T,>(k: string): T | null => {
+    const row = data.find((r) => r.key === k);
+    if (!row) return null;
+    try { return JSON.parse(row.value as string) as T; } catch { return null; }
+  };
+  const thresholds = get<BudgetThreshold[]>("approval_thresholds");
+  const rules = get<ModuleRule[]>("approval_rules");
+  if (!thresholds && !rules) return null;
+  return { thresholds: thresholds ?? [], rules: rules ?? [] };
+}
+
+export async function saveApprovalMatrix(m: ApprovalMatrix): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  await db.from("org_settings").upsert([
+    { key: "approval_thresholds", label: "Approval budget thresholds", value: JSON.stringify(m.thresholds) },
+    { key: "approval_rules", label: "Approval module rules", value: JSON.stringify(m.rules) },
+  ]);
+}
+
 /* ── Organization fields ────────────────────────────────────────────── */
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 

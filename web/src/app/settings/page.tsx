@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
-import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings } from "@/lib/db/settings";
+import { fetchMembers, createMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, BudgetThreshold, ModuleRule } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
@@ -18,6 +18,38 @@ const BRANCHES: string[] = BRANDS_DATA.flatMap((b) => b.branchList);
 
 function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
   return <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill whitespace-nowrap inline-block" style={{ color: fg, background: bg }}>{text}</span>;
+}
+
+// Roles that can sit in an approval chain (superset of Users & Roles + finance tiers).
+const APPROVER_ROLES = ["Requester", "Brand Lead", "CMO", "CFO", "CEO", "Finance", "Campaign Planner", "Senior Designer", "KOL Specialist"];
+
+/** Approval chain as ordered pills. Read-only shows arrows between roles; in
+ *  edit mode each pill can be removed and a role appended from a dropdown. */
+function ChainEditor({ chain, editable, onChange }: { chain: string[]; editable: boolean; onChange: (chain: string[]) => void }) {
+  if (!editable) {
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        {chain.map((c, i) => <span key={i} className="flex items-center gap-1"><Pill text={c} fg="#3E5C9A" bg="#EEF1F8" />{i < chain.length - 1 && <span className="text-faint text-[11px]">→</span>}</span>)}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {chain.map((c, i) => (
+        <span key={i} className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-[11px] font-bold px-[9px] py-[3px] rounded-pill" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>
+            {c}<button onClick={() => onChange(chain.filter((_, x) => x !== i))} className="text-[#3E5C9A]/60 hover:text-status-red font-bold ml-[1px]">×</button>
+          </span>
+          {i < chain.length - 1 && <span className="text-faint text-[11px]">→</span>}
+        </span>
+      ))}
+      <select value="" onChange={(e) => { if (e.target.value) onChange([...chain, e.target.value]); }}
+        className="text-[11px] font-semibold px-[8px] py-[4px] rounded-pill border border-line2 bg-white text-muted outline-none cursor-pointer">
+        <option value="">+ role</option>
+        {APPROVER_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+      </select>
+    </div>
+  );
 }
 function typePill(module: string) {
   const c = TYPE_COLOR[module] ?? "#6b6258";
@@ -93,6 +125,13 @@ export default function SettingsPage() {
   const [org, setOrg] = useState(() => ORG_FIELDS.map((f) => ({ ...f })));
   const persistOrg = () => { saveOrg(org); setOrgEdit(false); };
 
+  // Editable Approval Matrix (budget thresholds + module rules).
+  const [thresholds, setThresholds] = useState<BudgetThreshold[]>(() => BUDGET_THRESHOLDS.map((b) => ({ ...b, chain: [...b.chain] })));
+  const [rules, setRules] = useState<ModuleRule[]>(() => APPROVAL_RULES.map((r) => ({ ...r, chain: [...r.chain] })));
+  const [apprEdit, setApprEdit] = useState(false);
+  const [apprDirty, setApprDirty] = useState(false);
+  const persistApproval = () => { saveApprovalMatrix({ thresholds, rules }); setApprEdit(false); setApprDirty(false); };
+
   // Load saved permissions + org from Supabase.
   useEffect(() => {
     let alive = true;
@@ -104,6 +143,11 @@ export default function SettingsPage() {
       })));
     }).catch(() => {});
     fetchOrg().then((f) => { if (alive && f && f.length) setOrg(f); }).catch(() => {});
+    fetchApprovalMatrix().then((m) => {
+      if (!alive || !m) return;
+      if (m.thresholds.length) setThresholds(m.thresholds);
+      if (m.rules.length) setRules(m.rules);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
   // Team members (invitable) — loaded from Supabase when configured.
@@ -310,13 +354,43 @@ export default function SettingsPage() {
 
         {section === "approval" && (
           <div className="flex flex-col gap-5">
+            {/* Edit toolbar — CMO / Admin only */}
+            {canEdit && (
+              <div className="flex items-center justify-end gap-2">
+                {apprEdit ? (
+                  <>
+                    <button onClick={() => { setThresholds(BUDGET_THRESHOLDS.map((b) => ({ ...b, chain: [...b.chain] }))); setRules(APPROVAL_RULES.map((r) => ({ ...r, chain: [...r.chain] }))); setApprEdit(false); setApprDirty(false); fetchApprovalMatrix().then((m) => { if (m) { if (m.thresholds.length) setThresholds(m.thresholds); if (m.rules.length) setRules(m.rules); } }); }}
+                      className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">Cancel</button>
+                    <button onClick={persistApproval} disabled={!apprDirty}
+                      className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">Save changes</button>
+                  </>
+                ) : (
+                  <button onClick={() => setApprEdit(true)} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px]">✏️ Edit matrix</button>
+                )}
+              </div>
+            )}
+
             <div>
-              <div className="text-[13px] font-bold mb-3">Budget Threshold Approval</div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[13px] font-bold">Budget Threshold Approval</div>
+                {apprEdit && <button onClick={() => { setThresholds((ts) => [...ts, { range: "฿ new tier", approver: "", chain: ["Brand Lead"] }]); setApprDirty(true); }} className="text-[11.5px] font-bold text-accent">+ Add tier</button>}
+              </div>
               <div className="flex flex-col gap-2">
-                {BUDGET_THRESHOLDS.map((b) => (
-                  <div key={b.range} className="bg-surface border border-line rounded-card p-4 flex items-center gap-4 flex-wrap">
-                    <div className="min-w-[150px]"><div className="text-[13.5px] font-bold">{b.range}</div><div className="text-[11.5px] text-faint">{b.approver}</div></div>
-                    <div className="flex items-center gap-1 flex-wrap">{b.chain.map((c, i) => <span key={i} className="flex items-center gap-1"><span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>{c}</span>{i < b.chain.length - 1 && <span className="text-faint text-[11px]">→</span>}</span>)}</div>
+                {thresholds.map((b, ti) => (
+                  <div key={ti} className="bg-surface border border-line rounded-card p-4 flex items-start gap-4 flex-wrap">
+                    <div className="min-w-[160px]">
+                      {apprEdit ? (
+                        <>
+                          <input value={b.range} onChange={(e) => { setThresholds((ts) => ts.map((x, i) => i === ti ? { ...x, range: e.target.value } : x)); setApprDirty(true); }} className="w-full text-[13px] font-bold px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none mb-1" />
+                          <input value={b.approver} placeholder="short note" onChange={(e) => { setThresholds((ts) => ts.map((x, i) => i === ti ? { ...x, approver: e.target.value } : x)); setApprDirty(true); }} className="w-full text-[11.5px] text-faint px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                        </>
+                      ) : (
+                        <><div className="text-[13.5px] font-bold">{b.range}</div><div className="text-[11.5px] text-faint">{b.approver}</div></>
+                      )}
+                    </div>
+                    <ChainEditor chain={b.chain} editable={apprEdit}
+                      onChange={(chain) => { setThresholds((ts) => ts.map((x, i) => i === ti ? { ...x, chain } : x)); setApprDirty(true); }} />
+                    {apprEdit && <button onClick={() => { setThresholds((ts) => ts.filter((_, i) => i !== ti)); setApprDirty(true); }} className="ml-auto text-[12px] text-status-red font-bold">✕</button>}
                   </div>
                 ))}
               </div>
@@ -324,12 +398,25 @@ export default function SettingsPage() {
             <div>
               <div className="text-[13px] font-bold mb-3">Module Approval Rules</div>
               <div className="flex flex-col gap-2">
-                {APPROVAL_RULES.map((r) => (
-                  <div key={r.module} className="bg-surface border border-line rounded-card p-4">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap"><span className="text-[16px]">{r.icon}</span><span className="text-[13.5px] font-bold">{r.module}</span>
-                      <div className="flex items-center gap-1 flex-wrap ml-2">{r.chain.map((c, i) => <span key={i} className="flex items-center gap-1"><span className="text-[11px] font-semibold px-[8px] py-[2px] rounded-pill" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>{c}</span>{i < r.chain.length - 1 && <span className="text-faint text-[10px]">→</span>}</span>)}</div>
+                {rules.map((r, ri) => (
+                  <div key={ri} className="bg-surface border border-line rounded-card p-4">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-[16px]">{r.icon}</span><span className="text-[13.5px] font-bold">{r.module}</span>
+                      <div className="ml-2"><ChainEditor chain={r.chain} editable={apprEdit}
+                        onChange={(chain) => { setRules((rs) => rs.map((x, i) => i === ri ? { ...x, chain } : x)); setApprDirty(true); }} /></div>
                     </div>
-                    <div className="text-[11.5px] text-faint">SLA {r.sla}d · escalate {r.escalate}d · remind every {r.remind}d · backup {r.backup}</div>
+                    {apprEdit ? (
+                      <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-faint">
+                        {(["sla", "escalate", "remind"] as const).map((k) => (
+                          <label key={k} className="flex items-center gap-1">{k === "sla" ? "SLA" : k === "escalate" ? "escalate" : "remind"}
+                            <input type="number" min={0} value={r[k]} onChange={(e) => { const v = Number(e.target.value) || 0; setRules((rs) => rs.map((x, i) => i === ri ? { ...x, [k]: v } : x)); setApprDirty(true); }} className="w-[52px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />d</label>
+                        ))}
+                        <label className="flex items-center gap-1">backup
+                          <input value={r.backup} onChange={(e) => { setRules((rs) => rs.map((x, i) => i === ri ? { ...x, backup: e.target.value } : x)); setApprDirty(true); }} className="w-[110px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" /></label>
+                      </div>
+                    ) : (
+                      <div className="text-[11.5px] text-faint">SLA {r.sla}d · escalate {r.escalate}d · remind every {r.remind}d · backup {r.backup}</div>
+                    )}
                   </div>
                 ))}
               </div>
