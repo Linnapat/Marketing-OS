@@ -38,6 +38,12 @@ export interface ContentItem {
   /** Manual-publish trail — set when someone clicks Publish in the Content Calendar. */
   publishedBy?: string;
   publishedAt?: string;
+  /** Real relational links (no name matching). campaignId ties to the campaign
+   *  row; sourceContentItemId is the brief content item — the pair is the
+   *  idempotency key. graphicRequestId links the auto-created Graphic Request. */
+  campaignId?: string;
+  sourceContentItemId?: string;
+  graphicRequestId?: string;
 }
 
 export const CONTENT: ContentItem[] = [

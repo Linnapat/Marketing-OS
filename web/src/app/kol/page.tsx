@@ -17,7 +17,8 @@ import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
   kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals,
 } from "@/lib/data/kol";
-import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
+import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
+import { resolveKolAssignment } from "@/lib/db/assignments";
 import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefKolItem } from "@/lib/db/brief";
@@ -63,7 +64,8 @@ export default function KolPage() {
   // back into the campaign's KOL Plan.
   const addKol = async (kolsToCreate: Kol[], item: BriefKolItem | null, campaignName: string) => {
     setRequestOpen(false);
-    const created = await Promise.all(kolsToCreate.map((k) => createKol(k)));
+    const results = await Promise.all(kolsToCreate.map((k) => createKolIfNew(k)));
+    const created = results.filter((r) => r.created).map((r) => r.kol);
     setKols((ks) => [...created, ...ks]);
     if (item && campaignName && campaignName !== "—") appendBriefKolItem(campaignName, item).catch(() => {});
   };
@@ -509,25 +511,30 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   // link) is proposed later by the KOL specialist, so there's no name/handle here.
   const count = Math.max(1, item.count || 1);
   const canCreate = count > 0;
-  const submit = () => {
-    if (!canCreate) return;
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!canCreate || busy) return;
+    setBusy(true);
     const expEng = (item.likes || 0) + (item.comments || 0) + (item.shares || 0) + (item.saves || 0) + (item.clicks || 0);
+    // Owner from the picked value, else the KOL team; Approver from the approval
+    // matrix — never a demo user. Campaign id links back relationally.
+    const assign = await resolveKolAssignment().catch(() => ({ owner: "Unassigned", approver: "Unassigned" }));
+    const owner = (item.owner || "").trim() || assign.owner;
+    const campaignId = campaigns.find((c) => c.name === campaign)?.id;
+    const reqStamp = Date.now();
     // A request for N pages becomes N independent rows so each page is tracked,
-    // reviewed, and updated on its own. Budget is per-page (fee each), so the
-    // requirement's total budget is split evenly.
+    // reviewed, and updated on its own. Budget is split per page.
     const perPageBudget = Math.round((item.budget || 0) / count);
-    const kols = Array.from({ length: count }, (_, i) => {
-      const k = buildKol({
-        id: nextId + i, campaign: campaign || "—", b: brandId, kolType: item.kolType,
-        count: 1, budget: perPageBudget,
-        deliverables: item.contentRequired.join(" + "), notes: item.note,
-        expectedReach: item.expectedReach, expectedEngagement: expEng,
-        postingDate: item.postingStart, followers: item.followers,
-        owner: item.owner, requester, branch: item.area, platform: item.platforms[0],
-      });
-      // Label each page distinctly when more than one was requested.
-      return count > 1 ? { ...k, name: `${k.name} #${i + 1}` } : k;
-    });
+    const kols = Array.from({ length: count }, (_, i) => buildKol({
+      id: nextId + i, campaign: campaign || "—", b: brandId, kolType: item.kolType,
+      count: 1, budget: perPageBudget,
+      deliverables: item.contentRequired.join(" + "), notes: item.note,
+      expectedReach: item.expectedReach, expectedEngagement: expEng,
+      postingDate: item.postingStart, postingEnd: item.postingEnd, followers: item.followers,
+      owner, approver: assign.approver, requester, branch: item.area, platform: item.platforms[0],
+      name: item.name ? (count > 1 ? `${item.name} #${i + 1}` : item.name) : (count > 1 ? `New Request — ${item.kolType} #${i + 1}` : undefined),
+      campaignId, sourceKolRequirementId: `manual-${reqStamp}#${i + 1}`,
+    }));
     onCreate(kols, item, campaign.trim());
   };
 
@@ -556,7 +563,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           </div>
         </div>
         <KolItemForm item={item} onChange={onChange} hidePage />
-        <button onClick={submit} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create KOL Request</button>
+        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{busy ? "Creating…" : "Create KOL Request"}</button>
       </div>
     </div>
   );

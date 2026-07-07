@@ -23,12 +23,36 @@ export async function createContent(post: ContentItem): Promise<ContentItem> {
   const db = supabase();
   if (!db) return post;
   const { data, error } = await db.from("content_posts").insert({
-    title: post.title, brand: post.b, campaign: post.campaign, campaign_id: campById[post.campaign] ?? null,
+    title: post.title, brand: post.b, campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
     platforms: post.platforms ?? [post.plat], status: post.status, day: post.day, time: post.time,
     owner: post.owner, caption: post.caption, data: post,
   }).select("id").single();
   if (error || !data) return post;
   return { ...post, id: `c${data.id}` };
+}
+
+/** Source content-item ids already materialised for a campaign — the
+ *  idempotency set that makes re-running a Submit a no-op. */
+export async function fetchContentSourceIds(campaignId: string): Promise<Set<string>> {
+  const db = supabase();
+  if (!db) return new Set();
+  const { data, error } = await db.from("content_posts").select("data").eq("campaign_id", campaignId);
+  if (error || !data) return new Set();
+  const ids = new Set<string>();
+  for (const r of data) { const s = (r.data as ContentItem)?.sourceContentItemId; if (s) ids.add(s); }
+  return ids;
+}
+
+/** Create a post only if its (campaignId, sourceContentItemId) isn't present. */
+export async function createContentIfNew(post: ContentItem, existing?: Set<string>): Promise<{ created: boolean; post: ContentItem }> {
+  const key = post.sourceContentItemId;
+  if (key) {
+    const set = existing ?? (post.campaignId ? await fetchContentSourceIds(post.campaignId) : new Set());
+    if (set.has(key)) return { created: false, post };
+    set.add(key);
+  }
+  const created = await createContent(post);
+  return { created: true, post: created };
 }
 
 /** Persist an edited post (approval action, caption edit, etc). The whole

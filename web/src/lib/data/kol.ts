@@ -63,6 +63,11 @@ export interface Kol {
   requester?: string;
   /** Link to the campaign-independent master profile (kol_profiles.kol_id). */
   masterKolId?: string;
+  /** Real relational links (no name matching). campaignId ties back to the
+   *  campaign row; sourceKolRequirementId is the brief's KOL item id — the pair
+   *  is the idempotency key that stops duplicate rows on Submit/retry. */
+  campaignId?: string;
+  sourceKolRequirementId?: string;
   /** Per-platform posts: each has its own link and (once live) its own result
    *  numbers. Rolls up into Performance. Round-trips in the jsonb data blob. */
   posts?: KolPost[];
@@ -89,21 +94,24 @@ export function postsTotals(posts: KolPost[]): { reach: number; engagement: numb
   return posts.reduce((a, p) => ({ reach: a.reach + (p.reach || 0), engagement: a.engagement + (p.engagement || 0) }), { reach: 0, engagement: 0 });
 }
 
-// Consolidated 7-stage lifecycle (was 15). Fewer, clearer steps for the drawer
-// dropdown; legacy records are folded in via normalizeStage().
+// Canonical 9-stage lifecycle. The drawer + Status view drive off these; legacy
+// records are folded in via normalizeStage().
 export const ALL_STAGES = [
-  "Prospect", "Negotiating", "Contract Signed", "Producing", "In Review", "Posted", "Completed",
+  "Request", "Owner Assigned", "Negotiating", "Contract Signed", "Producing",
+  "In Review", "Approved", "Posted", "Completed",
 ];
 
-// Map any legacy status onto the 7 consolidated stages. Unknown/new values and
-// the special "Paused" pass through unchanged.
+// Map any legacy status onto the canonical stages. Unknown values and the
+// special "Paused" pass through unchanged.
 const STAGE_MAP: Record<string, string> = {
-  Prospect: "Prospect", Shortlisted: "Prospect",
+  Prospect: "Request", Shortlisted: "Request", Request: "Request",
+  "Owner Assigned": "Owner Assigned",
   Negotiating: "Negotiating", "Contract Pending": "Negotiating",
   "Contract Signed": "Contract Signed",
-  "Brief Sent": "Producing", "Content Creating": "Producing",
+  "Brief Sent": "Producing", "Content Creating": "Producing", Producing: "Producing",
   "Draft Submitted": "In Review", "Waiting Review": "In Review",
-  "Revision Requested": "In Review", "Approved to Post": "In Review", Scheduled: "In Review",
+  "Revision Requested": "In Review", "In Review": "In Review",
+  "Approved to Post": "Approved", Approved: "Approved", Scheduled: "Approved",
   Posted: "Posted",
   Reporting: "Completed", Completed: "Completed",
 };

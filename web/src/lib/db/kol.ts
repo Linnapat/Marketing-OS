@@ -27,6 +27,31 @@ export async function createKol(kol: Kol): Promise<Kol> {
   return kol;
 }
 
+/** Source ids (campaignId + sourceKolRequirementId) already materialised for a
+ *  campaign — the idempotency set that makes re-running a Submit a no-op. */
+export async function fetchKolSourceIds(campaignId: string): Promise<Set<string>> {
+  const db = supabase();
+  if (!db) return new Set();
+  const { data, error } = await db.from("kols").select("data").filter("data->>campaignId", "eq", campaignId);
+  if (error || !data) return new Set();
+  const ids = new Set<string>();
+  for (const r of data) { const s = (r.data as Kol)?.sourceKolRequirementId; if (s) ids.add(s); }
+  return ids;
+}
+
+/** Create a KOL only if its (campaignId, sourceKolRequirementId) isn't present.
+ *  Pass a pre-fetched `existing` set to batch a whole brief without re-querying. */
+export async function createKolIfNew(kol: Kol, existing?: Set<string>): Promise<{ created: boolean; kol: Kol }> {
+  const key = kol.sourceKolRequirementId;
+  if (key) {
+    const set = existing ?? (kol.campaignId ? await fetchKolSourceIds(kol.campaignId) : new Set());
+    if (set.has(key)) return { created: false, kol };
+    set.add(key);
+  }
+  const created = await createKol(kol);
+  return { created: true, kol: created };
+}
+
 /** Persist edits to a creator (results, contract status, etc). The whole Kol
  *  round-trips through `data`; status is mirrored. Matched on the id in the blob. */
 export async function updateKol(kol: Kol): Promise<void> {
@@ -37,37 +62,50 @@ export async function updateKol(kol: Kol): Promise<void> {
     .eq("data->>id", String(kol.id));
 }
 
-/** Build a full Kol from the sparse request form, filling sensible defaults. */
+/** Build a full Kol from the request form. Owner/Approver default to
+ *  "Unassigned" (never a demo user); campaign context is copied verbatim so no
+ *  field shows "TBD" when the Campaign Builder already has the value. */
 export function buildKol(input: {
   id: number; campaign: string; b: BrandId; kolType: string; count: number;
   budget: number; deliverables: string; notes: string;
   name?: string; handle?: string; expectedReach?: number; expectedEngagement?: number;
-  postingDate?: string; contactStatus?: string;
+  postingDate?: string; postingEnd?: string; contactStatus?: string;
   masterKolId?: string; platform?: string; followers?: number;
-  owner?: string; requester?: string; branch?: string;
+  owner?: string; approver?: string; requester?: string; branch?: string;
+  // Real relational links + copied campaign context (all optional).
+  campaignId?: string; sourceKolRequirementId?: string;
+  objective?: string; target?: string; keyMsg?: string; offer?: string; dueDate?: string;
 }): Kol {
+  const owner = input.owner?.trim() || "Unassigned";
+  const period = input.postingDate && input.postingEnd ? `${input.postingDate} – ${input.postingEnd}` : (input.postingDate || input.postingEnd || "TBD");
+  const or = (v?: string) => { const t = (v ?? "").trim(); return t || "TBD"; };
   return {
     id: input.id,
     name: input.name?.trim() || `New Request — ${input.kolType}`,
     masterKolId: input.masterKolId,
+    campaignId: input.campaignId,
+    sourceKolRequirementId: input.sourceKolRequirementId,
     requester: input.requester?.trim() || undefined,
     h: input.handle?.trim() || "@tbd", plat: input.platform || "Instagram", b: input.b, branch: input.branch?.trim() || "—", campaign: input.campaign,
     kolType: input.kolType, followers: input.followers ?? 0, expectedReach: input.expectedReach ?? 0, actualReach: 0, visits: 0,
     fee: input.budget, foodCost: 0, totalCost: input.budget * Math.max(1, input.count),
-    owner: input.owner?.trim() || "Ken S.", ownerTeam: "KOL Team", pendingApprover: "Aran P.", currentBlocker: null,
-    status: input.contactStatus || "Prospect", waitingSince: null, postDueDate: input.postingDate || "TBD", postedDate: null,
+    owner, ownerTeam: "KOL Team", pendingApprover: input.approver?.trim() || "Unassigned",
+    // No owner yet → surface it as a blocker so the Needs-Attention list catches it.
+    currentBlocker: owner === "Unassigned" ? "No owner assigned" : null,
+    status: input.contactStatus || "Request", waitingSince: null, postDueDate: input.dueDate || input.postingDate || "TBD", postedDate: null,
     expectedEngagement: input.expectedEngagement ?? 0, actualEngagement: 0,
-    contactStatus: input.contactStatus || "Prospect", postingDate: input.postingDate || "TBD",
+    contactStatus: input.contactStatus || "Request", postingDate: input.postingDate || "TBD",
     openComments: 0, latestComment: "", isOverdue: false, couponCode: null,
     contractStatus: "Pending", quotationStatus: "Pending", invoiceStatus: "Pending",
     paymentStatus: "Unpaid", financeReqId: "—", paymentDue: "TBD", roi: 0,
     audienceFit: "TBD", contentStyle: input.deliverables || "TBD", contactInfo: "—",
-    pastCollab: "None", objective: "Awareness", target: "TBD", keyMsg: "TBD", offer: "TBD",
-    postingPeriod: "TBD", engagement: "—", saves: "—", shares: "—", postLink: null,
+    pastCollab: "None",
+    objective: or(input.objective), target: or(input.target), keyMsg: or(input.keyMsg), offer: or(input.offer),
+    postingPeriod: period, engagement: "—", saves: "—", shares: "—", postLink: null,
     notes: input.notes,
     stages: [
-      { l: "Prospect", d: "Today", done: false, cur: true },
-      { l: "Shortlisted", d: "", done: false, cur: false },
+      { l: "Request", d: "Today", done: false, cur: true },
+      { l: "Owner Assigned", d: "", done: false, cur: false },
       { l: "Negotiating", d: "", done: false, cur: false },
     ],
   } as Kol;

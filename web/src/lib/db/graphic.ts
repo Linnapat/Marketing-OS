@@ -19,11 +19,36 @@ export async function createGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (!db) return;
   await db.from("graphic_requests").insert({
-    title: g.title, brand: g.b, campaign: g.campaign, designer: g.designer, requester: g.requester,
+    title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,
+    designer: g.designer, requester: g.requester,
     approver: g.approver, type: g.type, priority: g.priority, stage: g.stage, due: g.due,
     platform: g.platform, size: g.size, brief_complete: g.briefComplete, blocker: g.blocker,
     next_action: g.nextAction, data: g,
   });
+}
+
+/** Source content-item ids that already have a graphic for a campaign — the
+ *  idempotency set that stops duplicate graphic requests on re-Submit. */
+export async function fetchGraphicSourceIds(campaignId: string): Promise<Set<string>> {
+  const db = supabase();
+  if (!db) return new Set();
+  const { data, error } = await db.from("graphic_requests").select("data").eq("campaign_id", campaignId);
+  if (error || !data) return new Set();
+  const ids = new Set<string>();
+  for (const r of data) { const s = (r.data as Graphic)?.sourceContentItemId; if (s) ids.add(s); }
+  return ids;
+}
+
+/** Create a graphic request only if its (campaignId, sourceContentItemId) isn't present. */
+export async function createGraphicIfNew(g: Graphic, existing?: Set<string>): Promise<{ created: boolean }> {
+  const key = g.sourceContentItemId;
+  if (key) {
+    const set = existing ?? (g.campaignId ? await fetchGraphicSourceIds(g.campaignId) : new Set());
+    if (set.has(key)) return { created: false };
+    set.add(key);
+  }
+  await createGraphic(g);
+  return { created: true };
 }
 
 /** Persist edits to a graphic (submitted work, stage moves, approvals). The full
@@ -49,10 +74,15 @@ export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentIt
 
   const posts = await fetchContent();
   const key = (s: string) => (s || "").trim().toLowerCase();
-  const post = posts.find(
-    (c) => key(c.campaign) === key(g.campaign) &&
-      (key(c.title) === key(g.contentItem) || (g.contentItem && key(g.title).includes(key(c.title)))),
-  );
+  // Prefer the real relational link (graphicRequestId / sourceContentItemId);
+  // fall back to campaign + title match only for legacy rows without ids.
+  const post =
+    posts.find((c) => c.graphicRequestId && String(c.graphicRequestId) === String(g.id)) ??
+    (g.sourceContentItemId ? posts.find((c) => c.sourceContentItemId === g.sourceContentItemId) : undefined) ??
+    posts.find(
+      (c) => key(c.campaign) === key(g.campaign) &&
+        (key(c.title) === key(g.contentItem) || (g.contentItem && key(g.title).includes(key(c.title)))),
+    );
   if (!post) return null;
 
   const next = attachApprovedAssets(post, assets);
@@ -64,9 +94,11 @@ export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentIt
 export function buildGraphic(input: {
   id: number; b: BrandId; campaign: string; title: string; type: string;
   due: string; designer: string; requester: string; approver: string; channels: string[];
+  campaignId?: string; sourceContentItemId?: string;
 }): Graphic {
   return {
     id: input.id, stage: "Brief", title: input.title || "New request", b: input.b, campaign: input.campaign,
+    campaignId: input.campaignId, sourceContentItemId: input.sourceContentItemId,
     due: input.due || "TBD", designer: input.designer || "Unassigned", requester: input.requester || "You",
     // Approver falls back to the requester (a real person in the flow) — never a
     // name that doesn't exist in Settings › Users & Roles.

@@ -8,10 +8,11 @@ import { supabase } from "@/lib/supabase";
 import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
-import { createContent } from "./content";
-import { createGraphic, buildGraphic } from "./graphic";
+import { createContentIfNew, fetchContentSourceIds } from "./content";
+import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic } from "./graphic";
 import { emptyDeliverable } from "@/lib/data/graphic";
-import { createKol, buildKol } from "./kol";
+import { createKolIfNew, fetchKolSourceIds, buildKol } from "./kol";
+import { resolveKolAssignment } from "./assignments";
 import { createTaskDb } from "./tasks";
 import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
@@ -47,6 +48,15 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   await createCampaign(row);
   await persistBriefBlob(brief);
 
+  // Idempotency: what's already been materialised for this campaign, so a repeat
+  // Submit / retry creates nothing new. Keyed by real source ids, not names.
+  const [contentSeen, graphicSeen, kolSeen, kolAssign] = await Promise.all([
+    fetchContentSourceIds(brief.id),
+    fetchGraphicSourceIds(brief.id),
+    fetchKolSourceIds(brief.id),
+    resolveKolAssignment(),
+  ]);
+
   let content = 0, graphics = 0, kols = 0, tasks = 0;
 
   const mkTask = (n: number, opts: Omit<Partial<Task>, "priority"> & { title: string; type: string; owner: string; priority?: string }): Task => ({
@@ -59,31 +69,37 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   });
 
   // ── Content items → content posts + graphic requests + content/graphic tasks ─
+  // Each row carries campaignId + sourceContentItemId; createXIfNew skips when
+  // the pair already exists, so re-Submit is a no-op (no duplicates, no dupe tasks).
   let n = 0;
   for (const ci of brief.content) {
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
+    const gid = ci.requiredGraphic ? stamp + 500 + n : undefined;
     const post: ContentItem = {
       // No publish date yet → fall back to the campaign Start Date (stays inside the
       // campaign window) rather than day 1 of the month.
       id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || dayOf(brief.startDate) || 1,
       dateIso: ci.publishDate || brief.startDate || undefined, time: "10:00", title: ci.title || `${brief.name} — Content ${n + 1}`,
       b: brief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: brief.name,
+      campaignId: brief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
       // Owner is assigned later inside the Creative team — leave unassigned here.
       owner: "Unassigned", caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: ci.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
-    await createContent(post); content++;
-    await createTaskDb(mkTask(++n, {
-      title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
-      owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-      nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
-    }));
+    const madeContent = await createContentIfNew(post, contentSeen);
+    if (madeContent.created) {
+      content++;
+      await createTaskDb(mkTask(++n, {
+        title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
+        owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+        nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
+      }));
+    }
 
-    if (ci.requiredGraphic) {
+    if (ci.requiredGraphic && gid) {
       // ONE graphic request per content item, carrying a deliverable per
       // Platform × Asset Size the content needs. The requester (Planner) approves.
-      const gid = stamp + 500 + n;
       const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
       const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", ci.referenceBriefLink || ""));
       const g: Graphic = {
@@ -91,6 +107,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
           type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
           requester: brief.plannerOwner, approver: brief.plannerOwner, channels: plats,
+          campaignId: brief.id, sourceContentItemId: ci.id,
         }),
         stage: "New Request",
         size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
@@ -98,29 +115,45 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
         contentItem: ci.title || "—",
       };
-      await createGraphic(g); graphics++;
-      await createTaskDb(mkTask(++n, {
-        title: `Graphic — ${ci.title || ci.type} (${deliverables.length} asset)`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
-        owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-        channel: plats.join(", "), relatedGraphicId: String(gid), nextAction: `Deliver ${deliverables.length} asset(s)`,
-      }));
+      const madeGraphic = await createGraphicIfNew(g, graphicSeen);
+      if (madeGraphic.created) {
+        graphics++;
+        await createTaskDb(mkTask(++n, {
+          title: `Graphic — ${ci.title || ci.type} (${deliverables.length} asset)`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
+          owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+          channel: plats.join(", "), relatedGraphicId: String(gid), nextAction: `Deliver ${deliverables.length} asset(s)`,
+        }));
+      }
     }
   }
 
   // ── KOL requirements → KOL requests + KOL tasks ────────────────────────────
+  // A requirement of N pages fans out to N rows, each with its own idempotency
+  // key (`${requirementId}#${page}`) so retry adds nothing. Owner/Approver come
+  // from real config (Teams + Approval Matrix); campaign context is copied whole.
   for (const kr of brief.kols) {
     const expEng = (kr.likes || 0) + (kr.comments || 0) + (kr.shares || 0) + (kr.saves || 0) + (kr.clicks || 0);
-    await createKol(buildKol({
-      id: stamp + 900 + n, campaign: brief.name, b: brief.b, kolType: kr.kolType,
-      count: kr.count || 1, budget: kr.budget || 0, deliverables: kr.contentRequired.join(" + "),
-      notes: kr.note, name: kr.name || undefined, handle: kr.handle || undefined,
-      followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
-      owner: kr.owner, branch: kr.area, platform: kr.platforms[0],
-      postingDate: labelDate(kr.postingStart), contactStatus: "Prospect",
-    })); kols++;
+    const pages = Math.max(1, kr.count || 1);
+    const perPageBudget = Math.round((kr.budget || 0) / pages);
+    const owner = (kr.owner || "").trim() || kolAssign.owner;
+    for (let p = 1; p <= pages; p++) {
+      const kol = buildKol({
+        id: stamp + 900 + n * 10 + p, campaign: brief.name, b: brief.b, kolType: kr.kolType,
+        count: 1, budget: perPageBudget, deliverables: kr.contentRequired.join(" + "),
+        notes: kr.note, name: kr.name ? (pages > 1 ? `${kr.name} #${p}` : kr.name) : undefined, handle: kr.handle || undefined,
+        followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
+        owner, approver: kolAssign.approver, branch: kr.area, platform: kr.platforms[0],
+        postingDate: labelDate(kr.postingStart), postingEnd: labelDate(kr.postingEnd),
+        campaignId: brief.id, sourceKolRequirementId: `${kr.id}#${p}`,
+        objective: brief.objective, target: brief.audience, keyMsg: brief.mainMessage, offer: brief.offer,
+        dueDate: labelDate(kr.postingStart),
+      });
+      const madeKol = await createKolIfNew(kol, kolSeen);
+      if (madeKol.created) kols++;
+    }
     await createTaskDb(mkTask(++n, {
-      title: `KOL — ${kr.name || kr.kolType} × ${kr.count}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
-      owner: kr.owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platforms.join(", "),
+      title: `KOL — ${kr.name || kr.kolType} × ${pages}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
+      owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platforms.join(", "),
       nextAction: `${kr.area || "—"} · reach ${kr.expectedReach.toLocaleString()}`,
     }));
   }
@@ -154,15 +187,8 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   }));
 
   tasks = n - content - graphics; // tasks created beyond the content/graphic pairs are ads/crm/report/kol
-  return { campaign: row, created: { content, graphics, kols, tasks: countTasks(brief) } };
-}
-
-// Total tasks the save will have created (for the result summary).
-function countTasks(brief: CampaignBrief): number {
-  const graphics = brief.content.filter((c) => c.requiredGraphic).length;
-  const ads = brief.budget.adsByPlatform.filter((a) => a.amount > 0).length || (brief.budget.ads > 0 ? 1 : 0);
-  const crm = brief.channels.some((c) => /crm|line oa/i.test(c)) || brief.budget.crm > 0 ? 1 : 0;
-  return brief.content.length + graphics + brief.kols.length + ads + crm + 1; // +1 report
+  // Report the real materialised counts (idempotency may make a retry all-zero).
+  return { campaign: row, created: { content, graphics, kols, tasks } };
 }
 
 function dayOf(iso: string): number { const d = Number(iso?.split("-")[2]); return Number.isFinite(d) ? d : 0; }

@@ -36,6 +36,11 @@ export interface Graphic {
   sourceLink?: string;
   submittedBy?: string;
   submittedAt?: string;
+  /** Real relational links: campaignId + the content item this graphic serves
+   *  (sourceContentItemId). The pair is the idempotency key so re-running a
+   *  Submit doesn't fan out duplicate requests. */
+  campaignId?: string;
+  sourceContentItemId?: string;
 }
 
 export interface GraphicDeliverable {
