@@ -74,14 +74,57 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'sheet ยังไม่เปิดแชร์ — ตั้ง Share เป็น "Anyone with the link · Viewer" ก่อน' }, { status: 403 });
   }
 
-  const rows: { month: string; category: string; budget: number }[] = [];
-  for (const r of parseCsv(text)) {
-    const month = normMonth(r[0] ?? "");
-    const category = (r[1] ?? "").trim();
-    const budget = Number(String(r[2] ?? "").replace(/[^\d.-]/g, ""));
-    if (/^\d{4}-\d{2}$/.test(month) && category && Number.isFinite(budget) && budget >= 0) {
-      rows.push({ month, category, budget });
+  const grid = parseCsv(text);
+  if (!grid.length) return NextResponse.json({ rows: [] });
+
+  // Auto-detect the schema from the header row. Supports both the simple 3-column
+  // sheet (month | category | budget) and the finance ledger export
+  // (fiscal_year, month, department, entity_type, section, line_item, row_type,
+  // amount, …). For the ledger we take line_item as the category, amount as the
+  // budget, and to avoid double-counting the Brand vs Department cuts we keep the
+  // Brand-level detail rows only.
+  const header = grid[0].map((h) => h.trim().toLowerCase());
+  const col = (...names: string[]) => header.findIndex((h) => names.some((n) => h === n));
+  const iMonth = col("month", "เดือน", "period");
+  const iLineItem = col("line_item", "line item");
+  const iAmount = col("amount");
+  const iCategoryCol = col("category");
+  const iBudgetCol = col("budget");
+  const iEntity = col("entity_type", "entity type");
+  const iRowType = col("row_type", "row type");
+  const iSection = col("section");
+
+  const isLedger = iLineItem >= 0 && iAmount >= 0;
+  const rows: { month: string; category: string; budget: number; group?: string }[] = [];
+
+  if (isLedger) {
+    const hasBrandRows = grid.slice(1).some((r) => (r[iEntity] ?? "").trim().toLowerCase() === "brand");
+    for (const r of grid.slice(1)) {
+      const rowType = iRowType >= 0 ? (r[iRowType] ?? "").trim().toLowerCase() : "detail";
+      if (iRowType >= 0 && rowType !== "detail") continue;               // skip subtotal/summary
+      const entity = iEntity >= 0 ? (r[iEntity] ?? "").trim().toLowerCase() : "";
+      if (hasBrandRows && iEntity >= 0 && entity !== "brand") continue;   // one cut only → no double count
+      const month = normMonth(r[iMonth >= 0 ? iMonth : 2] ?? "");
+      const category = (r[iLineItem] ?? "").trim();
+      const budget = Number(String(r[iAmount] ?? "").replace(/[^\d.-]/g, ""));
+      if (/^\d{4}-\d{2}$/.test(month) && category && Number.isFinite(budget) && budget >= 0) {
+        rows.push({ month, category, budget, group: iSection >= 0 ? (r[iSection] ?? "").trim() : undefined });
+      }
+    }
+  } else {
+    // Simple schema: month | category | budget (positional, or by header).
+    const mi = iMonth >= 0 ? iMonth : 0;
+    const ci = iCategoryCol >= 0 ? iCategoryCol : 1;
+    const bi = iBudgetCol >= 0 ? iBudgetCol : 2;
+    const start = /month|เดือน|category|budget/i.test((grid[0].join(" "))) ? 1 : 0; // skip a header row if present
+    for (const r of grid.slice(start)) {
+      const month = normMonth(r[mi] ?? "");
+      const category = (r[ci] ?? "").trim();
+      const budget = Number(String(r[bi] ?? "").replace(/[^\d.-]/g, ""));
+      if (/^\d{4}-\d{2}$/.test(month) && category && Number.isFinite(budget) && budget >= 0) {
+        rows.push({ month, category, budget });
+      }
     }
   }
-  return NextResponse.json({ rows });
+  return NextResponse.json({ rows, schema: isLedger ? "ledger" : "simple" });
 }
