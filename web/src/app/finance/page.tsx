@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { notify } from "@/lib/notify";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -368,6 +369,32 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
       {/* Period picker — day-level range up to whole months/years */}
       <DateFilterBar value={period} onChange={setPeriod}
         trailing={brand !== "all" ? <span>ตัวกรองแบรนด์มีผลกับยอดเบิกจริงเท่านั้น</span> : undefined} />
+
+      {/* Over-budget alert — the sheet budget is the monthly cap; campaign
+          expenses draw it down. Hard = approved already exceeds; soft = pending
+          requests would exceed. */}
+      {(() => {
+        const hard = rows.filter((r) => r.budget > 0 && r.approved > r.budget);
+        const soft = rows.filter((r) => r.budget > 0 && r.approved <= r.budget && r.approved + r.requested > r.budget);
+        if (!hard.length && !soft.length) return null;
+        const line = (r: CatPnlRow, over: number) => `${r.category} เกิน ${baht(over, { compact: true })} (${baht(r.approved, { compact: true })}/${baht(r.budget, { compact: true })})`;
+        const notifyOver = () => {
+          const parts = [...hard.map((r) => line(r, r.approved - r.budget)), ...soft.map((r) => line(r, r.approved + r.requested - r.budget))];
+          notify("approval", `⚠️ งบเกินเพดาน ${hard.length + soft.length} หมวด · ${periodLabel}`, parts.join("\n"), "/finance");
+        };
+        return (
+          <div className="rounded-cardLg px-5 py-4" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+              <div className="text-[13px] font-bold text-status-red">⚠️ เกินงบ {hard.length} หมวด{soft.length ? ` · ใกล้เกิน (รออนุมัติ) ${soft.length} หมวด` : ""}</div>
+              <button onClick={notifyOver} className="text-[12px] font-bold text-white rounded-[9px] px-3 py-[6px]" style={{ background: "#B33A2E" }}>แจ้งเตือนทีม (LINE/Email)</button>
+            </div>
+            <div className="flex flex-col gap-[3px]">
+              {hard.map((r) => <div key={r.category} className="text-[12px] text-status-red">🔴 <b>{r.category}</b> — อนุมัติ {baht(r.approved, { compact: true })} เกินงบ {baht(r.budget, { compact: true })} อยู่ <b>{baht(r.approved - r.budget, { compact: true })}</b></div>)}
+              {soft.map((r) => <div key={r.category} className="text-[12px]" style={{ color: "#C2691E" }}>🟠 <b>{r.category}</b> — อนุมัติแล้ว {baht(r.approved, { compact: true })} + รออนุมัติ {baht(r.requested, { compact: true })} จะเกินงบ {baht(r.budget, { compact: true })}</div>)}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Category table */}
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
