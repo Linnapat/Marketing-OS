@@ -88,7 +88,7 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           {tab === "campaign" && <CampaignTab kol={kol} />}
           {tab === "deliverables" && <DeliverablesTab items={deliverables} />}
           {tab === "brief" && <BriefTab kol={kol} />}
-          {tab === "contract" && <ContractTab kol={kol} />}
+          {tab === "contract" && <ContractTab kol={kol} onUpdate={onUpdate} />}
           {tab === "results" && <ResultsTab kol={kol} onUpdate={onUpdate} />}
           {tab === "comments" && <CommentsTab comments={comments} onResolve={(id) => setComments((cs) => cs.map((c) => c.id === id ? { ...c, status: "Resolved" } : c))} />}
         </div>
@@ -307,33 +307,57 @@ function BriefTab({ kol }: { kol: Kol }) {
   );
 }
 
-function ContractTab({ kol }: { kol: Kol }) {
-  const rows: [string, string][] = [
-    ["Contract", kol.contractStatus], ["Quotation", kol.quotationStatus], ["Invoice", kol.invoiceStatus], ["Payment", kol.paymentStatus],
-  ];
+// Contract + Quotation are the KOL team's to set (they gate Contract Signed).
+// Invoice + Payment mirror Finance — read-only here, actioned via the CTA.
+const CONTRACT_OPTS = ["Pending", "Sent", "Signed"];
+const QUOTATION_OPTS = ["Pending", "Sent", "Approved"];
+function ContractTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
+  const [busy, setBusy] = useState(false);
   const isPaid = /paid/i.test(kol.paymentStatus);
+  const set = async (patch: Partial<Kol>) => {
+    setBusy(true);
+    const next = { ...kol, ...patch } as Kol;
+    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
+  const selCls = "text-[12px] font-semibold px-[10px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none";
   return (
     <div className="flex flex-col gap-4">
-      {/* Fee is a plan/commitment — it is NOT actual spend until an approved
-          expense/payment exists in Finance. */}
       <div className="rounded-card p-3 text-[11.5px]" style={{ background: "#FBF8EE", border: "1px solid #E8CCA0", color: "#8A6D1E" }}>
         ค่าตัว KOL นับเป็น <b>Committed (แผน)</b> เท่านั้น — ยังไม่ถือเป็น Actual Spend จนกว่าจะมี Expense/Payment ที่อนุมัติใน Finance
       </div>
+
+      {/* Editable — these two unlock "Contract Signed" */}
       <div className="flex flex-col gap-2">
-        {rows.map(([k, v]) => (
+        <div className="flex items-center justify-between bg-surface border border-line rounded-card px-4 py-[10px]">
+          <div><div className="text-[13px] text-ink font-semibold">Contract</div><div className="text-[10.5px] text-faint">ต้องเป็น Signed เพื่อไป Contract Signed</div></div>
+          <select value={kol.contractStatus} disabled={busy} onChange={(e) => set({ contractStatus: e.target.value })} className={selCls}>
+            {[...new Set([kol.contractStatus, ...CONTRACT_OPTS])].map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center justify-between bg-surface border border-line rounded-card px-4 py-[10px]">
+          <div><div className="text-[13px] text-ink font-semibold">Quotation</div><div className="text-[10.5px] text-faint">ต้องเป็น Approved เพื่อไป Contract Signed</div></div>
+          <select value={kol.quotationStatus} disabled={busy} onChange={(e) => set({ quotationStatus: e.target.value })} className={selCls}>
+            {[...new Set([kol.quotationStatus, ...QUOTATION_OPTS])].map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Read-only — mirrors Finance */}
+      <div className="flex flex-col gap-2">
+        {([["Invoice", kol.invoiceStatus], ["Payment", kol.paymentStatus]] as [string, string][]).map(([k, v]) => (
           <div key={k} className="flex items-center justify-between bg-surface border border-line rounded-card px-4 py-3">
-            <span className="text-[13px] text-ink">{k}</span>
+            <span className="text-[13px] text-ink">{k} <span className="text-[10.5px] text-faint">· จาก Finance</span></span>
             <StatusBadge tone={kolTone(v)}>{v}</StatusBadge>
           </div>
         ))}
       </div>
+
       <div className="grid grid-cols-3 gap-3">
         <Field label="Fee (committed)" value={baht(kol.fee, { compact: true })} />
         <Field label="Food Support" value={baht(kol.foodCost, { compact: true })} />
         <Field label="Total Cost" value={baht(kol.totalCost, { compact: true })} />
       </div>
       <Field label="Payment Due" value={kol.paymentDue} />
-      {/* CTA to Finance — where the real expense/payment is raised & approved. */}
       <a href="/expenses" className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[10px] text-center">
         {isPaid ? "ดูรายการใน Finance / Expenses →" : "เปิดคำขอเบิก/ชำระเงินใน Finance / Expenses →"}
       </a>
