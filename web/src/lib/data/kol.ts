@@ -63,7 +63,30 @@ export interface Kol {
   requester?: string;
   /** Link to the campaign-independent master profile (kol_profiles.kol_id). */
   masterKolId?: string;
+  /** Per-platform posts: each has its own link and (once live) its own result
+   *  numbers. Rolls up into Performance. Round-trips in the jsonb data blob. */
+  posts?: KolPost[];
   stages: KolStage[];
+}
+
+export interface KolPost {
+  platform: string;
+  link: string;
+  reach?: number;
+  engagement?: number;
+}
+
+/** A KOL's posts — the stored list, or a single fallback synthesised from the
+ *  legacy single postLink + top-level result numbers so old rows still work. */
+export function kolPosts(k: Kol): KolPost[] {
+  if (k.posts && k.posts.length) return k.posts;
+  if (k.postLink) return [{ platform: k.plat, link: k.postLink, reach: k.actualReach || 0, engagement: k.actualEngagement || 0 }];
+  return [];
+}
+
+/** Sum reach + engagement across a KOL's posts. */
+export function postsTotals(posts: KolPost[]): { reach: number; engagement: number } {
+  return posts.reduce((a, p) => ({ reach: a.reach + (p.reach || 0), engagement: a.engagement + (p.engagement || 0) }), { reach: 0, engagement: 0 });
 }
 
 // Consolidated 7-stage lifecycle (was 15). Fewer, clearer steps for the drawer

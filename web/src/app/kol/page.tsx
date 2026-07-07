@@ -14,8 +14,8 @@ import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
 import {
-  KOLS, ALL_STAGES, SPECIALISTS, Kol, initials, fmtFollow,
-  kolKpis, kolAlerts, stageProgress, normalizeStage,
+  KOLS, ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
+  kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals,
 } from "@/lib/data/kol";
 import { fetchKols, createKol, buildKol, updateKol } from "@/lib/db/kol";
 import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
@@ -181,7 +181,7 @@ export default function KolPage() {
         {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-        {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} />}
         {tab === "database" && <KolDatabase />}
       </div>
 
@@ -335,26 +335,35 @@ function KolPlan({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue
   );
 }
 
-// Per-creator performance grouped by campaign, with a campaign roll-up total —
-// so the same campaign's KOLs are compared individually and summed once.
-function KolPerformance({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }) {
+// Per-post performance grouped by campaign: enter Reach + Engagement per post
+// link, roll up to each creator, then to a campaign total.
+function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: Kol) => void; onUpdate: (k: Kol) => void }) {
   const groups = useMemo(() => {
     const m = new Map<string, Kol[]>();
     for (const k of list) { const c = k.campaign || "—"; const arr = m.get(c); if (arr) arr.push(k); else m.set(c, [k]); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [list]);
-  const rate = (k: Kol) => { const base = k.actualReach || k.expectedReach || k.followers || 0; return base ? ((k.actualEngagement || 0) / base) * 100 : 0; };
-  const cols = "1.8fr 1fr 1fr 1fr 1fr 0.8fr";
+
+  // Update one post's result numbers (state only, so typing is smooth); the DB
+  // write happens on blur. Keeps top-level actuals = sum of posts.
+  const editPostResult = (k: Kol, idx: number, patch: Partial<KolPost>) => {
+    const posts = kolPosts(k).map((p, j) => (j === idx ? { ...p, ...patch } : p));
+    const totals = postsTotals(posts);
+    onUpdate({ ...k, posts, actualReach: totals.reach, actualEngagement: totals.engagement });
+  };
+
+  const rate = (reach: number, eng: number) => (reach ? (eng / reach) * 100 : 0);
+  const cols = "1.7fr 1.1fr 1.1fr 1fr 1fr 0.7fr";
+  const numCls = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-ivory outline-none text-right";
   if (list.length === 0) return <div className="text-[12.5px] text-faint text-center py-10">No performance data for these filters.</div>;
   return (
     <div className="flex flex-col gap-4">
       {groups.map(([campaign, ks]) => {
-        const reach = ks.reduce((s, k) => s + (k.actualReach || 0), 0);
-        const eng = ks.reduce((s, k) => s + (k.actualEngagement || 0), 0);
-        const fee = ks.reduce((s, k) => s + k.fee, 0);
+        const cReach = ks.reduce((s, k) => s + postsTotals(kolPosts(k)).reach, 0);
+        const cEng = ks.reduce((s, k) => s + postsTotals(kolPosts(k)).engagement, 0);
+        const cFee = ks.reduce((s, k) => s + k.fee, 0);
         const roiVals = ks.filter((k) => k.roi > 0).map((k) => k.roi);
         const avgRoi = roiVals.length ? roiVals.reduce((s, v) => s + v, 0) / roiVals.length : 0;
-        const blended = reach ? (eng / reach) * 100 : 0;
         return (
           <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
             <div className="flex items-center gap-2 px-5 py-3 border-b border-line4">
@@ -362,31 +371,53 @@ function KolPerformance({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => voi
               <span className="text-[11.5px] text-faint">· {ks.length} creator{ks.length > 1 ? "s" : ""}</span>
             </div>
             <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
-              <div>Creator</div><div>Reach</div><div>Engagement</div><div>Eng. Rate</div><div>Fee</div><div>ROAS</div>
+              <div>Creator · Post</div><div className="text-right">Reach</div><div className="text-right">Engagement</div><div className="text-right">Eng. Rate</div><div className="text-right">Fee</div><div className="text-right">ROAS</div>
             </div>
             {ks.map((k) => {
+              const posts = kolPosts(k);
+              const kt = postsTotals(posts);
               const pi = platformIcon(k.plat);
               return (
-                <button key={k.id} onClick={() => onOpen(k)} className="w-full grid gap-y-1 px-5 py-[11px] items-center text-left border-b border-line4 last:border-0 hover:bg-ivory/60" style={{ gridTemplateColumns: cols }}>
-                  <span className="flex items-center gap-2 text-[13px] font-semibold text-ink min-w-0">
-                    <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
-                    <span className="truncate">{k.name}</span>
-                  </span>
-                  <span className="text-[12.5px] text-muted">{fmtFollow(k.actualReach || 0)}</span>
-                  <span className="text-[12.5px] text-muted">{fmtFollow(k.actualEngagement || 0)}</span>
-                  <span className="text-[12.5px] text-muted">{fmtPct(rate(k))}</span>
-                  <span className="text-[12.5px] font-semibold text-ink">{baht(k.fee, { compact: true })}</span>
-                  <span className="text-[12.5px] font-semibold" style={{ color: k.roi >= 1 ? "#4E7A4E" : "#9A9387" }}>{k.roi ? `${k.roi.toFixed(1)}×` : "—"}</span>
-                </button>
+                <div key={k.id} className="border-b border-line4 last:border-0">
+                  {/* Creator subtotal row */}
+                  <button onClick={() => onOpen(k)} className="w-full grid gap-y-1 px-5 py-[10px] items-center text-left hover:bg-ivory/50" style={{ gridTemplateColumns: cols }}>
+                    <span className="flex items-center gap-2 text-[13px] font-bold text-ink min-w-0">
+                      <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
+                      <span className="truncate">{k.name}</span>
+                      <span className="text-[10.5px] text-faint font-semibold">· {posts.length} post{posts.length !== 1 ? "s" : ""}</span>
+                    </span>
+                    <span className="text-[12.5px] text-ink font-semibold text-right">{fmtFollow(kt.reach)}</span>
+                    <span className="text-[12.5px] text-ink font-semibold text-right">{fmtFollow(kt.engagement)}</span>
+                    <span className="text-[12.5px] text-muted text-right">{fmtPct(rate(kt.reach, kt.engagement))}</span>
+                    <span className="text-[12.5px] font-semibold text-ink text-right">{baht(k.fee, { compact: true })}</span>
+                    <span className="text-[12.5px] font-semibold text-right" style={{ color: k.roi >= 1 ? "#4E7A4E" : "#9A9387" }}>{k.roi ? `${k.roi.toFixed(1)}×` : "—"}</span>
+                  </button>
+                  {/* One editable row per post link */}
+                  {posts.map((p, pi2) => (
+                    <div key={pi2} className="grid gap-y-1 px-5 py-2 items-center bg-ivory/40" style={{ gridTemplateColumns: cols }}>
+                      <span className="flex items-center gap-2 text-[11.5px] text-muted min-w-0 pl-6">
+                        <span className="font-semibold">{p.platform}</span>
+                        {p.link
+                          ? <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-accent truncate hover:underline">{p.link} ↗</a>
+                          : <span className="text-faint italic">no link</span>}
+                      </span>
+                      <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k)} className={numCls} />
+                      <input type="number" value={p.engagement || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { engagement: Number(e.target.value) || 0 })} onBlur={() => updateKol(k)} className={numCls} />
+                      <span className="text-[11.5px] text-faint text-right">{fmtPct(rate(p.reach || 0, p.engagement || 0))}</span>
+                      <span></span><span></span>
+                    </div>
+                  ))}
+                  {posts.length === 0 && <div className="px-5 py-2 pl-11 text-[11.5px] text-faint bg-ivory/40">ยังไม่มีโพสต์ — เพิ่ม platform + link ใน drawer ของ KOL คนนี้</div>}
+                </div>
               );
             })}
             <div className="grid px-5 py-3 items-center bg-ivory/70 text-ink font-bold" style={{ gridTemplateColumns: cols }}>
               <span className="text-[12px]">Campaign total</span>
-              <span className="text-[12.5px]">{fmtFollow(reach)}</span>
-              <span className="text-[12.5px]">{fmtFollow(eng)}</span>
-              <span className="text-[12.5px]">{fmtPct(blended)}</span>
-              <span className="text-[12.5px]">{baht(fee, { compact: true })}</span>
-              <span className="text-[12.5px]">{avgRoi ? `${avgRoi.toFixed(1)}×` : "—"}</span>
+              <span className="text-[12.5px] text-right">{fmtFollow(cReach)}</span>
+              <span className="text-[12.5px] text-right">{fmtFollow(cEng)}</span>
+              <span className="text-[12.5px] text-right">{fmtPct(rate(cReach, cEng))}</span>
+              <span className="text-[12.5px] text-right">{baht(cFee, { compact: true })}</span>
+              <span className="text-[12.5px] text-right">{avgRoi ? `${avgRoi.toFixed(1)}×` : "—"}</span>
             </div>
           </div>
         );

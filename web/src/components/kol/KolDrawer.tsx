@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import {
-  Kol, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, ALL_STAGES, normalizeStage,
+  Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, ALL_STAGES, normalizeStage, kolPosts, postsTotals,
 } from "@/lib/data/kol";
+import { KOL_PLATFORMS } from "@/lib/data/brief";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
@@ -92,39 +93,54 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   );
 }
 
-// Advance this KOL through the 7 consolidated stages and attach its post/draft
-// link. Saves immediately; moving into "In Review" raises the approval task
-// (handled by the parent's onUpdate).
+// Advance this KOL through the 7 consolidated stages, and manage its per-platform
+// posts (each with its own link) below. Saves immediately; moving into "In
+// Review" raises the approval task (handled by the parent's onUpdate).
 function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
-  const [link, setLink] = useState(kol.postLink || "");
+  const [posts, setPosts] = useState<KolPost[]>(() => kolPosts(kol));
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
 
+  const persist = async (nextPosts: KolPost[]) => {
+    const totals = postsTotals(nextPosts);
+    const next: Kol = { ...kol, posts: nextPosts, postLink: nextPosts[0]?.link || kol.postLink, actualReach: totals.reach, actualEngagement: totals.engagement };
+    setBusy(true);
+    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+  };
   const setStage = async (stage: string) => {
     setBusy(true);
     const next: Kol = { ...kol, status: stage };
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
-  const saveLink = async () => {
-    if (link.trim() === (kol.postLink || "")) return;
-    setBusy(true);
-    const next: Kol = { ...kol, postLink: link.trim() };
-    try { await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 1500); } finally { setBusy(false); }
-  };
+  const editPost = (i: number, patch: Partial<KolPost>) => setPosts((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const addPost = () => setPosts((ps) => [...ps, { platform: KOL_PLATFORMS[0], link: "" }]);
+  const removePost = (i: number) => { const next = posts.filter((_, j) => j !== i); setPosts(next); persist(next); };
 
   return (
-    <div className="bg-surface border-b border-line px-4 py-3 flex items-center gap-2 flex-wrap">
-      <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Stage</span>
-      <select value={normalizeStage(kol.status)} disabled={busy} onChange={(e) => setStage(e.target.value)}
-        className="text-[12.5px] font-semibold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none">
-        {ALL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <div className="flex items-center gap-2 flex-1 min-w-[180px]">
-        <span className="text-[11px] text-faint">🔗</span>
-        <input value={link} onChange={(e) => setLink(e.target.value)} onBlur={saveLink}
-          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-          placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
-        {saved && <span className="text-[11px] font-semibold text-status-green">✓</span>}
+    <div className="bg-surface border-b border-line px-4 py-3 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold">Stage</span>
+        <select value={normalizeStage(kol.status)} disabled={busy} onChange={(e) => setStage(e.target.value)}
+          className="text-[12.5px] font-semibold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none">
+          {ALL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <button onClick={addPost} className="ml-auto text-[11.5px] font-bold text-accent">+ Add platform</button>
+      </div>
+      {/* Per-platform post links — one row each, pulled below the stage. */}
+      <div className="flex flex-col gap-[6px]">
+        {posts.map((p, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <select value={p.platform} onChange={(e) => editPost(i, { platform: e.target.value })} onBlur={() => persist(posts)}
+              className="text-[12px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none">
+              {[...new Set([p.platform, ...KOL_PLATFORMS])].map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+            </select>
+            <input value={p.link} onChange={(e) => editPost(i, { link: e.target.value })} onBlur={() => persist(posts)}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              placeholder="Post / draft link…" className="flex-1 text-[12px] px-3 py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+            {p.link && <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-[11px] text-accent font-bold">↗</a>}
+            <button onClick={() => removePost(i)} className="text-[12px] text-status-red font-bold">✕</button>
+          </div>
+        ))}
+        {posts.length === 0 && <div className="text-[11.5px] text-faint">ยังไม่มีโพสต์ — กด <b>+ Add platform</b> เพื่อเพิ่มลิงก์ต่อ platform</div>}
       </div>
     </div>
   );
