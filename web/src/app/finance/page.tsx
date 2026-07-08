@@ -35,18 +35,30 @@ type Tab = (typeof TABS)[number][0];
 
 /* ── Monthly category budgets from the Finance Google Sheet ─────────── */
 export interface SheetBudgetRow { month: string; category: string; budget: number; group?: string; brand?: BrandFilterValue; }
-interface CatPnlRow { category: string; budget: number; requested: number; approved: number; }
+interface CatPnlRow { section: string; category: string; budget: number; requested: number; approved: number; }
+
+function fallbackSection(category: string): string {
+  const value = category.toLowerCase();
+  if (/crm|line oa|line broadcast|loyalty|member|coupon/.test(value)) return "CRM";
+  if (/creative|graphic|production|photo|shoot|printing|posm|content|video|artwork|design/.test(value)) return "Creative & Production";
+  if (/office|rent|salary|system|website|cloud|eatlab|agency|outsource|admin|software|subscription/.test(value)) return "Office & Administration";
+  return "Marketing";
+}
 
 /** One row per category for the selected period: Budget (sheet months covered
  *  by the period, summed) vs the real expense requests logged in the period.
  *  Brand filter applies to actuals only — sheet budgets are company-wide. */
 function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodFilter, brand: BrandFilterValue): CatPnlRow[] {
   const monthKeys = new Set(filterMonthKeys(f));
-  const budgets = new Map<string, number>();
+  const budgets = new Map<string, { amount: number; section: string }>();
   for (const r of sheetRows) {
     if (!monthKeys.has(r.month)) continue;
     if (brand !== "all" && r.brand && r.brand !== "all" && r.brand !== brand) continue;
-    budgets.set(r.category, (budgets.get(r.category) || 0) + r.budget);
+    const current = budgets.get(r.category);
+    budgets.set(r.category, {
+      amount: (current?.amount || 0) + r.budget,
+      section: r.group || current?.section || fallbackSection(r.category),
+    });
   }
   const requested = new Map<string, number>();
   const approved = new Map<string, number>();
@@ -59,7 +71,8 @@ function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodF
   return cats
     .map((category) => ({
       category,
-      budget: budgets.get(category) || 0,
+      section: budgets.get(category)?.section || fallbackSection(category),
+      budget: budgets.get(category)?.amount || 0,
       requested: requested.get(category) || 0,
       approved: approved.get(category) || 0,
     }))
@@ -364,7 +377,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   campaigns: CampaignRow[];
 }) {
   const [urlDraft, setUrlDraft] = useState(sheetUrl);
-  const [openSection, setOpenSection] = useState<Record<string, boolean>>({ budget: true });
+  const [openSection, setOpenSection] = useState<Record<string, boolean>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
 
@@ -377,12 +390,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
     (brand === "all" || request.b === brand) && request.status !== "Draft" && request.status !== "Rejected"
   );
   const selectedContributors = selectedCategory ? categoryContributors(selectedCategory) : [];
-  const sections = [
-    { id: "budget", label: "Budget", value: (row: CatPnlRow) => row.budget },
-    { id: "requested", label: "Requested", value: (row: CatPnlRow) => row.requested },
-    { id: "approved", label: "Approved", value: (row: CatPnlRow) => row.approved },
-    { id: "remaining", label: "Remaining", value: (row: CatPnlRow) => row.budget - row.approved },
-  ];
+  const sections = Array.from(new Set(rows.map((row) => row.section))).map((section) => ({
+    section,
+    rows: rows.filter((row) => row.section === section),
+  }));
 
   return (
     <div className="flex flex-col gap-4">
@@ -448,29 +459,29 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
               <div className="text-right">Grand Total</div>
             </div>
             {sections.map((section) => {
-              const isOpen = Boolean(openSection[section.id]);
-              const sectionRows = rows.filter((row) => section.value(row) !== 0);
+              const isOpen = Boolean(openSection[section.section]);
+              const sectionRows = section.rows;
               const totals = Object.fromEntries(PNL_COST_CENTERS.map((center) => [center,
-                sectionRows.filter((row) => categoryCostCenter(row.category) === center).reduce((sum, row) => sum + section.value(row), 0)
+                sectionRows.filter((row) => categoryCostCenter(row.category) === center).reduce((sum, row) => sum + row.budget, 0)
               ])) as Record<PnlCostCenter, number>;
               const grandTotal = PNL_COST_CENTERS.reduce((sum, center) => sum + totals[center], 0);
               return (
-                <div key={section.id} className="border-b border-line4 last:border-0">
-                  <button onClick={() => setOpenSection((open) => ({ ...open, [section.id]: !open[section.id] }))}
+                <div key={section.section} className="border-b border-line4 last:border-0">
+                  <button onClick={() => setOpenSection((open) => ({ ...open, [section.section]: !open[section.section] }))}
                     className="w-full grid px-5 py-3 items-center text-left bg-ivory/65 hover:bg-ivory" style={{ gridTemplateColumns: cols }}>
                     <span className="flex items-center gap-2 text-[13px] font-bold text-ink">
                       {isOpen ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
-                      {section.label}
+                      {section.section}
                     </span>
                     {PNL_COST_CENTERS.map((center) => <span key={center} className="text-[13px] font-semibold text-right">{baht(totals[center], { compact: true })}</span>)}
                     <span className="text-[13px] font-bold text-right">{baht(grandTotal, { compact: true })}</span>
                   </button>
                   {isOpen && sectionRows.map((row) => {
-                    const value = section.value(row);
+                    const value = row.budget;
                     const center = categoryCostCenter(row.category);
                     const campaignCount = new Set(categoryContributors(row.category).map((request) => request.campaign).filter((name) => name && name !== "—")).size;
                     return (
-                      <button key={`${section.id}-${row.category}`} onClick={() => setSelectedCategory(row.category)}
+                      <button key={`${section.section}-${row.category}`} onClick={() => setSelectedCategory(row.category)}
                         className="w-full grid px-5 py-[10px] items-center text-left hover:bg-ivory/45 border-t border-line4/60" style={{ gridTemplateColumns: cols }}>
                         <span className="pl-6 text-[12.5px] text-muted flex items-center gap-2 min-w-0">
                           <span className="truncate">{row.category}</span>
