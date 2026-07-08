@@ -464,12 +464,12 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
             <div className="grid px-5 pt-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold" style={{ gridTemplateColumns: cols }}>
               <div>Section / Category</div>
               {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
-              <div className="text-right">Diff</div>
+              <div className="text-right sticky right-0 bg-surface pl-2">Diff</div>
             </div>
             <div className="grid px-5 pb-2 pt-1 text-[9.5px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
               <div></div>
               {PNL_COST_CENTERS.flatMap((center) => [<div key={`${center}-budget`} className="text-right">Budget</div>, <div key={`${center}-actual`} className="text-right">Actual</div>])}
-              <div className="text-right">Budget − Actual</div>
+              <div className="text-right sticky right-0 bg-surface pl-2">Budget − Actual</div>
             </div>
             {sections.map((section) => {
               const isOpen = Boolean(openSection[section.section]);
@@ -495,7 +495,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                       <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].budget, { compact: true })}</span>,
                       <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].actual, { compact: true })}</span>,
                     ])}
-                    <span className="text-[13px] font-bold text-right" style={{ color: sectionBudget - sectionActual < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(sectionBudget - sectionActual, { compact: true })}</span>
+                    <span className="text-[13px] font-bold text-right sticky right-0 bg-ivory pl-2" style={{ color: sectionBudget - sectionActual < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(sectionBudget - sectionActual, { compact: true })}</span>
                   </button>
                   {isOpen && sectionRows.map((row) => {
                     const center = categoryCostCenter(row.category);
@@ -511,7 +511,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                           <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
                           <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
                         ])}
-                        <span className="text-[12.5px] font-semibold text-right" style={{ color: row.budget - row.approved < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(row.budget - row.approved, { compact: true })}</span>
+                        <span className="text-[12.5px] font-semibold text-right sticky right-0 bg-surface pl-2" style={{ color: row.budget - row.approved < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(row.budget - row.approved, { compact: true })}</span>
                       </button>
                     );
                   })}
@@ -528,7 +528,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                     <span key={`${center}-grand-budget`} className="text-[12.5px] font-semibold text-right">{baht(grandTotals[center].budget, { compact: true })}</span>,
                     <span key={`${center}-grand-actual`} className="text-[12.5px] font-semibold text-right">{baht(grandTotals[center].actual, { compact: true })}</span>,
                   ])}
-                  <span className="text-[13px] font-bold text-right" style={{ color: budget - actual < 0 ? "#FF9E94" : "#A8D5A8" }}>{baht(budget - actual, { compact: true })}</span>
+                  <span className="text-[13px] font-bold text-right sticky right-0 bg-panel pl-2" style={{ color: budget - actual < 0 ? "#FF9E94" : "#A8D5A8" }}>{baht(budget - actual, { compact: true })}</span>
                 </div>
               );
             })()}
