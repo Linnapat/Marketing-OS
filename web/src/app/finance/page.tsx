@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, ExternalLink, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { notify } from "@/lib/notify";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -17,6 +18,7 @@ import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, Expe
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { useAuth } from "@/lib/auth";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
 import { financeFromDb, FinanceView } from "@/lib/data/derive";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
@@ -32,16 +34,32 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 /* ── Monthly category budgets from the Finance Google Sheet ─────────── */
-export interface SheetBudgetRow { month: string; category: string; budget: number; }
-interface CatPnlRow { category: string; budget: number; requested: number; approved: number; }
+export interface SheetBudgetRow { month: string; category: string; budget: number; group?: string; brand?: BrandFilterValue; }
+interface CatPnlRow { section: string; category: string; budget: number; requested: number; approved: number; }
+
+function fallbackSection(category: string): string {
+  const value = category.toLowerCase();
+  if (/crm|line oa|line broadcast|loyalty|member|coupon/.test(value)) return "CRM";
+  if (/creative|graphic|production|photo|shoot|printing|posm|content|video|artwork|design/.test(value)) return "Creative & Production";
+  if (/office|rent|salary|system|website|cloud|eatlab|agency|outsource|admin|software|subscription/.test(value)) return "Office & Administration";
+  return "Marketing";
+}
 
 /** One row per category for the selected period: Budget (sheet months covered
  *  by the period, summed) vs the real expense requests logged in the period.
- *  Brand filter applies to actuals only — sheet budgets are company-wide. */
+ *  When a brand is selected, both budget and actual must belong to that brand. */
 function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodFilter, brand: BrandFilterValue): CatPnlRow[] {
   const monthKeys = new Set(filterMonthKeys(f));
-  const budgets = new Map<string, number>();
-  for (const r of sheetRows) if (monthKeys.has(r.month)) budgets.set(r.category, (budgets.get(r.category) || 0) + r.budget);
+  const budgets = new Map<string, { amount: number; section: string }>();
+  for (const r of sheetRows) {
+    if (!monthKeys.has(r.month)) continue;
+    if (brand !== "all" && r.brand !== brand) continue;
+    const current = budgets.get(r.category);
+    budgets.set(r.category, {
+      amount: (current?.amount || 0) + r.budget,
+      section: r.group || current?.section || fallbackSection(r.category),
+    });
+  }
   const requested = new Map<string, number>();
   const approved = new Map<string, number>();
   for (const r of reqs) {
@@ -53,7 +71,8 @@ function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodF
   return cats
     .map((category) => ({
       category,
-      budget: budgets.get(category) || 0,
+      section: budgets.get(category)?.section || fallbackSection(category),
+      budget: budgets.get(category)?.amount || 0,
       requested: requested.get(category) || 0,
       approved: approved.get(category) || 0,
     }))
@@ -76,6 +95,7 @@ export default function FinancePage() {
   const { can } = useRole();
   // Budget + P&L derive from real campaigns / expense requests (empty on a fresh DB).
   const [fin, setFin] = useState<FinanceView | null>(null);
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [reqs, setReqs] = useState<ExpenseReq[]>([]);
   const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
   // Monthly category budgets live in a Google Sheet the Finance team edits.
@@ -107,7 +127,7 @@ export default function FinancePage() {
   useEffect(() => {
     let alive = true;
     Promise.all([fetchCampaigns(), fetchExpenseRequests(), fetchAllBriefs()])
-      .then(([c, r, b]) => { if (alive) { setFin(financeFromDb(c, r)); setReqs(r); setBriefs(b); } })
+      .then(([c, r, b]) => { if (alive) { setFin(financeFromDb(c, r)); setCampaigns(c); setReqs(r); setBriefs(b); } })
       .catch(() => {});
     getAppSetting("budget_sheet_url").then((u) => {
       if (alive && u) { setSheetUrl(u); loadSheet(u); }
@@ -176,6 +196,7 @@ export default function FinancePage() {
         {tab === "roi" && (
           <CategoryPnlTab
             brand={brand} reqs={reqs} sheetRows={sheetRows} period={period} setPeriod={setPeriod}
+            campaigns={campaigns}
             sheetUrl={sheetUrl} onSaveUrl={saveSheetUrl} onReload={() => loadSheet(sheetUrl)} status={sheetStatus}
           />
         )}
@@ -332,19 +353,48 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
 }
 
 /* ── P&L by Category — monthly budgets from the Finance Google Sheet ── */
-function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, onSaveUrl, onReload, status }: {
+const PNL_COST_CENTERS = ["marketing", "crm", "creative", "office"] as const;
+type PnlCostCenter = (typeof PNL_COST_CENTERS)[number];
+
+const COST_CENTER_LABEL: Record<PnlCostCenter, string> = {
+  marketing: "Marketing", crm: "CRM", creative: "Creative", office: "Office",
+};
+
+/** Expense requests do not have a cost-centre field yet. Keep the fallback in
+ * one place so the matrix is stable now and easy to replace with a DB field. */
+function categoryCostCenter(category: string): PnlCostCenter {
+  const value = category.toLowerCase();
+  if (/crm|line oa|line broadcast|loyalty|member|coupon/.test(value)) return "crm";
+  if (/creative|graphic|production|photo|shoot|printing|posm|content|video|artwork|design/.test(value)) return "creative";
+  if (/office|rent|salary|system|website|cloud|eatlab|agency|outsource|admin|software|subscription/.test(value)) return "office";
+  return "marketing";
+}
+
+function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, onSaveUrl, onReload, status, campaigns }: {
   brand: BrandFilterValue; reqs: ExpenseReq[]; sheetRows: SheetBudgetRow[];
   period: PeriodFilter; setPeriod: (f: PeriodFilter) => void;
   sheetUrl: string; onSaveUrl: (url: string) => void; onReload: () => void; status: string;
+  campaigns: CampaignRow[];
 }) {
   const [urlDraft, setUrlDraft] = useState(sheetUrl);
-  const [openCat, setOpenCat] = useState<Record<string, boolean>>({});
+  const [openSection, setOpenSection] = useState<Record<string, boolean>>({});
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
 
   const rows = categoryPnl(sheetRows, reqs, period, brand);
-  const tot = rows.reduce((a, r) => ({ budget: a.budget + r.budget, requested: a.requested + r.requested, approved: a.approved + r.approved }), { budget: 0, requested: 0, approved: 0 });
   const periodLabel = period.mode === "month" ? `${MONTHS[period.month]} ${period.year}` : `${period.start} → ${period.end}`;
-  const cols = "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.4fr";
+  const cols = "minmax(220px,2fr) repeat(10,minmax(82px,1fr))";
+  const campaignByName = new Map(campaigns.map((campaign) => [campaign.name, campaign]));
+  const categoryContributors = (category: string) => reqs.filter((request) =>
+    request.category === category && request.createdAt && inDateFilter(period, request.createdAt) &&
+    (brand === "all" || request.b === brand) && request.status !== "Draft" && request.status !== "Rejected"
+  );
+  const selectedContributors = selectedCategory ? categoryContributors(selectedCategory) : [];
+  const visibleRows = rows.filter((row) => row.section.trim().toLowerCase() !== "marketing");
+  const sections = Array.from(new Set(visibleRows.map((row) => row.section))).map((section) => ({
+    section,
+    rows: visibleRows.filter((row) => row.section === section),
+  }));
 
   return (
     <div className="flex flex-col gap-4">
@@ -353,7 +403,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
         <div className="text-[13px] font-bold mb-1">งบประมาณรายเดือนจาก Google Sheet</div>
         <div className="text-[11.5px] text-faint mb-3">
           แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
-          คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท)</b> — แก้งบใน sheet แล้วกดโหลดใหม่ได้เลย
+          คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท) · D = Brand (ถ้ามี)</b> — แก้งบใน sheet แล้วกดโหลดใหม่ได้เลย
         </div>
         <div className="flex gap-2 flex-wrap">
           <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"
@@ -368,7 +418,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
 
       {/* Period picker — day-level range up to whole months/years */}
       <DateFilterBar value={period} onChange={setPeriod}
-        trailing={brand !== "all" ? <span>ตัวกรองแบรนด์มีผลกับยอดเบิกจริงเท่านั้น</span> : undefined} />
+        trailing={brand !== "all" ? <span>กำลังแสดง Budget และ Actual เฉพาะ {brandName(brand)}</span> : undefined} />
 
       {/* Over-budget alert — the sheet budget is the monthly cap; campaign
           expenses draw it down. Hard = approved already exceeds; soft = pending
@@ -398,67 +448,115 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
 
       {/* Category table */}
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-        <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">P&amp;L by Category · {periodLabel}</div>
-        <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
-          <div>Category</div><div>Budget</div><div>เบิกแล้ว</div><div>อนุมัติแล้ว</div><div>คงเหลือ</div><div>ใช้ไป</div>
+        <div className="px-5 py-3 border-b border-line4 flex items-center justify-between gap-3">
+          <div className="text-[13px] font-bold">P&amp;L · {periodLabel}</div>
+          <div className="text-[11px] text-faint">เลือก Category เพื่อดู Campaign ที่เกี่ยวข้อง</div>
         </div>
-        {rows.map((r) => {
-          const remaining = r.budget - r.approved;
-          const pct = r.budget ? Math.round((r.approved / r.budget) * 100) : 0;
-          const over = r.budget > 0 && r.approved > r.budget;
-          const isOpen = openCat[r.category];
-          // Drill-down: the expense requests (with their campaigns) that make up
-          // this category's actual, for the selected period + brand.
-          const contrib = reqs.filter((x) => x.category === r.category && x.createdAt && inDateFilter(period, x.createdAt) && (brand === "all" || x.b === brand) && x.status !== "Draft" && x.status !== "Rejected");
-          const byCampaign = new Map<string, { requested: number; approved: number }>();
-          for (const x of contrib) { const k = x.campaign || "—"; const v = byCampaign.get(k) ?? { requested: 0, approved: 0 }; v.requested += x.requested || 0; v.approved += x.approved || 0; byCampaign.set(k, v); }
-          return (
-            <div key={r.category} className="border-b border-line4 last:border-0">
-              <button onClick={() => setOpenCat((o) => ({ ...o, [r.category]: !o[r.category] }))} className="w-full grid px-5 py-3 items-center gap-y-1 text-left hover:bg-ivory/50" style={{ gridTemplateColumns: cols }}>
-                <span className="text-[13px] font-bold text-ink flex items-center gap-[6px]"><span className="text-faint text-[10px] w-3">{contrib.length ? (isOpen ? "▾" : "▸") : ""}</span>{r.category}</span>
-                <span className="text-[13px] text-muted">{r.budget ? baht(r.budget, { compact: true }) : "—"}</span>
-                <span className="text-[13px] text-ink">{baht(r.requested, { compact: true })}{contrib.length ? <span className="text-[10.5px] text-faint"> · {byCampaign.size} camp.</span> : null}</span>
-                <span className="text-[13px] font-semibold" style={{ color: r.approved ? "#4E7A4E" : "#9A9387" }}>{baht(r.approved, { compact: true })}</span>
-                <span className="text-[13px] font-semibold" style={{ color: over ? "#B33A2E" : "#211F1C" }}>{r.budget ? baht(remaining, { compact: true }) : "—"}</span>
-                <span className="flex items-center gap-2">
-                  <span className="flex-1"><Progress value={Math.min(100, pct)} color={over ? "#B33A2E" : pct > 85 ? "#C68A1E" : "#4E7A4E"} height={7} /></span>
-                  <span className="text-[11.5px] font-bold w-[42px] text-right" style={{ color: over ? "#B33A2E" : "#6b6258" }}>{r.budget ? `${pct}%` : "—"}</span>
-                </span>
-              </button>
-              {isOpen && (
-                <div className="bg-ivory/60 px-5 pb-3 pt-1">
-                  {byCampaign.size === 0 ? (
-                    <div className="text-[11.5px] text-faint py-1 pl-6">ยังไม่มีคำขอเบิกในหมวดนี้สำหรับช่วงที่เลือก</div>
-                  ) : [...byCampaign.entries()].sort((a, b) => b[1].approved - a[1].approved).map(([camp, v]) => (
-                    <div key={camp} className="grid px-1 py-[5px] items-center text-[12px] border-b border-line4/60 last:border-0" style={{ gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr 1.4fr" }}>
-                      <span className="pl-6 text-muted truncate">🎯 {camp}</span>
-                      <span></span>
-                      <span className="text-ink">{baht(v.requested, { compact: true })}</span>
-                      <span className="font-semibold" style={{ color: v.approved ? "#4E7A4E" : "#9A9387" }}>{baht(v.approved, { compact: true })}</span>
-                      <span></span><span></span>
-                    </div>
-                  ))}
-                </div>
-              )}
+        <div className="overflow-x-auto">
+          <div className="min-w-[1180px]">
+            <div className="grid px-5 pt-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold" style={{ gridTemplateColumns: cols }}>
+              <div>Section / Category</div>
+              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
+              <div className="text-center" style={{ gridColumn: "span 2" }}>Grand Total</div>
             </div>
-          );
-        })}
-        {rows.length === 0 && (
+            <div className="grid px-5 pb-2 pt-1 text-[9.5px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+              <div></div>
+              {[...PNL_COST_CENTERS, "total"].flatMap((center) => [<div key={`${center}-budget`} className="text-right">Budget</div>, <div key={`${center}-actual`} className="text-right">Actual</div>])}
+            </div>
+            {sections.map((section) => {
+              const isOpen = Boolean(openSection[section.section]);
+              const sectionRows = section.rows;
+              const totals = Object.fromEntries(PNL_COST_CENTERS.map((center) => {
+                const centerRows = sectionRows.filter((row) => categoryCostCenter(row.category) === center);
+                return [center, {
+                  budget: centerRows.reduce((sum, row) => sum + row.budget, 0),
+                  actual: centerRows.reduce((sum, row) => sum + row.approved, 0),
+                }];
+              })) as Record<PnlCostCenter, { budget: number; actual: number }>;
+              const grandBudget = PNL_COST_CENTERS.reduce((sum, center) => sum + totals[center].budget, 0);
+              const grandActual = PNL_COST_CENTERS.reduce((sum, center) => sum + totals[center].actual, 0);
+              return (
+                <div key={section.section} className="border-b border-line4 last:border-0">
+                  <button onClick={() => setOpenSection((open) => ({ ...open, [section.section]: !open[section.section] }))}
+                    className="w-full grid px-5 py-3 items-center text-left bg-ivory/65 hover:bg-ivory" style={{ gridTemplateColumns: cols }}>
+                    <span className="flex items-center gap-2 text-[13px] font-bold text-ink">
+                      {isOpen ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
+                      {section.section}
+                    </span>
+                    {PNL_COST_CENTERS.flatMap((center) => [
+                      <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].budget, { compact: true })}</span>,
+                      <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].actual, { compact: true })}</span>,
+                    ])}
+                    <span className="text-[13px] font-bold text-right">{baht(grandBudget, { compact: true })}</span>
+                    <span className="text-[13px] font-bold text-right">{baht(grandActual, { compact: true })}</span>
+                  </button>
+                  {isOpen && sectionRows.map((row) => {
+                    const center = categoryCostCenter(row.category);
+                    const campaignCount = new Set(categoryContributors(row.category).map((request) => request.campaign).filter((name) => name && name !== "—")).size;
+                    return (
+                      <button key={`${section.section}-${row.category}`} onClick={() => setSelectedCategory(row.category)}
+                        className="w-full grid px-5 py-[10px] items-center text-left hover:bg-ivory/45 border-t border-line4/60" style={{ gridTemplateColumns: cols }}>
+                        <span className="pl-6 text-[12.5px] text-muted flex items-center gap-2 min-w-0">
+                          <span className="truncate">{row.category}</span>
+                          {campaignCount > 0 && <span className="shrink-0 text-[10px] font-bold text-accent">ดูรายละเอียด</span>}
+                        </span>
+                        {PNL_COST_CENTERS.flatMap((column) => [
+                          <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
+                          <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
+                        ])}
+                        <span className="text-[12.5px] font-semibold text-right">{baht(row.budget, { compact: true })}</span>
+                        <span className="text-[12.5px] font-semibold text-right">{baht(row.approved, { compact: true })}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {visibleRows.length === 0 && (
           <div className="px-5 py-10 text-[12.5px] text-faint text-center">
             ยังไม่มีข้อมูลช่วงนี้ — {sheetUrl ? "เพิ่มงบช่วงนี้ใน Google Sheet แล้วกดโหลดใหม่" : "เชื่อม Google Sheet ด้านบนเพื่อตั้งงบรายหมวด"}
           </div>
         )}
-        {rows.length > 0 && (
-          <div className="grid px-5 py-3 items-center bg-ivory/70 font-bold" style={{ gridTemplateColumns: cols }}>
-            <span className="text-[12px]">Total</span>
-            <span className="text-[13px]">{baht(tot.budget, { compact: true })}</span>
-            <span className="text-[13px]">{baht(tot.requested, { compact: true })}</span>
-            <span className="text-[13px]">{baht(tot.approved, { compact: true })}</span>
-            <span className="text-[13px]" style={{ color: tot.approved > tot.budget && tot.budget > 0 ? "#B33A2E" : "#211F1C" }}>{baht(tot.budget - tot.approved, { compact: true })}</span>
-            <span></span>
-          </div>
-        )}
       </div>
+
+      {selectedCategory && (
+        <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={`Campaign detail for ${selectedCategory}`}>
+          <button className="absolute inset-0 bg-black/25" aria-label="Close campaign detail" onClick={() => setSelectedCategory(null)} />
+          <aside className="relative h-full w-full max-w-[460px] bg-surface shadow-2xl flex flex-col">
+            <div className="px-5 py-4 border-b border-line flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-bold tracking-[0.07em] uppercase text-faint">Category detail</div>
+                <div className="text-[16px] font-bold text-ink mt-1">{selectedCategory}</div>
+                <div className="text-[11.5px] text-muted mt-1">{COST_CENTER_LABEL[categoryCostCenter(selectedCategory)]} · {brand === "all" ? "All Brands" : brandName(brand)}</div>
+              </div>
+              <button onClick={() => setSelectedCategory(null)} className="p-2 rounded-lg hover:bg-ivory" aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1">
+              <div className="text-[12px] font-bold text-muted mb-3">Campaigns ที่ผูกกับรายการนี้</div>
+              {selectedContributors.length === 0 ? (
+                <div className="rounded-card border border-line bg-ivory p-4 text-[12px] text-faint">ยังไม่มี Campaign หรือคำขอเบิกที่ผูกกับ Category นี้ในช่วงที่เลือก</div>
+              ) : Array.from(new Set(selectedContributors.map((request) => request.campaign).filter((name) => name && name !== "—"))).map((name) => {
+                const campaign = campaignByName.get(name);
+                const requests = selectedContributors.filter((request) => request.campaign === name);
+                const requested = requests.reduce((sum, request) => sum + (request.requested || 0), 0);
+                const approved = requests.reduce((sum, request) => sum + (request.approved || 0), 0);
+                const card = (
+                  <div className="rounded-card border border-line p-4 hover:bg-ivory/60">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-bold text-ink">{name}</span>
+                      {campaign && <ExternalLink size={14} className="text-faint shrink-0" />}
+                    </div>
+                    <div className="text-[11.5px] text-muted mt-2">Requested {baht(requested, { compact: true })} · Approved {baht(approved, { compact: true })}</div>
+                  </div>
+                );
+                return campaign ? <Link key={name} href={`/campaigns/${campaign.id}`}>{card}</Link> : <div key={name}>{card}</div>;
+              })}
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

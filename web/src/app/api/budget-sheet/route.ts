@@ -91,11 +91,12 @@ export async function GET(req: NextRequest) {
   const iCategoryCol = col("category");
   const iBudgetCol = col("budget");
   const iEntity = col("entity_type", "entity type");
+  const iDepartment = col("department", "brand", "แบรนด์");
   const iRowType = col("row_type", "row type");
   const iSection = col("section");
 
   const isLedger = iLineItem >= 0 && iAmount >= 0;
-  const rows: { month: string; category: string; budget: number; group?: string }[] = [];
+  const rows: { month: string; category: string; budget: number; group?: string; brand?: string }[] = [];
 
   if (isLedger) {
     // Sections that aren't real category budgets (KPIs, notes, transfers).
@@ -124,7 +125,7 @@ export async function GET(req: NextRequest) {
     // Google Sheets sometimes embeds control chars (e.g.  around a slash);
     // strip them so exclusion/alias matching is reliable and labels are clean.
     const clean = (s: string) => (s ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
-    type Raw = { section: string; entity: string; month: string; category: string; budget: number };
+    type Raw = { section: string; entity: string; department: string; month: string; category: string; budget: number };
     const raws: Raw[] = [];
     for (const r of grid.slice(1)) {
       const rowType = iRowType >= 0 ? (r[iRowType] ?? "").trim().toLowerCase() : "detail";
@@ -137,7 +138,11 @@ export async function GET(req: NextRequest) {
       const budget = Number(String(r[iAmount] ?? "").replace(/[^\d.-]/g, ""));
       if (!/^\d{4}-\d{2}$/.test(month) || !rawItem || !Number.isFinite(budget) || budget < 0) continue;
       const category = ALIAS[rawItem.toLowerCase()] ?? rawItem;
-      raws.push({ section, entity: (r[iEntity] ?? "").trim().toLowerCase(), month, category, budget });
+      raws.push({
+        section, entity: (r[iEntity] ?? "").trim().toLowerCase(),
+        department: iDepartment >= 0 ? clean(r[iDepartment] ?? "") : "",
+        month, category, budget,
+      });
     }
     // Per-section dedup: Digital Marketing carries both a Brand and a Department
     // cut of the same money — keep Brand there; sections with only a Department
@@ -146,20 +151,28 @@ export async function GET(req: NextRequest) {
     const brandSections = new Set(raws.filter((x) => x.entity === "brand").map((x) => x.section));
     for (const x of raws) {
       if (brandSections.has(x.section) && x.entity && x.entity !== "brand") continue;
-      rows.push({ month: x.month, category: x.category, budget: x.budget, group: x.section });
+      const brandAliases: Record<string, string> = {
+        teppen: "teppen", "omakase don": "omakase", omakase: "omakase",
+        mainichi: "mainichi", touka: "touka",
+      };
+      const brand = x.entity === "brand" ? brandAliases[x.department.toLowerCase()] : undefined;
+      rows.push({ month: x.month, category: x.category, budget: x.budget, group: x.section, brand });
     }
   } else {
     // Simple schema: month | category | budget (positional, or by header).
     const mi = iMonth >= 0 ? iMonth : 0;
     const ci = iCategoryCol >= 0 ? iCategoryCol : 1;
     const bi = iBudgetCol >= 0 ? iBudgetCol : 2;
+    const brandIndex = col("brand", "แบรนด์");
     const start = /month|เดือน|category|budget/i.test((grid[0].join(" "))) ? 1 : 0; // skip a header row if present
     for (const r of grid.slice(start)) {
       const month = normMonth(r[mi] ?? "");
       const category = (r[ci] ?? "").trim();
       const budget = Number(String(r[bi] ?? "").replace(/[^\d.-]/g, ""));
       if (/^\d{4}-\d{2}$/.test(month) && category && Number.isFinite(budget) && budget >= 0) {
-        rows.push({ month, category, budget });
+        const brandAliases: Record<string, string> = { teppen: "teppen", "omakase don": "omakase", omakase: "omakase", mainichi: "mainichi", touka: "touka" };
+        const brand = brandIndex >= 0 ? brandAliases[(r[brandIndex] ?? "").trim().toLowerCase()] : undefined;
+        rows.push({ month, category, budget, brand });
       }
     }
   }
