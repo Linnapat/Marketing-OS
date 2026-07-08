@@ -403,6 +403,11 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
       actual: centerRows.reduce((sum, row) => sum + row.approved, 0),
     }];
   })) as Record<PnlCostCenter, { budget: number; actual: number }>;
+  const totalBudget = PNL_COST_CENTERS.reduce((sum, center) => sum + grandTotals[center].budget, 0);
+  const totalActual = PNL_COST_CENTERS.reduce((sum, center) => sum + grandTotals[center].actual, 0);
+  const totalRemaining = totalBudget - totalActual;
+  const totalUsedPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
+  const overBudgetItems = visibleRows.filter((row) => row.budget > 0 && row.approved > row.budget).length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -438,6 +443,33 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
       {/* Period picker — day-level range up to whole months/years */}
       <DateFilterBar value={period} onChange={setPeriod}
         trailing={brand !== "all" ? <span>กำลังแสดง Budget และ Actual เฉพาะ {brandName(brand)}</span> : undefined} />
+
+      {/* P&L summary dashboard */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
+        <div className="rounded-card border border-line p-4" style={{ background: "#FBF6EA" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">Total Budget</div>
+          <div className="text-[23px] font-bold text-ink mt-1">{baht(totalBudget, { compact: true })}</div>
+          <div className="text-[11px] text-muted mt-1">{brand === "all" ? "ทุกแบรนด์" : brandName(brand)} · {periodLabel}</div>
+        </div>
+        <div className="rounded-card border border-line p-4" style={{ background: "#F2F8F1" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">Actual Used</div>
+          <div className="text-[23px] font-bold text-ink mt-1">{baht(totalActual, { compact: true })}</div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="flex-1"><Progress value={Math.min(100, totalUsedPct)} color={totalUsedPct > 100 ? "#B33A2E" : totalUsedPct > 85 ? "#C68A1E" : "#4E7A4E"} height={6} /></span>
+            <span className="text-[11px] font-bold text-muted">{totalUsedPct}%</span>
+          </div>
+        </div>
+        <div className="rounded-card border p-4" style={{ background: totalRemaining < 0 ? "#FFF2F0" : "#F5F7F3", borderColor: totalRemaining < 0 ? "#F5C8C4" : "#E3E0D8" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">{totalRemaining < 0 ? "Over Budget" : "Remaining"}</div>
+          <div className="text-[23px] font-bold mt-1" style={{ color: totalRemaining < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(Math.abs(totalRemaining), { compact: true })}</div>
+          <div className="text-[11px] text-muted mt-1">Budget − Actual</div>
+        </div>
+        <div className="rounded-card border p-4" style={{ background: overBudgetItems ? "#FFF5F4" : "#F5F7F3", borderColor: overBudgetItems ? "#F5C8C4" : "#E3E0D8" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">Budget Health</div>
+          <div className="text-[18px] font-bold mt-2" style={{ color: overBudgetItems ? "#B33A2E" : "#4E7A4E" }}>{overBudgetItems ? `เกินงบ ${overBudgetItems} รายการ` : "อยู่ในงบ"}</div>
+          <div className="text-[11px] text-muted mt-1">{overBudgetItems ? "ตรวจรายการสีแดงด้านล่าง" : "ยังไม่มีรายการใช้เกิน"}</div>
+        </div>
+      </div>
 
       {/* Over-budget alert — the sheet budget is the monthly cap; campaign
           expenses draw it down. Hard = approved already exceeds; soft = pending
@@ -475,13 +507,16 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
           <div className="min-w-[1180px]">
             <div className="grid px-5 pt-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold" style={{ gridTemplateColumns: cols }}>
               <div>Section / Category</div>
-              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
-              <div className="text-right sticky right-0 bg-surface pl-2">Diff</div>
+              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center border-l border-line4" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
+              <div className="text-right sticky right-0 bg-surface pl-2 border-l border-line4">Diff</div>
             </div>
             <div className="grid px-5 pb-2 pt-1 text-[9.5px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
               <div></div>
-              {PNL_COST_CENTERS.flatMap((center) => [<div key={`${center}-budget`} className="text-right">Budget</div>, <div key={`${center}-actual`} className="text-right">Actual</div>])}
-              <div className="text-right sticky right-0 bg-surface pl-2">Budget − Actual</div>
+              {PNL_COST_CENTERS.flatMap((center) => [
+                <div key={`${center}-budget`} className="text-right border-l border-line4 px-2 py-1 -my-1" style={{ background: "#FBF6EA" }}>Budget</div>,
+                <div key={`${center}-actual`} className="text-right border-l border-line4 px-2 py-1 -my-1" style={{ background: "#F2F8F1" }}>Actual</div>,
+              ])}
+              <div className="text-right sticky right-0 bg-surface pl-2 border-l border-line4">Budget − Actual</div>
             </div>
             {sections.map((section) => {
               const isOpen = Boolean(openSection[section.section]);
@@ -504,10 +539,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                       {section.section}
                     </span>
                     {PNL_COST_CENTERS.flatMap((center) => [
-                      <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].budget, { compact: true })}</span>,
-                      <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].actual, { compact: true })}</span>,
+                      <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right self-stretch flex items-center justify-end border-l border-line4 px-2 -my-3" style={{ background: "#FBF6EA" }}>{baht(totals[center].budget, { compact: true })}</span>,
+                      <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right self-stretch flex items-center justify-end border-l border-line4 px-2 -my-3" style={{ background: "#F2F8F1" }}>{baht(totals[center].actual, { compact: true })}</span>,
                     ])}
-                    <span className="text-[13px] font-bold text-right sticky right-0 bg-ivory pl-2" style={{ color: sectionBudget - sectionActual < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(sectionBudget - sectionActual, { compact: true })}</span>
+                    <span className="text-[13px] font-bold text-right sticky right-0 bg-ivory pl-2 border-l border-line4" style={{ color: sectionBudget - sectionActual < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(sectionBudget - sectionActual, { compact: true })}</span>
                   </button>
                   {isOpen && sectionRows.map((row) => {
                     const center = categoryCostCenter(row.category);
@@ -520,10 +555,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                           {campaignCount > 0 && <span className="shrink-0 text-[10px] font-bold text-accent">ดูรายละเอียด</span>}
                         </span>
                         {PNL_COST_CENTERS.flatMap((column) => [
-                          <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
-                          <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
+                          <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted self-stretch flex items-center justify-end border-l border-line4 px-2 -my-[10px]" style={{ background: "#FFFCF5" }}>{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
+                          <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted self-stretch flex items-center justify-end border-l border-line4 px-2 -my-[10px]" style={{ background: "#F8FBF7" }}>{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
                         ])}
-                        <span className="text-[12.5px] font-semibold text-right sticky right-0 bg-surface pl-2" style={{ color: row.budget - row.approved < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(row.budget - row.approved, { compact: true })}</span>
+                        <span className="text-[12.5px] font-semibold text-right sticky right-0 bg-surface pl-2 border-l border-line4" style={{ color: row.budget - row.approved < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(row.budget - row.approved, { compact: true })}</span>
                       </button>
                     );
                   })}
@@ -537,10 +572,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                 <div className="grid px-5 py-3 items-center bg-panel text-white border-t-2 border-line2" style={{ gridTemplateColumns: cols }}>
                   <span className="text-[13px] font-bold">Grand Total</span>
                   {PNL_COST_CENTERS.flatMap((center) => [
-                    <span key={`${center}-grand-budget`} className="text-[12.5px] font-semibold text-right">{baht(grandTotals[center].budget, { compact: true })}</span>,
-                    <span key={`${center}-grand-actual`} className="text-[12.5px] font-semibold text-right">{baht(grandTotals[center].actual, { compact: true })}</span>,
+                    <span key={`${center}-grand-budget`} className="text-[12.5px] font-semibold text-right border-l border-white/15 px-2">{baht(grandTotals[center].budget, { compact: true })}</span>,
+                    <span key={`${center}-grand-actual`} className="text-[12.5px] font-semibold text-right border-l border-white/15 px-2">{baht(grandTotals[center].actual, { compact: true })}</span>,
                   ])}
-                  <span className="text-[13px] font-bold text-right sticky right-0 bg-panel pl-2" style={{ color: budget - actual < 0 ? "#FF9E94" : "#A8D5A8" }}>{baht(budget - actual, { compact: true })}</span>
+                  <span className="text-[13px] font-bold text-right sticky right-0 bg-panel pl-2 border-l border-white/15" style={{ color: budget - actual < 0 ? "#FF9E94" : "#A8D5A8" }}>{baht(budget - actual, { compact: true })}</span>
                 </div>
               );
             })()}
