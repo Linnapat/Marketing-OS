@@ -273,6 +273,7 @@ function PipelineList({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilter
             </div>
             {g.kols.map((k) => {
               const pi = platformIcon(k.plat);
+              const creatorCollapsed = collapsedCreators.has(k.id);
               return (
                 <button key={k.id} onClick={() => onOpen(k)} className="w-full grid grid-cols-[2fr_1.4fr_1fr_1fr] gap-y-1 px-5 py-3 items-center text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
                   <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
@@ -350,6 +351,15 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [list]);
 
+  const [collapsedCreators, setCollapsedCreators] = useState<Set<number>>(new Set());
+  const toggleCreator = (kolId: number) => {
+    setCollapsedCreators((current) => {
+      const next = new Set(current);
+      if (next.has(kolId)) next.delete(kolId); else next.add(kolId);
+      return next;
+    });
+  };
+
   // Update one post's result numbers (state only, so typing is smooth); the DB
   // write happens on blur. Keeps top-level actuals = sum of posts.
   const editPostResult = (k: Kol, idx: number, patch: Partial<KolPost>) => {
@@ -383,23 +393,28 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
               const posts = kolPosts(k);
               const kt = postsTotals(posts);
               const pi = platformIcon(k.plat);
+              const creatorCollapsed = collapsedCreators.has(k.id);
               return (
                 <div key={k.id} className="border-b border-line4 last:border-0">
                   {/* Creator subtotal row */}
-                  <button onClick={() => onOpen(k)} className="w-full grid gap-y-1 px-5 py-[10px] items-center text-left hover:bg-ivory/50" style={{ gridTemplateColumns: cols }}>
-                    <span className="flex items-center gap-2 text-[13px] font-bold text-ink min-w-0">
+                  <div className="w-full grid gap-y-1 px-5 py-[10px] items-center text-left hover:bg-ivory/50" style={{ gridTemplateColumns: cols }}>
+                    <div className="flex items-center gap-2 text-[13px] font-bold text-ink min-w-0">
                       <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
-                      <span className="truncate">{k.name}</span>
-                      <span className="text-[10.5px] text-faint font-semibold">· {posts.length} post{posts.length !== 1 ? "s" : ""}</span>
-                    </span>
+                      <button type="button" onClick={() => onOpen(k)} className="truncate text-left hover:text-accent">{k.name}</button>
+                      <span className="text-[10.5px] text-faint font-semibold flex-shrink-0">· {posts.length} post{posts.length !== 1 ? "s" : ""}</span>
+                      {posts.length > 0 && <button type="button" onClick={() => toggleCreator(k.id)} aria-expanded={!creatorCollapsed}
+                        className="text-[10.5px] font-bold text-panel bg-white border border-line2 rounded-[7px] px-2 py-[4px] hover:border-panel flex-shrink-0">
+                        {creatorCollapsed ? "ขยาย ＋" : "ยุบ −"}
+                      </button>}
+                    </div>
                     <span className="text-[12.5px] text-ink font-semibold text-right">{fmtFollow(kt.reach)}</span>
                     <span className="text-[12.5px] text-ink font-semibold text-right">{fmtFollow(kt.engagement)}</span>
                     <span className="text-[12.5px] text-muted text-right">{fmtPct(rate(kt.reach, kt.engagement))}</span>
                     <span className="text-[12.5px] font-semibold text-ink text-right">{baht(k.fee, { compact: true })}</span>
                     <span className="text-[12.5px] font-semibold text-right" style={{ color: k.roi >= 1 ? "#4E7A4E" : "#9A9387" }}>{k.roi ? `${k.roi.toFixed(1)}×` : "—"}</span>
-                  </button>
+                  </div>
                   {/* One editable row per post link */}
-                  {posts.map((p, pi2) => (
+                  {!creatorCollapsed && posts.map((p, pi2) => (
                     <div key={pi2} className="grid gap-y-1 px-5 py-2 items-center bg-ivory/40" style={{ gridTemplateColumns: cols }}>
                       <span className="flex items-center gap-2 text-[11.5px] text-muted min-w-0 pl-6">
                         <span className="font-semibold">{p.platform}</span>
