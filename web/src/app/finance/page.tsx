@@ -47,13 +47,13 @@ function fallbackSection(category: string): string {
 
 /** One row per category for the selected period: Budget (sheet months covered
  *  by the period, summed) vs the real expense requests logged in the period.
- *  Brand filter applies to actuals only — sheet budgets are company-wide. */
+ *  When a brand is selected, both budget and actual must belong to that brand. */
 function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodFilter, brand: BrandFilterValue): CatPnlRow[] {
   const monthKeys = new Set(filterMonthKeys(f));
   const budgets = new Map<string, { amount: number; section: string }>();
   for (const r of sheetRows) {
     if (!monthKeys.has(r.month)) continue;
-    if (brand !== "all" && r.brand && r.brand !== "all" && r.brand !== brand) continue;
+    if (brand !== "all" && r.brand !== brand) continue;
     const current = budgets.get(r.category);
     budgets.set(r.category, {
       amount: (current?.amount || 0) + r.budget,
@@ -383,7 +383,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
 
   const rows = categoryPnl(sheetRows, reqs, period, brand);
   const periodLabel = period.mode === "month" ? `${MONTHS[period.month]} ${period.year}` : `${period.start} → ${period.end}`;
-  const cols = "minmax(220px,2fr) repeat(5,minmax(105px,1fr))";
+  const cols = "minmax(220px,2fr) repeat(10,minmax(82px,1fr))";
   const campaignByName = new Map(campaigns.map((campaign) => [campaign.name, campaign]));
   const categoryContributors = (category: string) => reqs.filter((request) =>
     request.category === category && request.createdAt && inDateFilter(period, request.createdAt) &&
@@ -395,13 +395,6 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
     section,
     rows: visibleRows.filter((row) => row.section === section),
   }));
-  const sumByCenter = (pick: (row: CatPnlRow) => number) => Object.fromEntries(
-    PNL_COST_CENTERS.map((center) => [center, visibleRows
-      .filter((row) => categoryCostCenter(row.category) === center)
-      .reduce((sum, row) => sum + pick(row), 0)])
-  ) as Record<PnlCostCenter, number>;
-  const budgetSum = sumByCenter((row) => row.budget);
-  const actualSum = sumByCenter((row) => row.approved);
 
   return (
     <div className="flex flex-col gap-4">
@@ -425,7 +418,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
 
       {/* Period picker — day-level range up to whole months/years */}
       <DateFilterBar value={period} onChange={setPeriod}
-        trailing={brand !== "all" ? <span>ตัวกรองแบรนด์มีผลกับยอดเบิกจริงเท่านั้น</span> : undefined} />
+        trailing={brand !== "all" ? <span>กำลังแสดง Budget และ Actual เฉพาะ {brandName(brand)}</span> : undefined} />
 
       {/* Over-budget alert — the sheet budget is the monthly cap; campaign
           expenses draw it down. Hard = approved already exceeds; soft = pending
@@ -460,19 +453,28 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
           <div className="text-[11px] text-faint">เลือก Category เพื่อดู Campaign ที่เกี่ยวข้อง</div>
         </div>
         <div className="overflow-x-auto">
-          <div className="min-w-[850px]">
-            <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+          <div className="min-w-[1180px]">
+            <div className="grid px-5 pt-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold" style={{ gridTemplateColumns: cols }}>
               <div>Section / Category</div>
-              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-right">{COST_CENTER_LABEL[center]}</div>)}
-              <div className="text-right">Grand Total</div>
+              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
+              <div className="text-center" style={{ gridColumn: "span 2" }}>Grand Total</div>
+            </div>
+            <div className="grid px-5 pb-2 pt-1 text-[9.5px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+              <div></div>
+              {[...PNL_COST_CENTERS, "total"].flatMap((center) => [<div key={`${center}-budget`} className="text-right">Budget</div>, <div key={`${center}-actual`} className="text-right">Actual</div>])}
             </div>
             {sections.map((section) => {
               const isOpen = Boolean(openSection[section.section]);
               const sectionRows = section.rows;
-              const totals = Object.fromEntries(PNL_COST_CENTERS.map((center) => [center,
-                sectionRows.filter((row) => categoryCostCenter(row.category) === center).reduce((sum, row) => sum + row.budget, 0)
-              ])) as Record<PnlCostCenter, number>;
-              const grandTotal = PNL_COST_CENTERS.reduce((sum, center) => sum + totals[center], 0);
+              const totals = Object.fromEntries(PNL_COST_CENTERS.map((center) => {
+                const centerRows = sectionRows.filter((row) => categoryCostCenter(row.category) === center);
+                return [center, {
+                  budget: centerRows.reduce((sum, row) => sum + row.budget, 0),
+                  actual: centerRows.reduce((sum, row) => sum + row.approved, 0),
+                }];
+              })) as Record<PnlCostCenter, { budget: number; actual: number }>;
+              const grandBudget = PNL_COST_CENTERS.reduce((sum, center) => sum + totals[center].budget, 0);
+              const grandActual = PNL_COST_CENTERS.reduce((sum, center) => sum + totals[center].actual, 0);
               return (
                 <div key={section.section} className="border-b border-line4 last:border-0">
                   <button onClick={() => setOpenSection((open) => ({ ...open, [section.section]: !open[section.section] }))}
@@ -481,11 +483,14 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                       {isOpen ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
                       {section.section}
                     </span>
-                    {PNL_COST_CENTERS.map((center) => <span key={center} className="text-[13px] font-semibold text-right">{baht(totals[center], { compact: true })}</span>)}
-                    <span className="text-[13px] font-bold text-right">{baht(grandTotal, { compact: true })}</span>
+                    {PNL_COST_CENTERS.flatMap((center) => [
+                      <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].budget, { compact: true })}</span>,
+                      <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].actual, { compact: true })}</span>,
+                    ])}
+                    <span className="text-[13px] font-bold text-right">{baht(grandBudget, { compact: true })}</span>
+                    <span className="text-[13px] font-bold text-right">{baht(grandActual, { compact: true })}</span>
                   </button>
                   {isOpen && sectionRows.map((row) => {
-                    const value = row.budget;
                     const center = categoryCostCenter(row.category);
                     const campaignCount = new Set(categoryContributors(row.category).map((request) => request.campaign).filter((name) => name && name !== "—")).size;
                     return (
@@ -495,32 +500,18 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                           <span className="truncate">{row.category}</span>
                           {campaignCount > 0 && <span className="shrink-0 text-[10px] font-bold text-accent">ดูรายละเอียด</span>}
                         </span>
-                        {PNL_COST_CENTERS.map((column) => <span key={column} className="text-[12.5px] text-right text-muted">{column === center ? baht(value, { compact: true }) : "—"}</span>)}
-                        <span className="text-[12.5px] font-semibold text-right">{baht(value, { compact: true })}</span>
+                        {PNL_COST_CENTERS.flatMap((column) => [
+                          <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
+                          <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
+                        ])}
+                        <span className="text-[12.5px] font-semibold text-right">{baht(row.budget, { compact: true })}</span>
+                        <span className="text-[12.5px] font-semibold text-right">{baht(row.approved, { compact: true })}</span>
                       </button>
                     );
                   })}
                 </div>
               );
             })}
-            {visibleRows.length > 0 && (
-              <div className="border-t-2 border-line2 bg-panel text-white">
-                {([
-                  ["Budget", budgetSum],
-                  ["Actual", actualSum],
-                  ["Variance", Object.fromEntries(PNL_COST_CENTERS.map((center) => [center, budgetSum[center] - actualSum[center]])) as Record<PnlCostCenter, number>],
-                ] as const).map(([label, values], index) => {
-                  const grandTotal = PNL_COST_CENTERS.reduce((sum, center) => sum + values[center], 0);
-                  return (
-                    <div key={label} className={`grid px-5 py-[10px] items-center ${index ? "border-t border-white/10" : ""}`} style={{ gridTemplateColumns: cols }}>
-                      <span className="text-[12.5px] font-bold">Sum · {label}</span>
-                      {PNL_COST_CENTERS.map((center) => <span key={center} className="text-[12.5px] font-semibold text-right">{baht(values[center], { compact: true })}</span>)}
-                      <span className="text-[13px] font-bold text-right">{baht(grandTotal, { compact: true })}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
         {visibleRows.length === 0 && (
