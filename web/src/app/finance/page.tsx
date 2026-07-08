@@ -377,6 +377,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   campaigns: CampaignRow[];
 }) {
   const [urlDraft, setUrlDraft] = useState(sheetUrl);
+  const [sheetConfigOpen, setSheetConfigOpen] = useState(false);
   const [openSection, setOpenSection] = useState<Record<string, boolean>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
@@ -406,21 +407,32 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   return (
     <div className="flex flex-col gap-4">
       {/* Google Sheet connection */}
-      <div className="bg-surface border border-line rounded-cardLg p-5">
-        <div className="text-[13px] font-bold mb-1">งบประมาณรายเดือนจาก Google Sheet</div>
-        <div className="text-[11.5px] text-faint mb-3">
-          แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
-          คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท) · D = Brand (ถ้ามี)</b> — แก้งบใน sheet แล้วกดโหลดใหม่ได้เลย
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"
-            className="flex-1 min-w-[260px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
-          <button onClick={() => onSaveUrl(urlDraft)} disabled={!urlDraft.trim() || urlDraft === sheetUrl}
-            className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 disabled:opacity-40">บันทึก & โหลด</button>
-          {sheetUrl && <button onClick={onReload} className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 bg-white">โหลดใหม่</button>}
-          {sheetUrl && <a href={sheetUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 py-[8px] bg-white">เปิด Sheet ↗</a>}
-        </div>
-        {status && <div className="text-[12px] mt-2" style={{ color: status.startsWith("⚠") ? "#B33A2E" : "#4E7A4E" }}>{status}</div>}
+      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+        <button onClick={() => setSheetConfigOpen((open) => !open)} aria-expanded={sheetConfigOpen} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-ivory/40">
+          <span>
+            <span className="text-[13px] font-bold text-ink">Google Sheet Budget</span>
+            <span className="text-[11.5px] ml-3" style={{ color: status.startsWith("⚠") ? "#B33A2E" : sheetUrl ? "#4E7A4E" : "#9A9387" }}>
+              {status || (sheetUrl ? "เชื่อมต่อแล้ว" : "ยังไม่ได้เชื่อมต่อ")}
+            </span>
+          </span>
+          {sheetConfigOpen ? <ChevronDown size={16} className="text-faint" /> : <ChevronRight size={16} className="text-faint" />}
+        </button>
+        {sheetConfigOpen && (
+          <div className="px-5 pb-5 pt-1 border-t border-line4">
+            <div className="text-[11.5px] text-faint my-3">
+              แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
+              คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท) · D = Brand (ถ้ามี)</b>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"
+                className="flex-1 min-w-[260px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              <button onClick={() => onSaveUrl(urlDraft)} disabled={!urlDraft.trim() || urlDraft === sheetUrl}
+                className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 disabled:opacity-40">บันทึก & โหลด</button>
+              {sheetUrl && <button onClick={onReload} className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 bg-white">โหลดใหม่</button>}
+              {sheetUrl && <a href={sheetUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 py-[8px] bg-white">เปิด Sheet ↗</a>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Period picker — day-level range up to whole months/years */}
