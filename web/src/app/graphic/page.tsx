@@ -292,7 +292,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label>
-              <div className={`${field} text-muted cursor-not-allowed`} aria-readonly="true">{requester} · Logged in</div>
+              <input value={requester} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
             </div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><OwnerSelect value={designer === "Unassigned" ? "" : designer} onChange={(v) => setDesigner(v || "Unassigned")} team="Creative" placeholder="Unassigned" /></div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
