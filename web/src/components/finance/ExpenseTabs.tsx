@@ -276,7 +276,9 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
 
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attach quotation</label>
-              <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">Drop file here or click to upload</div>
+              <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">
+                Drop file here or click to upload <span className="ml-2 font-bold text-accent">Coming soon</span>
+              </div>
             </div>
             <button
               onClick={submit}
