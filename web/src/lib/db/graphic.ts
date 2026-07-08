@@ -57,7 +57,10 @@ export async function updateGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (!db) return;
   await db.from("graphic_requests")
-    .update({ stage: g.stage, blocker: g.blocker, next_action: g.nextAction, data: g })
+    .update({
+      stage: g.stage, designer: g.designer, requester: g.requester, approver: g.approver,
+      blocker: g.blocker, next_action: g.nextAction, data: g,
+    })
     .eq("data->>id", String(g.id));
 }
 

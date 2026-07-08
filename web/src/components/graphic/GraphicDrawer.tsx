@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
@@ -20,7 +21,7 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
   const [tab, setTab] = useState<GTab>(initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
   const { member, user } = useAuth();
-  const designer = member?.name ?? user?.email ?? g.designer;
+  const currentUser = member?.name ?? user?.email ?? g.designer;
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefPct = Math.round((brief.filter((b) => b.ok).length / brief.length) * 100);
@@ -60,9 +61,22 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
         <div className="flex-1 overflow-y-auto px-5 py-[18px]">
           {tab === "overview" && (
             <div className="flex flex-col gap-4">
+              <div>
+                <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
+                <OwnerSelect
+                  value={g.designer === "Unassigned" ? "" : g.designer}
+                  onChange={(name) => {
+                    const assigned = name || "Unassigned";
+                    const ng: Graphic = { ...g, designer: assigned, nextAction: assigned === "Unassigned" ? "Assign designer to start work" : `${assigned} to start design` };
+                    updateGraphic(ng); onUpdate?.(ng);
+                  }}
+                  team="Creative"
+                  placeholder="Unassigned"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 {[["Stage", <StatusBadge key="s" tone={stageTone(g.stage)}>{g.stage}</StatusBadge>],
-                  ["Designer", g.designer], ["Requester", g.requester], ["Approver", g.approver],
+                  ["Requester", g.requester], ["Approver", g.approver],
                   ["Platform", g.platform], ["Size", g.size]].map(([l, v], i) => (
                   <div key={i}>
                     <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[3px]">{l as string}</div>
@@ -117,7 +131,7 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
             </div>
           )}
 
-          {tab === "assets" && <DeliverablesEditor g={g} me={designer} onUpdate={onUpdate} />}
+          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} onUpdate={onUpdate} />}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">

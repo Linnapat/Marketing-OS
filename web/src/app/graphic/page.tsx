@@ -23,6 +23,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
+import { useAuth } from "@/lib/auth";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
@@ -219,8 +220,9 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [designer, setDesigner] = useState("Unassigned");
-  const [requester, setRequester] = useState("");
   const [approver, setApprover] = useState("");
+  const { member, user } = useAuth();
+  const requester = member?.name || user?.email?.split("@")[0] || "You";
   // Same content-item "template" as the Campaign Builder's Content Plan — a graphic
   // request is just a content item that needs a graphic, so it stays in sync.
   const [item, setItem] = useState<BriefContentItem>(() => ({ ...emptyContentItem(nextId), requiredGraphic: true }));
@@ -240,12 +242,12 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const plats = item.platforms;
     const pairs = item.assets.length ? item.assets : plats.map((p) => ({ platform: p, size: "" }));
     const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", item.referenceBriefLink || ""));
-    const approverName = approver.trim() || requester.trim();
+    const approverName = approver.trim() || requester;
     const g: Graphic = {
       ...buildGraphic({
         id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
         type: item.type, due: labelDate(item.publishDate) || "TBD", designer,
-        requester: requester.trim() || "You", approver: approverName, channels: plats,
+        requester, approver: approverName, channels: plats,
       }),
       stage: "New Request",
       size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
@@ -288,7 +290,10 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label><OwnerSelect value={requester} onChange={setRequester} team="Planner" /></div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label>
+              <div className={`${field} text-muted cursor-not-allowed`} aria-readonly="true">{requester} · Logged in</div>
+            </div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><OwnerSelect value={designer === "Unassigned" ? "" : designer} onChange={(v) => setDesigner(v || "Unassigned")} team="Creative" placeholder="Unassigned" /></div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
           </div>
