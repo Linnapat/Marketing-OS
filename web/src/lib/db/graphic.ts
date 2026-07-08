@@ -3,9 +3,11 @@
 
 import { supabase } from "@/lib/supabase";
 import { GRAPHICS, Graphic, deliverableProgress } from "@/lib/data/graphic";
-import { BrandId } from "@/lib/brands";
+import { BrandId, brandName } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
+import { upsertGraphicTask } from "./tasks";
+import { Task } from "@/lib/data/tasks";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
@@ -17,14 +19,16 @@ export async function fetchGraphics(): Promise<Graphic[]> {
 
 export async function createGraphic(g: Graphic): Promise<void> {
   const db = supabase();
-  if (!db) return;
-  await db.from("graphic_requests").insert({
-    title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,
-    designer: g.designer, requester: g.requester,
-    approver: g.approver, type: g.type, priority: g.priority, stage: g.stage, due: g.due,
-    platform: g.platform, size: g.size, brief_complete: g.briefComplete, blocker: g.blocker,
-    next_action: g.nextAction, data: g,
-  });
+  if (db) {
+    await db.from("graphic_requests").insert({
+      title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,
+      designer: g.designer, requester: g.requester,
+      approver: g.approver, type: g.type, priority: g.priority, stage: g.stage, due: g.due,
+      platform: g.platform, size: g.size, brief_complete: g.briefComplete, blocker: g.blocker,
+      next_action: g.nextAction, data: g,
+    });
+  }
+  await syncGraphicAssignmentTask(g);
 }
 
 /** Source content-item ids that already have a graphic for a campaign — the
@@ -55,13 +59,15 @@ export async function createGraphicIfNew(g: Graphic, existing?: Set<string>): Pr
  *  object round-trips through `data`; stage is mirrored. Matched on the blob id. */
 export async function updateGraphic(g: Graphic): Promise<void> {
   const db = supabase();
-  if (!db) return;
-  await db.from("graphic_requests")
-    .update({
-      stage: g.stage, designer: g.designer, requester: g.requester, approver: g.approver,
-      blocker: g.blocker, next_action: g.nextAction, data: g,
-    })
-    .eq("data->>id", String(g.id));
+  if (db) {
+    await db.from("graphic_requests")
+      .update({
+        stage: g.stage, designer: g.designer, requester: g.requester, approver: g.approver,
+        blocker: g.blocker, next_action: g.nextAction, data: g,
+      })
+      .eq("data->>id", String(g.id));
+  }
+  await syncGraphicAssignmentTask(g);
 }
 
 /** When every deliverable of a graphic is approved, attach the approved asset
@@ -110,4 +116,33 @@ export function buildGraphic(input: {
     blocker: null, waitingSince: null, nextAction: "Complete the brief to start design.",
     platform: input.channels.join(", ") || "—", size: "—", contentItem: input.title || "—",
   };
+}
+
+function graphicTaskFromRequest(g: Graphic): Task {
+  return {
+    id: Number(`${g.id}01`),
+    title: g.title,
+    module: "Graphic",
+    moduleIcon: "🎨",
+    moduleColor: "#C2691E",
+    type: "Graphic",
+    assignee: g.designer || "Unassigned",
+    brand: brandName(g.b),
+    campaign: g.campaign,
+    priority: g.priority,
+    status: g.designer && g.designer !== "Unassigned" ? "Todo" : "Todo",
+    group: g.designer && g.designer !== "Unassigned" ? "doFirst" : "quickWins",
+    due: g.due || "TBD",
+    dueIso: undefined,
+    blocker: null,
+    pendingApprover: g.requester || null,
+    isQuickWin: false,
+    nextAction: g.designer && g.designer !== "Unassigned" ? `${g.designer} to start design` : "Creative leader to assign designer",
+    checklist: ["Review brief", "Create first draft", "Upload artwork for review"],
+    relatedGraphicId: String(g.id),
+  };
+}
+
+async function syncGraphicAssignmentTask(g: Graphic): Promise<void> {
+  await upsertGraphicTask(graphicTaskFromRequest(g));
 }
