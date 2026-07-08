@@ -390,10 +390,18 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
     (brand === "all" || request.b === brand) && request.status !== "Draft" && request.status !== "Rejected"
   );
   const selectedContributors = selectedCategory ? categoryContributors(selectedCategory) : [];
-  const sections = Array.from(new Set(rows.map((row) => row.section))).map((section) => ({
+  const visibleRows = rows.filter((row) => row.section.trim().toLowerCase() !== "marketing");
+  const sections = Array.from(new Set(visibleRows.map((row) => row.section))).map((section) => ({
     section,
-    rows: rows.filter((row) => row.section === section),
+    rows: visibleRows.filter((row) => row.section === section),
   }));
+  const sumByCenter = (pick: (row: CatPnlRow) => number) => Object.fromEntries(
+    PNL_COST_CENTERS.map((center) => [center, visibleRows
+      .filter((row) => categoryCostCenter(row.category) === center)
+      .reduce((sum, row) => sum + pick(row), 0)])
+  ) as Record<PnlCostCenter, number>;
+  const budgetSum = sumByCenter((row) => row.budget);
+  const actualSum = sumByCenter((row) => row.approved);
 
   return (
     <div className="flex flex-col gap-4">
@@ -495,9 +503,27 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                 </div>
               );
             })}
+            {visibleRows.length > 0 && (
+              <div className="border-t-2 border-line2 bg-panel text-white">
+                {([
+                  ["Budget", budgetSum],
+                  ["Actual", actualSum],
+                  ["Variance", Object.fromEntries(PNL_COST_CENTERS.map((center) => [center, budgetSum[center] - actualSum[center]])) as Record<PnlCostCenter, number>],
+                ] as const).map(([label, values], index) => {
+                  const grandTotal = PNL_COST_CENTERS.reduce((sum, center) => sum + values[center], 0);
+                  return (
+                    <div key={label} className={`grid px-5 py-[10px] items-center ${index ? "border-t border-white/10" : ""}`} style={{ gridTemplateColumns: cols }}>
+                      <span className="text-[12.5px] font-bold">Sum · {label}</span>
+                      {PNL_COST_CENTERS.map((center) => <span key={center} className="text-[12.5px] font-semibold text-right">{baht(values[center], { compact: true })}</span>)}
+                      <span className="text-[13px] font-bold text-right">{baht(grandTotal, { compact: true })}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
-        {rows.length === 0 && (
+        {visibleRows.length === 0 && (
           <div className="px-5 py-10 text-[12.5px] text-faint text-center">
             ยังไม่มีข้อมูลช่วงนี้ — {sheetUrl ? "เพิ่มงบช่วงนี้ใน Google Sheet แล้วกดโหลดใหม่" : "เชื่อม Google Sheet ด้านบนเพื่อตั้งงบรายหมวด"}
           </div>
