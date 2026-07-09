@@ -70,7 +70,7 @@ export async function fetchKolsForCampaign(campaignId: string): Promise<Kol[]> {
 const REQUIREMENT_FIELDS: (keyof Kol)[] = [
   "kolType", "plat", "fee", "totalCost", "expectedReach", "expectedEngagement",
   "branch", "contentStyle", "objective", "target", "keyMsg", "offer",
-  "postDueDate", "postingDate", "postingPeriod", "owner", "pendingApprover", "campaign", "b",
+  "postDueDate", "postingDate", "postingPeriod", "owner", "pendingApprover", "campaign", "b", "requester",
 ];
 
 /** Live two-way sync (Campaign Builder → KOL rows): create the row if new, else
@@ -154,6 +154,7 @@ export function buildKol(input: {
     objective: or(input.objective), target: or(input.target), keyMsg: or(input.keyMsg), offer: or(input.offer),
     postingPeriod: period, engagement: "—", saves: "—", shares: "—", postLink: null,
     notes: input.notes,
+    history: [{ type: "requested", at: new Date().toISOString(), by: input.requester?.trim() || "System", note: input.campaign }],
     stages: [
       { l: "Request", d: "Today", done: false, cur: true },
       { l: "Owner Assigned", d: "", done: false, cur: false },

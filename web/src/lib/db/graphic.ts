@@ -115,6 +115,7 @@ export function buildGraphic(input: {
     isOverdue: false, briefComplete: false, pendingApprover: input.approver || input.requester || "Unassigned",
     blocker: null, waitingSince: null, nextAction: "Complete the brief to start design.",
     platform: input.channels.join(", ") || "—", size: "—", contentItem: input.title || "—",
+    history: [{ type: "requested", at: new Date().toISOString(), by: input.requester || "You", note: input.campaign || "" }],
   };
 }
 

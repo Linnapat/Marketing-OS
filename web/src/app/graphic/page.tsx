@@ -64,7 +64,10 @@ export default function GraphicPage() {
     { label: "In Progress", value: kpi.inProgress },
     { label: "Waiting Feedback", value: kpi.waiting, tone: "gold" },
     { label: "Revisions", value: kpi.revisions, tone: "orange" },
-    { label: "Approved", value: kpi.approved, tone: "green" },
+    { label: "Approved", value: kpi.approvedCount, tone: "green" },
+    { label: "Delivered", value: kpi.deliveredCount, tone: kpi.deliveredCount ? "green" : undefined },
+    { label: "Revision Count", value: kpi.revisionRequests, tone: kpi.revisionRequests ? "orange" : undefined },
+    { label: "Late Submit", value: kpi.lateSubmissions, tone: kpi.lateSubmissions ? "red" : undefined },
     { label: "Open Feedback", value: kpi.feedback, tone: kpi.feedback ? "red" : undefined, dark: true },
   ];
 

@@ -77,12 +77,20 @@ export default function ContentPage() {
   );
   const cards = useMemo(() => brandOverview(posts), [posts]);
 
-  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string) => {
+  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
     setNewOpen(false);
-    const created = await createContent(p);
+    const sourceContentItemId = briefItem.id || `ci-cal-${Date.now()}`;
+    const graphicRequestId = briefItem.requiredGraphic ? String(Date.now() + 700) : undefined;
+    const post: ContentItem = {
+      ...p,
+      campaignId,
+      sourceContentItemId,
+      graphicRequestId,
+    };
+    const created = await createContent(post);
     setPosts((ps) => [created, ...ps]);
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
-    if (campaign && campaign !== "—") appendBriefItem(campaign, briefItem).catch(() => {});
+    if (campaign && campaign !== "—") appendBriefItem(campaign, { ...briefItem, id: sourceContentItemId }).catch(() => {});
     // "Required Graphic" checked → drop a linked request into the Graphic
     // module (one deliverable per Platform × Asset Size). When every
     // deliverable is approved there, the asset links flow back onto THIS post
@@ -94,9 +102,10 @@ export default function ContentPage() {
       const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", briefItem.referenceBriefLink || ""));
       const g: Graphic = {
         ...buildGraphic({
-          id: Date.now(), b: p.b, campaign: p.campaign, title: p.title,
+          id: Number(graphicRequestId), b: p.b, campaign: p.campaign, title: p.title,
           type: briefItem.type, due: labelDate(briefItem.publishDate) || "TBD",
           designer: "Unassigned", requester: me, approver: me, channels: plats,
+          campaignId, sourceContentItemId,
         }),
         stage: "New Request",
         size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
@@ -174,7 +183,7 @@ export default function ContentPage() {
   );
 }
 
-function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string) => void; count: number; initialIso?: string | null }) {
+function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => void; count: number; initialIso?: string | null }) {
   const [b, setB] = useState<BrandId>("teppen");
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
@@ -192,6 +201,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
     return () => { alive = false; };
   }, []);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
+  const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
@@ -210,7 +220,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
       captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
-    onCreate(post, item, campaign.trim());
+    onCreate(post, item, campaign.trim(), selectedCampaign?.id);
   };
 
   return (

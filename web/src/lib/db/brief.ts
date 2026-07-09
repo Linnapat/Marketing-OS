@@ -143,7 +143,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         count: 1, budget: perPageBudget, deliverables: kr.contentRequired.join(" + "),
         notes: kr.note, name: kr.name ? (pages > 1 ? `${kr.name} #${p}` : kr.name) : undefined, handle: kr.handle || undefined,
         followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
-        owner, approver: kolAssign.approver, branch: kr.area, platform: kr.platforms[0],
+        owner, approver: kolAssign.approver, requester: brief.plannerOwner, branch: kr.area, platform: kr.platforms[0],
         postingDate: labelDate(kr.postingStart), postingEnd: labelDate(kr.postingEnd),
         campaignId: brief.id, sourceKolRequirementId: `${kr.id}#${p}`,
         objective: brief.objective, target: brief.audience, keyMsg: brief.mainMessage, offer: brief.offer,
@@ -268,7 +268,10 @@ export async function appendBriefItem(campaignName: string, item: BriefContentIt
   if (!camp) return;
   const brief = await fetchCampaignBrief(camp.id);
   if (!brief) return;
-  brief.content = [...brief.content, { ...item, id: `ci-cal-${Date.now()}` }];
+  const nextId = item.id || `ci-cal-${Date.now()}`;
+  const existingIndex = brief.content.findIndex((c) => c.id === nextId);
+  if (existingIndex >= 0) brief.content[existingIndex] = { ...item, id: nextId };
+  else brief.content = [...brief.content, { ...item, id: nextId }];
   await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
 }
 
@@ -288,7 +291,7 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
     await db.from("campaigns").update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id);
     return;
   }
-  brief.kols = [...brief.kols, { ...item, id: `kr-req-${Date.now()}` }];
+  brief.kols = [...brief.kols, { ...item, id: item.id || `kr-req-${Date.now()}` }];
   // Re-derive the campaign's committed budget so the row (Budget/Spend shown on
   // the Campaigns list, detail header, Finance) moves together with the plan.
   const s = budgetSummary(brief);
