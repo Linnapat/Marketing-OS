@@ -321,5 +321,6 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   if (!brief) return;
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
-  await db.from("campaigns").update({ data: brief, status }).eq("id", id);
+  const nextApproval = status === "Waiting for Approval" ? (brief.approver || "CMO") : "None";
+  await db.from("campaigns").update({ data: brief, status, next_approval: nextApproval }).eq("id", id);
 }

@@ -9,6 +9,16 @@ import { getSavedSignature } from "@/lib/signature";
 
 const sarabun = Sarabun({ subsets: ["thai", "latin"], weight: ["400", "500", "600", "700"] });
 
+function TeppenLogo() {
+  return (
+    <svg viewBox="0 0 220 120" aria-label="TEPPEN GROUP" style={{ width: "92%", maxWidth: 170, margin: "0 auto", display: "block" }}>
+      <rect x="0" y="0" width="220" height="120" rx="12" fill="#ffffff" />
+      <text x="110" y="58" textAnchor="middle" fontSize="34" fontWeight="800" letterSpacing="5" fill="#1f4a86">TEPPEN</text>
+      <text x="110" y="88" textAnchor="middle" fontSize="14" fontWeight="700" letterSpacing="8" fill="#B8945A">GROUP</text>
+    </svg>
+  );
+}
+
 /**
  * ใบสำคัญจ่ายทั่วไป — printable A5 landscape voucher, ported from Payment Voucher.dc.html.
  * Full-screen overlay with a Payment / Petty Cash toggle and native print.
@@ -20,10 +30,11 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
     expense.reimburseType === "Petty Cash" ? "PETTY" : "PAYMENT",
   );
   const isPV = type === "PAYMENT";
-  // The approver's remembered signature flows straight into the voucher for print.
-  const [sig, setSig] = useState<string | null>(null);
-  useEffect(() => { setSig(getSavedSignature()); }, []);
-  const [logoOk, setLogoOk] = useState(true); // fall back to the text mark if no image file
+  // Remembered signatures flow straight into the voucher for print.
+  const [preparerSig, setPreparerSig] = useState<string | null>(null);
+  useEffect(() => {
+    setPreparerSig(getSavedSignature("preparer"));
+  }, []);
 
   const amount = expense.amount;
   const items = [
@@ -65,17 +76,9 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
             <tbody>
               <tr>
                 {/* Company logo — drop the real file at web/public/company-logo.png.
-                    Falls back to the TEPPEN GROUP text mark if the image is missing. */}
+                    Inline mark keeps the voucher branded even without an asset file. */}
                 <td rowSpan={5} style={{ border: cell, textAlign: "center", verticalAlign: "middle", padding: 4, width: "18%" }}>
-                  {logoOk ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src="/company-logo.png" alt="TEPPEN GROUP" onError={() => setLogoOk(false)} style={{ maxWidth: "90%", maxHeight: 60, margin: "0 auto", display: "block" }} />
-                  ) : (
-                    <>
-                      <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: 1.5, color: "#1a3a6b", lineHeight: 1 }}>TEPPEN</div>
-                      <div style={{ fontSize: 8, letterSpacing: 3, color: "#B8945A", marginTop: 3, fontWeight: 700 }}>GROUP</div>
-                    </>
-                  )}
+                  <TeppenLogo />
                 </td>
                 <td colSpan={3} style={{ border: cell, textAlign: "center", padding: "2px 6px", fontWeight: 700, fontSize: 11, color: "#1a3a6b" }}>14/2 ซอยสุขุมวิท 61 แขวงคลองตันเหนือ เขตวัฒนา กรุงเทพฯ 10110</td>
                 <td style={{ border: cell, textAlign: "right", padding: "2px 5px", fontSize: 9.5, color: "#555", verticalAlign: "top" }}>(สำนักงานใหญ่)</td>
@@ -130,16 +133,16 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
                 <td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้อนุมัติ / วันที่</td>
               </tr>
               <tr>
-                <td style={{ border: cell, height: 34 }} />
                 <td style={{ border: cell, height: 34, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-                  {sig && (
+                  {preparerSig && (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={sig} alt="ผู้อนุมัติ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
+                      <img src={preparerSig} alt="ผู้จัดทำ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
                       <div style={{ fontSize: 8.5, color: "#555" }}>{expense.date} 2569</div>
                     </>
                   )}
                 </td>
+                <td style={{ border: cell, height: 34 }} />
               </tr>
               <tr><td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้จ่ายเงิน / วันที่</td><td style={{ border: cell, background: "#fafafa" }} /></tr>
               <tr><td style={{ border: cell, height: 30 }} /><td style={{ border: cell, background: "#fafafa" }} /></tr>

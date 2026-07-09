@@ -19,8 +19,12 @@ export function CampaignDetailClient({ id, initialDetail }: { id: string; initia
 
   const name = detail?.row.name;
   const reload = useCallback(() => {
+    fetchCampaign(id).then((c) => {
+      if (c) setDetail(deriveDetail(c));
+    }).catch(() => {});
+    fetchCampaignBrief(id).then(setBrief).catch(() => {});
     if (name) fetchCampaignHub(name).then(setHub).catch(() => {});
-  }, [name]);
+  }, [id, name]);
 
   useEffect(() => {
     let alive = true;

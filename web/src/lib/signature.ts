@@ -1,17 +1,25 @@
-// Remembered approval signature. Stored locally (per browser) so an approver
-// signs once and later approvals only need a Confirm click.
+// Remembered voucher signatures. Stored locally (per browser) so Finance can
+// reuse a preparer / approver signature across approvals in the same session.
 
-const KEY = "mos:approval-signature";
+export type SignatureRole = "preparer" | "approver";
 
-export function getSavedSignature(): string | null {
+const KEY: Record<SignatureRole, string> = {
+  preparer: "mos:signature:preparer",
+  approver: "mos:signature:approver",
+};
+
+export function getSavedSignature(role: SignatureRole = "approver"): string | null {
   if (typeof window === "undefined") return null;
-  try { return localStorage.getItem(KEY); } catch { return null; }
+  try { return localStorage.getItem(KEY[role]); } catch { return null; }
 }
 
-export function saveSignature(dataUrl: string): void {
-  try { localStorage.setItem(KEY, dataUrl); } catch { /* ignore */ }
+export function saveSignature(role: SignatureRole, dataUrl: string): void {
+  try { localStorage.setItem(KEY[role], dataUrl); } catch { /* ignore */ }
 }
 
-export function clearSignature(): void {
-  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+export function clearSignature(role?: SignatureRole): void {
+  try {
+    if (role) localStorage.removeItem(KEY[role]);
+    else Object.values(KEY).forEach((k) => localStorage.removeItem(k));
+  } catch { /* ignore */ }
 }
