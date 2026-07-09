@@ -79,10 +79,17 @@ export default function ContentPage() {
 
   const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
     setNewOpen(false);
+    const requester = briefItem.requester?.trim() || me;
+    const designer = briefItem.designer || "Unassigned";
+    const approver = briefItem.approver?.trim() || requester;
+    const normalizedBriefItem: BriefContentItem = { ...briefItem, requester, designer, approver };
     const sourceContentItemId = briefItem.id || `ci-cal-${Date.now()}`;
     const graphicRequestId = briefItem.requiredGraphic ? String(Date.now() + 700) : undefined;
     const post: ContentItem = {
       ...p,
+      requester,
+      designer,
+      approver,
       campaignId,
       sourceContentItemId,
       graphicRequestId,
@@ -90,21 +97,21 @@ export default function ContentPage() {
     const created = await createContent(post);
     setPosts((ps) => [created, ...ps]);
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
-    if (campaign && campaign !== "—") appendBriefItem(campaign, { ...briefItem, id: sourceContentItemId }).catch(() => {});
+    if (campaign && campaign !== "—") appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId }).catch(() => {});
     // "Required Graphic" checked → drop a linked request into the Graphic
     // module (one deliverable per Platform × Asset Size). When every
     // deliverable is approved there, the asset links flow back onto THIS post
     // automatically (matched by campaign + content-item title) and unlock the
     // Publish gate. Unchecked = "No Asset": no request, publish without one.
     if (briefItem.requiredGraphic) {
-      const plats = briefItem.platforms.length ? briefItem.platforms : [p.plat];
-      const pairs = briefItem.assets.length ? briefItem.assets : plats.map((pl) => ({ platform: pl, size: "" }));
-      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", briefItem.referenceBriefLink || ""));
+      const plats = normalizedBriefItem.platforms.length ? normalizedBriefItem.platforms : [p.plat];
+      const pairs = normalizedBriefItem.assets.length ? normalizedBriefItem.assets : plats.map((pl) => ({ platform: pl, size: "" }));
+      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", normalizedBriefItem.referenceBriefLink || ""));
       const g: Graphic = {
         ...buildGraphic({
           id: Number(graphicRequestId), b: p.b, campaign: p.campaign, title: p.title,
-          type: briefItem.type, due: labelDate(briefItem.publishDate) || "TBD",
-          designer: "Unassigned", requester: me, approver: me, channels: plats,
+          type: normalizedBriefItem.type, due: labelDate(normalizedBriefItem.publishDate) || "TBD",
+          designer, requester, approver, channels: plats,
           campaignId, sourceContentItemId,
         }),
         stage: "New Request",
@@ -188,10 +195,13 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const { member, user } = useAuth();
+  const me = member?.name || user?.email?.split("@")[0] || "You";
   // Same content-item "template" as the Campaign Builder's Content Plan.
   const [item, setItem] = useState<BriefContentItem>(() => {
     const it = emptyContentItem(1);
-    return initialIso ? { ...it, publishDate: initialIso } : it;
+    const seeded = { ...it, requester: me, approver: me };
+    return initialIso ? { ...seeded, publishDate: initialIso } : seeded;
   });
   const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
 
@@ -252,7 +262,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
             </div>
           </div>
           {/* Shared content-item template */}
-          <ContentItemForm item={item} onChange={onChange} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} />
         </div>
         <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
       </div>

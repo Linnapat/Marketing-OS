@@ -79,6 +79,18 @@ function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodF
     .sort((a, b) => b.budget - a.budget || b.requested - a.requested);
 }
 
+function budgetPlanCategories(reqs: ExpenseReq[], brand: BrandFilterValue) {
+  const catMap = new Map<string, number>();
+  for (const r of reqs) {
+    if (brand !== "all" && r.b !== brand) continue;
+    if (r.status === "Draft" || r.status === "Rejected") continue;
+    catMap.set(r.category, (catMap.get(r.category) || 0) + (r.requested || 0));
+  }
+  return Array.from(catMap.entries())
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
 function download(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -226,7 +238,10 @@ function BudgetPlanTab({ brand, fin, reqs, briefs }: { brand: BrandFilterValue; 
   if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
   const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
   const brandAlloc = fin.byBrand.filter((b) => brand === "all" || b.b === brand);
-  const cats = fin.byCategory;
+  const totalPlan = brand === "all" ? fin.totalPlan : brandAlloc.reduce((sum, row) => sum + row.plan, 0);
+  const committed = brand === "all" ? fin.committed : brandAlloc.reduce((sum, row) => sum + row.spent, 0);
+  const available = totalPlan - committed;
+  const cats = budgetPlanCategories(reqs, brand);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
 
   return (
@@ -235,9 +250,9 @@ function BudgetPlanTab({ brand, fin, reqs, briefs }: { brand: BrandFilterValue; 
       <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
         <div className="rounded-card p-[18px]" style={{ background: "#211F1C", color: "#fff" }}>
           <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
-          <div className="text-[25px] font-bold mt-[6px]">{baht(fin.totalPlan, { compact: true })}</div>
+          <div className="text-[25px] font-bold mt-[6px]">{baht(totalPlan, { compact: true })}</div>
         </div>
-        {([["Committed", fin.committed], ["Available", fin.available]] as const).map(([l, v]) => (
+        {([["Committed", committed], ["Available", available]] as const).map(([l, v]) => (
           <div key={l} className="bg-surface border border-line rounded-card p-[18px]">
             <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
             <div className="text-[25px] font-bold mt-[6px] text-ink">{baht(v, { compact: true })}</div>

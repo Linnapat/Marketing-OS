@@ -303,7 +303,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
           </div>
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
-          <ContentItemForm item={item} onChange={onChange} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} showAssignmentFields={false} />
         </div>
         <button onClick={submit} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Request</button>
       </div>
