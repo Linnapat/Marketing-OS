@@ -222,7 +222,6 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const [b, setB] = useState<BrandId>("teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
-  const [designer, setDesigner] = useState("Unassigned");
   const [approver, setApprover] = useState("");
   const { member, user } = useAuth();
   const requester = member?.name || user?.email?.split("@")[0] || "You";
@@ -249,13 +248,13 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const g: Graphic = {
       ...buildGraphic({
         id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
-        type: item.type, due: labelDate(item.publishDate) || "TBD", designer,
+        type: item.type, due: labelDate(item.publishDate) || "TBD", designer: "Unassigned",
         requester, approver: approverName, channels: plats,
       }),
       stage: "New Request",
       size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
       deliverables,
-      nextAction: `Deliver ${deliverables.length} asset(s)`,
+      nextAction: "Creative leader to assign in-house or outsource designer",
       contentItem: item.title.trim() || "—",
     };
     const iso = item.publishDate || new Date().toISOString().slice(0, 10);
@@ -297,7 +296,10 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label>
               <input value={requester} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
             </div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><OwnerSelect value={designer === "Unassigned" ? "" : designer} onChange={(v) => setDesigner(v || "Unassigned")} team="Creative" placeholder="Unassigned" /></div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label>
+              <input value="Creative leader will assign after brief" readOnly aria-readonly="true" className={`${field} text-faint bg-ivory cursor-not-allowed`} />
+            </div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
           </div>
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
