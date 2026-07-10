@@ -13,10 +13,11 @@ export type OwnerTeam = "all" | "Creative" | "Planner" | "KOL" | "Ads" | "CRM";
 // Map a member's free-form role to a functional team for filtering / defaults.
 export function memberTeam(role: string): OwnerTeam {
   const r = (role || "").toLowerCase();
-  if (/design|creative|graphic|art/.test(r)) return "Creative";
-  if (/kol|influencer|creator/.test(r)) return "KOL";
+  if (/creative leader|design|graphic|art|video|vdo|agency|external/.test(r)) return "Creative";
+  if (/kol|influencer/.test(r)) return "KOL";
   if (/ads|performance|media|paid/.test(r)) return "Ads";
   if (/crm|line|loyalty/.test(r)) return "CRM";
+  if (/content creator|content|marketing executive|marketing manager|planner|campaign|co-?ordinator|brand lead|bgl/.test(r)) return "Planner";
   return "Planner";
 }
 

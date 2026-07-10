@@ -16,13 +16,37 @@ const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0
 
 // Every branch across all brands — the scope options for a Branch Manager.
 const BRANCHES: string[] = BRANDS_DATA.flatMap((b) => b.branchList);
+const BRAND_SCOPE_BRANDS = BRANDS_DATA.map((b) => b.name.replace(/\s+Thailand$/i, ""));
+const BRAND_SCOPE_LABELS = ["All brands", "External only", "Selected brands"];
+const BRAND_SCOPE_TEXT = "Teppen · Omakase Don";
+
+function normalizeScopeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function splitBrandScope(value: string): string[] {
+  return normalizeScopeText(value)
+    .replace(/^Branch\s*·\s*/i, "")
+    .split(/[·,]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function toggleBrandScope(current: string, brand: string): string {
+  const normalized = normalizeScopeText(current);
+  if (normalized === "All brands" || normalized === "External only" || /^Branch\s*·/i.test(normalized)) return brand;
+  const picked = new Set(splitBrandScope(normalized));
+  if (picked.has(brand)) picked.delete(brand);
+  else picked.add(brand);
+  return [...picked].join(" · ");
+}
 
 function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
   return <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill whitespace-nowrap inline-block" style={{ color: fg, background: bg }}>{text}</span>;
 }
 
 // Roles that can sit in an approval chain (superset of Users & Roles + finance tiers).
-const APPROVER_ROLES = ["Requester", "Brand Lead", "CMO", "CFO", "CEO", "Finance", "Campaign Planner", "Senior Designer", "KOL Specialist"];
+const APPROVER_ROLES = ["Requester", "Marketing Manager / BGL", "Creative Leader", "Marketing Executive", "Senior Graphic Designer", "VDO Editor", "Co-ordinator", "KOL Specialist", "Content Creator", "CMO", "CFO", "CEO", "Agency (External)"];
 
 // "Jul 7, 2026" — the stamp new/edited templates carry.
 const todayLabel = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -44,6 +68,77 @@ function BranchEditor({ branches, editable, placeholder = "branch", onChange }: 
       ))}
       <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} onBlur={add}
         placeholder={`+ ${placeholder}`} className="text-[11px] w-[92px] px-[8px] py-[3px] rounded-pill border border-line2 bg-white outline-none" />
+    </div>
+  );
+}
+
+function BrandScopeEditor({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const normalized = normalizeScopeText(value);
+  const selectedBrands = splitBrandScope(normalized);
+  const isAll = normalized === "All brands";
+  const isExternal = normalized === "External only";
+  const branchValue = /^Branch\s*·\s*/i.test(normalized) ? normalized.replace(/^Branch\s*·\s*/i, "").trim() : "";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        {BRAND_SCOPE_LABELS.map((label) => {
+          const active = normalized === label;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onChange(label)}
+              className="text-[11.5px] font-bold px-3 py-[6px] rounded-pill border"
+              style={active ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" } : { background: "#fff", color: "#6b6258", borderColor: "#E5DECF" }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {!isAll && !isExternal && (
+        <>
+          <div>
+            <div className="text-[11px] font-bold text-faint mb-[6px]">เลือกหลายแบรนด์ได้</div>
+            <div className="flex flex-wrap gap-2">
+              {BRAND_SCOPE_BRANDS.map((brand) => {
+                const active = selectedBrands.includes(brand) && !branchValue;
+                return (
+                  <button
+                    key={brand}
+                    type="button"
+                    onClick={() => onChange(toggleBrandScope(normalized, brand))}
+                    className="text-[11.5px] font-bold px-3 py-[6px] rounded-pill border"
+                    style={active ? { background: "#EEF1F8", color: "#3E5C9A", borderColor: "#C9D4EE" } : { background: "#fff", color: "#6b6258", borderColor: "#E5DECF" }}
+                  >
+                    {brand}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] font-bold text-faint mb-[6px]">หรือกำหนดเป็นสาขาเดียว</div>
+            <select value={branchValue} onChange={(e) => onChange(e.target.value ? `Branch · ${e.target.value}` : "")} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
+              <option value="">No branch limit</option>
+              {BRANCHES.map((br) => <option key={br} value={br}>{br}</option>)}
+            </select>
+          </div>
+        </>
+      )}
+
+      <div>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={BRAND_SCOPE_TEXT}
+          className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none"
+        />
+        <div className="text-[11px] text-faint mt-[5px]">เช่น {BRAND_SCOPE_TEXT} หรือ Branch · Central World</div>
+      </div>
     </div>
   );
 }
@@ -208,10 +303,10 @@ const ACCESS_STYLE: Record<string, { fg: string; bg: string }> = {
 };
 
 export default function SettingsPage() {
-  // Only the real CMO / Admin role may edit anything in Settings — everyone
+  // Only the real CMO role may edit anything in Settings — everyone
   // else gets the read-only view. Driven by auth (or the demo role switcher).
   const { role } = useRole();
-  const canEdit = role === "CMO / Admin";
+  const canEdit = role === "CMO";
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
   // Notification toggles persist to org_settings; /api/notify honors them.
@@ -322,7 +417,7 @@ export default function SettingsPage() {
     return () => { alive = false; };
   }, []);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const emptyInvite = { name: "", email: "", role: "Campaign Planner", access: "Editor", brandAccess: "All brands" };
+  const emptyInvite = { name: "", email: "", role: "Marketing Executive", access: "Editor", brandAccess: "Selected brands" };
   const [inv, setInv] = useState(emptyInvite);
   // Picking a role opens/closes its default view/edit access + brand scope.
   const pickRole = (role: string) => {
@@ -379,8 +474,8 @@ export default function SettingsPage() {
           <span className="text-[15px]">{canEdit ? "🔓" : "🔒"}</span>
           <div className="text-[12.5px]" style={{ color: canEdit ? "#8A6A2E" : "#6b6258" }}>
             {canEdit
-              ? <>Signed in as <b>CMO / Admin</b> — you can edit everything here, including view and edit permissions.</>
-              : <>Read-only for <b>{role}</b>. Only <b>CMO / Admin</b> can change settings.</>}
+              ? <>Signed in as <b>CMO</b> — you can edit everything here, including view and edit permissions.</>
+              : <>Read-only for <b>{role}</b>. Only <b>CMO</b> can change settings.</>}
           </div>
         </div>
 
@@ -577,7 +672,7 @@ export default function SettingsPage() {
 
         {section === "approval" && (
           <div className="flex flex-col gap-5">
-            {/* Edit toolbar — CMO / Admin only */}
+            {/* Edit toolbar — CMO only */}
             {canEdit && (
               <div className="flex items-center justify-end gap-2">
                 {apprEdit ? (
@@ -596,7 +691,7 @@ export default function SettingsPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="text-[13px] font-bold">Budget Threshold Approval</div>
-                {apprEdit && <button onClick={() => { setThresholds((ts) => [...ts, { range: "฿ new tier", approver: "", chain: ["Brand Lead"] }]); setApprDirty(true); }} className="text-[11.5px] font-bold text-accent">+ Add tier</button>}
+                {apprEdit && <button onClick={() => { setThresholds((ts) => [...ts, { range: "฿ new tier", approver: "", chain: ["Marketing Manager / BGL"] }]); setApprDirty(true); }} className="text-[11.5px] font-bold text-accent">+ Add tier</button>}
               </div>
               <div className="flex flex-col gap-2">
                 {thresholds.map((b, ti) => (
@@ -840,15 +935,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand / branch scope</label>
-                  <select value={inv.brandAccess} onChange={(e) => setInv({ ...inv, brandAccess: e.target.value })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
-                    <optgroup label="Brand">
-                      <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option>
-                    </optgroup>
-                    <optgroup label="Single branch">
-                      {BRANCHES.map((br) => <option key={br} value={`Branch · ${br}`}>Branch · {br}</option>)}
-                    </optgroup>
-                    <option>External only</option>
-                  </select>
+                  <BrandScopeEditor value={inv.brandAccess} onChange={(brandAccess) => setInv({ ...inv, brandAccess })} />
                 </div>
               </div>
             </div>
@@ -901,15 +988,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand / branch scope</label>
-                <select value={editUser.m.brandAccess} onChange={(e) => setEditUser((u) => u && { ...u, m: { ...u.m, brandAccess: e.target.value } })} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
-                  <optgroup label="Brand">
-                    <option>All brands</option><option>Teppen</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option>
-                  </optgroup>
-                  <optgroup label="Single branch">
-                    {BRANCHES.map((br) => <option key={br} value={`Branch · ${br}`}>Branch · {br}</option>)}
-                  </optgroup>
-                  <option>External only</option>
-                </select>
+                <BrandScopeEditor value={editUser.m.brandAccess} onChange={(brandAccess) => setEditUser((u) => u && { ...u, m: { ...u.m, brandAccess } })} />
               </div>
             </div>
             <div className="flex gap-2 mt-6">

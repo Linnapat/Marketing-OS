@@ -35,7 +35,7 @@ export default function CampaignsPage() {
   const [nc, setNc] = useState(emptyNew);
   // Team-shared custom campaign types (from the database). Only admins can add.
   const { role } = useRole();
-  const isAdmin = role === "CMO / Admin";
+  const isAdmin = role === "CMO";
   const [customTypes, setCustomTypes] = useState<string[]>([]);
   const [addingType, setAddingType] = useState(false);
   const [newType, setNewType] = useState("");

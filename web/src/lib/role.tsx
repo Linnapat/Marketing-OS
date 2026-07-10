@@ -6,13 +6,15 @@ import { fetchPermissions } from "@/lib/db/settings";
 import { canSeeModule, type PermMatrix } from "@/lib/permissions";
 
 export const ROLES = [
-  "CMO / Admin",
-  "Brand Lead",
-  "Content Planner",
-  "Graphic / Creator",
+  "CMO",
+  "Marketing Manager / BGL",
+  "Creative Leader",
+  "Marketing Executive",
+  "Senior Graphic Designer",
+  "VDO Editor",
+  "Co-ordinator",
   "KOL Specialist",
-  "Finance",
-  "CEO / Management",
+  "Content Creator",
   "Agency (External)",
 ] as const;
 export type Role = (typeof ROLES)[number];
@@ -52,7 +54,7 @@ export function useRole() {
 }
 
 /** Operation-level financials (salary, bonus, incentives, SSO…) are sensitive —
- *  only the CMO / Admin may view them in the P&L. */
+ *  only the CMO may view them in the P&L. */
 export function canSeeOperation(role: Role): boolean {
-  return role === "CMO / Admin";
+  return role === "CMO";
 }

@@ -36,7 +36,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   // stuck permanently in "Waiting for Approval".
   const { role, member } = useAuth();
   const [approving, setApproving] = useState(false);
-  const canApprove = role === "CMO / Admin" || role === "Brand Lead" || member?.name === effectiveNextApproval;
+  const canApprove = role === "CMO" || role === "Marketing Manager / BGL" || member?.name === effectiveNextApproval;
   const decide = async (status: string) => {
     setApproving(true);
     try { await updateCampaignStatus(c.id, status); onReload(); } finally { setApproving(false); }
@@ -617,8 +617,8 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
   // fall back to the static chain view below.
   if (!brief) {
     const chain = [
-      { role: "Planner", person: detail.row.owner, status: "Submitted", tone: "green" as const },
-      { role: "Brand Lead", person: "Mei T.", status: "Reviewed", tone: "green" as const },
+      { role: "Marketing Executive", person: detail.row.owner, status: "Submitted", tone: "green" as const },
+      { role: "Marketing Manager / BGL", person: "Mei T.", status: "Reviewed", tone: "green" as const },
       { role: "CMO", person: "Linnapat D.", status: detail.row.nextApproval === "CMO" ? "Pending" : "Approved", tone: detail.row.nextApproval === "CMO" ? "gold" as const : "green" as const },
     ];
     return (

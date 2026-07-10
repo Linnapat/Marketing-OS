@@ -42,21 +42,21 @@ export const BRANDS_DATA = [
 ];
 
 export const TEAMS_DATA = [
-  { icon: "📊", name: "CRM Team", lead: "Nok W.", scope: "LINE OA · Coupon · CRM campaigns · Revisit tracking", members: ["Nok W.", "Ken S."] },
-  { icon: "🎯", name: "Marketing / Campaign", lead: "Ken S.", scope: "Campaign brief · Planner · Store activation · Online ads", members: ["Ken S.", "Aran P.", "Mei T."] },
-  { icon: "🎨", name: "Creative Team", lead: "Boss", scope: "Graphic request · Artwork · Video · Final delivery", members: ["Boss"] },
-  { icon: "🌟", name: "KOL / Creator Team", lead: "Ploy R.", scope: "KOL selection · Brief · Draft review · Result tracking", members: ["Ploy R.", "Nok W."] },
-  { icon: "฿", name: "Finance / Budget", lead: "Aran P.", scope: "Budget approval · Expense request · Payment voucher", members: ["Aran P.", "Mei T."] },
-  { icon: "✅", name: "Management / Approval", lead: "Aran P.", scope: "CMO approval · Final campaign review · CFO sign-off", members: ["Aran P."] },
+  { icon: "🎯", name: "Marketing Team", lead: "Ken S.", scope: "Campaign planning · brand management · store activation · CRM coordination", members: ["Ken S.", "Nok W.", "May T."] },
+  { icon: "🎨", name: "Creative Team", lead: "Boss", scope: "Graphic request · artwork · video editing · final delivery", members: ["Boss", "Aom V."] },
+  { icon: "🧩", name: "Operations / Co-ordination", lead: "Nok W.", scope: "Timeline follow-up · cross-team coordination · branch follow-through", members: ["Nok W."] },
+  { icon: "🌟", name: "KOL / Creator Team", lead: "Ploy R.", scope: "KOL sourcing · creator brief · review · result tracking", members: ["Ploy R.", "Mint C."] },
+  { icon: "✅", name: "Management", lead: "Aran P.", scope: "CMO approval · final review · org-level decisions", members: ["Aran P."] },
+  { icon: "🤝", name: "Agency / External", lead: "Mild A.", scope: "External creative / content support by assigned brand", members: ["Mild A."] },
 ];
 
 export const USERS_DATA = [
   { name: "Khun Aran", email: "aran@teppenthailand.co.th", role: "CMO", access: "Admin", brandAccess: "All brands", status: "Active", color: "#B8945A" },
-  { name: "Ken S.", email: "ken@teppenthailand.co.th", role: "Campaign Lead", access: "Editor", brandAccess: "Teppen · OMD", status: "Active", color: "#3E5C9A" },
-  { name: "Boss", email: "boss@teppenthailand.co.th", role: "Senior Designer", access: "Editor", brandAccess: "All brands", status: "Active", color: "#4E7A4E" },
-  { name: "Nok W.", email: "nok@teppenthailand.co.th", role: "Campaign Mgr", access: "Editor", brandAccess: "Mainichi", status: "Active", color: "#6b6258" },
+  { name: "Ken S.", email: "ken@teppenthailand.co.th", role: "Marketing Manager / BGL", access: "Editor", brandAccess: "Teppen · Omakase Don", status: "Active", color: "#3E5C9A" },
+  { name: "Boss", email: "boss@teppenthailand.co.th", role: "Creative Leader", access: "Editor", brandAccess: "All brands", status: "Active", color: "#4E7A4E" },
+  { name: "Nok W.", email: "nok@teppenthailand.co.th", role: "Marketing Executive", access: "Editor", brandAccess: "Mainichi · Touka", status: "Active", color: "#6b6258" },
   { name: "Ploy R.", email: "ploy@teppenthailand.co.th", role: "KOL Specialist", access: "Editor", brandAccess: "Touka", status: "Active", color: "#B5577E" },
-  { name: "Mei T.", email: "mei@teppenthailand.co.th", role: "Performance", access: "Viewer", brandAccess: "All brands", status: "Active", color: "#C2691E" },
+  { name: "May T.", email: "may@teppenthailand.co.th", role: "Co-ordinator", access: "Editor", brandAccess: "Teppen · Mainichi", status: "Active", color: "#C2691E" },
 ];
 
 export const PERM_MODULES = ["Campaign", "Graphic", "KOL", "Finance", "Content", "CRM", "Settings"];
@@ -76,14 +76,15 @@ export const PERM_SCOPE_META: Record<PermScope, { label: string; c: string; b: s
   Own: { label: "Own only", c: "#9A9387", b: "#F2F0EB" },
 };
 export const PERM_ROLES: { role: string; desc: string; scope: PermScope; perms: Perm[] }[] = [
-  { role: "Admin / CMO", desc: "Full access", scope: "All", perms: [A, A, A, A, A, A, A] },
-  { role: "Brand Lead", desc: "Review & Approve", scope: "Brand", perms: [AP, AP, AP, N, AP, V, N] },
-  { role: "Branch Manager", desc: "One branch — review & approve", scope: "Branch", perms: [AP, V, V, N, AP, V, N] },
-  { role: "Planner", desc: "Create & Edit", scope: "Brand", perms: [E, V, V, N, E, E, N] },
-  { role: "Designer", desc: "Graphic module", scope: "Own", perms: [V, E, N, N, V, N, N] },
+  { role: "CMO", desc: "Full access", scope: "All", perms: [A, A, A, A, A, A, A] },
+  { role: "Marketing Manager / BGL", desc: "Brand lead · review & approve", scope: "Brand", perms: [AP, AP, AP, V, AP, AP, N] },
+  { role: "Creative Leader", desc: "Creative planning & final review", scope: "Brand", perms: [V, AP, N, N, V, N, N] },
+  { role: "Marketing Executive", desc: "Create & follow through campaign work", scope: "Brand", perms: [E, V, V, N, E, E, N] },
+  { role: "Senior Graphic Designer", desc: "Graphic / artwork execution", scope: "Own", perms: [V, E, N, N, V, N, N] },
+  { role: "VDO Editor", desc: "Video production execution", scope: "Own", perms: [V, E, N, N, V, N, N] },
+  { role: "Co-ordinator", desc: "Cross-team co-ordination and tracking", scope: "Brand", perms: [V, V, V, N, V, V, N] },
   { role: "KOL Specialist", desc: "KOL module", scope: "Own", perms: [V, N, E, N, V, N, N] },
-  { role: "Finance", desc: "Budget & payments", scope: "All", perms: [V, N, N, A, N, N, N] },
-  { role: "Viewer", desc: "Read only", scope: "Brand", perms: [V, V, V, N, V, V, N] },
+  { role: "Content Creator", desc: "Content creation & copywriting", scope: "Own", perms: [V, N, N, N, E, E, N] },
   { role: "Agency (External)", desc: "External — task list only", scope: "Own", perms: [N, E, N, N, E, N, N] },
 ];
 
@@ -91,30 +92,31 @@ export const PERM_ROLES: { role: string; desc: string; scope: PermScope; perms: 
 // access level and brand scope so picking a role opens/closes what they can
 // view or edit — an admin can still fine-tune per-role rights in Permissions.
 export const ROLE_OPTIONS: { role: string; access: "Admin" | "Editor" | "Viewer"; brand: string; external?: boolean }[] = [
-  { role: "CMO / Admin", access: "Admin", brand: "All brands" },
-  { role: "Brand Lead", access: "Editor", brand: "All brands" },
-  { role: "Branch Manager", access: "Editor", brand: "Single branch" },
-  { role: "Campaign Planner", access: "Editor", brand: "All brands" },
-  { role: "Senior Designer", access: "Editor", brand: "All brands" },
-  { role: "KOL Specialist", access: "Editor", brand: "Touka" },
-  { role: "Finance", access: "Editor", brand: "All brands" },
-  { role: "Performance / Analyst", access: "Viewer", brand: "All brands" },
+  { role: "CMO", access: "Admin", brand: "All brands" },
+  { role: "Marketing Manager / BGL", access: "Editor", brand: "All brands" },
+  { role: "Creative Leader", access: "Editor", brand: "All brands" },
+  { role: "Marketing Executive", access: "Editor", brand: "Selected brands" },
+  { role: "Senior Graphic Designer", access: "Editor", brand: "All brands" },
+  { role: "VDO Editor", access: "Editor", brand: "All brands" },
+  { role: "Co-ordinator", access: "Editor", brand: "Selected brands" },
+  { role: "KOL Specialist", access: "Editor", brand: "Selected brands" },
+  { role: "Content Creator", access: "Editor", brand: "Selected brands" },
   { role: "Agency (External)", access: "Editor", brand: "External only", external: true },
 ];
 
 export const BUDGET_THRESHOLDS = [
-  { range: "฿0 – 10,000", approver: "Brand Lead only", chain: ["Brand Lead"] },
-  { range: "฿10,001 – 50,000", approver: "CMO approval", chain: ["Brand Lead", "CMO"] },
-  { range: "฿50,001 – 200,000", approver: "CMO + CFO", chain: ["Brand Lead", "CMO", "CFO"] },
+  { range: "฿0 – 10,000", approver: "Marketing Manager / BGL only", chain: ["Marketing Manager / BGL"] },
+  { range: "฿10,001 – 50,000", approver: "CMO approval", chain: ["Marketing Manager / BGL", "CMO"] },
+  { range: "฿50,001 – 200,000", approver: "CMO + CFO", chain: ["Marketing Manager / BGL", "CMO", "CFO"] },
   { range: "฿200,001+", approver: "CMO + CFO + CEO", chain: ["CMO", "CFO", "CEO"] },
 ];
 
 export const APPROVAL_RULES = [
-  { icon: "🎯", module: "Campaign", sla: 3, escalate: 4, remind: 2, backup: "Aran P.", chain: ["Brand Lead", "CMO"] },
-  { icon: "🎨", module: "Graphic Request", sla: 2, escalate: 4, remind: 1, backup: "Ken S.", chain: ["Requester", "Brand Lead", "CMO"] },
-  { icon: "🌟", module: "KOL / Creator", sla: 3, escalate: 5, remind: 2, backup: "Aran P.", chain: ["Brand Lead", "CMO", "Finance"] },
-  { icon: "✍️", module: "Content", sla: 2, escalate: 3, remind: 1, backup: "Ken S.", chain: ["Brand Lead", "CMO"] },
-  { icon: "฿", module: "Finance / Budget", sla: 3, escalate: 4, remind: 2, backup: "Aran P.", chain: ["Brand Lead", "CMO", "CFO"] },
+  { icon: "🎯", module: "Campaign", sla: 3, escalate: 4, remind: 2, backup: "Aran P.", chain: ["Marketing Manager / BGL", "CMO"] },
+  { icon: "🎨", module: "Graphic Request", sla: 2, escalate: 4, remind: 1, backup: "Boss", chain: ["Requester", "Creative Leader", "Marketing Manager / BGL", "CMO"] },
+  { icon: "🌟", module: "KOL / Creator", sla: 3, escalate: 5, remind: 2, backup: "Ploy R.", chain: ["Marketing Manager / BGL", "CMO"] },
+  { icon: "✍️", module: "Content", sla: 2, escalate: 3, remind: 1, backup: "Ken S.", chain: ["Marketing Manager / BGL", "CMO"] },
+  { icon: "฿", module: "Finance / Budget", sla: 3, escalate: 4, remind: 2, backup: "Aran P.", chain: ["Marketing Manager / BGL", "CMO", "CFO"] },
 ];
 
 export type WfModule = "campaign" | "graphic" | "kol" | "task";

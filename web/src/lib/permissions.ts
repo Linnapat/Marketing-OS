@@ -13,13 +13,15 @@ export const PERM_NONE = "—";
 
 /** App role vocabulary (role.tsx) → the role label used in the perm matrix. */
 export const APP_ROLE_TO_PERM_ROLE: Record<Role, string> = {
-  "CMO / Admin": "Admin / CMO",
-  "Brand Lead": "Brand Lead",
-  "Content Planner": "Planner",
-  "Graphic / Creator": "Designer",
+  CMO: "CMO",
+  "Marketing Manager / BGL": "Marketing Manager / BGL",
+  "Creative Leader": "Creative Leader",
+  "Marketing Executive": "Marketing Executive",
+  "Senior Graphic Designer": "Senior Graphic Designer",
+  "VDO Editor": "VDO Editor",
+  "Co-ordinator": "Co-ordinator",
   "KOL Specialist": "KOL Specialist",
-  "Finance": "Finance",
-  "CEO / Management": "Viewer",
+  "Content Creator": "Content Creator",
   "Agency (External)": "Agency (External)",
 };
 

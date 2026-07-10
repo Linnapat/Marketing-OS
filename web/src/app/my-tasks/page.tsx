@@ -81,7 +81,7 @@ export default function MyTasksPage() {
   const { role } = useRole();
   // Expense approvals are a role gate (CMO), not a person filter — Marketing
   // expenses route to the CMO tier only (no CFO).
-  const canApproveExpense = role === "CMO / Admin" || role === "Finance";
+  const canApproveExpense = role === "CMO";
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);

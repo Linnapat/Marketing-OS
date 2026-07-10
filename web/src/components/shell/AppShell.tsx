@@ -108,7 +108,7 @@ function ModuleGate({ children }: { children: React.ReactNode }) {
   }
   const mod = moduleForPath(pathname);
   if (mod && !can(mod)) {
-    return <NoAccess title={`No access to ${mod}`} detail={`สิทธิ์ของ ${role} สำหรับโมดูล ${mod} ถูกตั้งเป็น "—" ใน Settings → Permissions — ติดต่อ CMO / Admin หากต้องการเข้าถึง`} />;
+    return <NoAccess title={`No access to ${mod}`} detail={`สิทธิ์ของ ${role} สำหรับโมดูล ${mod} ถูกตั้งเป็น "—" ใน Settings → Permissions — ติดต่อ CMO หากต้องการเข้าถึง`} />;
   }
   return <>{children}</>;
 }

@@ -29,7 +29,7 @@ export default function WorkCalendarPage() {
   const [edit, setEdit] = useState(false);
 
   const { role } = useRole();
-  const canEdit = role === "CMO / Admin";
+  const canEdit = role === "CMO";
 
   // Load the shared calendar state once, then persist every change — the
   // overrides and checkmarks used to evaporate on refresh.

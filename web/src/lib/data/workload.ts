@@ -28,7 +28,7 @@ export interface Member {
 export const MEMBERS: Member[] = [
   { id: "aran", name: "Aran P.", role: "Marketing Director", tasks: 18, doneToday: 3, inProgress: 7, waiting: 3, stuck: 1, needsAttention: 2, feedback: 5, revisions: 3, urgent: 2, workloadScore: 48, capacityTarget: 35, utilization: 137, capacityStatus: "needsSupport", mainBottleneck: "3 campaign approvals pending across teams", suggestedAction: "Delegate 2 mid-priority approvals to team leads", oldestWaitingDays: 4 },
   { id: "ken", name: "Ken S.", role: "Content Lead", tasks: 14, doneToday: 2, inProgress: 5, waiting: 4, stuck: 1, needsAttention: 1, feedback: 6, revisions: 2, urgent: 1, workloadScore: 38, capacityTarget: 35, utilization: 109, capacityStatus: "busy", mainBottleneck: "Waiting brief approval from Nok for LINE copy", suggestedAction: "Follow up Nok on brief confirmation today", oldestWaitingDays: 2 },
-  { id: "boss", name: "Boss", role: "Senior Designer", tasks: 16, doneToday: 1, inProgress: 6, waiting: 4, stuck: 2, needsAttention: 3, feedback: 9, revisions: 7, urgent: 2, workloadScore: 52, capacityTarget: 35, utilization: 149, capacityStatus: "needsSupport", mainBottleneck: "Waiting requester feedback on 4 design revisions", suggestedAction: "Move 2 low-priority tasks, follow up feedback today", oldestWaitingDays: 5 },
+  { id: "boss", name: "Boss", role: "Creative Leader", tasks: 16, doneToday: 1, inProgress: 6, waiting: 4, stuck: 2, needsAttention: 3, feedback: 9, revisions: 7, urgent: 2, workloadScore: 52, capacityTarget: 35, utilization: 149, capacityStatus: "needsSupport", mainBottleneck: "Waiting requester feedback on 4 design revisions", suggestedAction: "Move 2 low-priority tasks, follow up feedback today", oldestWaitingDays: 5 },
   { id: "nok", name: "Nok W.", role: "Campaign Manager", tasks: 12, doneToday: 2, inProgress: 4, waiting: 3, stuck: 0, needsAttention: 1, feedback: 3, revisions: 1, urgent: 1, workloadScore: 30, capacityTarget: 35, utilization: 86, capacityStatus: "busy", mainBottleneck: "Rainy Season budget request pending approval", suggestedAction: "Review and approve pending budget today", oldestWaitingDays: 1 },
   { id: "ploy", name: "Ploy R.", role: "KOL Specialist", tasks: 10, doneToday: 2, inProgress: 4, waiting: 1, stuck: 0, needsAttention: 0, feedback: 2, revisions: 0, urgent: 1, workloadScore: 24, capacityTarget: 35, utilization: 69, capacityStatus: "healthy", mainBottleneck: "None — on track", suggestedAction: "Can take 1–2 additional tasks if needed", oldestWaitingDays: 0 },
   { id: "mei", name: "Mei T.", role: "Performance Analyst", tasks: 9, doneToday: 2, inProgress: 3, waiting: 1, stuck: 0, needsAttention: 0, feedback: 1, revisions: 0, urgent: 0, workloadScore: 18, capacityTarget: 35, utilization: 51, capacityStatus: "healthy", mainBottleneck: "None — on track", suggestedAction: "Can take 2–3 additional tasks", oldestWaitingDays: 0 },
@@ -57,7 +57,7 @@ export interface Bottleneck {
 }
 
 export const BOTTLENECKS: Bottleneck[] = [
-  { module: "Graphic", icon: "🎨", stuckCount: 5, mainReason: "Waiting requester feedback", pendingApprover: "Brand Lead", oldestDays: 5, suggestedAction: "Follow up feedback requests today", color: "#C2691E", bg: "#FBF1E9" },
+  { module: "Graphic", icon: "🎨", stuckCount: 5, mainReason: "Waiting requester feedback", pendingApprover: "Marketing Manager / BGL", oldestDays: 5, suggestedAction: "Follow up feedback requests today", color: "#C2691E", bg: "#FBF1E9" },
   { module: "Content", icon: "✍️", stuckCount: 2, mainReason: "Brief not confirmed by Campaign", pendingApprover: "Nok W.", oldestDays: 2, suggestedAction: "Confirm brief today", color: "#3E5C9A", bg: "#EEF1F8" },
   { module: "Approval", icon: "✅", stuckCount: 3, mainReason: "Waiting CMO sign-off", pendingApprover: "Aran P.", oldestDays: 4, suggestedAction: "Schedule an approval round today", color: "#4E7A4E", bg: "#EEF4EE" },
   { module: "Budget", icon: "฿", stuckCount: 1, mainReason: "Pending budget approval", pendingApprover: "Aran P.", oldestDays: 1, suggestedAction: "Approve or delegate", color: "#4E7A4E", bg: "#EEF4EE" },
@@ -68,7 +68,7 @@ export interface Rec { icon: string; text: string; reason: string; actionLabels:
 
 export const RECS: Rec[] = [
   { icon: "✨", text: "Move 2 light design tasks from Boss to Mei T.", reason: "Boss is at 149% capacity — Mei has room to take more.", actionLabels: ["View tasks", "Reassign"] },
-  { icon: "⏳", text: "Follow up Brand Lead for 3 pending design approvals", reason: "Oldest waiting 5 days — blocking Boss and whole Graphic queue.", actionLabels: ["View tasks", "Follow up"] },
+  { icon: "⏳", text: "Follow up Marketing Manager / BGL for 3 pending design approvals", reason: "Oldest waiting 5 days — blocking Boss and whole Graphic queue.", actionLabels: ["View tasks", "Follow up"] },
   { icon: "🧱", text: "Ask requesters to complete 2 missing content briefs", reason: "Ken S. is blocked waiting for brief confirmation.", actionLabels: ["View tasks", "Follow up"] },
   { icon: "✨", text: "Ploy R. and Mei T. can take more tasks today", reason: "Both under 70% capacity — good day to rebalance.", actionLabels: ["View tasks"] },
 ];

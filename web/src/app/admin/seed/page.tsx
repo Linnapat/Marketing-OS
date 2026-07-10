@@ -38,13 +38,13 @@ export default function AdminSeedPage() {
   };
 
   // Admin-only: seeding writes to every table, so keep it off-limits to others.
-  if (role !== "CMO / Admin") {
+  if (role !== "CMO") {
     return (
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "40px 20px", fontFamily: "system-ui, sans-serif" }}>
         <div style={{ background: "#F5EFE4", border: "1px solid #E8D5AA", borderRadius: 12, padding: "24px", textAlign: "center" }}>
           <div style={{ fontSize: 30, marginBottom: 8 }}>🔒</div>
           <div style={{ fontSize: 15, fontWeight: 800 }}>Admin only</div>
-          <div style={{ fontSize: 13, color: "#6b6258", marginTop: 6 }}>This database seeding tool is restricted to CMO / Admin.</div>
+          <div style={{ fontSize: 13, color: "#6b6258", marginTop: 6 }}>This database seeding tool is restricted to CMO.</div>
         </div>
       </div>
     );

@@ -27,7 +27,7 @@ export async function resolveKolOwner(): Promise<string> {
   return team.members[0]?.trim() || UNASSIGNED;
 }
 
-/** Match an approval-chain role label (e.g. "CMO", "Brand Lead", "Finance") to a
+/** Match an approval-chain role label (e.g. "CMO", "Marketing Manager / BGL") to a
  *  real active member whose role contains it. */
 function memberForRole(role: string, members: Member[]): string | null {
   const r = role.trim().toLowerCase();

@@ -118,7 +118,7 @@ export async function saveNotifSettings(s: NotifSettings): Promise<void> {
 }
 
 /* ── Approval Matrix (budget thresholds + module rules) ─────────────── */
-// Stored as JSON blobs in the org_settings kv table. Editable by CMO / Admin.
+// Stored as JSON blobs in the org_settings kv table. Editable by the CMO.
 export interface BudgetThreshold { range: string; approver: string; chain: string[] }
 export interface ModuleRule { icon: string; module: string; sla: number; escalate: number; remind: number; backup: string; chain: string[] }
 export interface ApprovalMatrix { thresholds: BudgetThreshold[]; rules: ModuleRule[] }

@@ -71,7 +71,7 @@ export const TEAM_RESULTS: TeamResult[] = [
       { label: "Waiting Feedback", val: "5", sub: "items pending", color: "#B33A2E" },
     ],
     bestResult: "OMD Reel Cover Set — approved in 1 round",
-    nextAction: "Review 5 assets waiting feedback from Brand Lead",
+    nextAction: "Review 5 assets waiting feedback from Marketing Manager / BGL",
   },
   {
     id: "kol", label: "KOL Result", icon: "🌟", health: "excellent",
@@ -106,7 +106,7 @@ export interface DashAlert {
 export const DASH_ALERTS: DashAlert[] = [
   { type: "BELOW TARGET", team: "CRM", tone: "gold", title: "Repeat Rate 34% vs 40% target", meta: "Push Day 14 revisit · Park Silom branch" },
   { type: "ROAS BELOW", team: "Marketing", tone: "red", title: "TEPPEN Dinner — ROAS 4.2× (target 12×)", meta: "Review targeting and offer · ฿180K spent" },
-  { type: "WAITING", team: "Creative", tone: "gold", title: "5 assets waiting feedback >3 days", meta: "Brand Lead review needed · affects 2 campaigns" },
+  { type: "WAITING", team: "Creative", tone: "gold", title: "5 assets waiting feedback >3 days", meta: "Marketing Manager / BGL review needed · affects 2 campaigns" },
   { type: "MISSING DATA", team: "KOL", tone: "red", title: "2 creators missing post links", meta: "Results cannot be tracked until links added" },
   { type: "APPROVAL 5 DAYS", team: "Finance", tone: "red", title: "Q3 media plan approval pending", meta: "฿1.2M · waiting CMO sign-off" },
 ];

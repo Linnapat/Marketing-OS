@@ -17,7 +17,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user, member, role, signOut } = useAuth();
   const { can } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
-  const displayRole = member?.role ?? "CMO / Admin";
+  const displayRole = member?.role ?? "CMO";
   // External agency users only see their portal (demo role-switcher included).
   const baseGroups = role === "Agency (External)"
     ? NAV.filter((g) => g.label === "External")

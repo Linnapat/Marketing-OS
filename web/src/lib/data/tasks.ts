@@ -86,8 +86,8 @@ export const PERSON_COLOR: Record<string, string> = {
 };
 
 export const PERSON_ROLE: Record<string, string> = {
-  "Aran P.": "CMO / Admin", "Ken S.": "Content Planner", Boss: "Graphic / Creator",
-  "Nok W.": "Campaign Planner", "Ploy R.": "Brand Lead", "Mei T.": "Data / Ads",
+  "Aran P.": "CMO", "Ken S.": "Marketing Manager / BGL", Boss: "Creative Leader",
+  "Nok W.": "Marketing Executive", "Ploy R.": "KOL Specialist", "Mei T.": "Co-ordinator",
 };
 
 export const GREETINGS: Record<string, [string, string]> = {
