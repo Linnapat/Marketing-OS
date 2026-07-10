@@ -679,6 +679,7 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [reason, setReason] = useState("");
   const [rejected, setRejected] = useState<Record<number, boolean>>({});
   const [allReqs, setAllReqs] = useState<ExpenseReq[]>([]);
+  const [period, setPeriod] = useState<PeriodFilter>({ ...DEFAULT_DATE_FILTER, mode: "range" });
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
   const [sig, setSig] = useState<string | null>(null);
@@ -690,7 +691,10 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
     return () => { alive = false; };
   }, []);
 
-  const rows = allReqs.map((r, i) => ({ r, i })).filter(({ r }) => brand === "all" || r.b === brand);
+  const rows = allReqs
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => (brand === "all" || r.b === brand) && inDateFilter(period, r.createdAt));
+  const waitingCount = rows.filter(({ r, i }) => !approved[i] && !rejected[i] && r.status === "Waiting Approval").length;
   const approve = (i: number, r: ExpenseReq) => {
     setApproved((a) => ({ ...a, [i]: true }));
     setSigning(null);
@@ -706,9 +710,15 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <DateFilterBar
+        value={period}
+        onChange={setPeriod}
+        trailing={brand !== "all" ? <span>Approval เฉพาะ {brandName(brand)}</span> : <span>Approval ทุกแบรนด์</span>}
+      />
+
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-[12px] text-faint">
-          {allReqs.filter((r, i) => !approved[i] && !rejected[i] && r.status === "Waiting Approval").length} request(s) waiting for your approval.
+          {waitingCount} request(s) waiting for your approval.
         </div>
         <div className="flex items-center gap-4 flex-wrap text-[11.5px] text-muted">
           <div className="flex items-center gap-2">
