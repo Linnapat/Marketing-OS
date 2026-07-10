@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
@@ -17,6 +16,12 @@ import {
 import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
 import { useRole } from "@/lib/role";
 import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 
 const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LINE", "Event / Store Activation", "Seasonal Promotion", "Urgent promotion"];
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
@@ -107,116 +112,123 @@ export default function CampaignsPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Campaign Command Center"
-        title="Campaigns"
-        subtitle={`${filtered.length} campaigns · plan, track, and profit from every activation`}
-        right={<Link href="/campaigns/new" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Campaign</Link>}
-      />
+      <div className="flex flex-col gap-4" style={{ background: "#F8F7F3" }}>
+        <CampaignPageHeaderSection
+          eyebrow="CAMPAIGN COMMAND CENTER"
+          title="Campaign Café"
+          description="Plan, track, and profit from every activation"
+        />
 
-      {/* Period filter — filters the campaign list by its running dates */}
-      <div className="mt-[14px]">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
+        <CampaignCommandBar
+          action={<Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ New Campaign</Link>}
+        >
+          <DateFilterBar value={date} onChange={setDate} />
+        </CampaignCommandBar>
 
-      {/* Monthly budget summary — dark card */}
-      <div className="mt-[14px] bg-panel text-white rounded-cardLg p-5">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <div className="text-[13px] font-bold text-white/90">Monthly Budget → Result Summary</div>
-          <select
-            value={brand}
-            onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-            style={SELECT_STYLE_DARK}
-          >
-            <option value="all">All Brands</option>
-            {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-          </select>
-        </div>
-        <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))" }}>
-          {[
-            { label: "Total Budget", value: summary.budget, sub: `${summary.count} campaigns` },
-            { label: "Spent", value: summary.spend, sub: `${summary.spendPct}% utilized` },
-            { label: "Expected Revenue", value: summary.revenue, sub: "projected" },
-            { label: "Expected GP", value: summary.gp, sub: "38% margin" },
-            { label: "Blended ROAS", value: summary.roas, sub: "avg across", color: summary.roasColor },
-            { label: "Active", value: String(summary.activeCount), sub: "in flight" },
-          ].map((c) => (
-            <div key={c.label}>
-              <div className="text-[10px] uppercase tracking-[0.06em] text-white/45 font-bold mb-[6px]">{c.label}</div>
-              <div className="text-[20px] font-extrabold letter-tightest" style={{ color: c.color ?? "#fff" }}>{c.value}</div>
-              <div className="text-[10.5px] text-white/40 mt-[2px]">{c.sub}</div>
+        <ModuleSummaryCard title="Campaign Café Summary">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+            <div>
+              <div className="text-[16px] font-bold text-white">Campaign performance snapshot</div>
+              <div className="text-[12.5px] text-white/55 mt-1">{summary.count} campaigns in view</div>
             </div>
-          ))}
-        </div>
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-[10px] uppercase tracking-[0.06em] text-white/40 font-bold mb-[10px]">Budget by Brand</div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))" }}>
-            {summary.bars.map((b) => (
-              <div key={b.id}>
-                <div className="flex items-center justify-between mb-[5px]">
-                  <span className="flex items-center gap-[6px] text-[11.5px] text-white/70"><BrandDot brand={b.id as BrandId} size={7} />{b.name}</span>
-                  <span className="text-[11.5px] font-bold text-white/85">{b.budgetF}</span>
-                </div>
-                <Progress value={b.barW} color={b.color} track="rgba(255,255,255,.1)" height={5} />
+            <select
+              value={brand}
+              onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
+              style={SELECT_STYLE_DARK}
+            >
+              <option value="all">All Brands</option>
+              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+            </select>
+          </div>
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))" }}>
+            {[
+              { label: "Total Budget", value: summary.budget, sub: `${summary.count} campaigns` },
+              { label: "Spent", value: summary.spend, sub: `${summary.spendPct}% utilized` },
+              { label: "Expected Revenue", value: summary.revenue, sub: "projected" },
+              { label: "Expected GP", value: summary.gp, sub: "38% margin" },
+              { label: "Blended ROAS", value: summary.roas, sub: "avg across", color: summary.roasColor },
+              { label: "Active", value: String(summary.activeCount), sub: "in flight" },
+            ].map((c) => (
+              <div key={c.label} className="rounded-[20px] px-4 py-4 border border-white/10 bg-white/[0.03]">
+                <div className="text-[10px] uppercase tracking-[0.08em] text-white/45 font-bold mb-[8px]">{c.label}</div>
+                <div className="text-[22px] font-extrabold letter-tightest" style={{ color: c.color ?? "#fff" }}>{c.value}</div>
+                <div className="text-[10.5px] text-white/40 mt-[4px]">{c.sub}</div>
               </div>
             ))}
           </div>
-        </div>
-      </div>
+          <div className="pt-5 border-t border-white/10">
+            <div className="text-[11px] uppercase tracking-[0.08em] text-white/40 font-bold mb-[12px]">Budget by brand</div>
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))" }}>
+              {summary.bars.map((b) => (
+                <div key={b.id} className="rounded-[20px] px-4 py-4 border border-white/10 bg-white/[0.03]">
+                  <div className="flex items-center justify-between mb-[8px]">
+                    <span className="flex items-center gap-[6px] text-[11.5px] text-white/75"><BrandDot brand={b.id as BrandId} size={7} />{b.name}</span>
+                    <span className="text-[11.5px] font-bold text-white/90">{b.budgetF}</span>
+                  </div>
+                  <Progress value={b.barW} color={b.color} track="rgba(255,255,255,.1)" height={6} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </ModuleSummaryCard>
 
-      {/* Filters */}
-      <div className="mt-4 flex items-center gap-5 flex-wrap">
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Brand</span>
-          <select
-            value={brand}
-            onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-            className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none"
-          >
-            <option value="all">All Brands</option>
-            {BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Status</span>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none"
-          >
-            {statusChips.map((s) => (
-              <option key={s} value={s}>{s === "all" ? "All Statuses" : s}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Search</span>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นชื่อแคมเปญ…"
-            className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] outline-none w-[200px]" />
-        </div>
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Owner</span>
-          <select value={owner} onChange={(e) => setOwner(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
-            <option value="all">All Owners</option>
-            {owners.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Branch</span>
-          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
-            <option value="all">All Branches</option>
-            {allBranches.map((br) => <option key={br} value={br}>{br}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-[9px]">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Budget</span>
-          <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border border-line2 rounded-[10px] px-3 py-[8px] cursor-pointer outline-none">
-            <option value="all">Any Budget</option>
-            <option value="lt100">&lt; ฿100K</option>
-            <option value="100-300">฿100K – ฿300K</option>
-            <option value="gt300">&gt; ฿300K</option>
-          </select>
-        </div>
+        <FilterBar>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <div className="flex flex-col gap-[9px]">
+              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Brand</span>
+              <select
+                value={brand}
+                onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
+                className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none"
+                style={{ borderColor: "#ECEAF2" }}
+              >
+                <option value="all">All Brands</option>
+                {BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-[9px]">
+              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Branch</span>
+              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
+                <option value="all">All Branches</option>
+                {allBranches.map((br) => <option key={br} value={br}>{br}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-[9px]">
+              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Status</span>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none"
+                style={{ borderColor: "#ECEAF2" }}
+              >
+                {statusChips.map((s) => (
+                  <option key={s} value={s}>{s === "all" ? "All Statuses" : s}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-[9px]">
+              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Owner</span>
+              <select value={owner} onChange={(e) => setOwner(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
+                <option value="all">All Owners</option>
+                {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-[9px]">
+              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Budget</span>
+              <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
+                <option value="all">Any Budget</option>
+                <option value="lt100">&lt; ฿100K</option>
+                <option value="100-300">฿100K – ฿300K</option>
+                <option value="gt300">&gt; ฿300K</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-[9px]">
+              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Search</span>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นชื่อแคมเปญ…"
+                className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] outline-none w-full" style={{ borderColor: "#ECEAF2" }} />
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       {/* Status-grouped collapsible list */}
