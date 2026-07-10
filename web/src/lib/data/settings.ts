@@ -59,6 +59,14 @@ export const USERS_DATA = [
   { name: "May T.", email: "may@teppenthailand.co.th", role: "Co-ordinator", access: "Editor", brandAccess: "Teppen · Mainichi", status: "Active", color: "#C2691E" },
 ];
 
+export const MEMBER_PRESENCE_OPTIONS = [
+  { label: "Available", emoji: "🟢" },
+  { label: "Heads down", emoji: "🎯" },
+  { label: "In meeting", emoji: "📅" },
+  { label: "WFH", emoji: "🏠" },
+  { label: "On leave", emoji: "🌴" },
+];
+
 export const PERM_MODULES = ["Campaign", "Graphic", "KOL", "Finance", "Content", "CRM", "Settings"];
 export interface Perm { l: string; c: string; b: string; }
 const A: Perm = { l: "Admin", c: "#B8945A", b: "#FBF6ED" };

@@ -127,6 +127,9 @@ export interface TeamMemberView {
   name: string;
   role: string;
   color: string;
+  avatarUrl?: string;
+  presence?: string;
+  statusNote?: string;
   open: number;
   done: number;
   inProgress: number;
@@ -163,7 +166,7 @@ export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[]):
   };
 
   const view: TeamMemberView[] = members.map((m) => ({
-    name: m.name, role: m.role, color: m.color,
+    name: m.name, role: m.role, color: m.color, avatarUrl: m.avatarUrl, presence: m.presence, statusNote: m.statusNote,
     ...bucket(tasks.filter((t) => t.assignee === m.name)),
   }));
 

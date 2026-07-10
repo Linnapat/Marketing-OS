@@ -12,6 +12,11 @@ import { fetchTasks } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 
+function Avatar({ name, color, avatarUrl, size = 40 }: { name: string; color: string; avatarUrl?: string; size?: number }) {
+  if (avatarUrl) return <img src={avatarUrl} alt={name} className="rounded-full object-cover border border-line3" style={{ width: size, height: size }} />;
+  return <span className="rounded-full flex items-center justify-center text-[13px] font-extrabold text-white" style={{ background: color, width: size, height: size }}>{initials(name)}</span>;
+}
+
 export default function TeamWorkloadPage() {
   const [drawer, setDrawer] = useState<TeamMemberView | null>(null);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
@@ -80,8 +85,12 @@ export default function TeamWorkloadPage() {
             {needSupport.map((m) => (
               <button key={m.name} onClick={() => setDrawer(m)} className="text-left bg-surface rounded-card p-4 hover:border-accent border border-line3 transition">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-extrabold text-white" style={{ background: m.color }}>{initials(m.name)}</span>
-                  <div><div className="text-[13.5px] font-bold">{m.name}</div><div className="text-[11px] text-faint">{m.role}</div></div>
+                  <Avatar name={m.name} color={m.color} avatarUrl={m.avatarUrl} size={32} />
+                  <div>
+                    <div className="text-[13.5px] font-bold">{m.name}</div>
+                    <div className="text-[11px] text-faint">{m.role}</div>
+                    {m.presence && <div className="text-[10.5px] text-faint">{m.presence}{m.statusNote ? ` · ${m.statusNote}` : ""}</div>}
+                  </div>
                   <span className="ml-auto text-[11px] font-bold text-status-red">{m.open} open</span>
                 </div>
                 <div className="text-[11.5px] text-muted mt-1">🧱 {m.stuck} stuck · ⏰ {m.overdue} overdue</div>
@@ -102,10 +111,11 @@ export default function TeamWorkloadPage() {
           return (
             <button key={m.name} onClick={() => setDrawer(m)} className="text-left bg-surface border border-line rounded-cardLg p-5 hover:border-accent transition">
               <div className="flex items-center gap-3 mb-4">
-                <span className="w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-extrabold text-white" style={{ background: m.color }}>{initials(m.name)}</span>
+                <Avatar name={m.name} color={m.color} avatarUrl={m.avatarUrl} />
                 <div className="min-w-0"><div className="text-[14px] font-bold">{m.name}</div><div className="text-[11px] text-faint">{m.role}</div></div>
                 <span className="ml-auto text-[11px] font-bold px-[9px] py-[3px] rounded-pill whitespace-nowrap" style={{ background: cap.bg, color: cap.fg }}>{cap.emoji} {cap.label}</span>
               </div>
+              {m.presence && <div className="text-[11.5px] text-muted mb-3">{m.presence}{m.statusNote ? ` · ${m.statusNote}` : ""}</div>}
               <div className="flex items-center justify-between mb-[6px]">
                 <span className="text-[11.5px] text-muted">{m.open} open task{m.open === 1 ? "" : "s"}</span>
                 <span className="text-[11.5px] font-bold" style={{ color: cap.fg }}>{m.done} done</span>
@@ -137,10 +147,11 @@ function PersonDrawer({ m, onClose }: { m: TeamMemberView; onClose: () => void }
       <div className="absolute inset-y-0 right-0 w-full max-w-[480px] bg-surface flex flex-col shadow-2xl">
         <div className="px-5 py-4 border-b border-line flex items-start justify-between gap-2" style={{ background: "#FBF9F4" }}>
           <div className="flex items-center gap-3">
-            <span className="w-11 h-11 rounded-full flex items-center justify-center text-[14px] font-extrabold text-white" style={{ background: m.color }}>{initials(m.name)}</span>
+            <Avatar name={m.name} color={m.color} avatarUrl={m.avatarUrl} size={44} />
             <div>
               <div className="text-[16px] font-extrabold">{m.name}</div>
               <div className="text-[12px] text-faint">{m.role} · <span style={{ color: cap.fg, fontWeight: 700 }}>{cap.emoji} {cap.label}</span></div>
+              {m.presence && <div className="text-[11px] text-faint mt-1">{m.presence}{m.statusNote ? ` · ${m.statusNote}` : ""}</div>}
             </div>
           </div>
           <button onClick={onClose} className="text-faint hover:text-ink flex-shrink-0"><X size={18} /></button>

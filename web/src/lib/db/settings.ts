@@ -6,6 +6,9 @@ import { ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
 export interface Member {
   name: string; email: string; role: string; access: string;
   brandAccess: string; status: string; color: string;
+  avatarUrl?: string;
+  presence?: string;
+  statusNote?: string;
 }
 type Row = {
   email: string; name: string; role: string; access: string;
@@ -17,12 +20,26 @@ const toMember = (r: Row): Member => ({
   brandAccess: r.brand_access, status: r.status, color: r.color,
 });
 
+export interface MemberProfile {
+  avatarUrl?: string;
+  presence?: string;
+  statusNote?: string;
+}
+
+type MemberProfileMap = Record<string, MemberProfile>;
+
+function withProfiles(members: Member[], profiles: MemberProfileMap | null): Member[] {
+  if (!profiles) return members;
+  return members.map((m) => ({ ...m, ...(profiles[m.email.toLowerCase()] ?? {}) }));
+}
+
 export async function fetchMembers(): Promise<Member[]> {
   const db = supabase();
   if (!db) return USERS_DATA.map((u) => ({ ...u }));
+  const profiles = await fetchMemberProfiles().catch(() => null);
   const { data, error } = await db.from("members").select("*").order("email");
-  if (error || !data) return USERS_DATA.map((u) => ({ ...u }));
-  return (data as Row[]).map(toMember);
+  if (error || !data) return withProfiles(USERS_DATA.map((u) => ({ ...u })), profiles);
+  return withProfiles((data as Row[]).map(toMember), profiles);
 }
 
 export async function createMember(m: Member): Promise<void> {
@@ -47,6 +64,33 @@ export async function deleteMember(email: string): Promise<void> {
   const db = supabase();
   if (!db) return;
   await db.from("members").delete().eq("email", email);
+}
+
+export async function fetchMemberProfiles(): Promise<MemberProfileMap | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data, error } = await db.from("org_settings").select("value").eq("key", "member_profiles_v1").maybeSingle();
+  if (error || !data?.value) return null;
+  try { return JSON.parse(data.value as string) as MemberProfileMap; } catch { return null; }
+}
+
+export async function saveMemberProfile(email: string, profile: MemberProfile): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const current = (await fetchMemberProfiles()) ?? {};
+  const next: MemberProfileMap = {
+    ...current,
+    [email.toLowerCase()]: {
+      avatarUrl: profile.avatarUrl?.trim() || undefined,
+      presence: profile.presence?.trim() || undefined,
+      statusNote: profile.statusNote?.trim() || undefined,
+    },
+  };
+  await db.from("org_settings").upsert({
+    key: "member_profiles_v1",
+    label: "Member profile display settings",
+    value: JSON.stringify(next),
+  });
 }
 
 /* ── Generic team-shared JSON settings (org_settings kv) ─────────────── */
