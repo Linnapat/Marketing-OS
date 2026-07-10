@@ -54,6 +54,23 @@ function normMonth(s: string): string {
   return t;
 }
 
+/** Names used by the consolidated Finance sheet → app brand ids. The source
+ * ledger uses trading/source names rather than the labels shown in the app. */
+function brandId(value: string): string | undefined {
+  const key = value.replace(/\s+/g, " ").trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    "teppen": "teppen",
+    "omd by teppen": "omakase",
+    "omakase don": "omakase",
+    "omakase": "omakase",
+    "mainichi sushi": "mainichi",
+    "mainichi": "mainichi",
+    "takao": "touka",
+    "touka": "touka",
+  };
+  return aliases[key];
+}
+
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url") ?? "";
   const target = csvUrl(url);
@@ -151,11 +168,7 @@ export async function GET(req: NextRequest) {
     const brandSections = new Set(raws.filter((x) => x.entity === "brand").map((x) => x.section));
     for (const x of raws) {
       if (brandSections.has(x.section) && x.entity && x.entity !== "brand") continue;
-      const brandAliases: Record<string, string> = {
-        teppen: "teppen", "omakase don": "omakase", omakase: "omakase",
-        mainichi: "mainichi", touka: "touka",
-      };
-      const brand = x.entity === "brand" ? brandAliases[x.department.toLowerCase()] : undefined;
+      const brand = x.entity === "brand" ? brandId(x.department) : undefined;
       rows.push({ month: x.month, category: x.category, budget: x.budget, group: x.section, brand });
     }
   } else {
@@ -170,8 +183,7 @@ export async function GET(req: NextRequest) {
       const category = (r[ci] ?? "").trim();
       const budget = Number(String(r[bi] ?? "").replace(/[^\d.-]/g, ""));
       if (/^\d{4}-\d{2}$/.test(month) && category && Number.isFinite(budget) && budget >= 0) {
-        const brandAliases: Record<string, string> = { teppen: "teppen", "omakase don": "omakase", omakase: "omakase", mainichi: "mainichi", touka: "touka" };
-        const brand = brandIndex >= 0 ? brandAliases[(r[brandIndex] ?? "").trim().toLowerCase()] : undefined;
+        const brand = brandIndex >= 0 ? brandId(r[brandIndex] ?? "") : undefined;
         rows.push({ month, category, budget, brand });
       }
     }

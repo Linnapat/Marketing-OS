@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
@@ -20,10 +21,22 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
   const [tab, setTab] = useState<GTab>(initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
   const { member, user } = useAuth();
-  const designer = member?.name ?? user?.email ?? g.designer;
+  const currentUser = member?.name ?? user?.email ?? g.designer;
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefPct = Math.round((brief.filter((b) => b.ok).length / brief.length) * 100);
+  const canDeliver = g.stage === "Approved";
+
+  const markDelivered = () => {
+    if (!canDeliver) return;
+    const next: Graphic = {
+      ...g,
+      stage: "Delivered",
+      nextAction: "Delivered to campaign / content team",
+      history: [...(g.history ?? []), { type: "delivered", at: new Date().toISOString(), by: currentUser }],
+    };
+    updateGraphic(next); onUpdate?.(next);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -60,9 +73,27 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
         <div className="flex-1 overflow-y-auto px-5 py-[18px]">
           {tab === "overview" && (
             <div className="flex flex-col gap-4">
+              <div>
+                <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
+                <OwnerSelect
+                  value={g.designer === "Unassigned" ? "" : g.designer}
+                  onChange={(name) => {
+                    const assigned = name || "Unassigned";
+                    const ng: Graphic = {
+                      ...g,
+                      designer: assigned,
+                      nextAction: assigned === "Unassigned" ? "Assign designer to start work" : `${assigned} to start design`,
+                      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: assigned }],
+                    };
+                    updateGraphic(ng); onUpdate?.(ng);
+                  }}
+                  team="Creative"
+                  placeholder="Unassigned"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 {[["Stage", <StatusBadge key="s" tone={stageTone(g.stage)}>{g.stage}</StatusBadge>],
-                  ["Designer", g.designer], ["Requester", g.requester], ["Approver", g.approver],
+                  ["Requester", g.requester], ["Approver", g.approver],
                   ["Platform", g.platform], ["Size", g.size]].map(([l, v], i) => (
                   <div key={i}>
                     <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[3px]">{l as string}</div>
@@ -117,7 +148,7 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
             </div>
           )}
 
-          {tab === "assets" && <DeliverablesEditor g={g} me={designer} onUpdate={onUpdate} />}
+          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} onUpdate={onUpdate} />}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
@@ -155,6 +186,11 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
 
           {tab === "delivery" && (
             <div className="flex flex-col gap-2">
+              {canDeliver && (
+                <button onClick={markDelivered} className="self-start text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[8px] mb-2">
+                  Mark Delivered
+                </button>
+              )}
               {["Final artwork approved", "Correct size exported", "Source file attached", "Final asset link added", "Content Calendar updated", "Campaign status updated", "Delivered date set"].map((label) => {
                 const done = g.stage === "Delivered";
                 return (
@@ -186,9 +222,9 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
   const [reason, setReason] = useState("");
   const prog = deliverableProgress({ ...g, deliverables: dels });
 
-  const persist = (next: GraphicDeliverable[]) => {
+  const persist = (next: GraphicDeliverable[], event?: NonNullable<Graphic["history"]>[number]) => {
     setDels(next);
-    const ng: Graphic = { ...g, deliverables: next };
+    const ng: Graphic = { ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history };
     const ready = deliverableProgress(ng).ready;
     ng.stage = stageFromDeliverables(ng);
     ng.blocker = ready ? null : g.blocker;
@@ -204,13 +240,29 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
   const submit = (i: number) => {
     const d = dels[i];
     if (!d.assetLink.trim()) return;
-    persist(dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: new Date().toISOString() } : x));
+    const at = new Date().toISOString();
+    persist(
+      dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: at } : x),
+      { type: "submitted", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
+    );
     notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, "/graphic");
   };
-  const approve = (i: number) => persist(dels.map((x, j) => j === i ? { ...x, status: "Approved" } : x));
+  const approve = (i: number) => {
+    const at = new Date().toISOString();
+    const d = dels[i];
+    persist(
+      dels.map((x, j) => j === i ? { ...x, status: "Approved" } : x),
+      { type: "approved", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
+    );
+  };
   const sendBack = (i: number) => {
     const r = reason.trim(); if (!r) return;
-    persist(dels.map((x, j) => j === i ? { ...x, status: "Revision", feedback: [...x.feedback, { reason: r, by: me, at: new Date().toISOString() }] } : x));
+    const at = new Date().toISOString();
+    const d = dels[i];
+    persist(
+      dels.map((x, j) => j === i ? { ...x, status: "Revision", feedback: [...x.feedback, { reason: r, by: me, at }] } : x),
+      { type: "revision_requested", at, by: me, deliverableKey: `${d.platform}::${d.size}`, note: r },
+    );
     notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${dels[i]?.platform ?? ""} — ${r} · โดย ${me}`, "/graphic");
     setReason(""); setRevising(null);
   };

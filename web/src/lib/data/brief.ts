@@ -72,6 +72,9 @@ export interface BriefContentItem {
   id: string;
   title: string;
   subHead: string;
+  requester: string;
+  designer: string;
+  approver: string;
   type: string;
   platforms: string[];      // multi-select
   assets: AssetTarget[];    // platform+size pairs (checkbox grid)
@@ -170,7 +173,7 @@ export interface CampaignBrief {
 // ── Factories ─────────────────────────────────────────────────────────────
 export function emptyContentItem(seq: number): BriefContentItem {
   return {
-    id: `ci-${seq}`, title: "", subHead: "", type: CONTENT_TYPES[0], platforms: [],
+    id: `ci-${seq}`, title: "", subHead: "", requester: "", designer: "Unassigned", approver: "", type: CONTENT_TYPES[0], platforms: [],
     assets: [], publishDate: "", requiredGraphic: true,
     requiredVideo: false, priority: "Med", status: "Planned",
     captionDirection: "", mainMessage: "", cta: "", productHighlight: "",

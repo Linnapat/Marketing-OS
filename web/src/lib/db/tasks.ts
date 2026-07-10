@@ -57,3 +57,40 @@ export const reassignDb = (id: number, to: string) => {
   notify("newTask", `🔁 งาน #${id} ถูกส่งต่อให้ ${to}`, undefined, "/my-tasks");
   return updateTaskDb(id, { assignee: to });
 };
+
+/** Create or update the single My Tasks row that represents a Graphic request
+ *  assignment. Keyed by relatedGraphicId so re-assign updates the same task. */
+export async function upsertGraphicTask(task: Task): Promise<void> {
+  const db = supabase();
+  if (!db || !task.relatedGraphicId) return;
+
+  const { data } = await db.from("tasks")
+    .select("id, data")
+    .eq("data->>relatedGraphicId", String(task.relatedGraphicId))
+    .maybeSingle();
+
+  if (!data) {
+    if (task.assignee === "Unassigned") return;
+    return createTaskDb(task);
+  }
+
+  const current = data.data as Task;
+  const patch: Partial<Task> = {
+    title: task.title,
+    assignee: task.assignee,
+    brand: task.brand,
+    campaign: task.campaign,
+    due: task.due,
+    dueIso: task.dueIso,
+    nextAction: task.nextAction,
+    pendingApprover: task.pendingApprover,
+    status: task.assignee === "Unassigned" ? "Todo" : current.status === "Done" ? current.status : task.status,
+    group: task.assignee === "Unassigned" ? "quickWins" : current.status === "Done" ? current.group : task.group,
+  };
+
+  if (current.assignee !== task.assignee && task.assignee !== "Unassigned") {
+    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, "/my-tasks");
+  }
+
+  await updateTaskDb(current.id, patch);
+}

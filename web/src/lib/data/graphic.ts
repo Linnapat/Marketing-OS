@@ -5,6 +5,14 @@
 import { BrandId } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 
+export interface GraphicEvent {
+  type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered";
+  at: string;
+  by: string;
+  deliverableKey?: string;
+  note?: string;
+}
+
 export interface Graphic {
   id: number;
   stage: string;
@@ -41,6 +49,7 @@ export interface Graphic {
    *  Submit doesn't fan out duplicate requests. */
   campaignId?: string;
   sourceContentItemId?: string;
+  history?: GraphicEvent[];
 }
 
 export interface GraphicDeliverable {
@@ -175,6 +184,27 @@ export const VERSIONS: Version[] = [
 
 export const DESIGNERS = ["Boss", "Aom", "New", "Unassigned"];
 
+const dueDateFromLabel = (label: string): Date | null => {
+  const m = /^([A-Za-z]{3})\s+(\d{1,2})$/.exec((label || "").trim());
+  if (!m) return null;
+  const idx = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(m[1]);
+  if (idx < 0) return null;
+  return new Date(new Date().getFullYear(), idx, Number(m[2]), 23, 59, 59, 999);
+};
+
+export function graphicMetrics(g: Graphic) {
+  const history = g.history ?? [];
+  const fallbackRevision = (g.deliverables ?? []).reduce((sum, d) => sum + d.feedback.length, 0);
+  const revisionCount = history.filter((e) => e.type === "revision_requested").length || fallbackRevision;
+  const rejectionCount = history.filter((e) => e.type === "revision_requested" && (e.note || "").toLowerCase().includes("reject")).length;
+  const approvedCount = history.filter((e) => e.type === "approved").length || ((g.stage === "Approved" || g.stage === "Delivered") ? 1 : 0);
+  const deliveredCount = history.filter((e) => e.type === "delivered").length || (g.stage === "Delivered" ? 1 : 0);
+  const due = dueDateFromLabel(g.due);
+  const lateSubmissionCount = due ? history.filter((e) => e.type === "submitted" && new Date(e.at).getTime() > due.getTime()).length : 0;
+  const overdueCount = g.isOverdue ? 1 : 0;
+  return { revisionCount, rejectionCount, approvedCount, deliveredCount, lateSubmissionCount, overdueCount };
+}
+
 export function graphicKpis(list: Graphic[]) {
   return {
     total: list.length,
@@ -183,6 +213,11 @@ export function graphicKpis(list: Graphic[]) {
     revisions: list.filter((g) => g.stage === "Revision Requested").length,
     approved: list.filter((g) => ["Approved", "Delivered"].includes(g.stage)).length,
     feedback: list.reduce((s, g) => s + g.openFb, 0),
+    approvedCount: list.reduce((s, g) => s + graphicMetrics(g).approvedCount, 0),
+    deliveredCount: list.reduce((s, g) => s + graphicMetrics(g).deliveredCount, 0),
+    revisionRequests: list.reduce((s, g) => s + graphicMetrics(g).revisionCount, 0),
+    lateSubmissions: list.reduce((s, g) => s + graphicMetrics(g).lateSubmissionCount, 0),
+    overdueItems: list.reduce((s, g) => s + graphicMetrics(g).overdueCount, 0),
   };
 }
 

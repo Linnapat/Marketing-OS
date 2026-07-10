@@ -28,6 +28,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
+import { useAuth } from "@/lib/auth";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : "TBD"; }
@@ -110,6 +111,9 @@ export default function KolPage() {
     { label: "In Review", value: String(kpi.inReview), tone: kpi.inReview ? "gold" : undefined },
     { label: "Posted", value: String(kpi.posted), tone: "green" },
     { label: "Completed", value: String(kpi.completed) },
+    { label: "Approved", value: String(kpi.approvedCount), tone: kpi.approvedCount ? "green" : undefined },
+    { label: "Revision Count", value: String(kpi.revisionRequests), tone: kpi.revisionRequests ? "orange" : undefined },
+    { label: "Late Post", value: String(kpi.latePosts), tone: kpi.latePosts ? "red" : undefined },
     { label: "Avg ROAS", value: kpi.avgRoas ? `${kpi.avgRoas.toFixed(1)}×` : "—", dark: true },
   ];
 
@@ -497,8 +501,9 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const [brandSel, setBrandSel] = useState("TEPPEN");
   const [campaign, setCampaign] = useState("");
-  const [requester, setRequester] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const { member, user } = useAuth();
+  const requester = member?.name || user?.email?.split("@")[0] || "You";
   // Same KOL-item template as the Campaign Builder's KOL Plan (syncs both ways).
   const [item, setItem] = useState<BriefKolItem>(() => emptyKolItem(nextId));
   const onChange = (patch: Partial<BriefKolItem>) => setItem((it) => ({ ...it, ...patch }));
@@ -529,6 +534,8 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const owner = (item.owner || "").trim() || assign.owner;
     const campaignId = campaigns.find((c) => c.name === campaign)?.id;
     const reqStamp = Date.now();
+    const requestItemId = `kr-req-${reqStamp}`;
+    const requestItem: BriefKolItem = { ...item, id: requestItemId };
     // A request for N pages becomes N independent rows so each page is tracked,
     // reviewed, and updated on its own. Budget is split per page.
     const perPageBudget = Math.round((item.budget || 0) / count);
@@ -540,9 +547,9 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
       postingDate: item.postingStart, postingEnd: item.postingEnd, followers: item.followers,
       owner, approver: assign.approver, requester, branch: item.area, platform: item.platforms[0],
       name: item.name ? (count > 1 ? `${item.name} #${i + 1}` : item.name) : (count > 1 ? `New Request — ${item.kolType} #${i + 1}` : undefined),
-      campaignId, sourceKolRequirementId: `manual-${reqStamp}#${i + 1}`,
+      campaignId, sourceKolRequirementId: `${requestItemId}#${i + 1}`,
     }));
-    onCreate(kols, item, campaign.trim());
+    onCreate(kols, requestItem, campaign.trim());
   };
 
   return (
@@ -566,7 +573,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           </div>
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester <span className="text-faint font-normal">· งาน approve จะเด้งเข้า task list ของคนนี้</span></label>
-            <OwnerSelect value={requester} onChange={setRequester} team="Planner" />
+            <input value={requester} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
           </div>
         </div>
         <KolItemForm item={item} onChange={onChange} hidePage />

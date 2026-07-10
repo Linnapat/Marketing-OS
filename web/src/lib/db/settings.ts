@@ -1,7 +1,7 @@
 // Data access for Settings → Users & Roles (the members table).
 
 import { supabase } from "@/lib/supabase";
-import { USERS_DATA } from "@/lib/data/settings";
+import { ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
 
 export interface Member {
   name: string; email: string; role: string; access: string;
@@ -154,9 +154,15 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(
 export async function fetchOrg(): Promise<{ label: string; value: string }[] | null> {
   const db = supabase();
   if (!db) return null;
-  const { data, error } = await db.from("org_settings").select("label, value").order("key");
+  const wanted = ORG_FIELDS.map((f) => ({ key: slug(f.label), label: f.label, fallback: f.value }));
+  const wantedKeys = wanted.map((f) => f.key);
+  const { data, error } = await db.from("org_settings").select("key, label, value").in("key", wantedKeys);
   if (error || !data) return null;
-  return data.map((r) => ({ label: r.label as string, value: r.value as string }));
+  const byKey = new Map((data ?? []).map((r) => [r.key as string, { label: r.label as string, value: r.value as string }]));
+  return wanted.map((f) => {
+    const saved = byKey.get(f.key);
+    return { label: saved?.label || f.label, value: saved?.value || f.fallback };
+  });
 }
 
 export async function saveOrg(fields: { label: string; value: string }[]): Promise<void> {

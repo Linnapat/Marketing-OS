@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Sarabun } from "next/font/google";
 import { bahtText, thb } from "@/lib/bahtText";
 import { ExpenseRow } from "@/lib/data/finance";
@@ -20,10 +21,13 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
     expense.reimburseType === "Petty Cash" ? "PETTY" : "PAYMENT",
   );
   const isPV = type === "PAYMENT";
-  // The approver's remembered signature flows straight into the voucher for print.
-  const [sig, setSig] = useState<string | null>(null);
-  useEffect(() => { setSig(getSavedSignature()); }, []);
-  const [logoOk, setLogoOk] = useState(true); // fall back to the text mark if no image file
+  // Remembered signatures flow straight into the voucher for print.
+  const [preparerSig, setPreparerSig] = useState<string | null>(null);
+  const [approverSig, setApproverSig] = useState<string | null>(null);
+  useEffect(() => {
+    setPreparerSig(getSavedSignature("preparer"));
+    setApproverSig(getSavedSignature("approver"));
+  }, []);
 
   const amount = expense.amount;
   const items = [
@@ -64,18 +68,18 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, color: "#111", tableLayout: "fixed", lineHeight: 1.35 }}>
             <tbody>
               <tr>
-                {/* Company logo — drop the real file at web/public/company-logo.png.
-                    Falls back to the TEPPEN GROUP text mark if the image is missing. */}
+                {/* Company logo */}
                 <td rowSpan={5} style={{ border: cell, textAlign: "center", verticalAlign: "middle", padding: 4, width: "18%" }}>
-                  {logoOk ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src="/company-logo.png" alt="TEPPEN GROUP" onError={() => setLogoOk(false)} style={{ maxWidth: "90%", maxHeight: 60, margin: "0 auto", display: "block" }} />
-                  ) : (
-                    <>
-                      <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: 1.5, color: "#1a3a6b", lineHeight: 1 }}>TEPPEN</div>
-                      <div style={{ fontSize: 8, letterSpacing: 3, color: "#B8945A", marginTop: 3, fontWeight: 700 }}>GROUP</div>
-                    </>
-                  )}
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 110 }}>
+                    <Image
+                      src="/teppen-logo.png"
+                      alt="TEPPEN Food entertainment"
+                      width={150}
+                      height={150}
+                      style={{ width: "88%", height: "auto", objectFit: "contain" }}
+                      priority
+                    />
+                  </div>
                 </td>
                 <td colSpan={3} style={{ border: cell, textAlign: "center", padding: "2px 6px", fontWeight: 700, fontSize: 11, color: "#1a3a6b" }}>14/2 ซอยสุขุมวิท 61 แขวงคลองตันเหนือ เขตวัฒนา กรุงเทพฯ 10110</td>
                 <td style={{ border: cell, textAlign: "right", padding: "2px 5px", fontSize: 9.5, color: "#555", verticalAlign: "top" }}>(สำนักงานใหญ่)</td>
@@ -130,12 +134,20 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
                 <td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้อนุมัติ / วันที่</td>
               </tr>
               <tr>
-                <td style={{ border: cell, height: 34 }} />
                 <td style={{ border: cell, height: 34, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-                  {sig && (
+                  {preparerSig && (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={sig} alt="ผู้อนุมัติ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
+                      <img src={preparerSig} alt="ผู้จัดทำ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
+                      <div style={{ fontSize: 8.5, color: "#555" }}>{expense.date} 2569</div>
+                    </>
+                  )}
+                </td>
+                <td style={{ border: cell, height: 34, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+                  {approverSig && (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={approverSig} alt="ผู้อนุมัติ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
                       <div style={{ fontSize: 8.5, color: "#555" }}>{expense.date} 2569</div>
                     </>
                   )}

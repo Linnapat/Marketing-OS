@@ -26,13 +26,17 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
     if (t && (CAMPAIGN_TABS as readonly string[]).includes(t)) setTab(t as CampaignTab);
   }, []);
   const c = detail.row;
+  const effectiveStatus = brief?.status ?? c.status;
+  const effectiveNextApproval = effectiveStatus === "Waiting for Approval"
+    ? (brief?.approver || c.nextApproval || "CMO")
+    : "None";
   const s = hub ? hubStats(hub) : null;
   // Temporary approval action while the Approval Queue module is "SOON": the CMO /
   // Admin (or the named approver) can approve or send back, so campaigns never get
   // stuck permanently in "Waiting for Approval".
   const { role, member } = useAuth();
   const [approving, setApproving] = useState(false);
-  const canApprove = role === "CMO / Admin" || role === "Brand Lead" || member?.name === c.nextApproval;
+  const canApprove = role === "CMO / Admin" || role === "Brand Lead" || member?.name === effectiveNextApproval;
   const decide = async (status: string) => {
     setApproving(true);
     try { await updateCampaignStatus(c.id, status); onReload(); } finally { setApproving(false); }
@@ -65,7 +69,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <StatusBadge tone={campaignTone(c.status)}>{c.status}</StatusBadge>
+          <StatusBadge tone={campaignTone(effectiveStatus)}>{effectiveStatus}</StatusBadge>
           <StatusBadge tone={detail.hasResult ? "green" : "gold"}>{detail.hasResult ? "✓ Ready" : "⚠ Needs attention"}</StatusBadge>
         </div>
       </div>
@@ -80,7 +84,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
           { label: "Waiting", value: strip.waiting, color: "#e8c87d" },
           { label: "Overdue", value: c.taskOverdue, color: c.taskOverdue ? "#f0a89f" : "#fff" },
           { label: "Bottleneck", value: c.bottleneckTeam, color: "#e8c87d", small: true },
-          { label: "Next Approval", value: c.nextApproval, color: "#B8945A", small: true },
+          { label: "Next Approval", value: effectiveNextApproval, color: effectiveNextApproval === "None" ? "#9de09d" : "#B8945A", small: true },
         ].map((x) => (
           <div key={x.label}>
             <div className="text-[9.5px] uppercase tracking-[0.06em] text-white/45 font-bold mb-[5px]">{x.label}</div>
@@ -89,11 +93,11 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
         ))}
       </div>
 
-      {c.status === "Waiting for Approval" && (
+      {effectiveStatus === "Waiting for Approval" && (
         <div className="mt-4 rounded-card border px-4 py-3 flex items-center gap-3 flex-wrap" style={{ background: "#FBF8EE", borderColor: "#E8CCA0" }}>
           <span className="text-[18px]">🕓</span>
           <div className="flex-1 min-w-[200px]">
-            <div className="text-[13px] font-bold" style={{ color: "#8A6D1E" }}>Waiting for Approval · {c.nextApproval}</div>
+            <div className="text-[13px] font-bold" style={{ color: "#8A6D1E" }}>Waiting for Approval · {effectiveNextApproval}</div>
             <div className="text-[11.5px] text-muted">{canApprove ? "อนุมัติเพื่อเริ่มแคมเปญ หรือส่งกลับให้แก้ไข (Approval Queue module กำลังจะมา)" : "รอผู้อนุมัติดำเนินการ — ระหว่างนี้ยังไม่ค้างถาวร ผู้อนุมัติ/Admin กดได้จากหน้านี้"}</div>
           </div>
           {canApprove && (
@@ -132,7 +136,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       </div>
 
       <div className="mt-5">
-        {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} />}
+        {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} nextApproval={effectiveNextApproval} />}
         {tab === "brief" && <BriefTab detail={detail} brief={brief} />}
         {tab === "planner" && <PlannerTab detail={detail} hub={hub} onReload={onReload} />}
         {tab === "content" && <ContentList hub={hub} />}
@@ -164,7 +168,7 @@ function Panel({ title, children, className }: { title?: string; children: React
   );
 }
 
-function OverviewTab({ detail, hub, s }: { detail: CampaignDetail; hub: CampaignHub | null; s: HubStats | null }) {
+function OverviewTab({ detail, hub, s, nextApproval }: { detail: CampaignDetail; hub: CampaignHub | null; s: HubStats | null; nextApproval: string }) {
   const c = detail.row;
   const kpis = [
     { label: "Budget", value: detail.budgetF },
@@ -238,7 +242,7 @@ function OverviewTab({ detail, hub, s }: { detail: CampaignDetail; hub: Campaign
                 </div>
                 <StatusBadge tone="red">Blocked</StatusBadge>
               </div>
-              <div className="text-[11.5px] text-muted">Pending approver · <b>{c.nextApproval}</b></div>
+              <div className="text-[11.5px] text-muted">Pending approver · <b>{nextApproval}</b></div>
             </div>
           ) : (
             <div className="text-[13px] text-faint py-4 text-center">No blockers — this campaign is flowing smoothly. 🌿</div>

@@ -79,6 +79,18 @@ function categoryPnl(sheetRows: SheetBudgetRow[], reqs: ExpenseReq[], f: PeriodF
     .sort((a, b) => b.budget - a.budget || b.requested - a.requested);
 }
 
+function budgetPlanCategories(reqs: ExpenseReq[], brand: BrandFilterValue) {
+  const catMap = new Map<string, number>();
+  for (const r of reqs) {
+    if (brand !== "all" && r.b !== brand) continue;
+    if (r.status === "Draft" || r.status === "Rejected") continue;
+    catMap.set(r.category, (catMap.get(r.category) || 0) + (r.requested || 0));
+  }
+  return Array.from(catMap.entries())
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
 function download(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -192,7 +204,7 @@ export default function FinancePage() {
       </div>
 
       <div className="mt-5">
-        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} />}
+        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} period={period} setPeriod={setPeriod} />}
         {tab === "roi" && (
           <CategoryPnlTab
             brand={brand} reqs={reqs} sheetRows={sheetRows} period={period} setPeriod={setPeriod}
@@ -221,26 +233,53 @@ function NoFinanceAccess() {
 }
 
 /* ── Budget Plan: allocation + campaign-level profitability ─────────── */
-function BudgetPlanTab({ brand, fin, reqs, briefs }: { brand: BrandFilterValue; fin: FinanceView | null; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief> }) {
+function BudgetPlanTab({ brand, fin, reqs, briefs, period, setPeriod }: {
+  brand: BrandFilterValue; fin: FinanceView | null; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief>;
+  period: PeriodFilter; setPeriod: (f: PeriodFilter) => void;
+}) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
+  const filteredReqs = reqs.filter((r) => inDateFilter(period, r.createdAt));
   const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
-  const brandAlloc = fin.byBrand.filter((b) => brand === "all" || b.b === brand);
-  const cats = fin.byCategory;
+  const brandAlloc = fin.byBrand
+    .filter((b) => brand === "all" || b.b === brand)
+    .map((b) => ({
+      ...b,
+      spent: filteredReqs
+        .filter((r) => r.b === b.b && r.status !== "Draft" && r.status !== "Rejected")
+        .reduce((sum, r) => sum + (r.approved || r.requested || 0), 0),
+    }));
+  const totalPlan = brand === "all" ? fin.totalPlan : brandAlloc.reduce((sum, row) => sum + row.plan, 0);
+  const committed = brandAlloc.reduce((sum, row) => sum + row.spent, 0);
+  const available = totalPlan - committed;
+  const cats = budgetPlanCategories(filteredReqs, brand);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
+  const periodLabel = period.mode === "year"
+    ? `${period.year}`
+    : period.mode === "month"
+      ? `${MONTHS[period.month]} ${period.year}`
+      : `${period.start} → ${period.end}`;
 
   return (
     <div className="flex flex-col gap-4">
+      <DateFilterBar
+        value={period}
+        onChange={setPeriod}
+        trailing={brand !== "all" ? <span>กำลังแสดง Budget Plan เฉพาะ {brandName(brand)}</span> : undefined}
+      />
+
       {/* Top KPI cards */}
       <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
         <div className="rounded-card p-[18px]" style={{ background: "#211F1C", color: "#fff" }}>
           <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
-          <div className="text-[25px] font-bold mt-[6px]">{baht(fin.totalPlan, { compact: true })}</div>
+          <div className="text-[25px] font-bold mt-[6px]">{baht(totalPlan, { compact: true })}</div>
+          <div className="text-[11px] text-white/60 mt-1">{periodLabel}</div>
         </div>
-        {([["Committed", fin.committed], ["Available", fin.available]] as const).map(([l, v]) => (
+        {([["Committed", committed], ["Available", available]] as const).map(([l, v]) => (
           <div key={l} className="bg-surface border border-line rounded-card p-[18px]">
             <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
             <div className="text-[25px] font-bold mt-[6px] text-ink">{baht(v, { compact: true })}</div>
+            <div className="text-[11px] text-faint mt-1">{periodLabel}</div>
           </div>
         ))}
       </div>
@@ -377,12 +416,17 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   campaigns: CampaignRow[];
 }) {
   const [urlDraft, setUrlDraft] = useState(sheetUrl);
+  const [sheetConfigOpen, setSheetConfigOpen] = useState(false);
   const [openSection, setOpenSection] = useState<Record<string, boolean>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
 
   const rows = categoryPnl(sheetRows, reqs, period, brand);
-  const periodLabel = period.mode === "month" ? `${MONTHS[period.month]} ${period.year}` : `${period.start} → ${period.end}`;
+  const periodLabel = period.mode === "year"
+    ? `${period.year}`
+    : period.mode === "month"
+      ? `${MONTHS[period.month]} ${period.year}`
+      : `${period.start} → ${period.end}`;
   const cols = "minmax(220px,2fr) repeat(8,minmax(82px,1fr)) minmax(100px,1fr)";
   const campaignByName = new Map(campaigns.map((campaign) => [campaign.name, campaign]));
   const categoryContributors = (category: string) => reqs.filter((request) =>
@@ -402,30 +446,73 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
       actual: centerRows.reduce((sum, row) => sum + row.approved, 0),
     }];
   })) as Record<PnlCostCenter, { budget: number; actual: number }>;
+  const totalBudget = PNL_COST_CENTERS.reduce((sum, center) => sum + grandTotals[center].budget, 0);
+  const totalActual = PNL_COST_CENTERS.reduce((sum, center) => sum + grandTotals[center].actual, 0);
+  const totalRemaining = totalBudget - totalActual;
+  const totalUsedPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
+  const overBudgetItems = visibleRows.filter((row) => row.budget > 0 && row.approved > row.budget).length;
 
   return (
     <div className="flex flex-col gap-4">
       {/* Google Sheet connection */}
-      <div className="bg-surface border border-line rounded-cardLg p-5">
-        <div className="text-[13px] font-bold mb-1">งบประมาณรายเดือนจาก Google Sheet</div>
-        <div className="text-[11.5px] text-faint mb-3">
-          แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
-          คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท) · D = Brand (ถ้ามี)</b> — แก้งบใน sheet แล้วกดโหลดใหม่ได้เลย
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"
-            className="flex-1 min-w-[260px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
-          <button onClick={() => onSaveUrl(urlDraft)} disabled={!urlDraft.trim() || urlDraft === sheetUrl}
-            className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 disabled:opacity-40">บันทึก & โหลด</button>
-          {sheetUrl && <button onClick={onReload} className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 bg-white">โหลดใหม่</button>}
-          {sheetUrl && <a href={sheetUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 py-[8px] bg-white">เปิด Sheet ↗</a>}
-        </div>
-        {status && <div className="text-[12px] mt-2" style={{ color: status.startsWith("⚠") ? "#B33A2E" : "#4E7A4E" }}>{status}</div>}
+      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+        <button onClick={() => setSheetConfigOpen((open) => !open)} aria-expanded={sheetConfigOpen} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-ivory/40">
+          <span>
+            <span className="text-[13px] font-bold text-ink">Google Sheet Budget</span>
+            <span className="text-[11.5px] ml-3" style={{ color: status.startsWith("⚠") ? "#B33A2E" : sheetUrl ? "#4E7A4E" : "#9A9387" }}>
+              {status || (sheetUrl ? "เชื่อมต่อแล้ว" : "ยังไม่ได้เชื่อมต่อ")}
+            </span>
+          </span>
+          {sheetConfigOpen ? <ChevronDown size={16} className="text-faint" /> : <ChevronRight size={16} className="text-faint" />}
+        </button>
+        {sheetConfigOpen && (
+          <div className="px-5 pb-5 pt-1 border-t border-line4">
+            <div className="text-[11.5px] text-faint my-3">
+              แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
+              คอลัมน์: <b className="text-muted">A = เดือน (2026-07) · B = Category · C = Budget (บาท) · D = Brand (ถ้ามี)</b>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"
+                className="flex-1 min-w-[260px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              <button onClick={() => onSaveUrl(urlDraft)} disabled={!urlDraft.trim() || urlDraft === sheetUrl}
+                className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 disabled:opacity-40">บันทึก & โหลด</button>
+              {sheetUrl && <button onClick={onReload} className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 bg-white">โหลดใหม่</button>}
+              {sheetUrl && <a href={sheetUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 py-[8px] bg-white">เปิด Sheet ↗</a>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Period picker — day-level range up to whole months/years */}
       <DateFilterBar value={period} onChange={setPeriod}
         trailing={brand !== "all" ? <span>กำลังแสดง Budget และ Actual เฉพาะ {brandName(brand)}</span> : undefined} />
+
+      {/* P&L summary dashboard */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
+        <div className="rounded-card border border-line p-4" style={{ background: "#FBF6EA" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">Total Budget</div>
+          <div className="text-[23px] font-bold text-ink mt-1">{baht(totalBudget, { compact: true })}</div>
+          <div className="text-[11px] text-muted mt-1">{brand === "all" ? "ทุกแบรนด์" : brandName(brand)} · {periodLabel}</div>
+        </div>
+        <div className="rounded-card border border-line p-4" style={{ background: "#F2F8F1" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">Actual Used</div>
+          <div className="text-[23px] font-bold text-ink mt-1">{baht(totalActual, { compact: true })}</div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="flex-1"><Progress value={Math.min(100, totalUsedPct)} color={totalUsedPct > 100 ? "#B33A2E" : totalUsedPct > 85 ? "#C68A1E" : "#4E7A4E"} height={6} /></span>
+            <span className="text-[11px] font-bold text-muted">{totalUsedPct}%</span>
+          </div>
+        </div>
+        <div className="rounded-card border p-4" style={{ background: totalRemaining < 0 ? "#FFF2F0" : "#F5F7F3", borderColor: totalRemaining < 0 ? "#F5C8C4" : "#E3E0D8" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">{totalRemaining < 0 ? "Over Budget" : "Remaining"}</div>
+          <div className="text-[23px] font-bold mt-1" style={{ color: totalRemaining < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(Math.abs(totalRemaining), { compact: true })}</div>
+          <div className="text-[11px] text-muted mt-1">Budget − Actual</div>
+        </div>
+        <div className="rounded-card border p-4" style={{ background: overBudgetItems ? "#FFF5F4" : "#F5F7F3", borderColor: overBudgetItems ? "#F5C8C4" : "#E3E0D8" }}>
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">Budget Health</div>
+          <div className="text-[18px] font-bold mt-2" style={{ color: overBudgetItems ? "#B33A2E" : "#4E7A4E" }}>{overBudgetItems ? `เกินงบ ${overBudgetItems} รายการ` : "อยู่ในงบ"}</div>
+          <div className="text-[11px] text-muted mt-1">{overBudgetItems ? "ตรวจรายการสีแดงด้านล่าง" : "ยังไม่มีรายการใช้เกิน"}</div>
+        </div>
+      </div>
 
       {/* Over-budget alert — the sheet budget is the monthly cap; campaign
           expenses draw it down. Hard = approved already exceeds; soft = pending
@@ -463,13 +550,16 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
           <div className="min-w-[1180px]">
             <div className="grid px-5 pt-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold" style={{ gridTemplateColumns: cols }}>
               <div>Section / Category</div>
-              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
-              <div className="text-right">Diff</div>
+              {PNL_COST_CENTERS.map((center) => <div key={center} className="text-center border-l border-line4" style={{ gridColumn: "span 2" }}>{COST_CENTER_LABEL[center]}</div>)}
+              <div className="text-right sticky right-0 bg-surface pl-2 border-l border-line4">Diff</div>
             </div>
             <div className="grid px-5 pb-2 pt-1 text-[9.5px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
               <div></div>
-              {PNL_COST_CENTERS.flatMap((center) => [<div key={`${center}-budget`} className="text-right">Budget</div>, <div key={`${center}-actual`} className="text-right">Actual</div>])}
-              <div className="text-right">Budget − Actual</div>
+              {PNL_COST_CENTERS.flatMap((center) => [
+                <div key={`${center}-budget`} className="text-right border-l border-line4 px-2 py-1 -my-1" style={{ background: "#FBF6EA" }}>Budget</div>,
+                <div key={`${center}-actual`} className="text-right border-l border-line4 px-2 py-1 -my-1" style={{ background: "#F2F8F1" }}>Actual</div>,
+              ])}
+              <div className="text-right sticky right-0 bg-surface pl-2 border-l border-line4">Budget − Actual</div>
             </div>
             {sections.map((section) => {
               const isOpen = Boolean(openSection[section.section]);
@@ -492,10 +582,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                       {section.section}
                     </span>
                     {PNL_COST_CENTERS.flatMap((center) => [
-                      <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].budget, { compact: true })}</span>,
-                      <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right">{baht(totals[center].actual, { compact: true })}</span>,
+                      <span key={`${center}-budget`} className="text-[12.5px] font-semibold text-right self-stretch flex items-center justify-end border-l border-line4 px-2 -my-3" style={{ background: "#FBF6EA" }}>{baht(totals[center].budget, { compact: true })}</span>,
+                      <span key={`${center}-actual`} className="text-[12.5px] font-semibold text-right self-stretch flex items-center justify-end border-l border-line4 px-2 -my-3" style={{ background: "#F2F8F1" }}>{baht(totals[center].actual, { compact: true })}</span>,
                     ])}
-                    <span className="text-[13px] font-bold text-right" style={{ color: sectionBudget - sectionActual < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(sectionBudget - sectionActual, { compact: true })}</span>
+                    <span className="text-[13px] font-bold text-right sticky right-0 bg-ivory pl-2 border-l border-line4" style={{ color: sectionBudget - sectionActual < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(sectionBudget - sectionActual, { compact: true })}</span>
                   </button>
                   {isOpen && sectionRows.map((row) => {
                     const center = categoryCostCenter(row.category);
@@ -508,10 +598,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                           {campaignCount > 0 && <span className="shrink-0 text-[10px] font-bold text-accent">ดูรายละเอียด</span>}
                         </span>
                         {PNL_COST_CENTERS.flatMap((column) => [
-                          <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
-                          <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted">{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
+                          <span key={`${column}-budget`} className="text-[12.5px] text-right text-muted self-stretch flex items-center justify-end border-l border-line4 px-2 -my-[10px]" style={{ background: "#FFFCF5" }}>{column === center ? baht(row.budget, { compact: true }) : "—"}</span>,
+                          <span key={`${column}-actual`} className="text-[12.5px] text-right text-muted self-stretch flex items-center justify-end border-l border-line4 px-2 -my-[10px]" style={{ background: "#F8FBF7" }}>{column === center ? baht(row.approved, { compact: true }) : "—"}</span>,
                         ])}
-                        <span className="text-[12.5px] font-semibold text-right" style={{ color: row.budget - row.approved < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(row.budget - row.approved, { compact: true })}</span>
+                        <span className="text-[12.5px] font-semibold text-right sticky right-0 bg-surface pl-2 border-l border-line4" style={{ color: row.budget - row.approved < 0 ? "#B33A2E" : "#4E7A4E" }}>{baht(row.budget - row.approved, { compact: true })}</span>
                       </button>
                     );
                   })}
@@ -525,10 +615,10 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
                 <div className="grid px-5 py-3 items-center bg-panel text-white border-t-2 border-line2" style={{ gridTemplateColumns: cols }}>
                   <span className="text-[13px] font-bold">Grand Total</span>
                   {PNL_COST_CENTERS.flatMap((center) => [
-                    <span key={`${center}-grand-budget`} className="text-[12.5px] font-semibold text-right">{baht(grandTotals[center].budget, { compact: true })}</span>,
-                    <span key={`${center}-grand-actual`} className="text-[12.5px] font-semibold text-right">{baht(grandTotals[center].actual, { compact: true })}</span>,
+                    <span key={`${center}-grand-budget`} className="text-[12.5px] font-semibold text-right border-l border-white/15 px-2">{baht(grandTotals[center].budget, { compact: true })}</span>,
+                    <span key={`${center}-grand-actual`} className="text-[12.5px] font-semibold text-right border-l border-white/15 px-2">{baht(grandTotals[center].actual, { compact: true })}</span>,
                   ])}
-                  <span className="text-[13px] font-bold text-right" style={{ color: budget - actual < 0 ? "#FF9E94" : "#A8D5A8" }}>{baht(budget - actual, { compact: true })}</span>
+                  <span className="text-[13px] font-bold text-right sticky right-0 bg-panel pl-2 border-l border-white/15" style={{ color: budget - actual < 0 ? "#FF9E94" : "#A8D5A8" }}>{baht(budget - actual, { compact: true })}</span>
                 </div>
               );
             })()}
@@ -591,12 +681,11 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [allReqs, setAllReqs] = useState<ExpenseReq[]>([]);
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
-  // Remembered signature — sign once, then later approvals only need a Confirm.
   const [sig, setSig] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    setSig(getSavedSignature());
+    setSig(getSavedSignature("approver"));
     fetchExpenseRequests().then((r) => { if (alive) setAllReqs(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -621,14 +710,18 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
         <div className="text-[12px] text-faint">
           {allReqs.filter((r, i) => !approved[i] && !rejected[i] && r.status === "Waiting Approval").length} request(s) waiting for your approval.
         </div>
-        {sig && (
-          <div className="flex items-center gap-2 text-[11.5px] text-muted">
-            <span className="font-semibold">✍️ Signature on file</span>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={sig} alt="signature" className="h-6 border border-line3 rounded bg-white" />
-            <button onClick={() => { clearSignature(); setSig(null); }} className="font-bold text-accent">Change</button>
+        <div className="flex items-center gap-4 flex-wrap text-[11.5px] text-muted">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">ผู้อนุมัติ</span>
+            {sig ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={sig} alt="approver signature" className="h-6 border border-line3 rounded bg-white" />
+                <button onClick={() => { clearSignature("approver"); setSig(null); }} className="font-bold text-accent">Change</button>
+              </>
+            ) : <span className="text-faint">ยังไม่มีลายเซ็น</span>}
           </div>
-        )}
+        </div>
       </div>
       {rows.map(({ r, i }) => {
         const isRejected = rejected[i] || r.status === "Rejected";
@@ -669,8 +762,17 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
             </div>
             {signing === i && isPending && !sig && (
               <div className="mt-4 pt-4 border-t border-line4">
-                <div className="text-[12px] font-semibold text-muted mb-2">Sign once — we’ll remember it for next time</div>
-                <SignaturePad confirmLabel="Save signature &amp; Approve" onSave={(dataUrl) => { saveSignature(dataUrl); setSig(dataUrl); approve(i, r); }} />
+                <div className="text-[12px] font-semibold text-muted mb-2">
+                  Sign once — we’ll remember it for next time
+                </div>
+                <SignaturePad
+                  confirmLabel="Save signature &amp; Approve"
+                  onSave={(dataUrl) => {
+                    saveSignature("approver", dataUrl);
+                    setSig(dataUrl);
+                    approve(i, r);
+                  }}
+                />
               </div>
             )}
             {rejecting === i && isPending && (

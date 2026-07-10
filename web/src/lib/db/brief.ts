@@ -34,27 +34,39 @@ export interface BriefSaveResult {
 
 /** The row types this expands into (kept in one place for the preview + save). */
 export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResult> {
+  const normalizedBrief: CampaignBrief = {
+    ...brief,
+    content: brief.content.map((ci) => {
+      const requester = ci.requester?.trim() || brief.plannerOwner || "You";
+      return {
+        ...ci,
+        requester,
+        designer: ci.designer || "Unassigned",
+        approver: ci.approver?.trim() || requester,
+      };
+    }),
+  };
   const bn = brandName(brief.b);
   const stamp = Date.now();
 
   const row: CampaignRow = {
-    id: brief.id, name: brief.name, b: brief.b, branch: brief.branch,
+    id: normalizedBrief.id, name: normalizedBrief.name, b: normalizedBrief.b, branch: normalizedBrief.branch,
     // spend seeds Finance "Committed" — the amount allocated across buckets at plan time.
-    owner: brief.plannerOwner || "Unassigned", budget: brief.budget.total, spend: budgetSummary(brief).allocated, roi: 0,
-    dates: fmtRange(brief.startDate, brief.endDate), status: brief.status,
-    campType: brief.campaignType || brief.objective, readiness: "needs_attention",
+    owner: normalizedBrief.plannerOwner || "Unassigned", budget: normalizedBrief.budget.total, spend: budgetSummary(normalizedBrief).allocated, roi: 0,
+    dates: fmtRange(normalizedBrief.startDate, normalizedBrief.endDate), status: normalizedBrief.status,
+    campType: normalizedBrief.campaignType || normalizedBrief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
-    bottleneckTeam: "None", nextApproval: brief.approver || "CMO",
+    bottleneckTeam: "None", nextApproval: normalizedBrief.approver || "CMO",
   };
   await createCampaign(row);
-  await persistBriefBlob(brief);
+  await persistBriefBlob(normalizedBrief);
 
   // Idempotency: what's already been materialised for this campaign, so a repeat
   // Submit / retry creates nothing new. Keyed by real source ids, not names.
   const [contentSeen, graphicSeen, kolRows, kolAssign] = await Promise.all([
-    fetchContentSourceIds(brief.id),
-    fetchGraphicSourceIds(brief.id),
-    fetchKolsForCampaign(brief.id),
+    fetchContentSourceIds(normalizedBrief.id),
+    fetchGraphicSourceIds(normalizedBrief.id),
+    fetchKolsForCampaign(normalizedBrief.id),
     resolveKolAssignment(),
   ]);
 
@@ -73,16 +85,17 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   // Each row carries campaignId + sourceContentItemId; createXIfNew skips when
   // the pair already exists, so re-Submit is a no-op (no duplicates, no dupe tasks).
   let n = 0;
-  for (const ci of brief.content) {
+  for (const ci of normalizedBrief.content) {
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
     const gid = ci.requiredGraphic ? stamp + 500 + n : undefined;
     const post: ContentItem = {
       // No publish date yet → fall back to the campaign Start Date (stays inside the
       // campaign window) rather than day 1 of the month.
-      id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || dayOf(brief.startDate) || 1,
-      dateIso: ci.publishDate || brief.startDate || undefined, time: "10:00", title: ci.title || `${brief.name} — Content ${n + 1}`,
-      b: brief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: brief.name,
-      campaignId: brief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
+      id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || dayOf(normalizedBrief.startDate) || 1,
+      dateIso: ci.publishDate || normalizedBrief.startDate || undefined, time: "10:00", title: ci.title || `${normalizedBrief.name} — Content ${n + 1}`,
+      b: normalizedBrief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: normalizedBrief.name,
+      campaignId: normalizedBrief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
+      requester: ci.requester, designer: ci.designer, approver: ci.approver,
       // Owner is assigned later inside the Creative team — leave unassigned here.
       owner: "Unassigned", caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: ci.requiredGraphic ? "Waiting Design" : "No Asset",
@@ -107,13 +120,13 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         ...buildGraphic({
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
           type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
-          requester: brief.plannerOwner, approver: brief.plannerOwner, channels: plats,
-          campaignId: brief.id, sourceContentItemId: ci.id,
+          requester: ci.requester, approver: ci.approver, channels: plats,
+          campaignId: normalizedBrief.id, sourceContentItemId: ci.id,
         }),
         stage: "New Request",
         size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
         deliverables,
-        nextAction: `KV: ${brief.kvDirection || "—"} · Msg: ${ci.mainMessage || brief.mainMessage || "—"}`,
+        nextAction: `KV: ${normalizedBrief.kvDirection || "—"} · Msg: ${ci.mainMessage || normalizedBrief.mainMessage || "—"}`,
         contentItem: ci.title || "—",
       };
       const madeGraphic = await createGraphicIfNew(g, graphicSeen);
@@ -143,7 +156,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         count: 1, budget: perPageBudget, deliverables: kr.contentRequired.join(" + "),
         notes: kr.note, name: kr.name ? (pages > 1 ? `${kr.name} #${p}` : kr.name) : undefined, handle: kr.handle || undefined,
         followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
-        owner, approver: kolAssign.approver, branch: kr.area, platform: kr.platforms[0],
+        owner, approver: kolAssign.approver, requester: brief.plannerOwner, branch: kr.area, platform: kr.platforms[0],
         postingDate: labelDate(kr.postingStart), postingEnd: labelDate(kr.postingEnd),
         campaignId: brief.id, sourceKolRequirementId: `${kr.id}#${p}`,
         objective: brief.objective, target: brief.audience, keyMsg: brief.mainMessage, offer: brief.offer,
@@ -268,7 +281,10 @@ export async function appendBriefItem(campaignName: string, item: BriefContentIt
   if (!camp) return;
   const brief = await fetchCampaignBrief(camp.id);
   if (!brief) return;
-  brief.content = [...brief.content, { ...item, id: `ci-cal-${Date.now()}` }];
+  const nextId = item.id || `ci-cal-${Date.now()}`;
+  const existingIndex = brief.content.findIndex((c) => c.id === nextId);
+  if (existingIndex >= 0) brief.content[existingIndex] = { ...item, id: nextId };
+  else brief.content = [...brief.content, { ...item, id: nextId }];
   await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
 }
 
@@ -288,7 +304,7 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
     await db.from("campaigns").update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id);
     return;
   }
-  brief.kols = [...brief.kols, { ...item, id: `kr-req-${Date.now()}` }];
+  brief.kols = [...brief.kols, { ...item, id: item.id || `kr-req-${Date.now()}` }];
   // Re-derive the campaign's committed budget so the row (Budget/Spend shown on
   // the Campaigns list, detail header, Finance) moves together with the plan.
   const s = budgetSummary(brief);
@@ -305,5 +321,6 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   if (!brief) return;
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
-  await db.from("campaigns").update({ data: brief, status }).eq("id", id);
+  const nextApproval = status === "Waiting for Approval" ? (brief.approver || "CMO") : "None";
+  await db.from("campaigns").update({ data: brief, status, next_approval: nextApproval }).eq("id", id);
 }

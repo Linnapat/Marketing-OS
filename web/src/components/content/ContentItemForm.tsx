@@ -1,6 +1,7 @@
 "use client";
 
 import { DatePicker } from "@/components/ui/DatePicker";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
 } from "@/lib/data/brief";
@@ -12,11 +13,17 @@ import {
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function ContentItemForm({ item, onChange, outOfRange }: {
+export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, requestDate, publishTime, onPublishTimeChange }: {
   item: BriefContentItem;
   onChange: (patch: Partial<BriefContentItem>) => void;
   outOfRange?: (iso: string) => boolean;
+  requesterFallback?: string;
+  showAssignmentFields?: boolean;
+  requestDate?: string;
+  publishTime?: string;
+  onPublishTimeChange?: (value: string) => void;
 }) {
+  const requesterValue = item.requester?.trim() || "";
   const togglePlatform = (p: string) => {
     const on = item.platforms.includes(p);
     onChange({
@@ -31,10 +38,43 @@ export function ContentItemForm({ item, onChange, outOfRange }: {
 
   return (
     <div className="grid md:grid-cols-2 gap-3">
+      {showAssignmentFields !== false && (
+        <div className="md:col-span-2 grid md:grid-cols-3 gap-3">
+          <div>
+            <label className={label}>Requester</label>
+            <input value={requesterValue || requesterFallback || "You"} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
+          </div>
+          <div>
+            <label className={label}>Designer</label>
+            <input value={item.designer || "Creative leader will assign after brief"} readOnly aria-readonly="true" className={`${field} text-faint bg-ivory cursor-not-allowed`} />
+          </div>
+          <div>
+            <label className={label}>Approver</label>
+            <OwnerSelect value={item.approver} onChange={(v) => onChange({ approver: v })} placeholder="= Requester" />
+          </div>
+        </div>
+      )}
       <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={item.title} onChange={(e) => onChange({ title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
       <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
       <div><label className={label}>Content Type</label><select value={item.type} onChange={(e) => onChange({ type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-      <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
+      {requestDate ? (
+        <div className="md:col-span-2 grid md:grid-cols-3 gap-3">
+          <div>
+            <label className={label}>Request date</label>
+            <input value={requestDate} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
+          </div>
+          <div>
+            <label className={label}>Publish Date</label>
+            <DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} />
+          </div>
+          <div>
+            <label className={label}>Publish time</label>
+            <input type="time" value={publishTime || "10:00"} onChange={(e) => onPublishTimeChange?.(e.target.value)} className={field} />
+          </div>
+        </div>
+      ) : (
+        <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
+      )}
       <div><label className={label}>Priority</label><select value={item.priority} onChange={(e) => onChange({ priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
       <div className="flex flex-col gap-1">
         <div className="flex items-end gap-4">

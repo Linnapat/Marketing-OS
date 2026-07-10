@@ -4,6 +4,15 @@
 
 import { BrandId } from "@/lib/brands";
 
+export interface KolEvent {
+  type: "requested" | "owner_assigned" | "proposal_submitted" | "stage_changed" | "revision_requested" | "approved" | "posted";
+  at: string;
+  by: string;
+  from?: string;
+  to?: string;
+  note?: string;
+}
+
 export interface KolStage { l: string; d: string; done: boolean; cur: boolean; }
 
 export interface Kol {
@@ -74,6 +83,7 @@ export interface Kol {
   /** Per-platform posts: each has its own link and (once live) its own result
    *  numbers. Rolls up into Performance. Round-trips in the jsonb data blob. */
   posts?: KolPost[];
+  history?: KolEvent[];
   stages: KolStage[];
 }
 
@@ -197,7 +207,11 @@ export function kolKpis(list: Kol[]) {
   const expReach = list.reduce((s, k) => s + k.expectedReach, 0);
   const roiK = list.filter((k) => k.roi > 0);
   const avgRoas = roiK.length ? roiK.reduce((s, k) => s + k.roi, 0) / roiK.length : 0;
-  return { total, active, prospect, waitingReview: inReview, inReview, posted, completed, openComments, fees, expReach, avgRoas };
+  const revisionRequests = list.reduce((s, k) => s + kolMetrics(k).revisionCount, 0);
+  const approvedCount = list.reduce((s, k) => s + kolMetrics(k).approvedCount, 0);
+  const latePosts = list.reduce((s, k) => s + kolMetrics(k).latePostCount, 0);
+  const overdueItems = list.reduce((s, k) => s + kolMetrics(k).overdueCount, 0);
+  return { total, active, prospect, waitingReview: inReview, inReview, posted, completed, openComments, fees, expReach, avgRoas, revisionRequests, approvedCount, latePosts, overdueItems };
 }
 
 export function kolAlerts(list: Kol[]): Kol[] {
@@ -207,4 +221,24 @@ export function kolAlerts(list: Kol[]): Kol[] {
 export function stageProgress(status: string): { idx: number; total: number } {
   const idx = ALL_STAGES.indexOf(normalizeStage(status));
   return { idx: idx >= 0 ? idx : 0, total: ALL_STAGES.length };
+}
+
+const dueDateFromLabel = (label: string): Date | null => {
+  const m = /^([A-Za-z]{3})\s+(\d{1,2})$/.exec((label || "").trim());
+  if (!m) return null;
+  const idx = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(m[1]);
+  if (idx < 0) return null;
+  return new Date(new Date().getFullYear(), idx, Number(m[2]), 23, 59, 59, 999);
+};
+
+export function kolMetrics(k: Kol) {
+  const history = k.history ?? [];
+  const fallbackRevisions = k.status === "Revision Requested" ? 1 : 0;
+  const revisionCount = history.filter((e) => e.type === "revision_requested").length || fallbackRevisions;
+  const proposalSubmitCount = history.filter((e) => e.type === "proposal_submitted").length || (k.proposalSubmittedAt ? 1 : 0);
+  const due = dueDateFromLabel(k.postDueDate);
+  const latePostCount = due ? history.filter((e) => e.type === "posted" && new Date(e.at).getTime() > due.getTime()).length : 0;
+  const overdueCount = k.isOverdue ? 1 : 0;
+  const approvedCount = history.filter((e) => e.type === "approved").length || (/approved/i.test(k.quotationStatus || "") ? 1 : 0);
+  return { revisionCount, proposalSubmitCount, latePostCount, overdueCount, approvedCount };
 }

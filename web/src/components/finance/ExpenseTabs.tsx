@@ -18,6 +18,8 @@ import { RequestRow as QueueRow } from "@/lib/data/requests";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { getAppSetting } from "@/lib/db/appSettings";
+import { SignaturePad } from "@/components/finance/SignaturePad";
+import { clearSignature, getSavedSignature, saveSignature } from "@/lib/signature";
 
 /** Days a request has been waiting, from its created_at (needs expenses_p1.sql). */
 export function daysWaiting(createdAt?: string): number | null {
@@ -45,12 +47,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [requests, setRequests] = useState<ExpenseReq[]>(REQUESTS);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [preparerSig, setPreparerSig] = useState<string | null>(null);
+  const [signingPreparer, setSigningPreparer] = useState(false);
   const { member, user } = useAuth();
   // Real requester name from the signed-in account (demo mode falls back).
   const requesterName = member?.name || user?.email?.split("@")[0] || "You";
 
   useEffect(() => {
     let alive = true;
+    setPreparerSig(getSavedSignature("preparer"));
     fetchExpenseRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
@@ -225,6 +230,40 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
               <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted cursor-pointer"><input type="checkbox" checked={applyWht} onChange={(e) => setApplyWht(e.target.checked)} /> WHT 3% <span className="text-faint font-normal">· หัก ณ ที่จ่าย</span></label>
             </div>
 
+            <div className="border border-line2 rounded-[14px] p-4 bg-[#FCFBF8]">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-[12px] font-bold text-muted">ผู้จัดทำ / Requester Signature</div>
+                  <div className="text-[11px] text-faint mt-[2px]">ลายเซ็นนี้จะไปแสดงใน voucher ช่องผู้จัดทำ</div>
+                </div>
+                {preparerSig ? (
+                  <div className="flex items-center gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={preparerSig} alt="preparer signature" className="h-8 border border-line3 rounded bg-white px-2" />
+                    <button onClick={() => { clearSignature("preparer"); setPreparerSig(null); setSigningPreparer(true); }} className="text-[12px] font-bold text-accent">
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setSigningPreparer((v) => !v)} className="text-[12px] font-bold px-3 py-[7px] rounded-[8px] bg-panel text-white">
+                    {signingPreparer ? "Cancel" : "Add signature"}
+                  </button>
+                )}
+              </div>
+              {signingPreparer && (
+                <div className="mt-3 pt-3 border-t border-line4">
+                  <SignaturePad
+                    confirmLabel="Save preparer signature"
+                    onSave={(dataUrl) => {
+                      saveSignature("preparer", dataUrl);
+                      setPreparerSig(dataUrl);
+                      setSigningPreparer(false);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Additional Line Items */}
             <div className="border border-line2 rounded-[14px] overflow-hidden">
               <div className="flex items-center justify-between px-[14px] py-[11px]" style={{ background: "#FAFAF7", borderBottom: "1px solid #EEE8DE" }}>
@@ -276,14 +315,17 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
 
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Attach quotation</label>
-              <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">Drop file here or click to upload</div>
+              <div className="border-2 border-dashed border-line2 rounded-[10px] py-6 text-center text-[12px] text-faint">
+                Drop file here or click to upload <span className="ml-2 font-bold text-accent">Coming soon</span>
+              </div>
             </div>
             <button
               onClick={submit}
-              disabled={!catKey || amt <= 0 || !campaign}
+              disabled={!catKey || amt <= 0 || !campaign || !preparerSig}
               className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
               Submit for Approval
             </button>
+            {!preparerSig && <div className="text-[11px] text-faint -mt-2">กรุณาใส่ลายเซ็นผู้จัดทำก่อนส่งคำขอ</div>}
           </div>
         </div>
 

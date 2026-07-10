@@ -20,6 +20,9 @@ export interface ContentItem {
   status: string;
   campaign: string;
   owner: string;
+  requester?: string;
+  designer?: string;
+  approver?: string;
   caption: string;
   hashtags: string;
   cta: string;

@@ -77,26 +77,42 @@ export default function ContentPage() {
   );
   const cards = useMemo(() => brandOverview(posts), [posts]);
 
-  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string) => {
+  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
     setNewOpen(false);
-    const created = await createContent(p);
+    const requester = briefItem.requester?.trim() || me;
+    const designer = briefItem.designer || "Unassigned";
+    const approver = briefItem.approver?.trim() || requester;
+    const normalizedBriefItem: BriefContentItem = { ...briefItem, requester, designer, approver };
+    const sourceContentItemId = briefItem.id || `ci-cal-${Date.now()}`;
+    const graphicRequestId = briefItem.requiredGraphic ? String(Date.now() + 700) : undefined;
+    const post: ContentItem = {
+      ...p,
+      requester,
+      designer,
+      approver,
+      campaignId,
+      sourceContentItemId,
+      graphicRequestId,
+    };
+    const created = await createContent(post);
     setPosts((ps) => [created, ...ps]);
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
-    if (campaign && campaign !== "—") appendBriefItem(campaign, briefItem).catch(() => {});
+    if (campaign && campaign !== "—") appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId }).catch(() => {});
     // "Required Graphic" checked → drop a linked request into the Graphic
     // module (one deliverable per Platform × Asset Size). When every
     // deliverable is approved there, the asset links flow back onto THIS post
     // automatically (matched by campaign + content-item title) and unlock the
     // Publish gate. Unchecked = "No Asset": no request, publish without one.
     if (briefItem.requiredGraphic) {
-      const plats = briefItem.platforms.length ? briefItem.platforms : [p.plat];
-      const pairs = briefItem.assets.length ? briefItem.assets : plats.map((pl) => ({ platform: pl, size: "" }));
-      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", briefItem.referenceBriefLink || ""));
+      const plats = normalizedBriefItem.platforms.length ? normalizedBriefItem.platforms : [p.plat];
+      const pairs = normalizedBriefItem.assets.length ? normalizedBriefItem.assets : plats.map((pl) => ({ platform: pl, size: "" }));
+      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", normalizedBriefItem.referenceBriefLink || ""));
       const g: Graphic = {
         ...buildGraphic({
-          id: Date.now(), b: p.b, campaign: p.campaign, title: p.title,
-          type: briefItem.type, due: labelDate(briefItem.publishDate) || "TBD",
-          designer: "Unassigned", requester: me, approver: me, channels: plats,
+          id: Number(graphicRequestId), b: p.b, campaign: p.campaign, title: p.title,
+          type: normalizedBriefItem.type, due: labelDate(normalizedBriefItem.publishDate) || "TBD",
+          designer, requester, approver, channels: plats,
+          campaignId, sourceContentItemId,
         }),
         stage: "New Request",
         size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
@@ -174,15 +190,19 @@ export default function ContentPage() {
   );
 }
 
-function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string) => void; count: number; initialIso?: string | null }) {
+function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => void; count: number; initialIso?: string | null }) {
   const [b, setB] = useState<BrandId>("teppen");
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const { member, user } = useAuth();
+  const me = member?.name || user?.email?.split("@")[0] || "You";
+  const requestDate = new Date().toISOString().slice(0, 10);
   // Same content-item "template" as the Campaign Builder's Content Plan.
   const [item, setItem] = useState<BriefContentItem>(() => {
     const it = emptyContentItem(1);
-    return initialIso ? { ...it, publishDate: initialIso } : it;
+    const seeded = { ...it, requester: me, approver: me };
+    return initialIso ? { ...seeded, publishDate: initialIso } : seeded;
   });
   const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
 
@@ -192,6 +212,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
     return () => { alive = false; };
   }, []);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
+  const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
@@ -210,7 +231,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
       captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
-    onCreate(post, item, campaign.trim());
+    onCreate(post, item, campaign.trim(), selectedCampaign?.id);
   };
 
   return (
@@ -221,8 +242,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
         <div className="text-[16px] font-extrabold mb-1">New Post</div>
         <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — บันทึกแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="flex flex-col gap-4">
-          {/* Calendar context: brand, campaign, time */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
               <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
@@ -236,13 +256,9 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Time</label>
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} />
-            </div>
           </div>
           {/* Shared content-item template */}
-          <ContentItemForm item={item} onChange={onChange} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} />
         </div>
         <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
       </div>

@@ -113,7 +113,12 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
   const ownerMissing = !hasOwner(kol);
 
   const saveOwner = async (owner: string) => {
-    const next: Kol = { ...kol, owner, currentBlocker: owner.trim() ? null : kol.currentBlocker };
+    const next: Kol = {
+      ...kol,
+      owner,
+      currentBlocker: owner.trim() ? null : kol.currentBlocker,
+      history: [...(kol.history ?? []), { type: "owner_assigned", at: new Date().toISOString(), by: owner, note: owner }],
+    };
     setBusy(true);
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
@@ -122,7 +127,20 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
     if (!ns) return;
     const gate = canTransition(kol, ns);
     if (!gate.ok) return;
-    const next: Kol = { ...kol, status: ns, currentBlocker: hasOwner(kol) ? null : kol.currentBlocker };
+    const now = new Date().toISOString();
+    const nextHistory: NonNullable<Kol["history"]> = [
+      ...(kol.history ?? []),
+      { type: "stage_changed", at: now, by: kol.owner || "System", from: kol.status, to: ns },
+    ];
+    if (ns === "Approved") nextHistory.push({ type: "approved", at: now, by: kol.pendingApprover || kol.owner || "System", note: ns });
+    if (ns === "Posted") nextHistory.push({ type: "posted", at: now, by: kol.owner || "System", note: ns });
+    const next: Kol = {
+      ...kol,
+      status: ns,
+      currentBlocker: hasOwner(kol) ? null : kol.currentBlocker,
+      postedDate: ns === "Posted" && !kol.postedDate ? now.slice(0, 10) : kol.postedDate,
+      history: nextHistory,
+    };
     setBusy(true);
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
@@ -272,6 +290,7 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       quotationStatus: "Pending Approval",
       proposalApprovalTaskId: taskId,
       proposalSubmittedAt: new Date().toISOString(),
+      history: [...(kol.history ?? []), { type: "proposal_submitted", at: new Date().toISOString(), by: kol.owner || "System", note: name.trim() || kol.name }],
     };
     try {
       await updateKol(next);
@@ -419,6 +438,9 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
   const set = async (patch: Partial<Kol>) => {
     setBusy(true);
     const next = { ...kol, ...patch } as Kol;
+    if (patch.quotationStatus && patch.quotationStatus !== kol.quotationStatus && /approved/i.test(patch.quotationStatus)) {
+      next.history = [...(kol.history ?? []), { type: "approved", at: new Date().toISOString(), by: kol.pendingApprover || kol.owner || "System", note: patch.quotationStatus }];
+    }
     try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
   };
   const saveProposalBudget = async () => {
@@ -545,10 +567,20 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const save = async () => {
     if (!gate.ok) { alert(gate.reason ?? "บันทึกผลยังไม่ได้"); return; }
     setBusy(true);
+    const now = new Date().toISOString();
+    const stage = normalizeStage(kol.status);
+    const shouldLogPosted = !!link.trim() && !(kol.history ?? []).some((e) => e.type === "posted");
     const next: Kol = {
       ...kol, actualReach: reach, actualEngagement: eng,
       engagement: eng ? fmtFollow(eng) : kol.engagement,
       postLink: link.trim() || null,
+      postedDate: link.trim() && !kol.postedDate ? now.slice(0, 10) : kol.postedDate,
+      history: [
+        ...(kol.history ?? []),
+        ...(shouldLogPosted
+          ? [{ type: "posted", at: now, by: kol.owner || "System", note: stage } as const]
+          : []),
+      ],
     };
     try {
       await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000);

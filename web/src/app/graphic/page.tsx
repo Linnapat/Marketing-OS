@@ -23,6 +23,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
+import { useAuth } from "@/lib/auth";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
@@ -63,7 +64,10 @@ export default function GraphicPage() {
     { label: "In Progress", value: kpi.inProgress },
     { label: "Waiting Feedback", value: kpi.waiting, tone: "gold" },
     { label: "Revisions", value: kpi.revisions, tone: "orange" },
-    { label: "Approved", value: kpi.approved, tone: "green" },
+    { label: "Approved", value: kpi.approvedCount, tone: "green" },
+    { label: "Delivered", value: kpi.deliveredCount, tone: kpi.deliveredCount ? "green" : undefined },
+    { label: "Revision Count", value: kpi.revisionRequests, tone: kpi.revisionRequests ? "orange" : undefined },
+    { label: "Late Submit", value: kpi.lateSubmissions, tone: kpi.lateSubmissions ? "red" : undefined },
     { label: "Open Feedback", value: kpi.feedback, tone: kpi.feedback ? "red" : undefined, dark: true },
   ];
 
@@ -218,9 +222,9 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const [b, setB] = useState<BrandId>("teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
-  const [designer, setDesigner] = useState("Unassigned");
-  const [requester, setRequester] = useState("");
   const [approver, setApprover] = useState("");
+  const { member, user } = useAuth();
+  const requester = member?.name || user?.email?.split("@")[0] || "You";
   // Same content-item "template" as the Campaign Builder's Content Plan — a graphic
   // request is just a content item that needs a graphic, so it stays in sync.
   const [item, setItem] = useState<BriefContentItem>(() => ({ ...emptyContentItem(nextId), requiredGraphic: true }));
@@ -240,17 +244,17 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const plats = item.platforms;
     const pairs = item.assets.length ? item.assets : plats.map((p) => ({ platform: p, size: "" }));
     const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", item.referenceBriefLink || ""));
-    const approverName = approver.trim() || requester.trim();
+    const approverName = approver.trim() || requester;
     const g: Graphic = {
       ...buildGraphic({
         id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
-        type: item.type, due: labelDate(item.publishDate) || "TBD", designer,
-        requester: requester.trim() || "You", approver: approverName, channels: plats,
+        type: item.type, due: labelDate(item.publishDate) || "TBD", designer: "Unassigned",
+        requester, approver: approverName, channels: plats,
       }),
       stage: "New Request",
       size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
       deliverables,
-      nextAction: `Deliver ${deliverables.length} asset(s)`,
+      nextAction: "Creative leader to assign in-house or outsource designer",
       contentItem: item.title.trim() || "—",
     };
     const iso = item.publishDate || new Date().toISOString().slice(0, 10);
@@ -288,12 +292,18 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label><OwnerSelect value={requester} onChange={setRequester} team="Planner" /></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label><OwnerSelect value={designer === "Unassigned" ? "" : designer} onChange={(v) => setDesigner(v || "Unassigned")} team="Creative" placeholder="Unassigned" /></div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester</label>
+              <input value={requester} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Designer</label>
+              <input value="Creative leader will assign after brief" readOnly aria-readonly="true" className={`${field} text-faint bg-ivory cursor-not-allowed`} />
+            </div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
           </div>
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
-          <ContentItemForm item={item} onChange={onChange} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} showAssignmentFields={false} />
         </div>
         <button onClick={submit} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Request</button>
       </div>

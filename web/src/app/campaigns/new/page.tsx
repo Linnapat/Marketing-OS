@@ -383,7 +383,7 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
                   <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
                 </div>
               </div>
-              <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} />
+              <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} requesterFallback={brief.plannerOwner || "You"} />
             </div>
           );
         })}
