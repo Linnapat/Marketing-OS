@@ -25,6 +25,14 @@ export const DEFAULT_DATE_FILTER: DateFilter = {
   end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
 };
 
+const CURRENT_YEAR_FILTER: DateFilter = {
+  mode: "year",
+  month: now.getMonth(),
+  year: now.getFullYear(),
+  start: new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10),
+  end: new Date(now.getFullYear(), 11, 31).toISOString().slice(0, 10),
+};
+
 /* ── Actually filtering with the selected period ─────────────────────── */
 const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
@@ -180,7 +188,7 @@ export function DateFilterBar({
         </>
       )}
       <button
-        onClick={() => set(DEFAULT_DATE_FILTER)}
+        onClick={() => set(f.mode === "year" ? CURRENT_YEAR_FILTER : DEFAULT_DATE_FILTER)}
         className="text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white whitespace-nowrap"
       >
         This {f.mode === "year" ? "year" : "month"}

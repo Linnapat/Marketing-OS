@@ -422,7 +422,11 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   useEffect(() => setUrlDraft(sheetUrl), [sheetUrl]);
 
   const rows = categoryPnl(sheetRows, reqs, period, brand);
-  const periodLabel = period.mode === "month" ? `${MONTHS[period.month]} ${period.year}` : `${period.start} → ${period.end}`;
+  const periodLabel = period.mode === "year"
+    ? `${period.year}`
+    : period.mode === "month"
+      ? `${MONTHS[period.month]} ${period.year}`
+      : `${period.start} → ${period.end}`;
   const cols = "minmax(220px,2fr) repeat(8,minmax(82px,1fr)) minmax(100px,1fr)";
   const campaignByName = new Map(campaigns.map((campaign) => [campaign.name, campaign]));
   const categoryContributors = (category: string) => reqs.filter((request) =>
