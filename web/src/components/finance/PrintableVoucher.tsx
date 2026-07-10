@@ -32,8 +32,10 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
   const isPV = type === "PAYMENT";
   // Remembered signatures flow straight into the voucher for print.
   const [preparerSig, setPreparerSig] = useState<string | null>(null);
+  const [approverSig, setApproverSig] = useState<string | null>(null);
   useEffect(() => {
     setPreparerSig(getSavedSignature("preparer"));
+    setApproverSig(getSavedSignature("approver"));
   }, []);
 
   const amount = expense.amount;
@@ -142,7 +144,15 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
                     </>
                   )}
                 </td>
-                <td style={{ border: cell, height: 34 }} />
+                <td style={{ border: cell, height: 34, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+                  {approverSig && (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={approverSig} alt="ผู้อนุมัติ" style={{ maxHeight: 30, maxWidth: "85%", margin: "0 auto", display: "block" }} />
+                      <div style={{ fontSize: 8.5, color: "#555" }}>{expense.date} 2569</div>
+                    </>
+                  )}
+                </td>
               </tr>
               <tr><td style={{ border: cell, padding: "3px 6px", textAlign: "center", fontWeight: 600, fontSize: 10, background: "#e4edf7" }}>ผู้จ่ายเงิน / วันที่</td><td style={{ border: cell, background: "#fafafa" }} /></tr>
               <tr><td style={{ border: cell, height: 30 }} /><td style={{ border: cell, background: "#fafafa" }} /></tr>

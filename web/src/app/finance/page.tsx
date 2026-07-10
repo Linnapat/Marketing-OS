@@ -653,11 +653,11 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [allReqs, setAllReqs] = useState<ExpenseReq[]>([]);
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
-  const [preparerSig, setPreparerSig] = useState<string | null>(null);
+  const [sig, setSig] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    setPreparerSig(getSavedSignature("preparer"));
+    setSig(getSavedSignature("approver"));
     fetchExpenseRequests().then((r) => { if (alive) setAllReqs(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -684,12 +684,12 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
         </div>
         <div className="flex items-center gap-4 flex-wrap text-[11.5px] text-muted">
           <div className="flex items-center gap-2">
-            <span className="font-semibold">ผู้จัดทำ</span>
-            {preparerSig ? (
+            <span className="font-semibold">ผู้อนุมัติ</span>
+            {sig ? (
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preparerSig} alt="preparer signature" className="h-6 border border-line3 rounded bg-white" />
-                <button onClick={() => { clearSignature("preparer"); setPreparerSig(null); }} className="font-bold text-accent">Change</button>
+                <img src={sig} alt="approver signature" className="h-6 border border-line3 rounded bg-white" />
+                <button onClick={() => { clearSignature("approver"); setSig(null); }} className="font-bold text-accent">Change</button>
               </>
             ) : <span className="text-faint">ยังไม่มีลายเซ็น</span>}
           </div>
@@ -722,7 +722,7 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
                   <button onClick={() => { setRejecting(rejecting === i ? null : i); setSigning(null); }} className="text-[12.5px] font-bold rounded-[9px] px-4 py-[8px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
                     {rejecting === i ? "Cancel" : "✕ Reject"}
                   </button>
-                  {preparerSig ? (
+                  {sig ? (
                     <button onClick={() => approve(i, r)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">✓ Confirm &amp; Approve</button>
                   ) : (
                     <button onClick={() => { setSigning(signing === i ? null : i); setRejecting(null); }} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">
@@ -732,16 +732,16 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
                 </div>
               )}
             </div>
-            {signing === i && isPending && !preparerSig && (
+            {signing === i && isPending && !sig && (
               <div className="mt-4 pt-4 border-t border-line4">
                 <div className="text-[12px] font-semibold text-muted mb-2">
-                  เซ็นผู้จัดทำก่อน — ระบบจะจำลายเซ็นไว้ใช้กับ voucher ถัดไป
+                  Sign once — we’ll remember it for next time
                 </div>
                 <SignaturePad
-                  confirmLabel="Save preparer signature &amp; Approve"
+                  confirmLabel="Save signature &amp; Approve"
                   onSave={(dataUrl) => {
-                    saveSignature("preparer", dataUrl);
-                    setPreparerSig(dataUrl);
+                    saveSignature("approver", dataUrl);
+                    setSig(dataUrl);
                     approve(i, r);
                   }}
                 />
