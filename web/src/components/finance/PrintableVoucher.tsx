@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Sarabun } from "next/font/google";
 import { bahtText, thb } from "@/lib/bahtText";
 import { ExpenseRow } from "@/lib/data/finance";
@@ -8,16 +9,6 @@ import { brandName } from "@/lib/brands";
 import { getSavedSignature } from "@/lib/signature";
 
 const sarabun = Sarabun({ subsets: ["thai", "latin"], weight: ["400", "500", "600", "700"] });
-
-function TeppenLogo() {
-  return (
-    <svg viewBox="0 0 220 120" aria-label="TEPPEN GROUP" style={{ width: "92%", maxWidth: 170, margin: "0 auto", display: "block" }}>
-      <rect x="0" y="0" width="220" height="120" rx="12" fill="#ffffff" />
-      <text x="110" y="58" textAnchor="middle" fontSize="34" fontWeight="800" letterSpacing="5" fill="#1f4a86">TEPPEN</text>
-      <text x="110" y="88" textAnchor="middle" fontSize="14" fontWeight="700" letterSpacing="8" fill="#B8945A">GROUP</text>
-    </svg>
-  );
-}
 
 /**
  * ใบสำคัญจ่ายทั่วไป — printable A5 landscape voucher, ported from Payment Voucher.dc.html.
@@ -77,10 +68,18 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, color: "#111", tableLayout: "fixed", lineHeight: 1.35 }}>
             <tbody>
               <tr>
-                {/* Company logo — drop the real file at web/public/company-logo.png.
-                    Inline mark keeps the voucher branded even without an asset file. */}
+                {/* Company logo */}
                 <td rowSpan={5} style={{ border: cell, textAlign: "center", verticalAlign: "middle", padding: 4, width: "18%" }}>
-                  <TeppenLogo />
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 110 }}>
+                    <Image
+                      src="/teppen-logo.png"
+                      alt="TEPPEN Food entertainment"
+                      width={150}
+                      height={150}
+                      style={{ width: "88%", height: "auto", objectFit: "contain" }}
+                      priority
+                    />
+                  </div>
                 </td>
                 <td colSpan={3} style={{ border: cell, textAlign: "center", padding: "2px 6px", fontWeight: 700, fontSize: 11, color: "#1a3a6b" }}>14/2 ซอยสุขุมวิท 61 แขวงคลองตันเหนือ เขตวัฒนา กรุงเทพฯ 10110</td>
                 <td style={{ border: cell, textAlign: "right", padding: "2px 5px", fontSize: 9.5, color: "#555", verticalAlign: "top" }}>(สำนักงานใหญ่)</td>

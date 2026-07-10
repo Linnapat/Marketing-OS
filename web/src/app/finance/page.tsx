@@ -204,7 +204,7 @@ export default function FinancePage() {
       </div>
 
       <div className="mt-5">
-        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} />}
+        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} period={period} setPeriod={setPeriod} />}
         {tab === "roi" && (
           <CategoryPnlTab
             brand={brand} reqs={reqs} sheetRows={sheetRows} period={period} setPeriod={setPeriod}
@@ -233,29 +233,53 @@ function NoFinanceAccess() {
 }
 
 /* ── Budget Plan: allocation + campaign-level profitability ─────────── */
-function BudgetPlanTab({ brand, fin, reqs, briefs }: { brand: BrandFilterValue; fin: FinanceView | null; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief> }) {
+function BudgetPlanTab({ brand, fin, reqs, briefs, period, setPeriod }: {
+  brand: BrandFilterValue; fin: FinanceView | null; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief>;
+  period: PeriodFilter; setPeriod: (f: PeriodFilter) => void;
+}) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
+  const filteredReqs = reqs.filter((r) => inDateFilter(period, r.createdAt));
   const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
-  const brandAlloc = fin.byBrand.filter((b) => brand === "all" || b.b === brand);
+  const brandAlloc = fin.byBrand
+    .filter((b) => brand === "all" || b.b === brand)
+    .map((b) => ({
+      ...b,
+      spent: filteredReqs
+        .filter((r) => r.b === b.b && r.status !== "Draft" && r.status !== "Rejected")
+        .reduce((sum, r) => sum + (r.approved || r.requested || 0), 0),
+    }));
   const totalPlan = brand === "all" ? fin.totalPlan : brandAlloc.reduce((sum, row) => sum + row.plan, 0);
-  const committed = brand === "all" ? fin.committed : brandAlloc.reduce((sum, row) => sum + row.spent, 0);
+  const committed = brandAlloc.reduce((sum, row) => sum + row.spent, 0);
   const available = totalPlan - committed;
-  const cats = budgetPlanCategories(reqs, brand);
+  const cats = budgetPlanCategories(filteredReqs, brand);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
+  const periodLabel = period.mode === "year"
+    ? `${period.year}`
+    : period.mode === "month"
+      ? `${MONTHS[period.month]} ${period.year}`
+      : `${period.start} → ${period.end}`;
 
   return (
     <div className="flex flex-col gap-4">
+      <DateFilterBar
+        value={period}
+        onChange={setPeriod}
+        trailing={brand !== "all" ? <span>กำลังแสดง Budget Plan เฉพาะ {brandName(brand)}</span> : undefined}
+      />
+
       {/* Top KPI cards */}
       <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
         <div className="rounded-card p-[18px]" style={{ background: "#211F1C", color: "#fff" }}>
           <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
           <div className="text-[25px] font-bold mt-[6px]">{baht(totalPlan, { compact: true })}</div>
+          <div className="text-[11px] text-white/60 mt-1">{periodLabel}</div>
         </div>
         {([["Committed", committed], ["Available", available]] as const).map(([l, v]) => (
           <div key={l} className="bg-surface border border-line rounded-card p-[18px]">
             <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
             <div className="text-[25px] font-bold mt-[6px] text-ink">{baht(v, { compact: true })}</div>
+            <div className="text-[11px] text-faint mt-1">{periodLabel}</div>
           </div>
         ))}
       </div>

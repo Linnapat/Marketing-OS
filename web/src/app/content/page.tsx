@@ -197,6 +197,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
+  const requestDate = new Date().toISOString().slice(0, 10);
   // Same content-item "template" as the Campaign Builder's Content Plan.
   const [item, setItem] = useState<BriefContentItem>(() => {
     const it = emptyContentItem(1);
@@ -241,8 +242,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
         <div className="text-[16px] font-extrabold mb-1">New Post</div>
         <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — บันทึกแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="flex flex-col gap-4">
-          {/* Calendar context: brand, campaign, time */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
               <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
@@ -256,13 +256,9 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Time</label>
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} />
-            </div>
           </div>
           {/* Shared content-item template */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} />
         </div>
         <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
       </div>
