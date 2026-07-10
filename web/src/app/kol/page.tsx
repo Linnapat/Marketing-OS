@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -29,6 +29,8 @@ import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
+import { importKolProfilesFromSheet, KolSheetRow } from "@/lib/db/kolMaster";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : "TBD"; }
@@ -440,7 +442,19 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
 function KolDatabase() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<KolMasterRow[]>([]);
+  const [sheetRows, setSheetRows] = useState<KolSheetRow[]>([]);
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [urlDraft, setUrlDraft] = useState("");
+  const [sheetStatus, setSheetStatus] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const loadDb = () => {
+    setLoading(true);
+    searchKolProfiles(q, 100)
+      .then((r) => { setRows(r); setLoading(false); })
+      .catch(() => { setLoading(false); });
+  };
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -451,11 +465,81 @@ function KolDatabase() {
     }, 200);
     return () => { alive = false; clearTimeout(t); };
   }, [q]);
+  useEffect(() => {
+    getAppSetting("kol_library_sheet_url").then((url) => {
+      if (!url) return;
+      setSheetUrl(url);
+      setUrlDraft(url);
+    }).catch(() => {});
+  }, []);
+
+  const loadSheet = async (url: string) => {
+    if (!url.trim()) { setSheetRows([]); setSheetStatus(""); return; }
+    setSheetStatus("กำลังโหลด…");
+    try {
+      const res = await fetch(`/api/kol-library-sheet?url=${encodeURIComponent(url.trim())}`);
+      const j = await res.json();
+      if (!res.ok || j.error) { setSheetRows([]); setSheetStatus(`⚠ ${j.error ?? "โหลดไม่สำเร็จ"}`); return; }
+      setSheetRows(j.rows ?? []);
+      setSheetStatus(`✓ โหลด KOL ${j.rows?.length ?? 0} รายการจาก Google Sheet`);
+    } catch {
+      setSheetRows([]); setSheetStatus("⚠ เชื่อมต่อ Google Sheets ไม่ได้ — ลองใหม่อีกครั้ง");
+    }
+  };
+
+  const saveSheetUrl = async (url: string) => {
+    setSheetUrl(url);
+    setUrlDraft(url);
+    await setAppSetting("kol_library_sheet_url", url.trim());
+    await loadSheet(url);
+  };
   const cols = "1.8fr 1.4fr 1fr 0.9fr 1fr 1.2fr 0.9fr";
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-card px-4 py-[10px] text-[11.5px]" style={{ background: "#EEF1F8", border: "1px solid #D5DEEF", color: "#3E5C9A" }}>
         <b>KOL Library</b> = ทะเบียนกลางของ KOL (Master Profile) ไม่ผูกแคมเปญ — ใช้ค้นและดึงมาใช้ซ้ำ พร้อมประวัติผลงาน/rank สะสมข้ามแคมเปญ · ต่างจาก <b>Request List</b> ที่เป็นดีลราย KOL ต่อ 1 แคมเปญ
+      </div>
+      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+        <button onClick={() => setSheetOpen((open) => !open)} aria-expanded={sheetOpen} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-ivory/40">
+          <span>
+            <span className="text-[13px] font-bold text-ink">Google Sheet Sync</span>
+            <span className="text-[11.5px] ml-3" style={{ color: sheetStatus.startsWith("⚠") ? "#B33A2E" : sheetUrl ? "#4E7A4E" : "#9A9387" }}>
+              {sheetStatus || (sheetUrl ? "เชื่อมต่อแล้ว" : "ยังไม่ได้เชื่อมต่อ")}
+            </span>
+          </span>
+          {sheetOpen ? <ChevronDown size={16} className="text-faint" /> : <ChevronRight size={16} className="text-faint" />}
+        </button>
+        {sheetOpen && (
+          <div className="px-5 pb-5 pt-1 border-t border-line4">
+            <div className="text-[11.5px] text-faint my-3">
+              แชร์ sheet แบบ <b className="text-muted">Anyone with the link · Viewer</b> แล้ววางลิงก์ด้านล่าง ·
+              คอลัมน์แนะนำ: <b className="text-muted">A = display_name · B = primary_handle · C = platform · D = followers · E = kol_type · F = tier · G = owner_specialist · H = status · I = agency · J = notes</b>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <input value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…" className="flex-1 min-w-[260px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+              <button onClick={() => saveSheetUrl(urlDraft)} disabled={!urlDraft.trim() || urlDraft === sheetUrl} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 disabled:opacity-40">บันทึก & โหลด</button>
+              {sheetUrl && <button onClick={() => loadSheet(sheetUrl)} className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 bg-white">โหลดใหม่</button>}
+              {sheetUrl && <a href={sheetUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-muted border border-line2 rounded-[9px] px-4 py-[8px] bg-white">เปิด Sheet ↗</a>}
+              <button
+                onClick={async () => {
+                  if (!sheetRows.length || syncing) return;
+                  setSyncing(true);
+                  try {
+                    const result = await importKolProfilesFromSheet(sheetRows);
+                    setSheetStatus(`✓ sync แล้ว เพิ่ม ${result.inserted} · อัปเดต ${result.updated}`);
+                    loadDb();
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+                disabled={!sheetRows.length || syncing}
+                className="text-[12.5px] font-bold text-white bg-status-green rounded-[9px] px-4 disabled:opacity-40"
+              >
+                {syncing ? "Syncing…" : `Sync เข้า Library${sheetRows.length ? ` (${sheetRows.length})` : ""}`}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"

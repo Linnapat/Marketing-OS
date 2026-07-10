@@ -21,6 +21,19 @@ export interface KolMasterRow {
   rank_label: string | null;
 }
 
+export interface KolSheetRow {
+  display_name: string;
+  primary_handle?: string;
+  platform?: string;
+  total_followers?: number;
+  kol_type?: string;
+  tier?: string;
+  status?: string;
+  owner_specialist?: string;
+  contact_agency?: string;
+  notes?: string;
+}
+
 /** Derive mock master rows from the bundled creators (used when no DB). */
 function mockMaster(): KolMasterRow[] {
   const seen = new Set<string>();
@@ -153,4 +166,81 @@ export function tierFromFollowers(f?: number): string | undefined {
   if (f < 500_000) return "Mid";
   if (f < 1_000_000) return "Macro";
   return "Mega";
+}
+
+function clean(v?: string | null): string {
+  return (v ?? "").trim();
+}
+
+async function findExistingKolId(displayName: string, handle: string, platform: string): Promise<string | null> {
+  const db = supabase();
+  if (!db) return null;
+  if (handle) {
+    const { data } = await db.from("kol_channels").select("kol_id").eq("handle_url", handle).eq("platform", platform).limit(1).maybeSingle();
+    const kolId = (data as { kol_id?: string } | null)?.kol_id;
+    if (kolId) return kolId;
+  }
+  const { data } = await db.from("kol_profiles").select("kol_id").ilike("display_name", displayName).limit(1).maybeSingle();
+  return (data as { kol_id?: string } | null)?.kol_id ?? null;
+}
+
+/** Upsert KOL Library rows from a Google Sheet preview. Match existing profiles
+ *  by (platform + handle) first, else by display name. Returns inserted/updated counts. */
+export async function importKolProfilesFromSheet(rows: KolSheetRow[]): Promise<{ inserted: number; updated: number }> {
+  const db = supabase();
+  if (!db || !rows.length) return { inserted: 0, updated: 0 };
+  let inserted = 0, updated = 0;
+  for (const row of rows) {
+    const displayName = clean(row.display_name);
+    if (!displayName) continue;
+    const handle = clean(row.primary_handle);
+    const platform = clean(row.platform) || "Instagram";
+    const followers = Number(row.total_followers ?? 0) || undefined;
+    const tier = clean(row.tier) || tierFromFollowers(followers);
+    const status = clean(row.status) || "Active";
+    const kolId = await findExistingKolId(displayName, handle, platform);
+    if (kolId) {
+      await db.from("kol_profiles").update({
+        display_name: displayName,
+        kol_type: clean(row.kol_type) || null,
+        tier: tier ?? null,
+        status,
+        owner_specialist: clean(row.owner_specialist) || null,
+        contact_agency: clean(row.contact_agency) || null,
+        notes: clean(row.notes) || null,
+        updated_at: new Date().toISOString(),
+      }).eq("kol_id", kolId);
+      if (handle || followers) {
+        await db.from("kol_channels").upsert({
+          kol_id: kolId,
+          platform,
+          handle_url: handle || null,
+          followers: followers ?? null,
+        }, { onConflict: "kol_id,platform" });
+      }
+      updated++;
+      try {
+        await db.rpc("recompute_kol_rank", { p_kol: kolId });
+      } catch {}
+    } else {
+      const newKolId = await createKolProfile({
+        display_name: displayName,
+        kol_type: clean(row.kol_type) || undefined,
+        tier,
+        owner_specialist: clean(row.owner_specialist) || undefined,
+        contact_agency: clean(row.contact_agency) || undefined,
+        notes: clean(row.notes) || undefined,
+        platform,
+        handle_url: handle || undefined,
+        followers,
+      });
+      if (newKolId) {
+        inserted++;
+        try {
+          await db.rpc("recompute_kol_rank", { p_kol: newKolId });
+        } catch {}
+      }
+    }
+  }
+  return { inserted, updated };
 }
