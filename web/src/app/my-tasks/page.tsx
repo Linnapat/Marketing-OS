@@ -21,6 +21,12 @@ import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 
 // Stages / statuses that still need someone in the approval tier to act.
 const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
@@ -195,6 +201,7 @@ export default function MyTasksPage() {
   const myApprovals = myTasks.filter((t) => getStatus(t) === "Need Approval").length;
   const myWaiting = myTasks.filter((t) => getStatus(t) === "Waiting").length;
   const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
+  const totalOpenTasks = myTasks.filter((t) => getStatus(t) !== "Done").length;
 
   const matchScope = (t: Task) => {
     const st = getStatus(t);
@@ -208,37 +215,66 @@ export default function MyTasksPage() {
 
   return (
     <div style={{ paddingBottom: 40 }}>
-      {/* HEADER */}
-      <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
-        <div>
-          <div className="text-[22px] font-extrabold tracking-[-0.02em]">My Tasks</div>
-          <div className="text-[12.5px] text-faint mt-[2px]">Personal workspace · Team overview · Approvals</div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => setNewOpen(true)} style={chip(true)}>+ New Task</button>
-          <div className="w-px h-5 bg-line2 mx-1" />
-          <span onClick={() => setActiveTab("myDay")} style={chip(activeTab === "myDay")}>My Day</span>
-          <span onClick={() => setActiveTab("approval")} style={chip(activeTab === "approval")} className="relative">
-            My Approval{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
-          </span>
-          <span onClick={() => setActiveTab("team")} style={chip(activeTab === "team")}>Team View</span>
-          <div className="w-px h-5 bg-line2 mx-1" />
-          <div className="flex items-center gap-[6px] bg-white border border-line2 rounded-pill px-3 py-[5px]">
-            <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ background: colorOf(viewAs) }}>{init(viewAs)}</span>
-            <span className="text-[12px] font-semibold text-ink">{viewAs.split(" ")[0]}</span>
-          </div>
-          {people.map(({ name: p }) => {
-            const active = viewAs === p;
-            return <span key={p} onClick={() => pickViewAs(p)} style={active
-              ? { fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#211F1C", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }
-              : { fontSize: 11, fontWeight: 500, padding: "4px 10px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" }}>{p.split(" ")[0]}</span>;
-          })}
-        </div>
-      </div>
+      <CampaignPageHeaderSection
+        eyebrow="BUSY BUT BRILLIANT"
+        title="My Tasks"
+        description="Personal workspace, approvals, and team workload in one calm command center."
+      />
 
-      {/* Period filter — by task due date; undated tasks stay visible */}
-      <div className="mb-[18px]">
-        <DateFilterBar value={date} onChange={setDate} />
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar
+          action={<button onClick={() => setNewOpen(true)} style={{ ...chip(true), padding: "10px 16px", borderRadius: 12 }}>+ New Task</button>}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[13px] font-semibold text-faint">
+                Viewing as {viewAs} · approvals, focus work, and team support in one place
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span onClick={() => setActiveTab("myDay")} style={chip(activeTab === "myDay")}>My Day</span>
+                <span onClick={() => setActiveTab("approval")} style={chip(activeTab === "approval")} className="relative">
+                  My Approval{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
+                </span>
+                <span onClick={() => setActiveTab("team")} style={chip(activeTab === "team")}>Team View</span>
+              </div>
+            </div>
+            <DateFilterBar value={date} onChange={setDate} />
+          </div>
+        </CampaignCommandBar>
+
+        <ModuleSummaryCard title="My Tasks Summary">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              { label: "Open tasks", value: totalOpenTasks },
+              { label: "Need approval", value: myApprovals },
+              { label: "Waiting", value: myWaiting },
+              { label: "Stuck", value: myStuck },
+              { label: "Done", value: myDone },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </ModuleSummaryCard>
+
+        <FilterBar>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-[6px] bg-white border border-line2 rounded-pill px-3 py-[5px]">
+              <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ background: colorOf(viewAs) }}>{init(viewAs)}</span>
+              <span className="text-[12px] font-semibold text-ink">{viewAs.split(" ")[0]}</span>
+            </div>
+            <div className="flex gap-[7px] flex-wrap">
+              {people.map(({ name: p }) => {
+                const active = viewAs === p;
+                return <span key={p} onClick={() => pickViewAs(p)} style={active
+                  ? { fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#211F1C", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }
+                  : { fontSize: 11, fontWeight: 500, padding: "4px 10px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" }}>{p.split(" ")[0]}</span>;
+              })}
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       {activeTab === "myDay" ? (

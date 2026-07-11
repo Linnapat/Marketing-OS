@@ -8,6 +8,12 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, BRAND_ORDER, brandName } from "@/lib/brands";
 import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
 import { fetchAssets, createAsset } from "@/lib/db/assets";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 
 const TYPES = ["all", "Key Visual", "Story", "Print", "Social Media", "Reel Cover", "Carousel", "LINE Rich Message"];
 
@@ -39,11 +45,17 @@ export default function AssetLibraryPage() {
 
   const rows = assets.filter((a) => (brand === "all" || a.b === brand) && (type === "all" || a.type === type));
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  const approvedCount = rows.filter((a) => a.approval === "Approved").length;
+  const linkedCount = rows.filter((a) => !!a.driveUrl || !!a.canvaUrl).length;
+  const campaignCount = new Set(rows.map((a) => a.campaign).filter((name) => name && name !== "—")).size;
 
   return (
     <>
-      <PageHeader eyebrow="Asset Library" title="Asset Library" subtitle={`${rows.length} assets · final artwork, versions, and Drive / Canva links per campaign`}
-        right={<button onClick={() => setUploadOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ Upload Asset</button>} />
+      <CampaignPageHeaderSection
+        eyebrow="READY TO SERVE"
+        title="Asset Pantry"
+        description="Keep final artwork, versions, and production links tidy for every campaign."
+      />
 
       {uploadOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -73,21 +85,50 @@ export default function AssetLibraryPage() {
         </div>
       )}
 
-      <div className="mt-4 flex flex-col gap-3">
-        <BrandFilter value={brand} onChange={setBrand} />
-        <div className="flex items-center gap-[7px] flex-wrap">
-          <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Type</span>
-          {TYPES.map((t) => {
-            const active = t === type;
-            return <button key={t} onClick={() => setType(t)} className="text-[12px] px-[12px] py-[5px] rounded-pill whitespace-nowrap"
-              style={active ? { fontWeight: 700, background: "#211F1C", color: "#fff" } : { fontWeight: 500, border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{t === "all" ? "All" : t}</button>;
-          })}
-        </div>
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar
+          action={<button onClick={() => setUploadOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Upload Asset</button>}
+        >
+          <div className="text-[13px] font-semibold text-faint">
+            {rows.length} assets in view · final artwork, versions, and Drive / Canva links per campaign
+          </div>
+        </CampaignCommandBar>
+
+        <ModuleSummaryCard title="Asset Pantry Summary">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: "Assets in view", value: rows.length, note: "Current brand + type filter" },
+              { label: "Approved", value: approvedCount, note: "Ready for handoff or publish" },
+              { label: "Linked files", value: linkedCount, note: "Drive or Canva attached" },
+              { label: "Active campaigns", value: campaignCount, note: "Campaigns using these assets" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
+                <div className="mt-2 text-[11px] text-white/55">{item.note}</div>
+              </div>
+            ))}
+          </div>
+        </ModuleSummaryCard>
+
+        <FilterBar>
+          <div className="flex flex-col gap-4">
+            <BrandFilter value={brand} onChange={setBrand} />
+            <div className="flex items-center gap-[7px] flex-wrap">
+              <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Type</span>
+              {TYPES.map((t) => {
+                const active = t === type;
+                return <button key={t} onClick={() => setType(t)} className="text-[12px] px-[12px] py-[7px] rounded-pill whitespace-nowrap transition"
+                  style={active ? { fontWeight: 700, background: "#6C5CE7", color: "#fff", boxShadow: "0 10px 24px rgba(108, 92, 231, 0.22)" } : { fontWeight: 600, border: "1px solid #ECEAF2", color: "#6E6879", background: "#fff" }}>{t === "all" ? "All types" : t}</button>;
+              })}
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
         {rows.map((a) => (
-          <div key={a.id} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div key={a.id} className="bg-surface border border-line rounded-cardLg overflow-hidden shadow-soft">
             <div className="h-32 flex items-center justify-center relative" style={{ background: "repeating-linear-gradient(45deg,#F4EFE5,#F4EFE5 10px,#EFE9DC 10px,#EFE9DC 20px)" }}>
               <span className="text-[11px] font-mono text-faint">{a.type}</span>
               <span className="absolute top-2 right-2"><StatusBadge tone="blue">{a.version}</StatusBadge></span>
@@ -100,14 +141,14 @@ export default function AssetLibraryPage() {
                 <span className="text-[11px] text-faint">{a.updated}</span>
               </div>
               <div className="flex items-center gap-3">
-                {a.driveUrl && <span className="text-[11.5px] text-accent font-semibold cursor-pointer">Drive ↗</span>}
-                {a.canvaUrl && <span className="text-[11.5px] text-accent font-semibold cursor-pointer">Canva ↗</span>}
+                {a.driveUrl && <a href={a.driveUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Drive ↗</a>}
+                {a.canvaUrl && <a href={a.canvaUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Canva ↗</a>}
               </div>
             </div>
           </div>
         ))}
-        <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px]">
-          <div className="text-[13px] font-bold text-faint">Drop asset</div>
+        <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px] bg-white/70">
+          <div className="text-[13px] font-bold text-muted">Drop asset</div>
           <div className="text-[11px] text-faint mt-1">Drive · Canva · final artwork</div>
         </div>
       </div>

@@ -10,8 +10,8 @@ const hanken = Hanken_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Marketing OS",
-  description: "Premium marketing operations for the TEPPEN restaurant group.",
+  title: "MKT Playground",
+  description: "Marketing Playground OS for the TEPPEN Group team.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

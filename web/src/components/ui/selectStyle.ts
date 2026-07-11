@@ -6,10 +6,11 @@ const chevron = (stroke: string) =>
 
 /** Light filter dropdown — matches the app's standard filter controls. */
 export const SELECT_STYLE: CSSProperties = {
-  fontSize: 12.5, fontWeight: 600, padding: "7px 30px 7px 12px", borderRadius: 10,
-  border: "1px solid #E5DECF", background: "#fff", color: "#211F1C", cursor: "pointer",
+  fontSize: 12.5, fontWeight: 700, padding: "9px 34px 9px 14px", borderRadius: 14,
+  border: "1px solid #ECEAF2", background: "#FBFAF7", color: "#17172A", cursor: "pointer",
   appearance: "none",
-  backgroundImage: chevron("%239A9387"),
+  boxShadow: "0 6px 16px rgba(23,23,42,.04)",
+  backgroundImage: chevron("%238A879A"),
   backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center",
 };
 

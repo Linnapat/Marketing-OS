@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -31,6 +30,12 @@ import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { importKolProfilesFromSheet, KolSheetRow } from "@/lib/db/kolMaster";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : "TBD"; }
@@ -121,38 +126,53 @@ export default function KolPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="KOL / Creator"
+      <CampaignPageHeaderSection
+        eyebrow="CREATOR CAFÉ"
         title="KOL / Creator"
-        subtitle={`${filtered.length} creators · deal, brief, review, and track every collaboration`}
-        right={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ Request KOL</button>}
+        description="Track creator requests, approvals, performance, and your reusable KOL library in one place."
       />
 
-      <div className="mt-4 flex items-center gap-4 flex-wrap">
-        <BrandFilter value={brand} onChange={setBrand} />
-        <label className="flex items-center gap-[7px]">
-          <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Campaign</span>
-          <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE}>
-            <option value="all">All Campaigns</option>
-            {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-      </div>
-
-      {/* Period filter — by post due date; undated collaborations stay visible */}
-      <div className="mt-3">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
-
-      {/* KPI strip */}
-      <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))" }}>
-        {KPIS.map((k) => (
-          <div key={k.label} className="rounded-card p-4 border"
-            style={k.dark ? { background: "#211F1C", borderColor: "#211F1C" } : { background: "#fff", borderColor: "#ECE6DA" }}>
-            <div className="text-[10px] uppercase tracking-[0.06em] font-bold mb-[6px]" style={{ color: k.dark ? "#B8945A" : "#9A9387" }}>{k.label}</div>
-            <div className="text-[22px] font-extrabold letter-tightest" style={{ color: k.dark ? "#fff" : k.tone === "red" ? "#B33A2E" : k.tone === "gold" ? "#C68A1E" : "#211F1C" }}>{k.value}</div>
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar
+          action={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Request KOL</button>}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="text-[13px] font-semibold text-faint">
+              {filtered.length} creators in view · deal, brief, review, and performance tracking
+            </div>
+            <DateFilterBar value={date} onChange={setDate} />
           </div>
-        ))}
+        </CampaignCommandBar>
+
+        <ModuleSummaryCard title="Creator Café Summary">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {KPIS.slice(0, 5).map((k) => (
+              <div key={k.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{k.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{k.value}</div>
+              </div>
+            ))}
+          </div>
+        </ModuleSummaryCard>
+
+        <FilterBar>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-4 flex-wrap">
+              <BrandFilter value={brand} onChange={setBrand} />
+              <label className="flex items-center gap-[7px]">
+                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Campaign</span>
+                <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE}>
+                  <option value="all">All Campaigns</option>
+                  {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">KOL plan sync on</span>
+              <span className="rounded-pill bg-[#FBF0F5] px-3 py-[7px] font-bold text-[#B5577E]">Requester fixed to login</span>
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       {/* Needs Attention */}

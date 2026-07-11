@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -24,6 +23,12 @@ import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
@@ -73,21 +78,62 @@ export default function GraphicPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Creative Request"
+      <CampaignPageHeaderSection
+        eyebrow="CREATIVE KITCHEN"
         title="Graphic Request"
-        subtitle={`${items.length} requests · brief, design, review, approve, deliver`}
-        right={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">+ New Request</button>}
+        description="Brief, assign, review, approve, and deliver every creative request in one workspace."
       />
 
-      {/* KPI strip */}
-      <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))" }}>
-        {KPIS.map((k) => (
-          <div key={k.label} className="rounded-card p-4 border" style={k.dark ? { background: "#211F1C", borderColor: "#211F1C" } : { background: "#fff", borderColor: "#ECE6DA" }}>
-            <div className="text-[10px] uppercase tracking-[0.06em] font-bold mb-[6px]" style={{ color: k.dark ? "#B8945A" : "#9A9387" }}>{k.label}</div>
-            <div className="text-[22px] font-extrabold letter-tightest" style={{ color: k.dark ? "#fff" : k.tone === "red" ? "#B33A2E" : k.tone === "gold" ? "#C68A1E" : k.tone === "orange" ? "#C2691E" : k.tone === "green" ? "#4E7A4E" : "#211F1C" }}>{k.value}</div>
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar
+          action={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ New Request</button>}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[13px] font-semibold text-faint">
+                {items.length} requests in view · shared with campaign, content, and approval checkpoints
+              </div>
+              <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }]} />
+            </div>
+            <DateFilterBar value={date} onChange={setDate} />
           </div>
-        ))}
+        </CampaignCommandBar>
+
+        <ModuleSummaryCard title="Graphic Request Summary">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {KPIS.slice(0, 5).map((k) => (
+              <div key={k.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{k.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{k.value}</div>
+              </div>
+            ))}
+          </div>
+        </ModuleSummaryCard>
+
+        <FilterBar>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-[7px]">
+                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
+                <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
+                  <option value="all">All Brands</option>
+                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-[7px]">
+                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
+                <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
+                  <option value="all">All</option>
+                  {DESIGNERS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Creative leader assigns later</span>
+              <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">Revision tracking on</span>
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       {/* Needs Attention */}
@@ -107,32 +153,6 @@ export default function GraphicPage() {
           </div>
         </div>
       )}
-
-      {/* Controls */}
-      <div className="mt-5 flex items-center justify-between flex-wrap gap-3">
-        <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }]} />
-        <div className="flex items-center gap-4 flex-wrap">
-          <label className="flex items-center gap-[7px]">
-            <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
-            <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
-              <option value="all">All Brands</option>
-              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-[7px]">
-            <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
-            <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
-              <option value="all">All</option>
-              {DESIGNERS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      {/* Period filter — by request due date; undated requests stay visible */}
-      <div className="mt-3">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
 
       <div className="mt-5">
         {view === "board" ? <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} /> : <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}

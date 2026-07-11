@@ -4,19 +4,19 @@
 export type Tone = "neutral" | "gold" | "red" | "green" | "blue" | "orange" | "ink";
 
 export const TONES: Record<Tone, { fg: string; bg: string }> = {
-  neutral: { fg: "#6b6258", bg: "#F0EDE6" },
-  gold: { fg: "#C68A1E", bg: "#FBF8EE" },
-  red: { fg: "#B33A2E", bg: "#FFF5F4" },
-  green: { fg: "#4E7A4E", bg: "#EEF4EE" },
-  blue: { fg: "#3E5C9A", bg: "#eef1f8" },
-  orange: { fg: "#C2691E", bg: "#FBF1E9" },
-  ink: { fg: "#211F1C", bg: "#ECE6DA" },
+  neutral: { fg: "#8A879A", bg: "#F4F2F8" },
+  gold: { fg: "#B78E2D", bg: "#FFF3D7" },
+  red: { fg: "#E15B5B", bg: "#FFF0F0" },
+  green: { fg: "#5D9E35", bg: "#F0F8D8" },
+  blue: { fg: "#4D61D6", bg: "#EEE9FF" },
+  orange: { fg: "#DD8A2F", bg: "#FFF3E5" },
+  ink: { fg: "#17172A", bg: "#ECEAF2" },
 };
 
 // Campaign status → tone, from campStatusMap in the design.
 export const CAMPAIGN_STATUS_TONE: Record<string, Tone> = {
   Draft: "neutral",
-  Planning: "blue",
+  Planning: "gold",
   "In Progress": "blue",
   "Waiting Approval": "gold",
   // Campaign Brief workflow statuses
@@ -24,7 +24,7 @@ export const CAMPAIGN_STATUS_TONE: Record<string, Tone> = {
   "Waiting for Approval": "gold",
   "Need Revision": "orange",
   Approved: "green",
-  Active: "green",
+  Active: "blue",
   Completed: "ink",
   Cancelled: "red",
 };

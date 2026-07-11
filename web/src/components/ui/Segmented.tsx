@@ -11,18 +11,18 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex gap-1 bg-line3 rounded-[9px] p-[3px] flex-shrink-0">
+    <div className="flex gap-1 bg-[#F1EFF6] border border-line rounded-[14px] p-[4px] flex-shrink-0 soft-shadow">
       {options.map((o) => {
         const active = o.value === value;
         return (
           <button
             key={o.value}
             onClick={() => onChange(o.value)}
-            className="text-[13px] font-bold px-[14px] py-[6px] rounded-[7px] whitespace-nowrap transition"
+            className="text-[13px] font-bold px-[14px] py-[7px] rounded-[10px] whitespace-nowrap transition"
             style={{
-              background: active ? "#fff" : "transparent",
-              color: active ? "#211F1C" : "#9A9387",
-              boxShadow: active ? "0 1px 4px rgba(0,0,0,.08)" : undefined,
+              background: active ? "linear-gradient(135deg, #7C6CF6, #5B4FD8)" : "transparent",
+              color: active ? "#fff" : "#8A879A",
+              boxShadow: active ? "0 8px 18px rgba(108,92,231,.22)" : undefined,
             }}
           >
             {o.label}

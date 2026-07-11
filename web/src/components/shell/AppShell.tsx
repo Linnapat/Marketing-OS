@@ -55,15 +55,15 @@ function Shell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile top bar */}
-      <header className="lg:hidden sticky top-0 z-30 flex items-center gap-3 bg-panel text-white px-4 h-14">
+      <header className="lg:hidden sticky top-0 z-30 flex items-center gap-3 text-white px-4 h-16 border-b border-white/[0.08]" style={{ background: "#17172A" }}>
         <button onClick={() => setDrawer(true)} aria-label="Open menu" className="p-1">
           <Menu size={22} />
         </button>
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-[8px] bg-accent flex items-center justify-center text-panel font-extrabold text-[13px]">
+          <div className="w-8 h-8 rounded-[10px] flex items-center justify-center text-white font-extrabold text-[13px]" style={{ background: "linear-gradient(135deg, #7C6CF6, #5B4FD8)" }}>
             M
           </div>
-          <span className="text-[14px] font-extrabold">Marketing OS</span>
+          <span className="text-[14px] font-extrabold">MKT Playground</span>
         </div>
       </header>
 
@@ -87,8 +87,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Content */}
-      <main className="lg:pl-[248px]">
-        <div className="max-w-content mx-auto px-5 sm:px-6 pt-5 pb-16">
+      <main className="lg:pl-[280px]">
+        <div className="max-w-content mx-auto px-5 sm:px-6 lg:px-8 pt-5 pb-16">
           <ModuleGate>{children}</ModuleGate>
         </div>
       </main>

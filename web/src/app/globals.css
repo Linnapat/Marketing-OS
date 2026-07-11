@@ -3,22 +3,45 @@
 @tailwind utilities;
 
 :root {
-  --accent: #B8945A;
+  --accent: #6C5CE7;
+  --accent-soft: #EEE9FF;
+  --accent-matcha: #C8EA6A;
+  --accent-gold: #D7B76A;
+  --bg-main: #F8F7F3;
+  --bg-card: #FFFFFF;
+  --bg-soft: #FBFAF7;
+  --text-heading: #17172A;
+  --text-body: #3E3E55;
+  --text-muted: #8A879A;
+  --border-soft: #ECEAF2;
 }
 
 html, body {
-  background: #FAF8F4;
-  color: #211F1C;
+  background: var(--bg-main);
+  color: var(--text-heading);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Thin warm scrollbars, matching the design files */
+body {
+  background-image:
+    radial-gradient(circle at top left, rgba(108, 92, 231, 0.035), transparent 22%),
+    radial-gradient(circle at top right, rgba(200, 234, 106, 0.05), transparent 18%);
+}
+
+* {
+  border-color: var(--border-soft);
+}
+
+/* Thin soft scrollbars, matching the new playful SaaS shell */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: #DDD4C4; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #D8D4E4; border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 @layer utilities {
   .letter-tightest { letter-spacing: -0.02em; }
+  .soft-shadow { box-shadow: 0 10px 30px rgba(23, 23, 42, 0.06); }
+  .soft-card { background: var(--bg-card); border: 1px solid var(--border-soft); box-shadow: 0 10px 30px rgba(23, 23, 42, 0.04); }
+  .soft-surface { background: var(--bg-soft); border: 1px solid var(--border-soft); }
 }
 
 /* Printable voucher: when the print overlay is mounted, print ONLY it. */

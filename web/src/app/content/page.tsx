@@ -19,6 +19,12 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { createGraphic, buildGraphic } from "@/lib/db/graphic";
 import { Graphic, emptyDeliverable } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
@@ -76,6 +82,12 @@ export default function ContentPage() {
     [posts, brand, date],
   );
   const cards = useMemo(() => brandOverview(posts), [posts]);
+  const summary = useMemo(() => ({
+    posts: items.length,
+    waitingApproval: items.filter((c) => c.approvalStatus === "Waiting Approval").length,
+    waitingAsset: items.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length,
+    scheduled: items.filter((c) => c.publishStatus === "Scheduled in OS" || c.publishStatus === "Queued").length,
+  }), [items]);
 
   const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
     setNewOpen(false);
@@ -127,45 +139,82 @@ export default function ContentPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Content Command Center"
-        title="Content Calendar"
-        subtitle={`${items.length} posts this month · plan, caption, approve, schedule, publish`}
-        right={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-4 py-[9px]">+ New Post</button>}
+      <CampaignPageHeaderSection
+        eyebrow="THE DAILY BOOST"
+        title="Content Bento"
+        description="Plan, caption, approve, schedule, and publish every post from one shared calendar."
       />
 
-      {/* Brand overview cards */}
-      <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))" }}>
-        {cards.map((bc) => (
-          <div key={bc.b} className="bg-surface border border-line rounded-card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <BrandDot brand={bc.b} size={10} />
-              <div className="text-[14px] font-extrabold">{bc.name}</div>
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar
+          action={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ New Post</button>}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[13px] font-semibold text-faint">
+                {items.length} posts in view · shared planner for captions, approvals, and publish timing
+              </div>
+              <Segmented
+                value={view}
+                onChange={setView}
+                options={[{ value: "month", label: "Month" }, { value: "week", label: "Week" }, { value: "list", label: "List" }, { value: "queue", label: "🚀 Queue" }]}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-[6px] text-[11px]">
-              <span className="text-faint font-semibold">Posts this month</span><span className="font-bold text-right">{bc.total}</span>
-              <span className="font-semibold" style={{ color: "#3E5C9A" }}>Scheduled</span><span className="font-bold text-right" style={{ color: "#3E5C9A" }}>{bc.scheduled}</span>
-              <span className="font-semibold" style={{ color: "#C68A1E" }}>Waiting approval</span><span className="font-bold text-right" style={{ color: "#C68A1E" }}>{bc.waitApproval}</span>
-              <span className="font-semibold" style={{ color: "#B33A2E" }}>Missing asset</span><span className="font-bold text-right" style={{ color: "#B33A2E" }}>{bc.missingAsset}</span>
-            </div>
-            {bc.failed > 0 && <div className="mt-2 text-[11px] font-bold text-status-red rounded-[7px] px-2 py-1" style={{ background: "#FBF3F1" }}>⚠ {bc.failed} failed</div>}
+            <DateFilterBar value={date} onChange={setDate} />
           </div>
-        ))}
-      </div>
+        </CampaignCommandBar>
 
-      {/* Controls */}
-      <div className="mt-5 flex items-center justify-between flex-wrap gap-3">
-        <Segmented
-          value={view}
-          onChange={setView}
-          options={[{ value: "month", label: "Month" }, { value: "week", label: "Week" }, { value: "list", label: "List" }, { value: "queue", label: "🚀 Queue" }]}
-        />
-        <BrandFilter value={brand} onChange={setBrand} label="" />
-      </div>
+        <ModuleSummaryCard title="Content Bento Summary">
+          <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                { label: "Posts in view", value: summary.posts, note: "Current brand + date filters" },
+                { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
+                { label: "Waiting asset", value: summary.waitingAsset, note: "Graphic or asset still missing" },
+                { label: "Scheduled / queued", value: summary.scheduled, note: "Ready in the publish line" },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
+                  <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
+                  <div className="mt-2 text-[11px] text-white/55">{item.note}</div>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+              <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold mb-3">Brand rhythm</div>
+              <div className="grid gap-3">
+                {cards.map((bc) => (
+                  <div key={bc.b} className="rounded-[16px] bg-white/8 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <BrandDot brand={bc.b} size={8} />
+                        <div className="text-[13px] font-bold text-white truncate">{bc.name}</div>
+                      </div>
+                      <div className="text-[12px] text-white/70 font-semibold">{bc.total} posts</div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
+                      <span>Scheduled {bc.scheduled}</span>
+                      <span>Approval {bc.waitApproval}</span>
+                      <span>Missing asset {bc.missingAsset}</span>
+                      {bc.failed > 0 && <span className="text-[#FFB7AC]">Failed {bc.failed}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </ModuleSummaryCard>
 
-      {/* Period filter — drives the calendar month and every view below */}
-      <div className="mt-3">
-        <DateFilterBar value={date} onChange={setDate} />
+        <FilterBar>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <BrandFilter value={brand} onChange={setBrand} label="" />
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Shared with Campaign</span>
+              <span className="rounded-pill bg-[#EAF8EE] px-3 py-[7px] font-bold text-[#4BA06B]">Requester sync on</span>
+              <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">Asset queue visible</span>
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       <div className="mt-5">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
@@ -10,7 +10,14 @@ import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
 import { ExpenseRequestTab, SpendingLogTab } from "@/components/finance/ExpenseTabs";
 import { BrandFilterValue, brandName } from "@/lib/brands";
 import { buildCsv, ExpenseRow } from "@/lib/data/finance";
-import { fetchExpenses, fetchExpenseRequests } from "@/lib/db/finance";
+import { baht } from "@/lib/format";
+import { fetchExpenses, fetchExpenseRequests, ExpenseReq, ExpenseLogRow } from "@/lib/db/finance";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  FilterBar,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 
 function download(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
@@ -27,6 +34,30 @@ export default function ExpensesPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [pvExpense, setPvExpense] = useState<ExpenseRow | null>(null);
+  const [requests, setRequests] = useState<ExpenseReq[]>([]);
+  const [spending, setSpending] = useState<ExpenseLogRow[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchExpenseRequests().then((rows) => { if (alive) setRequests(rows); }).catch(() => {});
+    fetchExpenses().then((rows) => { if (alive) setSpending(rows); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const filteredRequests = useMemo(
+    () => requests.filter((r) => (brand === "all" || r.b === brand) && inDateFilter(date, r.createdAt)),
+    [requests, brand, date],
+  );
+  const filteredSpending = useMemo(
+    () => spending.filter((r) => (brand === "all" || r.b === brand) && inDateFilter(date, r.date)),
+    [spending, brand, date],
+  );
+  const summary = useMemo(() => ({
+    requestCount: filteredRequests.length,
+    waitingApproval: filteredRequests.filter((r) => r.status === "Waiting Approval").length,
+    unpaidTotal: filteredSpending.filter((r) => r.status === "Unpaid").reduce((sum, row) => sum + row.amount + (row.vat || 0), 0),
+    spendingTotal: filteredSpending.reduce((sum, row) => sum + row.amount + (row.vat || 0), 0),
+  }), [filteredRequests, filteredSpending]);
 
   // Export what the page actually shows: real DB rows, current brand + period.
   const exportCsv = async () => {
@@ -49,24 +80,56 @@ export default function ExpensesPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Expenses"
-        title="Expenses"
-        subtitle="Submit expense requests and track spending — in Thai Baht."
+      <CampaignPageHeaderSection
+        eyebrow="CASHIER"
+        title="Cashier"
+        description="Submit expense requests, follow payment status, and export spending in Thai Baht."
       />
 
-      <div className="mt-[14px]">
-        <DateFilterBar value={date} onChange={setDate} />
-      </div>
-      <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
-        <BrandFilter value={brand} onChange={setBrand} />
-        <button onClick={exportCsv} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">
-          <Download size={13} /> Export CSV
-        </button>
-      </div>
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar
+          action={<button onClick={exportCsv} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[12px] px-4 py-[9px] bg-white shadow-soft">
+            <Download size={13} /> Export CSV
+          </button>}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[13px] font-semibold text-faint">
+                One place for request intake, vouchers, and spending follow-up
+              </div>
+              <Segmented value={tab} onChange={setTab} options={[{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]} />
+            </div>
+            <DateFilterBar value={date} onChange={setDate} />
+          </div>
+        </CampaignCommandBar>
 
-      <div className="mt-5">
-        <Segmented value={tab} onChange={setTab} options={[{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]} />
+        <ModuleSummaryCard title="Cashier Summary">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: "Requests in view", value: summary.requestCount, note: "Current brand + date filters" },
+              { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
+              { label: "Unpaid spending", value: baht(summary.unpaidTotal), note: "Approved but not marked paid" },
+              { label: "Spend logged", value: baht(summary.spendingTotal), note: "Actual spending in the log" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
+                <div className="mt-2 text-[11px] text-white/55">{item.note}</div>
+              </div>
+            ))}
+          </div>
+        </ModuleSummaryCard>
+
+        <FilterBar>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <BrandFilter value={brand} onChange={setBrand} />
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Voucher preview included</span>
+              <span className="rounded-pill bg-[#EAF8EE] px-3 py-[7px] font-bold text-[#4BA06B]">Requester signature ready</span>
+              <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">Approval flow unchanged</span>
+            </div>
+          </div>
+        </FilterBar>
       </div>
 
       <div className="mt-5">

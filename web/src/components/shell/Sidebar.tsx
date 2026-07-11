@@ -14,6 +14,24 @@ import { MEMBER_PRESENCE_OPTIONS } from "@/lib/data/settings";
 import { saveMemberProfile } from "@/lib/db/settings";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
+const NAV_ACCENTS: Record<string, { bg: string; fg: string }> = {
+  "/": { bg: "#EEE9FF", fg: "#6C5CE7" },
+  "/campaigns": { bg: "#EEE9FF", fg: "#6C5CE7" },
+  "/content": { bg: "#F0F8D8", fg: "#5D9E35" },
+  "/graphic": { bg: "#FDEBF3", fg: "#D876AA" },
+  "/kol": { bg: "#FFF3E5", fg: "#E08A34" },
+  "/ads": { bg: "#EDF8FE", fg: "#3FA7D6" },
+  "/requests": { bg: "#FFF7E8", fg: "#D89C28" },
+  "/approvals": { bg: "#FFF3D7", fg: "#B78E2D" },
+  "/assets": { bg: "#F1ECFF", fg: "#8A62D7" },
+  "/expenses": { bg: "#EAF8EE", fg: "#4BA06B" },
+  "/finance": { bg: "#FFF3D7", fg: "#B78E2D" },
+  "/my-tasks": { bg: "#FFF0F0", fg: "#E15B5B" },
+  "/team": { bg: "#EAF1FF", fg: "#5A7CFF" },
+  "/workflow": { bg: "#EAF1FF", fg: "#5A7CFF" },
+  "/settings": { bg: "#F4F2F8", fg: "#706A84" },
+  "/agency": { bg: "#F4F2F8", fg: "#706A84" },
+};
 
 function Avatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
   if (avatarUrl) return <img src={avatarUrl} alt={name} className="w-8 h-8 rounded-full object-cover border border-white/10" />;
@@ -51,18 +69,18 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
-    <div className="flex flex-col h-full bg-panel text-white w-[248px]">
+    <div className="flex flex-col h-full text-white w-[280px]" style={{ background: "#17172A" }}>
       {/* Brand */}
-      <div className="px-5 pt-6 pb-5">
+      <div className="px-5 pt-6 pb-5 border-b border-white/[0.08]">
         <div className="flex items-center gap-[10px]">
-          <div className="w-8 h-8 rounded-[9px] bg-accent flex items-center justify-center text-panel font-extrabold text-[15px]">
+          <div className="w-10 h-10 rounded-[14px] flex items-center justify-center font-extrabold text-[15px] shadow-[0_10px_24px_rgba(108,92,231,0.28)]" style={{ background: "linear-gradient(135deg, #7C6CF6, #5B4FD8)", color: "#fff" }}>
             M
           </div>
           <div>
             <div className="text-[14.5px] font-extrabold tracking-[-0.01em] leading-none">
-              Marketing OS
+              MKT Playground
             </div>
-            <div className="text-[10.5px] text-[#9c948340] text-white/40 mt-[3px]">
+            <div className="text-[10.5px] text-white/45 mt-[3px]">
               TEPPEN Group
             </div>
           </div>
@@ -72,39 +90,46 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         {groups.map((group, gi) => (
-          <div key={gi} className="mb-3">
+          <div key={gi} className="mb-4">
             {group.label && (
-              <div className="px-3 pt-3 pb-1.5 text-[10px] font-bold tracking-[0.08em] uppercase text-white/30">
+              <div className="px-3 pt-3 pb-2 text-[10px] font-bold tracking-[0.12em] uppercase text-white/28">
                 {group.label}
               </div>
             )}
             {group.items.map((item) => {
               const active = isActive(item.href);
               const Icon = item.icon;
+              const accent = NAV_ACCENTS[item.href] ?? NAV_ACCENTS["/"];
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={onNavigate}
                   className={clsx(
-                    "group flex items-center gap-3 px-3 py-[9px] rounded-[10px] mb-[2px] text-[13.5px] font-semibold transition",
+                    "group flex items-center gap-3 px-3 py-[11px] rounded-[16px] mb-[4px] text-[13px] font-semibold transition min-w-0",
                     active
-                      ? "bg-white/[0.08] text-white"
-                      : "text-white/55 hover:text-white hover:bg-white/[0.04]",
+                      ? "text-white"
+                      : "text-white/70 hover:text-white hover:bg-white/[0.05]",
                   )}
+                  style={active ? { background: "linear-gradient(135deg, #7C6CF6, #5B4FD8)", boxShadow: "0 12px 26px rgba(108, 92, 231, 0.28)" } : undefined}
                 >
-                  <Icon
-                    size={17}
-                    className={clsx(active ? "text-accent" : "text-white/45 group-hover:text-white/70")}
-                  />
-                  <span className="flex-1">{item.label}</span>
+                  <span
+                    className="w-8 h-8 rounded-[11px] flex items-center justify-center shrink-0"
+                    style={active ? { background: "rgba(255,255,255,.16)", color: "#fff" } : { background: accent.bg, color: accent.fg }}
+                  >
+                    <Icon
+                      size={16}
+                      className={clsx(active ? "text-white" : "")}
+                    />
+                  </span>
+                  <span className="flex-1 truncate">{item.label}</span>
                   {item.badge && (
-                    <span className="text-[10.5px] font-bold px-[7px] py-[1px] rounded-pill bg-accent text-panel">
+                    <span className="text-[10.5px] font-bold px-[7px] py-[1px] rounded-pill bg-white/95 text-[#5B4FD8]">
                       {item.badge}
                     </span>
                   )}
                   {!item.ready && (
-                    <span className="text-[9px] font-bold text-white/25 tracking-wide">SOON</span>
+                    <span className="text-[9px] font-bold text-[#D7B76A] bg-white/[0.06] border border-white/[0.08] tracking-wide rounded-pill px-[6px] py-[2px]">SOON</span>
                   )}
                 </Link>
               );
@@ -114,11 +139,11 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       {/* Footer: role switcher + user */}
-      <div className="px-3 pb-4 pt-2 border-t border-white/[0.07]">
+      <div className="px-3 pb-4 pt-3 border-t border-white/[0.08] bg-white/[0.02]">
         {/* Role preview is a demo aid — hide it once real logins are enforced,
             so a signed-in user can't escalate their "viewing as" role. */}
         {!AUTH_REQUIRED && <RoleSwitcher />}
-        <div className="flex items-center gap-[10px] px-2 pt-3">
+        <div className="flex items-center gap-[10px] px-2 pt-2">
           <Avatar name={displayName} avatarUrl={member?.avatarUrl} />
           <div className="min-w-0 flex-1">
             <div className="text-[12.5px] font-bold text-white/90 truncate">{displayName}</div>

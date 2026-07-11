@@ -14,9 +14,9 @@ export function BrandFilter({
   label?: string;
 }) {
   return (
-    <label className="flex items-center gap-[7px]">
+    <label className="flex items-center gap-[9px] flex-wrap">
       {label && (
-        <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">
+        <span className="text-[11px] font-bold text-faint tracking-[0.08em] uppercase">
           {label}
         </span>
       )}
