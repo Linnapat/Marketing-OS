@@ -25,7 +25,6 @@ import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
   FilterBar,
-  ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
 // Stages / statuses that still need someone in the approval tier to act.
@@ -241,23 +240,6 @@ export default function MyTasksPage() {
             <DateFilterBar value={date} onChange={setDate} />
           </div>
         </CampaignCommandBar>
-
-        <ModuleSummaryCard title="My Tasks Summary">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {[
-              { label: "Open tasks", value: totalOpenTasks },
-              { label: "Need approval", value: myApprovals },
-              { label: "Waiting", value: myWaiting },
-              { label: "Stuck", value: myStuck },
-              { label: "Done", value: myDone },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
-                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
-              </div>
-            ))}
-          </div>
-        </ModuleSummaryCard>
 
         <FilterBar>
           <div className="flex items-center justify-between flex-wrap gap-3">

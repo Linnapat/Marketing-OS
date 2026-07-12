@@ -282,7 +282,7 @@ export default function DashboardPage() {
       tasks,
       counts,
       highlights: new Set(tasks.map((item) => item.day)),
-      upcoming: tasks.slice(0, 5),
+      upcoming: tasks.slice(0, 3),
     };
   }, [displayMonth, displayYear, workflowState]);
 
@@ -420,14 +420,14 @@ export default function DashboardPage() {
           <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-bold text-faint uppercase tracking-[0.08em] mb-3">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d}>{d}</div>)}
           </div>
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-1.5">
             {calendarCells.map((day, idx) => {
               const highlighted = day != null && workflowCalendar.highlights.has(day);
               const count = day != null ? workflowCalendar.counts.get(day) || 0 : 0;
               return (
                 <div
                   key={`${day ?? "x"}-${idx}`}
-                  className="aspect-square rounded-[16px] border text-[13px] font-semibold flex flex-col items-center justify-center"
+                  className="h-[52px] rounded-[14px] border text-[12px] font-semibold flex flex-col items-center justify-center"
                   style={{
                     borderColor: highlighted ? "#D9D0FF" : "#ECEAF2",
                     background: highlighted ? "#EEE9FF" : "#FBFAF7",
@@ -436,7 +436,7 @@ export default function DashboardPage() {
                 >
                   <span>{day ?? ""}</span>
                   {day != null && count > 0 && (
-                    <span className="mt-1 text-[10px] font-bold" style={{ color: highlighted ? "#6C5CE7" : "#9D96AC" }}>
+                    <span className="mt-0.5 text-[9px] font-bold leading-none text-center px-1" style={{ color: highlighted ? "#6C5CE7" : "#9D96AC" }}>
                       {count} task{count > 1 ? "s" : ""}
                     </span>
                   )}
@@ -444,11 +444,11 @@ export default function DashboardPage() {
               );
             })}
           </div>
-          <div className="mt-4 flex flex-col gap-2">
+          <div className="mt-3 flex flex-col gap-2">
             {workflowCalendar.upcoming.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-3 rounded-[16px] border border-line bg-[#FBFAF7] px-3 py-2.5">
+              <div key={item.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-line bg-[#FBFAF7] px-3 py-2">
                 <div className="min-w-0">
-                  <div className="text-[13px] font-semibold text-ink truncate">{item.title}</div>
+                  <div className="text-[12.5px] font-semibold text-ink truncate">{item.title}</div>
                   <div className="text-[11.5px] text-faint">{item.section} · {item.responsible}</div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
