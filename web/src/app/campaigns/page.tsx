@@ -112,15 +112,11 @@ export default function CampaignsPage() {
   const liveBudget = liveCampaigns.reduce((sum, c) => sum + c.budget, 0);
   const liveSpend = liveCampaigns.reduce((sum, c) => sum + c.spend, 0);
   const liveOwners = Array.from(new Set(liveCampaigns.map((c) => c.owner).filter(Boolean))).length;
-  const topUrgent = [...atRiskCampaigns]
-    .sort((a, b) => (b.taskOverdue + b.taskBlocked) - (a.taskOverdue + a.taskBlocked))
-    .slice(0, 3);
-
   const statusChips = ["all", ...STATUS_ORDER];
 
   return (
     <>
-      <div className="flex flex-col gap-4" style={{ background: "#F8F7F3" }}>
+      <div className="flex flex-col gap-3" style={{ background: "#F8F7F3" }}>
         <CampaignPageHeaderSection
           eyebrow="CAMPAIGN COMMAND CENTER"
           title="Campaign Café"
@@ -142,101 +138,63 @@ export default function CampaignsPage() {
             boxShadow: "0 18px 44px rgba(139, 184, 73, 0.20)",
           }}
         >
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
             <div>
-              <div className="text-[16px] font-bold text-[#203515]">Needs action first</div>
-              <div className="text-[12.5px] text-[#4E6A38] mt-1">Campaigns that need approval, follow-up, or close monitoring right now</div>
+              <div className="text-[15px] font-bold text-[#203515]">Needs action first</div>
+              <div className="text-[12px] text-[#4E6A38] mt-1">Campaigns that need approval, follow-up, or close monitoring right now</div>
             </div>
             <select
               value={brand}
               onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-              className="text-[13px] font-semibold rounded-[16px] px-4 py-[10px] outline-none cursor-pointer border"
+              className="text-[12px] font-semibold rounded-[14px] px-3.5 py-[9px] outline-none cursor-pointer border"
               style={{ background: "rgba(255,255,255,0.55)", borderColor: "#AFD76F", color: "#203515" }}
             >
               <option value="all">All Brands</option>
               {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
             </select>
           </div>
-          <div className="rounded-[22px] px-5 py-5 border bg-white/35" style={{ borderColor: "#AFD76F" }}>
-            <div className="text-[11px] uppercase tracking-[0.08em] text-[#5B783F] font-bold mb-4">Needs action first</div>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
-                  {waitingApprovalCampaigns.length} waiting approval
-                </span>
-                <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
-                  {budgetWatchCampaigns.length} near budget limit
-                </span>
-                <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
-                  {atRiskCampaigns.length} need follow-up
-                </span>
-              </div>
-              {topUrgent.length > 0 ? topUrgent.map((c) => (
-                <div key={c.id} className="rounded-[18px] border bg-white/45 px-4 py-3" style={{ borderColor: "#AFD76F" }}>
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <div className="text-[13px] font-bold text-[#203515] truncate">{c.name}</div>
-                        <div className="text-[11px] text-[#5B783F]">
-                          {brandName(c.b)} · {c.owner} · {c.nextApproval !== "—" ? `Next: ${c.nextApproval}` : "Monitor now"}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                      {c.taskBlocked > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9E4036]" style={{ background: "#F6D5CF", borderColor: "#E7B3AA" }}>{c.taskBlocked} blocked</span>}
-                      {c.taskOverdue > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9A6A00]" style={{ background: "#F8E5AF", borderColor: "#E9CD78" }}>{c.taskOverdue} overdue</span>}
-                      {c.budget > 0 && (c.spend / c.budget) >= 0.8 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#476100]" style={{ background: "#E6F5BF", borderColor: "#B8D979" }}>{Math.round((c.spend / c.budget) * 100)}% budget used</span>}
-                      <span
-                        className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] border"
-                        style={
-                          c.status === "Waiting Approval"
-                            ? { background: "#FFF5CF", color: "#946C00", borderColor: "#E9CF76" }
-                            : c.status === "Active" || c.status === "In Progress"
-                              ? { background: "#EEF2FF", color: "#4A63D9", borderColor: "#C8D2FF" }
-                              : { background: "rgba(255,255,255,0.68)", color: "#284019", borderColor: "#B8D98E" }
-                        }
-                      >
-                        {c.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )) : (
-                <div className="rounded-[18px] px-4 py-6 border bg-white/45 text-[12px] text-[#5B783F]" style={{ borderColor: "#AFD76F" }}>
-                  No urgent campaign in this view right now.
-                </div>
-              )}
+          <div className="rounded-[18px] px-4 py-3 border bg-white/35" style={{ borderColor: "#AFD76F" }}>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
+                {waitingApprovalCampaigns.length} waiting approval
+              </span>
+              <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
+                {budgetWatchCampaigns.length} near budget limit
+              </span>
+              <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
+                {atRiskCampaigns.length} need follow-up
+              </span>
             </div>
           </div>
         </ModuleSummaryCard>
 
         <FilterBar>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <div className="flex flex-col gap-[9px]">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Brand</span>
               <select
                 value={brand}
                 onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-                className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none"
+                className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none"
                 style={{ borderColor: "#ECEAF2" }}
               >
                 <option value="all">All Brands</option>
                 {BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
               </select>
             </div>
-            <div className="flex flex-col gap-[9px]">
+            <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Branch</span>
-              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
+              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
                 <option value="all">All Branches</option>
                 {allBranches.map((br) => <option key={br} value={br}>{br}</option>)}
               </select>
             </div>
-            <div className="flex flex-col gap-[9px]">
+            <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Status</span>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none"
+                className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none"
                 style={{ borderColor: "#ECEAF2" }}
               >
                 {statusChips.map((s) => (
@@ -244,33 +202,33 @@ export default function CampaignsPage() {
                 ))}
               </select>
             </div>
-            <div className="flex flex-col gap-[9px]">
+            <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Owner</span>
-              <select value={owner} onChange={(e) => setOwner(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
+              <select value={owner} onChange={(e) => setOwner(e.target.value)} className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
                 <option value="all">All Owners</option>
                 {owners.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
-            <div className="flex flex-col gap-[9px]">
+            <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Budget</span>
-              <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
+              <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
                 <option value="all">Any Budget</option>
                 <option value="lt100">&lt; ฿100K</option>
                 <option value="100-300">฿100K – ฿300K</option>
                 <option value="gt300">&gt; ฿300K</option>
               </select>
             </div>
-            <div className="flex flex-col gap-[9px]">
+            <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Search</span>
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นชื่อแคมเปญ…"
-                className="text-[13px] font-semibold text-ink bg-white border rounded-[16px] px-4 py-[11px] outline-none w-full" style={{ borderColor: "#ECEAF2" }} />
+                className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] outline-none w-full" style={{ borderColor: "#ECEAF2" }} />
             </div>
           </div>
         </FilterBar>
       </div>
 
       {/* Status-grouped collapsible list */}
-      <div className="mt-5 flex flex-col gap-3">
+      <div className="mt-4 flex flex-col gap-3">
         {groups.map((g) => {
           const isCollapsed = collapsed[g.status];
           return (
