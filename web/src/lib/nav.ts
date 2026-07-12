@@ -24,6 +24,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/", label: "Mood & Metrics", icon: LayoutDashboard, ready: true },
       { href: "/campaigns", label: "Campaign Café", icon: Target, ready: true },
+      { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
     ],
   },
   {
@@ -45,7 +46,6 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/my-tasks", label: "Busy but Brilliant", icon: CheckSquare, badge: 4, ready: true },
       { href: "/team", label: "Team Mood Board", icon: Users, ready: true },
-      { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
       { href: "/settings", label: "Settings", icon: Settings, ready: true },
     ],
   },

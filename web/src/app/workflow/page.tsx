@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Check } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 import { useRole } from "@/lib/role";
 import {
   WORK_SECTIONS, MONTH_NAMES, monthMeta, isWeekendDate, projectMarks,
@@ -103,61 +107,65 @@ export default function WorkCalendarPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Work Flow"
+      <CampaignPageHeaderSection
+        eyebrow="TEAM CALENDAR"
         title="Work Calendar"
-        subtitle={`${monthLabel} · team timeline & deliverable reminders${isTemplate ? "" : " · auto-generated"}`}
-        right={
-          <div className="flex items-center gap-1 bg-ivory border border-line2 rounded-pill p-[3px]">
-            {(["grid", "agenda"] as const).map((v) => (
-              <button key={v} onClick={() => setView(v)}
-                className="text-[12px] font-bold px-[13px] py-[5px] rounded-pill capitalize"
-                style={view === v ? { background: "#211F1C", color: "#fff" } : { color: "#6b6258" }}>
-                {v}
-              </button>
-            ))}
-          </div>
-        }
+        description={`${monthLabel} · team timeline & deliverable reminders${isTemplate ? "" : " · auto-generated"}`}
       />
 
-      {/* Month navigator + admin edit */}
-      <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className="w-8 h-8 rounded-[9px] border border-line2 bg-white flex items-center justify-center text-muted hover:bg-ivory">
-            <ChevronLeft size={16} />
-          </button>
-          <input
-            type="month"
-            value={`${ym.y}-${String(ym.m + 1).padStart(2, "0")}`}
-            onChange={(e) => {
-              const [y, m] = e.target.value.split("-").map(Number);
-              if (y && m) { setEdit(false); setYm({ y, m: m - 1 }); }
-            }}
-            className="text-[13px] font-bold text-ink bg-white border border-line2 rounded-[9px] px-3 py-[7px] outline-none"
-          />
-          <button onClick={() => shiftMonth(1)} aria-label="Next month" className="w-8 h-8 rounded-[9px] border border-line2 bg-white flex items-center justify-center text-muted hover:bg-ivory">
-            <ChevronRight size={16} />
-          </button>
-          <button onClick={() => { setEdit(false); setYm({ y: TEMPLATE_YEAR, m: TEMPLATE_MONTH }); }}
-            className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white hover:bg-ivory">
-            Jul 2026
-          </button>
-        </div>
-
-        {canEdit && view === "grid" && (
-          <div className="flex items-center gap-2">
-            {edit && monthOverrides.length > 0 && (
-              <button onClick={resetMonth} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">
-                <RotateCcw size={13} /> Reset month
+      <div className="mt-5">
+        <CampaignCommandBar
+          action={
+            <div className="flex items-center gap-1 bg-ivory border border-line2 rounded-pill p-[3px]">
+              {(["grid", "agenda"] as const).map((v) => (
+                <button key={v} onClick={() => setView(v)}
+                  className="text-[12px] font-bold px-[13px] py-[5px] rounded-pill capitalize"
+                  style={view === v ? { background: "#211F1C", color: "#fff" } : { color: "#6b6258" }}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className="w-8 h-8 rounded-[9px] border border-line2 bg-white flex items-center justify-center text-muted hover:bg-ivory">
+                <ChevronLeft size={16} />
               </button>
+              <input
+                type="month"
+                value={`${ym.y}-${String(ym.m + 1).padStart(2, "0")}`}
+                onChange={(e) => {
+                  const [y, m] = e.target.value.split("-").map(Number);
+                  if (y && m) { setEdit(false); setYm({ y, m: m - 1 }); }
+                }}
+                className="text-[13px] font-bold text-ink bg-white border border-line2 rounded-[12px] px-3 py-[8px] outline-none"
+              />
+              <button onClick={() => shiftMonth(1)} aria-label="Next month" className="w-8 h-8 rounded-[9px] border border-line2 bg-white flex items-center justify-center text-muted hover:bg-ivory">
+                <ChevronRight size={16} />
+              </button>
+              <button onClick={() => { setEdit(false); setYm({ y: TEMPLATE_YEAR, m: TEMPLATE_MONTH }); }}
+                className="text-[12px] font-semibold text-muted border border-line2 rounded-[12px] px-3 py-[8px] bg-white hover:bg-ivory">
+                Jul 2026
+              </button>
+            </div>
+
+            {canEdit && view === "grid" && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {edit && monthOverrides.length > 0 && (
+                  <button onClick={resetMonth} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[12px] px-3 py-[8px] bg-white">
+                    <RotateCcw size={13} /> Reset month
+                  </button>
+                )}
+                <button onClick={() => setEdit((e) => !e)}
+                  className="inline-flex items-center gap-[6px] text-[12px] font-bold rounded-[12px] px-4 py-[8px]"
+                  style={edit ? { background: "#4E7A4E", color: "#fff" } : { background: "#211F1C", color: "#fff" }}>
+                  {edit ? <><Check size={13} /> Done editing</> : <><Pencil size={13} /> Edit</>}
+                </button>
+              </div>
             )}
-            <button onClick={() => setEdit((e) => !e)}
-              className="inline-flex items-center gap-[6px] text-[12px] font-bold rounded-[9px] px-4 py-[7px]"
-              style={edit ? { background: "#4E7A4E", color: "#fff" } : { background: "#211F1C", color: "#fff" }}>
-              {edit ? <><Check size={13} /> Done editing</> : <><Pencil size={13} /> Edit</>}
-            </button>
           </div>
-        )}
+        </CampaignCommandBar>
       </div>
 
       {edit && (
@@ -166,23 +174,39 @@ export default function WorkCalendarPage() {
         </div>
       )}
 
-      {/* Reminder strip */}
-      <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))" }}>
-        <div className="rounded-card p-4" style={{ background: "#211F1C", color: "#fff" }}>
-          <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Due today</div>
-          <div className="text-[25px] font-bold mt-[4px]">{todaysCount}</div>
-          <div className="text-[11px] text-white/50 mt-[2px]">{todayDay ? `${MONTH_NAMES[ym.m]} ${todayDay}` : `not viewing this month`}</div>
-        </div>
-        <div className="bg-surface border border-line rounded-card p-4">
-          <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">Next 7 days</div>
-          <div className="text-[25px] font-bold mt-[4px] text-ink">{weekCount}</div>
-          <div className="text-[11px] text-faint mt-[2px]">tasks with a deadline</div>
-        </div>
-        <div className="bg-surface border border-line rounded-card p-4">
-          <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">Checked off</div>
-          <div className="text-[25px] font-bold mt-[4px] text-ink">{doneCount}<span className="text-[15px] text-faint font-semibold"> / {totalTasks}</span></div>
-          <div className="text-[11px] text-faint mt-[2px]">in {MONTH_NAMES[ym.m]}</div>
-        </div>
+      <div className="mt-5">
+        <ModuleSummaryCard
+          title="Calendar Snapshot"
+          style={{
+            background: "linear-gradient(135deg, #EEF2FF 0%, #F7F4FF 100%)",
+            border: "1px solid #DAD7FA",
+            boxShadow: "0 18px 44px rgba(108, 92, 231, 0.12)",
+          }}
+          titleClassName="text-[#7B72B7]"
+        >
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))" }}>
+            <div className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(123,114,183,0.16)" }}>
+              <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-[#7B72B7]">Due today</div>
+              <div className="text-[25px] font-bold mt-[4px] text-ink">{todaysCount}</div>
+              <div className="text-[11px] mt-[2px] text-[#7D7789]">{todayDay ? `${MONTH_NAMES[ym.m]} ${todayDay}` : "not viewing this month"}</div>
+            </div>
+            <div className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(123,114,183,0.16)" }}>
+              <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-[#7B72B7]">Next 7 days</div>
+              <div className="text-[25px] font-bold mt-[4px] text-ink">{weekCount}</div>
+              <div className="text-[11px] mt-[2px] text-[#7D7789]">tasks with a deadline</div>
+            </div>
+            <div className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(123,114,183,0.16)" }}>
+              <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-[#7B72B7]">Checked off</div>
+              <div className="text-[25px] font-bold mt-[4px] text-ink">{doneCount}<span className="text-[15px] font-semibold text-[#7D7789]"> / {totalTasks}</span></div>
+              <div className="text-[11px] mt-[2px] text-[#7D7789]">in {MONTH_NAMES[ym.m]}</div>
+            </div>
+            <div className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(123,114,183,0.16)" }}>
+              <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-[#7B72B7]">Tracked tasks</div>
+              <div className="text-[25px] font-bold mt-[4px] text-ink">{totalTasks}</div>
+              <div className="text-[11px] mt-[2px] text-[#7D7789]">across all workflow sections</div>
+            </div>
+          </div>
+        </ModuleSummaryCard>
       </div>
 
       {view === "grid" ? (

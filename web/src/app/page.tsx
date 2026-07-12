@@ -23,11 +23,14 @@ import { fetchKols } from "@/lib/db/kol";
 import { fetchContent } from "@/lib/db/content";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchExpenseRequests, ExpenseReq } from "@/lib/db/finance";
-import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, parseRowDate, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { useAuth } from "@/lib/auth";
 import { campaignTone } from "@/lib/status";
+import { fetchWorkflowState } from "@/lib/db/workflowState";
+import { applyOverrides, MONTH_NAMES, monthMeta, projectMarks, WORK_SECTIONS } from "@/lib/data/workflow";
 
 interface RawData { c: CampaignRow[]; t: Task[]; k: Kol[]; ct: ContentItem[]; g: Graphic[]; er: ExpenseReq[] }
+interface WorkflowStateData { overrides: Record<string, string>; done: Record<string, boolean> }
 
 const CARD = "rounded-cardLg border border-line bg-surface soft-shadow";
 
@@ -131,6 +134,7 @@ export default function DashboardPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [raw, setRaw] = useState<RawData | null>(null);
+  const [workflowState, setWorkflowState] = useState<WorkflowStateData>({ overrides: {}, done: {} });
   const [search, setSearch] = useState("");
   const { member, user } = useAuth();
 
@@ -138,6 +142,16 @@ export default function DashboardPage() {
     let alive = true;
     Promise.all([fetchCampaigns(), fetchTasks(), fetchKols(), fetchContent(), fetchGraphics(), fetchExpenseRequests()])
       .then(([c, t, k, ct, g, er]) => { if (alive) setRaw({ c, t: t.tasks, k, ct, g, er }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetchWorkflowState()
+      .then((state) => {
+        if (alive && state) setWorkflowState({ overrides: state.overrides || {}, done: state.done || {} });
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -235,26 +249,42 @@ export default function DashboardPage() {
       ? (date.start ? new Date(`${date.start}T00:00:00`).getFullYear() : new Date().getFullYear())
       : date.year;
 
-  const calendarHighlights = useMemo(() => {
-    const dates = [
-      ...(view?.c ?? []).map((c) => parseRowDate((c.dates || "").split(/[–—-]/)[0]?.trim())),
-      ...(view?.ct ?? []).map((c) => parseRowDate(c.dateIso || `2026-07-${String(c.day || 1).padStart(2, "0")}`)),
-      ...(view?.t ?? []).map((t) => parseRowDate(t.dueIso || t.due)),
-    ].filter(Boolean) as Date[];
-    return new Set(dates.filter((d) => d.getMonth() === displayMonth && d.getFullYear() === displayYear).map((d) => d.getDate()));
-  }, [view, displayMonth, displayYear]);
+  const workflowCalendar = useMemo(() => {
+    const ymKey = `${displayYear}-${displayMonth}`;
+    const meta = monthMeta(displayYear, displayMonth);
+    const tasks = WORK_SECTIONS.flatMap((section) =>
+      section.tasks.flatMap((task) => {
+        const taskKey = `${section.key}::${task.en}`;
+        const marks = applyOverrides(projectMarks(task.marks, displayYear, displayMonth), ymKey, taskKey, workflowState.overrides);
+        return Object.entries(marks).map(([dayStr, marker]) => {
+          const day = Number(dayStr);
+          const doneKey = `${ymKey}::${taskKey}`;
+          return {
+            id: `${doneKey}::${day}`,
+            taskKey,
+            day,
+            marker,
+            title: task.en,
+            section: section.label,
+            responsible: task.r,
+            accountable: task.a,
+            done: Boolean(workflowState.done[doneKey]),
+          };
+        });
+      }),
+    ).sort((a, b) => a.day - b.day || a.title.localeCompare(b.title));
 
-  const upcomingDates = useMemo(() => {
-    const events = [
-      ...(view?.c ?? []).map((c) => ({ title: c.name, date: parseRowDate((c.dates || "").split(/[–—-]/)[0]?.trim()), meta: `Campaign · ${brandName(c.b)}` })),
-      ...(view?.ct ?? []).map((c) => ({ title: c.title, date: parseRowDate(c.dateIso || `2026-07-${String(c.day || 1).padStart(2, "0")}`), meta: `Content · ${brandName(c.b)}` })),
-      ...(view?.t ?? []).map((t) => ({ title: t.title, date: parseRowDate(t.dueIso || t.due), meta: `${t.module} · ${t.assignee}` })),
-    ]
-      .filter((x) => x.date)
-      .sort((a, b) => (a.date!.getTime() - b.date!.getTime()))
-      .slice(0, 4);
-    return events;
-  }, [view]);
+    const counts = new Map<number, number>();
+    tasks.forEach((item) => counts.set(item.day, (counts.get(item.day) || 0) + 1));
+
+    return {
+      month: meta,
+      tasks,
+      counts,
+      highlights: new Set(tasks.map((item) => item.day)),
+      upcoming: tasks.slice(0, 5),
+    };
+  }, [displayMonth, displayYear, workflowState]);
 
   const calendarCells = monthGrid(displayMonth, displayYear);
 
@@ -392,34 +422,50 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-7 gap-2">
             {calendarCells.map((day, idx) => {
-              const highlighted = day != null && calendarHighlights.has(day);
+              const highlighted = day != null && workflowCalendar.highlights.has(day);
+              const count = day != null ? workflowCalendar.counts.get(day) || 0 : 0;
               return (
                 <div
                   key={`${day ?? "x"}-${idx}`}
-                  className="aspect-square rounded-[16px] border text-[13px] font-semibold flex items-center justify-center"
+                  className="aspect-square rounded-[16px] border text-[13px] font-semibold flex flex-col items-center justify-center"
                   style={{
                     borderColor: highlighted ? "#D9D0FF" : "#ECEAF2",
                     background: highlighted ? "#EEE9FF" : "#FBFAF7",
                     color: highlighted ? "#6C5CE7" : "#8A879A",
                   }}
                 >
-                  {day ?? ""}
+                  <span>{day ?? ""}</span>
+                  {day != null && count > 0 && (
+                    <span className="mt-1 text-[10px] font-bold" style={{ color: highlighted ? "#6C5CE7" : "#9D96AC" }}>
+                      {count} task{count > 1 ? "s" : ""}
+                    </span>
+                  )}
                 </div>
               );
             })}
           </div>
           <div className="mt-4 flex flex-col gap-2">
-            {upcomingDates.map((item, idx) => (
-              <div key={`${item.title}-${idx}`} className="flex items-center justify-between gap-3 rounded-[16px] border border-line bg-[#FBFAF7] px-3 py-2.5">
+            {workflowCalendar.upcoming.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 rounded-[16px] border border-line bg-[#FBFAF7] px-3 py-2.5">
                 <div className="min-w-0">
                   <div className="text-[13px] font-semibold text-ink truncate">{item.title}</div>
-                  <div className="text-[11.5px] text-faint">{item.meta}</div>
+                  <div className="text-[11.5px] text-faint">{item.section} · {item.responsible}</div>
                 </div>
-                <div className="text-[11.5px] font-bold text-accent whitespace-nowrap">
-                  {item.date?.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-bold px-[8px] py-[4px] rounded-pill" style={{ background: item.done ? "#EAF8EE" : "#FFF3D7", color: item.done ? "#4BA06B" : "#B78E2D" }}>
+                    {item.marker}
+                  </span>
+                  <div className="text-[11.5px] font-bold text-accent whitespace-nowrap">
+                    {MONTH_NAMES[displayMonth].slice(0, 3)} {String(item.day).padStart(2, "0")}
+                  </div>
                 </div>
               </div>
             ))}
+            {workflowCalendar.upcoming.length === 0 && (
+              <div className="rounded-[18px] border border-dashed border-line px-4 py-6 text-center text-[13px] text-faint bg-[#FBFAF7]">
+                No workflow tasks scheduled in this view yet.
+              </div>
+            )}
           </div>
         </DashboardCard>
 

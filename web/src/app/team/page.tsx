@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
+import {
+  CampaignCommandBar,
+  CampaignPageHeaderSection,
+  ModuleSummaryCard,
+} from "@/components/campaign/CampaignHeadController";
 import { SectionLabel } from "@/components/ui/Card";
 import { Progress } from "@/components/ui/Progress";
 import { CAPACITY_META, initials } from "@/lib/data/workload";
@@ -52,26 +56,41 @@ export default function TeamWorkloadPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Team Pulse"
+      <CampaignPageHeaderSection
+        eyebrow="TEAM MOOD BOARD"
         title="Team Workload & Support"
-        subtitle="See who is busy, who is stuck, and where the team needs support today."
+        description="See who is busy, who is stuck, and where the team needs support today."
       />
 
-      {/* Period filter — workload for the selected period (by due date) */}
-      <div className="mt-4">
-        <DateFilterBar value={date} onChange={setDate} />
+      <div className="mt-5">
+        <CampaignCommandBar>
+          <div className="flex flex-col gap-3">
+            <div className="text-[12px] font-bold tracking-[0.12em] uppercase text-[#9D96AC]">Date range</div>
+            <DateFilterBar value={date} onChange={setDate} />
+          </div>
+        </CampaignCommandBar>
       </div>
 
-      {/* Team Pulse */}
-      <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))" }}>
-        {PULSE.map((c) => (
-          <div key={c.label} className="rounded-card p-4" style={{ background: c.bg, border: `1px solid ${c.border}` }}>
-            <div className="flex items-center gap-2 mb-2"><span className="text-[18px]">{c.icon}</span><span className="text-[24px] font-extrabold" style={{ color: c.fg }}>{c.val}</span></div>
-            <div className="text-[12.5px] font-bold" style={{ color: c.fg }}>{c.label}</div>
-            <div className="text-[11px] text-faint mt-[2px]">{c.note}</div>
+      <div className="mt-5">
+        <ModuleSummaryCard
+          title="Team Pulse Summary"
+          style={{
+            background: "linear-gradient(135deg, #EAF9D3 0%, #F6FFD8 100%)",
+            border: "1px solid #B9D97E",
+            boxShadow: "0 18px 44px rgba(166, 212, 92, 0.16)",
+          }}
+          titleClassName="text-[#5C6B3C]"
+        >
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+            {PULSE.map((c) => (
+              <div key={c.label} className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.66)", border: "1px solid rgba(92,107,60,0.14)" }}>
+                <div className="flex items-center gap-2 mb-2"><span className="text-[18px]">{c.icon}</span><span className="text-[24px] font-extrabold" style={{ color: c.fg }}>{c.val}</span></div>
+                <div className="text-[12.5px] font-bold" style={{ color: c.fg }}>{c.label}</div>
+                <div className="text-[11px] mt-[2px]" style={{ color: "#667258" }}>{c.note}</div>
+              </div>
+            ))}
           </div>
-        ))}
+        </ModuleSummaryCard>
       </div>
 
       {/* Needs support panel */}

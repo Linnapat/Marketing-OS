@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campaign/CampaignHeadController";
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -440,9 +441,44 @@ export default function SettingsPage() {
   const meta = SECTION_META[section];
 
   return (
-    <div className="flex gap-6 items-start">
+    <>
+      <CampaignPageHeaderSection
+        eyebrow="TEAM SETTINGS"
+        title="Settings"
+        description="Control people, permissions, workflow rules, and company-wide defaults for the whole OS."
+      />
+
+      <div className="mt-5">
+        <ModuleSummaryCard
+          title="Settings Access"
+          style={{
+            background: "linear-gradient(135deg, #FFF8E9 0%, #FFFDF5 100%)",
+            border: "1px solid #E9D7A3",
+            boxShadow: "0 18px 44px rgba(184, 148, 90, 0.14)",
+          }}
+          titleClassName="text-[#8A6A2E]"
+        >
+          <div className="grid gap-3 md:grid-cols-[1.4fr_1fr]">
+            <div className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(138,106,46,0.14)" }}>
+              <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#8A6A2E]">Current section</div>
+              <div className="mt-2 text-[22px] font-extrabold text-ink">{meta.title}</div>
+              <div className="mt-2 text-[13px] text-[#6F6659]">{meta.desc}</div>
+            </div>
+            <div className="rounded-[22px] p-4" style={{ background: canEdit ? "rgba(255,255,255,0.78)" : "rgba(242,240,235,0.92)", border: `1px solid ${canEdit ? "rgba(138,106,46,0.14)" : "rgba(107,98,88,0.14)"}` }}>
+              <div className="text-[12px] font-bold uppercase tracking-[0.08em]" style={{ color: canEdit ? "#8A6A2E" : "#6b6258" }}>Access</div>
+              <div className="mt-3 text-[14px]" style={{ color: canEdit ? "#8A6A2E" : "#6b6258" }}>
+                {canEdit
+                  ? <>🔓 Signed in as <b>CMO</b> — you can edit everything here.</>
+                  : <>🔒 Read-only for <b>{role}</b>. Only <b>CMO</b> can change settings.</>}
+              </div>
+            </div>
+          </div>
+        </ModuleSummaryCard>
+      </div>
+
+      <div className="mt-5 flex gap-6 items-start">
       {/* Sidebar */}
-      <aside className="w-[228px] flex-shrink-0 sticky top-5 hidden md:block">
+      <aside className="w-[228px] flex-shrink-0 sticky top-5 hidden md:block rounded-[24px] border border-[#ECEAF2] bg-white p-4 shadow-[0_10px_30px_rgba(23,23,42,0.05)]">
         <div className="text-[22px] font-extrabold tracking-[-0.02em] mb-1">Settings</div>
         <div className="text-[12px] text-faint mb-5">Control center for the whole OS.</div>
         {NAV_DEF.map((g) => (
@@ -999,6 +1035,7 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
