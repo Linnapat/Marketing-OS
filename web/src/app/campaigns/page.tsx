@@ -172,31 +172,33 @@ export default function CampaignsPage() {
                 </span>
               </div>
               {topUrgent.length > 0 ? topUrgent.map((c) => (
-                <div key={c.id} className="rounded-[18px] px-4 py-4 border bg-white/45" style={{ borderColor: "#AFD76F" }}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-bold text-[#203515] truncate">{c.name}</div>
-                      <div className="text-[11px] text-[#5B783F] mt-1">
-                        {brandName(c.b)} · {c.owner} · {c.nextApproval !== "—" ? `Next: ${c.nextApproval}` : "Monitor now"}
+                <div key={c.id} className="rounded-[18px] border bg-white/45 px-4 py-3" style={{ borderColor: "#AFD76F" }}>
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <div className="text-[13px] font-bold text-[#203515] truncate">{c.name}</div>
+                        <div className="text-[11px] text-[#5B783F]">
+                          {brandName(c.b)} · {c.owner} · {c.nextApproval !== "—" ? `Next: ${c.nextApproval}` : "Monitor now"}
+                        </div>
                       </div>
                     </div>
-                    <span
-                      className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] border"
-                      style={
-                        c.status === "Waiting Approval"
-                          ? { background: "#FFF5CF", color: "#946C00", borderColor: "#E9CF76" }
-                          : c.status === "Active" || c.status === "In Progress"
-                            ? { background: "#EEF2FF", color: "#4A63D9", borderColor: "#C8D2FF" }
-                            : { background: "rgba(255,255,255,0.68)", color: "#284019", borderColor: "#B8D98E" }
-                      }
-                    >
-                      {c.status}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-[10.5px]">
-                    {c.taskBlocked > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9E4036]" style={{ background: "#F6D5CF", borderColor: "#E7B3AA" }}>{c.taskBlocked} blocked</span>}
-                    {c.taskOverdue > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9A6A00]" style={{ background: "#F8E5AF", borderColor: "#E9CD78" }}>{c.taskOverdue} overdue</span>}
-                    {c.budget > 0 && (c.spend / c.budget) >= 0.8 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#476100]" style={{ background: "#E6F5BF", borderColor: "#B8D979" }}>{Math.round((c.spend / c.budget) * 100)}% budget used</span>}
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                      {c.taskBlocked > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9E4036]" style={{ background: "#F6D5CF", borderColor: "#E7B3AA" }}>{c.taskBlocked} blocked</span>}
+                      {c.taskOverdue > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9A6A00]" style={{ background: "#F8E5AF", borderColor: "#E9CD78" }}>{c.taskOverdue} overdue</span>}
+                      {c.budget > 0 && (c.spend / c.budget) >= 0.8 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#476100]" style={{ background: "#E6F5BF", borderColor: "#B8D979" }}>{Math.round((c.spend / c.budget) * 100)}% budget used</span>}
+                      <span
+                        className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] border"
+                        style={
+                          c.status === "Waiting Approval"
+                            ? { background: "#FFF5CF", color: "#946C00", borderColor: "#E9CF76" }
+                            : c.status === "Active" || c.status === "In Progress"
+                              ? { background: "#EEF2FF", color: "#4A63D9", borderColor: "#C8D2FF" }
+                              : { background: "rgba(255,255,255,0.68)", color: "#284019", borderColor: "#B8D98E" }
+                        }
+                      >
+                        {c.status}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )) : (
