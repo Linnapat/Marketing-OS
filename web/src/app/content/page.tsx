@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
-import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
@@ -152,11 +151,30 @@ export default function ContentPage() {
               <div className="text-[13px] font-semibold text-faint">
                 {items.length} posts in view · shared planner for captions, approvals, and publish timing
               </div>
-              <Segmented
-                value={view}
-                onChange={setView}
-                options={[{ value: "month", label: "Month" }, { value: "week", label: "Week" }, { value: "list", label: "List" }, { value: "queue", label: "🚀 Queue" }]}
-              />
+              <div className="flex items-center rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px] shadow-[0_8px_22px_rgba(108,92,231,0.08)]">
+                {[
+                  { value: "month", label: "Month" },
+                  { value: "week", label: "Week" },
+                  { value: "list", label: "List" },
+                  { value: "queue", label: "🚀 Queue" },
+                ].map((option) => {
+                  const active = view === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      onClick={() => setView(option.value as View)}
+                      className="min-w-[88px] rounded-[12px] px-4 py-[10px] text-[12px] font-extrabold whitespace-nowrap transition"
+                      style={{
+                        background: active ? "linear-gradient(135deg, #7C6CF6, #5B4FD8)" : "transparent",
+                        color: active ? "#FFFFFF" : "#8A879A",
+                        boxShadow: active ? "0 8px 18px rgba(108,92,231,.18)" : undefined,
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
