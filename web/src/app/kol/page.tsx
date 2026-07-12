@@ -127,14 +127,14 @@ export default function KolPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="CREATOR CAFÉ"
-        title="KOL / Creator"
+        eyebrow="KOL/INFLU CAFÉ"
+        title="KOL/Influ Café"
         description="Track creator requests, approvals, performance, and your reusable KOL library in one place."
       />
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Request KOL</button>}
+          action={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send KOL Brief</button>}
         >
           <div className="flex flex-col gap-4">
             <div className="text-[13px] font-semibold text-faint">
@@ -144,12 +144,20 @@ export default function KolPage() {
           </div>
         </CampaignCommandBar>
 
-        <ModuleSummaryCard title="Creator Café Summary">
+        <ModuleSummaryCard
+          title="KOL/Influ Café Summary"
+          titleClassName="text-[#9D3D6B]"
+          style={{
+            background: "linear-gradient(180deg, #FCE8F2 0%, #F8DCEB 100%)",
+            border: "1px solid #F1BDD7",
+            boxShadow: "0 18px 44px rgba(181, 87, 126, 0.14)",
+          }}
+        >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {KPIS.slice(0, 5).map((k) => (
-              <div key={k.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{k.label}</div>
-                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{k.value}</div>
+              <div key={k.label} className="rounded-[20px] border px-4 py-4 bg-white/58" style={{ borderColor: "#F1BDD7" }}>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-[#A26785] font-extrabold">{k.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-[#4E2136]">{k.value}</div>
               </div>
             ))}
           </div>
@@ -276,7 +284,14 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
         <div>Creator</div><div>Campaign</div><div>Followers</div><div>Fee</div><div>Stage</div>
       </div>
       {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}
-      {list.length === 0 && <div className="text-[12.5px] text-faint text-center py-8">No creators match these filters.</div>}
+      {list.length === 0 && (
+        <div className="px-5 py-10 text-center">
+          <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#F1BDD7] bg-[#FFF4F8] px-6 py-5">
+            <div className="text-[13px] font-bold text-[#9D3D6B]">No creator requests match these filters</div>
+            <div className="text-[11.5px] text-[#A26785]">Try another brand or campaign, or send a new KOL brief to start a request.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -387,7 +402,14 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
   const rate = (reach: number, eng: number) => (reach ? (eng / reach) * 100 : 0);
   const cols = "1.7fr 1.1fr 1.1fr 1fr 1fr 0.7fr";
   const numCls = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-ivory outline-none text-right";
-  if (list.length === 0) return <div className="text-[12.5px] text-faint text-center py-10">No performance data for these filters.</div>;
+  if (list.length === 0) return (
+    <div className="px-5 py-10 text-center">
+      <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#F1BDD7] bg-[#FFF4F8] px-6 py-5">
+        <div className="text-[13px] font-bold text-[#9D3D6B]">No performance data in this view yet</div>
+        <div className="text-[11.5px] text-[#A26785]">Results will show up here after post links, reach, and engagement are filled in.</div>
+      </div>
+    </div>
+  );
   return (
     <div className="flex flex-col gap-4">
       {groups.map(([campaign, ks]) => {
@@ -590,8 +612,11 @@ function KolDatabase() {
           );
         })}
         {rows.length === 0 && (
-          <div className="text-[12.5px] text-faint text-center py-10">
-            {loading ? "Loading…" : "ยังไม่มี KOL ในคลัง — โปรไฟล์จะสะสมเมื่อเริ่มทำงานกับ KOL แต่ละราย"}
+          <div className="px-5 py-10 text-center">
+            <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#F1BDD7] bg-[#FFF4F8] px-6 py-5">
+              <div className="text-[13px] font-bold text-[#9D3D6B]">{loading ? "Loading…" : "No KOL saved in the library yet"}</div>
+              <div className="text-[11.5px] text-[#A26785]">{loading ? "Pulling the latest creator library…" : "Profiles will build up automatically once the team starts working with each creator."}</div>
+            </div>
           </div>
         )}
       </div>
@@ -627,6 +652,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   // link) is proposed later by the KOL specialist, so there's no name/handle here.
   const count = Math.max(1, item.count || 1);
   const canCreate = count > 0;
+  const syncOn = Boolean(campaign.trim());
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!canCreate || busy) return;
@@ -661,7 +687,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-[16px] font-extrabold mb-1">Request KOL</div>
+        <div className="text-[16px] font-extrabold mb-1">Send KOL Brief</div>
         <div className="text-[11.5px] text-faint mb-4">ระบุ requirement ที่ต้องการ (ยังไม่ต้องรู้ชื่อเพจ) — KOL specialist จะเสนอเพจจริงทีหลัง · ฟอร์มเดียวกับ KOL Plan และ sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
@@ -681,7 +707,15 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           </div>
         </div>
         <KolItemForm item={item} onChange={onChange} hidePage />
-        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{busy ? "Creating…" : "Create KOL Request"}</button>
+        <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: syncOn ? "#EEF8E8" : "#FBF6EC", borderColor: syncOn ? "#CFE4C2" : "#EADBC1" }}>
+          <div className="text-[12px] font-bold" style={{ color: syncOn ? "#3F6A34" : "#8A6D1E" }}>
+            {syncOn ? "Campaign sync is on for this request" : "Campaign not selected yet — request still works, but it will not sync back to Campaign Plan"}
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: syncOn ? "#5A7A4D" : "#9A8460" }}>
+            Requester is fixed to login, and the KOL specialist will take over after this brief is sent.
+          </div>
+        </div>
+        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{busy ? "Creating…" : "Send KOL Request"}</button>
       </div>
     </div>
   );

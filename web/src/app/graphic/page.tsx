@@ -86,7 +86,7 @@ export default function GraphicPage() {
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ New Request</button>}
+          action={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>}
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -99,12 +99,35 @@ export default function GraphicPage() {
           </div>
         </CampaignCommandBar>
 
-        <ModuleSummaryCard title="Graphic Request Summary">
+        <ModuleSummaryCard
+          title="Graphic Request Summary ✨"
+          titleClassName="text-[#7A5710]"
+          style={{
+            background: "linear-gradient(180deg, #F4D48D 0%, #E7BE67 100%)",
+            border: "1px solid #D5A94D",
+            boxShadow: "0 18px 44px rgba(180, 132, 33, 0.20)",
+          }}
+        >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {KPIS.slice(0, 5).map((k) => (
-              <div key={k.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{k.label}</div>
-                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{k.value}</div>
+            {[
+              { ...KPIS[0], emoji: "🎨" },
+              { ...KPIS[1], emoji: "🛠️" },
+              { ...KPIS[2], emoji: "💬" },
+              { ...KPIS[3], emoji: "🔁" },
+              { ...KPIS[4], emoji: "✅" },
+            ].map((k) => (
+              <div key={k.label} className="rounded-[20px] border px-4 py-4 bg-white/55" style={{ borderColor: "#D9B86A" }}>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-[#8A6930] font-extrabold">
+                  {k.emoji} {k.label}
+                </div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-[#2F2413]">{k.value}</div>
+                <div className="mt-2 text-[11px] font-semibold text-[#70552B]">
+                  {k.label === "Total" ? "All open design requests in this view" :
+                    k.label === "In Progress" ? "Currently being worked on" :
+                      k.label === "Waiting Feedback" ? "Waiting for comment or approval" :
+                        k.label === "Revisions" ? "Requested changes still in loop" :
+                          "Ready and approved to move forward"}
+                </div>
               </div>
             ))}
           </div>
@@ -206,7 +229,11 @@ function BoardView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =
                   </div>
                 </button>
               ))}
-              {cards.length === 0 && <div className="text-[11px] text-faint text-center py-4 border border-dashed border-line2 rounded-card">Empty</div>}
+              {cards.length === 0 && (
+                <div className="text-[11px] text-faint text-center py-4 border border-dashed border-line2 rounded-card bg-[#FCFBF8]">
+                  No request in this stage yet
+                </div>
+              )}
             </div>
           </div>
         );
@@ -233,6 +260,14 @@ function ListView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =>
           <span className="text-[12px] text-muted">{g.pendingApprover}</span>
         </button>
       ))}
+      {items.length === 0 && (
+        <div className="px-5 py-10 text-center">
+          <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#D9B86A] bg-[#FFF8EA] px-6 py-5">
+            <div className="text-[13px] font-bold text-[#8A6930]">No graphic requests match this view</div>
+            <div className="text-[11.5px] text-[#9A7A47]">Try a wider filter, or send a new brief to start the queue.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -259,6 +294,11 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
 
   const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
+  const missing = [
+    !campaign.trim() ? "campaign" : null,
+    !item.title.trim() ? "brief title" : null,
+    !item.platforms.length ? "platform" : null,
+  ].filter(Boolean) as string[];
   const submit = () => {
     if (!canCreate) return;
     const plats = item.platforms;
@@ -292,7 +332,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-[16px] font-extrabold mb-1">New Graphic Request</div>
+        <div className="text-[16px] font-extrabold mb-1">Send Graphic Brief</div>
         <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — สร้างแล้วเป็น content + graphic (แยก asset ต่อ platform×size) และ sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="flex flex-col gap-4">
           {/* Context: brand, campaign, team */}
@@ -325,7 +365,15 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
           <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} showAssignmentFields={false} />
         </div>
-        <button onClick={submit} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Request</button>
+        <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
+          <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
+            {canCreate ? "Ready to send to Creative leader" : `Before sending, add ${missing.join(", ")}`}
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: canCreate ? "#5A7A4D" : "#9A8460" }}>
+            Requester stays fixed to login, and designer will be assigned after the brief comes in.
+          </div>
+        </div>
+        <button onClick={submit} disabled={!canCreate} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Send Graphic Request</button>
       </div>
     </div>
   );

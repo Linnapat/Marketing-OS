@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -10,7 +9,7 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { BrandFilterValue, brandName, BRAND_ORDER, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, brandOverview, PLATFORMS, itemPlatforms, contentDateIso,
+  CONTENT, ContentItem, contentTone, platIcon, PLATFORMS, itemPlatforms, contentDateIso,
 } from "@/lib/data/content";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent } from "@/lib/db/content";
@@ -81,7 +80,6 @@ export default function ContentPage() {
     () => posts.filter((c) => (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
     [posts, brand, date],
   );
-  const cards = useMemo(() => brandOverview(posts), [posts]);
   const summary = useMemo(() => ({
     posts: items.length,
     waitingApproval: items.filter((c) => c.approvalStatus === "Waiting Approval").length,
@@ -141,13 +139,13 @@ export default function ContentPage() {
     <>
       <CampaignPageHeaderSection
         eyebrow="THE DAILY BOOST"
-        title="Content Bento"
+        title="Content Plan"
         description="Plan, caption, approve, schedule, and publish every post from one shared calendar."
       />
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ New Post</button>}
+          action={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Plan Post</button>}
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -164,44 +162,28 @@ export default function ContentPage() {
           </div>
         </CampaignCommandBar>
 
-        <ModuleSummaryCard title="Content Bento Summary">
-          <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                { label: "Posts in view", value: summary.posts, note: "Current brand + date filters" },
-                { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
-                { label: "Waiting asset", value: summary.waitingAsset, note: "Graphic or asset still missing" },
-                { label: "Scheduled / queued", value: summary.scheduled, note: "Ready in the publish line" },
-              ].map((item) => (
-                <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
-                  <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
-                  <div className="mt-2 text-[11px] text-white/55">{item.note}</div>
-                </div>
-              ))}
-            </div>
-            <div className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
-              <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold mb-3">Brand rhythm</div>
-              <div className="grid gap-3">
-                {cards.map((bc) => (
-                  <div key={bc.b} className="rounded-[16px] bg-white/8 px-3 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <BrandDot brand={bc.b} size={8} />
-                        <div className="text-[13px] font-bold text-white truncate">{bc.name}</div>
-                      </div>
-                      <div className="text-[12px] text-white/70 font-semibold">{bc.total} posts</div>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
-                      <span>Scheduled {bc.scheduled}</span>
-                      <span>Approval {bc.waitApproval}</span>
-                      <span>Missing asset {bc.missingAsset}</span>
-                      {bc.failed > 0 && <span className="text-[#FFB7AC]">Failed {bc.failed}</span>}
-                    </div>
-                  </div>
-                ))}
+        <ModuleSummaryCard
+          title="Content Plan Summary"
+          titleClassName="text-[#5A4FB2]"
+          style={{
+            background: "linear-gradient(180deg, #F3EEFF 0%, #ECE5FF 100%)",
+            border: "1px solid #DDD1FF",
+            boxShadow: "0 18px 44px rgba(108, 92, 231, 0.12)",
+          }}
+        >
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: "Posts in view", value: summary.posts, note: "Current brand + date filters" },
+              { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
+              { label: "Waiting asset", value: summary.waitingAsset, note: "Graphic or asset still missing" },
+              { label: "Scheduled / queued", value: summary.scheduled, note: "Ready in the publish line" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[20px] border px-4 py-4 bg-white/60" style={{ borderColor: "#DDD1FF" }}>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-[#766D98] font-bold">{item.label}</div>
+                <div className="mt-3 text-[28px] leading-none font-extrabold text-[#2C2553]">{item.value}</div>
+                <div className="mt-2 text-[11px] text-[#7D778F]">{item.note}</div>
               </div>
-            </div>
+            ))}
           </div>
         </ModuleSummaryCard>
 
@@ -268,6 +250,11 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
+  const missing = [
+    !campaign.trim() ? "campaign" : null,
+    !item.title.trim() ? "post title" : null,
+    !item.platforms.length ? "platform" : null,
+  ].filter(Boolean) as string[];
   const create = () => {
     if (!canCreate) return;
     const iso = item.publishDate || initialIso || new Date().toISOString().slice(0, 10);
@@ -288,7 +275,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-[16px] font-extrabold mb-1">New Post</div>
+        <div className="text-[16px] font-extrabold mb-1">Plan New Post</div>
         <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — บันทึกแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -309,7 +296,15 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
           {/* Shared content-item template */}
           <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} />
         </div>
-        <button onClick={create} disabled={!canCreate} className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create Post</button>
+        <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
+          <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
+            {canCreate ? "Ready to save into Content Plan" : `Before saving, add ${missing.join(", ")}`}
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: canCreate ? "#5A7A4D" : "#9A8460" }}>
+            Publish date / time stays editable later, and Campaign sync will start as soon as this post is saved.
+          </div>
+        </div>
+        <button onClick={create} disabled={!canCreate} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Save to Content Plan</button>
       </div>
     </div>
   );
@@ -390,7 +385,7 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
         <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule</span>
-        <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ New Post</button>
+        <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: "60px 2fr 1.2fr 1fr 1fr 1fr 1fr" }}>
@@ -412,6 +407,14 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
           </button>
         );
       })}
+      {items.length === 0 && (
+        <div className="px-5 py-10 text-center">
+          <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#DDD1FF] bg-[#F7F2FF] px-6 py-5">
+            <div className="text-[13px] font-bold text-[#5A4FB2]">No posts in this view yet</div>
+            <div className="text-[11.5px] text-[#7D778F]">Try another brand or date range, or start by planning the first post.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -433,11 +436,18 @@ function QueueView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: Conten
                 <div className="text-[11px] text-faint">{brandName(c.b)} · {labelDate(contentDateIso(c))}, {c.time}</div>
               </div>
               <StatusBadge tone={contentTone(c.publishStatus)}>{c.publishStatus}</StatusBadge>
-              <button onClick={() => onOpen(c)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Open ↗</button>
+              <button onClick={() => onOpen(c)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Review post ↗</button>
             </div>
           );
         })}
-        {queue.length === 0 && <div className="text-[13px] text-faint text-center py-10">No scheduled posts for this brand.</div>}
+        {queue.length === 0 && (
+          <div className="px-5 py-10 text-center">
+            <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#C5D4F8] bg-[#F5F8FF] px-6 py-5">
+              <div className="text-[13px] font-bold text-[#3150A6]">Nothing in the publish queue yet</div>
+              <div className="text-[11.5px] text-[#6C7AA6]">Once a post is scheduled or queued, it will appear here for final review.</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

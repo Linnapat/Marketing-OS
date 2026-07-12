@@ -5,13 +5,12 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
-import { Progress } from "@/components/ui/Progress";
 import { BrandFilterValue, BrandId, BRAND_ORDER, brandName, BRANDS } from "@/lib/brands";
 import { SELECT_STYLE_DARK } from "@/components/ui/selectStyle";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
-  CAMPAIGNS, STATUS_ORDER, READINESS_META, monthlySummary, CampaignRow, Readiness,
+  CAMPAIGNS, STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
 import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
 import { useRole } from "@/lib/role";
@@ -85,8 +84,6 @@ export default function CampaignsPage() {
 
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 
-  const summary = monthlySummary(brand, campaigns);
-
   const owners = Array.from(new Set(campaigns.map((c) => c.owner).filter(Boolean)));
   // Branches may be comma-joined (multi-branch campaigns); split for the filter.
   const allBranches = Array.from(new Set(campaigns.flatMap((c) => (c.branch || "").split(",").map((s) => s.trim())).filter((s) => s && s !== "—")));
@@ -107,6 +104,17 @@ export default function CampaignsPage() {
   const groups = STATUS_ORDER
     .map((s) => ({ status: s, rows: filtered.filter((c) => c.status === s) }))
     .filter((g) => g.rows.length > 0);
+  const activeStatuses = new Set(["Planning", "Active", "In Progress", "Waiting Approval"]);
+  const liveCampaigns = filtered.filter((c) => activeStatuses.has(c.status));
+  const waitingApprovalCampaigns = filtered.filter((c) => c.status === "Waiting Approval" || c.nextApproval !== "—");
+  const atRiskCampaigns = filtered.filter((c) => c.readiness === "needs_attention" || c.taskOverdue > 0 || c.taskBlocked > 0);
+  const budgetWatchCampaigns = filtered.filter((c) => c.budget > 0 && (c.spend / c.budget) >= 0.8);
+  const liveBudget = liveCampaigns.reduce((sum, c) => sum + c.budget, 0);
+  const liveSpend = liveCampaigns.reduce((sum, c) => sum + c.spend, 0);
+  const liveOwners = Array.from(new Set(liveCampaigns.map((c) => c.owner).filter(Boolean))).length;
+  const topUrgent = [...atRiskCampaigns]
+    .sort((a, b) => (b.taskOverdue + b.taskBlocked) - (a.taskOverdue + a.taskBlocked))
+    .slice(0, 3);
 
   const statusChips = ["all", ...STATUS_ORDER];
 
@@ -120,54 +128,82 @@ export default function CampaignsPage() {
         />
 
         <CampaignCommandBar
-          action={<Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ New Campaign</Link>}
+          action={<Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ Create Campaign</Link>}
         >
           <DateFilterBar value={date} onChange={setDate} />
         </CampaignCommandBar>
 
-        <ModuleSummaryCard title="Campaign Café Summary">
+        <ModuleSummaryCard
+          title="Campaign Café Summary"
+          titleClassName="text-[#31531F]"
+          style={{
+            background: "linear-gradient(180deg, #D8FFA9 0%, #C9F28C 100%)",
+            border: "1px solid #B8E37A",
+            boxShadow: "0 18px 44px rgba(139, 184, 73, 0.20)",
+          }}
+        >
           <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
             <div>
-              <div className="text-[16px] font-bold text-white">Campaign performance snapshot</div>
-              <div className="text-[12.5px] text-white/55 mt-1">{summary.count} campaigns in view</div>
+              <div className="text-[16px] font-bold text-[#203515]">Needs action first</div>
+              <div className="text-[12.5px] text-[#4E6A38] mt-1">Campaigns that need approval, follow-up, or close monitoring right now</div>
             </div>
             <select
               value={brand}
               onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-              style={SELECT_STYLE_DARK}
+              className="text-[13px] font-semibold rounded-[16px] px-4 py-[10px] outline-none cursor-pointer border"
+              style={{ background: "rgba(255,255,255,0.55)", borderColor: "#AFD76F", color: "#203515" }}
             >
               <option value="all">All Brands</option>
               {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
             </select>
           </div>
-          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))" }}>
-            {[
-              { label: "Total Budget", value: summary.budget, sub: `${summary.count} campaigns` },
-              { label: "Spent", value: summary.spend, sub: `${summary.spendPct}% utilized` },
-              { label: "Expected Revenue", value: summary.revenue, sub: "projected" },
-              { label: "Expected GP", value: summary.gp, sub: "38% margin" },
-              { label: "Blended ROAS", value: summary.roas, sub: "avg across", color: summary.roasColor },
-              { label: "Active", value: String(summary.activeCount), sub: "in flight" },
-            ].map((c) => (
-              <div key={c.label} className="rounded-[20px] px-4 py-4 border border-white/10 bg-white/[0.03]">
-                <div className="text-[10px] uppercase tracking-[0.08em] text-white/45 font-bold mb-[8px]">{c.label}</div>
-                <div className="text-[22px] font-extrabold letter-tightest" style={{ color: c.color ?? "#fff" }}>{c.value}</div>
-                <div className="text-[10.5px] text-white/40 mt-[4px]">{c.sub}</div>
+          <div className="rounded-[22px] px-5 py-5 border bg-white/35" style={{ borderColor: "#AFD76F" }}>
+            <div className="text-[11px] uppercase tracking-[0.08em] text-[#5B783F] font-bold mb-4">Needs action first</div>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
+                  {waitingApprovalCampaigns.length} waiting approval
+                </span>
+                <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
+                  {budgetWatchCampaigns.length} near budget limit
+                </span>
+                <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
+                  {atRiskCampaigns.length} need follow-up
+                </span>
               </div>
-            ))}
-          </div>
-          <div className="pt-5 border-t border-white/10">
-            <div className="text-[11px] uppercase tracking-[0.08em] text-white/40 font-bold mb-[12px]">Budget by brand</div>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))" }}>
-              {summary.bars.map((b) => (
-                <div key={b.id} className="rounded-[20px] px-4 py-4 border border-white/10 bg-white/[0.03]">
-                  <div className="flex items-center justify-between mb-[8px]">
-                    <span className="flex items-center gap-[6px] text-[11.5px] text-white/75"><BrandDot brand={b.id as BrandId} size={7} />{b.name}</span>
-                    <span className="text-[11.5px] font-bold text-white/90">{b.budgetF}</span>
+              {topUrgent.length > 0 ? topUrgent.map((c) => (
+                <div key={c.id} className="rounded-[18px] px-4 py-4 border bg-white/45" style={{ borderColor: "#AFD76F" }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-bold text-[#203515] truncate">{c.name}</div>
+                      <div className="text-[11px] text-[#5B783F] mt-1">
+                        {brandName(c.b)} · {c.owner} · {c.nextApproval !== "—" ? `Next: ${c.nextApproval}` : "Monitor now"}
+                      </div>
+                    </div>
+                    <span
+                      className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] border"
+                      style={
+                        c.status === "Waiting Approval"
+                          ? { background: "#FFF5CF", color: "#946C00", borderColor: "#E9CF76" }
+                          : c.status === "Active" || c.status === "In Progress"
+                            ? { background: "#EEF2FF", color: "#4A63D9", borderColor: "#C8D2FF" }
+                            : { background: "rgba(255,255,255,0.68)", color: "#284019", borderColor: "#B8D98E" }
+                      }
+                    >
+                      {c.status}
+                    </span>
                   </div>
-                  <Progress value={b.barW} color={b.color} track="rgba(255,255,255,.1)" height={6} />
+                  <div className="mt-3 flex flex-wrap gap-2 text-[10.5px]">
+                    {c.taskBlocked > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9E4036]" style={{ background: "#F6D5CF", borderColor: "#E7B3AA" }}>{c.taskBlocked} blocked</span>}
+                    {c.taskOverdue > 0 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#9A6A00]" style={{ background: "#F8E5AF", borderColor: "#E9CD78" }}>{c.taskOverdue} overdue</span>}
+                    {c.budget > 0 && (c.spend / c.budget) >= 0.8 && <span className="rounded-pill border px-2.5 py-[4px] text-[10.5px] font-extrabold tracking-[0.01em] text-[#476100]" style={{ background: "#E6F5BF", borderColor: "#B8D979" }}>{Math.round((c.spend / c.budget) * 100)}% budget used</span>}
+                  </div>
                 </div>
-              ))}
+              )) : (
+                <div className="rounded-[18px] px-4 py-6 border bg-white/45 text-[12px] text-[#5B783F]" style={{ borderColor: "#AFD76F" }}>
+                  No urgent campaign in this view right now.
+                </div>
+              )}
             </div>
           </div>
         </ModuleSummaryCard>

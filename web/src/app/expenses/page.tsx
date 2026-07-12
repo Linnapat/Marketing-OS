@@ -58,6 +58,7 @@ export default function ExpensesPage() {
     unpaidTotal: filteredSpending.filter((r) => r.status === "Unpaid").reduce((sum, row) => sum + row.amount + (row.vat || 0), 0),
     spendingTotal: filteredSpending.reduce((sum, row) => sum + row.amount + (row.vat || 0), 0),
   }), [filteredRequests, filteredSpending]);
+  const graphMax = Math.max(summary.requestCount, summary.waitingApproval, summary.unpaidTotal, summary.spendingTotal, 1);
 
   // Export what the page actually shows: real DB rows, current brand + period.
   const exportCsv = async () => {
@@ -103,20 +104,54 @@ export default function ExpensesPage() {
           </div>
         </CampaignCommandBar>
 
-        <ModuleSummaryCard title="Cashier Summary">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: "Requests in view", value: summary.requestCount, note: "Current brand + date filters" },
-              { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
-              { label: "Unpaid spending", value: baht(summary.unpaidTotal), note: "Approved but not marked paid" },
-              { label: "Spend logged", value: baht(summary.spendingTotal), note: "Actual spending in the log" },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
-                <div className="mt-3 text-[28px] leading-none font-extrabold text-white">{item.value}</div>
-                <div className="mt-2 text-[11px] text-white/55">{item.note}</div>
+        <ModuleSummaryCard
+          title="Cashier Summary"
+          titleClassName="text-[#6C5CE7]"
+          style={{
+            background: "#FFFFFF",
+            border: "1px solid #ECEAF2",
+            boxShadow: "0 16px 40px rgba(108, 92, 231, 0.08)",
+          }}
+        >
+          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
+              {[
+                { label: "Requests in view", value: summary.requestCount, note: "Current brand + date filters" },
+                { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
+                { label: "Unpaid spending", value: baht(summary.unpaidTotal), note: "Approved but not marked paid" },
+                { label: "Spend logged", value: baht(summary.spendingTotal), note: "Actual spending in the log" },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[20px] border px-4 py-4 bg-[#F4F0FF]" style={{ borderColor: "#DDD1FF" }}>
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-[#7D72B4] font-extrabold">{item.label}</div>
+                  <div className="mt-3 text-[28px] leading-none font-extrabold text-[#2E2755]">{item.value}</div>
+                  <div className="mt-2 text-[11px] text-[#7D778F]">{item.note}</div>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-[20px] border px-4 py-4 bg-[#F8F5FF]" style={{ borderColor: "#E4DAFF" }}>
+              <div className="text-[11px] uppercase tracking-[0.08em] text-[#7D72B4] font-extrabold mb-4">Cash flow glance 📊</div>
+              <div className="flex flex-col gap-4">
+                {[
+                  { label: "Requests", value: summary.requestCount, display: String(summary.requestCount), color: "#8B7BFF" },
+                  { label: "Waiting", value: summary.waitingApproval, display: String(summary.waitingApproval), color: "#B59CFF" },
+                  { label: "Unpaid", value: summary.unpaidTotal, display: baht(summary.unpaidTotal, { compact: true }), color: "#C5B2FF" },
+                  { label: "Logged", value: summary.spendingTotal, display: baht(summary.spendingTotal, { compact: true }), color: "#6C5CE7" },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span className="text-[12px] font-bold text-[#4A4373]">{item.label}</span>
+                      <span className="text-[12px] font-extrabold" style={{ color: item.color }}>{item.display}</span>
+                    </div>
+                    <div className="h-[10px] rounded-full bg-white overflow-hidden border border-[#E4DAFF]">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.max(8, Math.round((item.value / graphMax) * 100))}%`, background: item.color }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </ModuleSummaryCard>
 

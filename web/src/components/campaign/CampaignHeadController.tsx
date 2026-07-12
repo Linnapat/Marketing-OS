@@ -53,9 +53,13 @@ export function CampaignCommandBar({
 export function ModuleSummaryCard({
   title,
   children,
+  style,
+  titleClassName,
 }: {
   title: string;
   children: ReactNode;
+  style?: CSSProperties;
+  titleClassName?: string;
 }) {
   return (
     <section
@@ -65,9 +69,10 @@ export function ModuleSummaryCard({
         border: "1px solid rgba(255,255,255,0.04)",
         borderRadius: 24,
         boxShadow: "0 16px 40px rgba(23, 23, 42, 0.18)",
+        ...style,
       }}
     >
-      <div className="text-[13px] font-bold tracking-[0.04em] uppercase text-white/70 mb-4">
+      <div className={`text-[13px] font-bold tracking-[0.04em] uppercase mb-4 ${titleClassName ?? "text-white/70"}`}>
         {title}
       </div>
       {children}

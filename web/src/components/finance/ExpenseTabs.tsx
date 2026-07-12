@@ -162,13 +162,20 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
         <div className="text-[40px] mb-2">✓</div>
         <div className="text-[16px] font-bold text-ink">Request submitted</div>
         <div className="text-[13px] text-faint mt-1">Reference <b className="text-ink">{submitted}</b> · {lines.length + 1} line item(s) · routed to {route}</div>
-        <button onClick={() => { setSubmitted(null); setAmount(""); setCatKey(""); setLines([]); }} className="mt-5 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">New Request</button>
+        <button onClick={() => { setSubmitted(null); setAmount(""); setCatKey(""); setLines([]); }} className="mt-5 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">Start Another Request</button>
       </div>
     );
   }
 
   const field = "w-full text-[14px] px-[13px] py-[11px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const lineField = "w-full text-[13px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none";
+  const missing = [
+    !catKey ? "category" : null,
+    amt <= 0 ? "amount" : null,
+    !campaign ? "campaign" : null,
+    !preparerSig ? "requester signature" : null,
+  ].filter(Boolean) as string[];
+  const readyToSubmit = missing.length === 0;
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
@@ -176,6 +183,12 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       <div className="flex-1 min-w-0 flex flex-col gap-4">
         <div className="bg-surface border border-line rounded-cardLg p-5">
           <div className="text-[13px] font-bold mb-4">New Expense Request</div>
+          <div className="flex flex-wrap gap-2 mb-4 text-[11px]">
+            <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">1. Choose category</span>
+            <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">2. Add amount + campaign</span>
+            <span className="rounded-pill bg-[#EAF8EE] px-3 py-[7px] font-bold text-[#4BA06B]">3. Sign as requester</span>
+            <span className="rounded-pill bg-[#EEF1F8] px-3 py-[7px] font-bold text-[#3E5C9A]">4. Send to approval</span>
+          </div>
           <div className="flex flex-col gap-4">
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category <span className="text-status-red">*</span></label>
@@ -319,11 +332,19 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
                 Drop file here or click to upload <span className="ml-2 font-bold text-accent">Coming soon</span>
               </div>
             </div>
+            <div className="rounded-[16px] border px-4 py-3" style={{ background: readyToSubmit ? "#EEF8E8" : "#FBF6EC", borderColor: readyToSubmit ? "#CFE4C2" : "#EADBC1" }}>
+              <div className="text-[12px] font-bold" style={{ color: readyToSubmit ? "#3F6A34" : "#8A6D1E" }}>
+                {readyToSubmit ? "Ready to send for approval" : `Before sending, add ${missing.join(", ")}`}
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: readyToSubmit ? "#5A7A4D" : "#9A8460" }}>
+                The approval flow stays exactly the same. This check only helps the requester finish the form correctly.
+              </div>
+            </div>
             <button
               onClick={submit}
               disabled={!catKey || amt <= 0 || !campaign || !preparerSig}
               className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
-              Submit for Approval
+              Send Approval Request
             </button>
             {!preparerSig && <div className="text-[11px] text-faint -mt-2">กรุณาใส่ลายเซ็นผู้จัดทำก่อนส่งคำขอ</div>}
           </div>
@@ -366,7 +387,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             {r.status === "Draft" && (
               <button onClick={() => submitDraft(r)}
                 className="w-full text-[12px] font-bold text-white rounded-[8px] py-[7px] mb-3" style={{ background: "#211F1C" }}>
-                ส่งขออนุมัติ →
+                Continue to approval →
               </button>
             )}
             <div className="grid grid-cols-3 gap-[6px]">
@@ -404,7 +425,14 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
         style={{ gridTemplateColumns: "1.6fr 1.2fr 1.2fr 1fr 1fr 0.9fr 1fr" }}>
         <div>Vendor</div><div>Category</div><div>Brand</div><div>Amount</div><div>VAT</div><div>Status</div><div></div>
       </div>
-      {rows.length === 0 && <div className="text-[12.5px] text-faint text-center py-10">ยังไม่มีรายการใช้จ่าย</div>}
+      {rows.length === 0 && (
+        <div className="px-5 py-10 text-center">
+          <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#DDD1FF] bg-[#F7F2FF] px-6 py-5">
+            <div className="text-[13px] font-bold text-[#5A4FB2]">No spending logged yet</div>
+            <div className="text-[11.5px] text-[#7D778F]">Approved and paid requests will show up here as your spending log.</div>
+          </div>
+        </div>
+      )}
       {rows.map((e, i) => (
         <div key={i} className="grid grid-cols-1 md:grid-cols-[1.6fr_1.2fr_1.2fr_1fr_1fr_0.9fr_1fr] gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0">
           <div className="text-[13px] font-semibold text-ink">{e.vendor}<div className="text-[11px] text-faint md:hidden">{e.date}</div></div>
@@ -414,7 +442,7 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
           <div className="text-[12.5px] text-muted">{e.vat ? baht(e.vat) : "—"}</div>
           <div><StatusBadge tone={STATUS_TONE[e.status] ?? "neutral"}>{e.status}</StatusBadge></div>
           <div className="flex items-center gap-[6px]">
-            <button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Voucher ↗</button>
+            <button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Open voucher ↗</button>
             {e.status === "Unpaid" && (
               <button onClick={() => markPaid(e)} className="text-[11.5px] font-bold text-white rounded-[8px] px-3 py-[5px]" style={{ background: "#4E7A4E" }}>Mark Paid ✓</button>
             )}

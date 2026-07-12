@@ -29,9 +29,9 @@ export const NAV: NavGroup[] = [
   {
     label: "Plan & Produce",
     items: [
-      { href: "/content", label: "Content Bento", icon: CalendarDays, ready: true },
+      { href: "/content", label: "Content Plan", icon: CalendarDays, ready: true },
       { href: "/graphic", label: "Creative Kitchen", icon: Palette, ready: true },
-      { href: "/kol", label: "Creator Café", icon: Star, ready: true },
+      { href: "/kol", label: "KOL/Influ Café", icon: Star, ready: true },
       { href: "/ads", label: "The Daily Boost", icon: Megaphone, ready: false },
       { href: "/requests", label: "Brief & Bite", icon: Inbox, ready: false },
       { href: "/approvals", label: "Ready to Serve", icon: ClipboardCheck, ready: false },
