@@ -334,7 +334,18 @@ export default function AgencyPortalPage() {
 function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTask, patch: Partial<AgencyTask>) => void }) {
   const tone = AGENCY_STATUS_TONE[t.status];
   const locked = t.status === "Approved";
-  const briefPack = t.graphic ? creativeBriefDetails(t.graphic) : [];
+  const briefPack = t.graphic ? creativeBriefDetails(t.graphic) : [
+    { label: "Brief link", value: "ยังไม่มี link brief" },
+    { label: "Objective", value: `${t.campaign} · ${t.type} for ${brandName(t.b)}` },
+    { label: "Key message", value: t.brief || "ยังไม่มี key message เพิ่มเติม" },
+    { label: "Platform / usage", value: t.type || "—" },
+    { label: "Size / format", value: "ดูจาก brief / deliverable spec" },
+    { label: "CI / mood direction", value: `${brandName(t.b)} brand direction · keep CI, tone, logo and visual hierarchy consistent.` },
+    { label: "Reference", value: "ยังไม่มี reference link" },
+    { label: "Linked content item", value: "Manual agency task" },
+    { label: "Caption / copy", value: "ยังไม่มี caption/copy เพิ่มเติม" },
+    { label: "Additional details", value: t.note || t.brief || "ไม่มีรายละเอียดเพิ่มเติม" },
+  ];
   return (
     <div className="bg-surface border border-line rounded-cardLg p-5" style={locked ? { opacity: 0.88 } : undefined}>
       <div className="flex items-start gap-3 flex-wrap">
@@ -358,33 +369,26 @@ function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTas
         )}
       </div>
 
-      {t.graphic ? (
-        <div className="mt-3 rounded-card border border-[#E8D6A8] bg-[#FFF8EA] px-3 py-3">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
-            <span className="text-[10.5px] font-bold text-[#8A6930]">linked from Creative Kitchen</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {briefPack.map((item) => (
-              <div key={item.label} className="rounded-[10px] border border-[#EADBB6] bg-white/70 px-3 py-[8px]">
-                <div className="text-[9.5px] uppercase tracking-[0.06em] text-[#9A7A47] font-bold mb-[3px]">{item.label}</div>
-                {item.href ? (
-                  <a href={item.href} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent leading-[1.4] break-words">
-                    {item.value} ↗
-                  </a>
-                ) : (
-                  <div className="text-[11.5px] text-[#5B4630] leading-[1.4] break-words">{item.value}</div>
-                )}
-              </div>
-            ))}
-          </div>
+      <div className="mt-3 rounded-card border border-[#E8D6A8] bg-[#FFF8EA] px-3 py-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
+          <span className="text-[10.5px] font-bold text-[#8A6930]">{t.graphic ? "linked from Creative Kitchen" : "manual agency task"}</span>
         </div>
-      ) : t.brief && (
-        <div className="mt-3 text-[12px] text-muted bg-ivory border border-line3 rounded-card px-3 py-[9px]">
-          <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-faint">Brief</span>
-          <div className="mt-[2px]">{t.brief}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {briefPack.map((item) => (
+            <div key={item.label} className="rounded-[10px] border border-[#EADBB6] bg-white/70 px-3 py-[8px]">
+              <div className="text-[9.5px] uppercase tracking-[0.06em] text-[#9A7A47] font-bold mb-[3px]">{item.label}</div>
+              {"href" in item && item.href ? (
+                <a href={item.href} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent leading-[1.4] break-words">
+                  {item.value} ↗
+                </a>
+              ) : (
+                <div className="text-[11.5px] text-[#5B4630] leading-[1.4] break-words">{item.value}</div>
+              )}
+            </div>
+          ))}
         </div>
-      )}
+      </div>
 
       {!locked && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
