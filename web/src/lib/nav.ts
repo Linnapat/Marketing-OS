@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, ClipboardCheck, FolderOpen,
-  CalendarClock, Globe, Megaphone, Receipt,
+  CalendarClock, Globe, Megaphone, Receipt, BarChart3,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,6 +24,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/", label: "Mood & Metrics", icon: LayoutDashboard, ready: true },
       { href: "/campaigns", label: "Campaign Café", icon: Target, ready: true },
+      { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
       { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
     ],
   },

@@ -70,6 +70,20 @@ export async function updateCampaignStatus(id: string, status: string): Promise<
   await db.from("campaigns").update({ status }).eq("id", id);
 }
 
+/** Roll the ad-level ACTUAL spend up to the campaign (spend = Σ budgetActual). The
+ *  planned budget stays fixed at the campaign — it is never overwritten here. In
+ *  mock mode the in-memory campaign is mutated so the Platform Performance edits
+ *  reflect in the Campaigns list within the session; with Supabase it persists. */
+export async function updateCampaignSpend(id: string, spend: number): Promise<void> {
+  const db = supabase();
+  if (!db) {
+    const c = CAMPAIGNS.find((x) => x.id === id);
+    if (c) c.spend = spend;
+    return;
+  }
+  await db.from("campaigns").update({ spend }).eq("id", id);
+}
+
 /** A single campaign by id — for the detail page. */
 export async function fetchCampaign(id: string): Promise<CampaignRow | undefined> {
   const db = supabase();
