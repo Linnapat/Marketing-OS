@@ -28,6 +28,10 @@ function branchMatch(item: OmdStorePromotion, branch: string) {
   return branch === "all" || item.branches.includes(branch) || item.branches.includes("All Branch");
 }
 
+function filterLabel(value: string, fallback: string) {
+  return value === "all" ? fallback : value;
+}
+
 function toCsv(items: OmdStorePromotion[]) {
   const header = ["Category", "Title", "Detail", "POS", "Branch", "Start", "End", "Status"];
   const rows = items.map((item) => [
@@ -86,31 +90,111 @@ export default function OmdStoreCampaignPage() {
       <style jsx global>{`
         @media print {
           @page { size: A4 landscape; margin: 8mm; }
-          html, body { background: #ffffff !important; }
+          html, body {
+            background: #ffffff !important;
+            font-size: 10px !important;
+          }
           .print-root {
             color-adjust: exact;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
+            background: #ffffff !important;
+            min-height: auto !important;
+          }
+          .omd-page {
+            max-width: none !important;
+            padding: 0 !important;
+          }
+          .omd-print-hero {
+            border-radius: 14px !important;
+            border-color: #d8d4e4 !important;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f7f3 100%) !important;
+            box-shadow: none !important;
+            padding: 12px 14px !important;
+          }
+          .omd-print-meta {
+            display: flex !important;
+          }
+          .omd-print-title {
+            font-size: 23px !important;
+            line-height: 1.05 !important;
+          }
+          .omd-print-summary {
+            display: grid !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            margin-top: 8px !important;
+          }
+          .omd-print-summary > div {
+            border-radius: 12px !important;
+            padding: 10px 12px !important;
+            break-inside: avoid;
+          }
+          .omd-print-sections {
+            margin-top: 8px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+          }
+          .omd-print-section {
+            border-radius: 14px !important;
+            box-shadow: none !important;
+            break-inside: avoid;
+            overflow: hidden !important;
+          }
+          .omd-table-head {
+            display: grid !important;
+            grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+            padding: 7px 10px !important;
+            font-size: 8px !important;
+            background: #fbfaf7 !important;
           }
           .omd-print-card {
+            display: grid !important;
+            grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+            gap: 8px !important;
+            padding: 8px 10px !important;
             break-inside: avoid;
             page-break-inside: avoid;
           }
-          .omd-print-section {
-            break-inside: avoid;
+          .omd-print-card * {
+            line-height: 1.28 !important;
+          }
+          .omd-print-card-title {
+            font-size: 10.5px !important;
+          }
+          .omd-print-card-body,
+          .omd-print-card-meta {
+            font-size: 9.5px !important;
+          }
+          .omd-category-head {
+            padding: 8px 10px !important;
+          }
+          .omd-category-head-title {
+            font-size: 11.5px !important;
+          }
+          .omd-chip {
+            border: 1px solid rgba(255,255,255,0.55) !important;
+            padding: 3px 7px !important;
+            font-size: 8.5px !important;
           }
         }
       `}</style>
 
-      <div className="mx-auto max-w-[1400px] px-4 py-4 md:px-6 md:py-5">
-        <section className="rounded-[18px] border border-[#ECEAF2] bg-white px-4 py-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)] md:px-5">
+      <div className="omd-page mx-auto max-w-[1400px] px-4 py-4 md:px-6 md:py-5">
+        <section className="omd-print-hero rounded-[18px] border border-[#ECEAF2] bg-white px-4 py-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)] md:px-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#6C5CE7]">Campaign Sub Module</div>
-              <h1 className="mt-1 text-[24px] font-extrabold leading-tight md:text-[30px]">OMD Store Promotion Board</h1>
+              <h1 className="omd-print-title mt-1 text-[24px] font-extrabold leading-tight md:text-[30px]">OMD Store Promotion Board</h1>
               <p className="mt-1 max-w-[780px] text-[13px] font-medium text-[#7D7789]">
                 Print-ready promotion list for Omakase Don branches, grouped by promotion type with Marketing-OS colors.
               </p>
+              <div className="omd-print-meta mt-3 hidden flex-wrap gap-2 text-[10px] font-bold text-[#706A84]">
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Branch: {filterLabel(branch, "All Branches")}</span>
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Category: {category === "all" ? "All Categories" : OMD_STORE_CATEGORY_META[category].label}</span>
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Printed: {formatDate(new Date().toISOString())}</span>
+              </div>
             </div>
             <div className="no-print flex flex-wrap gap-2">
               <button
@@ -185,7 +269,7 @@ export default function OmdStoreCampaignPage() {
           </div>
         </section>
 
-        <section className="mt-3 grid gap-3 md:grid-cols-3">
+        <section className="omd-print-summary mt-3 grid gap-3 md:grid-cols-3">
           <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
             <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Visible Items</div>
             <div className="mt-2 text-[26px] font-extrabold">{filtered.length}</div>
@@ -200,17 +284,17 @@ export default function OmdStoreCampaignPage() {
           </div>
         </section>
 
-        <section className="mt-3 space-y-3">
+        <section className="omd-print-sections mt-3 space-y-3">
           {grouped.map((group) => {
             const meta = OMD_STORE_CATEGORY_META[group.key];
             return (
               <div key={group.key} className="omd-print-section overflow-hidden rounded-[18px] border bg-white shadow-[0_8px_22px_rgba(23,23,42,0.04)]" style={{ borderColor: meta.border }}>
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3" style={{ background: meta.bg, color: meta.fg }}>
-                  <div className="text-[14px] font-extrabold">{meta.printLabel}</div>
+                <div className="omd-category-head flex flex-wrap items-center justify-between gap-2 px-4 py-3" style={{ background: meta.bg, color: meta.fg }}>
+                  <div className="omd-category-head-title text-[14px] font-extrabold">{meta.printLabel}</div>
                   <div className="rounded-full bg-white/65 px-3 py-1 text-[11px] font-extrabold">{group.items.length} items</div>
                 </div>
 
-                <div className="hidden xl:grid grid-cols-[1.1fr_2fr_1.2fr_.9fr_.8fr_.75fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
+                <div className="omd-table-head hidden xl:grid grid-cols-[1.1fr_2fr_1.2fr_.9fr_.8fr_.75fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
                   <div>Promotion</div>
                   <div>Details</div>
                   <div>POS Name</div>
@@ -223,19 +307,19 @@ export default function OmdStoreCampaignPage() {
                   {group.items.map((item) => (
                     <article key={item.id} className="omd-print-card grid gap-3 px-4 py-3 xl:grid-cols-[1.1fr_2fr_1.2fr_.9fr_.8fr_.75fr]">
                       <div>
-                        <div className="text-[13px] font-extrabold leading-snug">{item.title}</div>
-                        <div className="mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold" style={{ background: meta.bg, color: meta.fg }}>
+                        <div className="omd-print-card-title text-[13px] font-extrabold leading-snug">{item.title}</div>
+                        <div className="omd-chip mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold" style={{ background: meta.bg, color: meta.fg }}>
                           {meta.label}
                         </div>
                       </div>
-                      <div className="text-[12px] font-medium leading-relaxed text-[#3E3E55]">{item.description}</div>
-                      <div className="text-[12px] font-bold leading-relaxed text-[#3E3E55]">{item.posName || "—"}</div>
-                      <div className="text-[12px] font-extrabold text-[#17172A]">{item.branches.join(", ")}</div>
-                      <div className="text-[12px] font-bold leading-relaxed text-[#3E3E55]">
+                      <div className="omd-print-card-body text-[12px] font-medium leading-relaxed text-[#3E3E55]">{item.description}</div>
+                      <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">{item.posName || "—"}</div>
+                      <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{item.branches.join(", ")}</div>
+                      <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
                         {formatDate(item.startDate)}<br />
                         <span className="text-[#8A879A]">to {formatDate(item.endDate)}</span>
                       </div>
-                      <div className="text-[12px] font-extrabold" style={{ color: item.status === "ended" ? "#8A879A" : meta.fg }}>{statusLabel(item)}</div>
+                      <div className="omd-print-card-meta text-[12px] font-extrabold" style={{ color: item.status === "ended" ? "#8A879A" : meta.fg }}>{statusLabel(item)}</div>
                     </article>
                   ))}
                 </div>
