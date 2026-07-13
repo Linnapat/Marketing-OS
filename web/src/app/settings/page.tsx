@@ -6,7 +6,7 @@ import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { budgetByBrandFromSheet, currentBudgetMonthKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
+import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
@@ -367,7 +367,7 @@ export default function SettingsPage() {
   const [brandsEdit, setBrandsEdit] = useState(false);
   const [brandsDirty, setBrandsDirty] = useState(false);
   const [brandLiveStats, setBrandLiveStats] = useState<Record<string, { campaigns: number; budget: number }>>({});
-  const [budgetMonth, setBudgetMonth] = useState(currentBudgetMonthKey());
+  const [budgetYear, setBudgetYear] = useState(currentBudgetYearKey());
   const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
   const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands); setBrandsEdit(false); setBrandsDirty(false); };
 
@@ -424,7 +424,8 @@ export default function SettingsPage() {
     let alive = true;
     Promise.all([fetchCampaigns(), fetchBudgetSheetRows()]).then(([campaigns, sheetRows]) => {
       if (!alive) return;
-      const budgetTotals = budgetByBrandFromSheet(sheetRows, currentBudgetMonthKey());
+      const year = currentBudgetYearKey();
+      const budgetTotals = annualBudgetByBrandFromSheet(sheetRows, year);
       const next: Record<string, { campaigns: number; budget: number }> = {};
       for (const c of campaigns) {
         const key = c.b;
@@ -435,7 +436,7 @@ export default function SettingsPage() {
         next[key] ??= { campaigns: 0, budget: 0 };
         next[key].budget = budget;
       }
-      setBudgetMonth(currentBudgetMonthKey());
+      setBudgetYear(year);
       setBrandLiveStats(next);
     }).catch(() => { if (alive) setBrandLiveStats({}); });
     return () => { alive = false; };
@@ -610,7 +611,7 @@ export default function SettingsPage() {
                     <div className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{live.campaigns}</div><div className="text-[9.5px] text-faint font-bold uppercase">Live campaigns</div></div>
                     <div className="bg-ivory border border-line3 rounded-card p-2 text-center">
                       <div className="text-[14px] font-extrabold">{formatCompactBaht(live.budget)}</div>
-                      <div className="text-[9.5px] text-faint font-bold uppercase">PL budget · {budgetMonth}</div>
+                      <div className="text-[9.5px] text-faint font-bold uppercase">PL budget · {budgetYear}</div>
                     </div>
                   </div>
                   <BranchEditor branches={b.branchList} editable={brandsEdit} onChange={(branchList) => editBrand(i, { branchList })} />
