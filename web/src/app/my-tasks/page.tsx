@@ -202,6 +202,15 @@ export default function MyTasksPage() {
   const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
   const totalOpenTasks = myTasks.filter((t) => getStatus(t) !== "Done").length;
 
+  const openMyDay = () => {
+    setActiveTab("myDay");
+    if (scopeFilter === "approvals") setScopeFilter("all");
+  };
+  const openMyApprovals = () => {
+    setScopeFilter("approvals");
+    setActiveTab("approval");
+  };
+
   const matchScope = (t: Task) => {
     const st = getStatus(t);
     if (scopeFilter === "today") return (daysUntilDue(t) ?? 1) <= 0 || st === "Stuck";
@@ -230,9 +239,9 @@ export default function MyTasksPage() {
                 Viewing as {viewAs} · approvals, focus work, and team support in one place
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span onClick={() => setActiveTab("myDay")} style={chip(activeTab === "myDay")}>My Day</span>
-                <span onClick={() => setActiveTab("approval")} style={chip(activeTab === "approval")} className="relative">
-                  My Approval{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
+                <span onClick={openMyDay} style={chip(activeTab === "myDay")}>My Day</span>
+                <span onClick={openMyApprovals} style={chip(activeTab === "approval")} className="relative">
+                  My approvals{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
                 </span>
                 <span onClick={() => setActiveTab("team")} style={chip(activeTab === "team")}>Team View</span>
               </div>
@@ -288,7 +297,15 @@ export default function MyTasksPage() {
           {/* FILTER + VIEW */}
           <div className="flex items-center justify-between flex-wrap gap-[10px]">
             <div className="flex gap-[7px] flex-wrap">
-              {SCOPE_FILTERS.map((f) => <span key={f.id} onClick={() => setScopeFilter(f.id)} style={chip(scopeFilter === f.id)}>{f.label}</span>)}
+              {SCOPE_FILTERS.map((f) => (
+                <span
+                  key={f.id}
+                  onClick={() => f.id === "approvals" ? openMyApprovals() : setScopeFilter(f.id)}
+                  style={chip(scopeFilter === f.id)}
+                >
+                  {f.label}
+                </span>
+              ))}
             </div>
             <div className="flex gap-[6px]">
               <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>

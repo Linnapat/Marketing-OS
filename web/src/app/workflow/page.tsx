@@ -81,6 +81,21 @@ export default function WorkCalendarPage() {
   const allTasks = useMemo(() => sections.flatMap((s) => s.tasks.map((t) => ({ ...t, section: s }))), [sections]);
   const monthOverrides = Object.keys(overrides).filter((k) => k.startsWith(`${monthKey}::`) && overrides[k] !== undefined);
 
+  const alertItems = useMemo(() => {
+    if (todayDay == null) return { dueToday: [] as typeof allTasks, overdue: [] as typeof allTasks, pending: [] as typeof allTasks };
+    const pending = allTasks.filter((t) => {
+      const dk = `${monthKey}::${t.taskKey}`;
+      if (done[dk]) return false;
+      const days = Object.keys(t.marks).map(Number);
+      return days.some((d) => d <= todayDay);
+    });
+    return {
+      dueToday: pending.filter((t) => Object.prototype.hasOwnProperty.call(t.marks, todayDay)),
+      overdue: pending.filter((t) => Object.keys(t.marks).map(Number).some((d) => d < todayDay)),
+      pending,
+    };
+  }, [allTasks, done, monthKey, todayDay]);
+
   const todaysCount = todayDay ? allTasks.filter((t) => t.marks[todayDay] !== undefined).length : 0;
   const weekRange = todayDay ? Array.from({ length: 7 }, (_, i) => todayDay + i).filter((d) => d <= meta.days.length) : [];
   const weekCount = allTasks.filter((t) => weekRange.some((d) => t.marks[d] !== undefined)).length;
@@ -174,6 +189,39 @@ export default function WorkCalendarPage() {
         </div>
       )}
 
+      {(alertItems.pending.length > 0 || todayDay !== null) && (
+        <div className="mt-3 rounded-cardLg border px-4 py-3 flex flex-wrap items-center gap-2"
+          style={{
+            background: alertItems.overdue.length > 0 ? "#FFF5F4" : "#FFF9EE",
+            borderColor: alertItems.overdue.length > 0 ? "#F5C8C4" : "#F0D5BC",
+          }}>
+          <span className="text-[12px] font-extrabold uppercase tracking-[0.08em]"
+            style={{ color: alertItems.overdue.length > 0 ? "#B33A2E" : "#C2691E" }}>
+            Team alerts
+          </span>
+          {alertItems.overdue.length > 0 && (
+            <span className="text-[12px] font-bold px-3 py-[6px] rounded-pill" style={{ background: "#FDE3E0", color: "#B33A2E" }}>
+              ⏰ {alertItems.overdue.length} overdue
+            </span>
+          )}
+          {alertItems.dueToday.length > 0 && (
+            <span className="text-[12px] font-bold px-3 py-[6px] rounded-pill" style={{ background: "#FDF0D9", color: "#C2691E" }}>
+              📌 {alertItems.dueToday.length} due today
+            </span>
+          )}
+          {alertItems.pending.length > 0 && (
+            <span className="text-[12px] font-bold px-3 py-[6px] rounded-pill" style={{ background: "#F7F4FF", color: "#6C5CE7" }}>
+              🗂 {alertItems.pending.length} pending from schedule
+            </span>
+          )}
+          {alertItems.pending.length === 0 && todayDay !== null && (
+            <span className="text-[12px] font-bold px-3 py-[6px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+              ✅ no carry-over today
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-5">
         <ModuleSummaryCard
           title="Calendar Snapshot"
@@ -204,6 +252,13 @@ export default function WorkCalendarPage() {
               <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-[#7B72B7]">Tracked tasks</div>
               <div className="text-[25px] font-bold mt-[4px] text-ink">{totalTasks}</div>
               <div className="text-[11px] mt-[2px] text-[#7D7789]">across all workflow sections</div>
+            </div>
+            <div className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(123,114,183,0.16)" }}>
+              <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-[#7B72B7]">Needs attention</div>
+              <div className="text-[25px] font-bold mt-[4px]" style={{ color: alertItems.overdue.length > 0 ? "#B33A2E" : "#C2691E" }}>
+                {alertItems.overdue.length + alertItems.dueToday.length}
+              </div>
+              <div className="text-[11px] mt-[2px] text-[#7D7789]">overdue + due today</div>
             </div>
           </div>
         </ModuleSummaryCard>
