@@ -1,26 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, Printer, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Download, Printer, RefreshCw, Search } from "lucide-react";
 import {
   OMD_STORE_CATEGORY_META,
-  OMD_STORE_PROMOTIONS,
   OMD_STORE_SYNC_CONTRACT,
   type OmdStorePromotion,
   type OmdStorePromotionCategory,
 } from "@/lib/data/omdStorePromotions";
 import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import {
-  deletePromotionSummaryItem,
-  fetchPromotionSummaryItems,
-  savePromotionSummaryItem,
-} from "@/lib/db/promotionSummary";
-import { isSupabaseConfigured } from "@/lib/supabase";
 import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
-const manualStorageKey = "mkt-os:promotion-summary:manual-promotions";
 
 type PrintTemplate = "board" | "compact" | "checklist";
 
@@ -37,18 +29,6 @@ const PRINT_TEMPLATES: Record<PrintTemplate, { label: string; helper: string }> 
     label: "Branch Checklist",
     helper: "มีช่องเช็กให้ทีมหน้าร้านตรวจรายการ",
   },
-};
-
-const emptyManualPromotion: Omit<OmdStorePromotion, "id" | "source"> = {
-  brand: "omakase",
-  category: "promotion",
-  title: "",
-  description: "",
-  posName: "",
-  branches: ["All Branch"],
-  startDate: new Date().toISOString().slice(0, 10),
-  endDate: "",
-  status: "active",
 };
 
 function formatDate(value?: string) {
@@ -73,8 +53,7 @@ function filterLabel(value: string, fallback: string) {
 
 function sourceLabel(source?: OmdStorePromotion["source"]) {
   if (source === "campaign") return "Campaign";
-  if (source === "manual") return "Manual";
-  return "Seed";
+  return "Campaign";
 }
 
 function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
@@ -119,39 +98,19 @@ export default function OmdStoreCampaignPage() {
   const [search, setSearch] = useState("");
   const [syncState, setSyncState] = useState<"ready" | "synced">("ready");
   const [printTemplate, setPrintTemplate] = useState<PrintTemplate>("board");
-  const [manualItems, setManualItems] = useState<OmdStorePromotion[]>([]);
   const [liveCampaigns, setLiveCampaigns] = useState<CampaignRow[]>(CAMPAIGNS);
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualDraft, setManualDraft] = useState(emptyManualPromotion);
 
   useEffect(() => {
     refreshFromSupabase();
   }, []);
 
-  const loadLocalManualItems = () => {
-    try {
-      const saved = window.localStorage.getItem(manualStorageKey);
-      return saved ? JSON.parse(saved) as OmdStorePromotion[] : [];
-    } catch {
-      return [];
-    }
-  };
-
   const refreshFromSupabase = async () => {
-    const [campaignRows, summaryRows] = await Promise.all([
-      fetchCampaigns().catch(() => CAMPAIGNS),
-      fetchPromotionSummaryItems().catch(() => []),
-    ]);
+    const campaignRows = await fetchCampaigns().catch(() => CAMPAIGNS);
     setLiveCampaigns(campaignRows.length ? campaignRows : CAMPAIGNS);
-    setManualItems(isSupabaseConfigured ? summaryRows : loadLocalManualItems());
   };
 
   const campaignItems = useMemo(() => liveCampaigns.map(campaignToStorePromotion), [liveCampaigns]);
-  const allPromotions = useMemo(() => [
-    ...campaignItems,
-    ...OMD_STORE_PROMOTIONS.map((item) => ({ ...item, source: item.source ?? "seed" as const })),
-    ...manualItems,
-  ], [campaignItems, manualItems]);
+  const allPromotions = campaignItems;
 
   const branches = useMemo(() => {
     return Array.from(new Set(allPromotions.flatMap((item) => item.branches))).sort();
@@ -173,48 +132,6 @@ export default function OmdStoreCampaignPage() {
 
   const activeCount = filtered.filter((item) => item.status === "active" || item.status === "open_end").length;
   const storeCount = new Set(filtered.flatMap((item) => item.branches)).size;
-  const manualCount = manualItems.length;
-
-  const saveManualItems = (items: OmdStorePromotion[]) => {
-    setManualItems(items);
-    try {
-      window.localStorage.setItem(manualStorageKey, JSON.stringify(items));
-    } catch {
-      /* localStorage can be disabled in private contexts. */
-    }
-  };
-
-  const addManualItem = async () => {
-    if (!manualDraft.title.trim()) return;
-    const item: OmdStorePromotion = {
-      ...manualDraft,
-      id: `manual-${Date.now()}`,
-      title: manualDraft.title.trim(),
-      description: manualDraft.description.trim() || "-",
-      posName: manualDraft.posName.trim(),
-      branches: manualDraft.branches.map((item) => item.trim()).filter(Boolean),
-      endDate: manualDraft.endDate || undefined,
-      source: "manual",
-    };
-    if (isSupabaseConfigured) {
-      await savePromotionSummaryItem(item);
-      setManualItems([item, ...manualItems]);
-    } else {
-      saveManualItems([item, ...manualItems]);
-    }
-    setManualDraft(emptyManualPromotion);
-    setManualOpen(false);
-  };
-
-  const removeManualItem = async (id: string) => {
-    const next = manualItems.filter((item) => item.id !== id);
-    if (isSupabaseConfigured) {
-      await deletePromotionSummaryItem(id);
-      setManualItems(next);
-    } else {
-      saveManualItems(next);
-    }
-  };
 
   const exportCsv = () => {
     const blob = new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8" });
@@ -383,14 +300,6 @@ export default function OmdStoreCampaignPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setManualOpen((open) => !open)}
-                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold text-[#3E3E55]"
-              >
-                <Plus size={15} />
-                Add Manual
-              </button>
-              <button
-                type="button"
                 onClick={() => window.print()}
                 className="inline-flex h-10 items-center gap-2 rounded-[12px] bg-[#17172A] px-4 text-[12px] font-bold text-white"
               >
@@ -453,66 +362,10 @@ export default function OmdStoreCampaignPage() {
               <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-[#C8EA6A]">{OMD_STORE_SYNC_CONTRACT.mode}</span>
             </div>
             <div className="mt-3 text-[12px] font-medium leading-relaxed text-white/58">
-              ดึงจาก Campaign {campaignItems.length} รายการ และบันทึก manual {manualCount} รายการไว้ใน {isSupabaseConfigured ? "Supabase" : "browser fallback"}.
+              ดึงจาก Campaign {campaignItems.length} รายการเท่านั้น ไม่มี seed list หรือ manual entry ปนในหน้านี้.
             </div>
           </div>
         </section>
-
-        {manualOpen && (
-          <section className="no-print mt-3 rounded-[18px] border border-[#ECEAF2] bg-white p-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)]">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#6C5CE7]">Manual Promotion</div>
-                <div className="text-[15px] font-extrabold">เพิ่มรายการเองใน Promotion Summary</div>
-              </div>
-              <div className="text-[11px] font-bold text-[#8A879A]">{isSupabaseConfigured ? "เก็บใน Supabase เห็นร่วมกันทั้งทีม" : "ยังไม่พบ Supabase env: เก็บใน browser นี้ก่อน"}</div>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-7">
-              <label className="flex flex-col gap-1.5 lg:col-span-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Title</span>
-                <input value={manualDraft.title} onChange={(e) => setManualDraft((draft) => ({ ...draft, title: e.target.value }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" placeholder="ชื่อโปรโมชั่น" />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand</span>
-                <select value={manualDraft.brand} onChange={(e) => setManualDraft((draft) => ({ ...draft, brand: e.target.value as BrandId }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none">
-                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Category</span>
-                <select value={manualDraft.category} onChange={(e) => setManualDraft((draft) => ({ ...draft, category: e.target.value as OmdStorePromotionCategory }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none">
-                  {categoryOrder.map((key) => <option key={key} value={key}>{OMD_STORE_CATEGORY_META[key].label}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Branches</span>
-                <input value={manualDraft.branches.join(", ")} onChange={(e) => setManualDraft((draft) => ({ ...draft, branches: e.target.value.split(",") }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" placeholder="PS, CTW" />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Start</span>
-                <input type="date" value={manualDraft.startDate} onChange={(e) => setManualDraft((draft) => ({ ...draft, startDate: e.target.value }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">End</span>
-                <input type="date" value={manualDraft.endDate} onChange={(e) => setManualDraft((draft) => ({ ...draft, endDate: e.target.value }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" />
-              </label>
-              <label className="flex flex-col gap-1.5 lg:col-span-3">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Details</span>
-                <textarea value={manualDraft.description} onChange={(e) => setManualDraft((draft) => ({ ...draft, description: e.target.value }))} className="min-h-[76px] rounded-[12px] border border-[#ECEAF2] bg-white px-3 py-2 text-[12px] font-semibold outline-none" placeholder="รายละเอียดที่ต้องให้หน้าร้านอ่าน" />
-              </label>
-              <label className="flex flex-col gap-1.5 lg:col-span-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">POS Name</span>
-                <textarea value={manualDraft.posName} onChange={(e) => setManualDraft((draft) => ({ ...draft, posName: e.target.value }))} className="min-h-[76px] rounded-[12px] border border-[#ECEAF2] bg-white px-3 py-2 text-[12px] font-semibold outline-none" placeholder="ชื่อใน POS ถ้ามี" />
-              </label>
-              <div className="flex items-end">
-                <button type="button" onClick={addManualItem} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#6C5CE7] px-4 text-[12px] font-extrabold text-white">
-                  <Plus size={15} />
-                  Add
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
 
         <section className="omd-print-summary mt-3 grid gap-3 md:grid-cols-3">
           <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
@@ -529,25 +382,6 @@ export default function OmdStoreCampaignPage() {
             <div className="mt-1 text-[11px] font-bold text-[#8A879A]">{storeCount} branch groups</div>
           </div>
         </section>
-
-        {manualItems.length > 0 && (
-          <section className="no-print mt-3 rounded-[18px] border border-[#ECEAF2] bg-white p-4">
-            <div className="mb-3 text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Manual Items</div>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {manualItems.map((item) => (
-                <div key={item.id} className="flex items-start justify-between gap-3 rounded-[14px] border border-[#ECEAF2] bg-[#FBFAF7] p-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] font-extrabold">{item.title}</div>
-                    <div className="mt-1 text-[11px] font-semibold text-[#8A879A]">{BRANDS[item.brand].name} · {item.branches.join(", ")} · {OMD_STORE_CATEGORY_META[item.category].label}</div>
-                  </div>
-                  <button type="button" onClick={() => removeManualItem(item.id)} className="rounded-[10px] border border-[#ECEAF2] bg-white p-2 text-[#D95454]" aria-label="Remove manual promotion">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
 
         <section className="omd-print-sections mt-3 space-y-3">
           {grouped.map((group) => {
