@@ -334,6 +334,7 @@ export default function AgencyPortalPage() {
 function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTask, patch: Partial<AgencyTask>) => void }) {
   const tone = AGENCY_STATUS_TONE[t.status];
   const locked = t.status === "Approved";
+  const [briefOpen, setBriefOpen] = useState(false);
   const briefPack = t.graphic ? creativeBriefDetails(t.graphic) : [
     { label: "Brief link", value: "ยังไม่มี link brief" },
     { label: "Objective", value: `${t.campaign} · ${t.type} for ${brandName(t.b)}` },
@@ -346,6 +347,8 @@ function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTas
     { label: "Caption / copy", value: "ยังไม่มี caption/copy เพิ่มเติม" },
     { label: "Additional details", value: t.note || t.brief || "ไม่มีรายละเอียดเพิ่มเติม" },
   ];
+  const keyMessage = briefPack.find((item) => item.label === "Key message")?.value || t.brief || "No brief detail yet";
+  const briefLink = briefPack.find((item) => item.label === "Brief link");
   return (
     <div className="bg-surface border border-line rounded-cardLg p-5" style={locked ? { opacity: 0.88 } : undefined}>
       <div className="flex items-start gap-3 flex-wrap">
@@ -369,25 +372,42 @@ function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTas
         )}
       </div>
 
-      <div className="mt-3 rounded-card border border-[#E8D6A8] bg-[#FFF8EA] px-3 py-3">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
-          <span className="text-[10.5px] font-bold text-[#8A6930]">{t.graphic ? "linked from Creative Kitchen" : "manual agency task"}</span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {briefPack.map((item) => (
-            <div key={item.label} className="rounded-[10px] border border-[#EADBB6] bg-white/70 px-3 py-[8px]">
-              <div className="text-[9.5px] uppercase tracking-[0.06em] text-[#9A7A47] font-bold mb-[3px]">{item.label}</div>
-              {"href" in item && item.href ? (
-                <a href={item.href} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent leading-[1.4] break-words">
-                  {item.value} ↗
-                </a>
-              ) : (
-                <div className="text-[11.5px] text-[#5B4630] leading-[1.4] break-words">{item.value}</div>
-              )}
+      <div className="mt-3 rounded-card border border-[#E8D6A8] bg-[#FFF8EA] px-3 py-2">
+        <button type="button" onClick={() => setBriefOpen((v) => !v)} className="w-full text-left flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
+              <span className="text-[10.5px] font-bold text-[#8A6930]">{t.graphic ? "linked from Creative Kitchen" : "manual agency task"}</span>
             </div>
-          ))}
-        </div>
+            <div className="mt-[4px] text-[11.5px] text-[#5B4630] truncate">
+              {keyMessage}
+            </div>
+          </div>
+          <span className="flex-shrink-0 rounded-pill border border-[#D9B86A] bg-white/60 px-3 py-[6px] text-[11px] font-bold text-[#8A6930]">
+            {briefOpen ? "Hide brief ↑" : "Show brief ↓"}
+          </span>
+        </button>
+        {"href" in (briefLink ?? {}) && briefLink?.href && !briefOpen && (
+          <a href={briefLink.href} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11.5px] font-bold text-accent">
+            Open brief link ↗
+          </a>
+        )}
+        {briefOpen && (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+            {briefPack.map((item) => (
+              <div key={item.label} className="rounded-[10px] border border-[#EADBB6] bg-white/70 px-3 py-[8px]">
+                <div className="text-[9.5px] uppercase tracking-[0.06em] text-[#9A7A47] font-bold mb-[3px]">{item.label}</div>
+                {"href" in item && item.href ? (
+                  <a href={item.href} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent leading-[1.4] break-words">
+                    {item.value} ↗
+                  </a>
+                ) : (
+                  <div className="text-[11.5px] text-[#5B4630] leading-[1.4] break-words">{item.value}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {!locked && (
