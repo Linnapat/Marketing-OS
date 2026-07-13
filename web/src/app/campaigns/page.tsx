@@ -137,7 +137,14 @@ export default function CampaignsPage() {
         />
 
         <CampaignCommandBar
-          action={<Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ Create Campaign</Link>}
+          action={(
+            <>
+              <Link href="/campaigns/omd-store" className="text-[13px] font-bold rounded-[14px] px-4 py-[11px] border border-[#ECEAF2] bg-white text-[#5B4FD8]">
+                Promotion Summary Print
+              </Link>
+              <Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ Create Campaign</Link>
+            </>
+          )}
         >
           <DateFilterBar value={date} onChange={setDate} />
         </CampaignCommandBar>
