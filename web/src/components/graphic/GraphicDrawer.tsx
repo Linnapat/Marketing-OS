@@ -17,15 +17,26 @@ import { OwnerSelect } from "@/components/ui/OwnerSelect";
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
 
-export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }: { g: Graphic; initialTab?: GTab; onClose: () => void; onUpdate?: (g: Graphic) => void }) {
+export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onClose, onUpdate }: { g: Graphic; initialTab?: GTab; onClose: () => void; onUpdate?: (g: Graphic) => void }) {
+  const [g, setGraphic] = useState(initialGraphic);
   const [tab, setTab] = useState<GTab>(initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
+  const [feedbackTarget, setFeedbackTarget] = useState(0);
+  const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefPct = Math.round((brief.filter((b) => b.ok).length / brief.length) * 100);
   const canDeliver = g.stage === "Approved";
+  const deliverables = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
+  const reviewableDeliverables = deliverables.filter((d) => d.status === "Waiting review");
+  const targetDeliverable = deliverables[feedbackTarget];
+
+  const updateCurrentGraphic = (next: Graphic) => {
+    setGraphic(next);
+    onUpdate?.(next);
+  };
 
   const markDelivered = () => {
     if (!canDeliver) return;
@@ -35,7 +46,46 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
       nextAction: "Delivered to campaign / content team",
       history: [...(g.history ?? []), { type: "delivered", at: new Date().toISOString(), by: currentUser }],
     };
-    updateGraphic(next); onUpdate?.(next);
+    updateGraphic(next); updateCurrentGraphic(next);
+  };
+
+  const requestFeedbackRevision = () => {
+    const reason = feedbackReason.trim();
+    const d = targetDeliverable;
+    if (!reason || !d || d.status !== "Waiting review") return;
+    const at = new Date().toISOString();
+    const nextDeliverables = deliverables.map((x, i) => i === feedbackTarget
+      ? { ...x, status: "Revision" as const, feedback: [...x.feedback, { reason, by: currentUser, at }] }
+      : x);
+    const next: Graphic = {
+      ...g,
+      deliverables: nextDeliverables,
+      stage: stageFromDeliverables({ ...g, deliverables: nextDeliverables }),
+      openFb: (g.openFb ?? 0) + 1,
+      fb: (g.fb ?? 0) + 1,
+      blocker: "Design revision needed",
+      nextAction: `${g.designer} to revise ${d.platform} per feedback`,
+      history: [...(g.history ?? []), { type: "revision_requested", at, by: currentUser, deliverableKey: `${d.platform}::${d.size}`, note: reason }],
+    };
+    updateGraphic(next);
+    updateCurrentGraphic(next);
+    setFeedback((fs) => [{
+      id: Date.now(),
+      gid: g.id,
+      owner: currentUser,
+      team: "Requester / Approver",
+      ownerColor: "#B5577E",
+      type: "Design revision",
+      text: reason,
+      version: `V${d.version || 1}`,
+      status: "Open",
+      assignedTo: g.designer,
+      due: g.due,
+      createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    }, ...fs]);
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · โดย ${currentUser}`, "/graphic");
+    setFeedbackReason("");
+    setTab("feedback");
   };
 
   return (
@@ -148,11 +198,57 @@ export function GraphicDrawer({ g, initialTab = "overview", onClose, onUpdate }:
             </div>
           )}
 
-          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} onUpdate={onUpdate} />}
+          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} onUpdate={updateCurrentGraphic} />}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
-              {feedback.length === 0 && <div className="text-[13px] text-faint text-center py-8">No feedback yet.</div>}
+              <div className="rounded-card border border-line bg-ivory p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <div className="text-[13px] font-extrabold text-ink">Give feedback / Request revision</div>
+                    <div className="text-[11.5px] text-faint mt-1">
+                      ใช้เมื่อ Designer หรือ Agency ส่ง asset มาแล้ว สถานะเป็น Waiting review
+                    </div>
+                  </div>
+                  <StatusBadge tone={reviewableDeliverables.length ? "gold" : "neutral"}>
+                    {reviewableDeliverables.length ? `${reviewableDeliverables.length} waiting review` : "No asset to review"}
+                  </StatusBadge>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <select
+                    value={feedbackTarget}
+                    onChange={(e) => setFeedbackTarget(Number(e.target.value))}
+                    className="w-full text-[12.5px] px-[10px] py-[9px] rounded-[9px] border border-line2 bg-surface outline-none"
+                  >
+                    {deliverables.map((d, i) => (
+                      <option key={`${d.platform}-${d.size}`} value={i}>
+                        {d.platform} · {d.size} — {d.status}
+                      </option>
+                    ))}
+                  </select>
+                  {targetDeliverable?.status !== "Waiting review" && (
+                    <div className="text-[11.5px] rounded-[8px] px-3 py-2 bg-accent-soft text-faint border border-accent-border">
+                      Asset นี้ยัง feedback ไม่ได้ เพราะยังไม่ได้ส่งมาให้ review — ให้ Designer/Agency ใส่ลิงก์แล้วกด Submit for Review ก่อน
+                    </div>
+                  )}
+                  <textarea
+                    value={feedbackReason}
+                    onChange={(e) => setFeedbackReason(e.target.value)}
+                    rows={3}
+                    placeholder="พิมพ์ feedback / จุดที่ต้องแก้ เช่น logo ใหญ่ขึ้น, เปลี่ยนรูป, copy ไม่ตรง brief..."
+                    className="w-full text-[12.5px] px-[10px] py-[9px] rounded-[9px] border border-line2 bg-surface outline-none resize-none"
+                  />
+                  <button
+                    onClick={requestFeedbackRevision}
+                    disabled={!feedbackReason.trim() || targetDeliverable?.status !== "Waiting review"}
+                    className="self-start text-[12px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40"
+                    style={{ background: "#C67A28" }}
+                  >
+                    ↩ Send Feedback / Request Revision
+                  </button>
+                </div>
+              </div>
+              {feedback.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
               {feedback.map((f) => (
                 <div key={f.id} className="bg-surface border border-line rounded-card p-4">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
