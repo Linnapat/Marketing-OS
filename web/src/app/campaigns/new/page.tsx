@@ -19,7 +19,8 @@ import {
   kolBudgetTotal, withSyncedKolBudget,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
-import { saveCampaignBrief } from "@/lib/db/brief";
+import { fetchAllBriefs, saveCampaignBrief } from "@/lib/db/brief";
+import { budgetByBrandFromSheet, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -53,6 +54,23 @@ function overviewErrors(b: CampaignBrief): Record<string, string> {
   return e;
 }
 
+const monthKeyFromBrief = (brief: CampaignBrief) => (brief.startDate || brief.launchDate || "").slice(0, 7);
+const effectiveBriefBudget = (brief: CampaignBrief) => Math.max(brief.budget.total || 0, budgetSummary(brief).allocated || 0);
+
+function monthlyBudgetWarning(brief: CampaignBrief, savedBriefs: CampaignBrief[], sheetRows: Awaited<ReturnType<typeof fetchBudgetSheetRows>>): string | null {
+  const monthKey = monthKeyFromBrief(brief);
+  if (!monthKey) return null;
+  const plBudget = budgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
+  if (plBudget <= 0) return null;
+  const existing = savedBriefs
+    .filter((b) => b.id !== brief.id && b.b === brief.b && monthKeyFromBrief(b) === monthKey && b.status !== "Need Revision")
+    .reduce((sum, b) => sum + effectiveBriefBudget(b), 0);
+  const current = effectiveBriefBudget(brief);
+  const total = existing + current;
+  if (total <= plBudget) return null;
+  return `${brandName(brief.b)} เดือน ${monthKey} วาง Campaign Budget รวม ${baht(total, { compact: true })} เกิน PL Budget ${baht(plBudget, { compact: true })} อยู่ ${baht(total - plBudget, { compact: true })} — กรุณาลดงบหรือขอ revise budget ก่อน submit`;
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
@@ -65,6 +83,8 @@ export default function NewCampaignPage() {
   const [seq, setSeq] = useState(1);
   const [triedNext, setTriedNext] = useState(false); // show step-1 inline errors after first Next
   const [ackWarn, setAckWarn] = useState(false);      // acknowledge unresolved warnings before Submit
+  const [savedBriefs, setSavedBriefs] = useState<CampaignBrief[]>([]);
+  const [budgetSheetRows, setBudgetSheetRows] = useState<Awaited<ReturnType<typeof fetchBudgetSheetRows>>>([]);
 
   const set = <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => setBrief((b) => ({ ...b, [k]: v }));
   const nextSeq = () => { const s = seq; setSeq((x) => x + 1); return s; };
@@ -75,12 +95,24 @@ export default function NewCampaignPage() {
   useEffect(() => {
     if (!brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: (brandOptions[0] ?? "teppen") as BrandId, branches: [] }));
   }, [brandOptions, brief.b]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows()])
+      .then(([briefMap, sheetRows]) => {
+        if (!alive) return;
+        setSavedBriefs(Object.values(briefMap));
+        setBudgetSheetRows(sheetRows);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const branches = useMemo(() => BRANDS_DATA.find((d) => d.key === brief.b)?.branchList ?? [], [brief.b]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
   const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
   const preview = useMemo(() => taskPreview(brief), [brief]);
   const errors = useMemo(() => validateSubmit(brief), [brief]);
+  const budgetGuardWarning = useMemo(() => monthlyBudgetWarning(brief, savedBriefs, budgetSheetRows), [brief, savedBriefs, budgetSheetRows]);
 
   const outOfRange = (iso: string) => iso && brief.startDate && brief.endDate && (iso < brief.startDate || iso > brief.endDate);
   const rangeWarnings = useMemo(() => {
@@ -90,10 +122,11 @@ export default function NewCampaignPage() {
     return w;
   }, [brief]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const allWarnings = [...bs.warnings, ...rangeWarnings];
+  const allWarnings = [...bs.warnings, ...rangeWarnings, ...(budgetGuardWarning ? [budgetGuardWarning] : [])];
   const ovErrors = triedNext ? overviewErrors(brief) : {};
-  // Submit is blocked by hard errors AND by unresolved warnings unless acknowledged.
-  const canSubmit = errors.length === 0 && (allWarnings.length === 0 || ackWarn);
+  // Submit is blocked by hard errors, by over-PL-budget guards, and by other
+  // unresolved warnings unless acknowledged.
+  const canSubmit = errors.length === 0 && !budgetGuardWarning && (allWarnings.length === 0 || ackWarn);
 
   // Next validates step 1 inline: scroll to the first missing field instead of failing silently.
   const goNext = () => {
@@ -151,7 +184,7 @@ export default function NewCampaignPage() {
         {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} />}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
         {step === 2 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
-        {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} onEditKol={() => setStep(2)} />}
+        {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} onEditKol={() => setStep(2)} />}
         {step === 4 && <Preview preview={preview} warnings={allWarnings} />}
         {step === 5 && <Guideline checklist={checklist} />}
         {step === 6 && <Submit brief={brief} errors={errors} warnings={allWarnings} ack={ackWarn} onAck={setAckWarn} checklist={checklist} />}
@@ -437,7 +470,13 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
 }
 
 // ── Step 5 ──────────────────────────────────────────────────────────────────
-function Budget({ brief, setBrief, bs, onEditKol }: { brief: CampaignBrief; setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; bs: ReturnType<typeof budgetSummary>; onEditKol: () => void }) {
+function Budget({ brief, setBrief, bs, budgetGuardWarning, onEditKol }: {
+  brief: CampaignBrief;
+  setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>;
+  bs: ReturnType<typeof budgetSummary>;
+  budgetGuardWarning: string | null;
+  onEditKol: () => void;
+}) {
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const setB = (patch: Partial<CampaignBrief["budget"]>) => setBrief((b) => ({ ...b, budget: { ...b.budget, ...patch } }));
   const setAds = (i: number, patch: Partial<{ platform: string; amount: number }>) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.map((a, j) => j === i ? { ...a, ...patch } : a) } }));
@@ -451,6 +490,11 @@ function Budget({ brief, setBrief, bs, onEditKol }: { brief: CampaignBrief; setB
   return (
     <>
       <Panel title="Budget Allocation" hint="ใส่งบรวมแล้วเกลี่ยไปแต่ละส่วน — KOL Budget sync จาก KOL Plan (แก้ไม่ได้ตรงนี้)">
+        {budgetGuardWarning && (
+          <div className="mb-4 rounded-[16px] border px-4 py-3 text-[12.5px] font-semibold leading-relaxed" style={{ background: "#FFF7E3", borderColor: "#F3C96B", color: "#8A5B00" }}>
+            ⚠️ {budgetGuardWarning}
+          </div>
+        )}
         <div className="mb-4">
           <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· รวม KOL อัตโนมัติ</span></label>
           <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
