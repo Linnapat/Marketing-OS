@@ -254,6 +254,23 @@ create table if not exists agency_tasks (
   created_at   timestamptz default now()
 );
 
+-- ── Campaign Submodule: Promotion Summary Print ───────────────────────
+create table if not exists promotion_summary_items (
+  id          text primary key,
+  brand       text references brands(id),
+  category    text not null,
+  title       text not null,
+  description text not null default '',
+  pos_name    text,
+  branches    text[] default '{}',
+  start_date  text not null,
+  end_date    text,
+  status      text not null default 'active',
+  source      text not null default 'manual',
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- RLS — demo-open policies (enable RLS, then allow all with the anon key)
 -- ═══════════════════════════════════════════════════════════════════════
@@ -264,7 +281,7 @@ begin
     'brands','campaigns','tasks','content_posts','graphic_requests','kols',
     'budget_items','expenses','expense_requests','pnl','requests','assets',
     'workload_members','members','permissions','org_settings','workflow_tasks',
-    'agency_tasks'
+    'agency_tasks','promotion_summary_items'
   ] loop
     execute format('alter table %I enable row level security;', t);
     execute format('drop policy if exists demo_all on %I;', t);
