@@ -140,7 +140,7 @@ export default function CampaignsPage() {
           action={(
             <>
               <Link href="/campaigns/omd-store" className="text-[13px] font-bold rounded-[14px] px-4 py-[11px] border border-[#ECEAF2] bg-white text-[#5B4FD8]">
-                OMD Store Print
+                Promotion Summary Print
               </Link>
               <Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ Create Campaign</Link>
             </>

@@ -1,3 +1,5 @@
+import type { BrandId } from "@/lib/brands";
+
 export type OmdStorePromotionCategory =
   | "campaign"
   | "must_eat"
@@ -12,6 +14,7 @@ export type OmdStorePromotionStatus = "active" | "upcoming" | "ended" | "open_en
 
 export interface OmdStorePromotion {
   id: string;
+  brand: BrandId;
   category: OmdStorePromotionCategory;
   title: string;
   description: string;
@@ -92,6 +95,7 @@ export const OMD_STORE_CATEGORY_META: Record<OmdStorePromotionCategory, {
 export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   {
     id: "omd-web-order-trio",
+    brand: "omakase",
     category: "campaign",
     title: "Website Ordering Campaign",
     description: "สั่งก่อนรับที่หลัง / Order Now Pick Up Later. Option 1 ซื้อครบ 3 เมนู Kaisen Don, Bara Chirashi Don, Salmon Dice Don ฟรี Salmon Don. Option 2 ซื้อครบ 3 เมนู Kaisen Don, Bara Chirashi Don, Aburi Wagyu Don ฟรี Salmon Don.",
@@ -104,6 +108,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-kinmedai",
+    brand: "omakase",
     category: "must_eat",
     title: "Kinmedai Must Eat",
     description: "Kinmedai Zuwai Kani Don 580 THB, Kinmedai Kaisen Don 350 THB, Kinmedai Sashimi 250 THB.",
@@ -116,6 +121,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-hidden-menu",
+    brand: "omakase",
     category: "must_eat",
     title: "Hidden Menu",
     description: "Salmon Umami Don 220 THB และ Ikageso 60 THB.",
@@ -126,6 +132,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-happy-hour",
+    brand: "omakase",
     category: "drinks",
     title: "Happy Hour",
     description: "Happy Hour 17.00 เป็นต้นไป.",
@@ -136,6 +143,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-officer-discount",
+    brand: "omakase",
     category: "promotion",
     title: "Officer Discount 10% + Hello Neighbor",
     description: "ลูกค้าออฟฟิศหรือบริษัทที่เข้าร่วม เมื่อทานครบ 300 บาทขึ้นไป ลด 10%.",
@@ -148,6 +156,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-uob",
+    brand: "omakase",
     category: "promotion",
     title: "UOB Point Redemption",
     description: "แลกพ้อยท์ 799 คะแนน รับส่วนลด 100 บาท หรือ 399 คะแนน รับส่วนลด 50 บาท ไม่จำกัดจำนวนครั้ง ใช้แอป Slash ในการ tracking ยอด redeem.",
@@ -160,6 +169,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-ttb",
+    brand: "omakase",
     category: "promotion",
     title: "TTB Discount",
     description: "ซื้อขั้นต่ำ 300 บาท รับส่วนลด 10%. รับเครดิตเงินคืน 100 บาท เมื่อมียอดใช้จ่ายครบ 1,200 บาทขึ้นไป / เซลล์สลิป.",
@@ -172,6 +182,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-ctpk-tumbler",
+    brand: "omakase",
     category: "special_campaign",
     title: "Central Pinklao Grand Opening Gift",
     description: "Exclusive Gift: Limited-Edition Tumbler.",
@@ -183,6 +194,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-ctpk-exclusive-menu",
+    brand: "omakase",
     category: "special_campaign",
     title: "Central Pinklao Grand Opening Menu",
     description: "Salmon & Saba Set 320 THB, Buta & Saba Set 320 THB, Tokumori Kaisen Don O 320 THB.",
@@ -193,6 +205,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-ctpk-flyer",
+    brand: "omakase",
     category: "special_campaign",
     title: "Flyer Discount 10%",
     description: "ส่วนลดจาก flyer สำหรับ Central Pinklao.",
@@ -204,6 +217,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-yamete-sticker",
+    brand: "omakase",
     category: "delivery_takeaway",
     title: "Yamete Sticker",
     description: "แจกสติกเกอร์น้องแมว สำหรับ Delivery / Takeaway.",
@@ -214,6 +228,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-takeaway-20-boxes",
+    brand: "omakase",
     category: "delivery_takeaway",
     title: "OMD Takeaway 20 Boxes",
     description: "สั่งครบ 20 กล่อง ส่งฟรีภายในรัศมี 5 กิโลเมตร ทุกสาขา สั่งผ่านแอดมิน Line @Omakasedon.",
@@ -226,6 +241,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-big-cleaning",
+    brand: "omakase",
     category: "big_cleaning",
     title: "Big Cleaning",
     description: "Cleaning.",
@@ -238,6 +254,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-crm-new-member",
+    brand: "omakase",
     category: "crm",
     title: "New Member Takowasabi",
     description: "OMD Member: New Member รับฟรี Takowasabi.",
@@ -249,6 +266,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-crm-point-omakase",
+    brand: "omakase",
     category: "crm",
     title: "Point Redemption 200 Point",
     description: "Point redemption 200 point for Omakase Don 250 THB.",
@@ -260,6 +278,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-crm-cash-coupon-50",
+    brand: "omakase",
     category: "crm",
     title: "50 THB Cash Coupon",
     description: "OMD Member cash coupon.",
@@ -271,6 +290,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-crm-cash-coupon-100",
+    brand: "omakase",
     category: "crm",
     title: "Special Day 100 THB Cash Coupon",
     description: "Special day cash coupon.",
@@ -282,6 +302,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-crm-birthday",
+    brand: "omakase",
     category: "crm",
     title: "Birthday Don",
     description: "Birthday รับสิทธิแลก Don ในเดือนเกิด มูลค่า 200 บาท.",
@@ -293,6 +314,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
   },
   {
     id: "omd-crm-must-eat",
+    brand: "omakase",
     category: "crm",
     title: "Must Eat Discount 10% For CRM",
     description: "ส่วนลด Must Eat 10% สำหรับ CRM.",
@@ -309,5 +331,5 @@ export const OMD_STORE_SYNC_CONTRACT = {
   source: "Marketing-OS Campaign",
   mode: "on-demand",
   approvalEvents: ["campaign.approved", "campaign.updated"],
-  requiredFields: ["title", "category", "branches", "startDate", "endDate", "posName"],
+  requiredFields: ["brand", "title", "category", "branches", "startDate", "endDate", "posName"],
 };

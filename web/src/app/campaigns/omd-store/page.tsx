@@ -10,9 +10,10 @@ import {
   type OmdStorePromotionCategory,
 } from "@/lib/data/omdStorePromotions";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
+import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
-const manualStorageKey = "mkt-os:omd-store:manual-promotions";
+const manualStorageKey = "mkt-os:promotion-summary:manual-promotions";
 
 type PrintTemplate = "board" | "compact" | "checklist";
 
@@ -32,6 +33,7 @@ const PRINT_TEMPLATES: Record<PrintTemplate, { label: string; helper: string }> 
 };
 
 const emptyManualPromotion: Omit<OmdStorePromotion, "id" | "source"> = {
+  brand: "omakase",
   category: "promotion",
   title: "",
   description: "",
@@ -72,6 +74,7 @@ function campaignToStorePromotion(index: number): OmdStorePromotion {
   const campaign = CAMPAIGNS[index];
   return {
     id: `campaign-${campaign.id}`,
+    brand: campaign.b,
     category: "campaign",
     title: campaign.name,
     description: `${campaign.campType} · Owner: ${campaign.owner} · Budget ${campaign.budget.toLocaleString("th-TH")} THB`,
@@ -85,9 +88,10 @@ function campaignToStorePromotion(index: number): OmdStorePromotion {
 }
 
 function toCsv(items: OmdStorePromotion[]) {
-  const header = ["Source", "Category", "Title", "Detail", "POS", "Branch", "Start", "End", "Status"];
+  const header = ["Source", "Brand", "Category", "Title", "Detail", "POS", "Branch", "Start", "End", "Status"];
   const rows = items.map((item) => [
     sourceLabel(item.source),
+    BRANDS[item.brand].name,
     OMD_STORE_CATEGORY_META[item.category].label,
     item.title,
     item.description,
@@ -103,6 +107,7 @@ function toCsv(items: OmdStorePromotion[]) {
 }
 
 export default function OmdStoreCampaignPage() {
+  const [brand, setBrand] = useState<BrandId | "all">("all");
   const [category, setCategory] = useState<OmdStorePromotionCategory | "all">("all");
   const [branch, setBranch] = useState("all");
   const [search, setSearch] = useState("");
@@ -121,7 +126,7 @@ export default function OmdStoreCampaignPage() {
     }
   }, []);
 
-  const campaignItems = useMemo(() => CAMPAIGNS.slice(0, 4).map((_, index) => campaignToStorePromotion(index)), []);
+  const campaignItems = useMemo(() => CAMPAIGNS.map((_, index) => campaignToStorePromotion(index)), []);
   const allPromotions = useMemo(() => [
     ...campaignItems,
     ...OMD_STORE_PROMOTIONS.map((item) => ({ ...item, source: item.source ?? "seed" as const })),
@@ -135,11 +140,12 @@ export default function OmdStoreCampaignPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allPromotions.filter((item) =>
+      (brand === "all" || item.brand === brand) &&
       (category === "all" || item.category === category) &&
       branchMatch(item, branch) &&
-      (!q || `${sourceLabel(item.source)} ${item.title} ${item.description} ${item.posName} ${item.branches.join(" ")}`.toLowerCase().includes(q)),
+      (!q || `${sourceLabel(item.source)} ${BRANDS[item.brand].name} ${item.title} ${item.description} ${item.posName} ${item.branches.join(" ")}`.toLowerCase().includes(q)),
     );
-  }, [allPromotions, branch, category, search]);
+  }, [allPromotions, branch, brand, category, search]);
 
   const grouped = categoryOrder
     .map((key) => ({ key, items: filtered.filter((item) => item.category === key) }))
@@ -310,12 +316,13 @@ export default function OmdStoreCampaignPage() {
         <section className="omd-print-hero rounded-[18px] border border-[#ECEAF2] bg-white px-4 py-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)] md:px-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <div className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#6C5CE7]">Campaign Sub Module</div>
-              <h1 className="omd-print-title mt-1 text-[24px] font-extrabold leading-tight md:text-[30px]">OMD Store Promotion Board</h1>
+              <div className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#6C5CE7]">Campaign Print Module</div>
+              <h1 className="omd-print-title mt-1 text-[24px] font-extrabold leading-tight md:text-[30px]">Promotion Summary Print</h1>
               <p className="mt-1 max-w-[780px] text-[13px] font-medium text-[#7D7789]">
-                Print-ready promotion list for Omakase Don branches, grouped by promotion type with Marketing-OS colors.
+                Print-ready promotion summary synced from Campaign, grouped by type, brand, and branch with Marketing-OS colors.
               </p>
               <div className="omd-print-meta mt-3 hidden flex-wrap gap-2 text-[10px] font-bold text-[#706A84]">
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Brand: {brand === "all" ? "All Brands" : BRANDS[brand].name}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Branch: {filterLabel(branch, "All Branches")}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Category: {category === "all" ? "All Categories" : OMD_STORE_CATEGORY_META[category].label}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Template: {PRINT_TEMPLATES[printTemplate].label}</span>
@@ -332,7 +339,7 @@ export default function OmdStoreCampaignPage() {
                 className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold text-[#5B4FD8]"
               >
                 <RefreshCw size={15} />
-                Sync Marketing-OS
+                Sync Campaign
               </button>
               <button
                 type="button"
@@ -364,11 +371,18 @@ export default function OmdStoreCampaignPage() {
 
         <section className="no-print mt-3 grid gap-3 xl:grid-cols-[1.2fr_.8fr]">
           <div className="rounded-[18px] border border-[#ECEAF2] bg-white p-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)]">
-            <div className="grid gap-3 md:grid-cols-5">
+            <div className="grid gap-3 md:grid-cols-6">
               <label className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Print Template</span>
                 <select value={printTemplate} onChange={(e) => setPrintTemplate(e.target.value as PrintTemplate)} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none">
                   {Object.entries(PRINT_TEMPLATES).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand</span>
+                <select value={brand} onChange={(e) => setBrand(e.target.value as BrandId | "all")} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none">
+                  <option value="all">All Brands</option>
+                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1.5">
@@ -401,13 +415,13 @@ export default function OmdStoreCampaignPage() {
           <div className="rounded-[18px] border border-[#D8D4E4] bg-[#17172A] p-4 text-white shadow-[0_12px_30px_rgba(23,23,42,0.13)]">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-white/45">Marketing-OS Sync</div>
+                <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-white/45">Campaign Sync</div>
                 <div className="mt-1 text-[14px] font-extrabold">{syncState === "synced" ? "Synced preview ready" : "On-demand now, realtime-ready later"}</div>
               </div>
               <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-[#C8EA6A]">{OMD_STORE_SYNC_CONTRACT.mode}</span>
             </div>
             <div className="mt-3 text-[12px] font-medium leading-relaxed text-white/58">
-              ตอนนี้รวมข้อมูลจาก Campaign {campaignItems.length} รายการ + seed list + manual {manualCount} รายการ โดยยังไม่กระทบ Campaign workflow หลัก.
+              ดึงจาก Campaign {campaignItems.length} รายการ แล้วรวมกับ seed list และ manual {manualCount} รายการ โดย filter ปริ้นตามแบรนด์ได้.
             </div>
           </div>
         </section>
@@ -417,14 +431,20 @@ export default function OmdStoreCampaignPage() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#6C5CE7]">Manual Promotion</div>
-                <div className="text-[15px] font-extrabold">เพิ่มรายการเองสำหรับหน้าร้าน</div>
+                <div className="text-[15px] font-extrabold">เพิ่มรายการเองใน Promotion Summary</div>
               </div>
               <div className="text-[11px] font-bold text-[#8A879A]">เก็บใน browser นี้ก่อน</div>
             </div>
-            <div className="grid gap-3 lg:grid-cols-6">
+            <div className="grid gap-3 lg:grid-cols-7">
               <label className="flex flex-col gap-1.5 lg:col-span-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Title</span>
                 <input value={manualDraft.title} onChange={(e) => setManualDraft((draft) => ({ ...draft, title: e.target.value }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" placeholder="ชื่อโปรโมชั่น" />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand</span>
+                <select value={manualDraft.brand} onChange={(e) => setManualDraft((draft) => ({ ...draft, brand: e.target.value as BrandId }))} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none">
+                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                </select>
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Category</span>
@@ -472,8 +492,9 @@ export default function OmdStoreCampaignPage() {
             <div className="mt-2 text-[26px] font-extrabold">{activeCount}</div>
           </div>
           <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
-            <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Branch Coverage</div>
-            <div className="mt-2 text-[26px] font-extrabold">{storeCount}</div>
+            <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand / Branch</div>
+            <div className="mt-2 text-[26px] font-extrabold">{brand === "all" ? "All" : BRANDS[brand].name}</div>
+            <div className="mt-1 text-[11px] font-bold text-[#8A879A]">{storeCount} branch groups</div>
           </div>
         </section>
 
@@ -485,7 +506,7 @@ export default function OmdStoreCampaignPage() {
                 <div key={item.id} className="flex items-start justify-between gap-3 rounded-[14px] border border-[#ECEAF2] bg-[#FBFAF7] p-3">
                   <div className="min-w-0">
                     <div className="truncate text-[12px] font-extrabold">{item.title}</div>
-                    <div className="mt-1 text-[11px] font-semibold text-[#8A879A]">{item.branches.join(", ")} · {OMD_STORE_CATEGORY_META[item.category].label}</div>
+                    <div className="mt-1 text-[11px] font-semibold text-[#8A879A]">{BRANDS[item.brand].name} · {item.branches.join(", ")} · {OMD_STORE_CATEGORY_META[item.category].label}</div>
                   </div>
                   <button type="button" onClick={() => removeManualItem(item.id)} className="rounded-[10px] border border-[#ECEAF2] bg-white p-2 text-[#D95454]" aria-label="Remove manual promotion">
                     <Trash2 size={14} />
@@ -508,7 +529,7 @@ export default function OmdStoreCampaignPage() {
 
                 <div className="omd-table-head hidden xl:grid grid-cols-[.65fr_1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
                   <div className="omd-check-cell hidden">Done</div>
-                  <div>Source</div>
+                  <div>Brand</div>
                   <div>Promotion</div>
                   <div>Details</div>
                   <div>POS Name</div>
@@ -523,7 +544,10 @@ export default function OmdStoreCampaignPage() {
                       <div className="omd-check-cell hidden">
                         <span className="inline-block h-4 w-4 rounded-[4px] border border-[#9D96AC] bg-white" />
                       </div>
-                      <div className="omd-print-card-meta text-[11px] font-extrabold text-[#706A84]">{sourceLabel(item.source)}</div>
+                      <div className="omd-print-card-meta text-[11px] font-extrabold text-[#706A84]">
+                        {BRANDS[item.brand].name}<br />
+                        <span className="font-bold text-[#9D96AC]">{sourceLabel(item.source)}</span>
+                      </div>
                       <div>
                         <div className="omd-print-card-title text-[13px] font-extrabold leading-snug">{item.title}</div>
                         <div className="omd-chip mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold" style={{ background: meta.bg, color: meta.fg }}>
