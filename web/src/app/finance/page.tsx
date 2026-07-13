@@ -243,12 +243,7 @@ function BudgetPlanTab({ brand, fin, reqs, briefs, period, setPeriod }: {
   const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
   const brandAlloc = fin.byBrand
     .filter((b) => brand === "all" || b.b === brand)
-    .map((b) => ({
-      ...b,
-      spent: filteredReqs
-        .filter((r) => r.b === b.b && r.status !== "Draft" && r.status !== "Rejected")
-        .reduce((sum, r) => sum + (r.approved || r.requested || 0), 0),
-    }));
+    .map((b) => ({ ...b }));
   const totalPlan = brand === "all" ? fin.totalPlan : brandAlloc.reduce((sum, row) => sum + row.plan, 0);
   const committed = brandAlloc.reduce((sum, row) => sum + row.spent, 0);
   const available = totalPlan - committed;
