@@ -81,12 +81,19 @@ export default function TeamWorkloadPage() {
           }}
           titleClassName="text-[#5C6B3C]"
         >
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+          <div className="flex flex-nowrap gap-3 overflow-x-auto pb-1">
             {PULSE.map((c) => (
-              <div key={c.label} className="rounded-[22px] p-4" style={{ background: "rgba(255,255,255,0.66)", border: "1px solid rgba(92,107,60,0.14)" }}>
-                <div className="flex items-center gap-2 mb-2"><span className="text-[18px]">{c.icon}</span><span className="text-[24px] font-extrabold" style={{ color: c.fg }}>{c.val}</span></div>
-                <div className="text-[12.5px] font-bold" style={{ color: c.fg }}>{c.label}</div>
-                <div className="text-[11px] mt-[2px]" style={{ color: "#667258" }}>{c.note}</div>
+              <div
+                key={c.label}
+                className="min-w-[170px] flex-1 rounded-[20px] px-4 py-3"
+                style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(92,107,60,0.14)" }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[17px]">{c.icon}</span>
+                  <span className="text-[20px] font-extrabold leading-none" style={{ color: c.fg }}>{c.val}</span>
+                </div>
+                <div className="mt-2 text-[12px] font-bold leading-tight" style={{ color: c.fg }}>{c.label}</div>
+                <div className="mt-[2px] text-[10.5px] leading-tight" style={{ color: "#667258" }}>{c.note}</div>
               </div>
             ))}
           </div>
