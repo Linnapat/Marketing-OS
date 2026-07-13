@@ -9,7 +9,14 @@ import {
   type OmdStorePromotion,
   type OmdStorePromotionCategory,
 } from "@/lib/data/omdStorePromotions";
-import { CAMPAIGNS } from "@/lib/data/campaigns";
+import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import {
+  deletePromotionSummaryItem,
+  fetchPromotionSummaryItems,
+  savePromotionSummaryItem,
+} from "@/lib/db/promotionSummary";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
@@ -70,8 +77,7 @@ function sourceLabel(source?: OmdStorePromotion["source"]) {
   return "Seed";
 }
 
-function campaignToStorePromotion(index: number): OmdStorePromotion {
-  const campaign = CAMPAIGNS[index];
+function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
   return {
     id: `campaign-${campaign.id}`,
     brand: campaign.b,
@@ -114,19 +120,33 @@ export default function OmdStoreCampaignPage() {
   const [syncState, setSyncState] = useState<"ready" | "synced">("ready");
   const [printTemplate, setPrintTemplate] = useState<PrintTemplate>("board");
   const [manualItems, setManualItems] = useState<OmdStorePromotion[]>([]);
+  const [liveCampaigns, setLiveCampaigns] = useState<CampaignRow[]>(CAMPAIGNS);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualDraft, setManualDraft] = useState(emptyManualPromotion);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(manualStorageKey);
-      if (saved) setManualItems(JSON.parse(saved));
-    } catch {
-      setManualItems([]);
-    }
+    refreshFromSupabase();
   }, []);
 
-  const campaignItems = useMemo(() => CAMPAIGNS.map((_, index) => campaignToStorePromotion(index)), []);
+  const loadLocalManualItems = () => {
+    try {
+      const saved = window.localStorage.getItem(manualStorageKey);
+      return saved ? JSON.parse(saved) as OmdStorePromotion[] : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const refreshFromSupabase = async () => {
+    const [campaignRows, summaryRows] = await Promise.all([
+      fetchCampaigns().catch(() => CAMPAIGNS),
+      fetchPromotionSummaryItems().catch(() => []),
+    ]);
+    setLiveCampaigns(campaignRows.length ? campaignRows : CAMPAIGNS);
+    setManualItems(isSupabaseConfigured ? summaryRows : loadLocalManualItems());
+  };
+
+  const campaignItems = useMemo(() => liveCampaigns.map(campaignToStorePromotion), [liveCampaigns]);
   const allPromotions = useMemo(() => [
     ...campaignItems,
     ...OMD_STORE_PROMOTIONS.map((item) => ({ ...item, source: item.source ?? "seed" as const })),
@@ -164,7 +184,7 @@ export default function OmdStoreCampaignPage() {
     }
   };
 
-  const addManualItem = () => {
+  const addManualItem = async () => {
     if (!manualDraft.title.trim()) return;
     const item: OmdStorePromotion = {
       ...manualDraft,
@@ -176,13 +196,24 @@ export default function OmdStoreCampaignPage() {
       endDate: manualDraft.endDate || undefined,
       source: "manual",
     };
-    saveManualItems([item, ...manualItems]);
+    if (isSupabaseConfigured) {
+      await savePromotionSummaryItem(item);
+      setManualItems([item, ...manualItems]);
+    } else {
+      saveManualItems([item, ...manualItems]);
+    }
     setManualDraft(emptyManualPromotion);
     setManualOpen(false);
   };
 
-  const removeManualItem = (id: string) => {
-    saveManualItems(manualItems.filter((item) => item.id !== id));
+  const removeManualItem = async (id: string) => {
+    const next = manualItems.filter((item) => item.id !== id);
+    if (isSupabaseConfigured) {
+      await deletePromotionSummaryItem(id);
+      setManualItems(next);
+    } else {
+      saveManualItems(next);
+    }
   };
 
   const exportCsv = () => {
@@ -332,7 +363,8 @@ export default function OmdStoreCampaignPage() {
             <div className="no-print flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  await refreshFromSupabase();
                   setSyncState("synced");
                   window.setTimeout(() => setSyncState("ready"), 1800);
                 }}
@@ -421,7 +453,7 @@ export default function OmdStoreCampaignPage() {
               <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-[#C8EA6A]">{OMD_STORE_SYNC_CONTRACT.mode}</span>
             </div>
             <div className="mt-3 text-[12px] font-medium leading-relaxed text-white/58">
-              ดึงจาก Campaign {campaignItems.length} รายการ แล้วรวมกับ seed list และ manual {manualCount} รายการ โดย filter ปริ้นตามแบรนด์ได้.
+              ดึงจาก Campaign {campaignItems.length} รายการ และบันทึก manual {manualCount} รายการไว้ใน {isSupabaseConfigured ? "Supabase" : "browser fallback"}.
             </div>
           </div>
         </section>
@@ -433,7 +465,7 @@ export default function OmdStoreCampaignPage() {
                 <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#6C5CE7]">Manual Promotion</div>
                 <div className="text-[15px] font-extrabold">เพิ่มรายการเองใน Promotion Summary</div>
               </div>
-              <div className="text-[11px] font-bold text-[#8A879A]">เก็บใน browser นี้ก่อน</div>
+              <div className="text-[11px] font-bold text-[#8A879A]">{isSupabaseConfigured ? "เก็บใน Supabase เห็นร่วมกันทั้งทีม" : "ยังไม่พบ Supabase env: เก็บใน browser นี้ก่อน"}</div>
             </div>
             <div className="grid gap-3 lg:grid-cols-7">
               <label className="flex flex-col gap-1.5 lg:col-span-2">

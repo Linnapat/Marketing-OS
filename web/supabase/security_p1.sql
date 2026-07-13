@@ -62,7 +62,8 @@ begin
   foreach t in array array[
     'brands','campaigns','tasks','content_posts','graphic_requests','kols',
     'budget_items','expenses','expense_requests','pnl','requests','assets',
-    'workload_members','members','permissions','org_settings','workflow_tasks'
+    'workload_members','members','permissions','org_settings','workflow_tasks',
+    'promotion_summary_items'
   ] loop
     -- Skip tables that don't exist yet so the block never aborts midway.
     if to_regclass('public.' || t) is null then continue; end if;

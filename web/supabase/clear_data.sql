@@ -21,7 +21,7 @@ begin
   foreach t in array array[
     'campaigns','tasks','content_posts','graphic_requests','kols',
     'budget_items','expenses','expense_requests','pnl','requests','assets',
-    'workload_members','workflow_tasks','agency_tasks',
+    'workload_members','workflow_tasks','agency_tasks','promotion_summary_items',
     'kol_profiles','kol_channels','kol_collaboration_history',
     'kol_rank_scores','kol_rank_weights',
     'members','permissions','org_settings','brands'

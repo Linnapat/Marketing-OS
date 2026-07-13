@@ -27,7 +27,8 @@ begin
   foreach t in array array[
     'brands','campaigns','tasks','content_posts','graphic_requests','kols',
     'budget_items','expenses','expense_requests','pnl','requests','assets',
-    'workload_members','members','permissions','org_settings','workflow_tasks'
+    'workload_members','members','permissions','org_settings','workflow_tasks',
+    'promotion_summary_items'
   ] loop
     execute format('drop policy if exists demo_all on %I;', t);
     execute format('drop policy if exists staff_rw on %I;', t);
