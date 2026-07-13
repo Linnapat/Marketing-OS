@@ -21,6 +21,7 @@ export interface OmdStorePromotion {
   endDate?: string;
   periodDays?: number;
   status: OmdStorePromotionStatus;
+  source?: "campaign" | "manual" | "seed";
 }
 
 export const OMD_STORE_CATEGORY_META: Record<OmdStorePromotionCategory, {
@@ -99,6 +100,7 @@ export const OMD_STORE_PROMOTIONS: OmdStorePromotion[] = [
     startDate: "2026-06-23",
     endDate: "2026-08-31",
     status: "active",
+    source: "seed",
   },
   {
     id: "omd-kinmedai",
