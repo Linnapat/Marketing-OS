@@ -10,7 +10,7 @@ import { SELECT_STYLE_DARK } from "@/components/ui/selectStyle";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
-  CAMPAIGNS, STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
+  STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
 import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
 import { useRole } from "@/lib/role";
@@ -36,7 +36,7 @@ export default function CampaignsPage() {
   const [budgetBand, setBudgetBand] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
-  const [campaigns, setCampaigns] = useState(CAMPAIGNS);
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const defaultBrand = brandOptions[0] ?? "teppen";
   const emptyNew = { name: "", b: defaultBrand as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };

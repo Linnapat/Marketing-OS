@@ -1,6 +1,10 @@
-// Campaigns — ported from Campaign.dc.html. Raw list plus the detail derivations the
-// design computes per campaign (objective/target/offer maps, budget lines, KPI targets,
-// readiness, module links). Shaped so a Supabase `campaigns` table can replace RAW later.
+// Campaigns — data shape plus detail derivations (objective/target/offer maps,
+// budget lines, KPI targets, readiness, module links).
+//
+// Important: keep the seed list empty for production readiness. Live campaigns
+// must come from Supabase / the campaign builder, not demo rows. This prevents
+// cleared demo campaigns from reappearing in Settings, Campaign Café, Finance,
+// Performance Bar, or the admin seed endpoint.
 
 import { BrandId, brandColor, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
@@ -31,18 +35,7 @@ export interface CampaignRow {
   nextApproval: string;
 }
 
-const RAW: Omit<CampaignRow, "id">[] = [
-  { name: "Songkran Teppanyaki", b: "teppen", branch: "Thonglor", owner: "Aran P.", budget: 270000, spend: 320000, roi: 2.8, dates: "Apr 1 – Apr 30", status: "Active", campType: "Online + Offline", readiness: "needs_attention", taskBlocked: 2, taskWaiting: 1, taskOverdue: 1, taskTotal: 14, taskDone: 8, taskInProgress: 4, bottleneckTeam: "Graphic Team", nextApproval: "CMO" },
-  { name: "Wagyu Festival", b: "teppen", branch: "EmQuartier", owner: "Mei T.", budget: 450000, spend: 280000, roi: 3.4, dates: "Jun 1 – Jul 15", status: "Active", campType: "Online + Offline", readiness: "ready", taskBlocked: 0, taskWaiting: 1, taskOverdue: 0, taskTotal: 18, taskDone: 14, taskInProgress: 3, bottleneckTeam: "None", nextApproval: "None" },
-  { name: "Summer Reel Series", b: "omakase", branch: "Siam Paragon", owner: "Ken S.", budget: 180000, spend: 60000, roi: 0, dates: "Jun 20 – Jul 20", status: "In Progress", campType: "Online Only", readiness: "needs_attention", taskBlocked: 1, taskWaiting: 2, taskOverdue: 0, taskTotal: 10, taskDone: 4, taskInProgress: 4, bottleneckTeam: "Design Team", nextApproval: "Brand Manager" },
-  { name: "Father's Day Set", b: "omakase", branch: "Central World", owner: "Ken S.", budget: 120000, spend: 95000, roi: 3.6, dates: "Jun 10 – Jun 30", status: "Active", campType: "Online Only", readiness: "ready", taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 9, taskDone: 9, taskInProgress: 0, bottleneckTeam: "None", nextApproval: "None" },
-  { name: "Rainy Season Promo", b: "mainichi", branch: "Icon Siam", owner: "Nok W.", budget: 90000, spend: 0, roi: 0, dates: "Jul 1 – Jul 31", status: "Waiting Approval", campType: "CRM / LINE", readiness: "blocked", taskBlocked: 3, taskWaiting: 2, taskOverdue: 0, taskTotal: 8, taskDone: 0, taskInProgress: 2, bottleneckTeam: "Budget", nextApproval: "CFO" },
-  { name: "LINE Coupon Drive", b: "mainichi", branch: "Thonglor", owner: "Nok W.", budget: 60000, spend: 58000, roi: 0.8, dates: "May 1 – May 31", status: "Completed", campType: "CRM / LINE", readiness: "ready", taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 12, taskDone: 12, taskInProgress: 0, bottleneckTeam: "None", nextApproval: "None" },
-  { name: "Cocktail Hour Launch", b: "touka", branch: "Thonglor", owner: "Ploy R.", budget: 150000, spend: 35000, roi: 4.1, dates: "Jun 15 – Aug 1", status: "Active", campType: "Online + Offline", readiness: "needs_attention", taskBlocked: 1, taskWaiting: 1, taskOverdue: 1, taskTotal: 15, taskDone: 10, taskInProgress: 3, bottleneckTeam: "Content Team", nextApproval: "CMO" },
-  { name: "Omakase Tasting Menu", b: "omakase", branch: "EmQuartier", owner: "Ken S.", budget: 200000, spend: 0, roi: 0, dates: "Jul 10 – Aug 10", status: "Draft", campType: "Offline Only", readiness: "needs_attention", taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 3, taskDone: 0, taskInProgress: 1, bottleneckTeam: "None", nextApproval: "CMO" },
-  { name: "Golden Week Teaser", b: "teppen", branch: "Siam Paragon", owner: "Mei T.", budget: 100000, spend: 100000, roi: 2.2, dates: "Apr 28 – May 6", status: "Completed", campType: "Online Only", readiness: "ready", taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 10, taskDone: 10, taskInProgress: 0, bottleneckTeam: "None", nextApproval: "None" },
-  { name: "Touka Anniversary", b: "touka", branch: "Central World", owner: "Ploy R.", budget: 130000, spend: 0, roi: 0, dates: "Aug 1 – Aug 31", status: "Draft", campType: "Event / Store Activation", readiness: "blocked", taskBlocked: 1, taskWaiting: 0, taskOverdue: 0, taskTotal: 4, taskDone: 0, taskInProgress: 0, bottleneckTeam: "Brief", nextApproval: "CMO" },
-];
+const RAW: Omit<CampaignRow, "id">[] = [];
 
 export const CAMPAIGNS: CampaignRow[] = RAW.map((c, i) => ({
   ...c,
