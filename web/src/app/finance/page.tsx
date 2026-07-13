@@ -325,6 +325,7 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
   rows: PnlRow[]; open: Record<string, boolean>; setOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief>;
 }) {
+  const profitGridCols = "0.4fr 2fr 1.2fr 1.1fr 1.1fr 1.1fr 0.8fr 0.8fr";
   // Real breakdown: Budget side = the campaign brief's bucket allocation;
   // Actual side = expense requests logged against the campaign, by category.
   const detail = (p: PnlRow) => {
@@ -345,7 +346,7 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="px-5 py-3 text-[13px] font-bold border-b border-line4">Campaign-level Profitability</div>
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "0.4fr 2fr 1.2fr 1.1fr 1.1fr 1.1fr 0.8fr 0.8fr" }}>
+        style={{ gridTemplateColumns: profitGridCols }}>
         <div></div><div>Campaign</div><div>Revenue</div><div>Budget</div><div>Expense</div><div>Gross Profit</div><div>ROI</div><div>ROAS</div>
       </div>
       {rows.map((p) => {
@@ -354,7 +355,8 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
         return (
           <div key={p.name} className="border-b border-line4 last:border-0">
             <button onClick={() => setOpen((o) => ({ ...o, [p.name]: !o[p.name] }))}
-              className="w-full grid grid-cols-[0.4fr_2fr_1.2fr_1.1fr_1.1fr_1.1fr_0.8fr_0.8fr] gap-y-1 px-5 py-3 items-center text-left hover:bg-ivory/60">
+              className="w-full grid gap-y-1 px-5 py-3 items-center text-left hover:bg-ivory/60"
+              style={{ gridTemplateColumns: profitGridCols }}>
               <span>{isOpen ? <ChevronDown size={15} className="text-faint" /> : <ChevronRight size={15} className="text-faint" />}</span>
               <span className="flex items-center gap-[7px] text-[13px] font-bold text-ink"><BrandDot brand={p.b} size={7} />{p.name}</span>
               <span className="text-[13px] text-ink">{baht(p.revenue, { compact: true })}</span>
@@ -370,10 +372,15 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
                   <div className="py-[7px] text-[12px] text-faint">No breakdown yet — this campaign has no brief allocation or logged expenses.</div>
                 )}
                 {detail(p).map((d) => (
-                  <div key={d.label} className="grid grid-cols-[2fr_1fr_1fr] gap-2 py-[7px] text-[12px]">
+                  <div key={d.label} className="grid gap-y-1 py-[7px] text-[12px] items-center" style={{ gridTemplateColumns: profitGridCols }}>
+                    <span></span>
                     <span className="text-muted">{d.label}</span>
-                    <span className="text-faint">Budget {baht(d.budget, { compact: true })}</span>
-                    <span className="text-ink font-semibold">Actual {baht(d.actual, { compact: true })}</span>
+                    <span></span>
+                    <span className="text-faint">{baht(d.budget, { compact: true })}</span>
+                    <span className="text-ink font-semibold">{baht(d.actual, { compact: true })}</span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
                   </div>
                 ))}
               </div>
