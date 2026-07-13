@@ -5,8 +5,10 @@ import { CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campa
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { BRAND_ORDER, BRANDS, BrandId } from "@/lib/brands";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
+import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
@@ -53,6 +55,14 @@ const APPROVER_ROLES = ["Requester", "Marketing Manager / BGL", "Creative Leader
 
 // "Jul 7, 2026" — the stamp new/edited templates carry.
 const todayLabel = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+const emptyMetaAccount = (brand: BrandId): MetaBrandAccount => ({
+  brand,
+  facebookPageId: "",
+  facebookPageName: "",
+  instagramBusinessId: "",
+  instagramHandle: "",
+});
 
 const formatCompactBaht = (amount: number) => {
   if (amount >= 1_000_000) return `฿${(amount / 1_000_000).toFixed(amount % 1_000_000 === 0 ? 0 : 1)}M`;
@@ -395,6 +405,18 @@ export default function SettingsPage() {
   const editTpl = (i: number, patch: Partial<TemplateCfg>) => { setTemplates((ts) => ts.map((t, j) => j === i ? { ...t, ...patch, updated: todayLabel() } : t)); setTplDirty(true); };
   const persistTemplates = () => { saveJsonSetting("templates_config", "Templates", templates); setTplEdit(false); setTplDirty(false); };
 
+  // Meta publishing account mapping. Tokens stay server-side in Vercel env;
+  // this setting only stores public account IDs/labels per brand.
+  const [metaAccounts, setMetaAccounts] = useState<Record<BrandId, MetaBrandAccount>>(() =>
+    Object.fromEntries(BRAND_ORDER.map((brand) => [brand, emptyMetaAccount(brand)])) as Record<BrandId, MetaBrandAccount>
+  );
+  const [metaDirty, setMetaDirty] = useState(false);
+  const editMeta = (brand: BrandId, patch: Partial<MetaBrandAccount>) => {
+    setMetaAccounts((current) => ({ ...current, [brand]: { ...(current[brand] ?? emptyMetaAccount(brand)), brand, ...patch } }));
+    setMetaDirty(true);
+  };
+  const persistMeta = () => { saveMetaPublishingAccounts(metaAccounts); setMetaDirty(false); };
+
   // Edit-existing-member modal.
   const [editUser, setEditUser] = useState<{ orig: string; m: Member } | null>(null);
 
@@ -418,6 +440,10 @@ export default function SettingsPage() {
     fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (alive && t?.length) setTeams(t); }).catch(() => {});
     fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (alive && w) setStatusSets((cur) => ({ ...cur, ...w })); }).catch(() => {});
     fetchJsonSetting<TemplateCfg[]>("templates_config").then((t) => { if (alive && t?.length) setTemplates(t); }).catch(() => {});
+    fetchMetaPublishingAccounts().then((saved) => {
+      if (!alive) return;
+      setMetaAccounts(Object.fromEntries(BRAND_ORDER.map((brand) => [brand, { ...emptyMetaAccount(brand), ...(saved[brand] ?? {}) }])) as Record<BrandId, MetaBrandAccount>);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -902,21 +928,55 @@ export default function SettingsPage() {
         )}
 
         {section === "integrations" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {INTEGRATIONS.map((it) => (
-              <div key={it.name} className="bg-surface border border-line rounded-cardLg p-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="w-9 h-9 rounded-[10px] flex items-center justify-center text-[16px]" style={{ background: it.iconBg }}>{it.icon}</span>
-                  <div className="flex-1"><div className="text-[14px] font-bold">{it.name}</div><div className="text-[11px] text-faint">{it.category}</div></div>
-                  <Pill text={it.status} fg={it.status === "Connected" ? "#4E7A4E" : it.status === "Coming soon" ? "#C68A1E" : "#9A9387"} bg={it.status === "Connected" ? "#EEF4EE" : it.status === "Coming soon" ? "#FBF8EE" : "#F2F0EB"} />
+          <div className="flex flex-col gap-4">
+            <div className="bg-surface border border-line rounded-cardLg p-5">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <div className="text-[14px] font-extrabold">📘 Meta Publishing</div>
+                  <div className="text-[12px] text-faint mt-1">Map each brand to its Facebook Page / Instagram Business account. Access token stays in Vercel env for safety.</div>
                 </div>
-                <div className="text-[12px] text-muted mb-3">{it.desc}</div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-faint">Last sync · {it.lastSync}</span>
-                  <div className="flex gap-2">{it.actions.map((a) => <span key={a} className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] cursor-pointer" style={(a === "Connect" || a === "Sync now") ? { background: "#211F1C", color: "#fff" } : { border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{a}</span>)}</div>
-                </div>
+                {canEdit && <button onClick={persistMeta} disabled={!metaDirty} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px] disabled:opacity-40">Save Meta mapping</button>}
               </div>
-            ))}
+              <div className="rounded-[14px] px-4 py-3 mb-4 text-[12px]" style={{ background: "#F5F8FF", border: "1px solid #D7E1FF", color: "#3150A6" }}>
+                Required server env: <b>META_PAGE_ACCESS_TOKEN</b>, <b>META_FACEBOOK_PAGE_ID</b>, <b>META_INSTAGRAM_BUSINESS_ID</b>. Without these, posts can queue but cannot publish to Meta.
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {BRAND_ORDER.map((brand) => {
+                  const account = metaAccounts[brand] ?? emptyMetaAccount(brand);
+                  const connected = Boolean(account.facebookPageId || account.instagramBusinessId);
+                  return (
+                    <div key={brand} className="rounded-[18px] border border-line2 bg-ivory p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-[13px] font-bold">{BRANDS[brand].name}</div>
+                        <Pill text={connected ? "Mapped" : "Not mapped"} fg={connected ? "#4E7A4E" : "#9A9387"} bg={connected ? "#EEF4EE" : "#F2F0EB"} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input disabled={!canEdit} value={account.facebookPageName} onChange={(e) => editMeta(brand, { facebookPageName: e.target.value })} placeholder="Facebook Page name" className="text-[12.5px] px-3 py-[9px] rounded-[10px] border border-line2 bg-white outline-none disabled:opacity-60" />
+                        <input disabled={!canEdit} value={account.facebookPageId} onChange={(e) => editMeta(brand, { facebookPageId: e.target.value })} placeholder="Facebook Page ID" className="text-[12.5px] px-3 py-[9px] rounded-[10px] border border-line2 bg-white outline-none disabled:opacity-60" />
+                        <input disabled={!canEdit} value={account.instagramHandle} onChange={(e) => editMeta(brand, { instagramHandle: e.target.value })} placeholder="Instagram handle" className="text-[12.5px] px-3 py-[9px] rounded-[10px] border border-line2 bg-white outline-none disabled:opacity-60" />
+                        <input disabled={!canEdit} value={account.instagramBusinessId} onChange={(e) => editMeta(brand, { instagramBusinessId: e.target.value })} placeholder="Instagram Business ID" className="text-[12.5px] px-3 py-[9px] rounded-[10px] border border-line2 bg-white outline-none disabled:opacity-60" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {INTEGRATIONS.map((it) => (
+                <div key={it.name} className="bg-surface border border-line rounded-cardLg p-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="w-9 h-9 rounded-[10px] flex items-center justify-center text-[16px]" style={{ background: it.iconBg }}>{it.icon}</span>
+                    <div className="flex-1"><div className="text-[14px] font-bold">{it.name}</div><div className="text-[11px] text-faint">{it.category}</div></div>
+                    <Pill text={it.status} fg={it.status === "Connected" ? "#4E7A4E" : it.status === "Coming soon" ? "#C68A1E" : "#9A9387"} bg={it.status === "Connected" ? "#EEF4EE" : it.status === "Coming soon" ? "#FBF8EE" : "#F2F0EB"} />
+                  </div>
+                  <div className="text-[12px] text-muted mb-3">{it.desc}</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-faint">Last sync · {it.lastSync}</span>
+                    <div className="flex gap-2">{it.actions.map((a) => <span key={a} className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] cursor-pointer" style={(a === "Connect" || a === "Sync now") ? { background: "#211F1C", color: "#fff" } : { border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{a}</span>)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

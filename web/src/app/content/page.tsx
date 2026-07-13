@@ -84,7 +84,7 @@ export default function ContentPage() {
     posts: items.length,
     waitingApproval: items.filter((c) => c.approvalStatus === "Waiting Approval").length,
     waitingAsset: items.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length,
-    scheduled: items.filter((c) => c.publishStatus === "Scheduled in OS" || c.publishStatus === "Queued").length,
+    scheduled: items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)).length,
   }), [items]);
 
   const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
@@ -442,7 +442,7 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
 }
 
 function QueueView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: ContentItem) => void }) {
-  const queue = items.filter((c) => ["Scheduled in OS", "Queued", "Published", "Failed"].includes(c.publishStatus));
+  const queue = items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing", "Published", "Failed"].includes(c.publishStatus));
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-cardLg px-4 py-3 text-[12px]" style={{ background: "#EEF3FF", border: "1px solid #C5D4F8", color: "#1E3A8A" }}>

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { updateContent, approveContent, publishContent } from "@/lib/db/content";
+import { updateContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
+import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -28,6 +29,22 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<string | null>(null);
+  const [scheduleTime, setScheduleTime] = useState(item.time || "10:00");
+  const [metaAccount, setMetaAccount] = useState<MetaBrandAccount | undefined>();
+  const metaChannels = useMemo(() => itemPlatforms(item).filter((p) => /facebook|instagram|reel/i.test(p)), [item]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>(metaChannels);
+  const metaConnected = hasMetaAccount(metaAccount);
+
+  useEffect(() => {
+    setSelectedChannels(metaChannels);
+  }, [metaChannels]);
+  useEffect(() => {
+    let alive = true;
+    fetchMetaPublishingAccounts().then((accounts) => {
+      if (alive) setMetaAccount(accounts[item.b]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [item.b]);
 
   // Persist an approval action to the shared content_posts table and bubble
   // the fresh object up so the calendar reflects it without a refetch.
@@ -71,6 +88,25 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
       if (!res.ok) { alert("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    } finally { setBusy(false); }
+  };
+  const scheduleMeta = async () => {
+    const scheduledFor = `${scheduleDate || item.dateIso || `2026-07-${String(item.day || 1).padStart(2, "0")}`}T${scheduleTime || item.time || "10:00"}:00+07:00`;
+    setBusy(true);
+    try {
+      const res = await scheduleContentToMeta(item, reviewer, scheduledFor, selectedChannels);
+      if (!res.ok) { alert("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
+      onUpdate?.(res.post);
+      notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+    } finally { setBusy(false); }
+  };
+  const publishMetaNow = async () => {
+    setBusy(true);
+    try {
+      const res = await publishContentToMeta(item, reviewer, selectedChannels, metaAccount);
+      if (!res.ok) { alert("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
+      onUpdate?.(res.post);
+      notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
     } finally { setBusy(false); }
   };
 
@@ -236,8 +272,12 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
           {tab === "publish" && (
             <div className="flex flex-col gap-[14px]">
               <div className="rounded-[12px] px-[14px] py-3" style={{ background: "#EEF3FF", border: "1px solid #C5D4F8" }}>
-                <div className="text-[12px] font-bold mb-1" style={{ color: "#1E3A8A" }}>Future Publish Integration</div>
-                <div className="text-[12px]" style={{ color: "#3B6BF5" }}>Meta connection not connected · Ready for future auto-publish once integrated.</div>
+                <div className="text-[12px] font-bold mb-1" style={{ color: "#1E3A8A" }}>Meta Publish Queue</div>
+                <div className="text-[12px]" style={{ color: "#3B6BF5" }}>
+                  {metaConnected
+                    ? `Mapped to ${metaAccount?.facebookPageName || metaAccount?.facebookPageId || "Facebook Page"}${metaAccount?.instagramHandle ? ` · ${metaAccount.instagramHandle}` : ""}`
+                    : "Meta account not mapped yet · set it in Settings > Integrations"}
+                </div>
               </div>
 
               {/* Approved assets attached from the Graphic Request module */}
@@ -266,22 +306,29 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
               <div>
                 <div className="text-[11.5px] font-bold text-muted mb-2">Select channels</div>
                 <div className="flex flex-col gap-[7px]">
-                  {[{ icon: "📘", label: "Facebook Page", sub: "TEPPEN Group" }, { icon: "📸", label: "Instagram Feed", sub: "@teppen.bkk" }, { icon: "🎬", label: "Instagram Reel", sub: "@teppen.bkk" }].map((ch) => (
-                    <div key={ch.label} className="flex items-center justify-between px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line3 bg-surface">
-                      <div className="flex items-center gap-[9px]"><span className="text-[15px]">{ch.icon}</span><div><div className="text-[13px] font-semibold">{ch.label}</div><div className="text-[11px] text-faint">{ch.sub}</div></div></div>
-                      <StatusBadge tone="neutral">Not connected</StatusBadge>
-                    </div>
-                  ))}
+                  {(metaChannels.length ? metaChannels : ["Facebook", "Instagram"]).map((channel) => {
+                    const checked = selectedChannels.includes(channel);
+                    const icon = /facebook/i.test(channel) ? "📘" : /reel/i.test(channel) ? "🎬" : "📸";
+                    const sub = /facebook/i.test(channel)
+                      ? (metaAccount?.facebookPageName || metaAccount?.facebookPageId || "Facebook Page")
+                      : (metaAccount?.instagramHandle || metaAccount?.instagramBusinessId || "Instagram Business");
+                    return (
+                      <label key={channel} className="flex items-center justify-between px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line3 bg-surface cursor-pointer">
+                        <div className="flex items-center gap-[9px]"><span className="text-[15px]">{icon}</span><div><div className="text-[13px] font-semibold">{channel}</div><div className="text-[11px] text-faint">{sub}</div></div></div>
+                        <input type="checkbox" checked={checked} onChange={() => setSelectedChannels((list) => checked ? list.filter((x) => x !== channel) : [...list, channel])} />
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-[10px]">
                 <div><label className="block text-[11.5px] font-bold text-muted mb-[5px]">Schedule Date</label><DatePicker value={scheduleDate} onChange={(v) => setScheduleDate(v || null)} /></div>
-                <div><label className="block text-[11.5px] font-bold text-muted mb-[5px]">Schedule Time</label><input type="time" defaultValue={item.time} className={field} /></div>
+                <div><label className="block text-[11.5px] font-bold text-muted mb-[5px]">Schedule Time</label><input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className={field} /></div>
               </div>
               <div>
                 <div className="text-[11.5px] font-bold text-muted mb-2">Preflight checklist</div>
                 <div className="flex flex-col gap-[6px]">
-                  {preflight(item).map((pf) => (
+                  {preflight(item, metaConnected).map((pf) => (
                     <div key={pf.label} className="flex items-center gap-[9px] px-[12px] py-2 rounded-[9px]" style={{ background: "#F7F4EE" }}>
                       <span className="text-[13px]">{pf.ok ? "✅" : "⬜"}</span>
                       <span className="text-[12.5px] font-medium" style={{ color: pf.ok ? "#4E7A4E" : "#9A9387" }}>{pf.label}</span>
@@ -289,7 +336,18 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                   ))}
                 </div>
               </div>
-              <button disabled className="text-[13.5px] font-bold py-3 rounded-[11px] cursor-not-allowed" style={{ background: "#E8E2D6", color: "#9A9387" }}>Auto-publish available after Meta connection</button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={scheduleMeta} disabled={!gate.ok || !metaConnected || !selectedChannels.length || busy}
+                  className="text-[13px] font-bold py-3 rounded-[11px] disabled:cursor-not-allowed"
+                  style={{ background: gate.ok && metaConnected && selectedChannels.length ? "#EEF3FF" : "#E8E2D6", color: gate.ok && metaConnected && selectedChannels.length ? "#3150A6" : "#9A9387" }}>
+                  📌 Schedule to Meta
+                </button>
+                <button onClick={publishMetaNow} disabled={!gate.ok || !metaConnected || !selectedChannels.length || busy}
+                  className="text-[13px] font-bold py-3 rounded-[11px] disabled:cursor-not-allowed"
+                  style={{ background: gate.ok && metaConnected && selectedChannels.length ? "#211F1C" : "#E8E2D6", color: gate.ok && metaConnected && selectedChannels.length ? "#fff" : "#9A9387" }}>
+                  🚀 Publish now
+                </button>
+              </div>
 
               {item.publishStatus === "Published" ? (
                 <div className="rounded-[11px] px-[14px] py-3 text-center" style={{ background: "#EFF7EF", border: "1px solid #BFE0C4" }}>
@@ -302,7 +360,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                   <button onClick={publish} disabled={!gate.ok || busy}
                     className="text-[13.5px] font-bold py-3 rounded-[11px] text-white disabled:cursor-not-allowed"
                     style={{ background: gate.ok ? "#211F1C" : "#E8E2D6", color: gate.ok ? "#fff" : "#9A9387" }}>
-                    {busy ? "Publishing…" : gate.ok ? "🚀 Mark as Published (manual)" : "🔒 Publish locked"}
+                    {busy ? "Publishing…" : gate.ok ? "✓ Mark as Published manually" : "🔒 Publish locked"}
                   </button>
                   {!gate.ok && (
                     <div className="rounded-[10px] px-[13px] py-[10px]" style={{ background: "#FBF3F1", border: "1px solid #E8C5BC" }}>

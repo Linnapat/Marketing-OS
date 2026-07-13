@@ -89,3 +89,49 @@ export async function publishContent(post: ContentItem, by: string): Promise<{ o
   await updateContent(next);
   return { ok: true, reasons: [], post: next };
 }
+
+export async function scheduleContentToMeta(post: ContentItem, by: string, scheduledFor: string, channels: string[]): Promise<{ ok: boolean; reasons: string[]; post: ContentItem }> {
+  const gate = canPublish(post);
+  if (!gate.ok) return { ok: false, reasons: gate.reasons, post };
+  const next: ContentItem = {
+    ...post,
+    status: "Scheduled",
+    publishStatus: "Scheduled to Meta",
+    publishChannels: channels,
+    scheduledBy: by,
+    scheduledAt: new Date().toISOString(),
+    scheduledFor,
+    metaError: undefined,
+  };
+  await updateContent(next);
+  return { ok: true, reasons: [], post: next };
+}
+
+export async function publishContentToMeta(post: ContentItem, by: string, channels: string[], account?: unknown): Promise<{ ok: boolean; reasons: string[]; post: ContentItem }> {
+  const gate = canPublish(post);
+  if (!gate.ok) return { ok: false, reasons: gate.reasons, post };
+  const res = await fetch("/api/meta/publish", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ post, channels, account }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.ok) {
+    const error = json?.error || "Meta publish failed";
+    const failed: ContentItem = { ...post, publishStatus: "Failed", status: "Failed", publishChannels: channels, metaError: error };
+    await updateContent(failed);
+    return { ok: false, reasons: [error], post: failed };
+  }
+  const next: ContentItem = {
+    ...post,
+    publishStatus: "Published",
+    status: "Published",
+    publishChannels: channels,
+    metaPostIds: json.ids ?? {},
+    metaError: undefined,
+    publishedBy: by,
+    publishedAt: new Date().toISOString(),
+  };
+  await updateContent(next);
+  return { ok: true, reasons: [], post: next };
+}

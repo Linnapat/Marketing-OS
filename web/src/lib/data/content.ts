@@ -30,6 +30,12 @@ export interface ContentItem {
   assetStatus: string;
   approvalStatus: string;
   publishStatus: string;
+  publishChannels?: string[];
+  metaPostIds?: Record<string, string>;
+  metaError?: string;
+  scheduledBy?: string;
+  scheduledAt?: string;
+  scheduledFor?: string;
   /** Approval trail — set when a reviewer acts on the post. */
   approvedBy?: string;
   approvedAt?: string;
@@ -68,7 +74,7 @@ export const CONTENT_STATUS_TONE: Record<string, Tone> = {
   Scheduled: "blue", Published: "green", Failed: "red", "Missing Asset": "red",
   // caption/asset/approval sub-statuses
   Missing: "red", Ready: "blue", Approved: "green", Final: "green", "No Asset": "red",
-  "Waiting Feedback": "gold", "Scheduled in OS": "blue", Queued: "blue",
+  "Waiting Feedback": "gold", "Scheduled in OS": "blue", Queued: "blue", "Scheduled to Meta": "blue", Publishing: "blue",
   "Revision Requested": "orange",
 };
 
@@ -163,12 +169,12 @@ export function advanceApprovalState(c: ContentItem): ContentItem {
   return c;
 }
 
-export function preflight(c: ContentItem): { label: string; ok: boolean }[] {
+export function preflight(c: ContentItem, metaConnected = false): { label: string; ok: boolean }[] {
   return [
     { label: "Caption ready", ok: ["Ready", "Approved"].includes(c.captionStatus) },
     { label: "Asset ready", ok: ["Approved", "Final"].includes(c.assetStatus) },
-    { label: "Account connected", ok: false },
-    { label: "Permission valid", ok: false },
+    { label: "Meta account mapped", ok: metaConnected },
+    { label: "Server token configured", ok: metaConnected },
     { label: "Approval completed", ok: c.approvalStatus === "Approved" },
   ];
 }
@@ -184,7 +190,7 @@ export function canPublish(c: ContentItem): { ok: boolean; reasons: string[] } {
   // publish without waiting on the Graphic module.
   if (!["Approved", "Final", "No Asset"].includes(c.assetStatus)) reasons.push("Asset ยังไม่พร้อม — รอทีมกราฟฟิกส่ง & อนุมัติครบ");
   if (c.approvalStatus !== "Approved") reasons.push("Content ยังไม่ถูกอนุมัติ");
-  if (["Published", "Scheduled in OS", "Queued"].includes(c.publishStatus)) reasons.push("โพสต์นี้ publish/queue ไปแล้ว");
+  if (["Published", "Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)) reasons.push("โพสต์นี้ publish/queue ไปแล้ว");
   return { ok: reasons.length === 0, reasons };
 }
 
