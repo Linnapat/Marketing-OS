@@ -1,13 +1,6 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/shell/AppShell";
-
-const hanken = Hanken_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-hanken",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "MKT Playground",
@@ -16,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={hanken.variable}>
+    <html lang="en">
       <body className="font-sans antialiased">
         <AppShell>{children}</AppShell>
       </body>

@@ -2,13 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { Sarabun } from "next/font/google";
 import { bahtText, thb } from "@/lib/bahtText";
 import { ExpenseRow } from "@/lib/data/finance";
 import { brandName } from "@/lib/brands";
 import { getSavedSignature } from "@/lib/signature";
-
-const sarabun = Sarabun({ subsets: ["thai", "latin"], weight: ["400", "500", "600", "700"] });
 
 /**
  * ใบสำคัญจ่ายทั่วไป — printable A5 landscape voucher, ported from Payment Voucher.dc.html.
@@ -49,7 +46,7 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
   const cellLight = "1px solid #ccc";
 
   return (
-    <div className={`fixed inset-0 z-[100] overflow-auto ${sarabun.className}`} style={{ background: "#5b6472" }}>
+    <div className="fixed inset-0 z-[100] overflow-auto" style={{ background: "#5b6472", fontFamily: "\"Sarabun\", \"Noto Sans Thai\", system-ui, sans-serif" }}>
       {/* Toolbar */}
       <div className="no-print sticky top-0 z-10 flex items-center gap-3 px-5 py-[9px]" style={{ background: "#1a3a6b", boxShadow: "0 2px 8px rgba(0,0,0,.4)" }}>
         <span className="text-white text-[14px] font-semibold">ใบสำคัญจ่ายทั่วไป · Preview</span>
