@@ -27,7 +27,10 @@ export async function fetchCampaigns(): Promise<CampaignRow[]> {
   const db = supabase();
   if (!db) return CAMPAIGNS.map((c) => ({ ...c }));
   const { data, error } = await db.from("campaigns").select("*").order("id");
-  if (error || !data) return CAMPAIGNS.map((c) => ({ ...c }));
+  // In production, never fall back to demo campaigns when Supabase is present.
+  // A query error should read as "no live campaign data" instead of showing
+  // sample work that has already been cleared for real usage.
+  if (error || !data) return [];
   return (data as Row[]).map(toCampaign);
 }
 
@@ -101,6 +104,6 @@ export async function fetchCampaign(id: string): Promise<CampaignRow | undefined
   const db = supabase();
   if (!db) return CAMPAIGNS.find((c) => c.id === id);
   const { data, error } = await db.from("campaigns").select("*").eq("id", id).maybeSingle();
-  if (error || !data) return CAMPAIGNS.find((c) => c.id === id);
+  if (error || !data) return undefined;
   return toCampaign(data as Row);
 }

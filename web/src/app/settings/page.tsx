@@ -5,6 +5,7 @@ import { CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campa
 import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
@@ -51,6 +52,12 @@ const APPROVER_ROLES = ["Requester", "Marketing Manager / BGL", "Creative Leader
 
 // "Jul 7, 2026" — the stamp new/edited templates carry.
 const todayLabel = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+const formatCompactBaht = (amount: number) => {
+  if (amount >= 1_000_000) return `฿${(amount / 1_000_000).toFixed(amount % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (amount >= 1_000) return `฿${Math.round(amount / 1_000)}K`;
+  return `฿${amount.toLocaleString()}`;
+};
 
 /** Editable list of tag pills (branches, team members). Read-only shows plain
  *  pills; edit mode adds an ✕ per pill and a small input to append. */
@@ -358,6 +365,7 @@ export default function SettingsPage() {
   const [brands, setBrands] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const [brandsEdit, setBrandsEdit] = useState(false);
   const [brandsDirty, setBrandsDirty] = useState(false);
+  const [brandLiveStats, setBrandLiveStats] = useState<Record<string, { campaigns: number; budget: number }>>({});
   const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
   const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands); setBrandsEdit(false); setBrandsDirty(false); };
 
@@ -408,6 +416,21 @@ export default function SettingsPage() {
     fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (alive && t?.length) setTeams(t); }).catch(() => {});
     fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (alive && w) setStatusSets((cur) => ({ ...cur, ...w })); }).catch(() => {});
     fetchJsonSetting<TemplateCfg[]>("templates_config").then((t) => { if (alive && t?.length) setTemplates(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    fetchCampaigns().then((campaigns) => {
+      if (!alive) return;
+      const next: Record<string, { campaigns: number; budget: number }> = {};
+      for (const c of campaigns) {
+        const key = c.b;
+        next[key] ??= { campaigns: 0, budget: 0 };
+        next[key].campaigns += 1;
+        next[key].budget += c.budget || 0;
+      }
+      setBrandLiveStats(next);
+    }).catch(() => { if (alive) setBrandLiveStats({}); });
     return () => { alive = false; };
   }, []);
   // Team members (invitable) — loaded from Supabase when configured.
@@ -557,7 +580,9 @@ export default function SettingsPage() {
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {brands.map((b, i) => (
+              {brands.map((b, i) => {
+                const live = brandLiveStats[b.key] ?? { campaigns: 0, budget: 0 };
+                return (
                 <div key={b.key} className="bg-surface border border-line rounded-cardLg p-5">
                   <div className="flex items-center gap-3 mb-3">
                     {brandsEdit
@@ -575,17 +600,15 @@ export default function SettingsPage() {
                   </div>
                   <div className="grid grid-cols-3 gap-2 mb-3">
                     <div className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{b.branchList.length}</div><div className="text-[9.5px] text-faint font-bold uppercase">Branches</div></div>
-                    <div className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{b.campaigns}</div><div className="text-[9.5px] text-faint font-bold uppercase">Campaigns</div></div>
+                    <div className="bg-ivory border border-line3 rounded-card p-2 text-center"><div className="text-[14px] font-extrabold">{live.campaigns}</div><div className="text-[9.5px] text-faint font-bold uppercase">Live campaigns</div></div>
                     <div className="bg-ivory border border-line3 rounded-card p-2 text-center">
-                      {brandsEdit
-                        ? <input value={b.budget} onChange={(e) => editBrand(i, { budget: e.target.value })} className="w-full text-[13px] font-extrabold text-center px-1 py-[2px] rounded-[6px] border border-line2 bg-white outline-none" />
-                        : <div className="text-[14px] font-extrabold">{b.budget}</div>}
-                      <div className="text-[9.5px] text-faint font-bold uppercase">Budget</div>
+                      <div className="text-[14px] font-extrabold">{formatCompactBaht(live.budget)}</div>
+                      <div className="text-[9.5px] text-faint font-bold uppercase">Live budget</div>
                     </div>
                   </div>
                   <BranchEditor branches={b.branchList} editable={brandsEdit} onChange={(branchList) => editBrand(i, { branchList })} />
                 </div>
-              ))}
+              );})}
             </div>
           </div>
         )}
