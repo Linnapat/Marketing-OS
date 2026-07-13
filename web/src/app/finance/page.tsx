@@ -23,6 +23,7 @@ import { financeFromDb, FinanceView } from "@/lib/data/derive";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
+import { BudgetSheetRow } from "@/lib/db/budgetSheet";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter as PeriodFilter, inDateFilter, filterMonthKeys, MONTHS } from "@/components/ui/DateFilterBar";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 
@@ -34,7 +35,7 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 /* ── Monthly category budgets from the Finance Google Sheet ─────────── */
-export interface SheetBudgetRow { month: string; category: string; budget: number; group?: string; brand?: BrandFilterValue; }
+export type SheetBudgetRow = BudgetSheetRow;
 interface CatPnlRow { section: string; category: string; budget: number; requested: number; approved: number; }
 
 function fallbackSection(category: string): string {
