@@ -27,9 +27,11 @@ export interface Task {
   /** Auto-created from a Campaign Brief — links back to the source. */
   relatedBrief?: string;
   relatedGraphicId?: string;
+  relatedCampaignId?: string;
   /** KOL proposal approvals link the task back to the campaign KOL row. */
   relatedKolId?: number;
-  approvalKind?: "kolProposal";
+  approvalKind?: "kolProposal" | "budgetRevision";
+  requestedBudget?: number;
   dueIso?: string;
   /** Indices of checklist items already ticked off. */
   checklistDone?: number[];

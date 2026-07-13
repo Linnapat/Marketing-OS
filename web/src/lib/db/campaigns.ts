@@ -84,6 +84,18 @@ export async function updateCampaignSpend(id: string, spend: number): Promise<vo
   await db.from("campaigns").update({ spend }).eq("id", id);
 }
 
+/** CMO-approved budget revision. Spend stays untouched; only the campaign plan
+ *  cap changes so Finance / Dashboard recalculate from the same source. */
+export async function updateCampaignBudget(id: string, budget: number): Promise<void> {
+  const db = supabase();
+  if (!db) {
+    const c = CAMPAIGNS.find((x) => x.id === id);
+    if (c) c.budget = budget;
+    return;
+  }
+  await db.from("campaigns").update({ budget }).eq("id", id);
+}
+
 /** A single campaign by id — for the detail page. */
 export async function fetchCampaign(id: string): Promise<CampaignRow | undefined> {
   const db = supabase();

@@ -16,17 +16,21 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { Segmented } from "@/components/ui/Segmented";
 import { DateFilterBar, DateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { useBrandVisibility } from "@/lib/brandVisibility";
-import { BrandFilterValue, BrandId } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
   CampaignResultRow, GroupAgg, GroupDim, aggregateBy, platformMeta, cpr,
-  deriveResultRow, fmtUpdated,
+  deriveResultRow, fmtUpdated, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults, syncCampaignSpend } from "@/lib/db/campaignResult";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
+import { fetchAllBriefs } from "@/lib/db/brief";
+import { CampaignBrief } from "@/lib/data/brief";
+import { createTaskDb } from "@/lib/db/tasks";
+import { Task } from "@/lib/data/tasks";
 
 const ACCENT = "#0EA5A0"; // Platform Performance theme (matches PageHeader /platforms)
 
@@ -67,6 +71,12 @@ export default function PlatformsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+  const [reviseOpen, setReviseOpen] = useState(false);
+  const [reviseCampaignId, setReviseCampaignId] = useState("");
+  const [reviseAmount, setReviseAmount] = useState("");
+  const [reviseReason, setReviseReason] = useState("");
+  const [reviseSent, setReviseSent] = useState(false);
   const savedRef = useRef<ReturnType<typeof setTimeout>>();
 
   const brandOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.b])) as Record<string, BrandId>, [campaigns]);
@@ -75,10 +85,11 @@ export default function PlatformsPage() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([fetchAllResults(), fetchCampaigns()]).then(([res, camps]) => {
+    Promise.all([fetchAllResults(), fetchCampaigns(), fetchAllBriefs()]).then(([res, camps, briefMap]) => {
       if (!live) return;
-      setRows(res);
+      setRows(mergeBudgetAllocationRows(res, camps, briefMap));
       setCampaigns(camps);
+      setBriefs(briefMap);
       setLoading(false);
     });
     return () => { live = false; };
@@ -170,6 +181,51 @@ export default function PlatformsPage() {
     } finally { setSaving(false); }
   };
 
+  const requestReviseBudget = async () => {
+    const campaign = campaigns.find((c) => c.id === reviseCampaignId);
+    if (!campaign || !reviseReason.trim()) return;
+    const brief = briefs[campaign.name];
+    const amount = Number(reviseAmount) || 0;
+    const requester = member?.name || "Requester";
+    const approver = brief?.approver?.trim() || "Aran P.";
+    const task: Task = {
+      id: Date.now(),
+      title: `Revise budget request — ${campaign.name}`,
+      module: "Finance",
+      moduleIcon: "฿",
+      moduleColor: "#4E7A4E",
+      type: "Budget",
+      assignee: approver,
+      brand: brandName(campaign.b),
+      campaign: campaign.name,
+      status: "Need Approval",
+      priority: "High",
+      group: "needApproval",
+      due: "Today",
+      dueIso: new Date().toISOString().slice(0, 10),
+      blocker: null,
+      pendingApprover: approver,
+      isQuickWin: false,
+      nextAction: [
+        `${requester} requested a budget revision.`,
+        amount > 0 ? `Requested revised budget: ${baht(amount)}` : "",
+        `Current campaign budget: ${baht(campaign.budget)}`,
+        `Reason: ${reviseReason.trim()}`,
+      ].filter(Boolean).join("\n"),
+      checklist: ["Review reason", "Check campaign allocation", "Approve or ask for revision"],
+      relatedBrief: brief?.id ?? campaign.id,
+      relatedCampaignId: campaign.id,
+      approvalKind: "budgetRevision",
+      requestedBudget: amount > 0 ? amount : campaign.budget,
+      comments: [{ by: requester, text: reviseReason.trim(), at: new Date().toISOString() }],
+    };
+    await createTaskDb(task);
+    setReviseSent(true);
+    setReviseAmount("");
+    setReviseReason("");
+    setTimeout(() => { setReviseOpen(false); setReviseSent(false); }, 1400);
+  };
+
   const dimLabel = dim === "platform" ? "Platform" : "Campaign";
   const footTarget = groups.reduce((s, g) => s + g.target, 0);
   const footActual = groups.reduce((s, g) => s + g.actual, 0);
@@ -190,6 +246,11 @@ export default function PlatformsPage() {
               className="inline-flex items-center gap-1 text-[12.5px] font-bold text-white rounded-[10px] px-4 py-[8px] disabled:opacity-40"
               style={{ background: ACCENT }}>
               {saved ? <><Check size={15} /> บันทึกแล้ว</> : <><Save size={15} /> {saving ? "กำลังบันทึก…" : "บันทึก"}</>}
+            </button>
+            <button onClick={() => { setReviseCampaignId(reviseCampaignId || campaigns[0]?.id || ""); setReviseOpen(true); }}
+              className="inline-flex items-center gap-1 text-[12.5px] font-bold rounded-[10px] px-4 py-[8px] border"
+              style={{ color: ACCENT, borderColor: "#BCEBE6", background: "#E3F7F5" }}>
+              Request revise budget
             </button>
           </div>
         }
@@ -318,6 +379,51 @@ export default function PlatformsPage() {
             คลิกแถวเพื่อขยาย/อัพเดต actual ราย ad · กรอก Conversion รวมได้ที่ช่องในแถวกลุ่ม (กระจายลงราย ad ให้อัตโนมัติ) · งบแผน fix ที่แคมเปญ · CPR ต่างหน่วยตาม KPI ไม่นำมารวมกัน
           </div>
         </>
+      )}
+
+      {reviseOpen && (
+        <div className="fixed inset-0 z-50 bg-black/35 flex items-center justify-center px-4" onClick={() => setReviseOpen(false)}>
+          <div className="w-full max-w-lg bg-surface rounded-[22px] border border-line shadow-soft p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[16px] font-extrabold text-ink">Request revise budget</div>
+                <div className="text-[12.5px] text-faint mt-1">ส่งคำขอแก้งบไปหา CMO พร้อมเหตุผลก่อนเปลี่ยน budget จริง</div>
+              </div>
+              <button onClick={() => setReviseOpen(false)} className="text-faint hover:text-ink text-[20px] leading-none">×</button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-[11.5px] font-bold text-faint uppercase tracking-[0.08em]">Campaign</span>
+                <select value={reviseCampaignId} onChange={(e) => setReviseCampaignId(e.target.value)}
+                  className="text-[13px] font-semibold px-3 py-[10px] rounded-[12px] border border-line2 bg-white outline-none">
+                  <option value="">Select campaign…</option>
+                  {campaigns.filter((c) => visibleBrands.includes(c.b)).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} · {brandName(c.b)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[11.5px] font-bold text-faint uppercase tracking-[0.08em]">Requested revised budget</span>
+                <input value={reviseAmount} onChange={(e) => setReviseAmount(e.target.value)} inputMode="numeric" placeholder="฿"
+                  className="text-[13px] font-semibold px-3 py-[10px] rounded-[12px] border border-line2 bg-white outline-none" />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[11.5px] font-bold text-faint uppercase tracking-[0.08em]">Reason *</span>
+                <textarea value={reviseReason} onChange={(e) => setReviseReason(e.target.value)} rows={4}
+                  placeholder="เช่น KOL quote สูงกว่าแผน / ต้องเพิ่มงบยิง Ads เพราะ reach ไม่ถึง target"
+                  className="text-[13px] font-semibold px-3 py-[10px] rounded-[12px] border border-line2 bg-white outline-none resize-none" />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setReviseOpen(false)} className="text-[12.5px] font-bold px-4 py-[9px] rounded-[10px] border border-line2 text-muted bg-white">Cancel</button>
+              <button onClick={requestReviseBudget} disabled={!reviseCampaignId || !reviseReason.trim()}
+                className="text-[12.5px] font-bold px-4 py-[9px] rounded-[10px] text-white disabled:opacity-45"
+                style={{ background: ACCENT }}>
+                {reviseSent ? "Sent ✓" : "Send to CMO"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

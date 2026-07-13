@@ -7,6 +7,8 @@
 // lib/db/campaignResult.ts for the data access (mock fallback / Supabase blob).
 
 import { Tone } from "@/lib/status";
+import { CampaignBrief } from "@/lib/data/brief";
+import { CampaignRow } from "@/lib/data/campaigns";
 
 export type ResultKpi = "Reach" | "Click" | "Conversion";
 
@@ -211,6 +213,92 @@ export function seedResults(campaignId: string): CampaignResultRow[] {
 /** Every seeded row, flattened — mock source for the Platform Performance page. */
 export function allSeedResults(): CampaignResultRow[] {
   return Object.values(SEED_RESULTS).flat().map((r) => ({ ...r }));
+}
+
+const slug = (v: string) => (v || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+function flightDays(startIso?: string, endIso?: string): number {
+  if (!startIso || !endIso) return 30;
+  const start = new Date(`${startIso}T00:00:00`);
+  const end = new Date(`${endIso}T00:00:00`);
+  if (isNaN(+start) || isNaN(+end)) return 30;
+  return Math.max(1, Math.round((+end - +start) / 86400000) + 1);
+}
+
+function planRow(base: Omit<CampaignResultRow, "reachActual" | "budgetActual" | "conversions">): CampaignResultRow {
+  return { ...base, reachActual: 0, budgetActual: 0, conversions: 0 };
+}
+
+/** Performance Bar should show planned media/KOL budget as soon as a Campaign
+ *  Brief exists, even before actual rows have been entered. Existing saved
+ *  result rows win; missing rows are derived from Budget allocation. */
+export function mergeBudgetAllocationRows(
+  results: CampaignResultRow[],
+  campaigns: CampaignRow[],
+  briefsByCampaignName: Record<string, CampaignBrief>,
+): CampaignResultRow[] {
+  const out = [...results];
+  const existing = new Set(results.map((r) => r.id));
+  const pushIfMissing = (row: CampaignResultRow) => {
+    if (existing.has(row.id)) return;
+    existing.add(row.id);
+    out.push(row);
+  };
+
+  for (const campaign of campaigns) {
+    const brief = briefsByCampaignName[campaign.name];
+    if (!brief) continue;
+    const days = flightDays(brief.startDate, brief.endDate);
+    const audience = brief.audience || "Campaign audience";
+
+    const adLines = (brief.budget.adsByPlatform ?? []).filter((line) => (line.amount || 0) > 0);
+    const fallbackAds = !adLines.length && (brief.budget.ads || 0) > 0
+      ? [{ platform: brief.channels.find((c) => /facebook|instagram|tiktok|google|youtube|line/i.test(c)) ?? "Ads", amount: brief.budget.ads }]
+      : [];
+
+    for (const line of [...adLines, ...fallbackAds]) {
+      pushIfMissing(planRow({
+        id: `plan-${campaign.id}-ads-${slug(line.platform)}`,
+        campaignId: campaign.id,
+        ad: `Planned Ads — ${line.platform}`,
+        audience,
+        role: "Media plan",
+        platform: line.platform,
+        type: "Ads Budget Allocation",
+        kpi: "Reach",
+        target: 0,
+        budget: line.amount || 0,
+        days,
+        cvTargetPct: 0,
+      }));
+    }
+
+    for (const kol of brief.kols ?? []) {
+      const budget = kol.budget || 0;
+      if (budget <= 0) continue;
+      const platforms = kol.platforms?.length ? kol.platforms : ["KOL"];
+      const budgetPerPlatform = Math.round(budget / platforms.length);
+      const reachPerPlatform = Math.round((kol.expectedReach || 0) * Math.max(1, kol.count || 1) / platforms.length);
+      platforms.forEach((platform, index) => {
+        pushIfMissing(planRow({
+          id: `plan-${campaign.id}-kol-${slug(kol.id)}-${slug(platform)}`,
+          campaignId: campaign.id,
+          ad: `Planned KOL — ${kol.name || kol.kolType || `Creator ${index + 1}`}`,
+          audience: kol.area || audience,
+          role: "KOL plan",
+          platform: platform || "KOL",
+          type: (kol.contentRequired ?? []).join(" + ") || "KOL Content",
+          kpi: "Reach",
+          target: reachPerPlatform,
+          budget: budgetPerPlatform,
+          days,
+          cvTargetPct: 0,
+        }));
+      });
+    }
+  }
+
+  return out;
 }
 
 // ── Platform aggregation (Platform Performance page) ──────────────────

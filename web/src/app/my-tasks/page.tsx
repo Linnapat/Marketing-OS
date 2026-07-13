@@ -8,7 +8,7 @@ import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
-import { fetchCampaigns } from "@/lib/db/campaigns";
+import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
@@ -185,6 +185,10 @@ export default function MyTasksPage() {
     const task = tasks.find((t) => t.id === id);
     if (task?.approvalKind === "kolProposal" && task.relatedKolId != null) {
       approveKolProposal(task.relatedKolId).catch(() => {});
+    }
+    if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
+      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch(() => {});
+      setCampaigns((cs) => cs.map((c) => c.id === task.relatedCampaignId ? { ...c, budget: task.requestedBudget! } : c));
     }
     setDoneIds((s) => new Set(s).add(id));
     setDrawerId(null);
