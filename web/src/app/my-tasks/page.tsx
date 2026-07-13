@@ -12,7 +12,8 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
-import { brandName } from "@/lib/brands";
+import { BRANDS, BrandId, brandName } from "@/lib/brands";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import { baht } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
@@ -75,6 +76,8 @@ const SCOPE_FILTERS = [
 ];
 
 export default function MyTasksPage() {
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
   const [activeTab, setActiveTab] = useState<"myDay" | "approval" | "team">("myDay");
   const [people, setPeople] = useState<Person[]>(MOCK_PEOPLE);
   const [viewAs, setViewAs] = useState(MOCK_PEOPLE[0].name);
@@ -121,26 +124,33 @@ export default function MyTasksPage() {
 
   // My Approval inbox — campaigns + requests where the current person is the
   // approver (available to anyone in an approval tier).
+  const canSeeBrandLabel = (value?: string | null) => {
+    if (brandVisibility.allowAll) return true;
+    const raw = (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (!raw || raw === "allbrands") return true;
+    return brandOptions.some((id) => raw.includes(id) || raw.includes(BRANDS[id].name.toLowerCase().replace(/[^a-z0-9]+/g, "")));
+  };
+
   const approvalCampaigns = useMemo(
-    () => campaigns.filter((c) => PENDING_CAMPAIGN.has(c.status)),
-    [campaigns],
+    () => campaigns.filter((c) => PENDING_CAMPAIGN.has(c.status) && brandVisibility.isVisible(c.b)),
+    [campaigns, brandVisibility],
   );
   const approvalRequests = useMemo(
     // Budget cards are excluded — they're shown as actionable expense requests below.
-    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && r.approver === viewAs && r.type !== "Budget"),
-    [requests, viewAs],
+    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && r.approver === viewAs && r.type !== "Budget" && brandVisibility.isVisible(r.b)),
+    [requests, viewAs, brandVisibility],
   );
   const approvalExpenses = useMemo(
-    () => (canApproveExpense ? expenseReqs.filter((r) => r.status === "Waiting Approval") : []),
-    [expenseReqs, canApproveExpense],
+    () => (canApproveExpense ? expenseReqs.filter((r) => r.status === "Waiting Approval" && brandVisibility.isVisible(r.b)) : []),
+    [expenseReqs, canApproveExpense, brandVisibility],
   );
   const approvalTasks = useMemo(
-    () => tasks.filter((t) => t.assignee === viewAs && !doneIds.has(t.id) && t.status === "Need Approval"),
-    [tasks, viewAs, doneIds],
+    () => tasks.filter((t) => t.assignee === viewAs && !doneIds.has(t.id) && t.status === "Need Approval" && canSeeBrandLabel(t.brand)),
+    [tasks, viewAs, doneIds, brandOptions, brandVisibility],
   );
   const approvalGraphics = useMemo(
-    () => graphics.filter((g) => g.requester === viewAs && (g.deliverables ?? []).some((d) => d.status === "Waiting review")),
-    [graphics, viewAs],
+    () => graphics.filter((g) => g.requester === viewAs && brandVisibility.isVisible(g.b) && (g.deliverables ?? []).some((d) => d.status === "Waiting review")),
+    [graphics, viewAs, brandVisibility],
   );
   const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
   // Approve / reject inline — sync the row locally so the card updates at once.
@@ -187,7 +197,7 @@ export default function MyTasksPage() {
   const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
-  const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date]);
+  const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date, brandOptions, brandVisibility]);
   const [greetText, greetSubtext] = GREETINGS[viewAs] ?? [`Good to see you, ${viewAs.split(" ")[0]} 🌿`, "Let's move things forward today."];
 
   // Today's focus = due today or overdue (real calendar) or stuck.
@@ -340,11 +350,11 @@ export default function MyTasksPage() {
       ) : activeTab === "approval" ? (
         <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
       ) : (
-        <TeamView tasks={tasks.filter((t) => inDateFilter(date, t.dueIso || t.due))} getStatus={getStatus} people={people} onSelect={(p) => { pickViewAs(p); setActiveTab("myDay"); }} />
+        <TeamView tasks={tasks.filter((t) => canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due))} getStatus={getStatus} people={people} onSelect={(p) => { pickViewAs(p); setActiveTab("myDay"); }} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
-      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
+      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
           <span className="text-[18px]">🌿</span>
@@ -855,19 +865,20 @@ const TYPE_META: Record<string, { module: string; icon: string; color: string }>
   Ads: { module: "Ads", icon: "📣", color: "#C68A1E" }, Report: { module: "Campaign", icon: "🎯", color: "#B33A2E" }, Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
 };
 
-function NewTaskModal({ owner, people, campaigns, nextId, onClose, onCreate }: { owner: string; people: Person[]; campaigns: CampaignRow[]; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
+function NewTaskModal({ owner, people, campaigns, brandOptions, nextId, onClose, onCreate }: { owner: string; people: Person[]; campaigns: CampaignRow[]; brandOptions: BrandId[]; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState("Content");
   const [assignee, setAssignee] = useState(owner);
-  const [brand, setBrand] = useState("Teppen");
+  const [brand, setBrand] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [dueIso, setDueIso] = useState("");
   const [priority, setPriority] = useState<"High" | "Med" | "Low">("Med");
   const [group, setGroup] = useState("doFirst");
   const [nextAction, setNextAction] = useState("");
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  // Real campaigns for the chosen brand (modal's brand is the display name).
-  const brandCampaigns = useMemo(() => campaigns.filter((c) => brandName(c.b) === brand), [campaigns, brand]);
+  // Real campaigns for the chosen brand.
+  useEffect(() => { if (!brandOptions.includes(brand)) setBrand(brandOptions[0] ?? "teppen"); }, [brand, brandOptions]);
+  const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === brand), [campaigns, brand]);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
@@ -875,7 +886,7 @@ function NewTaskModal({ owner, people, campaigns, nextId, onClose, onCreate }: {
   const create = () => {
     if (!canCreate) return;
     const meta = TYPE_META[type];
-    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand, campaign: campaign.trim(), status: "Todo", priority, group, due: fmtShort(dueIso) || "TBD", dueIso, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
+    onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand: brandName(brand), campaign: campaign.trim(), status: "Todo", priority, group, due: fmtShort(dueIso) || "TBD", dueIso, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
   };
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
@@ -890,7 +901,7 @@ function NewTaskModal({ owner, people, campaigns, nextId, onClose, onCreate }: {
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Assign to</label><select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field}>{people.map(({ name: p }) => <option key={p} value={p}>{p}{p === owner ? " (me)" : ""}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={brand} onChange={(e) => setBrand(e.target.value)} className={field}><option>Teppen</option><option>Omakase</option><option>Mainichi</option><option>Touka</option></select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={brand} onChange={(e) => setBrand(e.target.value as BrandId)} className={field}>{brandOptions.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}</select></div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label><select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}><option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>{brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-3 gap-3">

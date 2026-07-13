@@ -631,7 +631,10 @@ export default function SettingsPage() {
         {section === "users" && (
           <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-line4">
-              <div className="text-[13px] font-bold">{users.length} members</div>
+              <div>
+                <div className="text-[13px] font-bold">{users.length} members</div>
+                <div className="text-[11.5px] text-faint mt-[2px]">Brand / branch scope controls which brands each member can see and select across the OS.</div>
+              </div>
               <button onClick={() => canEdit && setInviteOpen(true)} disabled={!canEdit}
                 className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[7px] disabled:opacity-40 disabled:cursor-default">+ Invite</button>
             </div>
@@ -970,7 +973,7 @@ export default function SettingsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand / branch scope</label>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand visibility</label>
                   <BrandScopeEditor value={inv.brandAccess} onChange={(brandAccess) => setInv({ ...inv, brandAccess })} />
                 </div>
               </div>
@@ -1023,7 +1026,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand / branch scope</label>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand visibility</label>
                 <BrandScopeEditor value={editUser.m.brandAccess} onChange={(brandAccess) => setEditUser((u) => u && { ...u, m: { ...u.m, brandAccess } })} />
               </div>
             </div>

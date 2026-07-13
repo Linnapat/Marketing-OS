@@ -45,6 +45,58 @@ body {
   .soft-surface { background: var(--bg-soft); border: 1px solid var(--border-soft); }
 }
 
+/* Shared module headers: keep the top controls useful without stealing the page. */
+.module-head-compact > * {
+  gap: 0.5rem;
+}
+
+.module-head-compact button,
+.module-head-compact select,
+.module-head-compact input {
+  min-height: 32px;
+}
+
+.module-head-compact [class*="px-4"] {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.module-head-compact [class*="py-["] {
+  padding-top: 0.38rem;
+  padding-bottom: 0.38rem;
+}
+
+.module-summary-compact .grid {
+  gap: 0.55rem;
+}
+
+.module-summary-compact .grid > * {
+  border-radius: 14px !important;
+  padding: 0.72rem 0.88rem !important;
+  min-height: 74px;
+}
+
+.module-summary-compact .grid > * [class*="text-[28px]"],
+.module-summary-compact .grid > * [class*="text-[32px]"],
+.module-summary-compact .grid > * [class*="text-[34px]"],
+.module-summary-compact .grid > * [class*="text-[38px]"] {
+  font-size: 1.48rem !important;
+  line-height: 1 !important;
+  margin-top: 0.45rem !important;
+}
+
+.module-summary-compact .grid > * [class*="text-[11px]"],
+.module-summary-compact .grid > * [class*="text-[12px]"] {
+  font-size: 0.62rem !important;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 768px) {
+  .module-summary-compact .grid > * {
+    min-height: 64px;
+  }
+}
+
 /* Printable voucher: when the print overlay is mounted, print ONLY it. */
 @media print {
   body * { visibility: hidden !important; }

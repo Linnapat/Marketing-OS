@@ -6,7 +6,7 @@ import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
-import { BrandFilterValue, brandName, BRAND_ORDER, BRANDS, BrandId } from "@/lib/brands";
+import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
   CONTENT, ContentItem, contentTone, platIcon, PLATFORMS, itemPlatforms, contentDateIso,
 } from "@/lib/data/content";
@@ -27,6 +27,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 
 /** Row of platform badges (one per selected channel). */
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
@@ -240,7 +241,9 @@ export default function ContentPage() {
 }
 
 function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => void; count: number; initialIso?: string | null }) {
-  const [b, setB] = useState<BrandId>("teppen");
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
+  const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -260,6 +263,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
   useEffect(() => {
@@ -300,7 +304,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
               <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
-                {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
               </select>
             </div>
             <div>

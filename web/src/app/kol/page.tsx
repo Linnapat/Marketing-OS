@@ -30,6 +30,7 @@ import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { importKolProfilesFromSheet, KolSheetRow } from "@/lib/db/kolMaster";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -624,11 +625,11 @@ function KolDatabase() {
   );
 }
 
-const KOL_BRAND_TO_ID: Record<string, BrandId> = { TEPPEN: "teppen", "Omakase Don": "omakase", Mainichi: "mainichi", Touka: "touka" };
-
 function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (kols: Kol[], item: BriefKolItem, campaign: string) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const [brandSel, setBrandSel] = useState("TEPPEN");
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
+  const [brandId, setBrandId] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const { member, user } = useAuth();
@@ -642,7 +643,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     return () => { alive = false; };
   }, []);
 
-  const brandId = KOL_BRAND_TO_ID[brandSel] ?? "teppen";
+  useEffect(() => { if (!brandOptions.includes(brandId)) setBrandId(brandOptions[0] ?? "teppen"); }, [brandId, brandOptions]);
   const brandCampaigns = campaigns.filter((c) => c.b === brandId);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
@@ -692,7 +693,9 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-            <select value={brandSel} onChange={(e) => setBrandSel(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+            <select value={brandId} onChange={(e) => setBrandId(e.target.value as BrandId)} className={field}>
+              {brandOptions.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>

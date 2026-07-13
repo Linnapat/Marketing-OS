@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
-import { BrandFilterValue, BrandId, BRAND_ORDER, brandName, BRANDS } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName, BRANDS } from "@/lib/brands";
 import { SELECT_STYLE_DARK } from "@/components/ui/selectStyle";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
@@ -15,6 +15,7 @@ import {
 import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
 import { useRole } from "@/lib/role";
 import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -26,6 +27,8 @@ const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LI
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 
 export default function CampaignsPage() {
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
@@ -35,7 +38,8 @@ export default function CampaignsPage() {
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState(CAMPAIGNS);
   const [newOpen, setNewOpen] = useState(false);
-  const emptyNew = { name: "", b: "teppen" as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
+  const defaultBrand = brandOptions[0] ?? "teppen";
+  const emptyNew = { name: "", b: defaultBrand as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
   const [nc, setNc] = useState(emptyNew);
   // Team-shared custom campaign types (from the database). Only admins can add.
   const { role } = useRole();
@@ -58,6 +62,15 @@ export default function CampaignsPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     Completed: true, Draft: true, Cancelled: true,
   });
+
+  useEffect(() => {
+    const next = brandVisibility.normalize(brand);
+    if (next !== brand) setBrand(next);
+  }, [brand, brandVisibility]);
+
+  useEffect(() => {
+    if (!brandOptions.includes(nc.b)) setNc((n) => ({ ...n, b: defaultBrand as BrandId }));
+  }, [brandOptions, defaultBrand, nc.b]);
 
   useEffect(() => {
     let alive = true;
@@ -149,8 +162,8 @@ export default function CampaignsPage() {
               className="text-[12px] font-semibold rounded-[14px] px-3.5 py-[9px] outline-none cursor-pointer border"
               style={{ background: "rgba(255,255,255,0.55)", borderColor: "#AFD76F", color: "#203515" }}
             >
-              <option value="all">All Brands</option>
-              {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+              {brandVisibility.allowAll && <option value="all">All Brands</option>}
+              {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
             </select>
           </div>
           <div className="rounded-[18px] px-4 py-3 border bg-white/35" style={{ borderColor: "#AFD76F" }}>
@@ -178,8 +191,8 @@ export default function CampaignsPage() {
                 className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none"
                 style={{ borderColor: "#ECEAF2" }}
               >
-                <option value="all">All Brands</option>
-                {BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
+                {brandVisibility.allowAll && <option value="all">All Brands</option>}
+                {brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-[7px]">
@@ -296,7 +309,7 @@ export default function CampaignsPage() {
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign name <span className="text-status-red">*</span></label><input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. Wagyu Festival" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId })} className={field}>{BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Branch</label><input value={nc.branch} onChange={(e) => setNc({ ...nc, branch: e.target.value })} placeholder="e.g. Thonglor" className={field} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">

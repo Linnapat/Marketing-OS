@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
-import { BrandFilterValue, BrandId, BRAND_ORDER, brandName } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
 import { fetchAssets, createAsset } from "@/lib/db/assets";
 import {
@@ -18,11 +19,13 @@ import {
 const TYPES = ["all", "Key Visual", "Story", "Print", "Social Media", "Reel Cover", "Carousel", "LINE Rich Message"];
 
 export default function AssetLibraryPage() {
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [type, setType] = useState("all");
   const [assets, setAssets] = useState<Asset[]>(ASSETS);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const empty = { name: "", b: "teppen" as BrandId, campaign: "", type: "Key Visual", driveUrl: "", canvaUrl: "" };
+  const empty = { name: "", b: (brandOptions[0] ?? "teppen") as BrandId, campaign: "", type: "Key Visual", driveUrl: "", canvaUrl: "" };
   const [nu, setNu] = useState(empty);
 
   useEffect(() => {
@@ -30,6 +33,10 @@ export default function AssetLibraryPage() {
     fetchAssets().then((a) => { if (alive) setAssets(a); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (!brandOptions.includes(nu.b)) setNu((n) => ({ ...n, b: (brandOptions[0] ?? "teppen") as BrandId }));
+  }, [brandOptions, nu.b]);
 
   const upload = async () => {
     if (!nu.name.trim()) return;
@@ -68,7 +75,7 @@ export default function AssetLibraryPage() {
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Asset name <span className="text-status-red">*</span></label><input value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="e.g. Wagyu KV final" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nu.b} onChange={(e) => setNu({ ...nu, b: e.target.value as BrandId })} className={field}>{BRAND_ORDER.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nu.b} onChange={(e) => setNu({ ...nu, b: e.target.value as BrandId })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label><select value={nu.type} onChange={(e) => setNu({ ...nu, type: e.target.value })} className={field}>{TYPES.filter((t) => t !== "all").map((t) => <option key={t}>{t}</option>)}</select></div>
               </div>
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><input value={nu.campaign} onChange={(e) => setNu({ ...nu, campaign: e.target.value })} placeholder="Campaign name" className={field} /></div>

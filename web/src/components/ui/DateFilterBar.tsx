@@ -124,10 +124,10 @@ export function DateFilterBar({
   };
 
   const selectStyle: React.CSSProperties = {
-    fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 10,
+    fontSize: 11.5, fontWeight: 700, padding: "5px 9px", borderRadius: 9,
     border: "1px solid #E5DECF", background: "#fff", color: "#211F1C", cursor: "pointer",
   };
-  const arrow = "w-[30px] h-[32px] rounded-[9px] border border-line2 bg-white flex items-center justify-center cursor-pointer text-[15px] text-ink flex-shrink-0 select-none";
+  const arrow = "w-[28px] h-[30px] rounded-[8px] border border-line2 bg-white flex items-center justify-center cursor-pointer text-[14px] text-ink flex-shrink-0 select-none";
 
   const prev = () => {
     let m = f.month - 1, y = f.year;
@@ -141,7 +141,7 @@ export function DateFilterBar({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 bg-surface border border-line rounded-[13px] px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 bg-surface border border-line rounded-[12px] px-2.5 py-1.5">
       <Segmented
         value={f.mode}
         onChange={(mode) => set({ ...f, mode })}
@@ -189,11 +189,11 @@ export function DateFilterBar({
       )}
       <button
         onClick={() => set(f.mode === "year" ? CURRENT_YEAR_FILTER : DEFAULT_DATE_FILTER)}
-        className="text-[11.5px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[6px] bg-white whitespace-nowrap"
+        className="text-[11px] font-bold text-muted border border-line2 rounded-[8px] px-2.5 py-[5px] bg-white whitespace-nowrap"
       >
         This {f.mode === "year" ? "year" : "month"}
       </button>
-      <div className="text-[11.5px] font-semibold text-faint whitespace-nowrap ml-auto flex items-center gap-3">
+      <div className="text-[11px] font-semibold text-faint whitespace-nowrap ml-auto flex items-center gap-2">
         {trailing}
         <span>{f.mode === "year" ? f.year : `${MONTHS[f.month]} ${f.year}`}</span>
       </div>

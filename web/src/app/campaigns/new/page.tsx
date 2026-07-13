@@ -9,7 +9,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
-import { BRAND_ORDER, BRANDS, BrandId, brandName } from "@/lib/brands";
+import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA } from "@/lib/data/settings";
 import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem,
@@ -22,6 +22,7 @@ import {
 import { saveCampaignBrief } from "@/lib/db/brief";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 
 // Guideline sits just before Submit — a final pre-flight, not an early gate.
 const STEPS = ["Campaign Overview", "Content Plan", "KOL Plan", "Budget Allocation", "Auto Task Preview", "Guideline Checklist", "Submit"];
@@ -55,6 +56,8 @@ function overviewErrors(b: CampaignBrief): Record<string, string> {
 export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
   const [id] = useState(newCampaignId);
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
@@ -69,6 +72,9 @@ export default function NewCampaignPage() {
   // Planner = the logged-in user (auto, read-only). Keep it synced to auth.
   const me = member?.name ?? user?.email ?? "";
   useEffect(() => { if (me) setBrief((b) => ({ ...b, plannerOwner: me })); }, [me]);
+  useEffect(() => {
+    if (!brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: (brandOptions[0] ?? "teppen") as BrandId, branches: [] }));
+  }, [brandOptions, brief.b]);
 
   const branches = useMemo(() => BRANDS_DATA.find((d) => d.key === brief.b)?.branchList ?? [], [brief.b]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
@@ -142,7 +148,7 @@ export default function NewCampaignPage() {
       </div>
 
       <div className="mt-5 max-w-[900px]">
-        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} />}
+        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} />}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
         {step === 2 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} onEditKol={() => setStep(2)} />}
@@ -194,10 +200,10 @@ function Chips({ options, value, onChange }: { options: readonly string[]; value
 }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
-function Overview({ brief, set, setBrief, branches, planner, errors }: {
+function Overview({ brief, set, setBrief, branches, planner, errors, brandOptions }: {
   brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
-  errors: Record<string, string>;
+  errors: Record<string, string>; brandOptions: BrandId[];
 }) {
   const errBorder = { borderColor: "#B33A2E", background: "#FFF7F6" };
   const errText = "text-[11px] text-status-red font-semibold mt-1";
@@ -216,7 +222,7 @@ function Overview({ brief, set, setBrief, branches, planner, errors }: {
         <div>
           <label className={label}>Brand</label>
           <select value={brief.b} onChange={(e) => setBrief((b) => ({ ...b, b: e.target.value as BrandId, branches: [] }))} className={field}>
-            {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+            {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
           </select>
         </div>
         {/* Branch — directly under Brand */}

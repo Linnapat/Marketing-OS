@@ -6,7 +6,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
-import { BrandFilterValue, BrandId, brandName, BRAND_ORDER, BRANDS } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName, BRANDS } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   DESIGNERS, graphicKpis, graphicNeedsAttention, emptyDeliverable,
@@ -23,6 +23,7 @@ import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -35,6 +36,8 @@ function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = 
 
 
 export default function GraphicPage() {
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
   const [view, setView] = useState<"board" | "list">("board");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [designer, setDesigner] = useState<string>("all");
@@ -48,6 +51,11 @@ export default function GraphicPage() {
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    const next = brandVisibility.normalize(brand);
+    if (next !== brand) setBrand(next);
+  }, [brand, brandVisibility]);
 
   // Creating a graphic request now goes through the shared Content Plan template:
   // it spawns the graphic (with per-asset deliverables), a real content post, and
@@ -139,8 +147,8 @@ export default function GraphicPage() {
               <label className="flex items-center gap-[7px]">
                 <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
                 <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
-                  <option value="all">All Brands</option>
-                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                  {brandVisibility.allowAll && <option value="all">All Brands</option>}
+                  {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
                 </select>
               </label>
               <label className="flex items-center gap-[7px]">
@@ -274,7 +282,9 @@ function ListView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =>
 
 function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const [b, setB] = useState<BrandId>("teppen");
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
+  const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [approver, setApprover] = useState("");
@@ -290,6 +300,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
 
@@ -340,7 +351,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
               <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
-                {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
               </select>
             </div>
             <div>
