@@ -4,7 +4,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import {
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
-  deliverableProgress, stageFromDeliverables, deriveDeliverables,
+  deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -27,6 +27,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const currentUser = member?.name ?? user?.email ?? g.designer;
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
+  const briefDetails = creativeBriefDetails(g);
   const briefPct = Math.round((brief.filter((b) => b.ok).length / brief.length) * 100);
   const canDeliver = g.stage === "Approved";
   const deliverables = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
@@ -180,6 +181,29 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
 
           {tab === "brief" && (
             <div className="flex flex-col gap-4">
+              <div className="rounded-card border border-line bg-surface p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <div className="text-[13px] font-extrabold text-ink">Creative Brief Pack</div>
+                    <div className="text-[11.5px] text-faint mt-1">รายละเอียดที่ Creative ใช้เช็คก่อนเริ่มงาน</div>
+                  </div>
+                  <StatusBadge tone={g.briefComplete ? "green" : "gold"}>{g.briefComplete ? "Ready" : "Needs detail"}</StatusBadge>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {briefDetails.map((item) => (
+                    <div key={item.label} className="rounded-[12px] border border-line3 bg-ivory px-3 py-[10px]">
+                      <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{item.label}</div>
+                      {item.href ? (
+                        <a href={item.href} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-accent leading-[1.45] break-words">
+                          {item.value} ↗
+                        </a>
+                      ) : (
+                        <div className="text-[12.5px] text-muted leading-[1.45] break-words">{item.value}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div className="rounded-card p-4" style={{ background: "#F7F4EE" }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[12px] font-bold">Brief completeness</span>

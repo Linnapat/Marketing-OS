@@ -20,7 +20,7 @@ import {
 } from "@/lib/data/agency";
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 import { fetchGraphics, updateGraphic } from "@/lib/db/graphic";
-import { deriveDeliverables, Graphic, GraphicDeliverable } from "@/lib/data/graphic";
+import { creativeBriefDetails, deriveDeliverables, Graphic, GraphicDeliverable } from "@/lib/data/graphic";
 import { fetchMembers, Member } from "@/lib/db/settings";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
@@ -334,6 +334,7 @@ export default function AgencyPortalPage() {
 function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTask, patch: Partial<AgencyTask>) => void }) {
   const tone = AGENCY_STATUS_TONE[t.status];
   const locked = t.status === "Approved";
+  const briefPack = t.graphic ? creativeBriefDetails(t.graphic) : [];
   return (
     <div className="bg-surface border border-line rounded-cardLg p-5" style={locked ? { opacity: 0.88 } : undefined}>
       <div className="flex items-start gap-3 flex-wrap">
@@ -357,7 +358,28 @@ function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTas
         )}
       </div>
 
-      {t.brief && (
+      {t.graphic ? (
+        <div className="mt-3 rounded-card border border-[#E8D6A8] bg-[#FFF8EA] px-3 py-3">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
+            <span className="text-[10.5px] font-bold text-[#8A6930]">linked from Creative Kitchen</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {briefPack.map((item) => (
+              <div key={item.label} className="rounded-[10px] border border-[#EADBB6] bg-white/70 px-3 py-[8px]">
+                <div className="text-[9.5px] uppercase tracking-[0.06em] text-[#9A7A47] font-bold mb-[3px]">{item.label}</div>
+                {item.href ? (
+                  <a href={item.href} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent leading-[1.4] break-words">
+                    {item.value} ↗
+                  </a>
+                ) : (
+                  <div className="text-[11.5px] text-[#5B4630] leading-[1.4] break-words">{item.value}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : t.brief && (
         <div className="mt-3 text-[12px] text-muted bg-ivory border border-line3 rounded-card px-3 py-[9px]">
           <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-faint">Brief</span>
           <div className="mt-[2px]">{t.brief}</div>

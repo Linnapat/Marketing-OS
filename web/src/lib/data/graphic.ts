@@ -2,7 +2,7 @@
 // workflow schema (brief completeness, blocker, versions, feedback thread) so the board,
 // list, and 6-tab detail drawer all read from one shape.
 
-import { BrandId } from "@/lib/brands";
+import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 
 export interface GraphicEvent {
@@ -36,6 +36,16 @@ export interface Graphic {
   platform: string;
   size: string;
   contentItem: string;
+  /** Creative brief detail carried from Campaign / Content. Optional so older
+   *  saved requests continue to work while newer requests can show the real
+   *  brief pack in the drawer. */
+  briefLink?: string;
+  objective?: string;
+  keyMessage?: string;
+  moodDirection?: string;
+  referenceLink?: string;
+  captionCopy?: string;
+  extraDetails?: string;
   /** Per-asset deliverables (Platform × Asset Size from the content brief).
    *  The graphic team submits a link per row; the requester approves per row. */
   deliverables?: GraphicDeliverable[];
@@ -236,5 +246,25 @@ export function briefFields(g: Graphic): { label: string; ok: boolean }[] {
     { label: "Reference link", ok: g.briefComplete },
     { label: "Linked content item", ok: g.contentItem !== "—" },
     { label: "Caption / copy", ok: g.briefComplete },
+  ];
+}
+
+export function creativeBriefLink(g: Graphic): string {
+  return g.briefLink || g.referenceLink || g.deliverables?.find((d) => d.refLink)?.refLink || "";
+}
+
+export function creativeBriefDetails(g: Graphic): { label: string; value: string; href?: string }[] {
+  const briefLink = creativeBriefLink(g);
+  return [
+    { label: "Brief link", value: briefLink ? "Open creative brief" : "ยังไม่มี link brief", href: briefLink || undefined },
+    { label: "Objective", value: g.objective || `${g.campaign} · ${g.type} for ${brandName(g.b)}` },
+    { label: "Key message", value: g.keyMessage || g.nextAction || "รอ requester เติม key message" },
+    { label: "Platform / usage", value: g.platform || "—" },
+    { label: "Size / format", value: g.size || "—" },
+    { label: "CI / mood direction", value: g.moodDirection || `${brandName(g.b)} brand direction · keep CI, tone, logo and visual hierarchy consistent.` },
+    { label: "Reference", value: g.referenceLink || briefLink ? "Open reference" : "ยังไม่มี reference link", href: g.referenceLink || briefLink || undefined },
+    { label: "Linked content item", value: g.contentItem && g.contentItem !== "—" ? g.contentItem : "ยังไม่ link กับ Content Plan" },
+    { label: "Caption / copy", value: g.captionCopy || "ยังไม่มี caption/copy เพิ่มเติม" },
+    { label: "Additional details", value: g.extraDetails || g.blocker || "ไม่มีรายละเอียดเพิ่มเติม" },
   ];
 }
