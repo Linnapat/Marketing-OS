@@ -25,6 +25,8 @@ export const CAMPAIGN_STATUS_TONE: Record<string, Tone> = {
   "Need Revision": "orange",
   Approved: "green",
   Active: "blue",
+  Paused: "orange",
+  Inactive: "neutral",
   Completed: "ink",
   Cancelled: "red",
 };

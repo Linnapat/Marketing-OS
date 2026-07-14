@@ -70,7 +70,25 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
 export async function updateCampaignStatus(id: string, status: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("campaigns").update({ status }).eq("id", id);
+  const nextApproval = status === "Waiting Approval" || status === "Waiting for Approval" ? "CMO" : "None";
+  await db.from("campaigns").update({ status, next_approval: nextApproval }).eq("id", id);
+}
+
+/** Delete a campaign and the records Marketing OS generated from its brief so
+ * the list, planner modules, and task views stay in sync. */
+export async function deleteCampaign(id: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+
+  await Promise.all([
+    db.from("content_posts").delete().eq("campaign_id", id),
+    db.from("graphic_requests").delete().eq("campaign_id", id),
+    db.from("campaign_results").delete().eq("campaign_id", id),
+    db.from("tasks").delete().filter("data->>relatedBrief", "eq", id),
+    db.from("kols").delete().filter("data->>campaignId", "eq", id),
+  ]);
+
+  await db.from("campaigns").delete().eq("id", id);
 }
 
 /** Roll the ad-level ACTUAL spend up to the campaign (spend = Σ budgetActual). The

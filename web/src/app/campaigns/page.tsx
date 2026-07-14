@@ -14,7 +14,7 @@ import {
   STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
 import { CAMPAIGN_TYPES } from "@/lib/data/brief";
-import { fetchCampaigns, createCampaign } from "@/lib/db/campaigns";
+import { fetchCampaigns, createCampaign, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
@@ -27,6 +27,7 @@ import {
 } from "@/components/campaign/CampaignHeadController";
 
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
+const ACTION_STATUSES = ["Active", "Paused", "Inactive"];
 
 export default function CampaignsPage() {
   const brandVisibility = useBrandVisibility();
@@ -53,6 +54,7 @@ export default function CampaignsPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     Completed: true, Draft: true, Cancelled: true,
   });
+  const [busyCampaignId, setBusyCampaignId] = useState<string | null>(null);
 
   useEffect(() => {
     const next = brandVisibility.normalize(brand);
@@ -137,6 +139,30 @@ export default function CampaignsPage() {
   const liveSpend = liveCampaigns.reduce((sum, c) => sum + c.spend, 0);
   const liveOwners = Array.from(new Set(liveCampaigns.map((c) => c.owner).filter(Boolean))).length;
   const statusChips = ["all", ...STATUS_ORDER];
+
+  const onStatusChange = async (id: string, nextStatus: string) => {
+    setBusyCampaignId(id);
+    setCampaigns((rows) => rows.map((row) => (
+      row.id === id ? { ...row, status: nextStatus, nextApproval: nextStatus.includes("Waiting") ? "CMO" : "None" } : row
+    )));
+    setCollapsed((state) => ({ ...state, [nextStatus]: false }));
+    try {
+      await updateCampaignStatus(id, nextStatus);
+    } finally {
+      setBusyCampaignId(null);
+    }
+  };
+
+  const onDelete = async (campaign: CampaignRow) => {
+    if (!window.confirm(`Delete campaign "${campaign.name}"? This will remove linked planner rows and tasks too.`)) return;
+    setBusyCampaignId(campaign.id);
+    setCampaigns((rows) => rows.filter((row) => row.id !== campaign.id));
+    try {
+      await deleteCampaign(campaign.id);
+    } finally {
+      setBusyCampaignId(null);
+    }
+  };
 
   return (
     <>
@@ -276,17 +302,18 @@ export default function CampaignsPage() {
                 <div className="border-t border-line4">
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-                    style={{ gridTemplateColumns: "2.4fr 1.3fr 1fr 1fr 0.9fr 1.2fr" }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROI</div><div>Readiness</div>
+                    style={{ gridTemplateColumns: "2.2fr 1.25fr 0.9fr 0.85fr 0.75fr 1.05fr 1.6fr" }}>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROI</div><div>Readiness</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
-                    <Link
+                    <div
                       key={c.id}
-                      href={`/campaigns/${c.id}`}
-                      className="grid grid-cols-1 md:grid-cols-[2.4fr_1.3fr_1fr_1fr_0.9fr_1.2fr] gap-y-1 px-5 py-[13px] items-center border-b border-line4 last:border-0 hover:bg-ivory/60 transition"
+                      className="grid grid-cols-1 md:grid-cols-[2.2fr_1.25fr_0.9fr_0.85fr_0.75fr_1.05fr_1.6fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 hover:bg-ivory/60 transition"
                     >
                       <div>
-                        <div className="text-[13.5px] font-bold text-ink">{c.name}</div>
+                        <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
+                          {c.name}
+                        </Link>
                         <div className="text-[11px] text-faint mt-[1px]">{c.campType} · {c.dates}</div>
                         {c.taskTotal > 0 && (
                           <div className="flex items-center gap-2 mt-[5px] max-w-[200px]">
@@ -306,7 +333,41 @@ export default function CampaignsPage() {
                       <div>
                         <StatusBadge tone={READINESS_META[c.readiness].tone}>{READINESS_META[c.readiness].label}</StatusBadge>
                       </div>
-                    </Link>
+                      <div className="flex flex-col md:items-start gap-2">
+                        {(() => {
+                          const statusOptions = ACTION_STATUSES.includes(c.status) ? ACTION_STATUSES : [c.status, ...ACTION_STATUSES];
+                          return (
+                        <select
+                          value={c.status}
+                          onChange={(e) => onStatusChange(c.id, e.target.value)}
+                          disabled={busyCampaignId === c.id}
+                          className="min-w-[132px] text-[11.5px] font-bold text-ink bg-white border rounded-[12px] px-3 py-[8px] cursor-pointer outline-none disabled:opacity-50"
+                          style={{ borderColor: "#ECEAF2" }}
+                        >
+                          {statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                        </select>
+                          );
+                        })()}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link
+                            href={`/campaigns/new?edit=${c.id}`}
+                            className="text-[11.5px] font-bold rounded-[12px] px-3 py-[7px] border bg-white text-[#5B4FD8]"
+                            style={{ borderColor: "#DCD6F7" }}
+                          >
+                            Edit
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => onDelete(c)}
+                            disabled={busyCampaignId === c.id}
+                            className="text-[11.5px] font-bold rounded-[12px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50"
+                            style={{ borderColor: "#F2CACA" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}

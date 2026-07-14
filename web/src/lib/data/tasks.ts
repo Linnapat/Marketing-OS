@@ -146,9 +146,64 @@ export interface PersonSummary {
   total: number; done: number; active: number; waiting: number; stuck: number; needsAttention: boolean;
 }
 
+function workItemKey(task: Task): string {
+  const match = /^(.*):(content|graphic):(.+)$/.exec(task.briefTaskKey || "");
+  if (match) return `brief-item:${match[1]}:${match[3]}`;
+  if (task.relatedGraphicId) return `graphic:${task.relatedGraphicId}`;
+  return `task:${task.id}`;
+}
+
+function modulePriority(task: Task): number {
+  if (task.type === "Graphic" || task.module === "Graphic") return 4;
+  if (task.type === "Content" || task.module === "Content") return 3;
+  if (task.type === "KOL" || task.module === "KOL") return 2;
+  return 1;
+}
+
+function mergedStatus(tasks: Task[]): string {
+  const has = (name: string) => tasks.some((task) => task.status === name);
+  if (tasks.some((task) => task.blocker) || has("Stuck")) return "Stuck";
+  if (has("Need Approval")) return "Need Approval";
+  if (has("Waiting")) return "Waiting";
+  if (has("Revision")) return "Revision";
+  if (has("In Progress")) return "In Progress";
+  if (has("Todo")) return "Todo";
+  return tasks[0]?.status || "Todo";
+}
+
+/** Summary cards should count one creative/content work item once even if the
+ * source brief row spawned linked Content + Graphic task rows. */
+export function collapseTaskWorkItems(tasks: Task[], doneIds: Set<number> | number[] = []): Task[] {
+  const doneSet = doneIds instanceof Set ? doneIds : new Set(doneIds);
+  const groups = new Map<string, Task[]>();
+
+  for (const task of tasks) {
+    const key = workItemKey(task);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(task);
+    else groups.set(key, [task]);
+  }
+
+  return Array.from(groups.values()).map((group) => {
+    const preferred = [...group].sort((a, b) => modulePriority(b) - modulePriority(a))[0] ?? group[0];
+    const dueIso = group.map((task) => task.dueIso).filter(Boolean).sort()[0];
+    const due = group.find((task) => task.dueIso === dueIso)?.due || preferred.due;
+    const blocker = group.find((task) => task.blocker)?.blocker ?? null;
+    const status = group.every((task) => doneSet.has(task.id) || task.status === "Done") ? "Done" : mergedStatus(group);
+    return {
+      ...preferred,
+      dueIso,
+      due,
+      blocker,
+      status,
+    };
+  });
+}
+
 export function teamSummary(doneIds: Set<number>, source: Task[] = TASKS): PersonSummary[] {
+  const tasks = collapseTaskWorkItems(source, doneIds);
   return PEOPLE.map((name) => {
-    const mine = source.filter((t) => t.assignee === name);
+    const mine = tasks.filter((t) => t.assignee === name);
     const status = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
     const done = mine.filter((t) => status(t) === "Done").length;
     const stuck = mine.filter((t) => status(t) === "Stuck").length;

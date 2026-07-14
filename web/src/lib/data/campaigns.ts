@@ -54,6 +54,7 @@ export const READINESS_META: Record<Readiness, { label: string; tone: Tone }> = 
 
 export const STATUS_ORDER = [
   "Active", "In Progress",
+  "Paused", "Inactive",
   // Campaign Brief workflow statuses (from the builder) — must be listed here or
   // campaigns in these states have no group to render in on the list.
   "Ready for Review", "Waiting for Approval", "Need Revision", "Approved",

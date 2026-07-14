@@ -13,7 +13,7 @@ import { BrandFilterValue, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import { dashboardFromDb, dashboardFeed } from "@/lib/data/derive";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { Task } from "@/lib/data/tasks";
+import { collapseTaskWorkItems, Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
 import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
@@ -175,7 +175,7 @@ export default function DashboardPage() {
   const profileTone = avatarTone(displayName);
 
   const tasksOpen = useMemo(
-    () => (view?.t ?? []).filter((t) => t.status !== "Done").slice(0, 5),
+    () => collapseTaskWorkItems(view?.t ?? []).filter((t) => t.status !== "Done").slice(0, 5),
     [view],
   );
 
@@ -198,7 +198,7 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const totalCampaigns = view?.c.length ?? 0;
-    const activeTasks = (view?.t ?? []).filter((t) => t.status !== "Done").length;
+    const activeTasks = collapseTaskWorkItems(view?.t ?? []).filter((t) => t.status !== "Done").length;
     const spentThisMonth = dash?.spentTotal ?? 0;
     const reachThisMonth = (view?.k ?? []).reduce((sum, k) => sum + (k.actualReach || k.expectedReach || 0), 0);
     const totalEngagement = (view?.k ?? []).reduce((sum, k) => sum + (k.actualEngagement || parseMetricValue(k.engagement)), 0);
@@ -211,36 +211,6 @@ export default function DashboardPage() {
       { label: "Engagement Rate", value: `${engagementRate.toFixed(1)}%`, meta: pctDelta(engagementRate, Math.max(engagementRate * 0.94, 0.1)), icon: Megaphone, iconBg: "#F0F8D8", iconFg: "#5D9E35" },
     ];
   }, [view, dash]);
-
-  const chartData = useMemo(() => {
-    const reach = (view?.k ?? []).slice(0, 6).map((k, i) => k.actualReach || k.expectedReach || (i + 1) * 10000);
-    const engage = (view?.k ?? []).slice(0, 6).map((k, i) => k.actualEngagement || parseMetricValue(k.engagement) || (i + 1) * 700);
-    const sales = (view?.c ?? []).slice(0, 6).map((c, i) => Math.round((c.spend || c.budget || 0) * (c.roi || 1)) || (i + 1) * 25000);
-    // Customer acquisition needs a real POS / CRM source. Never infer it from
-    // task counts because that presents operational activity as business data.
-    const customers: number[] = [];
-    const max = Math.max(1, ...reach, ...engage, ...sales);
-    const normalize = (vals: number[]) => {
-      const list = vals.length ? vals : [0, 0, 0, 0, 0, 0];
-      return Array.from({ length: 6 }, (_, i) => list[i] ?? list[list.length - 1] ?? 0).map((v, i) => {
-        const x = 18 + i * 58;
-        const y = 150 - (v / max) * 118;
-        return `${x},${y}`;
-      }).join(" ");
-    };
-    return {
-      reach: normalize(reach),
-      engagement: normalize(engage),
-      customers: "",
-      sales: normalize(sales),
-      stats: [
-        { label: "Reach", value: compactNumber(reach.reduce((a, b) => a + b, 0)), color: "#6C5CE7" },
-        { label: "Engagement", value: compactNumber(engage.reduce((a, b) => a + b, 0)), color: "#8CCF5F" },
-        { label: "New Customers", value: "—", color: "#FFA94D" },
-        { label: "Sales THB", value: baht(sales.reduce((a, b) => a + b, 0), { compact: true }), color: "#D7B76A" },
-      ],
-    };
-  }, [view]);
 
   const displayMonth = date.mode === "range"
     ? (date.start ? new Date(`${date.start}T00:00:00`).getMonth() : new Date().getMonth())
@@ -348,42 +318,7 @@ export default function DashboardPage() {
         })}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
-        <DashboardCard title="Marketing Performance Overview">
-          <div className="grid gap-3 md:grid-cols-4 mb-5">
-            {chartData.stats.map((stat) => (
-              <div key={stat.label} className="rounded-[18px] bg-[#FBFAF7] border border-line px-4 py-3">
-                <div className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: stat.color }}>{stat.label}</div>
-                <div className="text-[20px] font-extrabold tracking-[-0.02em] text-ink mt-1">{stat.value}</div>
-              </div>
-            ))}
-          </div>
-          <div className="rounded-[22px] border border-line bg-[#FBFAF7] p-4">
-            <svg viewBox="0 0 320 165" className="w-full h-[220px]">
-              {[0, 1, 2, 3].map((i) => (
-                <line key={i} x1="0" x2="320" y1={28 + i * 32} y2={28 + i * 32} stroke="#ECEAF2" strokeDasharray="4 6" />
-              ))}
-              <polyline fill="none" stroke="#6C5CE7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chartData.reach} />
-              <polyline fill="none" stroke="#8CCF5F" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chartData.engagement} />
-              <polyline fill="none" stroke="#FFA94D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chartData.customers} />
-              <polyline fill="none" stroke="#D7B76A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chartData.sales} />
-            </svg>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-              {[
-                { label: "Reach", color: "#6C5CE7" },
-                { label: "Engagement", color: "#8CCF5F" },
-                { label: "New Customers", color: "#FFA94D" },
-                { label: "Sales THB", color: "#D7B76A" },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center gap-2 text-[12px] text-muted">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: item.color }} />
-                  {item.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </DashboardCard>
-
+      <div className="grid gap-4">
         <DashboardCard title="Busy but Brilliant" right={<Link href="/my-tasks" className="text-[12px] font-bold text-accent">Open tasks →</Link>}>
           <div className="flex flex-col gap-3">
             {tasksOpen.map((task) => {
