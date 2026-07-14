@@ -220,7 +220,11 @@ export function kolKpis(list: Kol[]) {
   const approvedCount = list.reduce((s, k) => s + kolMetrics(k).approvedCount, 0);
   const latePosts = list.reduce((s, k) => s + kolMetrics(k).latePostCount, 0);
   const overdueItems = list.reduce((s, k) => s + kolMetrics(k).overdueCount, 0);
-  return { total, active, prospect, waitingReview: inReview, inReview, posted, completed, openComments, fees, expReach, avgRoas, revisionRequests, approvedCount, latePosts, overdueItems };
+  // On-plan rate: of the posted-and-judgeable deals, % posted on/before due.
+  const judged = list.map((k) => kolMetrics(k).onTime).filter((v): v is 0 | 1 => v !== null);
+  const onTimeDone = judged.reduce((s, v) => s + v, 0 as number);
+  const onTimeRate = judged.length ? Math.round((onTimeDone / judged.length) * 100) : null;
+  return { total, active, prospect, waitingReview: inReview, inReview, posted, completed, openComments, fees, expReach, avgRoas, revisionRequests, approvedCount, latePosts, overdueItems, onTimeDone, onTimeJudged: judged.length, onTimeRate };
 }
 
 export function kolAlerts(list: Kol[]): Kol[] {
@@ -240,14 +244,37 @@ const dueDateFromLabel = (label: string): Date | null => {
   return new Date(new Date().getFullYear(), idx, Number(m[2]), 23, 59, 59, 999);
 };
 
+/** The deal's due moment — postDueDate is a "Jun 28"-style label or ISO. */
+function kolDue(k: Kol): Date | null {
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(k.postDueDate || "") ? new Date(`${k.postDueDate.slice(0, 10)}T23:59:59`) : null;
+  if (iso && !isNaN(+iso)) return iso;
+  return dueDateFromLabel(k.postDueDate);
+}
+
+/** Live overdue — computed against today, never trusted from the stored flag:
+ *  past due AND not yet posted (Posted/Completed/Paused stop the clock). */
+export function computeKolOverdue(k: Kol, now: Date = new Date()): boolean {
+  const stage = normalizeStage(k.status);
+  if (["Posted", "Completed"].includes(stage) || k.status === "Paused") return false;
+  const due = kolDue(k);
+  return !!due && due.getTime() < now.getTime();
+}
+
+/** Refresh the stored isOverdue flag with the live computation. */
+export const withLiveKolOverdue = (k: Kol): Kol => ({ ...k, isOverdue: computeKolOverdue(k) });
+
 export function kolMetrics(k: Kol) {
   const history = k.history ?? [];
   const fallbackRevisions = k.status === "Revision Requested" ? 1 : 0;
   const revisionCount = history.filter((e) => e.type === "revision_requested").length || fallbackRevisions;
   const proposalSubmitCount = history.filter((e) => e.type === "proposal_submitted").length || (k.proposalSubmittedAt ? 1 : 0);
-  const due = dueDateFromLabel(k.postDueDate);
+  const due = kolDue(k);
   const latePostCount = due ? history.filter((e) => e.type === "posted" && new Date(e.at).getTime() > due.getTime()).length : 0;
-  const overdueCount = k.isOverdue ? 1 : 0;
+  const overdueCount = computeKolOverdue(k) ? 1 : 0;
   const approvedCount = history.filter((e) => e.type === "approved").length || (/approved/i.test(k.quotationStatus || "") ? 1 : 0);
-  return { revisionCount, proposalSubmitCount, latePostCount, overdueCount, approvedCount };
+  // On-plan KPI: the post moment (history event, else postedDate) vs due.
+  const postedAtRaw = history.find((e) => e.type === "posted")?.at ?? k.postedDate ?? null;
+  const postedAt = postedAtRaw ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(postedAtRaw) ? `${postedAtRaw}T12:00:00` : postedAtRaw) : null;
+  const onTime: 0 | 1 | null = due && postedAt && !isNaN(+postedAt) ? (postedAt.getTime() <= due.getTime() ? 1 : 0) : null;
+  return { revisionCount, proposalSubmitCount, latePostCount, overdueCount, approvedCount, onTime };
 }

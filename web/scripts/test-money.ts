@@ -6,7 +6,8 @@
 
 import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from "../src/components/ui/DateFilterBar";
 import { financeFromDb } from "../src/lib/data/derive";
-import { kolRoas, Kol, KOLS } from "../src/lib/data/kol";
+import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
+import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
 import { resultsRoas, CampaignResultRow } from "../src/lib/data/campaignResult";
 import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
@@ -147,6 +148,27 @@ console.log("kolMonthlyTotals — KOL split must roll up per month");
   eq("Nov from single item", m["2026-11"], 10000);
   check("zero-budget month omitted", !("2026-12" in m));
   eq("unsplit item not attributed per month", Object.values(m).reduce((s, v) => s + v, 0), 62000);
+}
+
+console.log("on-plan KPI — live overdue + on-time vs due date");
+{
+  const now = new Date(`${Y}-07-15T10:00:00`);
+  const g = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), history: [], deliverables: [], ...over });
+  check("graphic past due & unfinished → overdue", computeGraphicOverdue(g({ dueIso: `${Y}-07-10`, stage: "In Progress" }), now));
+  check("graphic future due → not overdue", !computeGraphicOverdue(g({ dueIso: `${Y}-07-20`, stage: "In Progress" }), now));
+  check("graphic Delivered stops the clock", !computeGraphicOverdue(g({ dueIso: `${Y}-07-10`, stage: "Delivered" }), now));
+  const onTimeG = graphicMetrics(g({ dueIso: `${Y}-07-10`, stage: "Delivered", history: [{ type: "delivered", at: `${Y}-07-09T10:00:00`, by: "Boss" }] }));
+  eq("graphic delivered before due → onTime 1", onTimeG.onTime ?? -1, 1);
+  const lateG = graphicMetrics(g({ dueIso: `${Y}-07-10`, stage: "Delivered", history: [{ type: "delivered", at: `${Y}-07-12T10:00:00`, by: "Boss" }] }));
+  eq("graphic delivered after due → onTime 0", lateG.onTime ?? -1, 0);
+  check("graphic unfinished → onTime null (excluded)", graphicMetrics(g({ dueIso: `${Y}-07-10`, stage: "In Progress" })).onTime === null);
+
+  const k = (over: Partial<Kol>): Kol => ({ ...(KOLS[0] as Kol), history: [], postedDate: null, ...over });
+  check("kol past due & not posted → overdue", computeKolOverdue(k({ postDueDate: `${Y}-07-10`, status: "Producing" }), now));
+  check("kol Posted stops the clock", !computeKolOverdue(k({ postDueDate: `${Y}-07-10`, status: "Posted" }), now));
+  check("kol Paused excluded", !computeKolOverdue(k({ postDueDate: `${Y}-07-10`, status: "Paused" }), now));
+  eq("kol posted before due → onTime 1", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-09` })).onTime ?? -1, 1);
+  eq("kol posted after due → onTime 0", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-12` })).onTime ?? -1, 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

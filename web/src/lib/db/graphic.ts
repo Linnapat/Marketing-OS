@@ -2,7 +2,7 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, deliverableProgress } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress } from "@/lib/data/graphic";
 import { BrandId, brandName } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
@@ -12,10 +12,10 @@ import { assertDbOk } from "@/lib/db/assert";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
-  if (!db) return GRAPHICS.map((g) => ({ ...g }));
+  if (!db) return GRAPHICS.map((g) => withLiveGraphicOverdue({ ...g }));
   const { data, error } = await db.from("graphic_requests").select("id, data").order("id");
   if (error || !data) return []; // query error = no live data, never demo rows
-  return data.map((r) => r.data as Graphic).filter(Boolean);
+  return data.map((r) => r.data as Graphic).filter(Boolean).map(withLiveGraphicOverdue);
 }
 
 export async function createGraphic(g: Graphic): Promise<void> {

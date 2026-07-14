@@ -183,13 +183,25 @@ export default function KolPage() {
             boxShadow: "0 18px 44px rgba(181, 87, 126, 0.14)",
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
             {KPIS.slice(0, 5).map((k) => (
               <div key={k.label} className="rounded-[20px] border px-4 py-4 bg-white/58" style={{ borderColor: "#F1BDD7" }}>
                 <div className="text-[11px] uppercase tracking-[0.08em] text-[#A26785] font-extrabold">{k.label}</div>
                 <div className="mt-3 text-[28px] leading-none font-extrabold text-[#4E2136]">{k.value}</div>
               </div>
             ))}
+            {/* On-plan KPI: % posted on/before due + live overdue count */}
+            <div className="rounded-[20px] border px-4 py-4" style={{ borderColor: "#CFE4C2", background: "#EEF4EE" }}>
+              <div className="text-[11px] uppercase tracking-[0.08em] font-extrabold" style={{ color: "#4E7A4E" }}>🎯 On-time</div>
+              <div className="mt-3 text-[24px] leading-none font-extrabold" style={{ color: "#2F4A2F" }}>
+                {kpi.onTimeRate != null ? `${kpi.onTimeRate}%` : "—"}
+              </div>
+              {kpi.onTimeJudged > 0 && <div className="mt-1 text-[10.5px] font-bold" style={{ color: "#5A7A4D" }}>{kpi.onTimeDone}/{kpi.onTimeJudged} posted ตามแผน</div>}
+            </div>
+            <div className="rounded-[20px] border px-4 py-4" style={kpi.overdueItems ? { borderColor: "#F5C8C4", background: "#FFF5F4" } : { borderColor: "#F1BDD7", background: "rgba(255,255,255,0.58)" }}>
+              <div className="text-[11px] uppercase tracking-[0.08em] font-extrabold" style={{ color: kpi.overdueItems ? "#B33A2E" : "#A26785" }}>⏰ Overdue</div>
+              <div className="mt-3 text-[24px] leading-none font-extrabold" style={{ color: kpi.overdueItems ? "#B33A2E" : "#4E2136" }}>{kpi.overdueItems}</div>
+            </div>
           </div>
         </ModuleSummaryCard>
 

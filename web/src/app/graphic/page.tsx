@@ -158,6 +158,17 @@ export default function GraphicPage() {
                 <span className="text-[15px] leading-none font-extrabold text-[#2F2413]">{k.value}</span>
               </span>
             ))}
+            {/* On-plan KPI: % finished on/before due + live overdue count */}
+            <span className="inline-flex items-center gap-2 rounded-pill border px-3 py-[6px]" style={{ borderColor: "#CFE4C2", background: "#EEF4EE" }}>
+              <span className="text-[10.5px] uppercase tracking-[0.06em] font-extrabold" style={{ color: "#4E7A4E" }}>🎯 On-time</span>
+              <span className="text-[15px] leading-none font-extrabold" style={{ color: "#2F4A2F" }}>
+                {kpi.onTimeRate != null ? `${kpi.onTimeRate}% (${kpi.onTimeDone}/${kpi.onTimeJudged})` : "—"}
+              </span>
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-pill border px-3 py-[6px]" style={{ borderColor: kpi.overdueItems ? "#F5C8C4" : "#D9B86A", background: kpi.overdueItems ? "#FFF5F4" : "rgba(255,255,255,0.55)" }}>
+              <span className="text-[10.5px] uppercase tracking-[0.06em] font-extrabold" style={{ color: kpi.overdueItems ? "#B33A2E" : "#8A6930" }}>⏰ Overdue</span>
+              <span className="text-[15px] leading-none font-extrabold" style={{ color: kpi.overdueItems ? "#B33A2E" : "#2F2413" }}>{kpi.overdueItems}</span>
+            </span>
           </div>
         </ModuleSummaryCard>
       </div>

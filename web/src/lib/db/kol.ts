@@ -2,19 +2,19 @@
 // column so nothing is lost. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { KOLS, Kol } from "@/lib/data/kol";
+import { KOLS, Kol, withLiveKolOverdue } from "@/lib/data/kol";
 import { BrandId } from "@/lib/brands";
 import { assertDbData, assertDbOk } from "@/lib/db/assert";
 
 /** Read all creators — from Supabase (data blob) if configured, else the mock. */
 export async function fetchKols(): Promise<Kol[]> {
   const db = supabase();
-  if (!db) return KOLS.map((k) => ({ ...k }));
+  if (!db) return KOLS.map((k) => withLiveKolOverdue({ ...k }));
   const { data, error } = await db.from("kols").select("id, data").order("id");
   // With a configured production database, never replace an empty/error result
   // with demo creators — that made the KPI show "Active 2" without real work.
   if (error || !data) return [];
-  return data.map((r) => r.data as Kol).filter(Boolean);
+  return data.map((r) => r.data as Kol).filter(Boolean).map(withLiveKolOverdue);
 }
 
 /** Insert a new creator request; returns it (with a unique id). */
@@ -64,7 +64,7 @@ export async function fetchKolsForCampaign(campaignId: string): Promise<Kol[]> {
   if (!db) return [];
   const { data, error } = await db.from("kols").select("data").filter("data->>campaignId", "eq", campaignId);
   if (error || !data) return [];
-  return data.map((r) => r.data as Kol).filter(Boolean);
+  return data.map((r) => r.data as Kol).filter(Boolean).map(withLiveKolOverdue);
 }
 
 // Fields that come FROM the requirement (KOL Plan) and should be overwritten on

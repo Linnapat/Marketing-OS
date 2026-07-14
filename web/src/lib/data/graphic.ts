@@ -207,6 +207,23 @@ const dueDateFromLabel = (label: string): Date | null => {
   return new Date(new Date().getFullYear(), idx, Number(m[2]), 23, 59, 59, 999);
 };
 
+/** The request's real due moment: dueIso when present, else the "Jul 2" label. */
+function graphicDue(g: Graphic): Date | null {
+  if (g.dueIso) { const d = new Date(`${g.dueIso}T23:59:59`); if (!isNaN(+d)) return d; }
+  return dueDateFromLabel(g.due);
+}
+
+/** Live overdue — computed against today, never trusted from the stored flag:
+ *  past due AND not yet finished (Approved/Delivered stop the clock). */
+export function computeGraphicOverdue(g: Graphic, now: Date = new Date()): boolean {
+  if (["Approved", "Delivered"].includes(g.stage)) return false;
+  const due = graphicDue(g);
+  return !!due && due.getTime() < now.getTime();
+}
+
+/** Refresh the stored isOverdue flag with the live computation. */
+export const withLiveGraphicOverdue = (g: Graphic): Graphic => ({ ...g, isOverdue: computeGraphicOverdue(g) });
+
 export function graphicMetrics(g: Graphic) {
   const history = g.history ?? [];
   const fallbackRevision = (g.deliverables ?? []).reduce((sum, d) => sum + d.feedback.length, 0);
@@ -214,10 +231,15 @@ export function graphicMetrics(g: Graphic) {
   const rejectionCount = history.filter((e) => e.type === "revision_requested" && (e.note || "").toLowerCase().includes("reject")).length;
   const approvedCount = history.filter((e) => e.type === "approved").length || ((g.stage === "Approved" || g.stage === "Delivered") ? 1 : 0);
   const deliveredCount = history.filter((e) => e.type === "delivered").length || (g.stage === "Delivered" ? 1 : 0);
-  const due = dueDateFromLabel(g.due);
+  const due = graphicDue(g);
   const lateSubmissionCount = due ? history.filter((e) => e.type === "submitted" && new Date(e.at).getTime() > due.getTime()).length : 0;
-  const overdueCount = g.isOverdue ? 1 : 0;
-  return { revisionCount, rejectionCount, approvedCount, deliveredCount, lateSubmissionCount, overdueCount };
+  const overdueCount = computeGraphicOverdue(g) ? 1 : 0;
+  // On-plan KPI: the first finish moment (delivered, else approved) vs due.
+  // 1 = finished on/before due, 0 = finished late, null = not finished yet or
+  // no timestamp to judge (excluded from the rate).
+  const finishedAt = history.find((e) => e.type === "delivered")?.at ?? history.find((e) => e.type === "approved")?.at;
+  const onTime: 0 | 1 | null = due && finishedAt ? (new Date(finishedAt).getTime() <= due.getTime() ? 1 : 0) : null;
+  return { revisionCount, rejectionCount, approvedCount, deliveredCount, lateSubmissionCount, overdueCount, onTime };
 }
 
 export function graphicKpis(list: Graphic[]) {
@@ -233,6 +255,12 @@ export function graphicKpis(list: Graphic[]) {
     revisionRequests: list.reduce((s, g) => s + graphicMetrics(g).revisionCount, 0),
     lateSubmissions: list.reduce((s, g) => s + graphicMetrics(g).lateSubmissionCount, 0),
     overdueItems: list.reduce((s, g) => s + graphicMetrics(g).overdueCount, 0),
+    // On-plan rate: of the finished-and-judgeable items, % finished on time.
+    ...(() => {
+      const judged = list.map((g) => graphicMetrics(g).onTime).filter((v): v is 0 | 1 => v !== null);
+      return { onTimeDone: judged.reduce((s, v) => s + v, 0 as number), onTimeJudged: judged.length,
+        onTimeRate: judged.length ? Math.round((judged.reduce((s, v) => s + v, 0 as number) / judged.length) * 100) : null };
+    })(),
   };
 }
 
