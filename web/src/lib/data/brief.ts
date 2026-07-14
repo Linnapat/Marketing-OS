@@ -116,6 +116,7 @@ export interface BriefKolItem {
   clicks: number;
   views: number;
   budget: number;
+  monthly?: MonthlyKolAllocation[];
   area: string;
   contentRequired: string[];
   postingStart: string;     // ISO
@@ -127,6 +128,7 @@ export interface BriefKolItem {
 
 export interface AdsPlatformBudget { platform: string; amount: number; }
 export interface MonthlyBudgetAllocation { month: string; amount: number; }
+export interface MonthlyKolAllocation { month: string; budget: number; pages: number; }
 
 export interface BriefBudget {
   total: number;
@@ -190,7 +192,7 @@ export function emptyKolItem(seq: number): BriefKolItem {
   return {
     id: `kr-${seq}`, name: "", handle: "", platforms: [], kolType: KOL_TYPES[0], followers: 0,
     count: 1, expectedReach: 0, likes: 0, comments: 0, shares: 0, saves: 0, clicks: 0, views: 0,
-    budget: 0, area: "", contentRequired: ["Reel"], postingStart: "", postingEnd: "",
+    budget: 0, monthly: [], area: "", contentRequired: ["Reel"], postingStart: "", postingEnd: "",
     owner: "", status: "Planned", note: "",
   };
 }

@@ -13,7 +13,7 @@ import {
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePage = false }: {
+export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePage = false, monthKeys = [] }: {
   item: BriefKolItem;
   onChange: (patch: Partial<BriefKolItem>) => void;
   branches?: string[];
@@ -21,8 +21,11 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
   /** Hide the KOL name / handle row — used at Request stage where the real page
    *  isn't known yet (the specialist proposes it later). */
   hidePage?: boolean;
+  /** Campaign months for splitting creator/page count and KOL budget. */
+  monthKeys?: string[];
 }) {
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
+  const fmt = (n: number) => n ? n.toLocaleString("en-US") : "";
   const rate = engagementRate(item);
   const togglePlatform = (p: string) => {
     const on = item.platforms.includes(p);
@@ -31,6 +34,16 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
   const toggleContent = (c: string) => {
     const on = item.contentRequired.includes(c);
     onChange({ contentRequired: on ? item.contentRequired.filter((x) => x !== c) : [...item.contentRequired, c] });
+  };
+  const monthlyRows = monthKeys.map((month) => item.monthly?.find((row) => row.month === month) ?? { month, budget: 0, pages: 0 });
+  const setMonthly = (month: string, patch: Partial<{ budget: number; pages: number }>) => {
+    const next = monthKeys.map((key) => {
+      const current = item.monthly?.find((row) => row.month === key) ?? { month: key, budget: 0, pages: 0 };
+      return key === month ? { ...current, ...patch } : current;
+    });
+    const budget = next.reduce((sum, row) => sum + (row.budget || 0), 0);
+    const count = next.reduce((sum, row) => sum + (row.pages || 0), 0);
+    onChange({ monthly: next, budget: budget || item.budget, count: count || item.count });
   };
 
   return (
@@ -65,11 +78,35 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
           })}
         </div>
       </div>
-      <div><label className={label}># Creator / Page</label><input value={item.count || ""} onChange={(e) => onChange({ count: num(e.target.value) })} className={field} placeholder="1" /></div>
-      <div><label className={label}>Follower</label><input value={item.followers || ""} onChange={(e) => onChange({ followers: num(e.target.value) })} className={field} placeholder="100000" /></div>
-      <div><label className={label}>Expected Reach</label><input value={item.expectedReach || ""} onChange={(e) => onChange({ expectedReach: num(e.target.value) })} className={field} placeholder="50000" /></div>
-      <div><label className={label}>Budget</label><input value={item.budget || ""} onChange={(e) => onChange({ budget: num(e.target.value) })} className={field} placeholder="฿" /></div>
+      <div><label className={label}># Creator / Page</label><input value={fmt(item.count)} onChange={(e) => onChange({ count: num(e.target.value) })} className={field} placeholder="1" /></div>
+      <div><label className={label}>Follower / page</label><input value={fmt(item.followers)} onChange={(e) => onChange({ followers: num(e.target.value) })} className={field} placeholder="100,000" /></div>
+      <div><label className={label}>Reach / page</label><input value={fmt(item.expectedReach)} onChange={(e) => onChange({ expectedReach: num(e.target.value) })} className={field} placeholder="50,000" /></div>
+      <div><label className={label}>Budget</label><input value={fmt(item.budget)} onChange={(e) => onChange({ budget: num(e.target.value), monthly: [] })} className={field} placeholder="฿" /></div>
       <div><label className={label}>Branch / Area</label><select value={item.area} onChange={(e) => onChange({ area: e.target.value })} className={field}><option value="">—</option>{branches.map((br) => <option key={br}>{br}</option>)}</select></div>
+      {monthKeys.length > 0 && (
+        <div className="md:col-span-3 rounded-[12px] border border-line2 bg-surface p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[11.5px] font-extrabold text-muted">Monthly split</div>
+              <div className="text-[10.5px] text-faint">แบ่ง Budget และ Creator/Page รายเดือน แล้วรวมกลับเข้า field ด้านบนอัตโนมัติ</div>
+            </div>
+            <div className="text-[11px] font-bold text-ink">
+              {fmt(monthlyRows.reduce((sum, row) => sum + row.pages, 0)) || "0"} page · ฿{monthlyRows.reduce((sum, row) => sum + row.budget, 0).toLocaleString("en-US")}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="grid min-w-max gap-2" style={{ gridTemplateColumns: `repeat(${monthKeys.length}, minmax(118px, 1fr))` }}>
+              {monthlyRows.map((row) => (
+                <div key={row.month} className="rounded-[10px] border border-line3 bg-ivory p-2">
+                  <div className="mb-1 text-[10.5px] font-extrabold text-faint">{row.month}</div>
+                  <input value={fmt(row.pages)} onChange={(e) => setMonthly(row.month, { pages: num(e.target.value) })} className="mb-1 w-full rounded-[8px] border border-line2 bg-white px-2 py-1.5 text-[12px] outline-none" placeholder="pages" />
+                  <input value={fmt(row.budget)} onChange={(e) => setMonthly(row.month, { budget: num(e.target.value) })} className="w-full rounded-[8px] border border-line2 bg-white px-2 py-1.5 text-[12px] outline-none" placeholder="budget" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Engagement metric breakdown */}
       <div className="md:col-span-3 mt-1 pt-3 border-t border-line3">

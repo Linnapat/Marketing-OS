@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import {
@@ -25,6 +26,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   onPublishTimeChange?: (value: string) => void;
   lockApproverToRequester?: boolean;
 }) {
+  const [customSizes, setCustomSizes] = useState<Record<string, string>>({});
   const requesterValue = item.requester?.trim() || "";
   const requesterDisplay = requesterValue || requesterFallback || "You";
   const approverDisplay = item.approver?.trim() || requesterDisplay;
@@ -42,6 +44,13 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   const toggleAsset = (platform: string, size: string) => {
     const has = item.assets.some((a) => a.platform === platform && a.size === size);
     onChange({ assets: has ? item.assets.filter((a) => !(a.platform === platform && a.size === size)) : [...item.assets, { platform, size }] });
+  };
+  const addCustomSize = (platform: string) => {
+    const size = (customSizes[platform] || "").trim();
+    if (!size) return;
+    const exists = item.assets.some((a) => a.platform === platform && a.size.toLowerCase() === size.toLowerCase());
+    if (!exists) onChange({ assets: [...item.assets, { platform, size }] });
+    setCustomSizes((map) => ({ ...map, [platform]: "" }));
   };
   const graphicDueField = item.requiredGraphic ? (
     <div>
@@ -72,7 +81,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
             <input value={item.designer || "Creative leader will assign after brief"} readOnly aria-readonly="true" className={`${field} text-faint bg-ivory cursor-not-allowed`} />
           </div>
           <div>
-            <label className={label}>Approver</label>
+            <label className={label}>Approver <span className="text-faint font-normal">· default requester</span></label>
             {lockApproverToRequester ? (
               <input value={`= Requester (${approverDisplay})`} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
             ) : (
@@ -85,12 +94,8 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
       <div><label className={label}>Content Type</label><select value={item.type} onChange={(e) => onChange({ type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
       {requestDate ? (
-        <div className={`md:col-span-2 grid gap-3 ${onPublishTimeChange ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+        <div className={`md:col-span-2 grid gap-3 ${onPublishTimeChange ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
           {graphicDueField}
-          <div>
-            <label className={label}>Request date</label>
-            <input value={requestDate} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
-          </div>
           <div>
             <label className={label}>Publish Date</label>
             <DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} />
@@ -121,8 +126,8 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
 
       {/* Platform + Asset Size — multi-select checkboxes */}
       <div className="md:col-span-2">
-        <label className={label}>Platforms &amp; Asset Deliverables <span className="text-status-red">*</span> <span className="text-faint font-normal">· เลือกได้หลาย platform และหลายขนาด</span></label>
-        <div className="mb-2 text-[11px] text-faint">Content Type กำหนดรูปแบบงาน ส่วน Platform × Size จะรวมเป็น deliverables ใน Graphic Request เดียว ไม่สร้างงานซ้ำ</div>
+        <label className={label}>Platforms <span className="text-status-red">*</span> <span className="text-faint font-normal">· Asset size optional</span></label>
+        <div className="mb-2 text-[11px] text-faint">Content Type กำหนดรูปแบบงาน ส่วน Platform จะรวมเป็น Graphic Request เดียว ไม่สร้างงานซ้ำ · ใส่ size เฉพาะตอนมี requirement พิเศษ</div>
         <div className="flex flex-wrap gap-2 mb-2">
           {CONTENT_PLATFORMS.map((p) => {
             const on = item.platforms.includes(p);
@@ -136,8 +141,8 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         </div>
         {item.platforms.map((p) => (
           <div key={p} className="mb-2 pl-2 border-l-2" style={{ borderColor: "#E5DECF" }}>
-            <div className="text-[11.5px] font-bold text-muted mb-1">{p} · sizes {!item.assets.some((a) => a.platform === p) && <span className="text-status-red font-normal">(เลือกอย่างน้อย 1)</span>}</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="text-[11.5px] font-bold text-muted mb-1">{p} · optional size</div>
+            <div className="flex flex-wrap gap-2 items-center">
               {assetSizesFor(p).map((s) => {
                 const on = item.assets.some((a) => a.platform === p && a.size === s);
                 return (
@@ -147,6 +152,20 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
                   </label>
                 );
               })}
+              <input
+                value={customSizes[p] || ""}
+                onChange={(e) => setCustomSizes((map) => ({ ...map, [p]: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomSize(p); } }}
+                placeholder="custom size"
+                className="w-[120px] text-[11.5px] px-[10px] py-[5px] rounded-pill border border-line2 bg-white outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => addCustomSize(p)}
+                className="text-[11.5px] font-bold px-[10px] py-[5px] rounded-pill border border-[#DDD1FF] text-[#6C5CE7] bg-[#F7F2FF]"
+              >
+                + size
+              </button>
             </div>
           </div>
         ))}

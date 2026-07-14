@@ -27,7 +27,7 @@ import {
 } from "@/components/campaign/CampaignHeadController";
 
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
-const ACTION_STATUSES = ["Active", "Paused", "Inactive"];
+const ACTION_STATUSES = ["Draft", "Waiting Approval", "Approved", "Active", "Paused", "Inactive", "Completed", "Cancelled"];
 
 export default function CampaignsPage() {
   const brandVisibility = useBrandVisibility();

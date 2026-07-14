@@ -23,7 +23,7 @@ import {
 } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
-import { budgetByBrandFromSheet, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
+import { BudgetSheetRow, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -59,6 +59,17 @@ function overviewErrors(b: CampaignBrief): Record<string, string> {
 
 const monthKeyFromBrief = (brief: CampaignBrief) => (brief.startDate || brief.launchDate || "").slice(0, 7);
 const effectiveBriefBudget = (brief: CampaignBrief) => Math.max(brief.budget.total || 0, budgetSummary(brief).allocated || 0);
+const isDigitalBudgetRow = (row: BudgetSheetRow) => (row.group || "").trim().toLowerCase() === "digital marketing";
+
+function digitalBudgetByBrandFromSheet(rows: BudgetSheetRow[], month: string): Record<BrandId, number> {
+  const totals: Record<BrandId, number> = { teppen: 0, omakase: 0, mainichi: 0, touka: 0 };
+  for (const row of rows) {
+    if (row.month !== month || !isDigitalBudgetRow(row)) continue;
+    if (!row.brand || row.brand === "all") continue;
+    totals[row.brand] += row.budget || 0;
+  }
+  return totals;
+}
 
 function budgetByMonthForBrief(brief: CampaignBrief): Record<string, number> {
   const rows = (brief.budget.monthly ?? []).filter((row) => row.month && row.amount > 0);
@@ -70,7 +81,7 @@ function budgetByMonthForBrief(brief: CampaignBrief): Record<string, number> {
 function monthlyBudgetWarning(brief: CampaignBrief, savedBriefs: CampaignBrief[], sheetRows: Awaited<ReturnType<typeof fetchBudgetSheetRows>>): string | null {
   const currentByMonth = budgetByMonthForBrief(brief);
   const warnings = Object.entries(currentByMonth).flatMap(([monthKey, current]) => {
-    const plBudget = budgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
+    const plBudget = digitalBudgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
     if (plBudget <= 0) return [];
     const existing = savedBriefs
       .filter((b) => b.id !== brief.id && b.b === brief.b && b.status !== "Need Revision")
@@ -87,7 +98,7 @@ function monthlyBudgetContext(brief: CampaignBrief, savedBriefs: CampaignBrief[]
   const currentByMonth = budgetByMonthForBrief(brief);
   const activeMonths = months.length ? months : Object.keys(currentByMonth);
   return activeMonths.map((monthKey) => {
-    const plBudget = budgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
+    const plBudget = digitalBudgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
     const committed = savedBriefs
       .filter((b) => b.id !== brief.id && b.b === brief.b && !["Need Revision", "Cancelled"].includes(b.status))
       .reduce((sum, b) => sum + (budgetByMonthForBrief(b)[monthKey] || 0), 0);
@@ -312,11 +323,18 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
   errors: Record<string, string>; brandOptions: BrandId[]; brandConfigs: BrandCfg[]; campaignTypes: string[];
 }) {
+  const [helperReach, setHelperReach] = useState("");
+  const [helperCv, setHelperCv] = useState("3");
+  const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const errBorder = { borderColor: "#B33A2E", background: "#FFF7F6" };
   const errText = "text-[11px] text-status-red font-semibold mt-1";
   const toggleMetric = (m: string) => setBrief((b) => ({ ...b, successMetrics: b.successMetrics.includes(m) ? b.successMetrics.filter((x) => x !== m) : [...b.successMetrics, m] }));
   const setGoal = (m: string, v: string) => setBrief((b) => ({ ...b, successGoals: { ...b.successGoals, [m]: v } }));
   const endInvalid = !!brief.startDate && !!brief.endDate && brief.endDate < brief.startDate;
+  const reachGoal = num(helperReach);
+  const cvPct = Number(helperCv) || 0;
+  const estimatedVisits = Math.round(reachGoal * (cvPct / 100));
+  const cpr = reachGoal ? effectiveBriefBudget(brief) / reachGoal : 0;
   return (
     <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
       <div className="grid md:grid-cols-2 gap-4">
@@ -382,6 +400,36 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
               ))}
             </div>
           )}
+        </div>
+
+        <div className="md:col-span-2 rounded-[16px] border border-line2 bg-[#FFFDF7] p-4">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div className="text-[12.5px] font-extrabold text-ink">CPR Helper</div>
+              <div className="text-[11px] text-faint">สูตร: Reach × %CV = Estimated Visit · CPR (THB) = Budget ÷ Reach</div>
+            </div>
+            <span className="rounded-pill bg-[#F2EEFF] px-3 py-1 text-[10.5px] font-extrabold text-[#6C5CE7]">Overview planning</span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-[1fr_.8fr_1fr_1fr_1fr]">
+            <label>
+              <span className="mb-1 block text-[11px] font-bold text-muted">Target Reach</span>
+              <input value={helperReach} onChange={(e) => setHelperReach(e.target.value)} className={field} placeholder="100,000" />
+            </label>
+            <label>
+              <span className="mb-1 block text-[11px] font-bold text-muted">%CV to Visit</span>
+              <input value={helperCv} onChange={(e) => setHelperCv(e.target.value)} className={field} placeholder="3" />
+            </label>
+            {[
+              ["Budget base", baht(effectiveBriefBudget(brief), { compact: true })],
+              ["Estimated Visit", estimatedVisits ? estimatedVisits.toLocaleString("en-US") : "—"],
+              ["CPR (THB)", reachGoal ? `฿${cpr.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"],
+            ].map(([labelText, value]) => (
+              <div key={labelText} className="rounded-[12px] border border-line2 bg-surface px-3 py-2">
+                <div className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-faint">{labelText}</div>
+                <div className="mt-1 text-[14px] font-extrabold text-ink">{value}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Dates */}
@@ -523,7 +571,7 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
                 <button onClick={() => rm(k.id)} className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
               </div>
             </div>
-            <KolItemForm item={k} onChange={(patch) => upd(k.id, patch)} branches={branches} outOfRange={(iso) => !!outOfRange(iso)} hidePage />
+            <KolItemForm item={k} onChange={(patch) => upd(k.id, patch)} branches={branches} outOfRange={(iso) => !!outOfRange(iso)} hidePage monthKeys={campaignMonthKeys(brief.startDate, brief.endDate)} />
           </div>
         ))}
         {brief.kols.length === 0 && <div className="text-[12.5px] text-faint text-center py-6 border border-dashed border-line2 rounded-[12px]">ยังไม่มี KOL — กด “Add KOL Requirement”</div>}
@@ -546,8 +594,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
   budgetSheetRows: Awaited<ReturnType<typeof fetchBudgetSheetRows>>;
   onEditKol: () => void;
 }) {
-  const [targetVisits, setTargetVisits] = useState("");
-  const [targetReach, setTargetReach] = useState("");
+  const [budgetContextOpen, setBudgetContextOpen] = useState(true);
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const setB = (patch: Partial<CampaignBrief["budget"]>) => setBrief((b) => ({ ...b, budget: { ...b.budget, ...patch } }));
   const setAds = (i: number, patch: Partial<{ platform: string; amount: number }>) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.map((a, j) => j === i ? { ...a, ...patch } : a) } }));
@@ -579,11 +626,6 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
     ["Graphic / Production", "graphic"], ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
   ];
   const contextRows = useMemo(() => monthlyBudgetContext(brief, savedBriefs, budgetSheetRows), [brief, savedBriefs, budgetSheetRows]);
-  const calcBudget = Math.max(brief.budget.total || 0, bs.allocated || 0);
-  const visitGoal = num(targetVisits);
-  const reachGoal = num(targetReach);
-  const costPerVisit = visitGoal ? calcBudget / visitGoal : 0;
-  const costPerReach = reachGoal ? calcBudget / reachGoal : 0;
   const branchScope = brief.branches.length ? brief.branches.join(", ") : "ยังไม่ได้เลือกสาขา";
 
   return (
@@ -594,84 +636,69 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
             ⚠️ {budgetGuardWarning}
           </div>
         )}
-        <div className="mb-4 grid gap-3 xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="mb-4">
           <div className="rounded-[16px] border border-line2 p-4" style={{ background: "#F8FCF1" }}>
             <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="text-[12.5px] font-extrabold text-ink">Budget context</div>
-                <div className="text-[11px] text-faint">{brandName(brief.b)} · {branchScope}</div>
+              <button type="button" onClick={() => setBudgetContextOpen((open) => !open)} className="flex items-start gap-2 text-left">
+                <span className="mt-[1px] text-[14px] text-muted">{budgetContextOpen ? "⌄" : "›"}</span>
+                <span>
+                  <span className="block text-[12.5px] font-extrabold text-ink">Budget context · Digital Marketing</span>
+                  <span className="block text-[11px] text-faint">{brandName(brief.b)} · {branchScope}</span>
+                </span>
+              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-pill px-2.5 py-1 text-[10.5px] font-extrabold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+                  Budget Sheet
+                </span>
+                <span className="rounded-pill px-2.5 py-1 text-[10.5px] font-extrabold" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>
+                  Digital Marketing only
+                </span>
               </div>
-              <span className="rounded-pill px-2.5 py-1 text-[10.5px] font-extrabold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
-                Budget Sheet
-              </span>
             </div>
-            {!budgetSheetRows.length && (
-              <div className="mb-3 rounded-[12px] border border-line2 bg-surface px-3 py-2 text-[11.5px] font-semibold text-faint">
-                ยังไม่ได้โหลด Budget Sheet source — ระบบจะแสดงงบ PL ทันทีเมื่อ sheet พร้อม
-              </div>
-            )}
-            <div className="flex flex-col gap-2">
-              {contextRows.length ? contextRows.map((row) => {
-                const over = row.remaining < 0;
-                return (
-                  <div key={row.month} className="rounded-[12px] border border-line2 bg-surface p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
-                      <span className="text-[11px] font-extrabold" style={{ color: over ? "#B33A2E" : "#4E7A4E" }}>
-                        {over ? `Over ${baht(Math.abs(row.remaining), { compact: true })}` : `Left ${baht(row.remaining, { compact: true })}`}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-[10.5px] sm:grid-cols-4">
-                      {[
-                        ["PL Budget", row.plBudget],
-                        ["Committed", row.committed],
-                        ["This campaign", row.thisCampaign],
-                        ["After this", row.remaining],
-                      ].map(([labelText, amount]) => (
-                        <div key={labelText as string} className="rounded-[10px] border border-line3 px-2.5 py-2">
-                          <div className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-faint">{labelText}</div>
-                          <div className="mt-0.5 font-extrabold text-ink">{baht(amount as number, { compact: true })}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
-                      <div className="h-full rounded-full" style={{ width: `${row.usedPct}%`, background: over ? "#B33A2E" : "#4E7A4E" }} />
-                    </div>
+            {budgetContextOpen && (
+              <>
+                {!budgetSheetRows.length && (
+                  <div className="mb-3 rounded-[12px] border border-line2 bg-surface px-3 py-2 text-[11.5px] font-semibold text-faint">
+                    ยังไม่ได้โหลด Budget Sheet source — ระบบจะแสดงงบ Digital Marketing ทันทีเมื่อ sheet พร้อม
                   </div>
-                );
-              }) : (
-                <div className="rounded-[12px] border border-dashed border-line2 bg-surface px-3 py-4 text-center text-[11.5px] font-semibold text-faint">
-                  เลือกช่วงวันที่แคมเปญก่อน เพื่อดู context งบรายเดือน
+                )}
+                <div className="flex flex-col gap-2">
+                  {contextRows.length ? contextRows.map((row) => {
+                    const over = row.remaining < 0;
+                    return (
+                      <div key={row.month} className="rounded-[12px] border border-line2 bg-surface p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
+                          <span className="text-[11px] font-extrabold" style={{ color: over ? "#B33A2E" : "#4E7A4E" }}>
+                            {over ? `Over ${baht(Math.abs(row.remaining), { compact: true })}` : `Left ${baht(row.remaining, { compact: true })}`}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[10.5px] sm:grid-cols-4">
+                          {[
+                            ["Digital Budget", row.plBudget],
+                            ["Committed", row.committed],
+                            ["This campaign", row.thisCampaign],
+                            ["After this", row.remaining],
+                          ].map(([labelText, amount]) => (
+                            <div key={labelText as string} className="rounded-[10px] border border-line3 px-2.5 py-2">
+                              <div className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-faint">{labelText}</div>
+                              <div className="mt-0.5 font-extrabold text-ink">{baht(amount as number, { compact: true })}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+                          <div className="h-full rounded-full" style={{ width: `${row.usedPct}%`, background: over ? "#B33A2E" : "#4E7A4E" }} />
+                        </div>
+                      </div>
+                    );
+                  }) : (
+                    <div className="rounded-[12px] border border-dashed border-line2 bg-surface px-3 py-4 text-center text-[11.5px] font-semibold text-faint">
+                      เลือกช่วงวันที่แคมเปญก่อน เพื่อดู context งบรายเดือน
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-[16px] border border-line2 p-4" style={{ background: "#FFFDF7" }}>
-            <div className="text-[12.5px] font-extrabold text-ink">CPR helper</div>
-            <div className="mt-1 text-[11px] text-faint">ช่วยคิดจาก Budget ที่กำลัง allocate: Budget / Goal</div>
-            <div className="mt-3 grid gap-2">
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-bold text-muted">Target visit</span>
-                <input value={targetVisits} onChange={(e) => setTargetVisits(e.target.value)} className={field} placeholder="เช่น 1,000" />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-bold text-muted">Target reach</span>
-                <input value={targetReach} onChange={(e) => setTargetReach(e.target.value)} className={field} placeholder="เช่น 100,000" />
-              </label>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {[
-                ["Budget base", baht(calcBudget, { compact: true })],
-                ["CP Visit", visitGoal ? baht(Math.round(costPerVisit)) : "—"],
-                ["CP Reach", reachGoal ? baht(Math.round(costPerReach)) : "—"],
-              ].map(([labelText, value]) => (
-                <div key={labelText} className="rounded-[10px] border border-line2 bg-surface px-3 py-2">
-                  <div className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-faint">{labelText}</div>
-                  <div className="mt-1 text-[14px] font-extrabold text-ink">{value}</div>
-                </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         </div>
         <div className="mb-4">
@@ -687,13 +714,20 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
               </div>
               <button type="button" onClick={splitMonthlyEqually} className="rounded-[9px] border border-line2 bg-surface px-3 py-2 text-[11.5px] font-bold text-accent">Split equally</button>
             </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {monthlyRows.map((row) => (
-                <label key={row.month} className="rounded-[10px] border border-line2 bg-surface p-3">
-                  <span className="block text-[11px] font-bold text-muted mb-1">{row.month}</span>
-                  <input value={row.amount || ""} onChange={(e) => setMonthly(row.month, num(e.target.value))} className={field} placeholder="฿" />
-                </label>
-              ))}
+            <div className="overflow-x-auto rounded-[12px] border border-line2 bg-white">
+              <div className="grid min-w-max overflow-hidden" style={{ gridTemplateColumns: `repeat(${monthlyRows.length}, minmax(112px, 1fr))` }}>
+                {monthlyRows.map((row) => (
+                  <label key={row.month} className="border-r border-line3 p-2 last:border-r-0">
+                    <span className="mb-1 block text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint">{row.month}</span>
+                    <input
+                      value={row.amount || ""}
+                      onChange={(e) => setMonthly(row.month, num(e.target.value))}
+                      className="w-full rounded-[8px] border border-line2 bg-surface px-2 py-1.5 text-[12px] font-bold text-ink outline-none"
+                      placeholder="฿"
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="mt-3 text-[11.5px] font-semibold" style={{ color: monthlyTotal === brief.budget.total ? "#4E7A4E" : "#B33A2E" }}>
               รวมรายเดือน {baht(monthlyTotal, { compact: true })} / Campaign {baht(brief.budget.total, { compact: true })}{monthlyTotal === brief.budget.total ? " ✓" : " ⚠ ต้องตรงกัน"}

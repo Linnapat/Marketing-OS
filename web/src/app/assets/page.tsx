@@ -9,6 +9,7 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
 import { fetchAssets, createAsset } from "@/lib/db/assets";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -17,13 +18,37 @@ import {
 } from "@/components/campaign/CampaignHeadController";
 
 const TYPES = ["all", "Key Visual", "Story", "Print", "Social Media", "Reel Cover", "Carousel", "LINE Rich Message"];
+type AssetTab = "library" | "portfolio";
+interface PortfolioItem {
+  id: string;
+  brand: BrandId;
+  title: string;
+  category: string;
+  link: string;
+  note: string;
+  updated: string;
+}
+const PORTFOLIO_KEY = "asset_brand_portfolio_v1";
+const PORTFOLIO_CATEGORIES = ["Brand book", "Best practice", "Reference", "Campaign case", "Photo mood", "Video mood", "Other"];
+const emptyPortfolio = (brand: BrandId): PortfolioItem => ({
+  id: `portfolio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  brand,
+  title: "",
+  category: "Brand book",
+  link: "",
+  note: "",
+  updated: "just now",
+});
 
 export default function AssetLibraryPage() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [type, setType] = useState("all");
+  const [tab, setTab] = useState<AssetTab>("library");
   const [assets, setAssets] = useState<Asset[]>(ASSETS);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [portfolioDraft, setPortfolioDraft] = useState<PortfolioItem>(() => emptyPortfolio((brandOptions[0] ?? "teppen") as BrandId));
   const [uploadOpen, setUploadOpen] = useState(false);
   const empty = { name: "", b: (brandOptions[0] ?? "teppen") as BrandId, campaign: "", type: "Key Visual", driveUrl: "", canvaUrl: "" };
   const [nu, setNu] = useState(empty);
@@ -31,12 +56,20 @@ export default function AssetLibraryPage() {
   useEffect(() => {
     let alive = true;
     fetchAssets().then((a) => { if (alive) setAssets(a); }).catch(() => {});
+    getAppSetting(PORTFOLIO_KEY).then((raw) => {
+      if (!alive || !raw) return;
+      try {
+        const parsed = JSON.parse(raw) as PortfolioItem[];
+        if (Array.isArray(parsed)) setPortfolio(parsed);
+      } catch {}
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   useEffect(() => {
     if (!brandOptions.includes(nu.b)) setNu((n) => ({ ...n, b: (brandOptions[0] ?? "teppen") as BrandId }));
-  }, [brandOptions, nu.b]);
+    if (!brandOptions.includes(portfolioDraft.brand)) setPortfolioDraft((p) => ({ ...p, brand: (brandOptions[0] ?? "teppen") as BrandId }));
+  }, [brandOptions, nu.b, portfolioDraft.brand]);
 
   const upload = async () => {
     if (!nu.name.trim()) return;
@@ -55,10 +88,24 @@ export default function AssetLibraryPage() {
   };
 
   const rows = assets.filter((a) => (brand === "all" || a.b === brand) && (type === "all" || a.type === type));
+  const portfolioRows = portfolio.filter((p) => (brand === "all" || p.brand === brand));
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const approvedCount = rows.filter((a) => a.approval === "Approved").length;
   const linkedCount = rows.filter((a) => !!a.driveUrl || !!a.canvaUrl).length;
-  const campaignCount = new Set(rows.map((a) => a.campaign).filter((name) => name && name !== "—")).size;
+  const persistPortfolio = async (next: PortfolioItem[]) => {
+    setPortfolio(next);
+    await setAppSetting(PORTFOLIO_KEY, JSON.stringify(next));
+  };
+  const addPortfolio = async () => {
+    if (!portfolioDraft.title.trim()) return;
+    const nextItem = { ...portfolioDraft, title: portfolioDraft.title.trim(), link: portfolioDraft.link.trim(), note: portfolioDraft.note.trim(), updated: "just now" };
+    try {
+      await persistPortfolio([nextItem, ...portfolio]);
+      setPortfolioDraft(emptyPortfolio((brandOptions[0] ?? "teppen") as BrandId));
+    } catch (error) {
+      alert(`บันทึก Portfolio ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
 
   return (
     <>
@@ -79,7 +126,7 @@ export default function AssetLibraryPage() {
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Asset name <span className="text-status-red">*</span></label><input value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="e.g. Wagyu KV final" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nu.b} onChange={(e) => setNu({ ...nu, b: e.target.value as BrandId })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nu.b} onChange={(e) => setNu({ ...nu, b: e.target.value as BrandId })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandVisibility.brandNames[b] ?? brandName(b)}</option>)}</select></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label><select value={nu.type} onChange={(e) => setNu({ ...nu, type: e.target.value })} className={field}>{TYPES.filter((t) => t !== "all").map((t) => <option key={t}>{t}</option>)}</select></div>
               </div>
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><input value={nu.campaign} onChange={(e) => setNu({ ...nu, campaign: e.target.value })} placeholder="Campaign name" className={field} /></div>
@@ -100,8 +147,30 @@ export default function AssetLibraryPage() {
         <CampaignCommandBar
           action={<button onClick={() => setUploadOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Upload Asset</button>}
         >
-          <div className="text-[13px] font-semibold text-faint">
-            {rows.length} assets in view · final artwork, versions, and Drive / Canva links per campaign
+          <div className="flex flex-col gap-3">
+            <div className="text-[13px] font-semibold text-faint">
+              {tab === "library"
+                ? `${rows.length} assets in view · final artwork, versions, and Drive / Canva links per campaign`
+                : `${portfolioRows.length} portfolio items in view · brand references, cases, and reusable examples`}
+            </div>
+            <div className="inline-flex w-fit rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px]">
+              {[
+                { value: "library", label: "Asset Library" },
+                { value: "portfolio", label: "Portfolio" },
+              ].map((option) => {
+                const active = tab === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => setTab(option.value as AssetTab)}
+                    className="rounded-[12px] px-4 py-[9px] text-[12px] font-extrabold transition"
+                    style={{ background: active ? "#6C5CE7" : "transparent", color: active ? "#fff" : "#8A879A" }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </CampaignCommandBar>
 
@@ -111,7 +180,7 @@ export default function AssetLibraryPage() {
               { label: "Assets in view", value: rows.length, note: "Current brand + type filter" },
               { label: "Approved", value: approvedCount, note: "Ready for handoff or publish" },
               { label: "Linked files", value: linkedCount, note: "Drive or Canva attached" },
-              { label: "Active campaigns", value: campaignCount, note: "Campaigns using these assets" },
+              { label: "Portfolio", value: portfolioRows.length, note: "Brand reference library" },
             ].map((item) => (
               <div key={item.label} className="rounded-[20px] border border-white/10 bg-white/6 px-4 py-4">
                 <div className="text-[11px] uppercase tracking-[0.08em] text-white/50 font-bold">{item.label}</div>
@@ -137,6 +206,7 @@ export default function AssetLibraryPage() {
         </FilterBar>
       </div>
 
+      {tab === "library" ? (
       <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
         {rows.map((a) => (
           <div key={a.id} className="bg-surface border border-line rounded-cardLg overflow-hidden shadow-soft">
@@ -163,6 +233,65 @@ export default function AssetLibraryPage() {
           <div className="text-[11px] text-faint mt-1">Drive · Canva · final artwork</div>
         </div>
       </div>
+      ) : (
+        <div className="mt-5 grid gap-4 lg:grid-cols-[360px_1fr]">
+          <div className="rounded-cardLg border border-line bg-surface p-5 shadow-soft h-fit">
+            <div className="text-[14px] font-extrabold text-ink">Add brand portfolio</div>
+            <div className="mt-1 text-[11.5px] text-faint">เก็บ brand book, mood, reference หรือ case ที่ใช้ซ้ำได้ต่อแบรนด์</div>
+            <div className="mt-4 flex flex-col gap-3">
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
+                <select value={portfolioDraft.brand} onChange={(e) => setPortfolioDraft({ ...portfolioDraft, brand: e.target.value as BrandId })} className={field}>
+                  {brandOptions.map((b) => <option key={b} value={b}>{brandVisibility.brandNames[b] ?? brandName(b)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Title <span className="text-status-red">*</span></label>
+                <input value={portfolioDraft.title} onChange={(e) => setPortfolioDraft({ ...portfolioDraft, title: e.target.value })} className={field} placeholder="e.g. TEPPEN social mood 2026" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category</label>
+                <select value={portfolioDraft.category} onChange={(e) => setPortfolioDraft({ ...portfolioDraft, category: e.target.value })} className={field}>
+                  {PORTFOLIO_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Portfolio link</label>
+                <input value={portfolioDraft.link} onChange={(e) => setPortfolioDraft({ ...portfolioDraft, link: e.target.value })} className={field} placeholder="Drive / Canva / Figma / Website" />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Note</label>
+                <textarea value={portfolioDraft.note} onChange={(e) => setPortfolioDraft({ ...portfolioDraft, note: e.target.value })} className={`${field} min-h-[88px]`} placeholder="ใช้กับงานแบบไหน / mood / do-don't" />
+              </div>
+              <button onClick={addPortfolio} disabled={!portfolioDraft.title.trim()} className="text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Save Portfolio</button>
+            </div>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))" }}>
+            {portfolioRows.map((item) => (
+              <div key={item.id} className="rounded-cardLg border border-line bg-surface p-4 shadow-soft">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[13.5px] font-extrabold text-ink truncate">{item.title}</div>
+                    <div className="mt-1 text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={item.brand} size={6} />{brandVisibility.brandNames[item.brand] ?? brandName(item.brand)}</div>
+                  </div>
+                  <StatusBadge tone="blue">{item.category}</StatusBadge>
+                </div>
+                {item.note && <div className="mt-3 text-[12px] leading-5 text-muted">{item.note}</div>}
+                <div className="mt-4 flex items-center justify-between">
+                  {item.link ? <a href={item.link} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-accent">Open portfolio ↗</a> : <span className="text-[12px] text-faint">No link</span>}
+                  <span className="text-[11px] text-faint">{item.updated}</span>
+                </div>
+              </div>
+            ))}
+            {portfolioRows.length === 0 && (
+              <div className="rounded-cardLg border border-dashed border-[#DDD1FF] bg-[#F7F2FF] p-8 text-center">
+                <div className="text-[13px] font-bold text-[#5A4FB2]">No portfolio yet</div>
+                <div className="mt-1 text-[11.5px] text-[#7D778F]">Add brand references so Creative / Agency can reuse the same direction.</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

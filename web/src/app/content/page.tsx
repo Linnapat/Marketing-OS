@@ -10,7 +10,7 @@ import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
   CONTENT, ContentItem, contentTone, platIcon, PLATFORMS, itemPlatforms, contentDateIso,
 } from "@/lib/data/content";
-import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent } from "@/lib/db/content";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
@@ -47,12 +47,17 @@ function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
 }
 
 type View = "month" | "week" | "list" | "queue";
+type SavedContentView = { name: string; view: View; brand: BrandFilterValue; date: DateFilter };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const labelDate = (iso: string) => { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
 const uniqueNewPostId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const isTemplateContentId = (id?: string) => !id || /^ci-\d+$/.test(id);
+const CAMPAIGN_COLORS = ["#6C5CE7", "#4BA06B", "#F59E0B", "#D85C9A", "#35A7FF", "#B33A2E", "#8B5CF6", "#14B8A6"];
+const hashText = (value: string) => value.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+const campaignAccent = (campaign?: string) => CAMPAIGN_COLORS[Math.abs(hashText(campaign || "default")) % CAMPAIGN_COLORS.length];
+const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || "guest"}`;
 
 export default function ContentPage() {
   const [view, setView] = useState<View>("month");
@@ -60,6 +65,8 @@ export default function ContentPage() {
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [open, setOpen] = useState<ContentItem | null>(null);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
+  const [savedViews, setSavedViews] = useState<SavedContentView[]>([]);
+  const [savedViewName, setSavedViewName] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const [newIso, setNewIso] = useState<string | null>(null);
   const { member, user } = useAuth();
@@ -70,6 +77,29 @@ export default function ContentPage() {
     fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(savedViewKey(me)) || "[]") as SavedContentView[];
+      setSavedViews(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSavedViews([]);
+    }
+  }, [me]);
+  const persistSavedViews = (next: SavedContentView[]) => {
+    setSavedViews(next);
+    if (typeof window !== "undefined") localStorage.setItem(savedViewKey(me), JSON.stringify(next));
+  };
+  const saveCurrentView = () => {
+    const name = savedViewName.trim() || `${view} · ${brand === "all" ? "All Brands" : brandName(brand)} · ${date.mode}`;
+    persistSavedViews([...savedViews.filter((v) => v.name !== name), { name, view, brand, date }]);
+    setSavedViewName("");
+  };
+  const applySavedView = (saved: SavedContentView) => {
+    setView(saved.view);
+    setBrand(saved.brand);
+    setDate(saved.date);
+  };
 
   // The month the grid shows: the filter month, or the range's starting month.
   const gy = date.mode === "month" ? date.year : Number((date.start || "2026-07-01").slice(0, 4));
@@ -213,7 +243,33 @@ export default function ContentPage() {
 
         <FilterBar>
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <BrandFilter value={brand} onChange={setBrand} label="" />
+            <div className="flex flex-wrap items-center gap-2">
+              <BrandFilter value={brand} onChange={setBrand} label="" />
+              <select
+                value=""
+                onChange={(e) => {
+                  const picked = savedViews.find((v) => v.name === e.target.value);
+                  if (picked) applySavedView(picked);
+                }}
+                className="text-[12px] font-bold rounded-pill border border-line2 bg-white px-3 py-[8px] text-muted outline-none"
+                title="Apply saved view"
+              >
+                <option value="">Saved views</option>
+                {savedViews.map((saved) => <option key={saved.name} value={saved.name}>{saved.name}</option>)}
+              </select>
+              <input
+                value={savedViewName}
+                onChange={(e) => setSavedViewName(e.target.value)}
+                placeholder="name this view"
+                className="w-[140px] text-[12px] rounded-pill border border-line2 bg-white px-3 py-[8px] outline-none"
+              />
+              <button
+                onClick={saveCurrentView}
+                className="text-[12px] font-bold rounded-pill bg-[#F2EEFF] px-3 py-[8px] text-[#6C5CE7]"
+              >
+                Save view
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2 text-[11px]">
               <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Shared with Campaign</span>
               <span className="rounded-pill bg-[#EAF8EE] px-3 py-[7px] font-bold text-[#4BA06B]">Requester sync on</span>
@@ -319,14 +375,22 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
-        <div className="text-[16px] font-extrabold mb-1">Plan New Post</div>
-        <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — บันทึกแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
+        <div className="mb-4 flex items-start justify-between gap-8 pr-8">
+          <div>
+            <div className="text-[16px] font-extrabold mb-1">Plan New Post</div>
+            <div className="text-[12px] text-faint">ฟอร์มเดียวกับ Content Plan — บันทึกแล้ว sync กลับเข้า Campaign อัตโนมัติ</div>
+          </div>
+          <div className="rounded-[12px] border border-[#DDD1FF] bg-[#F7F2FF] px-3 py-2 text-right">
+            <div className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#7D70CC]">Request date</div>
+            <div className="text-[12px] font-extrabold text-[#2C2553]">{requestDate}</div>
+          </div>
+        </div>
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
               <select value={b} onChange={(e) => setB(e.target.value as BrandId)} className={field}>
-                {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                {brandOptions.map((id) => <option key={id} value={id}>{brandVisibility.brandNames[id] ?? BRANDS[id].name}</option>)}
               </select>
             </div>
             <div>
@@ -345,7 +409,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
             </div>
           </div>
           {/* Shared content-item template */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} lockApproverToRequester />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} />
         </div>
         <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
@@ -392,7 +456,13 @@ function MonthView({ items, year, month, onOpen, onNew }: { items: ContentItem[]
               )}
               <div className="flex flex-col gap-[3px]">
                 {dayItems.map((c) => (
-                  <button key={c.id} onClick={() => onOpen(c)} className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition" style={{ background: "#FAF8F4", border: "1px solid #F0EBE0" }}>
+                  <button
+                    key={c.id}
+                    onClick={() => onOpen(c)}
+                    className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition border-l-[4px]"
+                    style={{ background: "#FAF8F4", borderColor: "#F0EBE0", borderLeftColor: campaignAccent(c.campaign) }}
+                    title={`${c.campaign} · ${c.title}`}
+                  >
                     <PlatBadges item={c} />
                     <span className="text-[10.5px] font-semibold truncate flex-1">{c.title}</span>
                   </button>
@@ -422,7 +492,7 @@ function WeekView({ items, monthName, onOpen }: { items: ContentItem[]; monthNam
 
 function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }) {
   return (
-    <button onClick={() => onOpen(c)} className="w-full grid grid-cols-[52px_1fr_auto] gap-3 items-center px-5 py-[11px] text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
+    <button onClick={() => onOpen(c)} className="w-full grid grid-cols-[52px_1fr_auto] gap-3 items-center px-5 py-[11px] text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
       <span className="text-[11px] font-bold text-faint">{c.time}</span>
       <div className="flex items-center gap-2 min-w-0">
         <PlatBadges item={c} size={18} />
@@ -449,7 +519,7 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
       </div>
       {[...items].sort((a, b) => a.day - b.day).map((c) => {
         return (
-          <button key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
+          <button key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
             <span className="text-[11px] font-bold text-faint">Jul {c.day}</span>
             <div className="flex items-center gap-2 min-w-0">
               <PlatBadges item={c} size={18} />

@@ -37,7 +37,7 @@ export function BrandFilter({
       >
         {visibility.allowAll && <option value="all">All Brands</option>}
         {options.map((id) => (
-          <option key={id} value={id}>{BRANDS[id].name}</option>
+          <option key={id} value={id}>{visibility.brandNames[id] ?? BRANDS[id].name}</option>
         ))}
       </select>
     </label>
