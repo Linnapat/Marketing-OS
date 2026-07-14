@@ -216,8 +216,10 @@ export default function DashboardPage() {
     const reach = (view?.k ?? []).slice(0, 6).map((k, i) => k.actualReach || k.expectedReach || (i + 1) * 10000);
     const engage = (view?.k ?? []).slice(0, 6).map((k, i) => k.actualEngagement || parseMetricValue(k.engagement) || (i + 1) * 700);
     const sales = (view?.c ?? []).slice(0, 6).map((c, i) => Math.round((c.spend || c.budget || 0) * (c.roi || 1)) || (i + 1) * 25000);
-    const customers = (view?.t ?? []).slice(0, 6).map((t, i) => (t.status === "Done" ? 10 : 5) * (i + 1));
-    const max = Math.max(1, ...reach, ...engage, ...sales, ...customers);
+    // Customer acquisition needs a real POS / CRM source. Never infer it from
+    // task counts because that presents operational activity as business data.
+    const customers: number[] = [];
+    const max = Math.max(1, ...reach, ...engage, ...sales);
     const normalize = (vals: number[]) => {
       const list = vals.length ? vals : [0, 0, 0, 0, 0, 0];
       return Array.from({ length: 6 }, (_, i) => list[i] ?? list[list.length - 1] ?? 0).map((v, i) => {
@@ -229,12 +231,12 @@ export default function DashboardPage() {
     return {
       reach: normalize(reach),
       engagement: normalize(engage),
-      customers: normalize(customers),
+      customers: "",
       sales: normalize(sales),
       stats: [
         { label: "Reach", value: compactNumber(reach.reduce((a, b) => a + b, 0)), color: "#6C5CE7" },
         { label: "Engagement", value: compactNumber(engage.reduce((a, b) => a + b, 0)), color: "#8CCF5F" },
-        { label: "New Customers", value: compactNumber(customers.reduce((a, b) => a + b, 0)), color: "#FFA94D" },
+        { label: "New Customers", value: "—", color: "#FFA94D" },
         { label: "Sales THB", value: baht(sales.reduce((a, b) => a + b, 0), { compact: true }), color: "#D7B76A" },
       ],
     };

@@ -7,6 +7,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview } from "../src/lib/data/brief";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -92,6 +93,18 @@ console.log("Idempotency — source-id keys");
   const c1 = tryCreateKey(cseen, "camp1::ci1");
   const c1again = tryCreateKey(cseen, "camp1::ci1");
   check("content item creates once, retry no-op", c1 && !c1again);
+}
+
+console.log("Campaign planning — monthly budget + work-item alignment");
+{
+  check("campaign month keys include every month in a long campaign", campaignMonthKeys("2026-07-15", "2026-09-02").join(",") === "2026-07,2026-08,2026-09");
+  const brief = emptyBrief("campaign-test");
+  const graphic = { ...emptyContentItem(1), id: "graphic", title: "KV", requiredGraphic: true, platforms: ["Instagram"], assets: [{ platform: "Instagram", size: "1:1" }] };
+  const contentOnly = { ...emptyContentItem(2), id: "copy", title: "Copy", requiredGraphic: false, platforms: ["Facebook"], assets: [{ platform: "Facebook", size: "1:1" }] };
+  brief.content = [graphic, contentOnly];
+  const preview = taskPreview(brief);
+  check("graphic content becomes one creative work item", preview.find((row) => row.kind === "Creative / Graphic Tasks")?.count === 1);
+  check("content-only item becomes one content task", preview.find((row) => row.kind === "Content Tasks")?.count === 1);
 }
 
 function tryCreateKey(set: Set<string>, key: string) { if (set.has(key)) return false; set.add(key); return true; }

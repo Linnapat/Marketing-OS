@@ -304,11 +304,14 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
 
-  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
+  const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
+  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && item.graphicDueDate && dueOrderValid;
   const missing = [
     !campaign.trim() ? "campaign" : null,
     !item.title.trim() ? "brief title" : null,
     !item.platforms.length ? "platform" : null,
+    !item.graphicDueDate ? "graphic due date" : null,
+    !dueOrderValid ? "graphic due date before publish date" : null,
   ].filter(Boolean) as string[];
   const submit = () => {
     if (!canCreate) return;
@@ -319,7 +322,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     const g: Graphic = {
       ...buildGraphic({
         id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
-        type: item.type, due: labelDate(item.publishDate) || "TBD", designer: "Unassigned",
+        type: item.type, due: labelDate(item.graphicDueDate) || "TBD", dueIso: item.graphicDueDate, designer: "Unassigned",
         requester, approver: approverName, channels: plats,
       }),
       stage: "New Request",

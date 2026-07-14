@@ -75,6 +75,17 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       ) : (
         <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
       )}
+      {item.requiredGraphic && (
+        <div>
+          <label className={label}>Graphic Due Date <span className="text-status-red">*</span></label>
+          <DatePicker
+            value={item.graphicDueDate || null}
+            onChange={(v) => onChange({ graphicDueDate: v })}
+            invalid={!!item.graphicDueDate && !!item.publishDate && item.graphicDueDate > item.publishDate}
+          />
+          <div className="mt-1 text-[11px] text-faint">กำหนดส่งงาน Creative · ต้องไม่เกิน Publish Date</div>
+        </div>
+      )}
       <div><label className={label}>Priority</label><select value={item.priority} onChange={(e) => onChange({ priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
       <div className="flex flex-col gap-1">
         <div className="flex items-end gap-4">
@@ -88,7 +99,8 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
 
       {/* Platform + Asset Size — multi-select checkboxes */}
       <div className="md:col-span-2">
-        <label className={label}>Platforms &amp; Asset Sizes <span className="text-status-red">*</span> <span className="text-faint font-normal">· ติ๊กได้หลาย platform หลายขนาด</span></label>
+        <label className={label}>Platforms &amp; Asset Deliverables <span className="text-status-red">*</span> <span className="text-faint font-normal">· เลือกได้หลาย platform และหลายขนาด</span></label>
+        <div className="mb-2 text-[11px] text-faint">Content Type กำหนดรูปแบบงาน ส่วน Platform × Size จะรวมเป็น deliverables ใน Graphic Request เดียว ไม่สร้างงานซ้ำ</div>
         <div className="flex flex-wrap gap-2 mb-2">
           {CONTENT_PLATFORMS.map((p) => {
             const on = item.platforms.includes(p);

@@ -120,7 +120,7 @@ export default function ContentPage() {
       const g: Graphic = {
         ...buildGraphic({
           id: Number(graphicRequestId), b: p.b, campaign: p.campaign, title: p.title,
-          type: normalizedBriefItem.type, due: labelDate(normalizedBriefItem.publishDate) || "TBD",
+          type: normalizedBriefItem.type, due: labelDate(normalizedBriefItem.graphicDueDate) || "TBD", dueIso: normalizedBriefItem.graphicDueDate,
           designer, requester, approver, channels: plats,
           campaignId, sourceContentItemId,
         }),
@@ -271,11 +271,14 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
   }, [brandCampaigns, campaign]);
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim();
+  const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
+  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && (!item.requiredGraphic || item.graphicDueDate) && dueOrderValid;
   const missing = [
     !campaign.trim() ? "campaign" : null,
     !item.title.trim() ? "post title" : null,
     !item.platforms.length ? "platform" : null,
+    item.requiredGraphic && !item.graphicDueDate ? "graphic due date" : null,
+    !dueOrderValid ? "graphic due date before publish date" : null,
   ].filter(Boolean) as string[];
   const create = () => {
     if (!canCreate) return;

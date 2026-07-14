@@ -20,6 +20,7 @@ export interface Graphic {
   b: BrandId;
   campaign: string;
   due: string;
+  dueIso?: string;
   designer: string;
   requester: string;
   approver: string;

@@ -104,11 +104,16 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     const madeContent = await createContentIfNew(post, contentSeen);
     if (madeContent.created) {
       content++;
-      await createTaskDb(mkTask(++n, {
-        title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
-        owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
-        nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
-      }));
+      // A content item with creative produces one Graphic work item only. The
+      // Content Calendar post remains linked, but does not duplicate My Tasks.
+      if (!ci.requiredGraphic) {
+        await createTaskDb(mkTask(++n, {
+          title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
+          owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+          nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
+        }));
+        tasks++;
+      }
     }
 
     if (ci.requiredGraphic && gid) {
@@ -119,7 +124,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       const g: Graphic = {
         ...buildGraphic({
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
-          type: ci.type, due: labelDate(ci.publishDate) || "TBD", designer: "Unassigned",
+          type: ci.type, due: labelDate(ci.graphicDueDate || ci.publishDate) || "TBD", dueIso: ci.graphicDueDate || ci.publishDate, designer: "Unassigned",
           requester: ci.requester, approver: ci.approver, channels: plats,
           campaignId: normalizedBrief.id, sourceContentItemId: ci.id,
         }),
@@ -134,9 +139,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         graphics++;
         await createTaskDb(mkTask(++n, {
           title: `Graphic — ${ci.title || ci.type} (${deliverables.length} asset)`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
-          owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+          owner: "", priority: ci.priority, due: labelDate(ci.graphicDueDate || ci.publishDate), dueIso: ci.graphicDueDate || ci.publishDate,
           channel: plats.join(", "), relatedGraphicId: String(gid), nextAction: `Deliver ${deliverables.length} asset(s)`,
         }));
+        tasks++;
       }
     }
   }
@@ -172,6 +178,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platforms.join(", "),
       nextAction: `${kr.area || "—"} · reach ${kr.expectedReach.toLocaleString()}`,
     }));
+    tasks++;
   }
 
   // ── Ads setup tasks (one per funded platform) ──────────────────────────────
@@ -185,6 +192,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       owner: "", channel: a.platform, due: labelDate(brief.startDate), dueIso: brief.startDate,
       nextAction: `Budget ${a.amount.toLocaleString()} · launch ${labelDate(brief.startDate) || "TBD"}`,
     }));
+    tasks++;
   }
 
   // ── CRM / LINE OA task ─────────────────────────────────────────────────────
@@ -193,6 +201,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       title: `CRM / LINE OA — ${brief.name}`, type: "CRM", moduleIcon: "💬", moduleColor: "#4E7A4E",
       owner: "", due: labelDate(brief.startDate), dueIso: brief.startDate, nextAction: "Plan LINE OA broadcast / CRM flow",
     }));
+    tasks++;
   }
 
   // ── Result report task ─────────────────────────────────────────────────────
@@ -201,8 +210,8 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     owner: brief.plannerOwner, due: labelDate(brief.endDate), dueIso: brief.endDate,
     nextAction: `วัดผล: ${brief.successMetrics.join(", ") || "—"}`,
   }));
+  tasks++;
 
-  tasks = n - content - graphics; // tasks created beyond the content/graphic pairs are ads/crm/report/kol
   // Report the real materialised counts (idempotency may make a retry all-zero).
   return { campaign: row, created: { content, graphics, kols, tasks } };
 }

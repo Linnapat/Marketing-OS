@@ -79,6 +79,7 @@ export interface BriefContentItem {
   platforms: string[];      // multi-select
   assets: AssetTarget[];    // platform+size pairs (checkbox grid)
   publishDate: string;      // ISO
+  graphicDueDate: string;   // ISO — creative delivery deadline, separate from publish
   requiredGraphic: boolean;
   requiredVideo: boolean;
   priority: string;
@@ -124,6 +125,7 @@ export interface BriefKolItem {
 }
 
 export interface AdsPlatformBudget { platform: string; amount: number; }
+export interface MonthlyBudgetAllocation { month: string; amount: number; }
 
 export interface BriefBudget {
   total: number;
@@ -134,6 +136,7 @@ export interface BriefBudget {
   crm: number;
   other: number;
   adsByPlatform: AdsPlatformBudget[];
+  monthly?: MonthlyBudgetAllocation[];
 }
 
 export interface ApprovalLogEntry {
@@ -174,7 +177,7 @@ export interface CampaignBrief {
 export function emptyContentItem(seq: number): BriefContentItem {
   return {
     id: `ci-${seq}`, title: "", subHead: "", requester: "", designer: "Unassigned", approver: "", type: CONTENT_TYPES[0], platforms: [],
-    assets: [], publishDate: "", requiredGraphic: true,
+    assets: [], publishDate: "", graphicDueDate: "", requiredGraphic: true,
     requiredVideo: false, priority: "Med", status: "Planned",
     captionDirection: "", mainMessage: "", cta: "", productHighlight: "",
     mandatoryText: "", doDont: "", referenceBriefLink: "", referenceImageLink: "",
@@ -192,7 +195,23 @@ export function emptyKolItem(seq: number): BriefKolItem {
 }
 
 export function emptyBudget(): BriefBudget {
-  return { total: 0, ads: 0, kol: 0, graphic: 0, printing: 0, crm: 0, other: 0, adsByPlatform: [{ platform: ADS_PLATFORMS[0], amount: 0 }] };
+  return { total: 0, ads: 0, kol: 0, graphic: 0, printing: 0, crm: 0, other: 0, adsByPlatform: [{ platform: ADS_PLATFORMS[0], amount: 0 }], monthly: [] };
+}
+
+export function campaignMonthKeys(startIso: string, endIso: string): string[] {
+  const start = /^\d{4}-\d{2}/.exec(startIso)?.[0];
+  const end = /^\d{4}-\d{2}/.exec(endIso)?.[0];
+  if (!start || !end || end < start) return start ? [start] : [];
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  const out: string[] = [];
+  let year = sy, month = sm;
+  while (year < ey || (year === ey && month <= em)) {
+    out.push(`${year}-${String(month).padStart(2, "0")}`);
+    month++;
+    if (month > 12) { month = 1; year++; }
+  }
+  return out;
 }
 
 export function emptyBrief(id: string): CampaignBrief {
@@ -254,6 +273,11 @@ export function budgetSummary(brief: CampaignBrief): BudgetSummary {
   if (adsMismatch) warnings.push(`งบ Ads แยกตาม platform (${adsAllocated.toLocaleString()}) ไม่ตรงกับงบ Ads รวม (${bud.ads.toLocaleString()})`);
   if (brief.channels.some((c) => /crm|line oa/i.test(c)) && !bud.crm) warnings.push("เลือก channel CRM / LINE OA แต่ยังไม่ได้ใส่งบ CRM");
   if (brief.channels.some((c) => /facebook|instagram|tiktok|google/i.test(c)) && !bud.ads) warnings.push("เลือก channel โฆษณา แต่ยังไม่ได้ใส่งบ Ads");
+  const campaignMonths = campaignMonthKeys(brief.startDate, brief.endDate);
+  const monthlyAllocated = (bud.monthly ?? []).filter((row) => campaignMonths.includes(row.month)).reduce((sum, row) => sum + (row.amount || 0), 0);
+  if (campaignMonths.length > 1 && monthlyAllocated !== (bud.total || 0)) {
+    warnings.push(`งบรายเดือน (${monthlyAllocated.toLocaleString()}) ต้องรวมเท่ากับงบ Campaign (${(bud.total || 0).toLocaleString()})`);
+  }
 
   const byBucket = buckets.map(([label, amount]) => ({
     label, amount: amount || 0, pct: effectiveTotal ? Math.round(((amount || 0) / effectiveTotal) * 100) : 0,
@@ -312,24 +336,32 @@ export function validateSubmit(brief: CampaignBrief): string[] {
     c.platforms.forEach((p) => {
       if (!c.assets.some((a) => a.platform === p)) e.push(`Please select asset size for ${p}`);
     });
+    if (c.requiredGraphic && !c.graphicDueDate) e.push(`Please select a Graphic Due Date for “${tag}”`);
+    if (c.requiredGraphic && c.graphicDueDate && c.publishDate && c.graphicDueDate > c.publishDate) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);
     // Reference Brief Link is optional — a real link often isn't known at planning time.
   });
+  const months = campaignMonthKeys(brief.startDate, brief.endDate);
+  if (months.length > 1) {
+    const monthlyTotal = (brief.budget.monthly ?? []).filter((row) => months.includes(row.month)).reduce((sum, row) => sum + (row.amount || 0), 0);
+    if (monthlyTotal !== brief.budget.total) e.push("Please allocate the Campaign Budget by month so the monthly total matches the Campaign Budget");
+  }
   return e;
 }
 
 // ── Task / graphic preview ────────────────────────────────────────────────
 export interface TaskPreview { kind: string; icon: string; count: number; detail: string }
 
-// Mirrors saveCampaignBrief exactly: 1 content task per content item, 1 graphic
-// task per content-with-graphic, 1 per KOL, 1 per funded ads platform, 1 CRM
-// (if used), 1 result report — so the preview total == the tasks actually created.
+// Mirrors saveCampaignBrief exactly: each content item becomes ONE work item.
+// Items requiring creative become a Graphic task (with Platform × Size rows as
+// deliverables); no-asset items become a Content task. This prevents duplicates.
 export function taskPreview(brief: CampaignBrief): TaskPreview[] {
   const withGraphic = brief.content.filter((c) => c.requiredGraphic);
+  const withoutGraphic = brief.content.filter((c) => !c.requiredGraphic);
   const creativePairs = withGraphic.flatMap((c) => c.assets);
   const adsPlatforms = brief.budget.adsByPlatform.filter((a) => a.amount > 0).length || (brief.budget.ads > 0 ? 1 : 0);
   const crm = brief.channels.some((c) => /crm|line oa/i.test(c)) || brief.budget.crm > 0 ? 1 : 0;
   const out: TaskPreview[] = [];
-  if (brief.content.length) out.push({ kind: "Content Tasks", icon: "📝", count: brief.content.length, detail: `${brief.content.length} content item(s)` });
+  if (withoutGraphic.length) out.push({ kind: "Content Tasks", icon: "📝", count: withoutGraphic.length, detail: `${withoutGraphic.length} item(s) without creative asset` });
   if (withGraphic.length) out.push({ kind: "Creative / Graphic Tasks", icon: "🎨", count: withGraphic.length, detail: `${withGraphic.length} request · ${creativePairs.length} asset(s)` });
   if (brief.kols.length) out.push({ kind: "KOL Tasks", icon: "🤝", count: brief.kols.length, detail: `${brief.kols.reduce((s, k) => s + (k.count || 0), 0)} creator/page` });
   if (adsPlatforms) out.push({ kind: "Ads Setup Tasks", icon: "📣", count: adsPlatforms, detail: `${adsPlatforms} platform` });

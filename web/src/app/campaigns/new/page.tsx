@@ -18,6 +18,7 @@ import {
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
   kolBudgetTotal, withSyncedKolBudget,
+  campaignMonthKeys,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { fetchAllBriefs, saveCampaignBrief } from "@/lib/db/brief";
@@ -59,18 +60,26 @@ function overviewErrors(b: CampaignBrief): Record<string, string> {
 const monthKeyFromBrief = (brief: CampaignBrief) => (brief.startDate || brief.launchDate || "").slice(0, 7);
 const effectiveBriefBudget = (brief: CampaignBrief) => Math.max(brief.budget.total || 0, budgetSummary(brief).allocated || 0);
 
+function budgetByMonthForBrief(brief: CampaignBrief): Record<string, number> {
+  const rows = (brief.budget.monthly ?? []).filter((row) => row.month && row.amount > 0);
+  if (rows.length) return Object.fromEntries(rows.map((row) => [row.month, row.amount]));
+  const month = monthKeyFromBrief(brief);
+  return month ? { [month]: effectiveBriefBudget(brief) } : {};
+}
+
 function monthlyBudgetWarning(brief: CampaignBrief, savedBriefs: CampaignBrief[], sheetRows: Awaited<ReturnType<typeof fetchBudgetSheetRows>>): string | null {
-  const monthKey = monthKeyFromBrief(brief);
-  if (!monthKey) return null;
-  const plBudget = budgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
-  if (plBudget <= 0) return null;
-  const existing = savedBriefs
-    .filter((b) => b.id !== brief.id && b.b === brief.b && monthKeyFromBrief(b) === monthKey && b.status !== "Need Revision")
-    .reduce((sum, b) => sum + effectiveBriefBudget(b), 0);
-  const current = effectiveBriefBudget(brief);
-  const total = existing + current;
-  if (total <= plBudget) return null;
-  return `${brandName(brief.b)} เดือน ${monthKey} วาง Campaign Budget รวม ${baht(total, { compact: true })} เกิน PL Budget ${baht(plBudget, { compact: true })} อยู่ ${baht(total - plBudget, { compact: true })} — กรุณาลดงบหรือขอ revise budget ก่อน submit`;
+  const currentByMonth = budgetByMonthForBrief(brief);
+  const warnings = Object.entries(currentByMonth).flatMap(([monthKey, current]) => {
+    const plBudget = budgetByBrandFromSheet(sheetRows, monthKey)[brief.b] || 0;
+    if (plBudget <= 0) return [];
+    const existing = savedBriefs
+      .filter((b) => b.id !== brief.id && b.b === brief.b && b.status !== "Need Revision")
+      .reduce((sum, b) => sum + (budgetByMonthForBrief(b)[monthKey] || 0), 0);
+    const total = existing + current;
+    if (total <= plBudget) return [];
+    return [`${brandName(brief.b)} เดือน ${monthKey} วาง Campaign Budget รวม ${baht(total, { compact: true })} เกิน PL Budget ${baht(plBudget, { compact: true })} อยู่ ${baht(total - plBudget, { compact: true })}`];
+  });
+  return warnings.length ? `${warnings.join(" · ")} — กรุณาลดงบหรือขอ revise budget ก่อน submit` : null;
 }
 
 export default function NewCampaignPage() {
@@ -492,6 +501,27 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, onEditKol }: {
   const addAds = () => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: [...b.budget.adsByPlatform, { platform: ADS_PLATFORMS[0], amount: 0 }] } }));
   const rmAds = (i: number) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.filter((_, j) => j !== i) } }));
   const kolBudget = kolBudgetTotal(brief);
+  const campaignMonths = campaignMonthKeys(brief.startDate, brief.endDate);
+  const monthlyRows = campaignMonths.map((month) => ({ month, amount: brief.budget.monthly?.find((row) => row.month === month)?.amount || 0 }));
+  const monthlyTotal = monthlyRows.reduce((sum, row) => sum + row.amount, 0);
+  const setMonthly = (month: string, amount: number) => setBrief((b) => ({
+    ...b,
+    budget: {
+      ...b.budget,
+      monthly: campaignMonthKeys(b.startDate, b.endDate).map((key) => ({
+        month: key,
+        amount: key === month ? amount : (b.budget.monthly?.find((row) => row.month === key)?.amount || 0),
+      })),
+    },
+  }));
+  const splitMonthlyEqually = () => setBrief((b) => {
+    const months = campaignMonthKeys(b.startDate, b.endDate);
+    if (!months.length) return b;
+    const total = b.budget.total || 0;
+    const base = Math.floor(total / months.length);
+    const remainder = total - (base * months.length);
+    return { ...b, budget: { ...b.budget, monthly: months.map((month, i) => ({ month, amount: base + (i < remainder ? 1 : 0) })) } };
+  });
   const otherBuckets: [string, keyof CampaignBrief["budget"]][] = [
     ["Graphic / Production", "graphic"], ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
   ];
@@ -508,6 +538,28 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, onEditKol }: {
           <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· รวม KOL อัตโนมัติ</span></label>
           <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
         </div>
+        {campaignMonths.length > 0 && (
+          <div className="mb-5 rounded-[14px] border border-line2 p-4" style={{ background: "#F8F6FF" }}>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="text-[12.5px] font-bold text-ink">Monthly Budget Plan</div>
+                <div className="text-[11px] text-faint">แบ่งงบตามเดือนจริงของแคมเปญ เพื่อเทียบกับ Budget Google Sheet รายเดือน</div>
+              </div>
+              <button type="button" onClick={splitMonthlyEqually} className="rounded-[9px] border border-line2 bg-surface px-3 py-2 text-[11.5px] font-bold text-accent">Split equally</button>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {monthlyRows.map((row) => (
+                <label key={row.month} className="rounded-[10px] border border-line2 bg-surface p-3">
+                  <span className="block text-[11px] font-bold text-muted mb-1">{row.month}</span>
+                  <input value={row.amount || ""} onChange={(e) => setMonthly(row.month, num(e.target.value))} className={field} placeholder="฿" />
+                </label>
+              ))}
+            </div>
+            <div className="mt-3 text-[11.5px] font-semibold" style={{ color: monthlyTotal === brief.budget.total ? "#4E7A4E" : "#B33A2E" }}>
+              รวมรายเดือน {baht(monthlyTotal, { compact: true })} / Campaign {baht(brief.budget.total, { compact: true })}{monthlyTotal === brief.budget.total ? " ✓" : " ⚠ ต้องตรงกัน"}
+            </div>
+          </div>
+        )}
         <div className="grid md:grid-cols-3 gap-3">
           {/* KOL — read-only, synced */}
           <div>
