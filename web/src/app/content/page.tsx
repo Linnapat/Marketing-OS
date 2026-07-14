@@ -51,6 +51,8 @@ const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const labelDate = (iso: string) => { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
+const uniqueNewPostId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const isTemplateContentId = (id?: string) => !id || /^ci-\d+$/.test(id);
 
 export default function ContentPage() {
   const [view, setView] = useState<View>("month");
@@ -92,7 +94,7 @@ export default function ContentPage() {
     const designer = briefItem.designer || "Unassigned";
     const approver = briefItem.approver?.trim() || requester;
     const normalizedBriefItem: BriefContentItem = { ...briefItem, requester, designer, approver };
-    const sourceContentItemId = briefItem.id || `ci-cal-${Date.now()}`;
+    const sourceContentItemId = isTemplateContentId(briefItem.id) ? uniqueNewPostId("ci-cal") : briefItem.id;
     const graphicRequestId = briefItem.requiredGraphic ? String(Date.now() + 700) : undefined;
     const post: ContentItem = {
       ...p,
@@ -258,7 +260,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
   // Same content-item "template" as the Campaign Builder's Content Plan.
   const [item, setItem] = useState<BriefContentItem>(() => {
     const it = emptyContentItem(1);
-    const seeded = { ...it, requester: me, approver: me };
+    const seeded = { ...it, id: uniqueNewPostId("ci-cal"), requester: me, approver: me };
     return initialIso ? { ...seeded, publishDate: initialIso } : seeded;
   });
   const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
@@ -294,8 +296,9 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
     setSaveError("");
     const iso = item.publishDate || initialIso || new Date().toISOString().slice(0, 10);
     const day = Math.max(1, Math.min(31, Number(iso.split("-")[2]) || 1));
+    const postId = uniqueNewPostId("c-cal");
     const post: ContentItem = {
-      id: `c${String(count + 1).padStart(2, "0")}-new`,
+      id: postId,
       day, dateIso: iso, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
       status: "Draft", campaign: campaign.trim(), owner: "Unassigned",
       caption: "", hashtags: "", cta: "",
