@@ -22,10 +22,10 @@ import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
   CampaignResultRow, GroupAgg, GroupDim, aggregateBy, platformMeta, cpr,
-  deriveResultRow, fmtUpdated, mergeBudgetAllocationRows, resultsRoas,
+  deriveResultRow, fmtUpdated, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
-import { fetchCampaigns, updateCampaignRoas } from "@/lib/db/campaigns";
+import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
 import { fetchAllBriefs } from "@/lib/db/brief";
@@ -171,13 +171,9 @@ export default function PlatformsPage() {
     try {
       await saveResults(stamped.filter((r) => dirty.has(r.id)));
       // Ad-level actuals stay in campaign_results — they must never overwrite
-      // campaigns.spend (plan-time COMMITTED allocation). Only the ROAS
-      // multiple rolls up, from entered revenue ÷ actual spend.
-      const touched = new Set(stamped.filter((r) => dirty.has(r.id)).map((r) => r.campaignId));
-      await Promise.all([...touched].map((cid) => {
-        const roas = resultsRoas(stamped.filter((r) => r.campaignId === cid));
-        return roas != null ? updateCampaignRoas(cid, roas) : Promise.resolve();
-      }));
+      // campaigns.spend (plan-time COMMITTED allocation). Revenue entry moved
+      // out of this page (Marketing Visit instead), so no ROAS rollup here —
+      // resultsRoas/updateCampaignRoas remain available for a future POS sync.
       setRows(stamped);
       setDirty(new Set());
       setSaved(true);
@@ -457,7 +453,7 @@ function AdEditor({ rows, nameOf, datesOf, onPatch }: {
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
         <thead>
           <tr className="text-faint">
-            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Revenue", "ROAS", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
+            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Mkt Visit", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
               <th key={i} className={`font-bold px-[9px] py-[6px] border-b border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
             ))}
           </tr>
@@ -479,9 +475,10 @@ function AdEditor({ rows, nameOf, datesOf, onPatch }: {
                 <EditCell value={r.reachActual} onChange={(v) => onPatch(r.id, "reachActual", v)} />
                 <EditCell value={r.budgetActual} onChange={(v) => onPatch(r.id, "budgetActual", v)} />
                 <EditCell value={r.conversions} onChange={(v) => onPatch(r.id, "conversions", v)} />
-                <EditCell value={r.revenue || 0} onChange={(v) => onPatch(r.id, "revenue", v)} />
-                <td className="px-[9px] py-[6px] text-right font-bold" style={{ color: r.revenue && r.budgetActual ? ((r.revenue / r.budgetActual) >= 1 ? "#4E7A4E" : "#B33A2E") : "#9A9387" }}>
-                  {r.revenue && r.budgetActual ? `${(r.revenue / r.budgetActual).toFixed(2)}×` : "—"}
+                <EditCell value={r.marketingVisits || 0} onChange={(v) => onPatch(r.id, "marketingVisits", v)} />
+                {/* Cost per visit (auto) = actual spend ÷ marketing visits */}
+                <td className="px-[9px] py-[6px] text-right font-bold text-ink">
+                  {cpr(r.marketingVisits && r.budgetActual ? r.budgetActual / r.marketingVisits : null)}
                 </td>
                 <td className="px-[9px] py-[6px] text-right text-ink font-bold">{cpr(d.cprActual)}</td>
                 <td className="px-[9px] py-[6px] text-right text-muted">{d.pctReach != null ? pct(d.pctReach * 100) : "—"}</td>

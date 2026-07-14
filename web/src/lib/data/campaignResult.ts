@@ -34,7 +34,8 @@ export interface CampaignResultRow {
   reachActual: number;   // actual count of the KPI unit (reach / clicks)
   budgetActual: number;  // actual spend (฿)
   conversions: number;   // actual conversions (drives CV% actual)
-  revenue?: number;      // actual sales attributed to this ad (฿) — drives auto ROAS
+  marketingVisits?: number; // actual store visits attributed to this ad — drives Cost/Visit
+  revenue?: number;      // legacy: sales attributed (฿); kept for old rows / future POS sync
 
   // Optional manual status override; when unset the status is derived.
   statusOverride?: ResultStatusKey;
