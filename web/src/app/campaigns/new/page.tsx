@@ -18,7 +18,7 @@ import {
   OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor,
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
-  kolBudgetTotal, withSyncedKolBudget,
+  kolBudgetTotal, kolMonthlyTotals, withSyncedKolBudget,
   campaignMonthKeys, todayIso,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
@@ -608,8 +608,33 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
   const rmAds = (i: number) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.filter((_, j) => j !== i) } }));
   const kolBudget = kolBudgetTotal(brief);
   const campaignMonths = campaignMonthKeys(brief.startDate, brief.endDate);
-  const monthlyRows = campaignMonths.map((month) => ({ month, amount: brief.budget.monthly?.find((row) => row.month === month)?.amount || 0 }));
+  // KOL Plan's per-month split — the floor each campaign month must cover.
+  const kolMonthly = kolMonthlyTotals(brief);
+  const monthlyRows = campaignMonths.map((month) => ({
+    month,
+    amount: brief.budget.monthly?.find((row) => row.month === month)?.amount || 0,
+    kol: kolMonthly[month] || 0,
+  }));
   const monthlyTotal = monthlyRows.reduce((sum, row) => sum + row.amount, 0);
+  const monthsUnderKol = monthlyRows.filter((row) => row.kol > 0 && row.amount < row.kol);
+  // Seed the monthly plan from the KOL split: each month gets its KOL floor,
+  // and whatever budget remains beyond KOL is spread equally across months.
+  const syncFromKolPlan = () => setBrief((b) => {
+    const months = campaignMonthKeys(b.startDate, b.endDate);
+    if (!months.length) return b;
+    const kolByMonth = kolMonthlyTotals(b);
+    const kolSum = months.reduce((s, m) => s + (kolByMonth[m] || 0), 0);
+    const remaining = Math.max(0, (b.budget.total || 0) - kolSum);
+    const base = Math.floor(remaining / months.length);
+    const remainder = remaining - base * months.length;
+    return {
+      ...b,
+      budget: {
+        ...b.budget,
+        monthly: months.map((month, i) => ({ month, amount: (kolByMonth[month] || 0) + base + (i < remainder ? 1 : 0) })),
+      },
+    };
+  });
   const setMonthly = (month: string, amount: number) => setBrief((b) => ({
     ...b,
     budget: {
@@ -716,26 +741,46 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           <div className="mb-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <div className="text-[12px] font-bold text-ink">Monthly Budget Plan <span className="text-[10.5px] text-faint font-normal">· เทียบกับ Budget Google Sheet รายเดือน</span></div>
-              <button type="button" onClick={splitMonthlyEqually} className="rounded-[8px] border border-line2 bg-surface px-2.5 py-1 text-[11px] font-bold text-accent">Split equally</button>
+              <div className="flex items-center gap-2">
+                {kolBudget > 0 && (
+                  <button type="button" onClick={syncFromKolPlan} className="rounded-[8px] border px-2.5 py-1 text-[11px] font-bold" style={{ borderColor: "#CFE4C2", background: "#EEF4EE", color: "#4E7A4E" }}>
+                    Sync จาก KOL Plan
+                  </button>
+                )}
+                <button type="button" onClick={splitMonthlyEqually} className="rounded-[8px] border border-line2 bg-surface px-2.5 py-1 text-[11px] font-bold text-accent">Split equally</button>
+              </div>
             </div>
             <div className="rounded-[10px] border border-line2 overflow-hidden">
-              <div className="grid bg-ivory px-3 py-[5px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
-                <span>Month</span><span>Budget (฿)</span>
+              <div className="grid bg-ivory px-3 py-[5px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "0.8fr 1.3fr 0.9fr" }}>
+                <span>Month</span><span>Budget (฿)</span><span>KOL · จาก KOL Plan</span>
               </div>
-              {monthlyRows.map((row) => (
-                <div key={row.month} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
-                  <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
-                  <input value={row.amount || ""} onChange={(e) => setMonthly(row.month, num(e.target.value))}
-                    className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] font-bold text-ink outline-none" placeholder="฿" />
-                </div>
-              ))}
-              <div className="grid items-center gap-2 border-t border-line2 bg-ivory px-3 py-[5px] text-[11.5px] font-bold" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
+              {monthlyRows.map((row) => {
+                const underKol = row.kol > 0 && row.amount < row.kol;
+                return (
+                  <div key={row.month} className="grid items-center gap-2 border-t border-line4 px-3 py-[4px]" style={{ gridTemplateColumns: "0.8fr 1.3fr 0.9fr", background: underKol ? "#FFF8F7" : "#fff" }}>
+                    <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
+                    <input value={row.amount || ""} onChange={(e) => setMonthly(row.month, num(e.target.value))}
+                      className="w-full rounded-[7px] border px-2 py-1 text-[12px] font-bold text-ink outline-none"
+                      style={{ borderColor: underKol ? "#F5C8C4" : "#E5DECF", background: "#FBF9F4" }} placeholder="฿" />
+                    <span className="text-[11.5px] font-semibold" style={{ color: underKol ? "#B33A2E" : row.kol ? "#6b6258" : "#C0B8AD" }}>
+                      {row.kol ? baht(row.kol, { compact: true }) : "—"}{underKol ? " ⚠" : ""}
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="grid items-center gap-2 border-t border-line2 bg-ivory px-3 py-[5px] text-[11.5px] font-bold" style={{ gridTemplateColumns: "0.8fr 1.3fr 0.9fr" }}>
                 <span>รวมรายเดือน</span>
                 <span style={{ color: monthlyTotal === brief.budget.total ? "#4E7A4E" : "#B33A2E" }}>
                   {baht(monthlyTotal, { compact: true })} / {baht(brief.budget.total, { compact: true })}{monthlyTotal === brief.budget.total ? " ✓" : " ⚠ ต้องตรงกัน"}
                 </span>
+                <span className="text-muted">{baht(monthlyRows.reduce((s, r) => s + r.kol, 0), { compact: true })}</span>
               </div>
             </div>
+            {monthsUnderKol.length > 0 && (
+              <div className="mt-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+                ⚠ งบรายเดือนน้อยกว่างบ KOL ที่วางไว้: {monthsUnderKol.map((r) => `${r.month} (แผน ${baht(r.amount, { compact: true })} < KOL ${baht(r.kol, { compact: true })})`).join(" · ")} — กด "Sync จาก KOL Plan" เพื่อเกลี่ยให้สอดคล้อง
+              </div>
+            )}
           </div>
         )}
 

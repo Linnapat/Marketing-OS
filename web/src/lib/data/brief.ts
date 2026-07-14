@@ -286,6 +286,19 @@ export const fmtPct = (n: number): string => `${(n || 0).toFixed(2)}%`;
 // ── KOL budget sync ───────────────────────────────────────────────────────
 export const kolBudgetTotal = (brief: CampaignBrief): number => brief.kols.reduce((s, k) => s + (k.budget || 0), 0);
 
+/** Per-month KOL budget summed across every KOL item's monthly split — the
+ *  floor the campaign's Monthly Budget Plan must cover for that month.
+ *  Items without a monthly split contribute to the total only, not per-month. */
+export function kolMonthlyTotals(brief: CampaignBrief): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of brief.kols) {
+    for (const row of k.monthly ?? []) {
+      if (row.budget) out[row.month] = (out[row.month] || 0) + row.budget;
+    }
+  }
+  return out;
+}
+
 /** Return a brief whose KOL budget bucket is synced to the KOL plan sum. */
 export function withSyncedKolBudget(brief: CampaignBrief): CampaignBrief {
   const kol = kolBudgetTotal(brief);

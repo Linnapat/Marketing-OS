@@ -8,6 +8,7 @@ import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS } from "../src/lib/data/kol";
 import { resultsRoas, CampaignResultRow } from "../src/lib/data/campaignResult";
+import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
 
@@ -124,6 +125,28 @@ console.log("kolRoas / resultsRoas — ROAS = revenue ÷ cost, never fabricated"
   ]) ?? -1, 2);
   check("no revenue → null (not 0×)", resultsRoas([row({ budgetActual: 10000 })]) === null);
   check("no spend → null", resultsRoas([row({ revenue: 10000 })]) === null);
+}
+
+console.log("kolMonthlyTotals — KOL split must roll up per month");
+{
+  const brief = {
+    kols: [
+      { budget: 50000, monthly: [
+        { month: "2026-09", budget: 20000, pages: 2 },
+        { month: "2026-10", budget: 20000, pages: 1 },
+        { month: "2026-11", budget: 10000, pages: 2 },
+        { month: "2026-12", budget: 0, pages: 0 },
+      ] },
+      { budget: 12000, monthly: [{ month: "2026-09", budget: 12000, pages: 1 }] },
+      { budget: 8000 }, // no monthly split — counts in total only, not per month
+    ],
+  } as unknown as CampaignBrief;
+  const m = kolMonthlyTotals(brief);
+  eq("Sep sums across KOL items", m["2026-09"], 32000);
+  eq("Oct from single item", m["2026-10"], 20000);
+  eq("Nov from single item", m["2026-11"], 10000);
+  check("zero-budget month omitted", !("2026-12" in m));
+  eq("unsplit item not attributed per month", Object.values(m).reduce((s, v) => s + v, 0), 62000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
