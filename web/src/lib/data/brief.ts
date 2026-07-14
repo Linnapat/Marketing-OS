@@ -333,7 +333,9 @@ export function budgetSummary(brief: CampaignBrief): BudgetSummary {
 
   const warnings: string[] = [];
   if (bud.total > 0 && allocated > bud.total) warnings.push(`งบที่จัดสรร (${allocated.toLocaleString()}) เกินงบรวม (${bud.total.toLocaleString()})`);
-  const adsMismatch = bud.ads > 0 && adsAllocated !== bud.ads;
+  // Mismatch only applies when platform lines exist — with lines, the Ads
+  // total is auto-summed in the builder, so this mostly guards legacy briefs.
+  const adsMismatch = bud.adsByPlatform.length > 0 && bud.ads > 0 && adsAllocated !== bud.ads;
   if (adsMismatch) warnings.push(`งบ Ads แยกตาม platform (${adsAllocated.toLocaleString()}) ไม่ตรงกับงบ Ads รวม (${bud.ads.toLocaleString()})`);
   if (brief.channels.some((c) => /crm|line oa/i.test(c)) && !bud.crm) warnings.push("เลือก channel CRM / LINE OA แต่ยังไม่ได้ใส่งบ CRM");
   if (brief.channels.some((c) => /facebook|instagram|tiktok|google/i.test(c)) && !bud.ads) warnings.push("เลือก channel โฆษณา แต่ยังไม่ได้ใส่งบ Ads");

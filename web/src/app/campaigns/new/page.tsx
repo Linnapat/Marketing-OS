@@ -637,9 +637,13 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
   const [budgetContextOpen, setBudgetContextOpen] = useState(true);
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const setB = (patch: Partial<CampaignBrief["budget"]>) => setBrief((b) => ({ ...b, budget: { ...b.budget, ...patch } }));
-  const setAds = (i: number, patch: Partial<{ platform: string; amount: number }>) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.map((a, j) => j === i ? { ...a, ...patch } : a) } }));
-  const addAds = () => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: [...b.budget.adsByPlatform, { platform: ADS_PLATFORMS[0], amount: 0 }] } }));
-  const rmAds = (i: number) => setBrief((b) => ({ ...b, budget: { ...b.budget, adsByPlatform: b.budget.adsByPlatform.filter((_, j) => j !== i) } }));
+  // With platform lines present, the Ads total is ALWAYS their sum — no more
+  // manual total drifting from the per-platform breakdown.
+  const withAdsTotal = (bud: CampaignBrief["budget"]): CampaignBrief["budget"] =>
+    bud.adsByPlatform.length ? { ...bud, ads: bud.adsByPlatform.reduce((s, a) => s + (a.amount || 0), 0) } : bud;
+  const setAds = (i: number, patch: Partial<{ platform: string; amount: number }>) => setBrief((b) => ({ ...b, budget: withAdsTotal({ ...b.budget, adsByPlatform: b.budget.adsByPlatform.map((a, j) => j === i ? { ...a, ...patch } : a) }) }));
+  const addAds = () => setBrief((b) => ({ ...b, budget: withAdsTotal({ ...b.budget, adsByPlatform: [...b.budget.adsByPlatform, { platform: ADS_PLATFORMS[0], amount: 0 }] }) }));
+  const rmAds = (i: number) => setBrief((b) => ({ ...b, budget: withAdsTotal({ ...b.budget, adsByPlatform: b.budget.adsByPlatform.filter((_, j) => j !== i) }) }));
   const kolBudget = kolBudgetTotal(brief);
   const campaignMonths = campaignMonthKeys(brief.startDate, brief.endDate);
   // KOL Plan's per-month split — the floor each campaign month must cover.
@@ -692,6 +696,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
   ];
   const contextRows = useMemo(() => monthlyBudgetContext(brief, savedBriefs, budgetSheetRows), [brief, savedBriefs, budgetSheetRows]);
   const branchScope = brief.branches.length ? brief.branches.join(", ") : "ยังไม่ได้เลือกสาขา";
+  const overTotal = (brief.budget.total || 0) > 0 && bs.allocated > (brief.budget.total || 0);
 
   return (
     <>
@@ -767,8 +772,15 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           </div>
         </div>
         <div className="mb-4">
-          <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· รวม KOL อัตโนมัติ</span></label>
-          <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
+          <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· ต้องครอบคลุมยอด allocate ทุกรายการ (รวม KOL)</span></label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
+            {bs.allocated > 0 && (
+              <span className="text-[11.5px] font-semibold" style={{ color: overTotal ? "#B33A2E" : "#4E7A4E" }}>
+                Allocate รวม {baht(bs.allocated, { compact: true })}{overTotal ? " ⚠ เกิน Total" : " ✓"}
+              </span>
+            )}
+          </div>
         </div>
         {/* Compact Excel-style rows — dense grid, no bulky cards */}
         {campaignMonths.length > 0 && (
@@ -846,10 +858,16 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           ))}
           <div className="grid items-center gap-2 border-t border-line2 bg-[#FBF9F4] px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
             <span className="text-[12px] font-bold text-ink">Ads Budget (total)</span>
-            <input value={brief.budget.ads || ""} onChange={(e) => setB({ ads: num(e.target.value) })}
-              className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] font-bold outline-none" placeholder="฿" />
-            <span className="text-[10.5px] font-semibold" style={{ color: bs.adsMismatch ? "#B33A2E" : "#4E7A4E" }}>
-              platform รวม {baht(bs.adsAllocated, { compact: true })}{bs.adsMismatch ? " ⚠" : " ✓"}
+            {brief.budget.adsByPlatform.length > 0 ? (
+              <span className="w-full rounded-[7px] border border-line3 bg-[#F2F0EB] px-2 py-1 text-[12px] font-extrabold text-ink">
+                {baht(brief.budget.ads || 0)}
+              </span>
+            ) : (
+              <input value={brief.budget.ads || ""} onChange={(e) => setB({ ads: num(e.target.value) })}
+                className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] font-bold outline-none" placeholder="฿" />
+            )}
+            <span className="text-[10.5px] font-semibold" style={{ color: "#4E7A4E" }}>
+              {brief.budget.adsByPlatform.length > 0 ? "รวมจาก platform อัตโนมัติ ✓" : "ยังไม่มี platform — ใส่ยอดรวมเองได้"}
             </span>
           </div>
           {brief.budget.adsByPlatform.map((a, i) => (
@@ -864,7 +882,30 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           <div className="border-t border-line4 bg-[#FBF9F4] px-3 py-[5px]">
             <button onClick={addAds} className="flex items-center gap-1 text-[11.5px] font-bold text-accent ml-4"><Plus size={12} /> Add platform</button>
           </div>
+          {/* Footer: live reconciliation of Σ allocation vs Total Campaign Budget */}
+          <div className="grid items-center gap-2 border-t border-line2 bg-ivory px-3 py-[6px] text-[12px] font-bold" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+            <span className="text-ink">รวม Allocate ทุกรายการ</span>
+            <span style={{ color: overTotal ? "#B33A2E" : "#4E7A4E" }}>
+              {baht(bs.allocated, { compact: true })} / {baht(brief.budget.total || 0, { compact: true })}
+              {overTotal ? ` ⚠ เกิน ${baht(bs.allocated - (brief.budget.total || 0), { compact: true })}` : brief.budget.total ? " ✓" : ""}
+            </span>
+            <span>
+              {(overTotal || (brief.budget.total || 0) !== bs.allocated) && bs.allocated > 0 && (
+                <button type="button" onClick={() => setB({ total: bs.allocated })}
+                  className="rounded-[8px] border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
+                  style={{ borderColor: "#CFE4C2", background: "#EEF4EE", color: "#4E7A4E" }}>
+                  ตั้ง Total = {baht(bs.allocated, { compact: true })}
+                </button>
+              )}
+            </span>
+          </div>
         </div>
+        {overTotal && (
+          <div className="mt-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+            ⚠ งบที่ allocate ({baht(bs.allocated, { compact: true })}) เกิน Total Campaign Budget ({baht(brief.budget.total || 0, { compact: true })}) —
+            ลดรายการที่จัดสรร หรือกด &quot;ตั้ง Total = {baht(bs.allocated, { compact: true })}&quot; แล้วเกลี่ย Monthly Budget Plan ใหม่ให้ตรง
+          </div>
+        )}
       </Panel>
 
       <Panel title="Allocation Summary">
