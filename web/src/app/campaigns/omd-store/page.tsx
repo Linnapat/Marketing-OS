@@ -10,6 +10,8 @@ import {
 } from "@/lib/data/omdStorePromotions";
 import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
+import { toastError } from "@/lib/toast";
 import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
 
@@ -75,7 +77,9 @@ function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
     category: "campaign",
     title: campaign.name,
     description: `${campaign.campType} · Owner: ${campaign.owner} · Budget ${campaign.budget.toLocaleString("th-TH")} THB`,
-    posName: campaign.nextApproval && campaign.nextApproval !== "None" ? `Next approval: ${campaign.nextApproval}` : "",
+    // POS name is typed by the team before printing (saved per item) — the
+    // approval status was never the right content for this column.
+    posName: "",
     branches: campaign.branch.split(",").map((item) => item.trim()).filter(Boolean),
     startDate: isoDate(start) ?? "",
     endDate: isoDate(end),
@@ -119,12 +123,27 @@ export default function OmdStoreCampaignPage() {
     refreshFromSupabase();
   }, []);
 
+  // POS names typed by the team — persisted per item in promotion_summary_items
+  // so the whole team sees the same names on every print.
+  const [posOverrides, setPosOverrides] = useState<Record<string, string>>({});
+
   const refreshFromSupabase = async () => {
     const campaignRows = await fetchCampaigns().catch(() => CAMPAIGNS);
     setLiveCampaigns(campaignRows.length ? campaignRows : CAMPAIGNS);
+    const saved = await fetchPromotionSummaryItems().catch(() => []);
+    setPosOverrides(Object.fromEntries(saved.filter((s) => s.posName).map((s) => [s.id, s.posName])));
   };
 
-  const campaignItems = useMemo(() => liveCampaigns.map(campaignToStorePromotion), [liveCampaigns]);
+  const setPosName = (id: string, value: string) => setPosOverrides((m) => ({ ...m, [id]: value }));
+  const savePosName = (item: OmdStorePromotion) => {
+    savePromotionSummaryItem({ ...item, posName: posOverrides[item.id] ?? "" })
+      .catch((error) => toastError(`บันทึก POS name ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+  };
+
+  const campaignItems = useMemo(
+    () => liveCampaigns.map(campaignToStorePromotion).map((it) => ({ ...it, posName: posOverrides[it.id] ?? it.posName })),
+    [liveCampaigns, posOverrides],
+  );
   const allPromotions = campaignItems;
 
   const branches = useMemo(() => {
@@ -457,7 +476,17 @@ export default function OmdStoreCampaignPage() {
                         </div>
                       </div>
                       <div className="omd-print-card-body text-[12px] font-medium leading-relaxed text-[#3E3E55]">{item.description}</div>
-                      <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">{item.posName || "—"}</div>
+                      <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
+                        {/* Editable on screen; the printout shows plain text */}
+                        <input
+                          value={item.posName}
+                          onChange={(e) => setPosName(item.id, e.target.value)}
+                          onBlur={() => savePosName(item)}
+                          placeholder="พิมพ์ชื่อใน POS…"
+                          className="print:hidden w-full rounded-[8px] border border-[#E5E1F0] bg-white px-2 py-1 text-[12px] font-bold text-[#3E3E55] outline-none focus:border-[#6C5CE7]"
+                        />
+                        <span className="hidden print:inline">{item.posName || "—"}</span>
+                      </div>
                       <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{item.branches.join(", ")}</div>
                       <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
                         {formatDate(item.startDate)}<br />
