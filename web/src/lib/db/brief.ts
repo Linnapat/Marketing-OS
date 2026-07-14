@@ -154,25 +154,45 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   // from real config (Teams + Approval Matrix); campaign context is copied whole.
   for (const kr of brief.kols) {
     const expEng = (kr.likes || 0) + (kr.comments || 0) + (kr.shares || 0) + (kr.saves || 0) + (kr.clicks || 0);
-    const pages = Math.max(1, kr.count || 1);
-    const perPageBudget = Math.round((kr.budget || 0) / pages);
     const owner = (kr.owner || "").trim() || kolAssign.owner;
-    for (let p = 1; p <= pages; p++) {
-      const kol = buildKol({
-        id: stamp + 900 + n * 10 + p, campaign: brief.name, b: brief.b, kolType: kr.kolType,
-        count: 1, budget: perPageBudget, deliverables: kr.contentRequired.join(" + "),
-        notes: kr.note, name: kr.name ? (pages > 1 ? `${kr.name} #${p}` : kr.name) : undefined, handle: kr.handle || undefined,
-        followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
-        owner, approver: kolAssign.approver, requester: brief.plannerOwner, branch: kr.area, platform: kr.platforms[0],
-        postingDate: labelDate(kr.postingStart), postingEnd: labelDate(kr.postingEnd),
-        campaignId: brief.id, sourceKolRequirementId: `${kr.id}#${p}`,
-        objective: brief.objective, target: brief.audience, keyMsg: brief.mainMessage, offer: brief.offer,
-        dueDate: labelDate(kr.postingStart),
-      });
-      // Upsert: new page → create; existing (same source id) → refresh its
-      // requirement fields while preserving workflow progress (live two-way).
-      const madeKol = await upsertKolRequirement(kol, kolRows);
-      if (madeKol.created) kols++;
+    // Month buckets keep every page tied to ITS month's posting window and
+    // per-month budget (Monthly split). Without a split, one bucket carries
+    // the requirement's overall posting window — same behavior as before.
+    const monthlyPlan = (kr.monthly ?? []).filter((m) => (m.pages || 0) > 0);
+    const buckets = monthlyPlan.length
+      ? monthlyPlan.map((m) => ({
+          pages: m.pages,
+          perPage: Math.round((m.budget || 0) / Math.max(1, m.pages)),
+          start: m.postStart || kr.postingStart,
+          end: m.postEnd || kr.postingEnd,
+        }))
+      : [{
+          pages: Math.max(1, kr.count || 1),
+          perPage: Math.round((kr.budget || 0) / Math.max(1, kr.count || 1)),
+          start: kr.postingStart,
+          end: kr.postingEnd,
+        }];
+    const pages = buckets.reduce((s, bkt) => s + bkt.pages, 0);
+    let p = 0;
+    for (const bucket of buckets) {
+      for (let i = 0; i < bucket.pages; i++) {
+        p++;
+        const kol = buildKol({
+          id: stamp + 900 + n * 10 + p, campaign: brief.name, b: brief.b, kolType: kr.kolType,
+          count: 1, budget: bucket.perPage, deliverables: kr.contentRequired.join(" + "),
+          notes: kr.note, name: kr.name ? (pages > 1 ? `${kr.name} #${p}` : kr.name) : undefined, handle: kr.handle || undefined,
+          followers: kr.followers, expectedReach: kr.expectedReach, expectedEngagement: expEng,
+          owner, approver: kolAssign.approver, requester: brief.plannerOwner, branch: kr.area, platform: kr.platforms[0],
+          postingDate: labelDate(bucket.start), postingEnd: labelDate(bucket.end),
+          campaignId: brief.id, sourceKolRequirementId: `${kr.id}#${p}`,
+          objective: brief.objective, target: brief.audience, keyMsg: brief.mainMessage, offer: brief.offer,
+          dueDate: labelDate(bucket.start),
+        });
+        // Upsert: new page → create; existing (same source id) → refresh its
+        // requirement fields while preserving workflow progress (live two-way).
+        const madeKol = await upsertKolRequirement(kol, kolRows);
+        if (madeKol.created) kols++;
+      }
     }
     const madeTask = await upsertBriefTask(mkTask(++n, {
       title: `KOL — ${kr.name || kr.kolType} × ${pages}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
