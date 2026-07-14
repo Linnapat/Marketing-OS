@@ -63,8 +63,12 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
 
   // Draft rows come from approved campaign budgets — one click sends them on.
   const submitDraft = async (r: ExpenseReq) => {
-    setRequests((rs) => rs.map((x) => (x === r ? { ...x, status: "Waiting Approval" } : x)));
-    await submitExpenseDraft(r);
+    try {
+      await submitExpenseDraft(r);
+      setRequests((rs) => rs.map((x) => (x === r ? { ...x, status: "Waiting Approval" } : x)));
+    } catch (error) {
+      alert(`ส่ง Draft เข้า Approval ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   const formBrandId = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
@@ -86,21 +90,25 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       category: catKey || "Expense", b: formBrandId,
       campaign, requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
-    await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht });
-    // Also drop a card into the shared Approval Queue (same table My Tasks ›
-    // My Approval + the Dashboard's Pending Approval read from), stage "Submitted".
-    const queueRow: QueueRow = {
-      id: ref, type: "Budget", typeIcon: "฿",
-      title: `${catKey || "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
-      campaign, requester: requesterName, approver: route,
-      due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
-    };
-    await createRequest(queueRow);
-    // ปิดช่องว่าง "แจ้งกลุ่ม LINE เอง" — ระบบแจ้งผู้อนุมัติให้ทันที
-    notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${catKey || "Expense"}`,
-      `${baht(amt)} (${reimburseType})${vendor ? ` · ${vendor}` : ""} · โดย ${requesterName} → รอ ${route} อนุมัติ`,
-      "/my-tasks");
-    setSubmitted(ref);
+    try {
+      await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht });
+      // Also drop a card into the shared Approval Queue (same table My Tasks ›
+      // My Approval + the Dashboard's Pending Approval read from), stage "Submitted".
+      const queueRow: QueueRow = {
+        id: ref, type: "Budget", typeIcon: "฿",
+        title: `${catKey || "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
+        campaign, requester: requesterName, approver: route,
+        due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
+      };
+      await createRequest(queueRow);
+      // ปิดช่องว่าง "แจ้งกลุ่ม LINE เอง" — ระบบแจ้งผู้อนุมัติให้ทันที
+      notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${catKey || "Expense"}`,
+        `${baht(amt)} (${reimburseType})${vendor ? ` · ${vendor}` : ""} · โดย ${requesterName} → รอ ${route} อนุมัติ`,
+        "/my-tasks");
+      setSubmitted(ref);
+    } catch (error) {
+      alert(`บันทึก Expense Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
   // Additional line items
   const [lines, setLines] = useState<ExtraLine[]>([]);
@@ -417,7 +425,7 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
   const rows = all.filter((e) => (brand === "all" || e.b === brand) && (!date || inDateFilter(date, e.date)));
   const markPaid = (row: ExpenseLogRow) => {
     setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x)));
-    markExpensePaid(row._id);
+    markExpensePaid(row._id).catch((error) => alert(`บันทึก Paid ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">

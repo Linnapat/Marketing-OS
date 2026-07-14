@@ -49,14 +49,16 @@ export default function WorkCalendarPage() {
   const setOverrides: typeof setOverridesRaw = (action) => {
     setOverridesRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
-      saveWorkflowState({ overrides: next, done: stateRef.current.done });
+      saveWorkflowState({ overrides: next, done: stateRef.current.done })
+        .catch((error) => alert(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;
     });
   };
   const setDone: typeof setDoneRaw = (action) => {
     setDoneRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
-      saveWorkflowState({ overrides: stateRef.current.overrides, done: next });
+      saveWorkflowState({ overrides: stateRef.current.overrides, done: next })
+        .catch((error) => alert(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;
     });
   };

@@ -44,10 +44,14 @@ export default function AssetLibraryPage() {
       id: "tmp", name: nu.name.trim(), b: nu.b, campaign: nu.campaign.trim() || "—", type: nu.type,
       version: "v1", approval: "Draft", driveUrl: nu.driveUrl.trim(), canvaUrl: nu.canvaUrl.trim(), updated: "just now",
     };
-    setUploadOpen(false);
-    setNu(empty);
-    const created = await createAsset(draft);
-    setAssets((as) => [created, ...as]);
+    try {
+      const created = await createAsset(draft);
+      setAssets((as) => [created, ...as]);
+      setUploadOpen(false);
+      setNu(empty);
+    } catch (error) {
+      alert(`บันทึก Asset ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   const rows = assets.filter((a) => (brand === "all" || a.b === brand) && (type === "all" || a.type === type));

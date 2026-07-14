@@ -228,7 +228,10 @@ export default function NewCampaignPage() {
       if (!asDraft) notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || "CMO"} อนุมัติใน My Tasks`, "/my-tasks");
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
-    } catch { setBusy(false); }
+    } catch (error) {
+      alert(`บันทึก Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      setBusy(false);
+    }
   };
 
   return (

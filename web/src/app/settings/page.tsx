@@ -328,13 +328,15 @@ export default function SettingsPage() {
   const canEdit = role === "CMO";
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
+  const reportSaveError = (label: string) => (error: unknown) =>
+    alert(`${label} ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
   // Notification toggles persist to org_settings; /api/notify honors them.
   const [channels, setChannelsRaw] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_CHANNELS.map((c) => [c.key, c.def])));
   const [triggers, setTriggersRaw] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_TRIGGERS.map((t) => [t.key, t.def])));
   const setChannels = (fn: (s: Record<string, boolean>) => Record<string, boolean>) =>
-    setChannelsRaw((prev) => { const next = fn(prev); saveNotifSettings({ channels: next, triggers }); return next; });
+    setChannelsRaw((prev) => { const next = fn(prev); saveNotifSettings({ channels: next, triggers }).catch(reportSaveError("บันทึก Notification settings")); return next; });
   const setTriggers = (fn: (s: Record<string, boolean>) => Record<string, boolean>) =>
-    setTriggersRaw((prev) => { const next = fn(prev); saveNotifSettings({ channels, triggers: next }); return next; });
+    setTriggersRaw((prev) => { const next = fn(prev); saveNotifSettings({ channels, triggers: next }).catch(reportSaveError("บันทึก Notification settings")); return next; });
   useEffect(() => {
     let alive = true;
     fetchNotifSettings().then((s) => {
@@ -356,20 +358,19 @@ export default function SettingsPage() {
     savePermissions(PERM_ROLES.map((r, ri) => ({
       role: r.role, descr: r.desc,
       perms: PERM_MODULES.map((m, mi) => ({ module: m, level: PERM_LEVELS[perm[ri][mi]].l })),
-    })));
-    setPermDirty(false);
+    }))).then(() => setPermDirty(false)).catch(reportSaveError("บันทึก Permissions"));
   };
   // Editable organization fields
   const [orgEdit, setOrgEdit] = useState(false);
   const [org, setOrg] = useState(() => ORG_FIELDS.map((f) => ({ ...f })));
-  const persistOrg = () => { saveOrg(org); setOrgEdit(false); };
+  const persistOrg = () => { saveOrg(org).then(() => setOrgEdit(false)).catch(reportSaveError("บันทึก Company details")); };
 
   // Editable Approval Matrix (budget thresholds + module rules).
   const [thresholds, setThresholds] = useState<BudgetThreshold[]>(() => BUDGET_THRESHOLDS.map((b) => ({ ...b, chain: [...b.chain] })));
   const [rules, setRules] = useState<ModuleRule[]>(() => APPROVAL_RULES.map((r) => ({ ...r, chain: [...r.chain] })));
   const [apprEdit, setApprEdit] = useState(false);
   const [apprDirty, setApprDirty] = useState(false);
-  const persistApproval = () => { saveApprovalMatrix({ thresholds, rules }); setApprEdit(false); setApprDirty(false); };
+  const persistApproval = () => { saveApprovalMatrix({ thresholds, rules }).then(() => { setApprEdit(false); setApprDirty(false); }).catch(reportSaveError("บันทึก Approval Matrix")); };
 
   // Editable Brands & Branches (persisted as a JSON blob in org_settings).
   const [brands, setBrands] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
@@ -378,7 +379,7 @@ export default function SettingsPage() {
   const [brandLiveStats, setBrandLiveStats] = useState<Record<string, { campaigns: number; budget: number }>>({});
   const [budgetYear, setBudgetYear] = useState(currentBudgetYearKey());
   const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
-  const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands); setBrandsEdit(false); setBrandsDirty(false); };
+  const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands).then(() => { setBrandsEdit(false); setBrandsDirty(false); }).catch(reportSaveError("บันทึก Brands & branches")); };
 
   // Campaign Types are shared by the full builder and quick-create form.
   const [campaignTypes, setCampaignTypes] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
@@ -386,9 +387,9 @@ export default function SettingsPage() {
   const [campaignTypesDirty, setCampaignTypesDirty] = useState(false);
   const persistCampaignTypes = () => {
     if (!campaignTypes.length) return;
-    saveJsonSetting("campaign_types_config", "Campaign types", campaignTypes);
-    setCampaignTypesEdit(false);
-    setCampaignTypesDirty(false);
+    saveJsonSetting("campaign_types_config", "Campaign types", campaignTypes)
+      .then(() => { setCampaignTypesEdit(false); setCampaignTypesDirty(false); })
+      .catch(reportSaveError("บันทึก Campaign types"));
   };
 
   // Editable Teams (JSON blob in org_settings).
@@ -397,7 +398,7 @@ export default function SettingsPage() {
   const [teamsEdit, setTeamsEdit] = useState(false);
   const [teamsDirty, setTeamsDirty] = useState(false);
   const editTeam = (i: number, patch: Partial<TeamCfg>) => { setTeams((ts) => ts.map((t, j) => j === i ? { ...t, ...patch } : t)); setTeamsDirty(true); };
-  const persistTeams = () => { saveJsonSetting("teams_config", "Teams", teams); setTeamsEdit(false); setTeamsDirty(false); };
+  const persistTeams = () => { saveJsonSetting("teams_config", "Teams", teams).then(() => { setTeamsEdit(false); setTeamsDirty(false); }).catch(reportSaveError("บันทึก Teams")); };
 
   // Editable Workflow Status per module (JSON blob in org_settings).
   const [statusSets, setStatusSets] = useState<Record<WfModule, WfStatus[]>>(() =>
@@ -405,7 +406,7 @@ export default function SettingsPage() {
   const [wfEdit, setWfEdit] = useState(false);
   const [wfDirty, setWfDirty] = useState(false);
   const editStatuses = (mod: WfModule, next: WfStatus[]) => { setStatusSets((s) => ({ ...s, [mod]: next.map((x, i) => ({ ...x, order: i + 1 })) })); setWfDirty(true); };
-  const persistWorkflow = () => { saveJsonSetting("workflow_status", "Workflow statuses", statusSets); setWfEdit(false); setWfDirty(false); };
+  const persistWorkflow = () => { saveJsonSetting("workflow_status", "Workflow statuses", statusSets).then(() => { setWfEdit(false); setWfDirty(false); }).catch(reportSaveError("บันทึก Workflow statuses")); };
 
   // Editable Templates (JSON blob in org_settings).
   type TemplateCfg = typeof TEMPLATES[number];
@@ -413,7 +414,7 @@ export default function SettingsPage() {
   const [tplEdit, setTplEdit] = useState(false);
   const [tplDirty, setTplDirty] = useState(false);
   const editTpl = (i: number, patch: Partial<TemplateCfg>) => { setTemplates((ts) => ts.map((t, j) => j === i ? { ...t, ...patch, updated: todayLabel() } : t)); setTplDirty(true); };
-  const persistTemplates = () => { saveJsonSetting("templates_config", "Templates", templates); setTplEdit(false); setTplDirty(false); };
+  const persistTemplates = () => { saveJsonSetting("templates_config", "Templates", templates).then(() => { setTplEdit(false); setTplDirty(false); }).catch(reportSaveError("บันทึก Templates")); };
 
   // Meta publishing account mapping. Tokens stay server-side in Vercel env;
   // this setting only stores public account IDs/labels per brand.
@@ -425,7 +426,7 @@ export default function SettingsPage() {
     setMetaAccounts((current) => ({ ...current, [brand]: { ...(current[brand] ?? emptyMetaAccount(brand)), brand, ...patch } }));
     setMetaDirty(true);
   };
-  const persistMeta = () => { saveMetaPublishingAccounts(metaAccounts); setMetaDirty(false); };
+  const persistMeta = () => { saveMetaPublishingAccounts(metaAccounts).then(() => setMetaDirty(false)).catch(reportSaveError("บันทึก Meta accounts")); };
 
   // Edit-existing-member modal.
   const [editUser, setEditUser] = useState<{ orig: string; m: Member } | null>(null);
@@ -494,17 +495,21 @@ export default function SettingsPage() {
     setInv((v) => ({ ...v, role, access: opt?.access ?? v.access, brandAccess: opt?.brand ?? v.brandAccess }));
   };
   const inviteValid = inv.name.trim() !== "" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email.trim());
-  const submitInvite = () => {
+  const submitInvite = async () => {
     if (!canEdit || !inviteValid) return;
     const member = {
       name: inv.name.trim(), email: inv.email.trim(), role: inv.role.trim() || "Member",
       access: inv.access, brandAccess: inv.brandAccess, status: "Invited",
       color: AVATAR_COLORS[users.length % AVATAR_COLORS.length],
     };
-    setUsers((us) => [...us, member]);
-    createMember(member);
-    setInviteOpen(false);
-    setInv(emptyInvite);
+    try {
+      await createMember(member);
+      setUsers((us) => [...us, member]);
+      setInviteOpen(false);
+      setInv(emptyInvite);
+    } catch (error) {
+      reportSaveError("เพิ่มสมาชิก")(error);
+    }
   };
   const meta = SECTION_META[section];
 
@@ -745,7 +750,12 @@ export default function SettingsPage() {
                   {canEdit && (
                     <div className="flex items-center gap-2 justify-end">
                       <button onClick={() => setEditUser({ orig: u.email, m: { ...u } })} className="text-[11.5px] font-bold text-accent">Edit</button>
-                      <button onClick={() => { if (confirm(`ลบ ${u.name} ออกจากทีม?`)) { setUsers((us) => us.filter((x) => x.email !== u.email)); deleteMember(u.email); } }} className="text-[11.5px] font-bold text-status-red">Delete</button>
+                      <button onClick={() => {
+                        if (!confirm(`ลบ ${u.name} ออกจากทีม?`)) return;
+                        deleteMember(u.email)
+                          .then(() => setUsers((us) => us.filter((x) => x.email !== u.email)))
+                          .catch(reportSaveError("ลบสมาชิก"));
+                      }} className="text-[11.5px] font-bold text-status-red">Delete</button>
                     </div>
                   )}
                 </div>
@@ -1159,7 +1169,13 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={() => { if (!editUser) return; const { orig, m } = editUser; setUsers((us) => us.map((x) => x.email === orig ? m : x)); updateMember(m, orig); setEditUser(null); }} disabled={!editUser.m.name.trim() || !editUser.m.email.trim()}
+              <button onClick={() => {
+                if (!editUser) return;
+                const { orig, m } = editUser;
+                updateMember(m, orig)
+                  .then(() => { setUsers((us) => us.map((x) => x.email === orig ? m : x)); setEditUser(null); })
+                  .catch(reportSaveError("บันทึกสมาชิก"));
+              }} disabled={!editUser.m.name.trim() || !editUser.m.email.trim()}
                 className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Save changes</button>
               <button onClick={() => setEditUser(null)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
             </div>

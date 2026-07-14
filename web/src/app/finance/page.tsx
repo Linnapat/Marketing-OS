@@ -701,13 +701,15 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const approve = (i: number, r: ExpenseReq) => {
     setApproved((a) => ({ ...a, [i]: true }));
     setSigning(null);
-    approveExpenseRequest(r, r.requested);
+    approveExpenseRequest(r, r.requested)
+      .catch((error) => alert(`อนุมัติคำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   const reject = (i: number, r: ExpenseReq) => {
     if (!reason.trim()) return;
     setRejected((a) => ({ ...a, [i]: true }));
     setRejecting(null);
-    rejectExpenseRequest(r, reason.trim(), approverName);
+    rejectExpenseRequest(r, reason.trim(), approverName)
+      .catch((error) => alert(`Reject คำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     setReason("");
   };
 

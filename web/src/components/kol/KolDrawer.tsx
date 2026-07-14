@@ -120,7 +120,12 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
       history: [...(kol.history ?? []), { type: "owner_assigned", at: new Date().toISOString(), by: owner, note: owner }],
     };
     setBusy(true);
-    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+    try {
+      await updateKol(next);
+      onUpdate?.(next);
+    } catch (error) {
+      alert(`บันทึก KOL Owner ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
 
   const advance = async () => {
@@ -142,7 +147,12 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
       history: nextHistory,
     };
     setBusy(true);
-    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+    try {
+      await updateKol(next);
+      onUpdate?.(next);
+    } catch (error) {
+      alert(`บันทึกสถานะ KOL ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
 
   return (
@@ -187,7 +197,12 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
     const totals = postsTotals(nextPosts);
     const next: Kol = { ...kol, posts: nextPosts, postLink: nextPosts[0]?.link || kol.postLink, actualReach: totals.reach, actualEngagement: totals.engagement };
     setBusy(true);
-    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+    try {
+      await updateKol(next);
+      onUpdate?.(next);
+    } catch (error) {
+      alert(`บันทึก KOL Deliverables ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
   const editPost = (i: number, patch: Partial<KolPost>) => setPosts((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const addPost = () => setPosts((ps) => [...ps, { platform: KOL_PLATFORMS[0], link: "" }]);
@@ -311,6 +326,8 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         await createTaskDb(task);
       }
       onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (error) {
+      alert(`ส่ง KOL proposal ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -441,7 +458,12 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
     if (patch.quotationStatus && patch.quotationStatus !== kol.quotationStatus && /approved/i.test(patch.quotationStatus)) {
       next.history = [...(kol.history ?? []), { type: "approved", at: new Date().toISOString(), by: kol.pendingApprover || kol.owner || "System", note: patch.quotationStatus }];
     }
-    try { await updateKol(next); onUpdate?.(next); } finally { setBusy(false); }
+    try {
+      await updateKol(next);
+      onUpdate?.(next);
+    } catch (error) {
+      alert(`บันทึก KOL Finance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
   const saveProposalBudget = async () => {
     const fee = Math.max(0, proposalBudget || 0);
@@ -585,7 +607,9 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     try {
       await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000);
       // Completed collaboration → keep the KOL Library / master history current.
-      if (normalizeStage(kol.status) === "Completed" && kol.masterKolId) logToMaster().catch(() => {});
+      if (normalizeStage(kol.status) === "Completed" && kol.masterKolId) logToMaster().catch((error) => alert(`บันทึก KOL Library history ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    } catch (error) {
+      alert(`บันทึก KOL Results ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 

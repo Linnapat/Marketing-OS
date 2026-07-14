@@ -39,7 +39,12 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   const canApprove = role === "CMO" || role === "Marketing Manager / BGL" || member?.name === effectiveNextApproval;
   const decide = async (status: string) => {
     setApproving(true);
-    try { await updateCampaignStatus(c.id, status); onReload(); } finally { setApproving(false); }
+    try {
+      await updateCampaignStatus(c.id, status);
+      onReload();
+    } catch (error) {
+      alert(`บันทึก Approval status ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setApproving(false); }
   };
 
   // Management strip — real counts once the hub has loaded, else the row's stored values.
@@ -389,7 +394,12 @@ function PlannerTab({ detail, hub, onReload }: { detail: CampaignDetail; hub: Ca
 
   const confirm = async () => {
     setBusy(true);
-    try { await createPlannerTasks(detail.row); onReload(); } finally { setBusy(false); }
+    try {
+      await createPlannerTasks(detail.row);
+      onReload();
+    } catch (error) {
+      alert(`สร้าง Planner Tasks ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
 
   return (
@@ -660,7 +670,11 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
       notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
       // Approved budget flows straight into Finance as Draft expense requests —
       // one per funded bucket — so the finance team never re-keys the plan.
-      const drafts = await createBudgetExpenseDrafts(detail.row, next).catch(() => 0);
+      const drafts = await createBudgetExpenseDrafts(detail.row, next)
+        .catch((error) => {
+          alert(`สร้าง Draft เบิกงบจาก Campaign ไม่สำเร็จ: ${error?.message || "Unknown error"}`);
+          return 0;
+        });
       if (drafts > 0) notify("approval", `💰 เปิด Draft เบิกงบ ${drafts} รายการจากงบแคมเปญ: ${brief.name}`, `ตามงบที่อนุมัติ — ตรวจและกดส่งอนุมัติได้ในโมดูล Expenses`, "/expenses");
     }
     else if (nextStatus === "Need Revision") notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — โดย ${reviewer}`, "/campaigns");

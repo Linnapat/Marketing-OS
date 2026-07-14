@@ -100,10 +100,14 @@ export default function CampaignsPage() {
       taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
       bottleneckTeam: "None", nextApproval: "CMO",
     };
-    setNewOpen(false); setNc(emptyNew);
-    setCampaigns((cs) => [row, ...cs]);
-    setCollapsed((c) => ({ ...c, [row.status]: false }));
-    await createCampaign(row);
+    try {
+      await createCampaign(row);
+      setNewOpen(false); setNc(emptyNew);
+      setCampaigns((cs) => [row, ...cs]);
+      setCollapsed((c) => ({ ...c, [row.status]: false }));
+    } catch (error) {
+      alert(`สร้าง Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
@@ -142,12 +146,16 @@ export default function CampaignsPage() {
 
   const onStatusChange = async (id: string, nextStatus: string) => {
     setBusyCampaignId(id);
+    const previous = campaigns.find((row) => row.id === id);
     setCampaigns((rows) => rows.map((row) => (
       row.id === id ? { ...row, status: nextStatus, nextApproval: nextStatus.includes("Waiting") ? "CMO" : "None" } : row
     )));
     setCollapsed((state) => ({ ...state, [nextStatus]: false }));
     try {
       await updateCampaignStatus(id, nextStatus);
+    } catch (error) {
+      if (previous) setCampaigns((rows) => rows.map((row) => row.id === id ? previous : row));
+      alert(`เปลี่ยนสถานะ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setBusyCampaignId(null);
     }
@@ -159,6 +167,9 @@ export default function CampaignsPage() {
     setCampaigns((rows) => rows.filter((row) => row.id !== campaign.id));
     try {
       await deleteCampaign(campaign.id);
+    } catch (error) {
+      setCampaigns((rows) => [campaign, ...rows]);
+      alert(`ลบ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setBusyCampaignId(null);
     }

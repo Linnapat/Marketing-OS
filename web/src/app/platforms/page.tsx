@@ -178,6 +178,8 @@ export default function PlatformsPage() {
       setSaved(true);
       clearTimeout(savedRef.current);
       savedRef.current = setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      alert(`บันทึก Performance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setSaving(false); }
   };
 
@@ -219,11 +221,15 @@ export default function PlatformsPage() {
       requestedBudget: amount > 0 ? amount : campaign.budget,
       comments: [{ by: requester, text: reviseReason.trim(), at: new Date().toISOString() }],
     };
-    await createTaskDb(task);
-    setReviseSent(true);
-    setReviseAmount("");
-    setReviseReason("");
-    setTimeout(() => { setReviseOpen(false); setReviseSent(false); }, 1400);
+    try {
+      await createTaskDb(task);
+      setReviseSent(true);
+      setReviseAmount("");
+      setReviseReason("");
+      setTimeout(() => { setReviseOpen(false); setReviseSent(false); }, 1400);
+    } catch (error) {
+      alert(`ส่ง Request Revise Budget ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   const dimLabel = dim === "platform" ? "Platform" : "Campaign";

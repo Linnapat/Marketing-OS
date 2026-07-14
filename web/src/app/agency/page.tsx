@@ -191,11 +191,11 @@ export default function AgencyPortalPage() {
     if (task.source === "graphic" && task.graphic) {
       const next = applyAgencyPatchToGraphic(task.graphic, patch, currentUser);
       setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
-      updateGraphic(next);
+      updateGraphic(next).catch((error) => alert(`บันทึกงาน Agency ที่ link กับ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return;
     }
     setManualTasks((ts) => ts.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
-    updateAgencyTask(task.id, patch);
+    updateAgencyTask(task.id, patch).catch((error) => alert(`บันทึก Agency Task ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const addTask = async () => {
@@ -208,8 +208,12 @@ export default function AgencyPortalPage() {
     };
     setNewOpen(false);
     setNt(empty);
-    const created = await createAgencyTask(draft, manualTasks);
-    setManualTasks((ts) => [{ ...created, source: "manual" }, ...ts]);
+    try {
+      const created = await createAgencyTask(draft, manualTasks);
+      setManualTasks((ts) => [{ ...created, source: "manual" }, ...ts]);
+    } catch (error) {
+      alert(`สร้าง Agency Task ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   return (

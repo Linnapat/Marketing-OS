@@ -47,7 +47,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
       nextAction: "Delivered to campaign / content team",
       history: [...(g.history ?? []), { type: "delivered", at: new Date().toISOString(), by: currentUser }],
     };
-    updateGraphic(next); updateCurrentGraphic(next);
+    updateGraphic(next)
+      .then(() => updateCurrentGraphic(next))
+      .catch((error) => alert(`บันทึกสถานะ Delivered ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const requestFeedbackRevision = () => {
@@ -68,8 +70,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
       nextAction: `${g.designer} to revise ${d.platform} per feedback`,
       history: [...(g.history ?? []), { type: "revision_requested", at, by: currentUser, deliverableKey: `${d.platform}::${d.size}`, note: reason }],
     };
-    updateGraphic(next);
-    updateCurrentGraphic(next);
+    updateGraphic(next)
+      .then(() => updateCurrentGraphic(next))
+      .catch((error) => alert(`บันทึก Feedback ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     setFeedback((fs) => [{
       id: Date.now(),
       gid: g.id,
@@ -136,7 +139,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                       nextAction: assigned === "Unassigned" ? "Assign designer to start work" : `${assigned} to start design`,
                       history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: assigned }],
                     };
-                    updateGraphic(ng); onUpdate?.(ng);
+                    updateGraphic(ng)
+                      .then(() => onUpdate?.(ng))
+                      .catch((error) => alert(`บันทึก Designer ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
                   }}
                   team="Creative"
                   placeholder="Unassigned"
