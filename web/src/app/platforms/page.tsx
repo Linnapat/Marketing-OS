@@ -163,6 +163,31 @@ export default function PlatformsPage() {
     setDirty((d) => { const nd = new Set(d); groupRows.forEach((r) => nd.add(r.id)); return nd; });
   };
 
+  // Grand-total entry (monthly mode): type the month's total once and spread it
+  // across every visible ad. Weight base per field — actual spend follows the
+  // plan budget share, actual reach follows the target share, conversions and
+  // visits follow the actual-reach share (even split when the base is all zero).
+  // Rounding remainder lands on the last row so the total always matches.
+  const spreadTotal = (
+    list: CampaignResultRow[],
+    key: "reachActual" | "budgetActual" | "conversions" | "marketingVisits",
+    total: number,
+  ) => {
+    if (list.length === 0) return;
+    const weightOf = (r: CampaignResultRow) =>
+      key === "budgetActual" ? (r.budget || 0)
+      : key === "reachActual" ? (r.target || 0)
+      : (r.reachActual || 0);
+    const tw = list.reduce((s, r) => s + weightOf(r), 0);
+    const alloc = list.map((r) =>
+      tw > 0 ? Math.round(total * (weightOf(r) / tw)) : Math.round(total / list.length),
+    );
+    alloc[alloc.length - 1] += total - alloc.reduce((a, b) => a + b, 0);
+    const map = new Map(list.map((r, i) => [r.id, Math.max(0, alloc[i])]));
+    setRows((rs) => rs.map((r) => (map.has(r.id) ? { ...r, [key]: map.get(r.id)! } : r)));
+    setDirty((d) => { const nd = new Set(d); list.forEach((r) => nd.add(r.id)); return nd; });
+  };
+
   const saveAll = async () => {
     if (dirty.size === 0) return;
     setSaving(true);
@@ -326,10 +351,11 @@ export default function PlatformsPage() {
                 <span className="text-[15px] leading-none" aria-hidden>📝</span>
                 <span className="text-[12px] font-semibold">
                   เลือกเดือนจากแถบด้านบน แล้วกรอก Reach / Budget / Conv. / Marketing Visit ของทุก ad ได้ในตารางเดียว
-                  — เสร็จแล้วกด &quot;บันทึก&quot; ครั้งเดียวมุมขวาบน ({entryRows.length} ads)
+                  — หรือกรอกยอดรวมครั้งเดียวที่แถว Σ Grand Total ด้านล่าง ระบบกระจายให้ · เสร็จแล้วกด &quot;บันทึก&quot; ครั้งเดียวมุมขวาบน ({entryRows.length} ads)
                 </span>
               </div>
-              <AdEditor rows={entryRows} nameOf={nameOf} datesOf={datesOf} onPatch={patchRow} />
+              <AdEditor rows={entryRows} nameOf={nameOf} datesOf={datesOf} onPatch={patchRow}
+                onSpreadTotal={(key, total) => spreadTotal(entryRows, key, total)} />
             </div>
           ) : groups.length === 0 ? (
             <div className="mt-3 bg-surface border border-line rounded-cardLg p-8 text-center text-[12.5px] text-faint">
@@ -472,13 +498,21 @@ function FragmentRow({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Editable ad-level drill-down under a group. Only actuals are editable. */
-function AdEditor({ rows, nameOf, datesOf, onPatch }: {
+/** Editable ad-level drill-down under a group. Only actuals are editable.
+ *  With `onSpreadTotal` (monthly-entry mode) a Grand Total row is appended —
+ *  typing a total there spreads it across every row at once. */
+function AdEditor({ rows, nameOf, datesOf, onPatch, onSpreadTotal }: {
   rows: CampaignResultRow[];
   nameOf: Record<string, string>;
   datesOf: Record<string, string>;
   onPatch: (id: string, key: keyof CampaignResultRow, value: number) => void;
+  onSpreadTotal?: (key: "reachActual" | "budgetActual" | "conversions" | "marketingVisits", total: number) => void;
 }) {
+  const sum = (f: (r: CampaignResultRow) => number) => rows.reduce((s, r) => s + f(r), 0);
+  const tReach = sum((r) => r.reachActual || 0);
+  const tBudgetAct = sum((r) => r.budgetActual || 0);
+  const tConv = sum((r) => r.conversions || 0);
+  const tVisit = sum((r) => r.marketingVisits || 0);
   return (
     <div className="rounded-[12px] border border-line bg-surface overflow-x-auto">
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
@@ -527,6 +561,29 @@ function AdEditor({ rows, nameOf, datesOf, onPatch }: {
             );
           })}
         </tbody>
+        {onSpreadTotal && rows.length > 0 && (
+          <tfoot>
+            <tr className="border-t-2 border-line bg-[#FFFBEF] font-bold text-ink">
+              <td className="px-[9px] py-[8px] text-left" colSpan={3}>
+                Σ Grand Total — กรอกยอดรวมทั้งเดือนที่นี่ ระบบกระจายลงราย ad ให้
+              </td>
+              <td className="px-[9px] py-[8px] text-right text-muted">{num(sum((r) => r.target || 0))}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted">{baht(sum((r) => r.budget || 0), { compact: true })}</td>
+              <EditCell value={tReach} onChange={(v) => onSpreadTotal("reachActual", v)} />
+              <EditCell value={tBudgetAct} onChange={(v) => onSpreadTotal("budgetActual", v)} />
+              <EditCell value={tConv} onChange={(v) => onSpreadTotal("conversions", v)} />
+              <EditCell value={tVisit} onChange={(v) => onSpreadTotal("marketingVisits", v)} />
+              {/* Derived totals — same formulas as the per-ad columns */}
+              <td className="px-[9px] py-[8px] text-right">{tReach > 0 && tVisit > 0 ? pct((tVisit / tReach) * 100) : "—"}</td>
+              <td className="px-[9px] py-[8px] text-right">{cpr(tVisit > 0 && tBudgetAct > 0 ? tBudgetAct / tVisit : null)}</td>
+              <td className="px-[9px] py-[8px] text-right">{cpr(tReach > 0 && tBudgetAct > 0 ? tBudgetAct / tReach : null)}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted">
+                {sum((r) => r.target || 0) > 0 ? pct((tReach / sum((r) => r.target || 0)) * 100) : "—"}
+              </td>
+              <td /><td /><td />
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
