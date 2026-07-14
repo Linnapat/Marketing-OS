@@ -97,6 +97,21 @@ export async function deleteCampaign(id: string): Promise<void> {
   assertDbOk(error, "Could not delete campaign");
 }
 
+/** Keep the campaign's ROAS multiple (stored in the legacy `roi` column) in
+ *  sync with entered results: ROAS = Σ ad revenue ÷ Σ ad actual spend. Called
+ *  after saving result rows so Campaign Café / Finance show the real multiple. */
+export async function updateCampaignRoas(id: string, roas: number): Promise<void> {
+  const rounded = Math.round(roas * 100) / 100;
+  const db = supabase();
+  if (!db) {
+    const c = CAMPAIGNS.find((x) => x.id === id);
+    if (c) c.roi = rounded;
+    return;
+  }
+  const { error } = await db.from("campaigns").update({ roi: rounded }).eq("id", id);
+  assertDbOk(error, "Could not update campaign ROAS");
+}
+
 /** CMO-approved budget revision. Spend stays untouched; only the campaign plan
  *  cap changes so Finance / Dashboard recalculate from the same source. */
 export async function updateCampaignBudget(id: string, budget: number): Promise<void> {

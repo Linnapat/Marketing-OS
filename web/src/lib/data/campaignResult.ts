@@ -34,6 +34,7 @@ export interface CampaignResultRow {
   reachActual: number;   // actual count of the KPI unit (reach / clicks)
   budgetActual: number;  // actual spend (฿)
   conversions: number;   // actual conversions (drives CV% actual)
+  revenue?: number;      // actual sales attributed to this ad (฿) — drives auto ROAS
 
   // Optional manual status override; when unset the status is derived.
   statusOverride?: ResultStatusKey;
@@ -62,6 +63,14 @@ export interface DerivedResultRow {
   pctBudget: number | null;   // budgetActual / budget (0..1+)
   cvActual: number | null;    // conversions / reachActual (0..1)
   status: ResultStatusKey;
+}
+
+/** Campaign ROAS from its result rows: Σ revenue ÷ Σ actual spend. Null until
+ *  someone enters revenue AND there is real spend — no fabricated multiples. */
+export function resultsRoas(rows: CampaignResultRow[]): number | null {
+  const revenue = rows.reduce((s, r) => s + (r.revenue || 0), 0);
+  const spend = rows.reduce((s, r) => s + (r.budgetActual || 0), 0);
+  return revenue > 0 && spend > 0 ? revenue / spend : null;
 }
 
 /** Pure per-row math. No side effects — safe to call in render. */
