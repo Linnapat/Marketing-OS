@@ -133,6 +133,7 @@ export const EXP_CATEGORIES: ExpCategory[] = [
   { key: "line_ads", label: "LINE Ads", group: "Digital Marketing", budget: 180000, used: 165000 },
   { key: "kol", label: "KOL / Influencer", group: "Digital Marketing", budget: 280000, used: 193000 },
   { key: "tiktok", label: "TikTok Ads", group: "Digital Marketing", budget: 120000, used: 88000 },
+  { key: "delivery_ads", label: "Delivery Ads", group: "Digital Marketing", budget: 60000, used: 38000 },
   { key: "photo", label: "Food cost / Photo shoot", group: "Digital Marketing", budget: 90000, used: 65000 },
   { key: "event", label: "Event / Activation", group: "Digital Marketing", budget: 100000, used: 0 },
   { key: "website", label: "Website (Cloud)", group: "System", budget: 80000, used: 80000 },

@@ -55,7 +55,7 @@ export const CHANNELS = [
   "Facebook", "Instagram", "TikTok", "LINE OA", "Google", "In-store", "CRM / LINE OA",
 ] as const;
 
-export const ADS_PLATFORMS = ["Facebook / Instagram", "TikTok", "Google", "LINE Ads", "Other"] as const;
+export const ADS_PLATFORMS = ["Facebook / Instagram", "TikTok", "Google", "LINE Ads", "Delivery (Grab/Line etc)", "Other"] as const;
 
 export const PRIORITIES = ["High", "Med", "Low"] as const;
 

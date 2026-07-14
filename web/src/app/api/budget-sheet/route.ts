@@ -131,6 +131,7 @@ export async function GET(req: NextRequest) {
       "line ads": "LINE Ads",
       "kol": "KOL / Influencer",
       "tiktok": "TikTok Ads",
+      "delivery ads": "Delivery Ads",
       "youtube ads": "YouTube Ads",
       "food cost (kol/photo shooting)": "Food cost / Photo shoot",
       "event": "Event / Activation",

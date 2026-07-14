@@ -19,6 +19,7 @@ export const ADS_PLATFORM_TO_CATEGORY: Record<string, string> = {
   "TikTok": "TikTok Ads",
   "Google": "Google Ads / PPC",
   "LINE Ads": "LINE Ads",
+  "Delivery (Grab/Line etc)": "Delivery Ads",
   "Other": "Other",
 };
 
