@@ -133,7 +133,7 @@ export interface MonthlyKolAllocation { month: string; budget: number; pages: nu
 export interface BriefBudget {
   total: number;
   ads: number;
-  kol: number;              // derived (read-only) = SUM(kol.budget)
+  kol: number;              // KOL envelope set in Budget Allocation → syncs to KOL Plan as its ceiling
   graphic: number;
   printing: number;
   crm: number;
@@ -299,13 +299,13 @@ export function kolMonthlyTotals(brief: CampaignBrief): Record<string, number> {
   return out;
 }
 
-/** Budget Allocation sets the KOL envelope (budget.kol) which syncs INTO the
- *  KOL Plan; if the plan's items end up exceeding the envelope, the bucket
- *  rises to the real committed sum so Finance never under-counts. */
+/** Budget Allocation is the source of truth: the KOL envelope (budget.kol) is
+ *  set here first and syncs INTO the KOL Plan as its ceiling. Saving must keep
+ *  the typed envelope as-is (never bump it to the plan's item sum) — if the
+ *  plan over-commits, that's flagged as a warning for the planner to resolve,
+ *  not silently absorbed into the allocated total. */
 export function withSyncedKolBudget(brief: CampaignBrief): CampaignBrief {
-  const kol = Math.max(brief.budget.kol || 0, kolBudgetTotal(brief));
-  if (brief.budget.kol === kol) return brief;
-  return { ...brief, budget: { ...brief.budget, kol } };
+  return brief;
 }
 
 // ── Budget derivation ─────────────────────────────────────────────────────
@@ -317,10 +317,11 @@ export interface BudgetSummary {
 }
 
 export function budgetSummary(brief: CampaignBrief): BudgetSummary {
-  // KOL bucket = the envelope set in Budget Allocation, raised to the KOL
-  // plan's real item sum when the plan exceeds it.
-  const kol = Math.max(brief.budget.kol || 0, kolBudgetTotal(brief));
-  const bud = { ...brief.budget, kol };
+  // KOL bucket = the envelope typed here in Budget Allocation — the source of
+  // truth. The KOL Plan syncs FROM this ceiling, so allocation is NEVER
+  // inflated to the plan's item sum. An over-commit (plan items > envelope) is
+  // surfaced as a ⚠ warning on the KOL row, not by silently raising the total.
+  const bud = { ...brief.budget };
   const buckets: [string, number][] = [
     ["Ads", bud.ads], ["KOL", bud.kol], ["Graphic / Production", bud.graphic],
     ["Printing / POSM", bud.printing], ["CRM / LINE OA", bud.crm], ["Other", bud.other],

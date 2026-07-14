@@ -636,6 +636,9 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
 }) {
   const [budgetContextOpen, setBudgetContextOpen] = useState(true);
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
+  // Display money inputs with thousands separators (e.g. 35,000); num() strips
+  // the commas back out on change, so the stored value stays a plain number.
+  const fmtNum = (n: number) => (n ? n.toLocaleString("en-US") : "");
   const setB = (patch: Partial<CampaignBrief["budget"]>) => setBrief((b) => ({ ...b, budget: { ...b.budget, ...patch } }));
   // With platform lines present, the Ads total is ALWAYS their sum — no more
   // manual total drifting from the per-platform breakdown.
@@ -774,7 +777,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
         <div className="mb-4">
           <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· ต้องครอบคลุมยอด allocate ทุกรายการ (รวม KOL)</span></label>
           <div className="flex items-center gap-3 flex-wrap">
-            <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
+            <input value={fmtNum(brief.budget.total)} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
             {bs.allocated > 0 && (
               <span className="text-[11.5px] font-semibold" style={{ color: overTotal ? "#B33A2E" : "#4E7A4E" }}>
                 Allocate รวม {baht(bs.allocated, { compact: true })}{overTotal ? " ⚠ เกิน Total" : " ✓"}
@@ -805,7 +808,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
                 return (
                   <div key={row.month} className="grid items-center gap-2 border-t border-line4 px-3 py-[4px]" style={{ gridTemplateColumns: "0.8fr 1.3fr 0.9fr", background: underKol ? "#FFF8F7" : "#fff" }}>
                     <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
-                    <input value={row.amount || ""} onChange={(e) => setMonthly(row.month, num(e.target.value))}
+                    <input value={fmtNum(row.amount)} onChange={(e) => setMonthly(row.month, num(e.target.value))}
                       className="w-full rounded-[7px] border px-2 py-1 text-[12px] font-bold text-ink outline-none"
                       style={{ borderColor: underKol ? "#F5C8C4" : "#E5DECF", background: "#FBF9F4" }} placeholder="฿" />
                     <span className="text-[11.5px] font-semibold" style={{ color: underKol ? "#B33A2E" : row.kol ? "#6b6258" : "#C0B8AD" }}>
@@ -837,7 +840,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           </div>
           <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
             <span className="text-[12px] font-semibold text-ink">KOL Budget <span className="text-[10px] text-faint">· sync ไป KOL Plan</span></span>
-            <input value={brief.budget.kol || ""} onChange={(e) => setB({ kol: num(e.target.value) })}
+            <input value={fmtNum(brief.budget.kol)} onChange={(e) => setB({ kol: num(e.target.value) })}
               className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
             <span className="flex items-center gap-2">
               {kolBudget > 0 && (
@@ -851,7 +854,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           {otherBuckets.map(([lbl, key]) => (
             <div key={key} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
               <span className="text-[12px] font-semibold text-ink">{lbl}</span>
-              <input value={(brief.budget[key] as number) || ""} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)}
+              <input value={fmtNum(brief.budget[key] as number)} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)}
                 className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
               <span></span>
             </div>
@@ -863,7 +866,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
                 {baht(brief.budget.ads || 0)}
               </span>
             ) : (
-              <input value={brief.budget.ads || ""} onChange={(e) => setB({ ads: num(e.target.value) })}
+              <input value={fmtNum(brief.budget.ads)} onChange={(e) => setB({ ads: num(e.target.value) })}
                 className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] font-bold outline-none" placeholder="฿" />
             )}
             <span className="text-[10.5px] font-semibold" style={{ color: "#4E7A4E" }}>
@@ -874,7 +877,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
             <div key={i} className="grid items-center gap-2 border-t border-line4 bg-[#FBF9F4] px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
               <select value={a.platform} onChange={(e) => setAds(i, { platform: e.target.value })}
                 className="ml-4 w-full rounded-[7px] border border-line2 bg-white px-2 py-1 text-[12px] outline-none">{ADS_PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
-              <input value={a.amount || ""} onChange={(e) => setAds(i, { amount: num(e.target.value) })}
+              <input value={fmtNum(a.amount)} onChange={(e) => setAds(i, { amount: num(e.target.value) })}
                 className="w-full rounded-[7px] border border-line2 bg-white px-2 py-1 text-[12px] outline-none" placeholder="฿" />
               <button onClick={() => rmAds(i)} className="w-6 h-6 rounded-[7px] border border-line2 bg-white flex items-center justify-center text-status-red flex-shrink-0"><X size={12} /></button>
             </div>
