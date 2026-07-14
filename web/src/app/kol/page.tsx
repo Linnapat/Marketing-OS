@@ -23,7 +23,8 @@ import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolM
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
-import { appendBriefKolItem, syncBriefKolFromRows } from "@/lib/db/brief";
+import { appendBriefKolItem, syncBriefKolFromRows, fetchAllBriefs } from "@/lib/db/brief";
+import { CampaignBrief, kolBudgetTotal } from "@/lib/data/brief";
 import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -63,11 +64,39 @@ export default function KolPage() {
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [kols, setKols] = useState<Kol[]>(KOLS);
 
+  // Campaign briefs — the KOL envelope from Budget Allocation / KOL Plan, so
+  // the specialist proposes inside the campaign's real budget.
+  const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+
   useEffect(() => {
     let alive = true;
     fetchKols().then((k) => { if (alive) setKols(k); }).catch(() => {});
+    fetchAllBriefs().then((b) => { if (alive) setBriefs(b); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  /** KOL budget of a campaign: the envelope typed in Budget Allocation,
+   *  falling back to the KOL Plan's item sum for older briefs. */
+  const kolBudgetOf = (campaignName: string): number => {
+    const b = briefs[campaignName];
+    if (!b) return 0;
+    return b.budget.kol || kolBudgetTotal(b);
+  };
+
+  // Campaigns whose committed KOL cost (fee + food of every row) already
+  // exceeds the KOL budget — surfaced before more proposals go out.
+  const overBudgetCampaigns = useMemo(() => {
+    const byCampaign = new Map<string, number>();
+    for (const k of kols) {
+      if (!k.campaign || k.campaign === "—") continue;
+      if (brand !== "all" && k.b !== brand) continue;
+      byCampaign.set(k.campaign, (byCampaign.get(k.campaign) || 0) + (k.totalCost || 0));
+    }
+    return Array.from(byCampaign.entries())
+      .map(([c, spent]) => ({ c, spent, budget: briefs[c] ? (briefs[c].budget.kol || kolBudgetTotal(briefs[c])) : 0 }))
+      .filter((x) => x.budget > 0 && x.spent > x.budget)
+      .sort((a, b2) => (b2.spent - b2.budget) - (a.spent - a.budget));
+  }, [kols, briefs, brand]);
 
   // Campaign filter options follow the brand filter; reset when out of range.
   const campaignOptions = useMemo(
@@ -242,9 +271,16 @@ export default function KolPage() {
       </div>
 
       <div className="mt-5">
+        {tab === "list" && overBudgetCampaigns.length > 0 && (
+          <div className="mb-3 rounded-[12px] px-4 py-3 text-[12px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+            ⚠ KOL expense เกินงบจาก KOL Plan: {overBudgetCampaigns.map((x) =>
+              `${x.c} (ใช้ ${baht(x.spent, { compact: true })} / งบ ${baht(x.budget, { compact: true })} — เกิน ${baht(x.spent - x.budget, { compact: true })})`,
+            ).join(" · ")}
+          </div>
+        )}
         {tab === "list" && group === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "list" && group === "campaign" && (
-          <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />
+          <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />
         )}
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
@@ -263,7 +299,11 @@ export default function KolPage() {
           }}
         />
       )}
-      {requestOpen && <RequestModal nextId={Math.max(0, ...kols.map((k) => k.id)) + 1} onClose={() => setRequestOpen(false)} onCreate={addKol} />}
+      {requestOpen && (
+        <RequestModal nextId={Math.max(0, ...kols.map((k) => k.id)) + 1} onClose={() => setRequestOpen(false)} onCreate={addKol}
+          budgetOf={kolBudgetOf}
+          spentOf={(c) => kols.filter((k) => k.campaign === c).reduce((s, k) => s + (k.totalCost || 0), 0)} />
+      )}
     </>
   );
 }
@@ -307,7 +347,7 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats (creators, fee, stage mix), expandable to the
  *  creator list inside. */
-function KolCampaignGroups({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }) {
+function KolCampaignGroups({ list, onOpen, budgetOf }: { list: Kol[]; onOpen: (k: Kol) => void; budgetOf?: (campaign: string) => number }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
     const m = new Map<string, Kol[]>();
@@ -323,6 +363,10 @@ function KolCampaignGroups({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => 
       {groups.map(([campaign, ks]) => {
         const isOpen = openGroups[campaign] ?? true;
         const fee = ks.reduce((s, k) => s + (k.fee || 0), 0);
+        // Committed cost (fee + food) vs the campaign's KOL budget from the plan.
+        const spent = ks.reduce((s, k) => s + (k.totalCost || 0), 0);
+        const budget = budgetOf?.(campaign) ?? 0;
+        const remaining = budget - spent;
         const producing = ks.filter((k) => ["Producing", "In Review"].includes(normalizeStage(k.status))).length;
         const posted = ks.filter((k) => ["Posted", "Completed"].includes(normalizeStage(k.status))).length;
         const overdue = ks.filter((k) => k.isOverdue).length;
@@ -333,6 +377,15 @@ function KolCampaignGroups({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => 
               <span className="text-faint text-[13px]">{isOpen ? "▾" : "▸"}</span>
               <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
               <span className="text-[11.5px] text-faint font-semibold">{ks.length} creator{ks.length > 1 ? "s" : ""} · {baht(fee, { compact: true })}</span>
+              {budget > 0 && (
+                <span className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold whitespace-nowrap"
+                  style={remaining < 0
+                    ? { color: "#B33A2E", background: "#FFF5F4", border: "1px solid #F5C8C4" }
+                    : { color: "#4E7A4E", background: "#EEF4EE", border: "1px solid #CFE4C2" }}
+                  title="งบ KOL จาก KOL Plan · ใช้ = fee + food ของทุกแถวในแคมเปญ">
+                  งบ KOL {baht(budget, { compact: true })} · ใช้ {baht(spent, { compact: true })} · {remaining < 0 ? `⚠ เกิน ${baht(-remaining, { compact: true })}` : `เหลือ ${baht(remaining, { compact: true })}`}
+                </span>
+              )}
               <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
                 {chip("producing/review", producing, "#3E5C9A", "#EEF1F8")}
                 {chip("posted", posted, "#4E7A4E", "#EEF4EE")}
@@ -699,7 +752,11 @@ function KolDatabase() {
   );
 }
 
-function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (kols: Kol[], item: BriefKolItem, campaign: string) => void }) {
+function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
+  nextId: number; onClose: () => void; onCreate: (kols: Kol[], item: BriefKolItem, campaign: string) => void;
+  /** KOL budget from the campaign's KOL Plan + committed cost so far. */
+  budgetOf?: (campaign: string) => number; spentOf?: (campaign: string) => number;
+}) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
@@ -792,6 +849,28 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
               <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
               {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
+            {(() => {
+              // Budget guard: show the campaign's KOL envelope + what's left,
+              // and warn when this requirement would push it over.
+              if (!campaign || !budgetOf) return null;
+              const budget = budgetOf(campaign);
+              if (budget <= 0) return null;
+              const spent = spentOf?.(campaign) ?? 0;
+              const remaining = budget - spent;
+              const thisReq = item.budget || 0;
+              const wouldExceed = thisReq > 0 && thisReq > remaining;
+              const over = remaining < 0 || wouldExceed;
+              return (
+                <div className="mt-[6px] rounded-[9px] px-3 py-2 text-[11.5px] font-semibold"
+                  style={over
+                    ? { background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }
+                    : { background: "#EEF4EE", border: "1px solid #CFE4C2", color: "#4E7A4E" }}>
+                  งบ KOL จาก KOL Plan: {baht(budget, { compact: true })} · ใช้ไปแล้ว {baht(spent, { compact: true })} ·{" "}
+                  {remaining < 0 ? `เกินแล้ว ${baht(-remaining, { compact: true })} ⚠` : `เหลือ ${baht(remaining, { compact: true })}`}
+                  {wouldExceed && remaining >= 0 && <> — ⚠ requirement นี้ ({baht(thisReq, { compact: true })}) จะทำให้เกินงบ</>}
+                </div>
+              );
+            })()}
           </div>
           <div className="col-span-2">
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester <span className="text-faint font-normal">· งาน approve จะเด้งเข้า task list ของคนนี้</span></label>
