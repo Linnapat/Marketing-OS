@@ -26,6 +26,8 @@ export interface Task {
   channel?: string;
   /** Auto-created from a Campaign Brief — links back to the source. */
   relatedBrief?: string;
+  /** Stable identity for re-saving/editing a brief without duplicating work. */
+  briefTaskKey?: string;
   relatedGraphicId?: string;
   relatedCampaignId?: string;
   /** KOL proposal approvals link the task back to the campaign KOL row. */

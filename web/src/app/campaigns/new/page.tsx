@@ -21,7 +21,7 @@ import {
   campaignMonthKeys,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
-import { fetchAllBriefs, saveCampaignBrief } from "@/lib/db/brief";
+import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
 import { budgetByBrandFromSheet, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
@@ -87,7 +87,8 @@ export default function NewCampaignPage() {
   const { member, user } = useAuth();
   const brandVisibility = useBrandVisibility();
   const permittedBrandOptions = brandVisibility.visibleBrands;
-  const [id] = useState(newCampaignId);
+  const [id, setId] = useState(newCampaignId);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -110,6 +111,34 @@ export default function NewCampaignPage() {
   // Planner = the logged-in user (auto, read-only). Keep it synced to auth.
   const me = member?.name ?? user?.email ?? "";
   useEffect(() => { if (me) setBrief((b) => ({ ...b, plannerOwner: me })); }, [me]);
+  useEffect(() => {
+    const editId = new URLSearchParams(window.location.search).get("edit");
+    if (!editId) return;
+    let alive = true;
+    fetchCampaignBrief(editId).then((saved) => {
+      if (!alive || !saved) return;
+      const defaults = emptyBrief(editId);
+      const normalized: CampaignBrief = {
+        ...defaults,
+        ...saved,
+        id: editId,
+        approver: saved.approver || CMO_NAME,
+        content: (saved.content ?? []).map((item, index) => ({
+          ...emptyContentItem(index + 1),
+          ...item,
+          graphicDueDate: item.graphicDueDate ?? "",
+        })),
+        kols: saved.kols ?? [],
+        budget: { ...defaults.budget, ...saved.budget, monthly: saved.budget?.monthly ?? [] },
+        approvalLog: saved.approvalLog ?? [],
+      };
+      setId(editId);
+      setEditingId(editId);
+      setBrief(normalized);
+      setSeq(normalized.content.length + normalized.kols.length + 1);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     if (brandOptions.length && !brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: brandOptions[0] as BrandId, branches: [] }));
   }, [brandOptions, brief.b]);
@@ -176,11 +205,11 @@ export default function NewCampaignPage() {
     setBusy(true);
     const now = new Date().toISOString();
     const status = asDraft ? "Draft" : "Waiting for Approval";
-    const logEntry = { action: "Submitted for approval", by: brief.plannerOwner || "Planner", at: now };
+    const logEntry = { action: editingId ? "Edited and resubmitted for approval" : "Submitted for approval", by: brief.plannerOwner || "Planner", at: now };
     const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
       await saveCampaignBrief(finalize(status, log, now));
-      if (!asDraft) notify("approval", `🎯 แคมเปญใหม่รออนุมัติ: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || "CMO"} อนุมัติใน My Tasks`, "/my-tasks");
+      if (!asDraft) notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || "CMO"} อนุมัติใน My Tasks`, "/my-tasks");
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch { setBusy(false); }
@@ -190,8 +219,8 @@ export default function NewCampaignPage() {
     <>
       <PageHeader
         eyebrow="Campaign Builder"
-        title="Create Campaign"
-        subtitle="สร้าง campaign brief แบบ flexible — ออกแบบเอง มี guideline ช่วยไม่ให้ตกหล่น แล้วแตกงานอัตโนมัติ"
+        title={editingId ? "Edit Campaign" : "Create Campaign"}
+        subtitle={editingId ? "แก้ไข Campaign ได้ทุกสถานะ — เมื่อ Submit ระบบจะส่งเวอร์ชันล่าสุดให้ CMO อนุมัติอีกครั้ง" : "สร้าง campaign brief แบบ flexible — ออกแบบเอง มี guideline ช่วยไม่ให้ตกหล่น แล้วแตกงานอัตโนมัติ"}
         right={<Link href="/campaigns" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">← Campaigns</Link>}
       />
 
@@ -225,7 +254,7 @@ export default function NewCampaignPage() {
         ) : (
           <div className="flex gap-2">
             <button disabled={busy} onClick={() => submit(true)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4 py-[9px] bg-surface disabled:opacity-40">Save Draft</button>
-            <button disabled={busy || !canSubmit} onClick={() => submit(false)} className="text-[13px] font-bold text-white rounded-[10px] px-5 py-[9px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{busy ? "Creating…" : "Submit Campaign"}</button>
+            <button disabled={busy || !canSubmit} onClick={() => submit(false)} className="text-[13px] font-bold text-white rounded-[10px] px-5 py-[9px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{busy ? "Saving…" : editingId ? "Submit Changes for CMO Approval" : "Submit Campaign"}</button>
           </div>
         )}
       </div>

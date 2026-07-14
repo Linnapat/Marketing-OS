@@ -69,6 +69,11 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {brief && (
+            <Link href={`/campaigns/new?edit=${encodeURIComponent(c.id)}`} className="text-[12px] font-bold rounded-[9px] px-3 py-[7px] border border-line2 bg-surface text-ink">
+              ✏️ Edit Campaign
+            </Link>
+          )}
           <StatusBadge tone={campaignTone(effectiveStatus)}>{effectiveStatus}</StatusBadge>
           <StatusBadge tone={detail.hasResult ? "green" : "gold"}>{detail.hasResult ? "✓ Ready" : "⚠ Needs attention"}</StatusBadge>
         </div>

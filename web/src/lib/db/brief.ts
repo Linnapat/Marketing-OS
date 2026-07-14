@@ -14,7 +14,7 @@ import { emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
 import { Kol } from "@/lib/data/kol";
 import { resolveKolAssignment } from "./assignments";
-import { createTaskDb } from "./tasks";
+import { upsertBriefTask } from "./tasks";
 import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
@@ -56,7 +56,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     dates: fmtRange(normalizedBrief.startDate, normalizedBrief.endDate), status: normalizedBrief.status,
     campType: normalizedBrief.campaignType || normalizedBrief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
-    bottleneckTeam: "None", nextApproval: normalizedBrief.approver || "CMO",
+    bottleneckTeam: "None", nextApproval: normalizedBrief.status === "Waiting for Approval" ? (normalizedBrief.approver || "CMO") : "None",
   };
   await createCampaign(row);
   await persistBriefBlob(normalizedBrief);
@@ -107,12 +107,12 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       // A content item with creative produces one Graphic work item only. The
       // Content Calendar post remains linked, but does not duplicate My Tasks.
       if (!ci.requiredGraphic) {
-        await createTaskDb(mkTask(++n, {
+        const madeTask = await upsertBriefTask(mkTask(++n, {
           title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
           owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
           nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
-        }));
-        tasks++;
+        }), `${brief.id}:content:${ci.id}`);
+        if (madeTask.created) tasks++;
       }
     }
 
@@ -137,12 +137,12 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       const madeGraphic = await createGraphicIfNew(g, graphicSeen);
       if (madeGraphic.created) {
         graphics++;
-        await createTaskDb(mkTask(++n, {
+        const madeTask = await upsertBriefTask(mkTask(++n, {
           title: `Graphic — ${ci.title || ci.type} (${deliverables.length} asset)`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
           owner: "", priority: ci.priority, due: labelDate(ci.graphicDueDate || ci.publishDate), dueIso: ci.graphicDueDate || ci.publishDate,
           channel: plats.join(", "), relatedGraphicId: String(gid), nextAction: `Deliver ${deliverables.length} asset(s)`,
-        }));
-        tasks++;
+        }), `${brief.id}:graphic:${ci.id}`);
+        if (madeTask.created) tasks++;
       }
     }
   }
@@ -173,12 +173,12 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       const madeKol = await upsertKolRequirement(kol, kolRows);
       if (madeKol.created) kols++;
     }
-    await createTaskDb(mkTask(++n, {
+    const madeTask = await upsertBriefTask(mkTask(++n, {
       title: `KOL — ${kr.name || kr.kolType} × ${pages}`, type: "KOL", moduleIcon: "🤝", moduleColor: "#B5577E",
       owner, due: labelDate(kr.postingStart), dueIso: kr.postingStart, channel: kr.platforms.join(", "),
       nextAction: `${kr.area || "—"} · reach ${kr.expectedReach.toLocaleString()}`,
-    }));
-    tasks++;
+    }), `${brief.id}:kol:${kr.id}`);
+    if (madeTask.created) tasks++;
   }
 
   // ── Ads setup tasks (one per funded platform) ──────────────────────────────
@@ -187,30 +187,30 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   const adChannel = brief.channels.find((c) => /facebook|instagram|tiktok|google|youtube|line/i.test(c));
   const adsList = adsPlatforms.length ? adsPlatforms : (brief.budget.ads > 0 ? [{ platform: adChannel ?? "Ads", amount: brief.budget.ads }] : []);
   for (const a of adsList) {
-    await createTaskDb(mkTask(++n, {
+    const madeTask = await upsertBriefTask(mkTask(++n, {
       title: `Ads setup — ${a.platform}`, type: "Ads", moduleIcon: "📣", moduleColor: "#C68A1E",
       owner: "", channel: a.platform, due: labelDate(brief.startDate), dueIso: brief.startDate,
       nextAction: `Budget ${a.amount.toLocaleString()} · launch ${labelDate(brief.startDate) || "TBD"}`,
-    }));
-    tasks++;
+    }), `${brief.id}:ads:${a.platform}`);
+    if (madeTask.created) tasks++;
   }
 
   // ── CRM / LINE OA task ─────────────────────────────────────────────────────
   if (brief.channels.some((c) => /crm|line oa/i.test(c)) || brief.budget.crm > 0) {
-    await createTaskDb(mkTask(++n, {
+    const madeTask = await upsertBriefTask(mkTask(++n, {
       title: `CRM / LINE OA — ${brief.name}`, type: "CRM", moduleIcon: "💬", moduleColor: "#4E7A4E",
       owner: "", due: labelDate(brief.startDate), dueIso: brief.startDate, nextAction: "Plan LINE OA broadcast / CRM flow",
-    }));
-    tasks++;
+    }), `${brief.id}:crm`);
+    if (madeTask.created) tasks++;
   }
 
   // ── Result report task ─────────────────────────────────────────────────────
-  await createTaskDb(mkTask(++n, {
+  const madeReportTask = await upsertBriefTask(mkTask(++n, {
     title: `Result report — ${brief.name}`, type: "Report", moduleIcon: "📊", moduleColor: "#B33A2E",
     owner: brief.plannerOwner, due: labelDate(brief.endDate), dueIso: brief.endDate,
     nextAction: `วัดผล: ${brief.successMetrics.join(", ") || "—"}`,
-  }));
-  tasks++;
+  }), `${brief.id}:report`);
+  if (madeReportTask.created) tasks++;
 
   // Report the real materialised counts (idempotency may make a retry all-zero).
   return { campaign: row, created: { content, graphics, kols, tasks } };

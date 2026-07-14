@@ -128,7 +128,9 @@ export default function CampaignsPage() {
     .filter((g) => g.rows.length > 0);
   const activeStatuses = new Set(["Planning", "Active", "In Progress", "Waiting Approval"]);
   const liveCampaigns = filtered.filter((c) => activeStatuses.has(c.status));
-  const waitingApprovalCampaigns = filtered.filter((c) => c.status === "Waiting Approval" || c.nextApproval !== "—");
+  const waitingApprovalCampaigns = filtered.filter((c) =>
+    c.status === "Waiting Approval" || c.status === "Waiting for Approval" || !["", "—", "None"].includes(c.nextApproval || ""),
+  );
   const atRiskCampaigns = filtered.filter((c) => c.readiness === "needs_attention" || c.taskOverdue > 0 || c.taskBlocked > 0);
   const budgetWatchCampaigns = filtered.filter((c) => c.budget > 0 && (c.spend / c.budget) >= 0.8);
   const liveBudget = liveCampaigns.reduce((sum, c) => sum + c.budget, 0);

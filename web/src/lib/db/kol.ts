@@ -10,7 +10,9 @@ export async function fetchKols(): Promise<Kol[]> {
   const db = supabase();
   if (!db) return KOLS.map((k) => ({ ...k }));
   const { data, error } = await db.from("kols").select("id, data").order("id");
-  if (error || !data) return KOLS.map((k) => ({ ...k }));
+  // With a configured production database, never replace an empty/error result
+  // with demo creators — that made the KPI show "Active 2" without real work.
+  if (error || !data) return [];
   return data.map((r) => r.data as Kol).filter(Boolean);
 }
 
