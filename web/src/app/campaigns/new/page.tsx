@@ -324,19 +324,28 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
   errors: Record<string, string>; brandOptions: BrandId[]; brandConfigs: BrandCfg[]; campaignTypes: string[];
 }) {
-  const [helperReach, setHelperReach] = useState("");
-  const [helperCv, setHelperCv] = useState("3");
-  const [helperOpen, setHelperOpen] = useState(true);
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const errBorder = { borderColor: "#B33A2E", background: "#FFF7F6" };
   const errText = "text-[11px] text-status-red font-semibold mt-1";
   const toggleMetric = (m: string) => setBrief((b) => ({ ...b, successMetrics: b.successMetrics.includes(m) ? b.successMetrics.filter((x) => x !== m) : [...b.successMetrics, m] }));
   const setGoal = (m: string, v: string) => setBrief((b) => ({ ...b, successGoals: { ...b.successGoals, [m]: v } }));
   const endInvalid = !!brief.startDate && !!brief.endDate && brief.endDate < brief.startDate;
-  const reachGoal = num(helperReach);
-  const cvPct = Number(helperCv) || 0;
-  const estimatedVisits = Math.round(reachGoal * (cvPct / 100));
-  const cpr = reachGoal ? effectiveBriefBudget(brief) / reachGoal : 0;
+
+  // Fixed success metrics: Reach + CV% are inputs, Visit auto-derives
+  // (Reach × CV%). Everything else stays an optional chip.
+  const FIXED_METRICS = ["Reach", "CV%", "Visit"] as const;
+  const reachGoal = num(brief.successGoals["Reach"] ?? "");
+  const cvPct = parseFloat(brief.successGoals["CV%"] ?? "") || 0;
+  const visitGoal = Math.round(reachGoal * (cvPct / 100));
+  const setFixedGoal = (metric: "Reach" | "CV%", value: string) => setBrief((b) => {
+    const goals = { ...b.successGoals, [metric]: value };
+    const r = parseInt((goals["Reach"] ?? "").replace(/\D/g, "")) || 0;
+    const cv = parseFloat(goals["CV%"] ?? "") || 0;
+    goals["Visit"] = r && cv ? String(Math.round(r * (cv / 100))) : "";
+    // Fixed metrics are always part of the campaign's KPI set.
+    const metrics = Array.from(new Set([...FIXED_METRICS, ...b.successMetrics]));
+    return { ...b, successGoals: goals, successMetrics: metrics };
+  });
   return (
     <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
       <div className="grid md:grid-cols-2 gap-4">
@@ -380,11 +389,30 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
           </select>
         </div>
 
-        {/* Success Metrics — multi-select + goal per metric, sitting under Objective */}
+        {/* Success Metrics — Reach / CV% / Visit are fixed (Visit auto = Reach × CV%);
+            the rest are optional chips with their own goal inputs. */}
         <div className="md:col-span-2">
-          <label className={label}>Success Metrics <span className="text-faint font-normal">· เลือกได้หลายตัว แล้วใส่เป้าหมาย</span></label>
-          <div className="flex flex-wrap gap-2">
-            {SUCCESS_METRICS.map((m) => {
+          <label className={label}>Success Metrics <span className="text-faint font-normal">· Reach, CV%, Visit เป็นค่าหลัก — ที่เหลือเลือกเพิ่มได้</span></label>
+          <div className="grid gap-2 sm:grid-cols-3 rounded-[12px] border border-line2 bg-[#FFFDF7] p-3">
+            <label>
+              <span className="mb-1 block text-[11px] font-bold text-muted">Reach goal <span className="text-status-red">*</span></span>
+              <input value={reachGoal ? reachGoal.toLocaleString("en-US") : ""} onChange={(e) => setFixedGoal("Reach", String(num(e.target.value)))}
+                className="w-full text-[13px] font-bold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="100,000" />
+            </label>
+            <label>
+              <span className="mb-1 block text-[11px] font-bold text-muted">CV% <span className="text-status-red">*</span></span>
+              <input value={brief.successGoals["CV%"] ?? ""} onChange={(e) => setFixedGoal("CV%", e.target.value.replace(/[^\d.]/g, ""))}
+                className="w-full text-[13px] font-bold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="3" />
+            </label>
+            <div>
+              <span className="mb-1 block text-[11px] font-bold text-muted">Visit goal <span className="text-faint font-normal">· auto = Reach × CV%</span></span>
+              <div className="w-full text-[13px] font-bold px-[10px] py-[7px] rounded-[9px] border border-line2 bg-surface" style={{ color: visitGoal ? "#211F1C" : "#9A9387" }}>
+                {visitGoal ? visitGoal.toLocaleString("en-US") : "—"}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {SUCCESS_METRICS.filter((m) => !(FIXED_METRICS as readonly string[]).includes(m)).map((m) => {
               const on = brief.successMetrics.includes(m);
               return (
                 <button key={m} type="button" onClick={() => toggleMetric(m)} className="text-[12px] font-semibold px-[12px] py-[6px] rounded-pill border transition-colors"
@@ -392,46 +420,12 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
               );
             })}
           </div>
-          {brief.successMetrics.length > 0 && (
+          {brief.successMetrics.filter((m) => !(FIXED_METRICS as readonly string[]).includes(m)).length > 0 && (
             <div className="grid sm:grid-cols-2 gap-2 mt-3">
-              {brief.successMetrics.map((m) => (
+              {brief.successMetrics.filter((m) => !(FIXED_METRICS as readonly string[]).includes(m)).map((m) => (
                 <div key={m} className="flex items-center gap-2">
                   <span className="text-[12px] font-semibold text-muted w-28 flex-shrink-0">{m} goal</span>
                   <input value={brief.successGoals[m] ?? ""} onChange={(e) => setGoal(m, e.target.value)} className="flex-1 text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="เช่น 50000 / 3.5%" />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="md:col-span-2 rounded-[12px] border border-line2 bg-[#FFFDF7] px-3 py-2">
-          <button type="button" onClick={() => setHelperOpen((o) => !o)} className="w-full flex flex-wrap items-center justify-between gap-2 text-left">
-            <span className="flex items-baseline gap-2">
-              <span className="text-[11px] text-muted">{helperOpen ? "⌄" : "›"}</span>
-              <span className="text-[12px] font-bold text-ink">CPR Helper</span>
-              <span className="text-[11px] text-faint">สูตร: Reach × %CV = Estimated Visit · CPR (THB) = Budget ÷ Reach</span>
-            </span>
-            <span className="rounded-pill bg-[#F2EEFF] px-2.5 py-[3px] text-[10px] font-bold text-[#6C5CE7]">Overview planning</span>
-          </button>
-          {helperOpen && (
-            <div className="mt-2 grid gap-2 md:grid-cols-[1fr_.8fr_1fr_1fr_1fr]">
-              {/* Inputs and derived cards share one label + value type scale */}
-              <label>
-                <span className="mb-1 block text-[11px] font-bold text-muted">Target Reach</span>
-                <input value={helperReach} onChange={(e) => setHelperReach(e.target.value)} className="w-full text-[13px] font-bold px-[10px] py-[6px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="100,000" />
-              </label>
-              <label>
-                <span className="mb-1 block text-[11px] font-bold text-muted">%CV to Visit</span>
-                <input value={helperCv} onChange={(e) => setHelperCv(e.target.value)} className="w-full text-[13px] font-bold px-[10px] py-[6px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="3" />
-              </label>
-              {[
-                ["Budget base", baht(effectiveBriefBudget(brief), { compact: true })],
-                ["Estimated Visit", estimatedVisits ? estimatedVisits.toLocaleString("en-US") : "—"],
-                ["CPR (THB)", reachGoal ? `฿${cpr.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"],
-              ].map(([labelText, value]) => (
-                <div key={labelText}>
-                  <span className="mb-1 block text-[11px] font-bold text-muted">{labelText}</span>
-                  <div className="w-full text-[13px] font-bold px-[10px] py-[6px] rounded-[9px] border border-line2 bg-surface text-ink">{value}</div>
                 </div>
               ))}
             </div>
