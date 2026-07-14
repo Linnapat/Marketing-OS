@@ -589,16 +589,29 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
   const remaining = envelope - planned;
   return (
     <Panel title="KOL Plan" hint="ระบุ requirement (ยังไม่ต้องรู้ชื่อเพจ) — specialist เสนอเพจจริงทีหลัง · ฟอร์มเดียวกับ Request KOL · รับงบจาก Budget Allocation">
-      {envelope > 0 && (
+      {(envelope > 0 || planned > 0) && (
         <div className="mb-4 rounded-[12px] px-4 py-3 flex items-center gap-4 flex-wrap"
           style={remaining < 0
             ? { background: "#FFF5F4", border: "1px solid #F5C8C4" }
             : { background: "#EEF4EE", border: "1px solid #CFE4C2" }}>
-          <span className="text-[12.5px] font-bold text-ink">งบ KOL จาก Budget Allocation: {baht(envelope, { compact: true })}</span>
-          <span className="text-[12px] font-semibold text-muted">วางแผนแล้ว {baht(planned, { compact: true })}</span>
-          <span className="text-[12px] font-bold" style={{ color: remaining < 0 ? "#B33A2E" : "#4E7A4E" }}>
-            {remaining < 0 ? `⚠ เกินงบ ${baht(Math.abs(remaining), { compact: true })}` : `เหลือ ${baht(remaining, { compact: true })}`}
+          <span className="text-[12.5px] font-bold text-ink">
+            งบ KOL จาก Budget Allocation: {envelope > 0 ? baht(envelope, { compact: true }) : "ยังไม่ได้ตั้ง"}
           </span>
+          <span className="text-[12px] font-semibold text-muted">วางแผนแล้ว {baht(planned, { compact: true })}</span>
+          {envelope > 0 && (
+            <span className="text-[12px] font-bold" style={{ color: remaining < 0 ? "#B33A2E" : "#4E7A4E" }}>
+              {remaining < 0 ? `⚠ เกินงบ ${baht(Math.abs(remaining), { compact: true })}` : `เหลือ ${baht(remaining, { compact: true })}`}
+            </span>
+          )}
+          {planned > 0 && planned !== envelope && (
+            <button type="button"
+              onClick={() => setBrief((b) => ({ ...b, budget: { ...b.budget, kol: planned } }))}
+              title="ตั้งงบ KOL ใน Budget Allocation ให้เท่ายอดที่วางแผนไว้"
+              className="rounded-[8px] border px-2.5 py-1 text-[11px] font-bold whitespace-nowrap"
+              style={{ borderColor: "#CFE4C2", background: "#fff", color: "#4E7A4E" }}>
+              อัพเดต Budget Allocation = {baht(planned, { compact: true })}
+            </button>
+          )}
         </div>
       )}
       <div className="flex flex-col gap-3">
@@ -842,11 +855,19 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
             <span className="text-[12px] font-semibold text-ink">KOL Budget <span className="text-[10px] text-faint">· sync ไป KOL Plan</span></span>
             <input value={fmtNum(brief.budget.kol)} onChange={(e) => setB({ kol: num(e.target.value) })}
               className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-2 flex-wrap">
               {kolBudget > 0 && (
                 <span className="text-[10.5px] font-semibold" style={{ color: kolBudget > (brief.budget.kol || 0) ? "#B33A2E" : "#6b6258" }}>
                   วางแผนแล้ว {baht(kolBudget, { compact: true })}{kolBudget > (brief.budget.kol || 0) ? " ⚠ เกิน" : ""}
                 </span>
+              )}
+              {kolBudget > 0 && kolBudget !== (brief.budget.kol || 0) && (
+                <button type="button" onClick={() => setB({ kol: kolBudget })}
+                  title="ตั้งงบ KOL ให้เท่ายอดที่วางใน KOL Plan"
+                  className="rounded-[7px] border px-2 py-[3px] text-[10.5px] font-bold whitespace-nowrap"
+                  style={{ borderColor: "#CFE4C2", background: "#EEF4EE", color: "#4E7A4E" }}>
+                  Sync = {baht(kolBudget, { compact: true })}
+                </button>
               )}
               <button onClick={onEditKol} className="text-[11px] font-bold text-accent text-left whitespace-nowrap">KOL Plan →</button>
             </span>
