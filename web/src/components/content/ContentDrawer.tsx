@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { updateContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
+import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
 import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
@@ -24,9 +24,17 @@ function uniq(values: string[]): string[] {
   return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean))).slice(0, 12);
 }
 
-export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; onClose: () => void; onUpdate?: (next: ContentItem) => void }) {
+export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
+  item: ContentItem; onClose: () => void;
+  onUpdate?: (next: ContentItem) => void;
+  onDelete?: (deleted: ContentItem) => void;
+}) {
   const [tab, setTab] = useState<DTab>("overview");
   const [caption, setCaption] = useState(item.caption);
+  // Editable post basics (title / date / time) — saved from the Overview tab.
+  const [editTitle, setEditTitle] = useState(item.title);
+  const [editDate, setEditDate] = useState<string | null>(item.dateIso ?? null);
+  const [editTime, setEditTime] = useState(item.time || "10:00");
   const [hashtags, setHashtags] = useState(item.hashtags);
   const [cta, setCta] = useState(item.cta);
   const [footer, setFooter] = useState(item.footer ?? "");
@@ -92,6 +100,28 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     } catch (error) {
       toastError(`บันทึกไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
+  };
+
+  // Save the post basics (title / date / time). `day` is derived from the ISO
+  // date so the month calendar re-slots the post immediately.
+  const saveBasics = () => {
+    const day = editDate ? Number(editDate.slice(8, 10)) || item.day : item.day;
+    persist({ ...item, title: editTitle.trim() || item.title, dateIso: editDate ?? item.dateIso, day, time: editTime || item.time });
+  };
+  const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
+
+  // Permanently delete the post (asks for confirmation first).
+  const [deleting, setDeleting] = useState(false);
+  const removePost = async () => {
+    if (!window.confirm(`ลบโพสต์ "${item.title}" ถาวร? การลบย้อนกลับไม่ได้`)) return;
+    setDeleting(true);
+    try {
+      await deleteContent(item);
+      onDelete?.(item);
+      onClose();
+    } catch (error) {
+      toastError(`ลบโพสต์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setDeleting(false); }
   };
 
   // Save caption/hashtags/cta; "Mark Ready" flips captionStatus and, if the post
@@ -217,6 +247,38 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
                   ))}
                 </div>
               )}
+
+              {/* Edit post basics */}
+              <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+                <div className="text-[11.5px] font-bold text-muted mb-3">✏️ Edit post</div>
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-faint mb-[5px]">Title</label>
+                    <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className={field} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-faint mb-[5px]">Publish date</label>
+                      <DatePicker value={editDate} onChange={(v) => setEditDate(v)} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-faint mb-[5px]">Time</label>
+                      <input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} className={field} />
+                    </div>
+                  </div>
+                  <button onClick={saveBasics} disabled={busy || !basicsDirty || !editTitle.trim()}
+                    className="text-[13px] font-bold py-[10px] rounded-[10px] bg-panel text-white disabled:opacity-40">
+                    {busy ? "Saving…" : "Save changes"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Delete — permanent, confirmed */}
+              <button onClick={removePost} disabled={deleting}
+                className="text-[12.5px] font-bold py-[10px] rounded-[10px] disabled:opacity-40"
+                style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+                {deleting ? "Deleting…" : "🗑 ลบโพสต์นี้"}
+              </button>
             </div>
           )}
 

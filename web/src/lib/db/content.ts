@@ -68,6 +68,15 @@ export async function updateContent(post: ContentItem): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** Permanently delete a post. Matched on the stable id inside the data blob —
+ *  the same key updateContent uses. */
+export async function deleteContent(post: ContentItem): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const { error } = await db.from("content_posts").delete().eq("data->>id", post.id);
+  if (error) throw new Error(error.message);
+}
+
 /** Backend-enforced Approve: re-checks the prerequisites (never trusts the
  *  disabled button) before persisting the approval. Returns the reasons when
  *  blocked so the UI can show exactly what's missing. */

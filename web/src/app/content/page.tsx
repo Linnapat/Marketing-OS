@@ -283,6 +283,10 @@ export default function ContentPage() {
             setOpen(next);
             setPosts((ps) => ps.map((p) => (p.id === next.id ? next : p)));
           }}
+          onDelete={(deleted) => {
+            setPosts((ps) => ps.filter((p) => p.id !== deleted.id));
+            setOpen(null);
+          }}
         />
       )}
       {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} initialIso={newIso} />}
