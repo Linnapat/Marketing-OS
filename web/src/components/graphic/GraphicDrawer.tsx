@@ -14,6 +14,8 @@ import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { createTaskDb } from "@/lib/db/tasks";
+import { Task } from "@/lib/data/tasks";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
@@ -51,6 +53,72 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     updateGraphic(next)
       .then(() => updateCurrentGraphic(next))
       .catch((error) => toastError(`บันทึกสถานะ Delivered ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
+
+  // ── Brief sign-off (content leader) ────────────────────────────────
+  // Approve = brief is complete enough to start production. Revise = the
+  // comment goes back to the requester AND lands in their My Tasks.
+  const [briefComment, setBriefComment] = useState("");
+  const [briefBusy, setBriefBusy] = useState(false);
+
+  const approveBrief = async () => {
+    setBriefBusy(true);
+    const at = new Date().toISOString();
+    const next: Graphic = {
+      ...g,
+      briefComplete: true,
+      briefApprovedBy: currentUser,
+      briefApprovedAt: at,
+      blocker: g.blocker === "Brief incomplete" || g.blocker === "Brief revision requested" ? null : g.blocker,
+      nextAction: g.designer === "Unassigned" ? "Creative leader to assign designer" : `${g.designer} to start production`,
+      history: [...(g.history ?? []), { type: "brief_approved", at, by: currentUser }],
+    };
+    try {
+      await updateGraphic(next);
+      updateCurrentGraphic(next);
+      notify("approved", `✅ Brief อนุมัติแล้ว: ${g.title}`, `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, "/graphic");
+    } catch (error) {
+      toastError(`อนุมัติ Brief ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBriefBusy(false); }
+  };
+
+  const reviseBrief = async () => {
+    const comment = briefComment.trim();
+    if (!comment) return;
+    setBriefBusy(true);
+    const at = new Date().toISOString();
+    const next: Graphic = {
+      ...g,
+      briefComplete: false,
+      briefApprovedBy: undefined,
+      briefApprovedAt: undefined,
+      blocker: "Brief revision requested",
+      nextAction: `${g.requester} to revise brief — ${comment}`,
+      history: [...(g.history ?? []), { type: "brief_revision_requested", at, by: currentUser, note: comment }],
+    };
+    // The comment becomes a task in the requester's My Tasks, due in 2 days.
+    const due = new Date(); due.setDate(due.getDate() + 2);
+    const task: Task = {
+      id: Date.now(), title: `Revise graphic brief — ${g.title}`,
+      module: "Graphic", moduleIcon: "🎨", moduleColor: "#C2691E", type: "Graphic",
+      assignee: g.requester, brand: brandName(g.b), campaign: g.campaign,
+      status: "Todo", priority: "High", group: "doFirst",
+      due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+      dueIso: due.toISOString().slice(0, 10),
+      blocker: null, pendingApprover: null, isQuickWin: false,
+      nextAction: `Comment จาก ${currentUser}: ${comment}`,
+      checklist: ["แก้ brief ตาม comment", "แจ้ง Creative leader"],
+      relatedGraphicId: String(g.id),
+    };
+    try {
+      await updateGraphic(next);
+      await createTaskDb(task);
+      updateCurrentGraphic(next);
+      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks");
+      setBriefComment("");
+    } catch (error) {
+      toastError(`ส่ง Brief กลับแก้ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBriefBusy(false); }
   };
 
   const requestFeedbackRevision = () => {
@@ -225,6 +293,37 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   </div>
                 ))}
               </div>
+
+              {/* Content-leader sign-off: Approve, or Revise with a comment
+                  that returns to the requester's My Tasks. */}
+              {g.briefApprovedBy ? (
+                <div className="rounded-card px-4 py-3" style={{ background: "#EEF4EE", border: "1px solid #CFE4C2" }}>
+                  <div className="text-[12.5px] font-bold" style={{ color: "#4E7A4E" }}>
+                    ✓ Brief approved by {g.briefApprovedBy}
+                    {g.briefApprovedAt ? ` · ${new Date(g.briefApprovedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-card border border-line bg-surface p-4">
+                  <div className="text-[12.5px] font-bold text-ink mb-1">Content leader sign-off</div>
+                  <div className="text-[11.5px] text-faint mb-3">อนุมัติ brief เพื่อเริ่มงาน หรือส่งกลับให้ {g.requester} แก้พร้อม comment</div>
+                  <button onClick={approveBrief} disabled={briefBusy}
+                    className="w-full text-[13px] font-bold text-white rounded-[10px] py-[10px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                    {briefBusy ? "Saving…" : "✓ Approve Brief"}
+                  </button>
+                  <div className="mt-3 pt-3 border-t border-line4">
+                    <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Revise — comment ถึง requester <span className="text-status-red">*</span></label>
+                    <textarea value={briefComment} onChange={(e) => setBriefComment(e.target.value)} rows={3}
+                      placeholder="บอกให้ชัดว่า brief ขาดอะไร / ต้องแก้ตรงไหน…"
+                      className="w-full text-[13px] px-[12px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none resize-none" />
+                    <button onClick={reviseBrief} disabled={briefBusy || !briefComment.trim()}
+                      className="mt-2 w-full text-[13px] font-bold rounded-[10px] py-[10px] disabled:opacity-40"
+                      style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+                      ↩ Revise & ส่งกลับเข้า Task ของ {g.requester}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

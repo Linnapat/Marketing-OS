@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";
+import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
 import { ExpenseRequestTab, SpendingLogTab } from "@/components/finance/ExpenseTabs";
 import { BrandFilterValue, brandName } from "@/lib/brands";
@@ -94,7 +95,14 @@ export default function ExpensesPage() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <BrandFilter value={brand} onChange={setBrand} />
-              <Segmented value={tab} onChange={setTab} options={[{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]} />
+              <div className="flex items-center gap-3 flex-wrap">
+                <SavedViewsBar<{ tab: "request" | "log"; brand: BrandFilterValue; date: DateFilter }>
+                  pageKey="expenses"
+                  current={{ tab, brand, date }}
+                  onApply={(v) => { setTab(v.tab); setBrand(v.brand); setDate(v.date); }}
+                />
+                <Segmented value={tab} onChange={setTab} options={[{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]} />
+              </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>

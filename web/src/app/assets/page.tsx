@@ -11,6 +11,8 @@ import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
 import { fetchAssets, createAsset } from "@/lib/db/assets";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
+import { SavedViewsBar } from "@/components/ui/SavedViews";
+import { Segmented } from "@/components/ui/Segmented";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -40,12 +42,39 @@ const emptyPortfolio = (brand: BrandId): PortfolioItem => ({
   updated: "just now",
 });
 
+interface AssetSavedView { tab: AssetTab; brand: BrandFilterValue; type: string; group: "list" | "campaign" }
+
+function AssetCard({ a }: { a: Asset }) {
+  return (
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden shadow-soft">
+      <div className="h-32 flex items-center justify-center relative" style={{ background: "repeating-linear-gradient(45deg,#F4EFE5,#F4EFE5 10px,#EFE9DC 10px,#EFE9DC 20px)" }}>
+        <span className="text-[11px] font-mono text-faint">{a.type}</span>
+        <span className="absolute top-2 right-2"><StatusBadge tone="blue">{a.version}</StatusBadge></span>
+      </div>
+      <div className="p-3">
+        <div className="text-[13.5px] font-bold text-ink truncate">{a.name}</div>
+        <div className="text-[11px] text-faint flex items-center gap-[5px] mt-[2px] mb-2"><BrandDot brand={a.b} size={6} />{brandName(a.b)} · {a.campaign}</div>
+        <div className="flex items-center justify-between mb-2">
+          <StatusBadge tone={ASSET_APPROVAL_TONE[a.approval] ?? "neutral"}>{a.approval}</StatusBadge>
+          <span className="text-[11px] text-faint">{a.updated}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {a.driveUrl && <a href={a.driveUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Drive ↗</a>}
+          {a.canvaUrl && <a href={a.canvaUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Canva ↗</a>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AssetLibraryPage() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [type, setType] = useState("all");
   const [tab, setTab] = useState<AssetTab>("library");
+  // Library grid can render flat or grouped by campaign.
+  const [group, setGroup] = useState<"list" | "campaign">("list");
   const [assets, setAssets] = useState<Asset[]>(ASSETS);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [portfolioDraft, setPortfolioDraft] = useState<PortfolioItem>(() => emptyPortfolio((brandOptions[0] ?? "teppen") as BrandId));
@@ -165,6 +194,14 @@ export default function AssetLibraryPage() {
               <span className="text-[12px] font-semibold text-faint">
                 {tab === "library" ? `${rows.length} assets in view` : `${portfolioRows.length} portfolio items in view`}
               </span>
+              <span className="ml-auto flex items-center gap-3 flex-wrap">
+                <SavedViewsBar<AssetSavedView>
+                  pageKey="assets"
+                  current={{ tab, brand, type, group }}
+                  onApply={(v) => { setTab(v.tab); setBrand(v.brand); setType(v.type); setGroup(v.group ?? "list"); }}
+                />
+                <Segmented value={group} onChange={setGroup} options={[{ value: "list", label: "List" }, { value: "campaign", label: "Group Campaign" }]} />
+              </span>
             </div>
             <div className="inline-flex w-fit rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px]">
               {[
@@ -206,32 +243,32 @@ export default function AssetLibraryPage() {
       </div>
 
       {tab === "library" ? (
-      <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
-        {rows.map((a) => (
-          <div key={a.id} className="bg-surface border border-line rounded-cardLg overflow-hidden shadow-soft">
-            <div className="h-32 flex items-center justify-center relative" style={{ background: "repeating-linear-gradient(45deg,#F4EFE5,#F4EFE5 10px,#EFE9DC 10px,#EFE9DC 20px)" }}>
-              <span className="text-[11px] font-mono text-faint">{a.type}</span>
-              <span className="absolute top-2 right-2"><StatusBadge tone="blue">{a.version}</StatusBadge></span>
-            </div>
-            <div className="p-3">
-              <div className="text-[13.5px] font-bold text-ink truncate">{a.name}</div>
-              <div className="text-[11px] text-faint flex items-center gap-[5px] mt-[2px] mb-2"><BrandDot brand={a.b} size={6} />{brandName(a.b)} · {a.campaign}</div>
-              <div className="flex items-center justify-between mb-2">
-                <StatusBadge tone={ASSET_APPROVAL_TONE[a.approval] ?? "neutral"}>{a.approval}</StatusBadge>
-                <span className="text-[11px] text-faint">{a.updated}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                {a.driveUrl && <a href={a.driveUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Drive ↗</a>}
-                {a.canvaUrl && <a href={a.canvaUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Canva ↗</a>}
-              </div>
+        group === "campaign" ? (
+          <div className="mt-5 flex flex-col gap-5">
+            {Array.from(rows.reduce((m, a) => { const c = a.campaign || "—"; (m.get(c) ?? m.set(c, []).get(c)!).push(a); return m; }, new Map<string, Asset[]>()).entries())
+              .sort((x, y) => x[0].localeCompare(y[0]))
+              .map(([c, list]) => (
+                <div key={c}>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <span className="text-[13px] font-extrabold text-ink">🎯 {c}</span>
+                    <span className="text-[12px] text-faint font-semibold">{list.length} asset{list.length > 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+                    {list.map((a) => <AssetCard key={a.id} a={a} />)}
+                  </div>
+                </div>
+              ))}
+            {rows.length === 0 && <div className="text-[12.5px] text-faint text-center py-10">No assets match this view.</div>}
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+            {rows.map((a) => <AssetCard key={a.id} a={a} />)}
+            <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px] bg-white/70">
+              <div className="text-[13px] font-bold text-muted">Drop asset</div>
+              <div className="text-[11px] text-faint mt-1">Drive · Canva · final artwork</div>
             </div>
           </div>
-        ))}
-        <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px] bg-white/70">
-          <div className="text-[13px] font-bold text-muted">Drop asset</div>
-          <div className="text-[11px] text-faint mt-1">Drive · Canva · final artwork</div>
-        </div>
-      </div>
+        )
       ) : (
         <div className="mt-5 grid gap-4 lg:grid-cols-[360px_1fr]">
           <div className="rounded-cardLg border border-line bg-surface p-5 shadow-soft h-fit">

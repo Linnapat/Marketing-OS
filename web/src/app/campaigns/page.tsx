@@ -18,7 +18,8 @@ import { CAMPAIGN_TYPES } from "@/lib/data/brief";
 import { fetchCampaigns, createCampaign, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
-import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -174,6 +175,13 @@ export default function CampaignsPage() {
             </>
           )}
         >
+          <div className="mb-2 flex justify-end">
+            <SavedViewsBar<{ brand: BrandFilterValue; search: string; date: DateFilter }>
+              pageKey="campaigns"
+              current={{ brand, search, date }}
+              onApply={(v) => { setBrand(v.brand); setSearch(v.search); setDate(v.date); }}
+            />
+          </div>
           <DateFilterBar value={date} onChange={setDate} />
           <div className="mt-2 grid gap-3 md:grid-cols-[240px_1fr]">
             <div className="flex flex-col gap-[7px]">

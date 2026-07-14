@@ -6,7 +6,8 @@ import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 
 export interface GraphicEvent {
-  type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered";
+  type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
+    | "brief_approved" | "brief_revision_requested";
   at: string;
   by: string;
   deliverableKey?: string;
@@ -41,6 +42,9 @@ export interface Graphic {
    *  saved requests continue to work while newer requests can show the real
    *  brief pack in the drawer. */
   briefLink?: string;
+  /** Content-leader brief sign-off — set by Approve Brief in the drawer. */
+  briefApprovedBy?: string;
+  briefApprovedAt?: string;
   objective?: string;
   keyMessage?: string;
   moodDirection?: string;

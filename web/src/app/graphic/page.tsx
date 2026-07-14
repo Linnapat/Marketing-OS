@@ -13,7 +13,8 @@ import {
   DESIGNERS, graphicKpis, emptyDeliverable,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic } from "@/lib/db/graphic";
-import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { createContent } from "@/lib/db/content";
 import { appendBriefItem } from "@/lib/db/brief";
@@ -35,10 +36,13 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
 
 
+type GraphicView = "board" | "list" | "campaign";
+interface GraphicSavedView { view: GraphicView; brand: BrandFilterValue; designer: string; date: DateFilter }
+
 export default function GraphicPage() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
-  const [view, setView] = useState<"board" | "list">("board");
+  const [view, setView] = useState<GraphicView>("board");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [designer, setDesigner] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
@@ -119,7 +123,14 @@ export default function GraphicPage() {
                 </label>
                 <span className="text-[12px] font-semibold text-faint">{items.length} requests in view</span>
               </div>
-              <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }]} />
+              <div className="flex items-center gap-3 flex-wrap">
+                <SavedViewsBar<GraphicSavedView>
+                  pageKey="graphic"
+                  current={{ view, brand, designer, date }}
+                  onApply={(v) => { setView(v.view); setBrand(v.brand); setDesigner(v.designer); setDate(v.date); }}
+                />
+                <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "campaign", label: "By Campaign" }]} />
+              </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
@@ -152,7 +163,9 @@ export default function GraphicPage() {
       </div>
 
       <div className="mt-5">
-        {view === "board" ? <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} /> : <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
+        {view === "board" && <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
+        {view === "list" && <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
+        {view === "campaign" && <CampaignGroupView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
       </div>
 
       {drawer && (
@@ -212,6 +225,29 @@ function BoardView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Group-by-campaign view: one section per campaign, list rows inside. */
+function CampaignGroupView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) => void }) {
+  const groups = useMemo(() => {
+    const m = new Map<string, Graphic[]>();
+    for (const g of items) { const k = g.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(g); }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [items]);
+  if (items.length === 0) return <ListView items={items} onOpen={onOpen} />;
+  return (
+    <div className="flex flex-col gap-4">
+      {groups.map(([campaign, gs]) => (
+        <div key={campaign}>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
+            <span className="text-[12px] text-faint font-semibold">{gs.length} request{gs.length > 1 ? "s" : ""}</span>
+          </div>
+          <ListView items={gs} onOpen={onOpen} />
+        </div>
+      ))}
     </div>
   );
 }

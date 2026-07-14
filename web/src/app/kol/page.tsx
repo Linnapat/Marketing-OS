@@ -28,7 +28,9 @@ import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
-import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { SavedViewsBar } from "@/components/ui/SavedViews";
+import { Segmented } from "@/components/ui/Segmented";
 import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -48,10 +50,14 @@ function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getD
 const TABS = [["list", "KOL / Creator Request List"], ["pipeline", "Status"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
 type Tab = (typeof TABS)[number][0];
 
+interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: DateFilter }
+
 export default function KolPage() {
   const [tab, setTab] = useState<Tab>("list");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [campaign, setCampaign] = useState<string>("all");
+  // Request List can render flat or grouped by campaign.
+  const [group, setGroup] = useState<"list" | "campaign">("list");
   const [drawer, setDrawer] = useState<{ kol: Kol; tab: "profile" | "comments" } | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
@@ -155,6 +161,14 @@ export default function KolPage() {
                 </select>
               </label>
               <span className="text-[12px] font-semibold text-faint">{filtered.length} creators in view</span>
+              <span className="ml-auto flex items-center gap-3 flex-wrap">
+                <SavedViewsBar<KolSavedView>
+                  pageKey="kol"
+                  current={{ tab, brand, campaign, group, date }}
+                  onApply={(v) => { setTab(v.tab); setBrand(v.brand); setCampaign(v.campaign); setGroup(v.group ?? "list"); setDate(v.date); }}
+                />
+                <Segmented value={group} onChange={setGroup} options={[{ value: "list", label: "List" }, { value: "campaign", label: "Group Campaign" }]} />
+              </span>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
@@ -216,7 +230,23 @@ export default function KolPage() {
       </div>
 
       <div className="mt-5">
-        {tab === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "list" && group === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "list" && group === "campaign" && (
+          <div className="flex flex-col gap-4">
+            {Array.from(filtered.reduce((m, k) => { const c = k.campaign || "—"; (m.get(c) ?? m.set(c, []).get(c)!).push(k); return m; }, new Map<string, Kol[]>()).entries())
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([c, ks]) => (
+                <div key={c}>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <span className="text-[13px] font-extrabold text-ink">🎯 {c}</span>
+                    <span className="text-[12px] text-faint font-semibold">{ks.length} creator{ks.length > 1 ? "s" : ""}</span>
+                  </div>
+                  <CreatorList list={ks} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />
+                </div>
+              ))}
+            {filtered.length === 0 && <CreatorList list={[]} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+          </div>
+        )}
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} />}
