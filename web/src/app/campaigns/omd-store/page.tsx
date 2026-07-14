@@ -11,6 +11,7 @@ import {
 import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
+import { parseRowDate } from "@/components/ui/DateFilterBar";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
 
@@ -56,7 +57,18 @@ function sourceLabel(source?: OmdStorePromotion["source"]) {
   return "Campaign";
 }
 
+/** Local-safe yyyy-mm-dd (toISOString would shift a Bangkok midnight back a day). */
+function isoDate(d: Date | null): string | undefined {
+  if (!d) return undefined;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
+  // Real campaign dates ("Jul 1 – Jul 31") — the period filter and the printed
+  // Period column must reflect the actual flight, not a fixed placeholder.
+  const [startRaw, endRaw] = (campaign.dates ?? "").split(/[–—-]/).map((s) => s.trim());
+  const start = parseRowDate(startRaw);
+  const end = parseRowDate(endRaw) ?? start;
   return {
     id: `campaign-${campaign.id}`,
     brand: campaign.b,
@@ -65,8 +77,8 @@ function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
     description: `${campaign.campType} · Owner: ${campaign.owner} · Budget ${campaign.budget.toLocaleString("th-TH")} THB`,
     posName: campaign.nextApproval && campaign.nextApproval !== "None" ? `Next approval: ${campaign.nextApproval}` : "",
     branches: campaign.branch.split(",").map((item) => item.trim()).filter(Boolean),
-    startDate: "2026-07-01",
-    endDate: "2026-12-31",
+    startDate: isoDate(start) ?? "",
+    endDate: isoDate(end),
     status: ["Completed", "Cancelled"].includes(campaign.status) ? "ended" : "active",
     source: "campaign",
   };
@@ -95,6 +107,9 @@ export default function OmdStoreCampaignPage() {
   const [brand, setBrand] = useState<BrandId | "all">("all");
   const [category, setCategory] = useState<OmdStorePromotionCategory | "all">("all");
   const [branch, setBranch] = useState("all");
+  // Print period — only promotions whose run overlaps [start, end] are printed.
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
   const [search, setSearch] = useState("");
   const [syncState, setSyncState] = useState<"ready" | "synced">("ready");
   const [printTemplate, setPrintTemplate] = useState<PrintTemplate>("board");
@@ -116,15 +131,29 @@ export default function OmdStoreCampaignPage() {
     return Array.from(new Set(allPromotions.flatMap((item) => item.branches))).sort();
   }, [allPromotions]);
 
+  // Overlap test: an item prints when its run intersects the selected window.
+  // Undated items stay visible so promotions never silently disappear.
+  const inPeriod = (item: OmdStorePromotion) => {
+    if (!periodStart && !periodEnd) return true;
+    if (!item.startDate && !item.endDate) return true;
+    const s = item.startDate ? new Date(`${item.startDate}T00:00:00`).getTime() : -Infinity;
+    const e = item.endDate ? new Date(`${item.endDate}T23:59:59`).getTime() : Infinity;
+    const ws = periodStart ? new Date(`${periodStart}T00:00:00`).getTime() : -Infinity;
+    const we = periodEnd ? new Date(`${periodEnd}T23:59:59`).getTime() : Infinity;
+    return s <= we && e >= ws;
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allPromotions.filter((item) =>
       (brand === "all" || item.brand === brand) &&
       (category === "all" || item.category === category) &&
       branchMatch(item, branch) &&
+      inPeriod(item) &&
       (!q || `${sourceLabel(item.source)} ${BRANDS[item.brand].name} ${item.title} ${item.description} ${item.posName} ${item.branches.join(" ")}`.toLowerCase().includes(q)),
     );
-  }, [allPromotions, branch, brand, category, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPromotions, branch, brand, category, search, periodStart, periodEnd]);
 
   const grouped = categoryOrder
     .map((key) => ({ key, items: filtered.filter((item) => item.category === key) }))
@@ -273,6 +302,11 @@ export default function OmdStoreCampaignPage() {
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Brand: {brand === "all" ? "All Brands" : BRANDS[brand].name}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Branch: {filterLabel(branch, "All Branches")}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Category: {category === "all" ? "All Categories" : OMD_STORE_CATEGORY_META[category].label}</span>
+                {(periodStart || periodEnd) && (
+                  <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">
+                    Period: {periodStart ? formatDate(periodStart) : "…"} – {periodEnd ? formatDate(periodEnd) : "…"}
+                  </span>
+                )}
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Template: {PRINT_TEMPLATES[printTemplate].label}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Printed: {formatDate(new Date().toISOString())}</span>
               </div>
@@ -340,6 +374,16 @@ export default function OmdStoreCampaignPage() {
                   {branches.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Period Start</span>
+                <input type="date" value={periodStart} max={periodEnd || undefined} onChange={(e) => setPeriodStart(e.target.value)}
+                  className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Period End</span>
+                <input type="date" value={periodEnd} min={periodStart || undefined} onChange={(e) => setPeriodEnd(e.target.value)}
+                  className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" />
+              </label>
               <label className="flex flex-col gap-1.5 md:col-span-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Search</span>
                 <span className="flex h-10 items-center gap-2 rounded-[12px] border border-[#ECEAF2] bg-white px-3">
@@ -347,6 +391,14 @@ export default function OmdStoreCampaignPage() {
                   <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา promotion, POS, branch..." className="w-full bg-transparent text-[12px] font-semibold outline-none" />
                 </span>
               </label>
+              {(periodStart || periodEnd) && (
+                <div className="flex items-end md:col-span-2">
+                  <button type="button" onClick={() => { setPeriodStart(""); setPeriodEnd(""); }}
+                    className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold text-[#B33A2E]">
+                    ✕ ล้างช่วงเวลา
+                  </button>
+                </div>
+              )}
             </div>
             <div className="mt-3 rounded-[14px] bg-[#FBFAF7] px-3 py-2 text-[11px] font-semibold text-[#706A84]">
               {PRINT_TEMPLATES[printTemplate].helper}
