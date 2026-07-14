@@ -3,7 +3,7 @@
 export interface NavGroup { group: string; items: { id: string; icon: string; label: string }[]; }
 export const NAV_DEF: NavGroup[] = [
   { group: "General", items: [{ id: "org", icon: "🏢", label: "Organization" }] },
-  { group: "Structure", items: [{ id: "brands", icon: "🎨", label: "Brands & Branches" }, { id: "teams", icon: "👥", label: "Teams" }, { id: "users", icon: "👤", label: "Users & Roles" }] },
+  { group: "Structure", items: [{ id: "brands", icon: "🎨", label: "Brands & Branches" }, { id: "campaign-types", icon: "🎯", label: "Campaign Types" }, { id: "teams", icon: "👥", label: "Teams" }, { id: "users", icon: "👤", label: "Users & Roles" }] },
   { group: "Rules", items: [{ id: "perms", icon: "🔐", label: "Permissions" }, { id: "approval", icon: "✅", label: "Approval Matrix" }, { id: "workflow", icon: "🔄", label: "Workflow Status" }] },
   { group: "Communication", items: [{ id: "notifs", icon: "🔔", label: "Notifications" }, { id: "integrations", icon: "🔌", label: "Integrations" }] },
   { group: "Resources", items: [{ id: "templates", icon: "📋", label: "Templates" }, { id: "audit", icon: "📝", label: "Audit Log" }] },
@@ -12,6 +12,7 @@ export const NAV_DEF: NavGroup[] = [
 export const SECTION_META: Record<string, { title: string; desc: string }> = {
   org: { title: "Organization", desc: "Company details, timezone, currency, and fiscal year settings." },
   brands: { title: "Brands & Branches", desc: "Configure brands, branch locations, and brand leads." },
+  "campaign-types": { title: "Campaign Types", desc: "Add, rename, or remove the campaign types available in Campaign forms." },
   teams: { title: "Teams", desc: "Define team groups, responsibilities, and default owners." },
   users: { title: "Users & Roles", desc: "Manage team members, roles, and access scopes." },
   perms: { title: "Permissions", desc: "Role-based module access matrix." },

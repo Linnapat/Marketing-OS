@@ -5,17 +5,18 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
-import { BrandFilterValue, BrandId, brandName, BRANDS } from "@/lib/brands";
+import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
+import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { SELECT_STYLE_DARK } from "@/components/ui/selectStyle";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
   STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
-import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
-import { fetchBrandConfigs } from "@/lib/db/settings";
+import { CAMPAIGN_TYPES } from "@/lib/data/brief";
+import { fetchCampaigns, createCampaign } from "@/lib/db/campaigns";
+import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
-import { useRole } from "@/lib/role";
 import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
@@ -25,12 +26,11 @@ import {
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
-const CAMP_TYPES = ["Online + Offline", "Online Only", "Offline Only", "CRM / LINE", "Event / Store Activation", "Seasonal Promotion", "Urgent promotion"];
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 
 export default function CampaignsPage() {
   const brandVisibility = useBrandVisibility();
-  const brandOptions = brandVisibility.visibleBrands;
+  const permittedBrandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [status, setStatus] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
@@ -40,28 +40,16 @@ export default function CampaignsPage() {
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
+  const configuredBrandIds = useMemo(() => new Set(brandConfigs.map((item) => item.key)), [brandConfigs]);
+  const brandOptions = useMemo(
+    () => permittedBrandOptions.filter((item) => configuredBrandIds.has(item)),
+    [configuredBrandIds, permittedBrandOptions],
+  );
   const [newOpen, setNewOpen] = useState(false);
-  const defaultBrand = brandOptions[0] ?? "teppen";
-  const emptyNew = { name: "", b: defaultBrand as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
+  const defaultBrand = brandOptions[0] ?? permittedBrandOptions[0] ?? "teppen";
+  const emptyNew = { name: "", b: defaultBrand as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMPAIGN_TYPES[0] as string };
   const [nc, setNc] = useState(emptyNew);
-  // Team-shared custom campaign types (from the database). Only admins can add.
-  const { role } = useRole();
-  const isAdmin = role === "CMO";
-  const [customTypes, setCustomTypes] = useState<string[]>([]);
-  const [addingType, setAddingType] = useState(false);
-  const [newType, setNewType] = useState("");
-  useEffect(() => { fetchCampaignTypes().then(setCustomTypes).catch(() => {}); }, []);
-  const typeOptions = Array.from(new Set([...CAMP_TYPES, ...customTypes]));
-  const addType = () => {
-    const t = newType.trim();
-    setAddingType(false); setNewType("");
-    if (!t || !isAdmin) return;
-    if (!typeOptions.includes(t)) {
-      setCustomTypes((cs) => [...cs, t]);
-      addCampaignType(t);
-    }
-    setNc((n) => ({ ...n, campType: t }));
-  };
+  const [typeOptions, setTypeOptions] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     Completed: true, Draft: true, Cancelled: true,
   });
@@ -72,7 +60,7 @@ export default function CampaignsPage() {
   }, [brand, brandVisibility]);
 
   useEffect(() => {
-    if (!brandOptions.includes(nc.b)) setNc((n) => ({ ...n, b: defaultBrand as BrandId }));
+    if (brandOptions.length && !brandOptions.includes(nc.b)) setNc((n) => ({ ...n, b: defaultBrand as BrandId, branch: "" }));
   }, [brandOptions, defaultBrand, nc.b]);
 
   useEffect(() => {
@@ -82,16 +70,22 @@ export default function CampaignsPage() {
   }, []);
   useEffect(() => {
     let alive = true;
-    fetchBrandConfigs().then((configs) => { if (alive) setBrandConfigs(configs); }).catch(() => {});
+    Promise.all([fetchBrandConfigs(), fetchCampaignTypeConfigs()]).then(([configs, types]) => {
+      if (!alive) return;
+      setBrandConfigs(configs);
+      setTypeOptions(types);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const newCampaignBranches = useMemo(() => brandConfigs.find((b) => b.key === nc.b)?.branchList ?? [], [brandConfigs, nc.b]);
+  const selectedNewCampaignBranches = useMemo(() => nc.branch.split(",").map((item) => item.trim()).filter(Boolean), [nc.branch]);
   useEffect(() => {
-    if (nc.branch && newCampaignBranches.length && !newCampaignBranches.includes(nc.branch)) {
-      setNc((n) => ({ ...n, branch: "" }));
-    }
+    const valid = selectedNewCampaignBranches.filter((item) => newCampaignBranches.includes(item));
+    if (valid.length !== selectedNewCampaignBranches.length) setNc((n) => ({ ...n, branch: valid.join(", ") }));
   }, [nc.branch, newCampaignBranches]);
+
+  const configuredBrandName = (id: BrandId) => brandConfigs.find((item) => item.key === id)?.name ?? brandName(id);
 
   const addCampaign = async () => {
     if (!nc.name.trim()) return;
@@ -185,7 +179,7 @@ export default function CampaignsPage() {
               style={{ background: "rgba(255,255,255,0.55)", borderColor: "#AFD76F", color: "#203515" }}
             >
               {brandVisibility.allowAll && <option value="all">All Brands</option>}
-              {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+              {brandOptions.map((id) => <option key={id} value={id}>{configuredBrandName(id)}</option>)}
             </select>
           </div>
           <div className="rounded-[18px] px-4 py-3 border bg-white/35" style={{ borderColor: "#AFD76F" }}>
@@ -214,7 +208,7 @@ export default function CampaignsPage() {
                 style={{ borderColor: "#ECEAF2" }}
               >
                 {brandVisibility.allowAll && <option value="all">All Brands</option>}
-                {brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}
+                {brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-[7px]">
@@ -331,13 +325,10 @@ export default function CampaignsPage() {
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign name <span className="text-status-red">*</span></label><input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. Wagyu Festival" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId, branch: "" })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId, branch: "" })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}</select></div>
                 <div>
                   <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Branch</label>
-                  <select value={nc.branch} onChange={(e) => setNc({ ...nc, branch: e.target.value })} className={field}>
-                    <option value="">{newCampaignBranches.length ? "Select branch…" : "No branches in Settings"}</option>
-                    {newCampaignBranches.map((br) => <option key={br} value={br}>{br}</option>)}
-                  </select>
+                  <MultiSelectDropdown options={newCampaignBranches} selected={selectedNewCampaignBranches} onChange={(next) => setNc({ ...nc, branch: next.join(", ") })} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -350,15 +341,7 @@ export default function CampaignsPage() {
                 <div>
                   <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label>
                   <select value={nc.campType} onChange={(e) => setNc({ ...nc, campType: e.target.value })} className={field}>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
-                  {isAdmin && (addingType ? (
-                    <div className="flex gap-2 mt-2">
-                      <input autoFocus value={newType} onChange={(e) => setNewType(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addType(); }} placeholder="New type name" className="flex-1 text-[13px] px-[10px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
-                      <button onClick={addType} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3">Add</button>
-                      <button onClick={() => { setAddingType(false); setNewType(""); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 bg-white">✕</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setAddingType(true)} className="text-[11.5px] font-semibold text-accent mt-[6px]">+ Add a custom type <span className="text-faint font-normal">(admin)</span></button>
-                  ))}
+                  <div className="text-[10.5px] text-faint mt-[6px]">Manage options in Settings → Campaign Types</div>
                 </div>
               </div>
             </div>

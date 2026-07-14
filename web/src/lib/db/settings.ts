@@ -2,6 +2,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { BRANDS_DATA, BrandCfg, ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
+import { CAMPAIGN_TYPES } from "@/lib/data/brief";
 
 export interface Member {
   name: string; email: string; role: string; access: string;
@@ -115,6 +116,11 @@ export async function fetchBrandConfigs(): Promise<BrandCfg[]> {
     return saved.map((b) => ({ ...b, branchList: [...(b.branchList ?? [])] }));
   }
   return BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] }));
+}
+
+export async function fetchCampaignTypeConfigs(): Promise<string[]> {
+  const saved = await fetchJsonSetting<string[]>("campaign_types_config").catch(() => null);
+  return saved !== null ? saved : [...CAMPAIGN_TYPES];
 }
 
 /* ── Permissions matrix ─────────────────────────────────────────────── */

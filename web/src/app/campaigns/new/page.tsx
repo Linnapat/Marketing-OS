@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Plus, Copy, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
@@ -20,7 +21,7 @@ import {
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { fetchAllBriefs, saveCampaignBrief } from "@/lib/db/brief";
-import { fetchBrandConfigs } from "@/lib/db/settings";
+import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
 import { budgetByBrandFromSheet, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
@@ -76,7 +77,7 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
   const brandVisibility = useBrandVisibility();
-  const brandOptions = brandVisibility.visibleBrands;
+  const permittedBrandOptions = brandVisibility.visibleBrands;
   const [id] = useState(newCampaignId);
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
@@ -87,6 +88,12 @@ export default function NewCampaignPage() {
   const [savedBriefs, setSavedBriefs] = useState<CampaignBrief[]>([]);
   const [budgetSheetRows, setBudgetSheetRows] = useState<Awaited<ReturnType<typeof fetchBudgetSheetRows>>>([]);
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
+  const [campaignTypes, setCampaignTypes] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
+  const configuredBrandIds = useMemo(() => new Set(brandConfigs.map((brand) => brand.key)), [brandConfigs]);
+  const brandOptions = useMemo(
+    () => permittedBrandOptions.filter((brand) => configuredBrandIds.has(brand)),
+    [configuredBrandIds, permittedBrandOptions],
+  );
 
   const set = <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => setBrief((b) => ({ ...b, [k]: v }));
   const nextSeq = () => { const s = seq; setSeq((x) => x + 1); return s; };
@@ -95,16 +102,17 @@ export default function NewCampaignPage() {
   const me = member?.name ?? user?.email ?? "";
   useEffect(() => { if (me) setBrief((b) => ({ ...b, plannerOwner: me })); }, [me]);
   useEffect(() => {
-    if (!brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: (brandOptions[0] ?? "teppen") as BrandId, branches: [] }));
+    if (brandOptions.length && !brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: brandOptions[0] as BrandId, branches: [] }));
   }, [brandOptions, brief.b]);
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs()])
-      .then(([briefMap, sheetRows, configs]) => {
+    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs(), fetchCampaignTypeConfigs()])
+      .then(([briefMap, sheetRows, configs, types]) => {
         if (!alive) return;
         setSavedBriefs(Object.values(briefMap));
         setBudgetSheetRows(sheetRows);
         setBrandConfigs(configs);
+        setCampaignTypes(types);
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -190,7 +198,7 @@ export default function NewCampaignPage() {
       </div>
 
       <div className="mt-5 max-w-[900px]">
-        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} />}
+        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
         {step === 2 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} onEditKol={() => setStep(2)} />}
@@ -242,14 +250,13 @@ function Chips({ options, value, onChange }: { options: readonly string[]; value
 }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
-function Overview({ brief, set, setBrief, branches, planner, errors, brandOptions }: {
+function Overview({ brief, set, setBrief, branches, planner, errors, brandOptions, brandConfigs, campaignTypes }: {
   brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
-  errors: Record<string, string>; brandOptions: BrandId[];
+  errors: Record<string, string>; brandOptions: BrandId[]; brandConfigs: BrandCfg[]; campaignTypes: string[];
 }) {
   const errBorder = { borderColor: "#B33A2E", background: "#FFF7F6" };
   const errText = "text-[11px] text-status-red font-semibold mt-1";
-  const toggleBranch = (br: string) => setBrief((b) => ({ ...b, branches: b.branches.includes(br) ? b.branches.filter((x) => x !== br) : [...b.branches, br] }));
   const toggleMetric = (m: string) => setBrief((b) => ({ ...b, successMetrics: b.successMetrics.includes(m) ? b.successMetrics.filter((x) => x !== m) : [...b.successMetrics, m] }));
   const setGoal = (m: string, v: string) => setBrief((b) => ({ ...b, successGoals: { ...b.successGoals, [m]: v } }));
   const endInvalid = !!brief.startDate && !!brief.endDate && brief.endDate < brief.startDate;
@@ -264,30 +271,23 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
         <div>
           <label className={label}>Brand</label>
           <select value={brief.b} onChange={(e) => setBrief((b) => ({ ...b, b: e.target.value as BrandId, branches: [] }))} className={field}>
-            {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+            {brandOptions.map((id) => <option key={id} value={id}>{brandConfigs.find((brand) => brand.key === id)?.name ?? BRANDS[id].name}</option>)}
           </select>
         </div>
         {/* Branch — directly under Brand */}
         <div id="ov-branches">
           <label className={label}>Branch <span className="text-status-red">*</span> <span className="text-faint font-normal">· หลายสาขา ({brief.branches.length})</span></label>
           {errors.branches && <p className={errText + " mb-1"}>{errors.branches}</p>}
-          <div className="flex flex-wrap gap-2">
-            {branches.length === 0 && <span className="text-[12px] text-faint">ไม่มีสาขาสำหรับแบรนด์นี้</span>}
-            {branches.map((br) => {
-              const on = brief.branches.includes(br);
-              return (
-                <label key={br} className="flex items-center gap-2 text-[12px] font-semibold px-[10px] py-[6px] rounded-[9px] border cursor-pointer"
-                  style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
-                  <input type="checkbox" checked={on} onChange={() => toggleBranch(br)} /> {br}
-                </label>
-              );
-            })}
-          </div>
+          <MultiSelectDropdown
+            options={branches}
+            selected={brief.branches}
+            onChange={(next) => setBrief((b) => ({ ...b, branches: next, branch: next.join(", ") }))}
+          />
         </div>
         <div>
           <label className={label}>Campaign Type</label>
           <select value={brief.campaignType} onChange={(e) => set("campaignType", e.target.value)} className={field}>
-            {CAMPAIGN_TYPES.map((t) => <option key={t}>{t}</option>)}
+            {campaignTypes.map((t) => <option key={t}>{t}</option>)}
           </select>
         </div>
         <div>

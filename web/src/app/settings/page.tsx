@@ -6,6 +6,7 @@ import { clsx } from "@/lib/clsx";
 import { useRole } from "@/lib/role";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { BRAND_ORDER, BRANDS, BrandId } from "@/lib/brands";
+import { CAMPAIGN_TYPES } from "@/lib/data/brief";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
@@ -379,6 +380,17 @@ export default function SettingsPage() {
   const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
   const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands); setBrandsEdit(false); setBrandsDirty(false); };
 
+  // Campaign Types are shared by the full builder and quick-create form.
+  const [campaignTypes, setCampaignTypes] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
+  const [campaignTypesEdit, setCampaignTypesEdit] = useState(false);
+  const [campaignTypesDirty, setCampaignTypesDirty] = useState(false);
+  const persistCampaignTypes = () => {
+    if (!campaignTypes.length) return;
+    saveJsonSetting("campaign_types_config", "Campaign types", campaignTypes);
+    setCampaignTypesEdit(false);
+    setCampaignTypesDirty(false);
+  };
+
   // Editable Teams (JSON blob in org_settings).
   type TeamCfg = typeof TEAMS_DATA[number];
   const [teams, setTeams] = useState<TeamCfg[]>(() => TEAMS_DATA.map((t) => ({ ...t, members: [...t.members] })));
@@ -435,6 +447,7 @@ export default function SettingsPage() {
       if (m.rules.length) setRules(m.rules);
     }).catch(() => {});
     fetchJsonSetting<BrandCfg[]>("brands_config").then((b) => { if (alive && b?.length) setBrands(b); }).catch(() => {});
+    fetchJsonSetting<string[]>("campaign_types_config").then((types) => { if (alive && types !== null) setCampaignTypes(types); }).catch(() => {});
     fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (alive && t?.length) setTeams(t); }).catch(() => {});
     fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (alive && w) setStatusSets((cur) => ({ ...cur, ...w })); }).catch(() => {});
     fetchJsonSetting<TemplateCfg[]>("templates_config").then((t) => { if (alive && t?.length) setTemplates(t); }).catch(() => {});
@@ -642,6 +655,32 @@ export default function SettingsPage() {
                 </div>
               );})}
             </div>
+          </div>
+        )}
+
+        {section === "campaign-types" && (
+          <div className="bg-surface border border-line rounded-cardLg p-6 max-w-2xl">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <div className="text-[13px] font-bold">Campaign type options</div>
+                <div className="text-[11.5px] text-faint mt-1">รายการนี้ใช้ร่วมกันใน Campaign Builder และ Quick Create</div>
+              </div>
+              {canEdit && (campaignTypesEdit ? (
+                <div className="flex gap-2">
+                  <button onClick={() => { setCampaignTypes([...CAMPAIGN_TYPES]); setCampaignTypesEdit(false); setCampaignTypesDirty(false); fetchJsonSetting<string[]>("campaign_types_config").then((types) => { if (types !== null) setCampaignTypes(types); }); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">Cancel</button>
+                  <button onClick={persistCampaignTypes} disabled={!campaignTypesDirty || !campaignTypes.length} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">Save changes</button>
+                </div>
+              ) : (
+                <button onClick={() => setCampaignTypesEdit(true)} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px]">✏️ Edit types</button>
+              ))}
+            </div>
+            <BranchEditor
+              branches={campaignTypes}
+              editable={campaignTypesEdit && canEdit}
+              placeholder="campaign type"
+              onChange={(next) => { setCampaignTypes(next); setCampaignTypesDirty(true); }}
+            />
+            {campaignTypesEdit && !campaignTypes.length && <div className="text-[11px] font-semibold text-status-red mt-3">ต้องมี Campaign Type อย่างน้อย 1 รายการก่อนบันทึก</div>}
           </div>
         )}
 
