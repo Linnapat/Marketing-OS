@@ -18,7 +18,7 @@ export const CAMPAIGN_TYPES = [
 ] as const;
 
 export const SUCCESS_METRICS = [
-  "Visit", "Reach", "Engagement", "New Member", "Repeater",
+  "Visit", "Reach", "Engagement", "CV%", "New Member", "Repeater",
   "ROAS", "Coupon Used", "Booking", "Sales",
 ] as const;
 

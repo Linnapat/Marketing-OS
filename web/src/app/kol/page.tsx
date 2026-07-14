@@ -14,7 +14,7 @@ import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
 import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
-  kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals,
+  kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
@@ -36,7 +36,6 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
@@ -144,9 +143,17 @@ export default function KolPage() {
         <CampaignCommandBar
           action={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send KOL Brief</button>}
         >
-          <div className="flex flex-col gap-4">
-            <div className="text-[13px] font-semibold text-faint">
-              {filtered.length} creators in view · deal, brief, review, and performance tracking
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              <BrandFilter value={brand} onChange={setBrand} />
+              <label className="flex items-center gap-[7px]">
+                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Campaign</span>
+                <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE}>
+                  <option value="all">All Campaigns</option>
+                  {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <span className="text-[12px] font-semibold text-faint">{filtered.length} creators in view</span>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
@@ -171,24 +178,6 @@ export default function KolPage() {
           </div>
         </ModuleSummaryCard>
 
-        <FilterBar>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-4 flex-wrap">
-              <BrandFilter value={brand} onChange={setBrand} />
-              <label className="flex items-center gap-[7px]">
-                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Campaign</span>
-                <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE}>
-                  <option value="all">All Campaigns</option>
-                  {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">KOL plan sync on</span>
-              <span className="rounded-pill bg-[#FBF0F5] px-3 py-[7px] font-bold text-[#B5577E]">Requester fixed to login</span>
-            </div>
-          </div>
-        </FilterBar>
       </div>
 
       {/* Needs Attention */}
@@ -255,7 +244,7 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
   const url = channelUrl(kol.plat, kol.h);
   return (
     <div className="border-b border-line4 last:border-0">
-      <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.4fr_1fr_1fr_1.4fr] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition">
+      <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.4fr_1fr_0.9fr_0.9fr_1.4fr] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition">
         <div className="flex items-center gap-3">
           <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: brandColor(kol.b) }}>{initials(kol.name)}</span>
           <div className="min-w-0">
@@ -270,6 +259,7 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
         </div>
         <div className="text-[12px] text-muted">{kol.campaign}<div className="text-[10.5px] text-faint">Due {kol.postDueDate}</div></div>
         <div className="text-[12.5px] text-muted">{fmtFollow(kol.followers)}<div className="text-[10.5px] text-faint">followers</div></div>
+        <div className="text-[12px]" style={{ color: kol.postedDate ? "#4E7A4E" : "#9A9387", fontWeight: kol.postedDate ? 600 : 400 }}>{kol.postedDate ?? "—"}</div>
         <div className="text-[13px] font-semibold text-ink">{baht(kol.fee, { compact: true })}</div>
         <div>
           <StatusBadge tone={kolTone(kol.status)}>{kol.status}</StatusBadge>
@@ -288,8 +278,8 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "2fr 1.4fr 1fr 1fr 1.4fr" }}>
-        <div>Creator</div><div>Campaign</div><div>Followers</div><div>Fee</div><div>Stage</div>
+        style={{ gridTemplateColumns: "2fr 1.4fr 1fr 0.9fr 0.9fr 1.4fr" }}>
+        <div>Creator</div><div>Campaign</div><div>Followers</div><div>Actual Post</div><div>Fee</div><div>Stage</div>
       </div>
       {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}
       {list.length === 0 && (
@@ -408,7 +398,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
   };
 
   const rate = (reach: number, eng: number) => (reach ? (eng / reach) * 100 : 0);
-  const cols = "1.7fr 1.1fr 1.1fr 1fr 1fr 0.7fr";
+  const cols = "1.7fr 0.95fr 0.95fr 1fr 0.9fr 0.9fr 0.7fr";
   const numCls = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-ivory outline-none text-right";
   if (list.length === 0) return (
     <div className="px-5 py-10 text-center">
@@ -421,10 +411,11 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
   return (
     <div className="flex flex-col gap-4">
       {groups.map(([campaign, ks]) => {
+        const cExpReach = ks.reduce((s, k) => s + (k.expectedReach || 0), 0);
         const cReach = ks.reduce((s, k) => s + postsTotals(kolPosts(k)).reach, 0);
         const cEng = ks.reduce((s, k) => s + postsTotals(kolPosts(k)).engagement, 0);
         const cFee = ks.reduce((s, k) => s + k.fee, 0);
-        const roiVals = ks.filter((k) => k.roi > 0).map((k) => k.roi);
+        const roiVals = ks.map(kolRoas).filter((v) => v > 0);
         const avgRoi = roiVals.length ? roiVals.reduce((s, v) => s + v, 0) / roiVals.length : 0;
         return (
           <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -433,7 +424,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
               <span className="text-[11.5px] text-faint">· {ks.length} creator{ks.length > 1 ? "s" : ""}</span>
             </div>
             <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
-              <div>Creator · Post</div><div className="text-right">Reach</div><div className="text-right">Engagement</div><div className="text-right">Eng. Rate</div><div className="text-right">Fee</div><div className="text-right">ROAS</div>
+              <div>Creator · Post</div><div className="text-right">Expected Reach</div><div className="text-right">Actual Reach</div><div className="text-right">Engagement</div><div className="text-right">Eng. Rate</div><div className="text-right">Fee</div><div className="text-right">ROAS</div>
             </div>
             {ks.map((k) => {
               const posts = kolPosts(k);
@@ -448,11 +439,12 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                       <span className="truncate">{k.name}</span>
                       <span className="text-[10.5px] text-faint font-semibold">· {posts.length} post{posts.length !== 1 ? "s" : ""}</span>
                     </span>
+                    <span className="text-[12.5px] text-muted text-right">{k.expectedReach ? fmtFollow(k.expectedReach) : "—"}</span>
                     <span className="text-[12.5px] text-ink font-semibold text-right">{fmtFollow(kt.reach)}</span>
                     <span className="text-[12.5px] text-ink font-semibold text-right">{fmtFollow(kt.engagement)}</span>
                     <span className="text-[12.5px] text-muted text-right">{fmtPct(rate(kt.reach, kt.engagement))}</span>
                     <span className="text-[12.5px] font-semibold text-ink text-right">{baht(k.fee, { compact: true })}</span>
-                    <span className="text-[12.5px] font-semibold text-right" style={{ color: k.roi >= 1 ? "#4E7A4E" : "#9A9387" }}>{k.roi ? `${k.roi.toFixed(1)}×` : "—"}</span>
+                    <span className="text-[12.5px] font-semibold text-right" style={{ color: kolRoas(k) >= 1 ? "#4E7A4E" : "#9A9387" }}>{kolRoas(k) ? `${kolRoas(k).toFixed(1)}×` : "—"}</span>
                   </button>
                   {/* One editable row per post link */}
                   {posts.map((p, pi2) => (
@@ -463,6 +455,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                           ? <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-accent truncate hover:underline">{p.link} ↗</a>
                           : <span className="text-faint italic">no link</span>}
                       </span>
+                      <span></span>
                       <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => alert(`บันทึก KOL Reach ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
                       <input type="number" value={p.engagement || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { engagement: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => alert(`บันทึก KOL Engagement ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
                       <span className="text-[11.5px] text-faint text-right">{fmtPct(rate(p.reach || 0, p.engagement || 0))}</span>
@@ -475,6 +468,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
             })}
             <div className="grid px-5 py-3 items-center bg-ivory/70 text-ink font-bold" style={{ gridTemplateColumns: cols }}>
               <span className="text-[12px]">Campaign total</span>
+              <span className="text-[12.5px] text-right">{fmtFollow(cExpReach)}</span>
               <span className="text-[12.5px] text-right">{fmtFollow(cReach)}</span>
               <span className="text-[12.5px] text-right">{fmtFollow(cEng)}</span>
               <span className="text-[12.5px] text-right">{fmtPct(rate(cReach, cEng))}</span>
@@ -664,7 +658,11 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
   useEffect(() => {
-    if (item.area && branches.length && !branches.includes(item.area)) onChange({ area: "" });
+    // Multi-branch: keep only areas that exist for the selected brand.
+    if (!item.area || !branches.length) return;
+    const list = item.area.split(",").map((s) => s.trim()).filter(Boolean);
+    const valid = list.filter((br) => branches.includes(br));
+    if (valid.length !== list.length) onChange({ area: valid.join(", ") });
   }, [branches, item.area]);
 
   // Requester specifies the requirement only — the real page (and the master-DB

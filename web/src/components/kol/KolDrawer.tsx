@@ -3,8 +3,16 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
-  Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals,
+  Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
+import { DatePicker } from "@/components/ui/DatePicker";
+
+const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-07-20" → "Jul 20" — same display format postDueDate already uses. */
+function isoToLabel(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  return m ? `${MON_SHORT[m - 1]} ${d}` : iso;
+}
 import { KOL_PLATFORMS } from "@/lib/data/brief";
 import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults } from "@/lib/kolFlow";
 import { brandName, brandColor } from "@/lib/brands";
@@ -257,6 +265,9 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const [kolType, setKolType] = useState(kol.kolType);
   const [followers, setFollowers] = useState(kol.followers || 0);
   const [avgReach, setAvgReach] = useState(kol.expectedReach || 0);
+  // Proposed post date — when set, the deal's due date (shown in Status / lists)
+  // follows the proposal.
+  const [postDate, setPostDate] = useState(kol.postingDate || "");
   const [audienceFit, setAudienceFit] = useState(kol.audienceFit);
   const [contentStyle, setContentStyle] = useState(kol.contentStyle);
   const [pastCollab, setPastCollab] = useState(kol.pastCollab);
@@ -302,6 +313,9 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType,
       followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab,
       contactInfo, masterKolId: masterKolId ?? kol.masterKolId,
+      // Status view + lists track the proposal's post date.
+      postingDate: postDate || kol.postingDate,
+      postDueDate: postDate ? isoToLabel(postDate) : kol.postDueDate,
       quotationStatus: "Pending Approval",
       proposalApprovalTaskId: taskId,
       proposalSubmittedAt: new Date().toISOString(),
@@ -367,6 +381,7 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         <div><label className={lbl}>KOL Type</label><input value={kolType} onChange={(e) => setKolType(e.target.value)} className={field} placeholder="e.g. Food Blogger" /></div>
         <div><label className={lbl}>Followers</label><input type="number" value={followers || ""} onChange={(e) => setFollowers(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
         <div><label className={lbl}>Avg Reach</label><input type="number" value={avgReach || ""} onChange={(e) => setAvgReach(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
+        <div><label className={lbl}>Post Date <span className="text-faint font-normal normal-case">· วันโพสต์ตาม proposal</span></label><DatePicker value={postDate || null} onChange={(v) => setPostDate(v)} /></div>
         <div><label className={lbl}>Audience Fit</label><select value={audienceFit} onChange={(e) => setAudienceFit(e.target.value)} className={field}>{audienceOptions.map((a) => <option key={a}>{a}</option>)}</select></div>
       </div>
       <div><label className={lbl}>Content Style</label><input value={contentStyle} onChange={(e) => setContentStyle(e.target.value)} className={field} placeholder="e.g. Food photography + short video" /></div>
@@ -547,6 +562,7 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
 function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [reach, setReach] = useState(kol.actualReach || 0);
   const [eng, setEng] = useState(kol.actualEngagement || 0);
+  const [revenue, setRevenue] = useState(kol.revenue || 0);
   const [link, setLink] = useState(kol.postLink ?? "");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -567,7 +583,7 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         deliverables: kol.contentStyle || undefined,
         actual_reach: reach || undefined,
         actual_engagement: eng || undefined,
-        roas: kol.roi || undefined,
+        roas: roas || undefined,
         on_time_delivery: onTime,
         brand_feedback_score: feedback || undefined,
       });
@@ -582,6 +598,8 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   // Engagement rate: engagement ÷ reach, falling back to followers. Always %.
   const engBase = reach > 0 ? reach : (kol.followers || 0);
   const engRate = engBase ? (eng / engBase) * 100 : 0;
+  // ROAS auto = attributed revenue ÷ total cost (fee + food support).
+  const roas = revenue && kol.totalCost > 0 ? revenue / kol.totalCost : kolRoas(kol);
 
   // Results may only be saved once Posted/Completed with a final link — the
   // stage itself is advanced (with its own guards) in the Stage bar, not here.
@@ -594,6 +612,9 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     const shouldLogPosted = !!link.trim() && !(kol.history ?? []).some((e) => e.type === "posted");
     const next: Kol = {
       ...kol, actualReach: reach, actualEngagement: eng,
+      revenue,
+      // Keep the legacy roi field in sync with the auto ROAS so old views agree.
+      roi: revenue && kol.totalCost > 0 ? Math.round((revenue / kol.totalCost) * 100) / 100 : kol.roi,
       engagement: eng ? fmtFollow(eng) : kol.engagement,
       postLink: link.trim() || null,
       postedDate: link.trim() && !kol.postedDate ? now.slice(0, 10) : kol.postedDate,
@@ -625,6 +646,10 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
           <label className="block text-[11px] font-bold text-faint mb-[5px]">Actual Engagement</label>
           <input type="number" value={eng || ""} onChange={(e) => setEng(parseInt(e.target.value) || 0)} className={field} placeholder="0" />
         </div>
+        <div className="col-span-2">
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">Sales / Revenue attributed (฿) <span className="text-faint font-normal">· ใช้คำนวณ ROAS อัตโนมัติ = Revenue ÷ Total Cost</span></label>
+          <input type="number" value={revenue || ""} onChange={(e) => setRevenue(parseInt(e.target.value) || 0)} className={field} placeholder="0" />
+        </div>
       </div>
       <div>
         <label className="block text-[11px] font-bold text-faint mb-[5px]">Result / Post Link</label>
@@ -639,7 +664,7 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
           ["Cost / Reach", costPerReach ? baht(Math.round(costPerReach * 100) / 100) : "—"],
           ["Cost / Eng.", costPerEng ? baht(Math.round(costPerEng * 100) / 100) : "—"],
           ["Visits", String(kol.visits)], ["CPV", cpv ? baht(cpv) : "—"],
-          ["ROI", kol.roi ? `${kol.roi}×` : "—"], ["Posted", kol.postedDate ?? "—"],
+          ["ROAS (auto)", roas ? `${roas.toFixed(2)}×` : "—"], ["Posted", kol.postedDate ?? "—"],
         ].map(([label, val]) => (
           <div key={label} className="bg-surface border border-line rounded-card p-3">
             <div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{label}</div>

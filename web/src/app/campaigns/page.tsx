@@ -22,8 +22,6 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
-  ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
@@ -132,17 +130,15 @@ export default function CampaignsPage() {
   const groups = STATUS_ORDER
     .map((s) => ({ status: s, rows: filtered.filter((c) => c.status === s) }))
     .filter((g) => g.rows.length > 0);
-  const activeStatuses = new Set(["Planning", "Active", "In Progress", "Waiting Approval"]);
-  const liveCampaigns = filtered.filter((c) => activeStatuses.has(c.status));
-  const waitingApprovalCampaigns = filtered.filter((c) =>
-    c.status === "Waiting Approval" || c.status === "Waiting for Approval" || !["", "—", "None"].includes(c.nextApproval || ""),
-  );
-  const atRiskCampaigns = filtered.filter((c) => c.readiness === "needs_attention" || c.taskOverdue > 0 || c.taskBlocked > 0);
-  const budgetWatchCampaigns = filtered.filter((c) => c.budget > 0 && (c.spend / c.budget) >= 0.8);
-  const liveBudget = liveCampaigns.reduce((sum, c) => sum + c.budget, 0);
-  const liveSpend = liveCampaigns.reduce((sum, c) => sum + c.spend, 0);
-  const liveOwners = Array.from(new Set(liveCampaigns.map((c) => c.owner).filter(Boolean))).length;
   const statusChips = ["all", ...STATUS_ORDER];
+
+  // A campaign that covers every branch of its brand reads "All branches"
+  // instead of the full comma-joined list.
+  const branchLabel = (c: CampaignRow) => {
+    const list = (c.branch || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const all = brandConfigs.find((b) => b.key === c.b)?.branchList ?? [];
+    return all.length > 0 && list.length >= all.length && all.every((br) => list.includes(br)) ? "All branches" : c.branch;
+  };
 
   const onStatusChange = async (id: string, nextStatus: string) => {
     setBusyCampaignId(id);
@@ -195,49 +191,7 @@ export default function CampaignsPage() {
           )}
         >
           <DateFilterBar value={date} onChange={setDate} />
-        </CampaignCommandBar>
-
-        <ModuleSummaryCard
-          title="Campaign Café Summary"
-          titleClassName="text-[#31531F]"
-          style={{
-            background: "linear-gradient(180deg, #D8FFA9 0%, #C9F28C 100%)",
-            border: "1px solid #B8E37A",
-            boxShadow: "0 18px 44px rgba(139, 184, 73, 0.20)",
-          }}
-        >
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-            <div>
-              <div className="text-[15px] font-bold text-[#203515]">Needs action first</div>
-              <div className="text-[12px] text-[#4E6A38] mt-1">Campaigns that need approval, follow-up, or close monitoring right now</div>
-            </div>
-            <select
-              value={brand}
-              onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-              className="text-[12px] font-semibold rounded-[14px] px-3.5 py-[9px] outline-none cursor-pointer border"
-              style={{ background: "rgba(255,255,255,0.55)", borderColor: "#AFD76F", color: "#203515" }}
-            >
-              {brandVisibility.allowAll && <option value="all">All Brands</option>}
-              {brandOptions.map((id) => <option key={id} value={id}>{configuredBrandName(id)}</option>)}
-            </select>
-          </div>
-          <div className="rounded-[18px] px-4 py-3 border bg-white/35" style={{ borderColor: "#AFD76F" }}>
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
-                {waitingApprovalCampaigns.length} waiting approval
-              </span>
-              <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
-                {budgetWatchCampaigns.length} near budget limit
-              </span>
-              <span className="rounded-pill px-3 py-[7px] text-[11px] font-extrabold tracking-[0.01em] text-[#1E3213] border" style={{ background: "rgba(255,255,255,0.62)", borderColor: "#A9D66A" }}>
-                {atRiskCampaigns.length} need follow-up
-              </span>
-            </div>
-          </div>
-        </ModuleSummaryCard>
-
-        <FilterBar>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Brand</span>
               <select
@@ -292,7 +246,7 @@ export default function CampaignsPage() {
                 className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] outline-none w-full" style={{ borderColor: "#ECEAF2" }} />
             </div>
           </div>
-        </FilterBar>
+        </CampaignCommandBar>
       </div>
 
       {/* Status-grouped collapsible list */}
@@ -314,7 +268,7 @@ export default function CampaignsPage() {
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
                     style={{ gridTemplateColumns: "2.2fr 1.25fr 0.9fr 0.85fr 0.75fr 1.05fr 1.6fr" }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROI</div><div>Readiness</div><div>Actions</div>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROAS</div><div>Readiness</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
                     <div
@@ -334,7 +288,7 @@ export default function CampaignsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-[6px] text-[12px] text-muted">
-                        <BrandDot brand={c.b} size={7} />{c.branch}
+                        <BrandDot brand={c.b} size={7} />{branchLabel(c)}
                       </div>
                       <div className="text-[12.5px] text-muted">{c.owner}</div>
                       <div className="text-[13px] font-semibold text-ink">{baht(c.budget, { compact: true })}</div>

@@ -25,7 +25,6 @@ import { Graphic } from "@/lib/data/graphic";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
 } from "@/components/campaign/CampaignHeadController";
 
 // Stages / statuses that still need someone in the approval tier to act.
@@ -78,10 +77,10 @@ const SCOPE_FILTERS = [
 export default function MyTasksPage() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
-  const [activeTab, setActiveTab] = useState<"myDay" | "approval" | "team">("myDay");
+  const [activeTab, setActiveTab] = useState<"myDay" | "approval">("myDay");
   const [people, setPeople] = useState<Person[]>(MOCK_PEOPLE);
+  // Personal view only — always the signed-in member (Team view lives in Team mood board).
   const [viewAs, setViewAs] = useState(MOCK_PEOPLE[0].name);
-  const [viewAsPicked, setViewAsPicked] = useState(false);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
@@ -158,14 +157,11 @@ export default function MyTasksPage() {
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
   const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? FALLBACK_COLORS[n] ?? "#9A9387";
 
-  // Default the "viewing as" person to the signed-in member (until the user
-  // picks someone explicitly); keep viewAs valid when the member list loads.
+  // Lock the view to the signed-in member; keep viewAs valid when the member list loads.
   useEffect(() => {
-    if (viewAsPicked) return;
     if (member?.name && people.some((p) => p.name === member.name)) setViewAs(member.name);
     else if (!people.some((p) => p.name === viewAs)) setViewAs(people[0]?.name ?? viewAs);
-  }, [member, people, viewAs, viewAsPicked]);
-  const pickViewAs = (n: string) => { setViewAsPicked(true); setViewAs(n); };
+  }, [member, people, viewAs]);
 
   // Optimistic local patch + persist — powers every action button.
   const patchTask = (id: number, p: Partial<Task>) => {
@@ -261,29 +257,11 @@ export default function MyTasksPage() {
                 <span onClick={openMyApprovals} style={chip(activeTab === "approval")} className="relative">
                   My approvals{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
                 </span>
-                <span onClick={() => setActiveTab("team")} style={chip(activeTab === "team")}>Team View</span>
               </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
         </CampaignCommandBar>
-
-        <FilterBar>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-[6px] bg-white border border-line2 rounded-pill px-3 py-[5px]">
-              <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold" style={{ background: colorOf(viewAs) }}>{init(viewAs)}</span>
-              <span className="text-[12px] font-semibold text-ink">{viewAs.split(" ")[0]}</span>
-            </div>
-            <div className="flex gap-[7px] flex-wrap">
-              {people.map(({ name: p }) => {
-                const active = viewAs === p;
-                return <span key={p} onClick={() => pickViewAs(p)} style={active
-                  ? { fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#211F1C", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }
-                  : { fontSize: 11, fontWeight: 500, padding: "4px 10px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" }}>{p.split(" ")[0]}</span>;
-              })}
-            </div>
-          </div>
-        </FilterBar>
       </div>
 
       {activeTab === "myDay" ? (
@@ -355,10 +333,8 @@ export default function MyTasksPage() {
             <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} colorOf={colorOf} />
           )}
         </div>
-      ) : activeTab === "approval" ? (
-        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
       ) : (
-        <TeamView tasks={tasks.filter((t) => canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due))} getStatus={getStatus} people={people} onSelect={(p) => { pickViewAs(p); setActiveTab("myDay"); }} />
+        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
@@ -629,77 +605,6 @@ function ListView({ tasks, getStatus, onOpen, colorOf }: { tasks: Task[]; getSta
   );
 }
 
-function TeamView({ tasks, getStatus, people, onSelect }: { tasks: Task[]; getStatus: (t: Task) => string; people: Person[]; onSelect: (p: string) => void }) {
-  const count = (s: string) => tasks.filter((t) => getStatus(t) === s).length;
-  const teamKpis = [
-    { label: "Total Tasks", val: tasks.length, color: "#fff" },
-    { label: "Done", val: count("Done"), color: "#B8E0B8" },
-    { label: "In Progress", val: count("In Progress"), color: "#B8C8E8" },
-    { label: "Stuck", val: count("Stuck"), color: "#F5C8C4" },
-    { label: "Need Approval", val: count("Need Approval"), color: "#B8E0B8" },
-  ];
-  const stuckAll = count("Stuck"), apprAll = count("Need Approval");
-  const parts: string[] = [];
-  if (stuckAll > 0) parts.push(`${stuckAll} task${stuckAll > 1 ? "s" : ""} stuck and need support`);
-  if (apprAll > 0) parts.push(`${apprAll} approval${apprAll > 1 ? "s" : ""} waiting`);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-[20px] px-7 py-6 text-white" style={{ background: "linear-gradient(135deg,#211F1C,#3A3630)" }}>
-        <div className="text-[11px] tracking-[0.08em] uppercase font-bold mb-3" style={{ color: "#B8945A" }}>Team Summary · {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</div>
-        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))" }}>
-          {teamKpis.map((k) => <div key={k.label}><div className="text-[10.5px] font-semibold mb-1" style={{ color: "#9A9387" }}>{k.label}</div><div className="text-[30px] font-extrabold" style={{ color: k.color }}>{k.val}</div></div>)}
-        </div>
-      </div>
-      {parts.length > 0 && (
-        <div className="rounded-[14px] px-5 py-[14px] flex items-center gap-[14px] flex-wrap" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
-          <span className="text-[18px]">⚠</span>
-          <div className="flex-1 min-w-[200px]"><div className="text-[13px] font-bold mb-[2px]" style={{ color: "#B33A2E" }}>Needs support today</div><div className="text-[12.5px] text-muted">{parts.join(" · ")}</div></div>
-        </div>
-      )}
-      <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))" }}>
-        {people.map(({ name: p, color }) => {
-          const pts = tasks.filter((t) => t.assignee === p);
-          const done = pts.filter((t) => getStatus(t) === "Done").length;
-          const stuck = pts.filter((t) => getStatus(t) === "Stuck").length;
-          const wait = pts.filter((t) => getStatus(t) === "Waiting").length;
-          const act = pts.filter((t) => ["In Progress", "Revision"].includes(getStatus(t))).length;
-          const appr = pts.filter((t) => getStatus(t) === "Need Approval").length;
-          const pct = pts.length ? Math.round((done / pts.length) * 100) : 0;
-          const healthStyle: CSSProperties = stuck > 0
-            ? { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FFF5F4", color: "#B33A2E" }
-            : pct >= 70 ? { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#EEF4EE", color: "#4E7A4E" }
-            : { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF8EE", color: "#C68A1E" };
-          const pctColor = pct >= 70 ? "#4E7A4E" : pct >= 40 ? "#C68A1E" : "#B33A2E";
-          return (
-            <div key={p} onClick={() => onSelect(p)} className="cursor-pointer" style={{ background: "#fff", border: "1px solid #ECE6DA", borderRadius: 18, padding: 20 }}>
-              <div className="flex items-center gap-3 mb-[14px]">
-                <span className="w-10 h-10 rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0" style={{ background: color }}>{init(p)}</span>
-                <div className="flex-1 min-w-0"><div className="text-[14.5px] font-bold">{p}</div><div className="text-[11.5px] text-faint">{pts.length} tasks</div></div>
-                <span style={healthStyle}>{stuck > 0 ? "Needs support" : pct >= 70 ? "Healthy" : "Busy"}</span>
-              </div>
-              <div className="grid grid-cols-4 gap-[6px] mb-3">
-                <TeamStat label="Done" val={done} fg="#4E7A4E" bg="#EEF4EE" />
-                <TeamStat label="Active" val={act} fg="#3E5C9A" bg="#EEF1F8" />
-                <TeamStat label="Wait" val={wait} fg="#C68A1E" bg="#FBF8EE" />
-                <TeamStat label="Stuck" val={stuck} fg={stuck > 0 ? "#B33A2E" : "#9A9387"} bg={stuck > 0 ? "#FFF5F4" : "#F5F2ED"} />
-              </div>
-              <div className="h-[5px] rounded-[3px] overflow-hidden mb-[5px]" style={{ background: "#F0EBE0" }}><div className="h-[5px] rounded-[3px]" style={{ background: pctColor, width: `${pct}%` }} /></div>
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] text-faint">{pct}% done</span>
-                {appr > 0 && <span className="text-[11px] font-semibold" style={{ color: "#C68A1E" }}>{appr} pending approval</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TeamStat({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
-  return <div className="text-center rounded-[9px] px-1 py-2" style={{ background: bg }}><div className="text-[9px] font-bold" style={{ color: fg }}>{label}</div><div className="text-[18px] font-bold" style={{ color: fg }}>{val}</div></div>;
-}
 
 function TaskDrawer({ t, status, me, people, colorOf, onClose, onDone, onReassign, onPatch }: {
   t: Task; status: string; me: string; people: Person[]; colorOf: (n: string) => string;

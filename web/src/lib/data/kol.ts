@@ -68,6 +68,8 @@ export interface Kol {
   actualEngagement?: number;
   contactStatus?: string;
   postingDate?: string;
+  /** Actual sales attributed to this KOL (฿) — drives the auto ROAS. */
+  revenue?: number;
   /** Who requested this KOL (the campaign side). Approval tasks route back here. */
   requester?: string;
   /** Idempotency link to the proposal approval task created on submit. */
@@ -105,6 +107,13 @@ export function kolPosts(k: Kol): KolPost[] {
 /** Sum reach + engagement across a KOL's posts. */
 export function postsTotals(posts: KolPost[]): { reach: number; engagement: number } {
   return posts.reduce((a, p) => ({ reach: a.reach + (p.reach || 0), engagement: a.engagement + (p.engagement || 0) }), { reach: 0, engagement: 0 });
+}
+
+/** Auto ROAS = attributed revenue ÷ total cost (fee + food). Falls back to the
+ *  manually-entered multiple on legacy rows that only carry `roi`. */
+export function kolRoas(k: Kol): number {
+  if (k.revenue && k.totalCost > 0) return k.revenue / k.totalCost;
+  return k.roi || 0;
 }
 
 // Canonical 9-stage lifecycle. The drawer + Status view drive off these; legacy
@@ -205,8 +214,8 @@ export function kolKpis(list: Kol[]) {
   const openComments = list.reduce((s, k) => s + k.openComments, 0);
   const fees = list.reduce((s, k) => s + k.fee, 0);
   const expReach = list.reduce((s, k) => s + k.expectedReach, 0);
-  const roiK = list.filter((k) => k.roi > 0);
-  const avgRoas = roiK.length ? roiK.reduce((s, k) => s + k.roi, 0) / roiK.length : 0;
+  const roiK = list.filter((k) => kolRoas(k) > 0);
+  const avgRoas = roiK.length ? roiK.reduce((s, k) => s + kolRoas(k), 0) / roiK.length : 0;
   const revisionRequests = list.reduce((s, k) => s + kolMetrics(k).revisionCount, 0);
   const approvedCount = list.reduce((s, k) => s + kolMetrics(k).approvedCount, 0);
   const latePosts = list.reduce((s, k) => s + kolMetrics(k).latePostCount, 0);

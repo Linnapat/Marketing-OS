@@ -2,6 +2,7 @@
 
 import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import {
   BriefKolItem, KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT, engagementRate, fmtPct,
 } from "@/lib/data/brief";
@@ -81,8 +82,19 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
       <div><label className={label}># Creator / Page</label><input value={fmt(item.count)} onChange={(e) => onChange({ count: num(e.target.value) })} className={field} placeholder="1" /></div>
       <div><label className={label}>Follower / page</label><input value={fmt(item.followers)} onChange={(e) => onChange({ followers: num(e.target.value) })} className={field} placeholder="100,000" /></div>
       <div><label className={label}>Reach / page</label><input value={fmt(item.expectedReach)} onChange={(e) => onChange({ expectedReach: num(e.target.value) })} className={field} placeholder="50,000" /></div>
+      <div>
+        <label className={label}>Total Reach <span className="text-faint font-normal">· Page × Reach/page</span></label>
+        <div className={`${field} bg-surface text-ink font-bold flex items-center`}>{fmt(Math.max(1, item.count || 1) * (item.expectedReach || 0)) || "—"}</div>
+      </div>
       <div><label className={label}>Budget</label><input value={fmt(item.budget)} onChange={(e) => onChange({ budget: num(e.target.value), monthly: [] })} className={field} placeholder="฿" /></div>
-      <div><label className={label}>Branch / Area</label><select value={item.area} onChange={(e) => onChange({ area: e.target.value })} className={field}><option value="">—</option>{branches.map((br) => <option key={br}>{br}</option>)}</select></div>
+      <div>
+        <label className={label}>Branch / Area <span className="text-faint font-normal">· เลือกได้หลายสาขา</span></label>
+        <MultiSelectDropdown
+          options={branches}
+          selected={item.area ? item.area.split(",").map((s) => s.trim()).filter(Boolean) : []}
+          onChange={(next) => onChange({ area: next.join(", ") })}
+        />
+      </div>
       {monthKeys.length > 0 && (
         <div className="md:col-span-3 rounded-[12px] border border-line2 bg-surface p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -94,16 +106,18 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
               {fmt(monthlyRows.reduce((sum, row) => sum + row.pages, 0)) || "0"} page · ฿{monthlyRows.reduce((sum, row) => sum + row.budget, 0).toLocaleString("en-US")}
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <div className="grid min-w-max gap-2" style={{ gridTemplateColumns: `repeat(${monthKeys.length}, minmax(118px, 1fr))` }}>
-              {monthlyRows.map((row) => (
-                <div key={row.month} className="rounded-[10px] border border-line3 bg-ivory p-2">
-                  <div className="mb-1 text-[10.5px] font-extrabold text-faint">{row.month}</div>
-                  <input value={fmt(row.pages)} onChange={(e) => setMonthly(row.month, { pages: num(e.target.value) })} className="mb-1 w-full rounded-[8px] border border-line2 bg-white px-2 py-1.5 text-[12px] outline-none" placeholder="pages" />
-                  <input value={fmt(row.budget)} onChange={(e) => setMonthly(row.month, { budget: num(e.target.value) })} className="w-full rounded-[8px] border border-line2 bg-white px-2 py-1.5 text-[12px] outline-none" placeholder="budget" />
-                </div>
-              ))}
+          {/* One row per month (Excel-style): Month | Pages | Budget */}
+          <div className="rounded-[10px] border border-line3 overflow-hidden">
+            <div className="grid bg-ivory px-3 py-[6px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "1fr 1fr 1.2fr" }}>
+              <span>Month</span><span>Pages</span><span>Budget (฿)</span>
             </div>
+            {monthlyRows.map((row) => (
+              <div key={row.month} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[5px]" style={{ gridTemplateColumns: "1fr 1fr 1.2fr" }}>
+                <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
+                <input value={fmt(row.pages)} onChange={(e) => setMonthly(row.month, { pages: num(e.target.value) })} className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
+                <input value={fmt(row.budget)} onChange={(e) => setMonthly(row.month, { budget: num(e.target.value) })} className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
+              </div>
+            ))}
           </div>
         </div>
       )}

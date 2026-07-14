@@ -9,7 +9,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandName, BRANDS } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  DESIGNERS, graphicKpis, graphicNeedsAttention, emptyDeliverable,
+  DESIGNERS, graphicKpis, emptyDeliverable,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic } from "@/lib/db/graphic";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
@@ -27,7 +27,6 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
@@ -75,7 +74,6 @@ export default function GraphicPage() {
 
   const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
   const kpi = graphicKpis(items);
-  const attention = graphicNeedsAttention(items);
 
   const KPIS: { label: string; value: number; tone?: string; dark?: boolean }[] = [
     { label: "Total", value: kpi.total },
@@ -101,10 +99,24 @@ export default function GraphicPage() {
         <CampaignCommandBar
           action={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>}
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-[13px] font-semibold text-faint">
-                {items.length} requests in view · shared with campaign, content, and approval checkpoints
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="flex items-center gap-[7px]">
+                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
+                  <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
+                    {brandVisibility.allowAll && <option value="all">All Brands</option>}
+                    {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                  </select>
+                </label>
+                <label className="flex items-center gap-[7px]">
+                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
+                  <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
+                    <option value="all">All</option>
+                    {DESIGNERS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </label>
+                <span className="text-[12px] font-semibold text-faint">{items.length} requests in view</span>
               </div>
               <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }]} />
             </div>
@@ -121,7 +133,7 @@ export default function GraphicPage() {
             boxShadow: "0 18px 44px rgba(180, 132, 33, 0.20)",
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="flex flex-wrap items-center gap-2">
             {[
               { ...KPIS[0], emoji: "🎨" },
               { ...KPIS[1], emoji: "🛠️" },
@@ -129,66 +141,14 @@ export default function GraphicPage() {
               { ...KPIS[3], emoji: "🔁" },
               { ...KPIS[4], emoji: "✅" },
             ].map((k) => (
-              <div key={k.label} className="rounded-[20px] border px-4 py-4 bg-white/55" style={{ borderColor: "#D9B86A" }}>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-[#8A6930] font-extrabold">
-                  {k.emoji} {k.label}
-                </div>
-                <div className="mt-3 text-[28px] leading-none font-extrabold text-[#2F2413]">{k.value}</div>
-                <div className="mt-2 text-[11px] font-semibold text-[#70552B]">
-                  {k.label === "Total" ? "All open design requests in this view" :
-                    k.label === "In Progress" ? "Currently being worked on" :
-                      k.label === "Waiting Feedback" ? "Waiting for comment or approval" :
-                        k.label === "Revisions" ? "Requested changes still in loop" :
-                          "Ready and approved to move forward"}
-                </div>
-              </div>
+              <span key={k.label} className="inline-flex items-center gap-2 rounded-pill border px-3 py-[6px] bg-white/55" style={{ borderColor: "#D9B86A" }}>
+                <span className="text-[10.5px] uppercase tracking-[0.06em] text-[#8A6930] font-extrabold">{k.emoji} {k.label}</span>
+                <span className="text-[15px] leading-none font-extrabold text-[#2F2413]">{k.value}</span>
+              </span>
             ))}
           </div>
         </ModuleSummaryCard>
-
-        <FilterBar>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-4 flex-wrap">
-              <label className="flex items-center gap-[7px]">
-                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
-                <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
-                  {brandVisibility.allowAll && <option value="all">All Brands</option>}
-                  {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-                </select>
-              </label>
-              <label className="flex items-center gap-[7px]">
-                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
-                <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
-                  <option value="all">All</option>
-                  {DESIGNERS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Creative leader assigns later</span>
-              <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">Revision tracking on</span>
-            </div>
-          </div>
-        </FilterBar>
       </div>
-
-      {/* Needs Attention */}
-      {attention.length > 0 && (
-        <div className="mt-4 bg-status-goldBg border border-accent-border rounded-cardLg p-4">
-          <div className="text-[12px] font-bold text-status-gold mb-3">⚠ Needs Attention · {attention.length}</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {attention.map((g) => (
-              <button key={g.id} onClick={() => setDrawer({ g, tab: g.openFb > 0 ? "feedback" : "overview" })} className="flex items-center gap-3 text-left bg-surface rounded-card px-3 py-2 hover:bg-ivory">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold truncate">{g.title}</div>
-                  <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.campaign}</div>
-                </div>
-                <span className="text-[11px] font-semibold text-status-gold flex-shrink-0">{g.isOverdue ? "⚠ Overdue" : !g.briefComplete ? "Brief incomplete" : `💬 ${g.openFb} open`}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="mt-5">
         {view === "board" ? <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} /> : <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}

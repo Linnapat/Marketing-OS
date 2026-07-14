@@ -15,7 +15,6 @@ import { fetchExpenses, fetchExpenseRequests, ExpenseReq, ExpenseLogRow } from "
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
@@ -58,7 +57,6 @@ export default function ExpensesPage() {
     unpaidTotal: filteredSpending.filter((r) => r.status === "Unpaid").reduce((sum, row) => sum + row.amount + (row.vat || 0), 0),
     spendingTotal: filteredSpending.reduce((sum, row) => sum + row.amount + (row.vat || 0), 0),
   }), [filteredRequests, filteredSpending]);
-  const graphMax = Math.max(summary.requestCount, summary.waitingApproval, summary.unpaidTotal, summary.spendingTotal, 1);
 
   // Export what the page actually shows: real DB rows, current brand + period.
   const exportCsv = async () => {
@@ -93,11 +91,9 @@ export default function ExpensesPage() {
             <Download size={13} /> Export CSV
           </button>}
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-[13px] font-semibold text-faint">
-                One place for request intake, vouchers, and spending follow-up
-              </div>
+              <BrandFilter value={brand} onChange={setBrand} />
               <Segmented value={tab} onChange={setTab} options={[{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]} />
             </div>
             <DateFilterBar value={date} onChange={setDate} />
@@ -113,58 +109,20 @@ export default function ExpensesPage() {
             boxShadow: "0 16px 40px rgba(108, 92, 231, 0.08)",
           }}
         >
-          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
-              {[
-                { label: "Requests in view", value: summary.requestCount, note: "Current brand + date filters" },
-                { label: "Waiting approval", value: summary.waitingApproval, note: "Needs approver action" },
-                { label: "Unpaid spending", value: baht(summary.unpaidTotal), note: "Approved but not marked paid" },
-                { label: "Spend logged", value: baht(summary.spendingTotal), note: "Actual spending in the log" },
-              ].map((item) => (
-                <div key={item.label} className="rounded-[20px] border px-4 py-4 bg-[#F4F0FF]" style={{ borderColor: "#DDD1FF" }}>
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-[#7D72B4] font-extrabold">{item.label}</div>
-                  <div className="mt-3 text-[28px] leading-none font-extrabold text-[#2E2755]">{item.value}</div>
-                  <div className="mt-2 text-[11px] text-[#7D778F]">{item.note}</div>
-                </div>
-              ))}
-            </div>
-            <div className="rounded-[20px] border px-4 py-4 bg-[#F8F5FF]" style={{ borderColor: "#E4DAFF" }}>
-              <div className="text-[11px] uppercase tracking-[0.08em] text-[#7D72B4] font-extrabold mb-4">Cash flow glance 📊</div>
-              <div className="flex flex-col gap-4">
-                {[
-                  { label: "Requests", value: summary.requestCount, display: String(summary.requestCount), color: "#8B7BFF" },
-                  { label: "Waiting", value: summary.waitingApproval, display: String(summary.waitingApproval), color: "#B59CFF" },
-                  { label: "Unpaid", value: summary.unpaidTotal, display: baht(summary.unpaidTotal, { compact: true }), color: "#C5B2FF" },
-                  { label: "Logged", value: summary.spendingTotal, display: baht(summary.spendingTotal, { compact: true }), color: "#6C5CE7" },
-                ].map((item) => (
-                  <div key={item.label}>
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <span className="text-[12px] font-bold text-[#4A4373]">{item.label}</span>
-                      <span className="text-[12px] font-extrabold" style={{ color: item.color }}>{item.display}</span>
-                    </div>
-                    <div className="h-[10px] rounded-full bg-white overflow-hidden border border-[#E4DAFF]">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${Math.max(8, Math.round((item.value / graphMax) * 100))}%`, background: item.color }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { label: "Requests in view", value: String(summary.requestCount) },
+              { label: "Waiting approval", value: String(summary.waitingApproval) },
+              { label: "Unpaid spending", value: baht(summary.unpaidTotal, { compact: true }) },
+              { label: "Spend logged", value: baht(summary.spendingTotal, { compact: true }) },
+            ].map((item) => (
+              <span key={item.label} className="inline-flex items-center gap-2 rounded-pill border px-3 py-[6px] bg-[#F4F0FF]" style={{ borderColor: "#DDD1FF" }}>
+                <span className="text-[10.5px] uppercase tracking-[0.06em] text-[#7D72B4] font-extrabold">{item.label}</span>
+                <span className="text-[15px] leading-none font-extrabold text-[#2E2755]">{item.value}</span>
+              </span>
+            ))}
           </div>
         </ModuleSummaryCard>
-
-        <FilterBar>
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <BrandFilter value={brand} onChange={setBrand} />
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Voucher preview included</span>
-              <span className="rounded-pill bg-[#EAF8EE] px-3 py-[7px] font-bold text-[#4BA06B]">Requester signature ready</span>
-              <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">Approval flow unchanged</span>
-            </div>
-          </div>
-        </FilterBar>
       </div>
 
       <div className="mt-5">

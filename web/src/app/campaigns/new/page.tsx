@@ -325,6 +325,7 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
 }) {
   const [helperReach, setHelperReach] = useState("");
   const [helperCv, setHelperCv] = useState("3");
+  const [helperOpen, setHelperOpen] = useState(true);
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
   const errBorder = { borderColor: "#B33A2E", background: "#FFF7F6" };
   const errText = "text-[11px] text-status-red font-semibold mt-1";
@@ -402,34 +403,38 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
           )}
         </div>
 
-        <div className="md:col-span-2 rounded-[16px] border border-line2 bg-[#FFFDF7] p-4">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <div className="text-[12.5px] font-extrabold text-ink">CPR Helper</div>
-              <div className="text-[11px] text-faint">สูตร: Reach × %CV = Estimated Visit · CPR (THB) = Budget ÷ Reach</div>
+        <div className="md:col-span-2 rounded-[12px] border border-line2 bg-[#FFFDF7] px-3 py-2">
+          <button type="button" onClick={() => setHelperOpen((o) => !o)} className="w-full flex flex-wrap items-center justify-between gap-2 text-left">
+            <span className="flex items-baseline gap-2">
+              <span className="text-[11px] text-muted">{helperOpen ? "⌄" : "›"}</span>
+              <span className="text-[12px] font-bold text-ink">CPR Helper</span>
+              <span className="text-[11px] text-faint">สูตร: Reach × %CV = Estimated Visit · CPR (THB) = Budget ÷ Reach</span>
+            </span>
+            <span className="rounded-pill bg-[#F2EEFF] px-2.5 py-[3px] text-[10px] font-bold text-[#6C5CE7]">Overview planning</span>
+          </button>
+          {helperOpen && (
+            <div className="mt-2 grid gap-2 md:grid-cols-[1fr_.8fr_1fr_1fr_1fr]">
+              {/* Inputs and derived cards share one label + value type scale */}
+              <label>
+                <span className="mb-1 block text-[11px] font-bold text-muted">Target Reach</span>
+                <input value={helperReach} onChange={(e) => setHelperReach(e.target.value)} className="w-full text-[13px] font-bold px-[10px] py-[6px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="100,000" />
+              </label>
+              <label>
+                <span className="mb-1 block text-[11px] font-bold text-muted">%CV to Visit</span>
+                <input value={helperCv} onChange={(e) => setHelperCv(e.target.value)} className="w-full text-[13px] font-bold px-[10px] py-[6px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="3" />
+              </label>
+              {[
+                ["Budget base", baht(effectiveBriefBudget(brief), { compact: true })],
+                ["Estimated Visit", estimatedVisits ? estimatedVisits.toLocaleString("en-US") : "—"],
+                ["CPR (THB)", reachGoal ? `฿${cpr.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"],
+              ].map(([labelText, value]) => (
+                <div key={labelText}>
+                  <span className="mb-1 block text-[11px] font-bold text-muted">{labelText}</span>
+                  <div className="w-full text-[13px] font-bold px-[10px] py-[6px] rounded-[9px] border border-line2 bg-surface text-ink">{value}</div>
+                </div>
+              ))}
             </div>
-            <span className="rounded-pill bg-[#F2EEFF] px-3 py-1 text-[10.5px] font-extrabold text-[#6C5CE7]">Overview planning</span>
-          </div>
-          <div className="grid gap-2 md:grid-cols-[1fr_.8fr_1fr_1fr_1fr]">
-            <label>
-              <span className="mb-1 block text-[11px] font-bold text-muted">Target Reach</span>
-              <input value={helperReach} onChange={(e) => setHelperReach(e.target.value)} className={field} placeholder="100,000" />
-            </label>
-            <label>
-              <span className="mb-1 block text-[11px] font-bold text-muted">%CV to Visit</span>
-              <input value={helperCv} onChange={(e) => setHelperCv(e.target.value)} className={field} placeholder="3" />
-            </label>
-            {[
-              ["Budget base", baht(effectiveBriefBudget(brief), { compact: true })],
-              ["Estimated Visit", estimatedVisits ? estimatedVisits.toLocaleString("en-US") : "—"],
-              ["CPR (THB)", reachGoal ? `฿${cpr.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"],
-            ].map(([labelText, value]) => (
-              <div key={labelText} className="rounded-[12px] border border-line2 bg-surface px-3 py-2">
-                <div className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-faint">{labelText}</div>
-                <div className="mt-1 text-[14px] font-extrabold text-ink">{value}</div>
-              </div>
-            ))}
-          </div>
+          )}
         </div>
 
         {/* Dates */}
@@ -705,71 +710,72 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· รวม KOL อัตโนมัติ</span></label>
           <input value={brief.budget.total || ""} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
         </div>
+        {/* Compact Excel-style rows — dense grid, no bulky cards */}
         {campaignMonths.length > 0 && (
-          <div className="mb-5 rounded-[14px] border border-line2 p-4" style={{ background: "#F8F6FF" }}>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <div>
-                <div className="text-[12.5px] font-bold text-ink">Monthly Budget Plan</div>
-                <div className="text-[11px] text-faint">แบ่งงบตามเดือนจริงของแคมเปญ เพื่อเทียบกับ Budget Google Sheet รายเดือน</div>
-              </div>
-              <button type="button" onClick={splitMonthlyEqually} className="rounded-[9px] border border-line2 bg-surface px-3 py-2 text-[11.5px] font-bold text-accent">Split equally</button>
+          <div className="mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div className="text-[12px] font-bold text-ink">Monthly Budget Plan <span className="text-[10.5px] text-faint font-normal">· เทียบกับ Budget Google Sheet รายเดือน</span></div>
+              <button type="button" onClick={splitMonthlyEqually} className="rounded-[8px] border border-line2 bg-surface px-2.5 py-1 text-[11px] font-bold text-accent">Split equally</button>
             </div>
-            <div className="overflow-x-auto rounded-[12px] border border-line2 bg-white">
-              <div className="grid min-w-max overflow-hidden" style={{ gridTemplateColumns: `repeat(${monthlyRows.length}, minmax(112px, 1fr))` }}>
-                {monthlyRows.map((row) => (
-                  <label key={row.month} className="border-r border-line3 p-2 last:border-r-0">
-                    <span className="mb-1 block text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint">{row.month}</span>
-                    <input
-                      value={row.amount || ""}
-                      onChange={(e) => setMonthly(row.month, num(e.target.value))}
-                      className="w-full rounded-[8px] border border-line2 bg-surface px-2 py-1.5 text-[12px] font-bold text-ink outline-none"
-                      placeholder="฿"
-                    />
-                  </label>
-                ))}
+            <div className="rounded-[10px] border border-line2 overflow-hidden">
+              <div className="grid bg-ivory px-3 py-[5px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
+                <span>Month</span><span>Budget (฿)</span>
               </div>
-            </div>
-            <div className="mt-3 text-[11.5px] font-semibold" style={{ color: monthlyTotal === brief.budget.total ? "#4E7A4E" : "#B33A2E" }}>
-              รวมรายเดือน {baht(monthlyTotal, { compact: true })} / Campaign {baht(brief.budget.total, { compact: true })}{monthlyTotal === brief.budget.total ? " ✓" : " ⚠ ต้องตรงกัน"}
+              {monthlyRows.map((row) => (
+                <div key={row.month} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
+                  <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
+                  <input value={row.amount || ""} onChange={(e) => setMonthly(row.month, num(e.target.value))}
+                    className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] font-bold text-ink outline-none" placeholder="฿" />
+                </div>
+              ))}
+              <div className="grid items-center gap-2 border-t border-line2 bg-ivory px-3 py-[5px] text-[11.5px] font-bold" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
+                <span>รวมรายเดือน</span>
+                <span style={{ color: monthlyTotal === brief.budget.total ? "#4E7A4E" : "#B33A2E" }}>
+                  {baht(monthlyTotal, { compact: true })} / {baht(brief.budget.total, { compact: true })}{monthlyTotal === brief.budget.total ? " ✓" : " ⚠ ต้องตรงกัน"}
+                </span>
+              </div>
             </div>
           </div>
         )}
-        <div className="grid md:grid-cols-3 gap-3">
-          {/* KOL — read-only, synced */}
-          <div>
-            <label className={label}>KOL Budget <span className="text-faint font-normal">· auto</span></label>
-            <div className="flex items-center gap-2">
-              <input value={baht(kolBudget)} readOnly disabled className={`${field} bg-line4 cursor-not-allowed opacity-80`} />
-            </div>
-            <button onClick={onEditKol} className="mt-[6px] text-[11.5px] font-bold text-accent">Edit in KOL Plan →</button>
+
+        {/* Allocation buckets + Ads platforms — one dense table */}
+        <div className="rounded-[10px] border border-line2 overflow-hidden">
+          <div className="grid bg-ivory px-3 py-[5px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+            <span>Item</span><span>Amount (฿)</span><span></span>
+          </div>
+          <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+            <span className="text-[12px] font-semibold text-ink">KOL Budget <span className="text-[10px] text-faint">· auto</span></span>
+            <input value={baht(kolBudget)} readOnly disabled className="w-full rounded-[7px] border border-line2 bg-line4 px-2 py-1 text-[12px] outline-none cursor-not-allowed opacity-80" />
+            <button onClick={onEditKol} className="text-[11px] font-bold text-accent text-left">Edit in KOL Plan →</button>
           </div>
           {otherBuckets.map(([lbl, key]) => (
-            <div key={key}><label className={label}>{lbl}</label><input value={(brief.budget[key] as number) || ""} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)} className={field} placeholder="฿" /></div>
+            <div key={key} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+              <span className="text-[12px] font-semibold text-ink">{lbl}</span>
+              <input value={(brief.budget[key] as number) || ""} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)}
+                className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
+              <span></span>
+            </div>
           ))}
-        </div>
-
-        {/* Ads Budget total sits right next to its per-platform breakdown */}
-        <div className="mt-5 rounded-[12px] border border-line2 p-4" style={{ background: "#FBF9F4" }}>
-          <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-            <div>
-              <label className={label}>Ads Budget (total)</label>
-              <input value={brief.budget.ads || ""} onChange={(e) => setB({ ads: num(e.target.value) })} className={`${field} max-w-[220px]`} placeholder="฿" />
-            </div>
-            <div className="text-[12px] font-semibold" style={{ color: bs.adsMismatch ? "#B33A2E" : "#4E7A4E" }}>
-              รวมตาม platform: {baht(bs.adsAllocated, { compact: true })}{bs.adsMismatch ? " ⚠ ไม่ตรงกับงบรวม" : " ✓"}
-            </div>
+          <div className="grid items-center gap-2 border-t border-line2 bg-[#FBF9F4] px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+            <span className="text-[12px] font-bold text-ink">Ads Budget (total)</span>
+            <input value={brief.budget.ads || ""} onChange={(e) => setB({ ads: num(e.target.value) })}
+              className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] font-bold outline-none" placeholder="฿" />
+            <span className="text-[10.5px] font-semibold" style={{ color: bs.adsMismatch ? "#B33A2E" : "#4E7A4E" }}>
+              platform รวม {baht(bs.adsAllocated, { compact: true })}{bs.adsMismatch ? " ⚠" : " ✓"}
+            </span>
           </div>
-          <div className="text-[12.5px] font-bold text-muted mb-2">Ads Budget by Platform</div>
-          <div className="flex flex-col gap-2">
-            {brief.budget.adsByPlatform.map((a, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <select value={a.platform} onChange={(e) => setAds(i, { platform: e.target.value })} className={`${field} max-w-[220px]`}>{ADS_PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
-                <input value={a.amount || ""} onChange={(e) => setAds(i, { amount: num(e.target.value) })} className={`${field} max-w-[160px]`} placeholder="฿" />
-                <button onClick={() => rmAds(i)} className="w-8 h-8 rounded-[8px] border border-line2 bg-surface flex items-center justify-center text-status-red flex-shrink-0"><X size={14} /></button>
-              </div>
-            ))}
+          {brief.budget.adsByPlatform.map((a, i) => (
+            <div key={i} className="grid items-center gap-2 border-t border-line4 bg-[#FBF9F4] px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+              <select value={a.platform} onChange={(e) => setAds(i, { platform: e.target.value })}
+                className="ml-4 w-full rounded-[7px] border border-line2 bg-white px-2 py-1 text-[12px] outline-none">{ADS_PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
+              <input value={a.amount || ""} onChange={(e) => setAds(i, { amount: num(e.target.value) })}
+                className="w-full rounded-[7px] border border-line2 bg-white px-2 py-1 text-[12px] outline-none" placeholder="฿" />
+              <button onClick={() => rmAds(i)} className="w-6 h-6 rounded-[7px] border border-line2 bg-white flex items-center justify-center text-status-red flex-shrink-0"><X size={12} /></button>
+            </div>
+          ))}
+          <div className="border-t border-line4 bg-[#FBF9F4] px-3 py-[5px]">
+            <button onClick={addAds} className="flex items-center gap-1 text-[11.5px] font-bold text-accent ml-4"><Plus size={12} /> Add platform</button>
           </div>
-          <button onClick={addAds} className="mt-2 flex items-center gap-1 text-[12px] font-bold text-accent"><Plus size={13} /> Add platform</button>
         </div>
       </Panel>
 

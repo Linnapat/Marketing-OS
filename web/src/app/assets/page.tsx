@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
@@ -10,10 +9,10 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
 import { fetchAssets, createAsset } from "@/lib/db/assets";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
+import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 
@@ -148,10 +147,23 @@ export default function AssetLibraryPage() {
           action={<button onClick={() => setUploadOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Upload Asset</button>}
         >
           <div className="flex flex-col gap-3">
-            <div className="text-[13px] font-semibold text-faint">
-              {tab === "library"
-                ? `${rows.length} assets in view · final artwork, versions, and Drive / Canva links per campaign`
-                : `${portfolioRows.length} portfolio items in view · brand references, cases, and reusable examples`}
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-[7px]">
+                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
+                <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
+                  {brandVisibility.allowAll && <option value="all">All Brands</option>}
+                  {brandOptions.map((id) => <option key={id} value={id}>{brandVisibility.brandNames[id] ?? brandName(id)}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-[7px]">
+                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Type</span>
+                <select value={type} onChange={(e) => setType(e.target.value)} style={SELECT_STYLE}>
+                  {TYPES.map((t) => <option key={t} value={t}>{t === "all" ? "All types" : t}</option>)}
+                </select>
+              </label>
+              <span className="text-[12px] font-semibold text-faint">
+                {tab === "library" ? `${rows.length} assets in view` : `${portfolioRows.length} portfolio items in view`}
+              </span>
             </div>
             <div className="inline-flex w-fit rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px]">
               {[
@@ -190,20 +202,6 @@ export default function AssetLibraryPage() {
             ))}
           </div>
         </ModuleSummaryCard>
-
-        <FilterBar>
-          <div className="flex flex-col gap-4">
-            <BrandFilter value={brand} onChange={setBrand} />
-            <div className="flex items-center gap-[7px] flex-wrap">
-              <span className="text-[11px] font-bold text-faint tracking-[0.05em] uppercase">Type</span>
-              {TYPES.map((t) => {
-                const active = t === type;
-                return <button key={t} onClick={() => setType(t)} className="text-[12px] px-[12px] py-[7px] rounded-pill whitespace-nowrap transition"
-                  style={active ? { fontWeight: 700, background: "#6C5CE7", color: "#fff", boxShadow: "0 10px 24px rgba(108, 92, 231, 0.22)" } : { fontWeight: 600, border: "1px solid #ECEAF2", color: "#6E6879", background: "#fff" }}>{t === "all" ? "All types" : t}</button>;
-              })}
-            </div>
-          </div>
-        </FilterBar>
       </div>
 
       {tab === "library" ? (
