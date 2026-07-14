@@ -12,25 +12,58 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
+import { DateFilter, rangeOverlapFraction } from "@/components/ui/DateFilterBar";
 
 // ── Finance ────────────────────────────────────────────────────────────────
+// Three distinct layers of money — never mix them:
+//   Plan      = budget approved for a campaign (c.budget). Not a transaction.
+//   Committed = plan-time allocation reserved across buckets (c.spend).
+//               Money earmarked, NOT yet spent — never shown as expense.
+//   Expense   = only approved/paid expense requests. The single source for
+//               P&L Expense → Gross Profit → ROI/ROAS (same rule as Dashboard).
 export interface FinanceView {
   totalPlan: number;
   committed: number;
+  actualSpend: number;
   available: number;
   byBrand: BudgetBrand[];
   byCategory: { name: string; amount: number }[];
   pnl: PnlRow[];
 }
 
-export function financeFromDb(campaigns: CampaignRow[], reqs: RequestRow[]): FinanceView {
-  const totalPlan = campaigns.reduce((s, c) => s + (c.budget || 0), 0);
-  const committed = campaigns.reduce((s, c) => s + (c.spend || 0), 0);
+const isSpentReq = (status: string) => /approved|paid/i.test(status);
+
+/** When `period` is given, campaigns are limited to those overlapping it and
+ *  their fixed budgets/allocations are pro-rated by day overlap (a Jun 1–Jul 15
+ *  campaign contributes 15/45 of its budget to July). Callers should pass
+ *  `reqs` already filtered to the same period. */
+export function financeFromDb(campaigns: CampaignRow[], reqs: RequestRow[], period?: DateFilter): FinanceView {
+  const inPeriod = campaigns
+    .map((c) => ({ c, f: period ? rangeOverlapFraction(period, c.dates) : 1 }))
+    .filter((x) => x.f > 0);
+
+  const totalPlan = inPeriod.reduce((s, x) => s + Math.round((x.c.budget || 0) * x.f), 0);
+  const committed = inPeriod.reduce((s, x) => s + Math.round((x.c.spend || 0) * x.f), 0);
+
+  // Actual expense per campaign — allocating a plan is never an expense; money
+  // must clear approval before it hits the P&L.
+  const spentByCampaign = new Map<string, number>();
+  let actualSpend = 0;
+  for (const r of reqs) {
+    if (!isSpentReq(r.status)) continue;
+    const amt = r.approved || r.requested || 0;
+    spentByCampaign.set(r.campaign, (spentByCampaign.get(r.campaign) || 0) + amt);
+    actualSpend += amt;
+  }
 
   const byBrand: BudgetBrand[] = BRAND_ORDER
     .map((b) => {
-      const cs = campaigns.filter((c) => c.b === b);
-      return { b, plan: cs.reduce((s, c) => s + (c.budget || 0), 0), spent: cs.reduce((s, c) => s + (c.spend || 0), 0) };
+      const cs = inPeriod.filter((x) => x.c.b === b);
+      return {
+        b,
+        plan: cs.reduce((s, x) => s + Math.round((x.c.budget || 0) * x.f), 0),
+        spent: cs.reduce((s, x) => s + Math.round((x.c.spend || 0) * x.f), 0),
+      };
     })
     .filter((x) => x.plan > 0 || x.spent > 0);
 
@@ -40,15 +73,15 @@ export function financeFromDb(campaigns: CampaignRow[], reqs: RequestRow[]): Fin
     .map(([name, amount]) => ({ name, amount }))
     .sort((a, b) => b.amount - a.amount);
 
-  // P&L per campaign — roi drives revenue (0 until results are entered, so this
-  // shows real zeros rather than fabricated numbers).
-  const pnl: PnlRow[] = campaigns.map((c) => {
-    const expense = c.spend || 0;
+  // P&L per campaign — expense is real approved spend (0 until a request is
+  // approved, so a freshly-allocated campaign shows GP 0, not −budget).
+  const pnl: PnlRow[] = inPeriod.map(({ c, f }) => {
+    const expense = spentByCampaign.get(c.name) || 0;
     const roi = c.roi || 0;
-    return { name: c.name, b: c.b, revenue: Math.round(expense * roi), budget: c.budget || 0, expense, roi, roas: roi };
+    return { name: c.name, b: c.b, revenue: Math.round(expense * roi), budget: Math.round((c.budget || 0) * f), expense, roi, roas: roi };
   });
 
-  return { totalPlan, committed, available: totalPlan - committed, byBrand, byCategory, pnl };
+  return { totalPlan, committed, actualSpend, available: totalPlan - committed, byBrand, byCategory, pnl };
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

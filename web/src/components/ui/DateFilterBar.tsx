@@ -86,6 +86,28 @@ export function rangeInFilter(f: DateFilter, range?: string | null): boolean {
   return s.getTime() <= we && e.getTime() >= ws;
 }
 
+/** Fraction (0–1) of a date-range row's days that fall inside the selected
+ *  period — for pro-rating a fixed campaign budget into a month/year/range
+ *  (e.g. "Jun 1 – Jul 15" → July gets 15/45 of the budget). Rows with no
+ *  parseable start count in full so budgets never silently vanish. */
+export function rangeOverlapFraction(f: DateFilter, range?: string | null): number {
+  const [startV, endV] = (range ?? "").split(/[–—-]/).map((s) => s.trim());
+  const s = parseRowDate(startV);
+  if (!s) return 1;
+  const e = parseRowDate(endV) ?? s;
+  const day = 86400000;
+  const s0 = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
+  const e0 = new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime();
+  if (e0 < s0) return 0;
+  const [ws, we] = filterWindow(f);
+  const total = Math.round((e0 - s0) / day) + 1;
+  const oStart = Math.max(s0, ws);
+  const oEnd = Math.min(e0, we);
+  if (oEnd < oStart) return 0;
+  const overlap = Math.floor((oEnd - oStart) / day) + 1;
+  return Math.min(1, overlap / total);
+}
+
 /** Month keys (YYYY-MM) covered by the selected period — for monthly budgets. */
 export function filterMonthKeys(f: DateFilter): string[] {
   if (f.mode === "month") return [`${f.year}-${String(f.month + 1).padStart(2, "0")}`];

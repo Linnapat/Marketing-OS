@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Download, ExternalLink, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { notify } from "@/lib/notify";
@@ -107,7 +107,7 @@ export default function FinancePage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const { can } = useRole();
   // Budget + P&L derive from real campaigns / expense requests (empty on a fresh DB).
-  const [fin, setFin] = useState<FinanceView | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [reqs, setReqs] = useState<ExpenseReq[]>([]);
   const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
@@ -140,7 +140,7 @@ export default function FinancePage() {
   useEffect(() => {
     let alive = true;
     Promise.all([fetchCampaigns(), fetchExpenseRequests(), fetchAllBriefs()])
-      .then(([c, r, b]) => { if (alive) { setFin(financeFromDb(c, r)); setCampaigns(c); setReqs(r); setBriefs(b); } })
+      .then(([c, r, b]) => { if (alive) { setCampaigns(c); setReqs(r); setBriefs(b); setLoaded(true); } })
       .catch(() => {});
     getAppSetting("budget_sheet_url").then((u) => {
       if (alive && u) { setSheetUrl(u); loadSheet(u); }
@@ -165,7 +165,8 @@ export default function FinancePage() {
         rows.map((r) => [label, r.category, r.budget, r.requested, r.approved, r.budget - r.approved]),
       ));
     } else {
-      const pnl = (fin?.pnl ?? []).filter((p) => brand === "all" || p.b === brand);
+      const periodReqs = reqs.filter((r) => inDateFilter(period, r.createdAt));
+      const pnl = financeFromDb(campaigns, periodReqs, period).pnl.filter((p) => brand === "all" || p.b === brand);
       download("campaign-pnl.csv", buildCsv(
         ["Campaign", "Brand", "Revenue", "Budget", "Expense", "Gross Profit", "ROI", "ROAS"],
         pnl.map((p) => [p.name, brandName(p.b), p.revenue, p.budget, p.expense, p.revenue - p.expense, p.roi + "x", p.roas + "x"]),
@@ -205,7 +206,7 @@ export default function FinancePage() {
       </div>
 
       <div className="mt-5">
-        {tab === "plan" && <BudgetPlanTab brand={brand} fin={fin} reqs={reqs} briefs={briefs} period={period} setPeriod={setPeriod} />}
+        {tab === "plan" && <BudgetPlanTab brand={brand} campaigns={campaigns} loaded={loaded} reqs={reqs} briefs={briefs} period={period} setPeriod={setPeriod} />}
         {tab === "roi" && (
           <CategoryPnlTab
             brand={brand} reqs={reqs} sheetRows={sheetRows} period={period} setPeriod={setPeriod}
@@ -234,19 +235,25 @@ function NoFinanceAccess() {
 }
 
 /* ── Budget Plan: allocation + campaign-level profitability ─────────── */
-function BudgetPlanTab({ brand, fin, reqs, briefs, period, setPeriod }: {
-  brand: BrandFilterValue; fin: FinanceView | null; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief>;
+function BudgetPlanTab({ brand, campaigns, loaded, reqs, briefs, period, setPeriod }: {
+  brand: BrandFilterValue; campaigns: CampaignRow[]; loaded: boolean; reqs: ExpenseReq[]; briefs: Record<string, CampaignBrief>;
   period: PeriodFilter; setPeriod: (f: PeriodFilter) => void;
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  if (!fin) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
-  const filteredReqs = reqs.filter((r) => inDateFilter(period, r.createdAt));
+  // Everything on this tab is scoped to the selected period: campaign budgets
+  // are pro-rated by day overlap, expenses filtered by created date.
+  const filteredReqs = useMemo(() => reqs.filter((r) => inDateFilter(period, r.createdAt)), [reqs, period]);
+  const fin: FinanceView = useMemo(() => financeFromDb(campaigns, filteredReqs, period), [campaigns, filteredReqs, period]);
+  if (!loaded) return <div className="text-[13px] text-faint text-center py-12">Loading…</div>;
   const rows = fin.pnl.filter((p) => brand === "all" || p.b === brand);
   const brandAlloc = fin.byBrand
     .filter((b) => brand === "all" || b.b === brand)
     .map((b) => ({ ...b }));
   const totalPlan = brand === "all" ? fin.totalPlan : brandAlloc.reduce((sum, row) => sum + row.plan, 0);
   const committed = brandAlloc.reduce((sum, row) => sum + row.spent, 0);
+  const actualSpend = filteredReqs
+    .filter((r) => (brand === "all" || r.b === brand) && /approved|paid/i.test(r.status))
+    .reduce((s, r) => s + (r.approved || r.requested || 0), 0);
   const available = totalPlan - committed;
   const cats = budgetPlanCategories(filteredReqs, brand);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
@@ -264,18 +271,23 @@ function BudgetPlanTab({ brand, fin, reqs, briefs, period, setPeriod }: {
         trailing={brand !== "all" ? <span>กำลังแสดง Budget Plan เฉพาะ {brandName(brand)}</span> : undefined}
       />
 
-      {/* Top KPI cards */}
-      <div className="grid gap-[14px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
-        <div className="rounded-card p-[18px]" style={{ background: "#211F1C", color: "#fff" }}>
-          <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
-          <div className="text-[25px] font-bold mt-[6px]">{baht(totalPlan, { compact: true })}</div>
-          <div className="text-[11px] text-white/60 mt-1">{periodLabel}</div>
+      {/* Top KPI cards — Plan (period-scoped) → Committed (allocated, not yet
+          spent) → Actual (approved expenses only) → Available */}
+      <div className="grid gap-[10px]" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}>
+        <div className="rounded-card px-[14px] py-[11px]" style={{ background: "#211F1C", color: "#fff" }}>
+          <div className="text-[10px] tracking-[0.07em] uppercase font-bold text-accent">Total Plan</div>
+          <div className="text-[19px] font-bold mt-[3px]">{baht(totalPlan, { compact: true })}</div>
+          <div className="text-[10.5px] text-white/60 mt-[2px]">{periodLabel}</div>
         </div>
-        {([["Committed", committed], ["Available", available]] as const).map(([l, v]) => (
-          <div key={l} className="bg-surface border border-line rounded-card p-[18px]">
-            <div className="text-[11px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
-            <div className="text-[25px] font-bold mt-[6px] text-ink">{baht(v, { compact: true })}</div>
-            <div className="text-[11px] text-faint mt-1">{periodLabel}</div>
+        {([
+          ["Committed", committed, "จัดสรรให้แคมเปญ · ยังไม่จ่ายจริง"],
+          ["Actual Spend", actualSpend, "เบิกที่อนุมัติ/จ่ายแล้ว"],
+          ["Available", available, periodLabel],
+        ] as const).map(([l, v, sub]) => (
+          <div key={l} className="bg-surface border border-line rounded-card px-[14px] py-[11px]">
+            <div className="text-[10px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
+            <div className="text-[19px] font-bold mt-[3px] text-ink">{baht(v, { compact: true })}</div>
+            <div className="text-[10.5px] text-faint mt-[2px]">{sub}</div>
           </div>
         ))}
       </div>
@@ -317,7 +329,7 @@ function BudgetPlanTab({ brand, fin, reqs, briefs, period, setPeriod }: {
         </div>
       </div>
 
-      <BudgetProfitability rows={rows} open={open} setOpen={setOpen} reqs={reqs} briefs={briefs} />
+      <BudgetProfitability rows={rows} open={open} setOpen={setOpen} reqs={filteredReqs} briefs={briefs} />
     </div>
   );
 }
@@ -328,12 +340,13 @@ function BudgetProfitability({ rows, open, setOpen, reqs, briefs }: {
 }) {
   const profitGridCols = "0.4fr 2fr 1.2fr 1.1fr 1.1fr 1.1fr 0.8fr 0.8fr";
   // Real breakdown: Budget side = the campaign brief's bucket allocation;
-  // Actual side = expense requests logged against the campaign, by category.
+  // Actual side = only APPROVED/PAID expense requests — an allocation or a
+  // pending request is not yet money spent.
   const detail = (p: PnlRow) => {
     const brief = briefs[p.name];
     const planned = brief ? budgetSummary(brief).byBucket.filter((b) => b.amount > 0) : [];
     const actualByCat = new Map<string, number>();
-    for (const r of reqs.filter((r) => r.campaign === p.name)) {
+    for (const r of reqs.filter((r) => r.campaign === p.name && /approved|paid/i.test(r.status))) {
       actualByCat.set(r.category, (actualByCat.get(r.category) || 0) + (r.approved || r.requested || 0));
     }
     const labels = [...new Set([...planned.map((b) => b.label), ...actualByCat.keys()])];
