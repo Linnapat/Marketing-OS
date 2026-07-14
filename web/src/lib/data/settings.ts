@@ -34,7 +34,18 @@ export const ORG_FIELDS = [
   { label: "Date format", value: "DD/MM/YYYY" },
 ];
 
-export const BRANDS_DATA = [
+export interface BrandCfg {
+  key: string;
+  name: string;
+  color: string;
+  lead: string;
+  branches: number;
+  campaigns: number;
+  budget: string;
+  branchList: string[];
+}
+
+export const BRANDS_DATA: BrandCfg[] = [
   { key: "teppen", name: "Teppen Thailand", color: "#B33A2E", lead: "Ken S.", branches: 3, campaigns: 8, budget: "฿1.8M", branchList: ["Central World", "EmQuartier", "Siam Paragon"] },
   { key: "omakase", name: "Omakase Don", color: "#3E5C9A", lead: "Aran P.", branches: 4, campaigns: 6, budget: "฿1.2M", branchList: ["IconSiam", "Centralplaza Westgate", "The Mall", "Terminal 21"] },
   { key: "mainichi", name: "Mainichi", color: "#4E7A4E", lead: "Nok W.", branches: 2, campaigns: 5, budget: "฿0.8M", branchList: ["Emporium", "Central Rama 9"] },

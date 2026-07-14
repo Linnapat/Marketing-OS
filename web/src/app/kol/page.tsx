@@ -20,6 +20,8 @@ import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
 import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { fetchBrandConfigs } from "@/lib/db/settings";
+import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { appendBriefKolItem, syncBriefKolFromRows } from "@/lib/db/brief";
 import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
@@ -632,6 +634,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const [brandId, setBrandId] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const { member, user } = useAuth();
   const requester = member?.name || user?.email?.split("@")[0] || "You";
   // Same KOL-item template as the Campaign Builder's KOL Plan (syncs both ways).
@@ -639,15 +642,25 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const onChange = (patch: Partial<BriefKolItem>) => setItem((it) => ({ ...it, ...patch }));
   useEffect(() => {
     let alive = true;
-    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    Promise.all([fetchCampaigns(), fetchBrandConfigs()])
+      .then(([c, configs]) => {
+        if (!alive) return;
+        setCampaigns(c);
+        setBrandConfigs(configs);
+      })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
 
   useEffect(() => { if (!brandOptions.includes(brandId)) setBrandId(brandOptions[0] ?? "teppen"); }, [brandId, brandOptions]);
   const brandCampaigns = campaigns.filter((c) => c.b === brandId);
+  const branches = useMemo(() => brandConfigs.find((b) => b.key === brandId)?.branchList ?? [], [brandConfigs, brandId]);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
+  useEffect(() => {
+    if (item.area && branches.length && !branches.includes(item.area)) onChange({ area: "" });
+  }, [branches, item.area]);
 
   // Requester specifies the requirement only — the real page (and the master-DB
   // link) is proposed later by the KOL specialist, so there's no name/handle here.
@@ -709,7 +722,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <input value={requester} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
           </div>
         </div>
-        <KolItemForm item={item} onChange={onChange} hidePage />
+        <KolItemForm item={item} onChange={onChange} branches={branches} hidePage />
         <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: syncOn ? "#EEF8E8" : "#FBF6EC", borderColor: syncOn ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: syncOn ? "#3F6A34" : "#8A6D1E" }}>
             {syncOn ? "Campaign sync is on for this request" : "Campaign not selected yet — request still works, but it will not sync back to Campaign Plan"}

@@ -10,7 +10,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
-import { BRANDS_DATA } from "@/lib/data/settings";
+import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem,
   OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor,
@@ -20,6 +20,7 @@ import {
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { fetchAllBriefs, saveCampaignBrief } from "@/lib/db/brief";
+import { fetchBrandConfigs } from "@/lib/db/settings";
 import { budgetByBrandFromSheet, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
@@ -85,6 +86,7 @@ export default function NewCampaignPage() {
   const [ackWarn, setAckWarn] = useState(false);      // acknowledge unresolved warnings before Submit
   const [savedBriefs, setSavedBriefs] = useState<CampaignBrief[]>([]);
   const [budgetSheetRows, setBudgetSheetRows] = useState<Awaited<ReturnType<typeof fetchBudgetSheetRows>>>([]);
+  const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
 
   const set = <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => setBrief((b) => ({ ...b, [k]: v }));
   const nextSeq = () => { const s = seq; setSeq((x) => x + 1); return s; };
@@ -97,17 +99,24 @@ export default function NewCampaignPage() {
   }, [brandOptions, brief.b]);
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows()])
-      .then(([briefMap, sheetRows]) => {
+    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs()])
+      .then(([briefMap, sheetRows, configs]) => {
         if (!alive) return;
         setSavedBriefs(Object.values(briefMap));
         setBudgetSheetRows(sheetRows);
+        setBrandConfigs(configs);
       })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
 
-  const branches = useMemo(() => BRANDS_DATA.find((d) => d.key === brief.b)?.branchList ?? [], [brief.b]);
+  const branches = useMemo(() => brandConfigs.find((d) => d.key === brief.b)?.branchList ?? [], [brandConfigs, brief.b]);
+  useEffect(() => {
+    setBrief((b) => {
+      const nextBranches = b.branches.filter((br) => branches.includes(br));
+      return nextBranches.length === b.branches.length ? b : { ...b, branches: nextBranches, branch: nextBranches.join(", ") };
+    });
+  }, [branches]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
   const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
   const preview = useMemo(() => taskPreview(brief), [brief]);

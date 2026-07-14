@@ -14,14 +14,11 @@ import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
   WF_MODULE_LABELS, STATUS_SETS, WfModule, WfStatus, NOTIF_CHANNELS, NOTIF_TRIGGERS,
-  INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR, ROLE_OPTIONS,
+  INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR, ROLE_OPTIONS, BrandCfg,
 } from "@/lib/data/settings";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
 
-// Every branch across all brands — the scope options for a Branch Manager.
-const BRANCHES: string[] = BRANDS_DATA.flatMap((b) => b.branchList);
-const BRAND_SCOPE_BRANDS = BRANDS_DATA.map((b) => b.name.replace(/\s+Thailand$/i, ""));
 const BRAND_SCOPE_LABELS = ["All brands", "External only", "Selected brands"];
 const BRAND_SCOPE_TEXT = "Teppen · Omakase Don";
 
@@ -91,12 +88,14 @@ function BranchEditor({ branches, editable, placeholder = "branch", onChange }: 
   );
 }
 
-function BrandScopeEditor({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+function BrandScopeEditor({ value, onChange, brands }: { value: string; onChange: (next: string) => void; brands: BrandCfg[] }) {
   const normalized = normalizeScopeText(value);
   const selectedBrands = splitBrandScope(normalized);
   const isAll = normalized === "All brands";
   const isExternal = normalized === "External only";
   const branchValue = /^Branch\s*·\s*/i.test(normalized) ? normalized.replace(/^Branch\s*·\s*/i, "").trim() : "";
+  const brandScopeBrands = brands.map((b) => b.name.replace(/\s+Thailand$/i, ""));
+  const branches = [...new Set(brands.flatMap((b) => b.branchList ?? []))];
 
   return (
     <div className="flex flex-col gap-3">
@@ -122,7 +121,7 @@ function BrandScopeEditor({ value, onChange }: { value: string; onChange: (next:
           <div>
             <div className="text-[11px] font-bold text-faint mb-[6px]">เลือกหลายแบรนด์ได้</div>
             <div className="flex flex-wrap gap-2">
-              {BRAND_SCOPE_BRANDS.map((brand) => {
+              {brandScopeBrands.map((brand) => {
                 const active = selectedBrands.includes(brand) && !branchValue;
                 return (
                   <button
@@ -143,7 +142,7 @@ function BrandScopeEditor({ value, onChange }: { value: string; onChange: (next:
             <div className="text-[11px] font-bold text-faint mb-[6px]">หรือกำหนดเป็นสาขาเดียว</div>
             <select value={branchValue} onChange={(e) => onChange(e.target.value ? `Branch · ${e.target.value}` : "")} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none">
               <option value="">No branch limit</option>
-              {BRANCHES.map((br) => <option key={br} value={br}>{br}</option>)}
+              {branches.map((br) => <option key={br} value={br}>{br}</option>)}
             </select>
           </div>
         </>
@@ -372,7 +371,6 @@ export default function SettingsPage() {
   const persistApproval = () => { saveApprovalMatrix({ thresholds, rules }); setApprEdit(false); setApprDirty(false); };
 
   // Editable Brands & Branches (persisted as a JSON blob in org_settings).
-  type BrandCfg = typeof BRANDS_DATA[number];
   const [brands, setBrands] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const [brandsEdit, setBrandsEdit] = useState(false);
   const [brandsDirty, setBrandsDirty] = useState(false);
@@ -1065,7 +1063,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand visibility</label>
-                  <BrandScopeEditor value={inv.brandAccess} onChange={(brandAccess) => setInv({ ...inv, brandAccess })} />
+                  <BrandScopeEditor value={inv.brandAccess} onChange={(brandAccess) => setInv({ ...inv, brandAccess })} brands={brands} />
                 </div>
               </div>
             </div>
@@ -1118,7 +1116,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand visibility</label>
-                <BrandScopeEditor value={editUser.m.brandAccess} onChange={(brandAccess) => setEditUser((u) => u && { ...u, m: { ...u.m, brandAccess } })} />
+                <BrandScopeEditor value={editUser.m.brandAccess} onChange={(brandAccess) => setEditUser((u) => u && { ...u, m: { ...u.m, brandAccess } })} brands={brands} />
               </div>
             </div>
             <div className="flex gap-2 mt-6">

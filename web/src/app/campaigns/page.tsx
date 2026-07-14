@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -13,6 +13,8 @@ import {
   STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
 } from "@/lib/data/campaigns";
 import { fetchCampaigns, createCampaign, fetchCampaignTypes, addCampaignType } from "@/lib/db/campaigns";
+import { fetchBrandConfigs } from "@/lib/db/settings";
+import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { useRole } from "@/lib/role";
 import { DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -37,6 +39,7 @@ export default function CampaignsPage() {
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const [newOpen, setNewOpen] = useState(false);
   const defaultBrand = brandOptions[0] ?? "teppen";
   const emptyNew = { name: "", b: defaultBrand as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMP_TYPES[0] };
@@ -77,6 +80,18 @@ export default function CampaignsPage() {
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  useEffect(() => {
+    let alive = true;
+    fetchBrandConfigs().then((configs) => { if (alive) setBrandConfigs(configs); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const newCampaignBranches = useMemo(() => brandConfigs.find((b) => b.key === nc.b)?.branchList ?? [], [brandConfigs, nc.b]);
+  useEffect(() => {
+    if (nc.branch && newCampaignBranches.length && !newCampaignBranches.includes(nc.branch)) {
+      setNc((n) => ({ ...n, branch: "" }));
+    }
+  }, [nc.branch, newCampaignBranches]);
 
   const addCampaign = async () => {
     if (!nc.name.trim()) return;
@@ -316,8 +331,14 @@ export default function CampaignsPage() {
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign name <span className="text-status-red">*</span></label><input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. Wagyu Festival" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Branch</label><input value={nc.branch} onChange={(e) => setNc({ ...nc, branch: e.target.value })} placeholder="e.g. Thonglor" className={field} /></div>
+                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId, branch: "" })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandName(b)}</option>)}</select></div>
+                <div>
+                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Branch</label>
+                  <select value={nc.branch} onChange={(e) => setNc({ ...nc, branch: e.target.value })} className={field}>
+                    <option value="">{newCampaignBranches.length ? "Select branch…" : "No branches in Settings"}</option>
+                    {newCampaignBranches.map((br) => <option key={br} value={br}>{br}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Owner</label><input value={nc.owner} onChange={(e) => setNc({ ...nc, owner: e.target.value })} placeholder="Name" className={field} /></div>

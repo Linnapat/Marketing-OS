@@ -1,7 +1,7 @@
 // Data access for Settings → Users & Roles (the members table).
 
 import { supabase } from "@/lib/supabase";
-import { ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
+import { BRANDS_DATA, BrandCfg, ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
 
 export interface Member {
   name: string; email: string; role: string; access: string;
@@ -107,6 +107,14 @@ export async function saveJsonSetting<T>(key: string, label: string, value: T): 
   const db = supabase();
   if (!db) return;
   await db.from("org_settings").upsert({ key, label, value: JSON.stringify(value) });
+}
+
+export async function fetchBrandConfigs(): Promise<BrandCfg[]> {
+  const saved = await fetchJsonSetting<BrandCfg[]>("brands_config").catch(() => null);
+  if (saved?.length) {
+    return saved.map((b) => ({ ...b, branchList: [...(b.branchList ?? [])] }));
+  }
+  return BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] }));
 }
 
 /* ── Permissions matrix ─────────────────────────────────────────────── */
