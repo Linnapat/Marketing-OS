@@ -299,9 +299,11 @@ export function kolMonthlyTotals(brief: CampaignBrief): Record<string, number> {
   return out;
 }
 
-/** Return a brief whose KOL budget bucket is synced to the KOL plan sum. */
+/** Budget Allocation sets the KOL envelope (budget.kol) which syncs INTO the
+ *  KOL Plan; if the plan's items end up exceeding the envelope, the bucket
+ *  rises to the real committed sum so Finance never under-counts. */
 export function withSyncedKolBudget(brief: CampaignBrief): CampaignBrief {
-  const kol = kolBudgetTotal(brief);
+  const kol = Math.max(brief.budget.kol || 0, kolBudgetTotal(brief));
   if (brief.budget.kol === kol) return brief;
   return { ...brief, budget: { ...brief.budget, kol } };
 }
@@ -315,7 +317,9 @@ export interface BudgetSummary {
 }
 
 export function budgetSummary(brief: CampaignBrief): BudgetSummary {
-  const kol = kolBudgetTotal(brief);                    // KOL bucket is always the plan sum
+  // KOL bucket = the envelope set in Budget Allocation, raised to the KOL
+  // plan's real item sum when the plan exceeds it.
+  const kol = Math.max(brief.budget.kol || 0, kolBudgetTotal(brief));
   const bud = { ...brief.budget, kol };
   const buckets: [string, number][] = [
     ["Ads", bud.ads], ["KOL", bud.kol], ["Graphic / Production", bud.graphic],

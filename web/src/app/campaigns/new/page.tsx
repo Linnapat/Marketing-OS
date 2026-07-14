@@ -30,7 +30,7 @@ import { baht } from "@/lib/format";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 
 // Guideline sits just before Submit — a final pre-flight, not an early gate.
-const STEPS = ["Campaign Overview", "Content Plan", "KOL Plan", "Budget Allocation", "Auto Task Preview", "Guideline Checklist", "Submit"];
+const STEPS = ["Campaign Overview", "Content Plan", "Budget Allocation", "KOL Plan", "Auto Task Preview", "Guideline Checklist", "Submit"];
 // There is a single campaign approver (the CMO) — assigned automatically.
 const CMO_NAME = "Linnapat D.";
 
@@ -269,8 +269,8 @@ export default function NewCampaignPage() {
       <div className="mt-5 max-w-[900px]">
         {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
-        {step === 2 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
-        {step === 3 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(2)} />}
+        {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} />}
+        {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 4 && <Preview preview={preview} warnings={allWarnings} />}
         {step === 5 && <Guideline checklist={checklist} />}
         {step === 6 && <Submit brief={brief} errors={errors} warnings={allWarnings} ack={ackWarn} onAck={setAckWarn} checklist={checklist} />}
@@ -583,8 +583,24 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
   const dup = (id: string) => setBrief((b) => { const src = b.kols.find((k) => k.id === id); return src ? { ...b, kols: [...b.kols, { ...src, id: `kr-${nextSeq()}` }] } : b; });
   const rm = (id: string) => setBrief((b) => ({ ...b, kols: b.kols.filter((k) => k.id !== id) }));
 
+  // Envelope from Budget Allocation (previous step) — the KOL plan draws it down.
+  const envelope = brief.budget.kol || 0;
+  const planned = kolBudgetTotal(brief);
+  const remaining = envelope - planned;
   return (
-    <Panel title="KOL Plan" hint="ระบุ requirement (ยังไม่ต้องรู้ชื่อเพจ) — specialist เสนอเพจจริงทีหลัง · ฟอร์มเดียวกับ Request KOL · งบ sync ไป Budget Allocation">
+    <Panel title="KOL Plan" hint="ระบุ requirement (ยังไม่ต้องรู้ชื่อเพจ) — specialist เสนอเพจจริงทีหลัง · ฟอร์มเดียวกับ Request KOL · รับงบจาก Budget Allocation">
+      {envelope > 0 && (
+        <div className="mb-4 rounded-[12px] px-4 py-3 flex items-center gap-4 flex-wrap"
+          style={remaining < 0
+            ? { background: "#FFF5F4", border: "1px solid #F5C8C4" }
+            : { background: "#EEF4EE", border: "1px solid #CFE4C2" }}>
+          <span className="text-[12.5px] font-bold text-ink">งบ KOL จาก Budget Allocation: {baht(envelope, { compact: true })}</span>
+          <span className="text-[12px] font-semibold text-muted">วางแผนแล้ว {baht(planned, { compact: true })}</span>
+          <span className="text-[12px] font-bold" style={{ color: remaining < 0 ? "#B33A2E" : "#4E7A4E" }}>
+            {remaining < 0 ? `⚠ เกินงบ ${baht(Math.abs(remaining), { compact: true })}` : `เหลือ ${baht(remaining, { compact: true })}`}
+          </span>
+        </div>
+      )}
       <div className="flex flex-col gap-3">
         {brief.kols.map((k, i) => (
           <div key={k.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
@@ -679,7 +695,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
 
   return (
     <>
-      <Panel title="Budget Allocation" hint="ใส่งบรวมแล้วเกลี่ยไปแต่ละส่วน — KOL Budget sync จาก KOL Plan (แก้ไม่ได้ตรงนี้)">
+      <Panel title="Budget Allocation" hint="ใส่งบรวมแล้วเกลี่ยไปแต่ละส่วน — งบ KOL ที่ตั้งตรงนี้จะ sync ไปเป็นเพดานใน KOL Plan (ขั้นถัดไป)">
         {budgetGuardWarning && (
           <div className="mb-4 rounded-[16px] border px-4 py-3 text-[12.5px] font-semibold leading-relaxed" style={{ background: "#FFF7E3", borderColor: "#F3C96B", color: "#8A5B00" }}>
             ⚠️ {budgetGuardWarning}
@@ -808,9 +824,17 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
             <span>Item</span><span>Amount (฿)</span><span></span>
           </div>
           <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
-            <span className="text-[12px] font-semibold text-ink">KOL Budget <span className="text-[10px] text-faint">· auto</span></span>
-            <input value={baht(kolBudget)} readOnly disabled className="w-full rounded-[7px] border border-line2 bg-line4 px-2 py-1 text-[12px] outline-none cursor-not-allowed opacity-80" />
-            <button onClick={onEditKol} className="text-[11px] font-bold text-accent text-left">Edit in KOL Plan →</button>
+            <span className="text-[12px] font-semibold text-ink">KOL Budget <span className="text-[10px] text-faint">· sync ไป KOL Plan</span></span>
+            <input value={brief.budget.kol || ""} onChange={(e) => setB({ kol: num(e.target.value) })}
+              className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
+            <span className="flex items-center gap-2">
+              {kolBudget > 0 && (
+                <span className="text-[10.5px] font-semibold" style={{ color: kolBudget > (brief.budget.kol || 0) ? "#B33A2E" : "#6b6258" }}>
+                  วางแผนแล้ว {baht(kolBudget, { compact: true })}{kolBudget > (brief.budget.kol || 0) ? " ⚠ เกิน" : ""}
+                </span>
+              )}
+              <button onClick={onEditKol} className="text-[11px] font-bold text-accent text-left whitespace-nowrap">KOL Plan →</button>
+            </span>
           </div>
           {otherBuckets.map(([lbl, key]) => (
             <div key={key} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>

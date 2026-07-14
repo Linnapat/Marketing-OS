@@ -453,7 +453,7 @@ function AdEditor({ rows, nameOf, datesOf, onPatch }: {
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
         <thead>
           <tr className="text-faint">
-            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Mkt Visit", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
+            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Visit", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
               <th key={i} className={`font-bold px-[9px] py-[6px] border-b border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
             ))}
           </tr>
