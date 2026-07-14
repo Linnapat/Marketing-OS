@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -140,7 +141,7 @@ export default function ContentPage() {
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
     if (campaign && campaign !== "—") {
       appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId })
-        .catch((error) => alert(`บันทึก Post แล้ว แต่ sync กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+        .catch((error) => toastError(`บันทึก Post แล้ว แต่ sync กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     // "Required Graphic" checked → drop a linked request into the Graphic
     // module (one deliverable per Platform × Asset Size). When every
@@ -164,7 +165,7 @@ export default function ContentPage() {
         nextAction: `Deliver ${deliverables.length} asset(s)`,
         contentItem: p.title,
       };
-      createGraphic(g).catch((error) => alert(`บันทึก Content แล้ว แต่สร้าง Graphic Request ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      createGraphic(g).catch((error) => toastError(`บันทึก Content แล้ว แต่สร้าง Graphic Request ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       notify("newTask", `🎨 คำขอกราฟฟิกใหม่: ${p.title}`, `${deliverables.length} asset · ${plats.join(", ")} · จาก Content Calendar โดย ${me}`, "/graphic");
     }
   };

@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -104,7 +105,7 @@ export default function CampaignsPage() {
       setCampaigns((cs) => [row, ...cs]);
       setCollapsed((c) => ({ ...c, [row.status]: false }));
     } catch (error) {
-      alert(`สร้าง Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`สร้าง Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 
@@ -151,7 +152,7 @@ export default function CampaignsPage() {
       await updateCampaignStatus(id, nextStatus);
     } catch (error) {
       if (previous) setCampaigns((rows) => rows.map((row) => row.id === id ? previous : row));
-      alert(`เปลี่ยนสถานะ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`เปลี่ยนสถานะ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setBusyCampaignId(null);
     }
@@ -165,7 +166,7 @@ export default function CampaignsPage() {
       await deleteCampaign(campaign.id);
     } catch (error) {
       setCampaigns((rows) => [campaign, ...rows]);
-      alert(`ลบ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`ลบ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setBusyCampaignId(null);
     }

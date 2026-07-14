@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -240,7 +241,7 @@ export default function NewCampaignPage() {
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch (error) {
-      alert(`บันทึก Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
       setBusy(false);
     }
   };

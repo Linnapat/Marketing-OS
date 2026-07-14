@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Check } from "lucide-react";
 import {
@@ -50,7 +51,7 @@ export default function WorkCalendarPage() {
     setOverridesRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
       saveWorkflowState({ overrides: next, done: stateRef.current.done })
-        .catch((error) => alert(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+        .catch((error) => toastError(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;
     });
   };
@@ -58,7 +59,7 @@ export default function WorkCalendarPage() {
     setDoneRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
       saveWorkflowState({ overrides: stateRef.current.overrides, done: next })
-        .catch((error) => alert(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+        .catch((error) => toastError(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;
     });
   };

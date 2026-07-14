@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -49,7 +50,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     };
     updateGraphic(next)
       .then(() => updateCurrentGraphic(next))
-      .catch((error) => alert(`บันทึกสถานะ Delivered ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      .catch((error) => toastError(`บันทึกสถานะ Delivered ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const requestFeedbackRevision = () => {
@@ -72,7 +73,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     };
     updateGraphic(next)
       .then(() => updateCurrentGraphic(next))
-      .catch((error) => alert(`บันทึก Feedback ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      .catch((error) => toastError(`บันทึก Feedback ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     setFeedback((fs) => [{
       id: Date.now(),
       gid: g.id,
@@ -141,7 +142,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                     };
                     updateGraphic(ng)
                       .then(() => onUpdate?.(ng))
-                      .catch((error) => alert(`บันทึก Designer ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+                      .catch((error) => toastError(`บันทึก Designer ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
                   }}
                   team="Creative"
                   placeholder="Unassigned"
@@ -356,10 +357,10 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
     ng.nextAction = ready ? "Ready to deploy — attached to Content Calendar" : g.nextAction;
     updateGraphic(ng)
       .then(() => onUpdate?.(ng))
-      .catch((error) => alert(`บันทึกงาน Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      .catch((error) => toastError(`บันทึกงาน Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     // Fully approved → push approved asset links onto the linked content post.
     if (ready) {
-      syncApprovedAssetsToContent(ng).catch((error) => alert(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content");
     }
   };

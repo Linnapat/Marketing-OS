@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -82,7 +83,7 @@ export default function AssetLibraryPage() {
       setUploadOpen(false);
       setNu(empty);
     } catch (error) {
-      alert(`บันทึก Asset ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Asset ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 
@@ -102,7 +103,7 @@ export default function AssetLibraryPage() {
       await persistPortfolio([nextItem, ...portfolio]);
       setPortfolioDraft(emptyPortfolio((brandOptions[0] ?? "teppen") as BrandId));
     } catch (error) {
-      alert(`บันทึก Portfolio ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Portfolio ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 

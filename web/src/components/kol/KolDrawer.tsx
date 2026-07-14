@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -132,7 +133,7 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
       await updateKol(next);
       onUpdate?.(next);
     } catch (error) {
-      alert(`บันทึก KOL Owner ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก KOL Owner ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -159,7 +160,7 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
       await updateKol(next);
       onUpdate?.(next);
     } catch (error) {
-      alert(`บันทึกสถานะ KOL ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึกสถานะ KOL ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -209,7 +210,7 @@ function StageBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) 
       await updateKol(next);
       onUpdate?.(next);
     } catch (error) {
-      alert(`บันทึก KOL Deliverables ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก KOL Deliverables ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
   const editPost = (i: number, patch: Partial<KolPost>) => setPosts((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
@@ -341,7 +342,7 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       }
       onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch (error) {
-      alert(`ส่ง KOL proposal ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`ส่ง KOL proposal ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -477,7 +478,7 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
       await updateKol(next);
       onUpdate?.(next);
     } catch (error) {
-      alert(`บันทึก KOL Finance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก KOL Finance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
   const saveProposalBudget = async () => {
@@ -605,7 +606,7 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   // stage itself is advanced (with its own guards) in the Stage bar, not here.
   const gate = canSaveResults({ ...kol, postLink: link.trim() || kol.postLink });
   const save = async () => {
-    if (!gate.ok) { alert(gate.reason ?? "บันทึกผลยังไม่ได้"); return; }
+    if (!gate.ok) { toastError(gate.reason ?? "บันทึกผลยังไม่ได้"); return; }
     setBusy(true);
     const now = new Date().toISOString();
     const stage = normalizeStage(kol.status);
@@ -628,9 +629,9 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     try {
       await updateKol(next); onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2000);
       // Completed collaboration → keep the KOL Library / master history current.
-      if (normalizeStage(kol.status) === "Completed" && kol.masterKolId) logToMaster().catch((error) => alert(`บันทึก KOL Library history ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      if (normalizeStage(kol.status) === "Completed" && kol.masterKolId) logToMaster().catch((error) => toastError(`บันทึก KOL Library history ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     } catch (error) {
-      alert(`บันทึก KOL Results ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก KOL Results ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 

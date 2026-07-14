@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -80,7 +81,7 @@ export default function KolPage() {
       setKols((ks) => [...created, ...ks]);
       setRequestOpen(false);
     } catch (error) {
-      alert(`บันทึก KOL Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก KOL Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
       throw error;
     }
   };
@@ -107,10 +108,10 @@ export default function KolPage() {
     const prev = kols.find((k) => k.id === next.id);
     setKols((ks) => ks.map((x) => (x.id === next.id ? next : x)));
     if (prev && normalizeStage(prev.status) !== "In Review" && normalizeStage(next.status) === "In Review") {
-      createReviewTask(next).catch((error) => alert(`สร้าง Approval task สำหรับ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      createReviewTask(next).catch((error) => toastError(`สร้าง Approval task สำหรับ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     // Reverse two-way sync: reflect the edit back into the campaign's KOL Plan.
-    syncBriefKolFromRows(next).catch((error) => alert(`sync KOL กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    syncBriefKolFromRows(next).catch((error) => toastError(`sync KOL กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
@@ -456,8 +457,8 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                           : <span className="text-faint italic">no link</span>}
                       </span>
                       <span></span>
-                      <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => alert(`บันทึก KOL Reach ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
-                      <input type="number" value={p.engagement || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { engagement: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => alert(`บันทึก KOL Engagement ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
+                      <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Reach ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
+                      <input type="number" value={p.engagement || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { engagement: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Engagement ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
                       <span className="text-[11.5px] text-faint text-right">{fmtPct(rate(p.reach || 0, p.engagement || 0))}</span>
                       <span></span><span></span>
                     </div>

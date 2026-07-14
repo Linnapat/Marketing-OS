@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X, Lock } from "lucide-react";
 import { SidebarContent } from "./Sidebar";
+import { Toaster } from "@/components/ui/Toaster";
 import { RoleProvider, useRole } from "@/lib/role";
 import { AuthProvider, useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { moduleForPath } from "@/lib/permissions";
@@ -92,6 +93,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <ModuleGate>{children}</ModuleGate>
         </div>
       </main>
+      <Toaster />
     </div>
   );
 }

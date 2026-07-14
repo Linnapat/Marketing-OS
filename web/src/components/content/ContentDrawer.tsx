@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState } from "@/lib/data/content";
@@ -77,7 +78,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
       setCopyDone(true);
       setTimeout(() => setCopyDone(false), 1400);
     } catch {
-      alert("Copy ไม่สำเร็จ กรุณา copy จากกล่องข้อความโดยตรง");
+      toastError("Copy ไม่สำเร็จ กรุณา copy จากกล่องข้อความโดยตรง");
     }
   };
 
@@ -89,7 +90,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
       await updateContent(next);
       onUpdate?.(next);
     } catch (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึกไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -103,7 +104,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     setBusy(true);
     try {
       const res = await approveContent(item, reviewer);
-      if (!res.ok) { alert("ยัง Approve ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
+      if (!res.ok) { toastError("ยัง Approve ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
     } finally { setBusy(false); }
@@ -125,7 +126,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     setBusy(true);
     try {
       const res = await publishContent(item, reviewer);
-      if (!res.ok) { alert("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
+      if (!res.ok) { toastError("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
     } finally { setBusy(false); }
@@ -135,7 +136,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     setBusy(true);
     try {
       const res = await scheduleContentToMeta(item, reviewer, scheduledFor, selectedChannels);
-      if (!res.ok) { alert("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
+      if (!res.ok) { toastError("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
     } finally { setBusy(false); }
@@ -144,7 +145,7 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     setBusy(true);
     try {
       const res = await publishContentToMeta(item, reviewer, selectedChannels, metaAccount);
-      if (!res.ok) { alert("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
+      if (!res.ok) { toastError("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
       onUpdate?.(res.post);
       notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
     } finally { setBusy(false); }

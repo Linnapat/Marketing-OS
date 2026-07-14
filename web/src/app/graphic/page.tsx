@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Segmented } from "@/components/ui/Segmented";
@@ -67,7 +68,7 @@ export default function GraphicPage() {
       setGraphics((gs) => [g, ...gs]);
       setReqOpen(false);
     } catch (error) {
-      alert(`บันทึก Graphic Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Graphic Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
       throw error;
     }
   };

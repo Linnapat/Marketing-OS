@@ -3,6 +3,7 @@
 // Expense Request + Spending Log — pulled out of the Finance module into their
 // own "Expenses" page so day-to-day spending is reachable without Finance access.
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -67,7 +68,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       await submitExpenseDraft(r);
       setRequests((rs) => rs.map((x) => (x === r ? { ...x, status: "Waiting Approval" } : x)));
     } catch (error) {
-      alert(`ส่ง Draft เข้า Approval ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`ส่ง Draft เข้า Approval ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 
@@ -107,7 +108,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
         "/my-tasks");
       setSubmitted(ref);
     } catch (error) {
-      alert(`บันทึก Expense Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Expense Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
   // Additional line items
@@ -425,7 +426,7 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
   const rows = all.filter((e) => (brand === "all" || e.b === brand) && (!date || inDateFilter(date, e.date)));
   const markPaid = (row: ExpenseLogRow) => {
     setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x)));
-    markExpensePaid(row._id).catch((error) => alert(`บันทึก Paid ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    markExpensePaid(row._id).catch((error) => toastError(`บันทึก Paid ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">

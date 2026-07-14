@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -43,7 +44,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       await updateCampaignStatus(c.id, status);
       onReload();
     } catch (error) {
-      alert(`บันทึก Approval status ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Approval status ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setApproving(false); }
   };
 
@@ -398,7 +399,7 @@ function PlannerTab({ detail, hub, onReload }: { detail: CampaignDetail; hub: Ca
       await createPlannerTasks(detail.row);
       onReload();
     } catch (error) {
-      alert(`สร้าง Planner Tasks ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`สร้าง Planner Tasks ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -675,7 +676,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
       // one per funded bucket — so the finance team never re-keys the plan.
       const drafts = await createBudgetExpenseDrafts(detail.row, next)
         .catch((error) => {
-          alert(`สร้าง Draft เบิกงบจาก Campaign ไม่สำเร็จ: ${error?.message || "Unknown error"}`);
+          toastError(`สร้าง Draft เบิกงบจาก Campaign ไม่สำเร็จ: ${error?.message || "Unknown error"}`);
           return 0;
         });
       if (drafts > 0) notify("approval", `💰 เปิด Draft เบิกงบ ${drafts} รายการจากงบแคมเปญ: ${brief.name}`, `ตามงบที่อนุมัติ — ตรวจและกดส่งอนุมัติได้ในโมดูล Expenses`, "/expenses");

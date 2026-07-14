@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -190,11 +191,11 @@ export default function AgencyPortalPage() {
     if (task.source === "graphic" && task.graphic) {
       const next = applyAgencyPatchToGraphic(task.graphic, patch, currentUser);
       setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
-      updateGraphic(next).catch((error) => alert(`บันทึกงาน Agency ที่ link กับ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      updateGraphic(next).catch((error) => toastError(`บันทึกงาน Agency ที่ link กับ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return;
     }
     setManualTasks((ts) => ts.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
-    updateAgencyTask(task.id, patch).catch((error) => alert(`บันทึก Agency Task ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    updateAgencyTask(task.id, patch).catch((error) => toastError(`บันทึก Agency Task ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const addTask = async () => {
@@ -211,7 +212,7 @@ export default function AgencyPortalPage() {
       const created = await createAgencyTask(draft, manualTasks);
       setManualTasks((ts) => [{ ...created, source: "manual" }, ...ts]);
     } catch (error) {
-      alert(`สร้าง Agency Task ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`สร้าง Agency Task ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 

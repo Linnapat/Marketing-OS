@@ -6,6 +6,7 @@
 // OR as a group total on the aggregate row (spread across the group's ads).
 // Uses the shared PageHeader (per-module theme) and brand-visibility system.
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, ExternalLink, Save, Check } from "lucide-react";
@@ -183,7 +184,7 @@ export default function PlatformsPage() {
       clearTimeout(savedRef.current);
       savedRef.current = setTimeout(() => setSaved(false), 2000);
     } catch (error) {
-      alert(`บันทึก Performance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`บันทึก Performance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setSaving(false); }
   };
 
@@ -232,7 +233,7 @@ export default function PlatformsPage() {
       setReviseReason("");
       setTimeout(() => { setReviseOpen(false); setReviseSent(false); }, 1400);
     } catch (error) {
-      alert(`ส่ง Request Revise Budget ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toastError(`ส่ง Request Revise Budget ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 

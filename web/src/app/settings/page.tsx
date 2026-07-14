@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campaign/CampaignHeadController";
 import { clsx } from "@/lib/clsx";
@@ -329,7 +330,7 @@ export default function SettingsPage() {
   const [section, setSection] = useState("org");
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
   const reportSaveError = (label: string) => (error: unknown) =>
-    alert(`${label} ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    toastError(`${label} ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
   // Notification toggles persist to org_settings; /api/notify honors them.
   const [channels, setChannelsRaw] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_CHANNELS.map((c) => [c.key, c.def])));
   const [triggers, setTriggersRaw] = useState<Record<string, boolean>>(Object.fromEntries(NOTIF_TRIGGERS.map((t) => [t.key, t.def])));

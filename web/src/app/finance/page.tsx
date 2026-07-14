@@ -1,5 +1,6 @@
 "use client";
 
+import { toastError } from "@/lib/toast";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Download, ExternalLink, X } from "lucide-react";
@@ -719,14 +720,14 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
     setApproved((a) => ({ ...a, [i]: true }));
     setSigning(null);
     approveExpenseRequest(r, r.requested)
-      .catch((error) => alert(`อนุมัติคำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      .catch((error) => toastError(`อนุมัติคำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   const reject = (i: number, r: ExpenseReq) => {
     if (!reason.trim()) return;
     setRejected((a) => ({ ...a, [i]: true }));
     setRejecting(null);
     rejectExpenseRequest(r, reason.trim(), approverName)
-      .catch((error) => alert(`Reject คำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      .catch((error) => toastError(`Reject คำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     setReason("");
   };
 
