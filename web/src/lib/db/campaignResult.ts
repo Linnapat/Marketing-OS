@@ -5,19 +5,14 @@
 
 import { supabase } from "@/lib/supabase";
 import { CampaignResultRow, seedResults, allSeedResults } from "@/lib/data/campaignResult";
-import { updateCampaignSpend } from "@/lib/db/campaigns";
 import { assertDbOk } from "@/lib/db/assert";
 
 type Row = { id: number; campaign_id: string; data: CampaignResultRow };
 
-/** Roll a campaign's ad-level ACTUAL spend up to the campaign record (spend =
- *  Σ row.budgetActual). The planned budget stays fixed at the campaign — it is
- *  never overwritten here. Call after saving result rows so the Campaigns list /
- *  Dashboard / Finance stay in sync. Pass the campaign's FULL current row set. */
-export async function syncCampaignSpend(campaignId: string, campaignRows: CampaignResultRow[]): Promise<void> {
-  const spend = campaignRows.reduce((s, r) => s + (r.budgetActual || 0), 0);
-  await updateCampaignSpend(campaignId, spend);
-}
+// NOTE: ad-level actuals live only in campaign_results. They must never be
+// rolled up into campaigns.spend — that column is the plan-time COMMITTED
+// allocation (written by the brief flow), and overwriting it silently turned
+// "Committed" into "Actual" across Finance/Dashboard.
 
 /** Every result row across all campaigns — for the Platform Performance page. */
 export async function fetchAllResults(): Promise<CampaignResultRow[]> {
@@ -27,7 +22,7 @@ export async function fetchAllResults(): Promise<CampaignResultRow[]> {
     .from("campaign_results")
     .select("id, campaign_id, data")
     .order("id");
-  if (error || !data) return allSeedResults();
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as Row[])
     .map((r) => (r.data ? { ...r.data, campaignId: r.campaign_id } : null))
     .filter(Boolean) as CampaignResultRow[];
@@ -42,7 +37,7 @@ export async function fetchResults(campaignId: string): Promise<CampaignResultRo
     .select("id, campaign_id, data")
     .eq("campaign_id", campaignId)
     .order("id");
-  if (error || !data) return seedResults(campaignId);
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as Row[])
     .map((r) => (r.data ? { ...r.data, campaignId: r.campaign_id } : null))
     .filter(Boolean) as CampaignResultRow[];

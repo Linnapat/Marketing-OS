@@ -20,7 +20,7 @@ export async function fetchAssets(): Promise<Asset[]> {
   const db = supabase();
   if (!db) return ASSETS.map((a) => ({ ...a }));
   const { data, error } = await db.from("assets").select("*").order("id", { ascending: false });
-  if (error || !data) return ASSETS.map((a) => ({ ...a }));
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as Row[]).map(toAsset);
 }
 

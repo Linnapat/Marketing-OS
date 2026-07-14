@@ -22,7 +22,7 @@ export async function fetchRequests(): Promise<RequestRow[]> {
   const db = supabase();
   if (!db) return REQUESTS.map((r) => ({ ...r }));
   const { data, error } = await db.from("requests").select("*").order("created_at", { ascending: false });
-  if (error || !data) return REQUESTS.map((r) => ({ ...r }));
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as Row[]).map(toReq);
 }
 

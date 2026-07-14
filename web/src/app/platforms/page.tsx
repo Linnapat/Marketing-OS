@@ -23,7 +23,7 @@ import {
   CampaignResultRow, GroupAgg, GroupDim, aggregateBy, platformMeta, cpr,
   deriveResultRow, fmtUpdated, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
-import { fetchAllResults, saveResults, syncCampaignSpend } from "@/lib/db/campaignResult";
+import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
@@ -169,10 +169,8 @@ export default function PlatformsPage() {
     );
     try {
       await saveResults(stamped.filter((r) => dirty.has(r.id)));
-      const touched = new Set(stamped.filter((r) => dirty.has(r.id)).map((r) => r.campaignId));
-      await Promise.all([...touched].map((cid) =>
-        syncCampaignSpend(cid, stamped.filter((r) => r.campaignId === cid)),
-      ));
+      // Note: ad-level actuals stay in campaign_results — they must never
+      // overwrite campaigns.spend, which is the plan-time COMMITTED allocation.
       setRows(stamped);
       setDirty(new Set());
       setSaved(true);

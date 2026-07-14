@@ -44,6 +44,8 @@ export async function fetchCampaignHub(name: string): Promise<CampaignHub> {
 export interface HubStats {
   total: number; done: number; inProgress: number; blocked: number; waiting: number;
   content: number; graphics: number; kols: number; tasks: number; expenses: number; expenseTotal: number;
+  /** Actual spend = only APPROVED/PAID expense requests (same rule as Finance). */
+  approvedTotal: number;
 }
 
 const CONTENT_DONE = /Approved|Published|Scheduled|Ready/i;
@@ -63,6 +65,7 @@ export function hubStats(hub: CampaignHub): HubStats {
     total, done, inProgress: Math.max(0, total - done - blocked), blocked, waiting,
     content: hub.content.length, graphics: hub.graphics.length, kols: hub.kols.length, tasks: hub.tasks.length,
     expenses: hub.expenses.length, expenseTotal: hub.expenses.reduce((s, e) => s + (e.requested || 0), 0),
+    approvedTotal: hub.expenses.filter((e) => /approved|paid/i.test(e.status)).reduce((s, e) => s + (e.approved || e.requested || 0), 0),
   };
 }
 

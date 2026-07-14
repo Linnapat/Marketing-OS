@@ -14,7 +14,7 @@ export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
   if (!db) return GRAPHICS.map((g) => ({ ...g }));
   const { data, error } = await db.from("graphic_requests").select("id, data").order("id");
-  if (error || !data) return GRAPHICS.map((g) => ({ ...g }));
+  if (error || !data) return []; // query error = no live data, never demo rows
   return data.map((r) => r.data as Graphic).filter(Boolean);
 }
 

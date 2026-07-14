@@ -97,21 +97,6 @@ export async function deleteCampaign(id: string): Promise<void> {
   assertDbOk(error, "Could not delete campaign");
 }
 
-/** Roll the ad-level ACTUAL spend up to the campaign (spend = Σ budgetActual). The
- *  planned budget stays fixed at the campaign — it is never overwritten here. In
- *  mock mode the in-memory campaign is mutated so the Platform Performance edits
- *  reflect in the Campaigns list within the session; with Supabase it persists. */
-export async function updateCampaignSpend(id: string, spend: number): Promise<void> {
-  const db = supabase();
-  if (!db) {
-    const c = CAMPAIGNS.find((x) => x.id === id);
-    if (c) c.spend = spend;
-    return;
-  }
-  const { error } = await db.from("campaigns").update({ spend }).eq("id", id);
-  assertDbOk(error, "Could not update campaign spend");
-}
-
 /** CMO-approved budget revision. Spend stays untouched; only the campaign plan
  *  cap changes so Finance / Dashboard recalculate from the same source. */
 export async function updateCampaignBudget(id: string, budget: number): Promise<void> {

@@ -591,11 +591,14 @@ function BudgetTab({ detail, s, brief }: { detail: CampaignDetail; s: HubStats |
     : detail.budgetLines;
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Same money layers as Finance: Plan → Committed (allocated, not yet
+            spent) → Requested (pending) → Actual (approved/paid only). */}
         {[
           { label: "Planning Budget", value: baht(c.budget, { compact: true }), pct: 100, color: "#B8945A" },
+          { label: "Committed · Allocated", value: baht(c.spend, { compact: true }), pct: c.budget ? Math.round((c.spend / c.budget) * 100) : 0, color: "#6C5CE7" },
           { label: "Requested", value: baht(requested, { compact: true }), pct: c.budget ? Math.round((requested / c.budget) * 100) : 0, color: "#3E5C9A" },
-          { label: "Actual Spend", value: baht(c.spend, { compact: true }), pct: c.budget ? Math.round((c.spend / c.budget) * 100) : 0, color: c.spend > c.budget ? "#B33A2E" : "#4E7A4E" },
+          { label: "Actual Spend", value: baht(s?.approvedTotal ?? 0, { compact: true }), pct: c.budget ? Math.round(((s?.approvedTotal ?? 0) / c.budget) * 100) : 0, color: (s?.approvedTotal ?? 0) > c.budget ? "#B33A2E" : "#4E7A4E" },
         ].map((k) => (
           <div key={k.label} className="bg-surface border border-line rounded-card p-4">
             <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold mb-[6px]">{k.label}</div>

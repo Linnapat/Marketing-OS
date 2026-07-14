@@ -40,7 +40,7 @@ export async function fetchMembers(): Promise<Member[]> {
   if (!db) return USERS_DATA.map((u) => ({ ...u }));
   const profiles = await fetchMemberProfiles().catch(() => null);
   const { data, error } = await db.from("members").select("*").order("email");
-  if (error || !data) return withProfiles(USERS_DATA.map((u) => ({ ...u })), profiles);
+  if (error || !data) return []; // query error = no live data, never demo rows
   return withProfiles((data as Row[]).map(toMember), profiles);
 }
 

@@ -33,7 +33,7 @@ export async function fetchAgencyTasks(agencyEmail?: string): Promise<AgencyTask
     // than silently swapping in mock data.
     ({ data, error } = await db.from("agency_tasks").select("*").order("id"));
   }
-  if (error || !data) return AGENCY_TASKS.map((t) => ({ ...t }));
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as Row[]).map(toTask);
 }
 

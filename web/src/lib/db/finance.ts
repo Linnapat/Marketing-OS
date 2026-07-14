@@ -47,7 +47,7 @@ export async function fetchExpenseRequests(): Promise<ExpenseReq[]> {
   const db = supabase();
   if (!db) return REQUESTS.map((r) => ({ ...r }));
   const { data, error } = await db.from("expense_requests").select("*").order("id", { ascending: false });
-  if (error || !data) return REQUESTS.map((r) => ({ ...r }));
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as Row[]).map(toReq);
 }
 
@@ -61,7 +61,7 @@ export async function fetchExpenses(): Promise<ExpenseLogRow[]> {
   const db = supabase();
   if (!db) return EXPENSES.map((e) => ({ ...e }));
   const { data, error } = await db.from("expenses").select("*").order("id", { ascending: false });
-  if (error || !data) return EXPENSES.map((e) => ({ ...e }));
+  if (error || !data) return []; // query error = no live data, never demo rows
   return (data as ExpRow[]).map((r) => ({ _id: r.id, vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status, reimburseType: r.reimburse_type ?? undefined, wht: Number(r.wht ?? 0) }));
 }
 
