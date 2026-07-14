@@ -11,7 +11,7 @@ import {
 import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
-import { parseRowDate } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
 
@@ -107,9 +107,9 @@ export default function OmdStoreCampaignPage() {
   const [brand, setBrand] = useState<BrandId | "all">("all");
   const [category, setCategory] = useState<OmdStorePromotionCategory | "all">("all");
   const [branch, setBranch] = useState("all");
-  // Print period — only promotions whose run overlaps [start, end] are printed.
-  const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState("");
+  // Print period — only promotions whose run overlaps the selected window
+  // are printed. Same Month/Year/Range control as every other module.
+  const [period, setPeriod] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [search, setSearch] = useState("");
   const [syncState, setSyncState] = useState<"ready" | "synced">("ready");
   const [printTemplate, setPrintTemplate] = useState<PrintTemplate>("board");
@@ -134,14 +134,17 @@ export default function OmdStoreCampaignPage() {
   // Overlap test: an item prints when its run intersects the selected window.
   // Undated items stay visible so promotions never silently disappear.
   const inPeriod = (item: OmdStorePromotion) => {
-    if (!periodStart && !periodEnd) return true;
     if (!item.startDate && !item.endDate) return true;
     const s = item.startDate ? new Date(`${item.startDate}T00:00:00`).getTime() : -Infinity;
     const e = item.endDate ? new Date(`${item.endDate}T23:59:59`).getTime() : Infinity;
-    const ws = periodStart ? new Date(`${periodStart}T00:00:00`).getTime() : -Infinity;
-    const we = periodEnd ? new Date(`${periodEnd}T23:59:59`).getTime() : Infinity;
+    const [ws, we] = filterWindow(period);
     return s <= we && e >= ws;
   };
+  const periodLabel = period.mode === "year"
+    ? `ปี ${period.year}`
+    : period.mode === "month"
+      ? `${MONTHS[period.month]} ${period.year}`
+      : `${period.start || "…"} → ${period.end || "…"}`;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -153,7 +156,7 @@ export default function OmdStoreCampaignPage() {
       (!q || `${sourceLabel(item.source)} ${BRANDS[item.brand].name} ${item.title} ${item.description} ${item.posName} ${item.branches.join(" ")}`.toLowerCase().includes(q)),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPromotions, branch, brand, category, search, periodStart, periodEnd]);
+  }, [allPromotions, branch, brand, category, search, period]);
 
   const grouped = categoryOrder
     .map((key) => ({ key, items: filtered.filter((item) => item.category === key) }))
@@ -302,11 +305,7 @@ export default function OmdStoreCampaignPage() {
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Brand: {brand === "all" ? "All Brands" : BRANDS[brand].name}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Branch: {filterLabel(branch, "All Branches")}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Category: {category === "all" ? "All Categories" : OMD_STORE_CATEGORY_META[category].label}</span>
-                {(periodStart || periodEnd) && (
-                  <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">
-                    Period: {periodStart ? formatDate(periodStart) : "…"} – {periodEnd ? formatDate(periodEnd) : "…"}
-                  </span>
-                )}
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Period: {periodLabel}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Template: {PRINT_TEMPLATES[printTemplate].label}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Printed: {formatDate(new Date().toISOString())}</span>
               </div>
@@ -374,16 +373,6 @@ export default function OmdStoreCampaignPage() {
                   {branches.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Period Start</span>
-                <input type="date" value={periodStart} max={periodEnd || undefined} onChange={(e) => setPeriodStart(e.target.value)}
-                  className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Period End</span>
-                <input type="date" value={periodEnd} min={periodStart || undefined} onChange={(e) => setPeriodEnd(e.target.value)}
-                  className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none" />
-              </label>
               <label className="flex flex-col gap-1.5 md:col-span-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Search</span>
                 <span className="flex h-10 items-center gap-2 rounded-[12px] border border-[#ECEAF2] bg-white px-3">
@@ -391,14 +380,9 @@ export default function OmdStoreCampaignPage() {
                   <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา promotion, POS, branch..." className="w-full bg-transparent text-[12px] font-semibold outline-none" />
                 </span>
               </label>
-              {(periodStart || periodEnd) && (
-                <div className="flex items-end md:col-span-2">
-                  <button type="button" onClick={() => { setPeriodStart(""); setPeriodEnd(""); }}
-                    className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold text-[#B33A2E]">
-                    ✕ ล้างช่วงเวลา
-                  </button>
-                </div>
-              )}
+            </div>
+            <div className="mt-3">
+              <DateFilterBar value={period} onChange={setPeriod} />
             </div>
             <div className="mt-3 rounded-[14px] bg-[#FBFAF7] px-3 py-2 text-[11px] font-semibold text-[#706A84]">
               {PRINT_TEMPLATES[printTemplate].helper}

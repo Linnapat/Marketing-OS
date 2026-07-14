@@ -520,24 +520,48 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
 }) {
   const requestDate = todayIso();
   const upd = (id: string, patch: Partial<BriefContentItem>) => setBrief((b) => ({ ...b, content: b.content.map((c) => c.id === id ? { ...c, ...patch } : c) }));
-  const add = () => setBrief((b) => ({ ...b, content: [...b.content, { ...emptyContentItem(nextSeq()) }] }));
-  const dup = (id: string) => setBrief((b) => { const src = b.content.find((c) => c.id === id); return src ? { ...b, content: [...b.content, { ...src, id: `ci-${nextSeq()}` }] } : b; });
+  // Collapsible items: everything starts folded; a newly added/duplicated item
+  // opens so you can fill it right away.
+  const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
+  const toggleItem = (id: string) => setOpenItems((o) => ({ ...o, [id]: !o[id] }));
+  const add = () => setBrief((b) => {
+    const item = { ...emptyContentItem(nextSeq()) };
+    setOpenItems((o) => ({ ...o, [item.id]: true }));
+    return { ...b, content: [...b.content, item] };
+  });
+  const dup = (id: string) => setBrief((b) => {
+    const src = b.content.find((c) => c.id === id);
+    if (!src) return b;
+    const copy = { ...src, id: `ci-${nextSeq()}` };
+    setOpenItems((o) => ({ ...o, [copy.id]: true }));
+    return { ...b, content: [...b.content, copy] };
+  });
   const rm = (id: string) => setBrief((b) => ({ ...b, content: b.content.filter((c) => c.id !== id) }));
 
   return (
-    <Panel title="Content Plan" hint="เลือก Platform ได้หลายที่ (ช่องติ๊ก) แล้วเลือก Asset Size ของแต่ละ platform — Owner ทีม Creative จะเลือกทีหลัง">
+    <Panel title="Content Plan" hint="เลือก Platform ได้หลายที่ (ช่องติ๊ก) แล้วเลือก Asset Size ของแต่ละ platform — คลิกหัวข้อเพื่อยุบ/ขยายแต่ละ item">
       <div className="flex flex-col gap-3">
         {brief.content.map((c, i) => {
+          const isOpen = openItems[c.id] ?? false;
           return (
-            <div key={c.id} className="border border-line2 rounded-[14px] p-4 bg-ivory">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[12px] font-bold text-muted">Content #{i + 1}</span>
-                <div className="flex gap-1">
+            <div key={c.id} className="border border-line2 rounded-[14px] bg-ivory overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-surface/60" onClick={() => toggleItem(c.id)}>
+                <span className="text-faint text-[13px]">{isOpen ? "▾" : "▸"}</span>
+                <span className="text-[12px] font-bold text-muted flex-shrink-0">Content #{i + 1}</span>
+                <span className="text-[13px] font-bold text-ink truncate">{c.title || "ยังไม่มีชื่อ"}</span>
+                <span className="text-[11px] text-faint truncate hidden sm:inline">
+                  {[c.platforms.join(" · "), c.publishDate].filter(Boolean).join(" · ")}
+                </span>
+                <div className="ml-auto flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => dup(c.id)} title="Duplicate" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
                   <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
                 </div>
               </div>
-              <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} requesterFallback={brief.plannerOwner || "You"} requestDate={requestDate} />
+              {isOpen && (
+                <div className="px-4 pb-4 border-t border-line3 pt-3">
+                  <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} requesterFallback={brief.plannerOwner || "You"} requestDate={requestDate} />
+                </div>
+              )}
             </div>
           );
         })}
