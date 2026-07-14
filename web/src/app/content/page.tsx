@@ -20,7 +20,6 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
@@ -182,10 +181,35 @@ export default function ContentPage() {
         <CampaignCommandBar
           action={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Plan Post</button>}
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-[13px] font-semibold text-faint">
-                {items.length} posts in view · shared planner for captions, approvals, and publish timing
+              <div className="flex flex-wrap items-center gap-2">
+                <BrandFilter value={brand} onChange={setBrand} label="" />
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const picked = savedViews.find((v) => v.name === e.target.value);
+                    if (picked) applySavedView(picked);
+                  }}
+                  className="text-[12px] font-bold rounded-pill border border-line2 bg-white px-3 py-[8px] text-muted outline-none"
+                  title="Apply saved view"
+                >
+                  <option value="">Saved views</option>
+                  {savedViews.map((saved) => <option key={saved.name} value={saved.name}>{saved.name}</option>)}
+                </select>
+                <input
+                  value={savedViewName}
+                  onChange={(e) => setSavedViewName(e.target.value)}
+                  placeholder="name this view"
+                  className="w-[140px] text-[12px] rounded-pill border border-line2 bg-white px-3 py-[8px] outline-none"
+                />
+                <button
+                  onClick={saveCurrentView}
+                  className="text-[12px] font-bold rounded-pill bg-[#F2EEFF] px-3 py-[8px] text-[#6C5CE7]"
+                >
+                  Save view
+                </button>
+                <span className="text-[12px] font-semibold text-faint">{items.length} posts in view</span>
               </div>
               <div className="flex items-center rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px] shadow-[0_8px_22px_rgba(108,92,231,0.08)]">
                 {[
@@ -241,42 +265,6 @@ export default function ContentPage() {
           </div>
         </ModuleSummaryCard>
 
-        <FilterBar>
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <BrandFilter value={brand} onChange={setBrand} label="" />
-              <select
-                value=""
-                onChange={(e) => {
-                  const picked = savedViews.find((v) => v.name === e.target.value);
-                  if (picked) applySavedView(picked);
-                }}
-                className="text-[12px] font-bold rounded-pill border border-line2 bg-white px-3 py-[8px] text-muted outline-none"
-                title="Apply saved view"
-              >
-                <option value="">Saved views</option>
-                {savedViews.map((saved) => <option key={saved.name} value={saved.name}>{saved.name}</option>)}
-              </select>
-              <input
-                value={savedViewName}
-                onChange={(e) => setSavedViewName(e.target.value)}
-                placeholder="name this view"
-                className="w-[140px] text-[12px] rounded-pill border border-line2 bg-white px-3 py-[8px] outline-none"
-              />
-              <button
-                onClick={saveCurrentView}
-                className="text-[12px] font-bold rounded-pill bg-[#F2EEFF] px-3 py-[8px] text-[#6C5CE7]"
-              >
-                Save view
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Shared with Campaign</span>
-              <span className="rounded-pill bg-[#EAF8EE] px-3 py-[7px] font-bold text-[#4BA06B]">Requester sync on</span>
-              <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">Asset queue visible</span>
-            </div>
-          </div>
-        </FilterBar>
       </div>
 
       <div className="mt-5">

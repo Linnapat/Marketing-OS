@@ -152,26 +152,5 @@ export function ModuleSummaryCard({
   );
 }
 
-export function FilterBar({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const { collapsed, toggle } = usePanelCollapsed("filter-bar", "filter-bar");
-
-  return (
-    <section className="px-3 py-2.5 md:px-4" style={shellStyle}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[9.5px] font-extrabold tracking-[0.12em] uppercase" style={{ color: "#9D96AC" }}>
-          Filter Bar
-        </div>
-        <CollapseButton collapsed={collapsed} onClick={toggle} />
-      </div>
-      {!collapsed && (
-        <div className="mt-2 flex flex-col gap-2 module-head-compact">
-          {children}
-        </div>
-      )}
-    </section>
-  );
-}
+// FilterBar was retired: every module's filters now live inside the Controls
+// card (CampaignCommandBar) so each page has one place to steer the view.

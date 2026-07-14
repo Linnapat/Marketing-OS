@@ -9,7 +9,6 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
@@ -230,8 +229,25 @@ export default function AgencyPortalPage() {
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-[13px] font-semibold text-faint">
-                {counts.linked} linked from Creative Kitchen · {counts.open} open external deliverables
+              <div className="flex items-center gap-4 flex-wrap">
+                <BrandFilter value={brand} onChange={setBrand} />
+                <label className="flex items-center gap-[7px]">
+                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Status</span>
+                  <select value={filter} onChange={(e) => setFilter(e.target.value as "all" | AgencyStatus)} className={field}>
+                    <option value="all">All Statuses</option>
+                    {AGENCY_STATUSES.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label className="flex items-center gap-[7px]">
+                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Type</span>
+                  <select value={type} onChange={(e) => setType(e.target.value)} className={field}>
+                    <option value="all">All Types</option>
+                    {Array.from(new Set([...AGENCY_TYPES, ...allTasks.map((t) => t.type)])).map((ty) => <option key={ty}>{ty}</option>)}
+                  </select>
+                </label>
+                <span className="text-[12px] font-semibold text-faint">
+                  {counts.linked} linked · {counts.open} open external deliverables
+                </span>
               </div>
               <div className="flex flex-wrap gap-2 text-[11px]">
                 <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Auto-sync from assigned designer</span>
@@ -268,27 +284,7 @@ export default function AgencyPortalPage() {
           </div>
         </ModuleSummaryCard>
 
-        <FilterBar>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-4 flex-wrap">
-              <BrandFilter value={brand} onChange={setBrand} />
-              <label className="flex items-center gap-[7px]">
-                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Status</span>
-                <select value={filter} onChange={(e) => setFilter(e.target.value as "all" | AgencyStatus)} className={field}>
-                  <option value="all">All Statuses</option>
-                  {AGENCY_STATUSES.map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </label>
-              <label className="flex items-center gap-[7px]">
-                <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Type</span>
-                <select value={type} onChange={(e) => setType(e.target.value)} className={field}>
-                  <option value="all">All Types</option>
-                  {Array.from(new Set([...AGENCY_TYPES, ...allTasks.map((t) => t.type)])).map((ty) => <option key={ty}>{ty}</option>)}
-                </select>
-              </label>
-            </div>
-          </div>
-        </FilterBar>
+
       </div>
 
       <div className="mt-5 flex flex-col gap-3">

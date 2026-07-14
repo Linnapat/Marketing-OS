@@ -26,6 +26,7 @@ import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BudgetSheetRow } from "@/lib/db/budgetSheet";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter as PeriodFilter, inDateFilter, filterMonthKeys, MONTHS } from "@/components/ui/DateFilterBar";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
+import { CampaignCommandBar, CampaignPageHeaderSection } from "@/components/campaign/CampaignHeadController";
 
 const TABS = [
   ["plan", "Budget Plan"],
@@ -178,17 +179,20 @@ export default function FinancePage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Finance & Budget"
+      <CampaignPageHeaderSection
+        eyebrow="FINANCE & BUDGET"
         title="Finance"
-        subtitle="Budget planning, expense requests, spending, and campaign P&L — in Thai Baht."
+        description="Budget planning, expense requests, spending, and campaign P&L — in Thai Baht."
       />
 
-      <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
-        <BrandFilter value={brand} onChange={setBrand} />
-        <button onClick={exportCsv} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">
-          <Download size={13} /> Export CSV
-        </button>
+      <div className="mt-5">
+        <CampaignCommandBar
+          action={<button onClick={exportCsv} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[12px] px-4 py-[9px] bg-white shadow-soft">
+            <Download size={13} /> Export CSV
+          </button>}
+        >
+          <BrandFilter value={brand} onChange={setBrand} />
+        </CampaignCommandBar>
       </div>
 
       {/* Tabs */}

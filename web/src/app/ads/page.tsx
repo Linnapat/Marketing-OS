@@ -7,7 +7,6 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  FilterBar,
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 import { BrandFilterValue } from "@/lib/brands";
@@ -123,8 +122,11 @@ export default function PerformanceBarPage() {
           )}
         >
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="text-[13px] font-semibold text-faint">
-              {loading ? "Syncing platform data…" : `Synced ${filtered.length} platform line(s)${updatedAt ? ` · ${updatedAt}` : ""}`}
+            <div className="flex items-center gap-4 flex-wrap">
+              <BrandFilter value={brand} onChange={setBrand} />
+              <span className="text-[12px] font-semibold text-faint">
+                {loading ? "Syncing platform data…" : `Synced ${filtered.length} platform line(s)${updatedAt ? ` · ${updatedAt}` : ""}`}
+              </span>
             </div>
             <div className="flex flex-wrap gap-2 text-[11px]">
               {connectedModules.map(([label, sub]) => (
@@ -160,14 +162,6 @@ export default function PerformanceBarPage() {
           </div>
         </ModuleSummaryCard>
 
-        <FilterBar>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <BrandFilter value={brand} onChange={setBrand} />
-            <div className="text-[12px] text-faint font-semibold">
-              Performance Bar syncs planning now; external platform import can be added next.
-            </div>
-          </div>
-        </FilterBar>
       </div>
 
       <div className="mt-5 bg-surface border border-line rounded-cardLg overflow-hidden">
