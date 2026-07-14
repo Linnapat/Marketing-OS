@@ -81,7 +81,13 @@ export function deriveResultRow(r: CampaignResultRow): DerivedResultRow {
   const cprActual = r.reachActual > 0 ? r.budgetActual / r.reachActual : null;
   const pctReach = r.target > 0 && r.reachActual > 0 ? r.reachActual / r.target : null;
   const pctBudget = r.budget > 0 && r.budgetActual > 0 ? r.budgetActual / r.budget : null;
-  const cvActual = r.reachActual > 0 && r.conversions > 0 ? r.conversions / r.reachActual : null;
+  // CV% actual = Marketing Visits ÷ Reach (same formula as the campaign
+  // overview: Reach × CV% = Visit). Falls back to conversions for legacy rows
+  // that never recorded visits.
+  const visits = r.marketingVisits || 0;
+  const cvActual = r.reachActual > 0 && (visits > 0 || r.conversions > 0)
+    ? (visits > 0 ? visits : r.conversions) / r.reachActual
+    : null;
 
   let status: ResultStatusKey = "pending";
   if (r.statusOverride) {

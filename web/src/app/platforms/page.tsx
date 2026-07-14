@@ -15,7 +15,7 @@ import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Segmented } from "@/components/ui/Segmented";
-import { DateFilterBar, DateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
@@ -65,7 +65,8 @@ export default function PlatformsPage() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [date, setDate] = useState<DateFilter>(WIDE_RANGE);
-  const [dim, setDim] = useState<GroupDim>("platform");
+  // "entry" = โหมดลงผลรายเดือน: ทุก ad ของเดือนที่เลือกในตารางแก้ไขตารางเดียว
+  const [dim, setDim] = useState<GroupDim | "entry">("platform");
   const [alertOnly, setAlertOnly] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState<Set<string>>(new Set());
@@ -107,7 +108,8 @@ export default function PlatformsPage() {
     }),
     [rows, visibleBrands, brand, brandOf, date, datesOf],
   );
-  const groupsAll = useMemo(() => aggregateBy(filtered, dim, nameOf), [filtered, dim, nameOf]);
+  const groupDim: GroupDim = dim === "entry" ? "campaign" : dim;
+  const groupsAll = useMemo(() => aggregateBy(filtered, groupDim, nameOf), [filtered, groupDim, nameOf]);
   const groups = useMemo(
     () => alertOnly ? groupsAll.filter((g) => budgetAlert(g.budgetPlan, g.budgetActual).tone === "red") : groupsAll,
     [groupsAll, alertOnly],
@@ -115,11 +117,11 @@ export default function PlatformsPage() {
   const rowsByGroup = useMemo(() => {
     const m: Record<string, CampaignResultRow[]> = {};
     for (const r of filtered) {
-      const key = dim === "platform" ? (r.platform || "—") : r.campaignId;
+      const key = groupDim === "platform" ? (r.platform || "—") : r.campaignId;
       (m[key] ??= []).push(r);
     }
     return m;
-  }, [filtered, dim]);
+  }, [filtered, groupDim]);
 
   const totalPlan = filtered.reduce((s, r) => s + (r.budget || 0), 0);
   const totalActual = filtered.reduce((s, r) => s + (r.budgetActual || 0), 0);
@@ -233,7 +235,14 @@ export default function PlatformsPage() {
     }
   };
 
-  const dimLabel = dim === "platform" ? "Platform" : "Campaign";
+  const dimLabel = groupDim === "platform" ? "Platform" : "Campaign";
+  // Rows for the monthly-entry grid: every ad in the selected period, campaign order.
+  const entryRows = useMemo(
+    () => [...filtered].sort((a, b) =>
+      (nameOf[a.campaignId] ?? a.campaignId).localeCompare(nameOf[b.campaignId] ?? b.campaignId) ||
+      (a.ad || "").localeCompare(b.ad || "")),
+    [filtered, nameOf],
+  );
   const footTarget = groups.reduce((s, g) => s + g.target, 0);
   const footActual = groups.reduce((s, g) => s + g.actual, 0);
   const footConv = groups.reduce((s, g) => s + g.conversions, 0);
@@ -265,15 +274,22 @@ export default function PlatformsPage() {
 
       {/* Command + filters — compact */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Segmented value={dim} onChange={(v) => { setDim(v); setOpen({}); }}
-          options={[{ value: "platform", label: "🗂 Platform" }, { value: "campaign", label: "🎯 Campaign" }]} />
+        <Segmented value={dim} onChange={(v) => {
+          setDim(v as GroupDim | "entry");
+          setOpen({});
+          // เข้าโหมดลงผลรายเดือน: ถ้ายังไม่ได้เลือกช่วงเป็นเดือน สลับให้เป็นเดือนปัจจุบัน
+          if (v === "entry" && date.mode !== "month") setDate(DEFAULT_DATE_FILTER);
+        }}
+          options={[{ value: "platform", label: "🗂 Platform" }, { value: "campaign", label: "🎯 Campaign" }, { value: "entry", label: "📝 ลงผลรายเดือน" }]} />
         <div className="ml-auto flex items-center gap-2">
           <BrandFilter value={brand} onChange={setBrand} label="" />
-          <select value={alertOnly ? "over" : "all"} onChange={(e) => setAlertOnly(e.target.value === "over")}
-            className="text-[12.5px] font-semibold px-[10px] py-[8px] rounded-[10px] border border-line2 bg-white text-ink outline-none">
-            <option value="all">ทุก{dimLabel === "Platform" ? " platform" : "แคมเปญ"}</option>
-            <option value="over">⚠️ เกินงบเท่านั้น</option>
-          </select>
+          {dim !== "entry" && (
+            <select value={alertOnly ? "over" : "all"} onChange={(e) => setAlertOnly(e.target.value === "over")}
+              className="text-[12.5px] font-semibold px-[10px] py-[8px] rounded-[10px] border border-line2 bg-white text-ink outline-none">
+              <option value="all">ทุก{dimLabel === "Platform" ? " platform" : "แคมเปญ"}</option>
+              <option value="over">⚠️ เกินงบเท่านั้น</option>
+            </select>
+          )}
         </div>
       </div>
       <div className="mt-2"><DateFilterBar value={date} onChange={setDate} /></div>
@@ -302,7 +318,20 @@ export default function PlatformsPage() {
             })}
           </div>
 
-          {groups.length === 0 ? (
+          {dim === "entry" ? (
+            /* ── โหมดลงผลรายเดือน: ทุก ad ของเดือนที่เลือกในตารางเดียว กดบันทึกครั้งเดียว ── */
+            <div className="mt-3">
+              <div className="flex items-center gap-2 rounded-[12px] px-3 py-[9px] mb-2"
+                style={{ background: "#E3F7F5", color: ACCENT }}>
+                <span className="text-[15px] leading-none" aria-hidden>📝</span>
+                <span className="text-[12px] font-semibold">
+                  เลือกเดือนจากแถบด้านบน แล้วกรอก Reach / Budget / Conv. / Marketing Visit ของทุก ad ได้ในตารางเดียว
+                  — เสร็จแล้วกด &quot;บันทึก&quot; ครั้งเดียวมุมขวาบน ({entryRows.length} ads)
+                </span>
+              </div>
+              <AdEditor rows={entryRows} nameOf={nameOf} datesOf={datesOf} onPatch={patchRow} />
+            </div>
+          ) : groups.length === 0 ? (
             <div className="mt-3 bg-surface border border-line rounded-cardLg p-8 text-center text-[12.5px] text-faint">
               ไม่มีรายการที่เกินงบ 🎉
             </div>
@@ -383,7 +412,9 @@ export default function PlatformsPage() {
           )}
 
           <div className="mt-3 text-[11px] text-faint px-1">
-            คลิกแถวเพื่อขยาย/อัพเดต actual ราย ad · กรอก Conversion รวมได้ที่ช่องในแถวกลุ่ม (กระจายลงราย ad ให้อัตโนมัติ) · งบแผน fix ที่แคมเปญ · CPR ต่างหน่วยตาม KPI ไม่นำมารวมกัน
+            {dim === "entry"
+              ? "กรอก actual ได้ทุกแถวโดยไม่ต้องเปิดทีละแคมเปญ · CV% คำนวณอัตโนมัติจาก Marketing Visit ÷ Reach · งบแผน fix ที่แคมเปญ · กด \"บันทึก\" ครั้งเดียวเมื่อกรอกครบ"
+              : "คลิกแถวเพื่อขยาย/อัพเดต actual ราย ad · กรอก Conversion รวมได้ที่ช่องในแถวกลุ่ม (กระจายลงราย ad ให้อัตโนมัติ) · งบแผน fix ที่แคมเปญ · CPR ต่างหน่วยตาม KPI ไม่นำมารวมกัน"}
           </div>
         </>
       )}
@@ -453,7 +484,7 @@ function AdEditor({ rows, nameOf, datesOf, onPatch }: {
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
         <thead>
           <tr className="text-faint">
-            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Visit", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
+            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Marketing Visit", "CV%", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
               <th key={i} className={`font-bold px-[9px] py-[6px] border-b border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
             ))}
           </tr>
@@ -476,6 +507,10 @@ function AdEditor({ rows, nameOf, datesOf, onPatch }: {
                 <EditCell value={r.budgetActual} onChange={(v) => onPatch(r.id, "budgetActual", v)} />
                 <EditCell value={r.conversions} onChange={(v) => onPatch(r.id, "conversions", v)} />
                 <EditCell value={r.marketingVisits || 0} onChange={(v) => onPatch(r.id, "marketingVisits", v)} />
+                {/* CV% (auto) = Marketing Visit ÷ Reach actual */}
+                <td className="px-[9px] py-[6px] text-right font-bold text-ink">
+                  {d.cvActual != null ? pct(d.cvActual * 100) : "—"}
+                </td>
                 {/* Cost per visit (auto) = actual spend ÷ marketing visits */}
                 <td className="px-[9px] py-[6px] text-right font-bold text-ink">
                   {cpr(r.marketingVisits && r.budgetActual ? r.budgetActual / r.marketingVisits : null)}

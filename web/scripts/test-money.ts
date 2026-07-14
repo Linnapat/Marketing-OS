@@ -8,7 +8,7 @@ import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
-import { resultsRoas, CampaignResultRow } from "../src/lib/data/campaignResult";
+import { resultsRoas, deriveResultRow, CampaignResultRow } from "../src/lib/data/campaignResult";
 import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
@@ -126,6 +126,12 @@ console.log("kolRoas / resultsRoas — ROAS = revenue ÷ cost, never fabricated"
   ]) ?? -1, 2);
   check("no revenue → null (not 0×)", resultsRoas([row({ budgetActual: 10000 })]) === null);
   check("no spend → null", resultsRoas([row({ revenue: 10000 })]) === null);
+
+  // CV% actual = Marketing Visit ÷ Reach (same as overview: Reach × CV% = Visit)
+  eq("cv = visits ÷ reach", deriveResultRow(row({ reachActual: 10000, marketingVisits: 250, conversions: 999 })).cvActual ?? -1, 0.025);
+  eq("no visits → legacy conversions fallback", deriveResultRow(row({ reachActual: 10000, conversions: 100 })).cvActual ?? -1, 0.01);
+  check("no reach → null (never divide by 0)", deriveResultRow(row({ marketingVisits: 250 })).cvActual === null);
+  check("nothing recorded → null", deriveResultRow(row({ reachActual: 10000 })).cvActual === null);
 }
 
 console.log("kolMonthlyTotals — KOL split must roll up per month");
