@@ -202,7 +202,8 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
             <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted">
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full" style={{ background: brandColor(item.b) }} />{brandName(item.b)}</span>
               <span className="text-faint">·</span><span>{item.campaign}</span>
-              <span className="text-faint">·</span><span>{MONTHS[6]} {item.day}, {item.time}</span>
+              {/* Real publish date from dateIso — falls back to day-of-month only when undated. */}
+              <span className="text-faint">·</span><span>{item.dateIso ? `${MONTHS[Number(item.dateIso.slice(5, 7)) - 1]} ${Number(item.dateIso.slice(8, 10))}` : `Day ${item.day}`}, {item.time}</span>
             </div>
           </div>
           <button onClick={onClose} className="text-faint hover:text-ink flex-shrink-0"><X size={18} /></button>

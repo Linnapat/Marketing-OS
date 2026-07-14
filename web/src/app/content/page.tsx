@@ -556,10 +556,11 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
         style={{ gridTemplateColumns: "60px 2fr 1.2fr 1fr 1fr 1fr 1fr" }}>
         <div>Date</div><div>Content</div><div>Campaign</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
       </div>
-      {[...items].sort((a, b) => a.day - b.day).map((c) => {
+      {[...items].sort((a, b) => contentDateIso(a).localeCompare(contentDateIso(b))).map((c) => {
         return (
           <button key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
-            <span className="text-[11px] font-bold text-faint">Jul {c.day}</span>
+            {/* Real publish date from dateIso — never a hardcoded month. */}
+            <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
             <div className="flex items-center gap-2 min-w-0">
               <PlatBadges item={c} size={18} />
               <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{c.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div></div>
