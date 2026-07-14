@@ -171,6 +171,8 @@ export interface CampaignBrief {
   kvDirection: string;
   successMetrics: string[];
   successGoals: Record<string, string>;   // metric → goal value
+  /** Link to the external campaign proposal deck/doc (Drive, Canva, …). */
+  proposalLink?: string;
   plannerOwner: string;                    // auto = logged-in user
   approver: string;         // CMO only
   content: BriefContentItem[];
@@ -271,7 +273,7 @@ export function emptyBrief(id: string): CampaignBrief {
     id, name: "", b: "teppen", branch: "", branches: [], objective: OBJECTIVES[0],
     campaignType: CAMPAIGN_TYPES[0], priority: "Med", startDate: "", endDate: "", launchDate: "",
     audience: "", mainMessage: "", offer: "", channels: [], concept: "", kvDirection: "",
-    successMetrics: [], successGoals: {}, plannerOwner: "", approver: "", content: [], kols: [], budget: emptyBudget(),
+    successMetrics: [], successGoals: {}, proposalLink: "", plannerOwner: "", approver: "", content: [], kols: [], budget: emptyBudget(),
     status: "Draft", approvalLog: [], createdAt: "",
   };
 }

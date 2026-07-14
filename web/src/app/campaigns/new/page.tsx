@@ -477,6 +477,17 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
           <textarea value={brief.kvDirection} onChange={(e) => set("kvDirection", e.target.value)} rows={3} className={field} placeholder="โทน สี มู้ด อ้างอิงภาพ" />
         </div>
         <div className="md:col-span-2">
+          <label className={label}>Campaign Proposal Link <span className="text-faint font-normal">· วางลิงก์ proposal (Drive / Canva / Slides)</span></label>
+          <div className="flex items-center gap-2">
+            <input value={brief.proposalLink || ""} onChange={(e) => set("proposalLink", e.target.value)}
+              className={field} placeholder="https://…" inputMode="url" />
+            {(brief.proposalLink || "").trim().startsWith("http") && (
+              <a href={brief.proposalLink!.trim()} target="_blank" rel="noopener noreferrer"
+                className="text-[12px] font-bold text-accent whitespace-nowrap">เปิดลิงก์ ↗</a>
+            )}
+          </div>
+        </div>
+        <div className="md:col-span-2">
           <label className={label}>Planner <span className="text-faint font-normal">· คุณ (ผู้ที่ล็อกอิน)</span></label>
           <input value={planner || "—"} readOnly disabled className={`${field} bg-line4 cursor-not-allowed opacity-80`} />
         </div>
