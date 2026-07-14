@@ -14,7 +14,7 @@ import {
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, requestDate, publishTime, onPublishTimeChange }: {
+export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, requestDate, publishTime, onPublishTimeChange, lockApproverToRequester }: {
   item: BriefContentItem;
   onChange: (patch: Partial<BriefContentItem>) => void;
   outOfRange?: (iso: string) => boolean;
@@ -23,8 +23,11 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   requestDate?: string;
   publishTime?: string;
   onPublishTimeChange?: (value: string) => void;
+  lockApproverToRequester?: boolean;
 }) {
   const requesterValue = item.requester?.trim() || "";
+  const requesterDisplay = requesterValue || requesterFallback || "You";
+  const approverDisplay = item.approver?.trim() || requesterDisplay;
   const graphicRequestDate = requestDate || todayIso();
   const minGraphicDue = minGraphicDueDate(graphicRequestDate);
   const graphicLeadValid = !item.graphicDueDate || isGraphicDueDateAllowed(item.graphicDueDate, graphicRequestDate);
@@ -62,7 +65,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         <div className="md:col-span-2 grid md:grid-cols-3 gap-3">
           <div>
             <label className={label}>Requester</label>
-            <input value={requesterValue || requesterFallback || "You"} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
+            <input value={requesterDisplay} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
           </div>
           <div>
             <label className={label}>Designer</label>
@@ -70,7 +73,11 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
           </div>
           <div>
             <label className={label}>Approver</label>
-            <OwnerSelect value={item.approver} onChange={(v) => onChange({ approver: v })} placeholder="= Requester" />
+            {lockApproverToRequester ? (
+              <input value={`= Requester (${approverDisplay})`} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
+            ) : (
+              <OwnerSelect value={item.approver} onChange={(v) => onChange({ approver: v })} placeholder="= Requester" />
+            )}
           </div>
         </div>
       )}

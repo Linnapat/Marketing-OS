@@ -342,7 +342,7 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
             </div>
           </div>
           {/* Shared content-item template */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} lockApproverToRequester />
         </div>
         <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
