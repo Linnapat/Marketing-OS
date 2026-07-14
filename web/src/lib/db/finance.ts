@@ -111,6 +111,29 @@ export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: 
   }
 }
 
+/** Approver corrects a wrongly-submitted request (category / item / amount)
+ *  before deciding. Only the request row changes — approved spend is written
+ *  to the Spending Log at approval time, so editing a pending row never
+ *  touches recorded money. The requester is notified of the correction. */
+export async function updateExpenseRequest(req: ExpenseReq, patch: {
+  category: string; vendor?: string; requested: number;
+}, by: string): Promise<void> {
+  notify("approval", `✏️ แก้ไขคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${patch.category}`,
+    `ยอดขอ ${baht(patch.requested)}${patch.vendor ? ` · ${patch.vendor}` : ""} — แก้โดย ${by}${req.requester ? ` (แจ้ง ${req.requester})` : ""}`, "/expenses");
+  const db = supabase();
+  if (!db || req._id === undefined) return;
+  const { error } = await db.from("expense_requests")
+    .update({ category: patch.category, requested: patch.requested }).eq("id", req._id);
+  assertDbOk(error, "Could not update expense request");
+  // Separate so a DB missing expenses_p1.sql still keeps the base correction.
+  await db.from("expense_requests").update({ vendor: patch.vendor ?? null }).eq("id", req._id);
+  if (req.ref) {
+    await db.from("requests").update({
+      title: `${patch.category} · ${baht(patch.requested)}${req.reimburseType ? ` · ${req.reimburseType}` : ""}${patch.vendor ? ` · ${patch.vendor}` : ""}`,
+    }).eq("id", req.ref);
+  }
+}
+
 /** Finance marks an Unpaid spending-log row as Paid after the actual payment. */
 export async function markExpensePaid(id: number | undefined): Promise<void> {
   const db = supabase();

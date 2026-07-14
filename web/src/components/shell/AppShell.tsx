@@ -47,12 +47,22 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   const [drawer, setDrawer] = useState(false);
+  // Desktop sidebar can collapse to an icon-only rail; the choice is remembered.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(localStorage.getItem("mos-sidebar-collapsed") === "1");
+  }, []);
+  const toggleCollapsed = () => setCollapsed((c) => {
+    const next = !c;
+    localStorage.setItem("mos-sidebar-collapsed", next ? "1" : "0");
+    return next;
+  });
 
   return (
     <div className="min-h-screen bg-ivory">
       {/* Desktop sidebar (fixed) */}
       <aside className="hidden lg:block fixed inset-y-0 left-0 z-30">
-        <SidebarContent />
+        <SidebarContent collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
       </aside>
 
       {/* Mobile top bar */}
@@ -88,7 +98,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Content */}
-      <main className="lg:pl-[280px]">
+      <main className={collapsed ? "lg:pl-[78px] transition-[padding] duration-200" : "lg:pl-[280px] transition-[padding] duration-200"}>
         <div className="max-w-content mx-auto px-5 sm:px-6 lg:px-8 pt-5 pb-16">
           <ModuleGate>{children}</ModuleGate>
         </div>

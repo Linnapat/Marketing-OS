@@ -3,7 +3,7 @@
 import { toastError } from "@/lib/toast";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, ExternalLink, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, ExternalLink, Pencil, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { notify } from "@/lib/notify";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -14,8 +14,8 @@ import { SignaturePad } from "@/components/finance/SignaturePad";
 import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
 import { useRole } from "@/lib/role";
 import { baht } from "@/lib/format";
-import { buildCsv, PnlRow } from "@/lib/data/finance";
-import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
+import { buildCsv, PnlRow, EXP_CATEGORIES, STATUS_TONE } from "@/lib/data/finance";
+import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, updateExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { useAuth } from "@/lib/auth";
 import { fetchCampaigns } from "@/lib/db/campaigns";
@@ -692,7 +692,7 @@ function CategoryPnlTab({ brand, reqs, sheetRows, period, setPeriod, sheetUrl, o
   );
 }
 
-/* ── Approval: pending requests + signature ────────────────────────── */
+/* ── Approval: Excel-style rows + history search + inline correction ── */
 function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const [signing, setSigning] = useState<number | null>(null);
@@ -701,6 +701,12 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [rejected, setRejected] = useState<Record<number, boolean>>({});
   const [allReqs, setAllReqs] = useState<ExpenseReq[]>([]);
   const [period, setPeriod] = useState<PeriodFilter>({ ...DEFAULT_DATE_FILTER, mode: "range" });
+  const [q, setQ] = useState("");
+  // Inline correction (wrong category / item / amount) — index of the row being edited.
+  const [editing, setEditing] = useState<number | null>(null);
+  const [eCat, setECat] = useState("");
+  const [eVendor, setEVendor] = useState("");
+  const [eAmt, setEAmt] = useState("");
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
   const [sig, setSig] = useState<string | null>(null);
@@ -712,10 +718,17 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
     return () => { alive = false; };
   }, []);
 
+  // Searching looks through the ENTIRE history (period filter suspended) so an
+  // old request is always findable; without a query the period filter applies.
+  const query = q.trim().toLowerCase();
   const rows = allReqs
     .map((r, i) => ({ r, i }))
-    .filter(({ r }) => (brand === "all" || r.b === brand) && inDateFilter(period, r.createdAt));
+    .filter(({ r }) => (brand === "all" || r.b === brand) && (query
+      ? [r.category, r.campaign, r.requester, r.vendor, r.ref, r.status, brandName(r.b), String(r.requested)]
+          .filter(Boolean).join(" ").toLowerCase().includes(query)
+      : inDateFilter(period, r.createdAt)));
   const waitingCount = rows.filter(({ r, i }) => !approved[i] && !rejected[i] && r.status === "Waiting Approval").length;
+
   const approve = (i: number, r: ExpenseReq) => {
     setApproved((a) => ({ ...a, [i]: true }));
     setSigning(null);
@@ -730,6 +743,24 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
       .catch((error) => toastError(`Reject คำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     setReason("");
   };
+  const startEdit = (i: number, r: ExpenseReq) => {
+    setEditing(i); setSigning(null); setRejecting(null);
+    setECat(r.category); setEVendor(r.vendor ?? ""); setEAmt(String(r.requested || ""));
+  };
+  const saveEdit = (i: number, r: ExpenseReq) => {
+    const patch = {
+      category: eCat.trim() || r.category,
+      vendor: eVendor.trim() || undefined,
+      requested: Number(eAmt) > 0 ? Number(eAmt) : r.requested,
+    };
+    setAllReqs((rs) => rs.map((x, xi) => (xi === i ? { ...x, ...patch } : x)));
+    setEditing(null);
+    updateExpenseRequest(r, patch, approverName)
+      .catch((error) => toastError(`แก้ไขคำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
+
+  const cell = "px-[10px] py-[8px] border-b border-line4";
+  const editField = "w-full text-[12.5px] px-[8px] py-[5px] rounded-[7px] border border-accent/60 bg-white outline-none";
 
   return (
     <div className="flex flex-col gap-3">
@@ -740,86 +771,178 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
       />
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="text-[12px] text-faint">
-          {waitingCount} request(s) waiting for your approval.
-        </div>
-        <div className="flex items-center gap-4 flex-wrap text-[11.5px] text-muted">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold">ผู้อนุมัติ</span>
-            {sig ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={sig} alt="approver signature" className="h-6 border border-line3 rounded bg-white" />
-                <button onClick={() => { clearSignature("approver"); setSig(null); }} className="font-bold text-accent">Change</button>
-              </>
-            ) : <span className="text-faint">ยังไม่มีลายเซ็น</span>}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative">
+            <Search size={14} className="absolute left-[10px] top-1/2 -translate-y-1/2 text-faint" />
+            <input
+              value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="ค้นหาย้อนหลัง — category / campaign / ผู้ขอ / vendor / ref / ยอด…"
+              className="w-[340px] max-w-full text-[12.5px] pl-8 pr-8 py-[8px] rounded-[10px] border border-line2 bg-white outline-none focus:border-accent"
+            />
+            {q && (
+              <button onClick={() => setQ("")} aria-label="Clear search"
+                className="absolute right-[8px] top-1/2 -translate-y-1/2 text-faint hover:text-ink"><X size={13} /></button>
+            )}
           </div>
+          <div className="text-[12px] text-faint">
+            {query
+              ? <>พบ {rows.length} รายการจากทั้งหมด (ค้นทุกช่วงเวลา)</>
+              : <>{waitingCount} request(s) waiting for your approval.</>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11.5px] text-muted">
+          <span className="font-semibold">ผู้อนุมัติ</span>
+          {sig ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={sig} alt="approver signature" className="h-6 border border-line3 rounded bg-white" />
+              <button onClick={() => { clearSignature("approver"); setSig(null); }} className="font-bold text-accent">Change</button>
+            </>
+          ) : <span className="text-faint">ยังไม่มีลายเซ็น</span>}
         </div>
       </div>
-      {rows.map(({ r, i }) => {
-        const isRejected = rejected[i] || r.status === "Rejected";
-        const isApproved = !isRejected && (approved[i] || r.status !== "Waiting Approval");
-        const isPending = !isApproved && !isRejected;
-        const wait = daysWaiting(r.createdAt);
-        return (
-          <div key={i} className="bg-surface border border-line rounded-cardLg p-5">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <BrandDot brand={r.b} size={8} />
-                  <span className="text-[14px] font-bold text-ink">{r.category}</span>
-                </div>
-                <div className="text-[12px] text-faint mt-1">
-                  {r.campaign}{r.requester ? <> · โดย {r.requester}</> : null} · requested {baht(r.requested, { compact: true })}
-                  {isPending && wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
-                </div>
-              </div>
-              {isRejected ? (
-                <StatusBadge tone="red">✕ Rejected</StatusBadge>
-              ) : isApproved ? (
-                <StatusBadge tone="green">✓ Approved</StatusBadge>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button onClick={() => { setRejecting(rejecting === i ? null : i); setSigning(null); }} className="text-[12.5px] font-bold rounded-[9px] px-4 py-[8px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
-                    {rejecting === i ? "Cancel" : "✕ Reject"}
-                  </button>
-                  {sig ? (
-                    <button onClick={() => approve(i, r)} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">✓ Confirm &amp; Approve</button>
-                  ) : (
-                    <button onClick={() => { setSigning(signing === i ? null : i); setRejecting(null); }} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px]">
-                      {signing === i ? "Cancel" : "✓ Approve"}
-                    </button>
+
+      <div className="overflow-x-auto border border-line rounded-cardLg bg-surface">
+        <table className="w-full text-[12px] whitespace-nowrap border-collapse">
+          <thead>
+            <tr className="text-faint">
+              {["วันที่", "Ref", "Category", "Brand", "Campaign", "ผู้ขอ", "Vendor / Item", "ยอดขอ (฿)", "อนุมัติ (฿)", "สถานะ", ""].map((h, i) => (
+                <th key={i} className={`font-bold px-[10px] py-2 border-b border-line bg-ivory ${i <= 6 ? "text-left" : i >= 10 ? "text-right" : "text-right"}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={11} className="px-4 py-8 text-center text-[12.5px] text-faint">
+                {query ? <>ไม่พบรายการที่ตรงกับ “{q}”</> : <>ไม่มีคำขอในช่วงที่เลือก — ลองปรับช่วงวันหรือใช้ช่องค้นหา</>}
+              </td></tr>
+            )}
+            {rows.map(({ r, i }) => {
+              const isRejected = rejected[i] || r.status === "Rejected";
+              const isApproved = !isRejected && (approved[i] || r.status === "Approved" || r.status === "Paid");
+              const isPending = !isApproved && !isRejected && r.status === "Waiting Approval";
+              const wait = daysWaiting(r.createdAt);
+              const isEdit = editing === i;
+              // Money guard: once approved, the amount is already in the Spending
+              // Log — corrections are only allowed while the request is undecided.
+              const canEdit = !isApproved && !approved[i];
+              return (
+                <ApprovalRowGroup key={r._id ?? `row-${i}`}>
+                  <tr className={isEdit ? "bg-[#FFFBEF]" : "hover:bg-ivory"}>
+                    <td className={`${cell} text-left text-muted`}>{r.createdAt ? r.createdAt.slice(0, 10) : "—"}</td>
+                    <td className={`${cell} text-left text-faint`}>{r.ref ?? "—"}</td>
+                    <td className={`${cell} text-left font-bold text-ink`}>
+                      {isEdit ? (
+                        <>
+                          <input value={eCat} onChange={(e) => setECat(e.target.value)} list="approval-categories" className={`${editField} min-w-[160px]`} autoFocus />
+                          <datalist id="approval-categories">
+                            {EXP_CATEGORIES.map((c) => <option key={c.label} value={c.label} />)}
+                          </datalist>
+                        </>
+                      ) : r.category}
+                    </td>
+                    <td className={`${cell} text-left`}>
+                      <span className="inline-flex items-center gap-[6px] text-muted"><BrandDot brand={r.b} size={7} />{brandName(r.b)}</span>
+                    </td>
+                    <td className={`${cell} text-left text-muted max-w-[200px] truncate`}>{r.campaign}</td>
+                    <td className={`${cell} text-left text-muted`}>{r.requester ?? "—"}</td>
+                    <td className={`${cell} text-left text-muted`}>
+                      {isEdit
+                        ? <input value={eVendor} onChange={(e) => setEVendor(e.target.value)} placeholder="vendor / item" className={`${editField} min-w-[120px]`} />
+                        : (r.vendor ?? "—")}
+                    </td>
+                    <td className={`${cell} text-right font-bold text-ink`}>
+                      {isEdit
+                        ? <input type="number" min={0} value={eAmt} onChange={(e) => setEAmt(e.target.value)} className={`${editField} w-[100px] text-right`} />
+                        : baht(r.requested)}
+                    </td>
+                    <td className={`${cell} text-right`} style={{ color: isApproved ? "#4E7A4E" : undefined }}>
+                      {isApproved && (r.approved || r.requested) ? baht(r.approved || r.requested) : "—"}
+                    </td>
+                    <td className={`${cell} text-right`}>
+                      {isRejected ? <StatusBadge tone="red">✕ Rejected</StatusBadge>
+                        : isApproved ? <StatusBadge tone="green">✓ Approved</StatusBadge>
+                        : isPending ? (
+                          <span className="inline-flex items-center gap-2">
+                            {wait !== null && wait >= 1 && <b className="text-[11px]" style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอ {wait} วัน</b>}
+                            <StatusBadge tone={STATUS_TONE[r.status] ?? "gold"}>{r.status}</StatusBadge>
+                          </span>
+                        ) : <StatusBadge tone={STATUS_TONE[r.status] ?? "neutral"}>{r.status}</StatusBadge>}
+                    </td>
+                    <td className={`${cell} text-right`}>
+                      {isEdit ? (
+                        <span className="inline-flex items-center gap-[6px]">
+                          <button onClick={() => saveEdit(i, r)} className="text-[11.5px] font-bold text-white rounded-[8px] px-3 py-[5px]" style={{ background: "#4E7A4E" }}>บันทึก ✓</button>
+                          <button onClick={() => setEditing(null)} className="text-[11.5px] font-bold text-muted border border-line2 rounded-[8px] px-3 py-[5px] bg-white">ยกเลิก</button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-[6px]">
+                          {canEdit && (
+                            <button onClick={() => startEdit(i, r)} title="แก้ไข category / item / ยอด (กรณีส่งมาผิด)"
+                              className="text-faint hover:text-ink p-[4px] rounded-[6px] border border-line2 bg-white"><Pencil size={12} /></button>
+                          )}
+                          {isPending && (
+                            <>
+                              <button onClick={() => { setRejecting(rejecting === i ? null : i); setSigning(null); }}
+                                className="text-[11.5px] font-bold rounded-[8px] px-3 py-[5px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+                                {rejecting === i ? "Cancel" : "✕"}
+                              </button>
+                              {sig ? (
+                                <button onClick={() => approve(i, r)} className="text-[11.5px] font-bold text-white bg-panel rounded-[8px] px-3 py-[5px]">✓ Approve</button>
+                              ) : (
+                                <button onClick={() => { setSigning(signing === i ? null : i); setRejecting(null); }}
+                                  className="text-[11.5px] font-bold text-white bg-panel rounded-[8px] px-3 py-[5px]">
+                                  {signing === i ? "Cancel" : "✓ Approve"}
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  {isRejected && r.rejectReason && (
+                    <tr><td colSpan={11} className="px-[10px] pb-[8px] border-b border-line4 text-[11.5px]" style={{ color: "#B33A2E" }}>
+                      ↩︎ เหตุผลที่ตีกลับ: {r.rejectReason}
+                    </td></tr>
                   )}
-                </div>
-              )}
-            </div>
-            {signing === i && isPending && !sig && (
-              <div className="mt-4 pt-4 border-t border-line4">
-                <div className="text-[12px] font-semibold text-muted mb-2">
-                  Sign once — we’ll remember it for next time
-                </div>
-                <SignaturePad
-                  confirmLabel="Save signature &amp; Approve"
-                  onSave={(dataUrl) => {
-                    saveSignature("approver", dataUrl);
-                    setSig(dataUrl);
-                    approve(i, r);
-                  }}
-                />
-              </div>
-            )}
-            {rejecting === i && isPending && (
-              <div className="mt-4 pt-4 border-t border-line4 flex gap-2 flex-wrap items-center">
-                <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น) เช่น ขอใบเสนอราคาก่อน" autoFocus
-                  className="flex-1 min-w-[220px] text-[13px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none" />
-                <button onClick={() => reject(i, r)} disabled={!reason.trim()} className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
-                  Reject &amp; Send back
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
+                  {signing === i && isPending && !sig && (
+                    <tr><td colSpan={11} className="px-[14px] py-3 border-b border-line4 bg-ivory">
+                      <div className="text-[12px] font-semibold text-muted mb-2">Sign once — we’ll remember it for next time</div>
+                      <SignaturePad
+                        confirmLabel="Save signature &amp; Approve"
+                        onSave={(dataUrl) => {
+                          saveSignature("approver", dataUrl);
+                          setSig(dataUrl);
+                          approve(i, r);
+                        }}
+                      />
+                    </td></tr>
+                  )}
+                  {rejecting === i && isPending && (
+                    <tr><td colSpan={11} className="px-[14px] py-3 border-b border-line4 bg-ivory">
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น) เช่น ขอใบเสนอราคาก่อน" autoFocus
+                          className="flex-1 min-w-[220px] text-[13px] px-[12px] py-[9px] rounded-[9px] border border-line2 bg-white outline-none" />
+                        <button onClick={() => reject(i, r)} disabled={!reason.trim()} className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
+                          Reject &amp; Send back
+                        </button>
+                      </div>
+                    </td></tr>
+                  )}
+                </ApprovalRowGroup>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[11px] text-faint px-1">
+        ✏️ แก้ไขได้เฉพาะรายการที่ยังไม่อนุมัติ (category / vendor / ยอดขอ) — ระบบแจ้งผู้ขอให้อัตโนมัติ · รายการที่อนุมัติแล้วยอดถูกบันทึกลง Spending Log จึงแก้ไม่ได้ · พิมพ์ค้นหาเพื่อดูย้อนหลังทุกช่วงเวลา
+      </div>
     </div>
   );
+}
+
+function ApprovalRowGroup({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }

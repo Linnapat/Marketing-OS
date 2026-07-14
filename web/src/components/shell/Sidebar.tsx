@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Pencil, X } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, LogOut, Pencil, X } from "lucide-react";
 import { NAV } from "@/lib/nav";
 import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -39,7 +39,12 @@ function Avatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
   return <div className="w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center text-panel text-[12px] font-extrabold">{initials(name)}</div>;
 }
 
-export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse }: {
+  onNavigate?: () => void;
+  /** Icon-only rail (desktop). The mobile drawer always renders expanded. */
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}) {
   const pathname = usePathname();
   const { user, member, role, signOut } = useAuth();
   const { can } = useRole();
@@ -70,32 +75,50 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
-    <div className="flex flex-col h-full text-white w-[280px]" style={{ background: "#17172A" }}>
+    <div
+      className={clsx("flex flex-col h-full text-white transition-[width] duration-200", collapsed ? "w-[78px]" : "w-[280px]")}
+      style={{ background: "#17172A" }}
+    >
       {/* Brand */}
-      <div className="px-5 pt-6 pb-5 border-b border-white/[0.08]">
-        <div className="flex items-center gap-[10px]">
-          <div className="w-10 h-10 rounded-[14px] flex items-center justify-center font-extrabold text-[15px] shadow-[0_10px_24px_rgba(108,92,231,0.28)]" style={{ background: "linear-gradient(135deg, #7C6CF6, #5B4FD8)", color: "#fff" }}>
+      <div className={clsx("pt-6 pb-5 border-b border-white/[0.08]", collapsed ? "px-3" : "px-5")}>
+        <div className={clsx("flex items-center gap-[10px]", collapsed && "flex-col gap-3")}>
+          <div className="w-10 h-10 rounded-[14px] flex items-center justify-center font-extrabold text-[15px] shadow-[0_10px_24px_rgba(108,92,231,0.28)] shrink-0" style={{ background: "linear-gradient(135deg, #7C6CF6, #5B4FD8)", color: "#fff" }}>
             M
           </div>
-          <div>
-            <div className="text-[14.5px] font-extrabold tracking-[-0.01em] leading-none">
-              MKT Playground
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <div className="text-[14.5px] font-extrabold tracking-[-0.01em] leading-none">
+                MKT Playground
+              </div>
+              <div className="text-[10.5px] text-white/45 mt-[3px]">
+                TEPPEN Group
+              </div>
             </div>
-            <div className="text-[10.5px] text-white/45 mt-[3px]">
-              TEPPEN Group
-            </div>
-          </div>
+          )}
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "ขยายเมนู" : "ย่อเมนูเหลือไอคอน"}
+              className="text-white/40 hover:text-white p-[6px] rounded-[8px] hover:bg-white/[0.06] shrink-0"
+            >
+              {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav className={clsx("flex-1 overflow-y-auto pb-4", collapsed ? "px-[14px]" : "px-3")}>
         {groups.map((group, gi) => (
           <div key={gi} className="mb-4">
-            {group.label && (
+            {group.label && !collapsed && (
               <div className="px-3 pt-3 pb-2 text-[10px] font-bold tracking-[0.12em] uppercase text-white/28">
                 {group.label}
               </div>
+            )}
+            {group.label && collapsed && gi > 0 && (
+              <div className="mx-auto my-3 h-px w-6 bg-white/[0.12]" />
             )}
             {group.items.map((item) => {
               const active = isActive(item.href);
@@ -106,8 +129,10 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                   key={item.href}
                   href={item.href}
                   onClick={onNavigate}
+                  title={collapsed ? item.label : undefined}
                   className={clsx(
-                    "group flex items-center gap-3 px-3 py-[11px] rounded-[16px] mb-[4px] text-[13px] font-semibold transition min-w-0",
+                    "group flex items-center rounded-[16px] mb-[4px] text-[13px] font-semibold transition min-w-0",
+                    collapsed ? "justify-center px-0 py-[9px]" : "gap-3 px-3 py-[11px]",
                     active
                       ? "text-white"
                       : "text-white/70 hover:text-white hover:bg-white/[0.05]",
@@ -123,13 +148,13 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       className={clsx(active ? "text-white" : "")}
                     />
                   </span>
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {item.badge && (
+                  {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+                  {!collapsed && item.badge && (
                     <span className="text-[10.5px] font-bold px-[7px] py-[1px] rounded-pill bg-white/95 text-[#5B4FD8]">
                       {item.badge}
                     </span>
                   )}
-                  {!item.ready && (
+                  {!collapsed && !item.ready && (
                     <span className="text-[9px] font-bold text-[#D7B76A] bg-white/[0.06] border border-white/[0.08] tracking-wide rounded-pill px-[6px] py-[2px]">SOON</span>
                   )}
                 </Link>
@@ -143,25 +168,36 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-3 pb-4 pt-3 border-t border-white/[0.08] bg-white/[0.02]">
         {/* Role preview is a demo aid — hide it once real logins are enforced,
             so a signed-in user can't escalate their "viewing as" role. */}
-        {!AUTH_REQUIRED && <RoleSwitcher />}
-        <div className="flex items-center gap-[10px] px-2 pt-2">
-          <Avatar name={displayName} avatarUrl={member?.avatarUrl} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-bold text-white/90 truncate">{displayName}</div>
-            <div className="text-[10.5px] text-white/40 truncate">{displayRole}</div>
-            {member?.presence && <div className="text-[10.5px] text-white/55 truncate">{member.presence}{member.statusNote ? ` · ${member.statusNote}` : ""}</div>}
+        {!AUTH_REQUIRED && !collapsed && <RoleSwitcher />}
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-2 pt-1" title={`${displayName} · ${displayRole}`}>
+            <Avatar name={displayName} avatarUrl={member?.avatarUrl} />
+            {AUTH_REQUIRED && user && (
+              <button onClick={() => signOut()} aria-label="Sign out" className="text-white/40 hover:text-white p-1" title="Sign out">
+                <LogOut size={15} />
+              </button>
+            )}
           </div>
-          {member && (
-            <button onClick={() => setProfileOpen(true)} aria-label="Edit profile" className="text-white/40 hover:text-white p-1" title="Edit profile">
-              <Pencil size={15} />
-            </button>
-          )}
-          {AUTH_REQUIRED && user && (
-            <button onClick={() => signOut()} aria-label="Sign out" className="text-white/40 hover:text-white p-1" title="Sign out">
-              <LogOut size={15} />
-            </button>
-          )}
-        </div>
+        ) : (
+          <div className="flex items-center gap-[10px] px-2 pt-2">
+            <Avatar name={displayName} avatarUrl={member?.avatarUrl} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-bold text-white/90 truncate">{displayName}</div>
+              <div className="text-[10.5px] text-white/40 truncate">{displayRole}</div>
+              {member?.presence && <div className="text-[10.5px] text-white/55 truncate">{member.presence}{member.statusNote ? ` · ${member.statusNote}` : ""}</div>}
+            </div>
+            {member && (
+              <button onClick={() => setProfileOpen(true)} aria-label="Edit profile" className="text-white/40 hover:text-white p-1" title="Edit profile">
+                <Pencil size={15} />
+              </button>
+            )}
+            {AUTH_REQUIRED && user && (
+              <button onClick={() => signOut()} aria-label="Sign out" className="text-white/40 hover:text-white p-1" title="Sign out">
+                <LogOut size={15} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {profileOpen && member && (
