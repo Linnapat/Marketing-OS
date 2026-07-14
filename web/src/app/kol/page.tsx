@@ -232,20 +232,7 @@ export default function KolPage() {
       <div className="mt-5">
         {tab === "list" && group === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "list" && group === "campaign" && (
-          <div className="flex flex-col gap-4">
-            {Array.from(filtered.reduce((m, k) => { const c = k.campaign || "—"; (m.get(c) ?? m.set(c, []).get(c)!).push(k); return m; }, new Map<string, Kol[]>()).entries())
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .map(([c, ks]) => (
-                <div key={c}>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <span className="text-[13px] font-extrabold text-ink">🎯 {c}</span>
-                    <span className="text-[12px] text-faint font-semibold">{ks.length} creator{ks.length > 1 ? "s" : ""}</span>
-                  </div>
-                  <CreatorList list={ks} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />
-                </div>
-              ))}
-            {filtered.length === 0 && <CreatorList list={[]} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-          </div>
+          <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />
         )}
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
@@ -301,6 +288,49 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Campaign view — Platform-Performance-style collapsible groups: one row per
+ *  campaign with summary stats (creators, fee, stage mix), expandable to the
+ *  creator list inside. */
+function KolCampaignGroups({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const groups = useMemo(() => {
+    const m = new Map<string, Kol[]>();
+    for (const k of list) { const c = k.campaign || "—"; (m.get(c) ?? m.set(c, []).get(c)!).push(k); }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [list]);
+  if (list.length === 0) return <CreatorList list={[]} onOpen={onOpen} />;
+  const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
+    <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      {groups.map(([campaign, ks]) => {
+        const isOpen = openGroups[campaign] ?? true;
+        const fee = ks.reduce((s, k) => s + (k.fee || 0), 0);
+        const producing = ks.filter((k) => ["Producing", "In Review"].includes(normalizeStage(k.status))).length;
+        const posted = ks.filter((k) => ["Posted", "Completed"].includes(normalizeStage(k.status))).length;
+        const overdue = ks.filter((k) => k.isOverdue).length;
+        return (
+          <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <button onClick={() => setOpenGroups((o) => ({ ...o, [campaign]: !(o[campaign] ?? true) }))}
+              className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-ivory/60">
+              <span className="text-faint text-[13px]">{isOpen ? "▾" : "▸"}</span>
+              <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
+              <span className="text-[11.5px] text-faint font-semibold">{ks.length} creator{ks.length > 1 ? "s" : ""} · {baht(fee, { compact: true })}</span>
+              <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+                {chip("producing/review", producing, "#3E5C9A", "#EEF1F8")}
+                {chip("posted", posted, "#4E7A4E", "#EEF4EE")}
+                {chip("overdue", overdue, "#B33A2E", "#FFF5F4")}
+              </span>
+            </button>
+            {isOpen && <div className="border-t border-line4"><CreatorList list={ks} onOpen={onOpen} /></div>}
+          </div>
+        );
+      })}
     </div>
   );
 }

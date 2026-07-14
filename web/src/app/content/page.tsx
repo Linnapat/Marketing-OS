@@ -46,7 +46,7 @@ function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
   );
 }
 
-type View = "month" | "week" | "list" | "queue";
+type View = "month" | "week" | "list" | "queue" | "campaign";
 type SavedContentView = { name: string; view: View; brand: BrandFilterValue; date: DateFilter };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -218,6 +218,7 @@ export default function ContentPage() {
                   { value: "week", label: "Week" },
                   { value: "list", label: "List" },
                   { value: "queue", label: "🚀 Queue" },
+                  { value: "campaign", label: "🎯 Campaign" },
                 ].map((option) => {
                   const active = view === option.value;
                   return (
@@ -273,6 +274,7 @@ export default function ContentPage() {
         {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} />}
         {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} />}
         {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
+        {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} />}
       </div>
 
       {open && (
@@ -496,6 +498,50 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
       </div>
       <StatusBadge tone={contentTone(c.status)}>{c.status}</StatusBadge>
     </button>
+  );
+}
+
+
+/** Campaign view — Platform-Performance-style collapsible groups: one row per
+ *  campaign with summary stats, expandable to the post list inside. */
+function CampaignView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const groups = useMemo(() => {
+    const m = new Map<string, ContentItem[]>();
+    for (const c of items) { const k = c.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(c); }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [items]);
+  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} />;
+  const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
+    <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      {groups.map(([campaign, list]) => {
+        const isOpen = openGroups[campaign] ?? true;
+        const waitingApproval = list.filter((c) => c.approvalStatus === "Waiting Approval").length;
+        const waitingAsset = list.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length;
+        const scheduled = list.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)).length;
+        const published = list.filter((c) => c.publishStatus === "Published").length;
+        return (
+          <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <button onClick={() => setOpenGroups((o) => ({ ...o, [campaign]: !(o[campaign] ?? true) }))}
+              className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-ivory/60">
+              {isOpen ? <span className="text-faint text-[13px]">▾</span> : <span className="text-faint text-[13px]">▸</span>}
+              <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
+              <span className="text-[11.5px] text-faint font-semibold">{list.length} post{list.length > 1 ? "s" : ""}</span>
+              <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+                {chip("waiting approval", waitingApproval, "#C68A1E", "#FBF8EE")}
+                {chip("waiting asset", waitingAsset, "#B33A2E", "#FFF5F4")}
+                {chip("scheduled", scheduled, "#3E5C9A", "#EEF1F8")}
+                {chip("published", published, "#4E7A4E", "#EEF4EE")}
+              </span>
+            </button>
+            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} /></div>}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

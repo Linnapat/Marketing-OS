@@ -229,25 +229,45 @@ function BoardView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =
   );
 }
 
-/** Group-by-campaign view: one section per campaign, list rows inside. */
+/** Campaign view — Platform-Performance-style collapsible groups: one row per
+ *  campaign with summary stats, expandable to the request list inside. */
 function CampaignGroupView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) => void }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
     const m = new Map<string, Graphic[]>();
     for (const g of items) { const k = g.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(g); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [items]);
   if (items.length === 0) return <ListView items={items} onOpen={onOpen} />;
+  const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
+    <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
+  );
   return (
-    <div className="flex flex-col gap-4">
-      {groups.map(([campaign, gs]) => (
-        <div key={campaign}>
-          <div className="flex items-center gap-2 mb-2 px-1">
-            <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
-            <span className="text-[12px] text-faint font-semibold">{gs.length} request{gs.length > 1 ? "s" : ""}</span>
+    <div className="flex flex-col gap-3">
+      {groups.map(([campaign, gs]) => {
+        const isOpen = openGroups[campaign] ?? true;
+        const inProgress = gs.filter((g) => /Progress|Creating/i.test(g.stage)).length;
+        const waiting = gs.filter((g) => /Waiting/i.test(g.stage)).length;
+        const done = gs.filter((g) => /Approved|Delivered/i.test(g.stage)).length;
+        const overdue = gs.filter((g) => g.isOverdue).length;
+        return (
+          <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <button onClick={() => setOpenGroups((o) => ({ ...o, [campaign]: !(o[campaign] ?? true) }))}
+              className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-ivory/60">
+              <span className="text-faint text-[13px]">{isOpen ? "▾" : "▸"}</span>
+              <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
+              <span className="text-[11.5px] text-faint font-semibold">{gs.length} request{gs.length > 1 ? "s" : ""}</span>
+              <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+                {chip("in progress", inProgress, "#3E5C9A", "#EEF1F8")}
+                {chip("waiting", waiting, "#C68A1E", "#FBF8EE")}
+                {chip("approved/delivered", done, "#4E7A4E", "#EEF4EE")}
+                {chip("overdue", overdue, "#B33A2E", "#FFF5F4")}
+              </span>
+            </button>
+            {isOpen && <div className="border-t border-line4"><ListView items={gs} onOpen={onOpen} /></div>}
           </div>
-          <ListView items={gs} onOpen={onOpen} />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
