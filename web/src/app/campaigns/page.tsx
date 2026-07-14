@@ -32,11 +32,7 @@ export default function CampaignsPage() {
   const brandVisibility = useBrandVisibility();
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
-  const [status, setStatus] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
-  const [owner, setOwner] = useState<string>("all");
-  const [budgetBand, setBudgetBand] = useState<string>("all");
-  const [branchFilter, setBranchFilter] = useState<string>("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
@@ -111,27 +107,14 @@ export default function CampaignsPage() {
 
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 
-  const owners = Array.from(new Set(campaigns.map((c) => c.owner).filter(Boolean)));
-  // Branches may be comma-joined (multi-branch campaigns); split for the filter.
-  const allBranches = Array.from(new Set(campaigns.flatMap((c) => (c.branch || "").split(",").map((s) => s.trim())).filter((s) => s && s !== "—")));
-  const inBand = (b: number) => budgetBand === "all"
-    || (budgetBand === "lt100" && b < 100000)
-    || (budgetBand === "100-300" && b >= 100000 && b <= 300000)
-    || (budgetBand === "gt300" && b > 300000);
-
   const filtered = campaigns.filter((c) =>
     (brand === "all" || c.b === brand) &&
-    (status === "all" || c.status === status) &&
     (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
-    (owner === "all" || c.owner === owner) &&
-    (branchFilter === "all" || (c.branch || "").split(",").map((s) => s.trim()).includes(branchFilter)) &&
-    inBand(c.budget) &&
     rangeInFilter(date, c.dates),
   );
   const groups = STATUS_ORDER
     .map((s) => ({ status: s, rows: filtered.filter((c) => c.status === s) }))
     .filter((g) => g.rows.length > 0);
-  const statusChips = ["all", ...STATUS_ORDER];
 
   // A campaign that covers every branch of its brand reads "All branches"
   // instead of the full comma-joined list.
@@ -192,7 +175,7 @@ export default function CampaignsPage() {
           )}
         >
           <DateFilterBar value={date} onChange={setDate} />
-          <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <div className="mt-2 grid gap-3 md:grid-cols-[240px_1fr]">
             <div className="flex flex-col gap-[7px]">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Brand</span>
               <select
@@ -203,42 +186,6 @@ export default function CampaignsPage() {
               >
                 {brandVisibility.allowAll && <option value="all">All Brands</option>}
                 {brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Branch</span>
-              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
-                <option value="all">All Branches</option>
-                {allBranches.map((br) => <option key={br} value={br}>{br}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Status</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none"
-                style={{ borderColor: "#ECEAF2" }}
-              >
-                {statusChips.map((s) => (
-                  <option key={s} value={s}>{s === "all" ? "All Statuses" : s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Owner</span>
-              <select value={owner} onChange={(e) => setOwner(e.target.value)} className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
-                <option value="all">All Owners</option>
-                {owners.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Budget</span>
-              <select value={budgetBand} onChange={(e) => setBudgetBand(e.target.value)} className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none" style={{ borderColor: "#ECEAF2" }}>
-                <option value="all">Any Budget</option>
-                <option value="lt100">&lt; ฿100K</option>
-                <option value="100-300">฿100K – ฿300K</option>
-                <option value="gt300">&gt; ฿300K</option>
               </select>
             </div>
             <div className="flex flex-col gap-[7px]">
