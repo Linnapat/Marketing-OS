@@ -19,7 +19,7 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, todayIso } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
@@ -61,11 +61,16 @@ export default function GraphicPage() {
   // it spawns the graphic (with per-asset deliverables), a real content post, and
   // writes the item back into the campaign's Content Plan — one source of truth.
   const addGraphic = async (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string) => {
-    setReqOpen(false);
-    setGraphics((gs) => [g, ...gs]);
-    await createGraphic(g);
-    if (post) await createContent(post).catch(() => {});
-    if (briefItem && campaign && campaign !== "—") appendBriefItem(campaign, briefItem).catch(() => {});
+    try {
+      await createGraphic(g);
+      if (post) await createContent(post);
+      if (briefItem && campaign && campaign !== "—") await appendBriefItem(campaign, briefItem);
+      setGraphics((gs) => [g, ...gs]);
+      setReqOpen(false);
+    } catch (error) {
+      alert(`บันทึก Graphic Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw error;
+    }
   };
 
   const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
@@ -290,6 +295,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const [approver, setApprover] = useState("");
   const { member, user } = useAuth();
   const requester = member?.name || user?.email?.split("@")[0] || "You";
+  const requestDate = todayIso();
   // Same content-item "template" as the Campaign Builder's Content Plan — a graphic
   // request is just a content item that needs a graphic, so it stays in sync.
   const [item, setItem] = useState<BriefContentItem>(() => ({ ...emptyContentItem(nextId), requiredGraphic: true }));
@@ -305,12 +311,14 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
 
   const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
-  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && item.graphicDueDate && dueOrderValid;
+  const graphicLeadValid = !!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate);
+  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && item.graphicDueDate && dueOrderValid && graphicLeadValid;
   const missing = [
     !campaign.trim() ? "campaign" : null,
     !item.title.trim() ? "brief title" : null,
     !item.platforms.length ? "platform" : null,
     !item.graphicDueDate ? "graphic due date" : null,
+    item.graphicDueDate && !graphicLeadValid ? `graphic due date at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days` : null,
     !dueOrderValid ? "graphic due date before publish date" : null,
   ].filter(Boolean) as string[];
   const submit = () => {
@@ -377,7 +385,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
           </div>
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} showAssignmentFields={false} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} requestDate={requestDate} showAssignmentFields={false} />
         </div>
         <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>

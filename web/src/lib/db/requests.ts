@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { REQUESTS, RequestRow } from "@/lib/data/requests";
 import { BrandId } from "@/lib/brands";
+import { assertDbOk } from "@/lib/db/assert";
 
 type Row = {
   id: string; type: string; type_icon: string; title: string; brand: BrandId;
@@ -28,7 +29,8 @@ export async function fetchRequests(): Promise<RequestRow[]> {
 export async function updateRequestStage(id: string, stage: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("requests").update({ stage }).eq("id", id);
+  const { error } = await db.from("requests").update({ stage }).eq("id", id);
+  assertDbOk(error, "Could not update request stage");
 }
 
 /** Move a request back a stage AND record the mandatory reject reason on the
@@ -39,16 +41,18 @@ export async function rejectRequest(
 ): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("requests").update({ stage }).eq("id", id);
+  const { error } = await db.from("requests").update({ stage }).eq("id", id);
+  assertDbOk(error, "Could not reject request");
   await db.from("requests").update({ feedback }).eq("id", id);
 }
 
 export async function createRequest(r: RequestRow): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("requests").upsert({
+  const { error } = await db.from("requests").upsert({
     id: r.id, type: r.type, type_icon: r.typeIcon, title: r.title, brand: r.b,
     campaign: r.campaign === "—" ? null : r.campaign, requester: r.requester,
     approver: r.approver, due: r.due, stage: r.stage, priority: r.priority,
   });
+  assertDbOk(error, "Could not save request");
 }

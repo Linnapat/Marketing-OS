@@ -170,34 +170,38 @@ export default function MyTasksPage() {
   // Optimistic local patch + persist — powers every action button.
   const patchTask = (id: number, p: Partial<Task>) => {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t)));
-    updateTaskDb(id, p);
+    updateTaskDb(id, p).catch((error) => alert(`บันทึก Task ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   const approveExpense = (r: ExpenseReq) => {
     setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Approved", approved: x.requested } : x)));
-    approveExpenseRequest(r, r.requested);
+    approveExpenseRequest(r, r.requested).catch((error) => alert(`อนุมัติ Expense ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   const rejectExpense = (r: ExpenseReq, reason: string) => {
     setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Rejected", rejectReason: reason } : x)));
-    rejectExpenseRequest(r, reason, approverName);
+    rejectExpenseRequest(r, reason, approverName).catch((error) => alert(`Reject Expense ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const markDone = (id: number) => {
     const task = tasks.find((t) => t.id === id);
     if (task?.approvalKind === "kolProposal" && task.relatedKolId != null) {
-      approveKolProposal(task.relatedKolId).catch(() => {});
+      approveKolProposal(task.relatedKolId).catch((error) => alert(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
-      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch(() => {});
+      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch((error) => alert(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       setCampaigns((cs) => cs.map((c) => c.id === task.relatedCampaignId ? { ...c, budget: task.requestedBudget! } : c));
     }
     setDoneIds((s) => new Set(s).add(id));
     setDrawerId(null);
-    markDoneDb(id);
+    markDoneDb(id).catch((error) => alert(`บันทึก Done ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     const msg = CELEBRATIONS[id % CELEBRATIONS.length];
     setCelebration(msg);
     setTimeout(() => setCelebration((c) => (c === msg ? null : c)), 3000);
   };
-  const createTask = (t: Task) => { setTasks((ts) => [t, ...ts]); setNewOpen(false); createTaskDb(t); };
+  const createTask = (t: Task) => {
+    createTaskDb(t)
+      .then(() => { setTasks((ts) => [t, ...ts]); setNewOpen(false); })
+      .catch((error) => alert(`สร้าง Task ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
   const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);

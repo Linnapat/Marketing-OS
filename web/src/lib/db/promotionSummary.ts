@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { assertDbOk } from "@/lib/db/assert";
 import type { BrandId } from "@/lib/brands";
 import type {
   OmdStorePromotion,
@@ -62,12 +63,14 @@ export async function fetchPromotionSummaryItems(): Promise<OmdStorePromotion[]>
 export async function savePromotionSummaryItem(item: OmdStorePromotion): Promise<OmdStorePromotion> {
   const db = supabase();
   if (!db) return item;
-  await db.from("promotion_summary_items").upsert(toRow(item), { onConflict: "id" });
+  const { error } = await db.from("promotion_summary_items").upsert(toRow(item), { onConflict: "id" });
+  assertDbOk(error, "Could not save promotion summary item");
   return item;
 }
 
 export async function deletePromotionSummaryItem(id: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("promotion_summary_items").delete().eq("id", id);
+  const { error } = await db.from("promotion_summary_items").delete().eq("id", id);
+  assertDbOk(error, "Could not delete promotion summary item");
 }

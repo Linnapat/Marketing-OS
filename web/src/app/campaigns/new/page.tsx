@@ -18,7 +18,7 @@ import {
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
   kolBudgetTotal, withSyncedKolBudget,
-  campaignMonthKeys,
+  campaignMonthKeys, todayIso,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
@@ -467,6 +467,7 @@ function Guideline({ checklist }: { checklist: GuidelineItem[] }) {
 function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
   brief: CampaignBrief; setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; nextSeq: () => number; outOfRange: (iso: string) => boolean | "" | undefined;
 }) {
+  const requestDate = todayIso();
   const upd = (id: string, patch: Partial<BriefContentItem>) => setBrief((b) => ({ ...b, content: b.content.map((c) => c.id === id ? { ...c, ...patch } : c) }));
   const add = () => setBrief((b) => ({ ...b, content: [...b.content, { ...emptyContentItem(nextSeq()) }] }));
   const dup = (id: string) => setBrief((b) => { const src = b.content.find((c) => c.id === id); return src ? { ...b, content: [...b.content, { ...src, id: `ci-${nextSeq()}` }] } : b; });
@@ -485,7 +486,7 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
                   <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
                 </div>
               </div>
-              <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} requesterFallback={brief.plannerOwner || "You"} />
+              <ContentItemForm item={c} onChange={(patch) => upd(c.id, patch)} outOfRange={(iso) => !!outOfRange(iso)} requesterFallback={brief.plannerOwner || "You"} requestDate={requestDate} />
             </div>
           );
         })}

@@ -24,6 +24,7 @@ export const SUCCESS_METRICS = [
 
 export const CONTENT_TYPES = [
   "Photo", "Reel", "Short Video", "Carousel", "Story",
+  "Photo album", "Photo shoot", "VDO shooting",
   "LINE Rich Message", "Poster", "Menu Insert", "POSM",
 ] as const;
 
@@ -214,6 +215,50 @@ export function campaignMonthKeys(startIso: string, endIso: string): string[] {
   return out;
 }
 
+export const GRAPHIC_MIN_BUSINESS_DAYS = 5;
+
+export function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function parseIsoLocal(iso: string): Date | null {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function toIsoLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function isBusinessDay(d: Date): boolean {
+  const day = d.getDay();
+  return day !== 0 && day !== 6;
+}
+
+export function addBusinessDays(startIso: string, days: number): string {
+  const start = parseIsoLocal(startIso);
+  if (!start) return "";
+  const d = new Date(start);
+  let added = 0;
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    if (isBusinessDay(d)) added += 1;
+  }
+  return toIsoLocal(d);
+}
+
+export function minGraphicDueDate(requestIso?: string): string {
+  return addBusinessDays(requestIso || todayIso(), GRAPHIC_MIN_BUSINESS_DAYS);
+}
+
+export function isGraphicDueDateAllowed(dueIso: string, requestIso?: string): boolean {
+  if (!dueIso) return false;
+  const minDue = minGraphicDueDate(requestIso);
+  return !!minDue && dueIso >= minDue;
+}
+
 export function emptyBrief(id: string): CampaignBrief {
   return {
     id, name: "", b: "teppen", branch: "", branches: [], objective: OBJECTIVES[0],
@@ -337,6 +382,7 @@ export function validateSubmit(brief: CampaignBrief): string[] {
       if (!c.assets.some((a) => a.platform === p)) e.push(`Please select asset size for ${p}`);
     });
     if (c.requiredGraphic && !c.graphicDueDate) e.push(`Please select a Graphic Due Date for “${tag}”`);
+    if (c.requiredGraphic && c.graphicDueDate && !isGraphicDueDateAllowed(c.graphicDueDate, todayIso())) e.push(`Graphic Due Date for “${tag}” must be at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days after Request Date`);
     if (c.requiredGraphic && c.graphicDueDate && c.publishDate && c.graphicDueDate > c.publishDate) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);
     // Reference Brief Link is optional — a real link often isn't known at planning time.
   });

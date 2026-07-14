@@ -24,7 +24,7 @@ import {
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -88,7 +88,6 @@ export default function ContentPage() {
   }), [items]);
 
   const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
-    setNewOpen(false);
     const requester = briefItem.requester?.trim() || me;
     const designer = briefItem.designer || "Unassigned";
     const approver = briefItem.approver?.trim() || requester;
@@ -106,8 +105,12 @@ export default function ContentPage() {
     };
     const created = await createContent(post);
     setPosts((ps) => [created, ...ps]);
+    setNewOpen(false);
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
-    if (campaign && campaign !== "—") appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId }).catch(() => {});
+    if (campaign && campaign !== "—") {
+      appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId })
+        .catch((error) => alert(`บันทึก Post แล้ว แต่ sync กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    }
     // "Required Graphic" checked → drop a linked request into the Graphic
     // module (one deliverable per Platform × Asset Size). When every
     // deliverable is approved there, the asset links flow back onto THIS post
@@ -130,7 +133,7 @@ export default function ContentPage() {
         nextAction: `Deliver ${deliverables.length} asset(s)`,
         contentItem: p.title,
       };
-      createGraphic(g).catch(() => {});
+      createGraphic(g).catch((error) => alert(`บันทึก Content แล้ว แต่สร้าง Graphic Request ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       notify("newTask", `🎨 คำขอกราฟฟิกใหม่: ${p.title}`, `${deliverables.length} asset · ${plats.join(", ")} · จาก Content Calendar โดย ${me}`, "/graphic");
     }
   };
@@ -240,13 +243,15 @@ export default function ContentPage() {
   );
 }
 
-function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => void; count: number; initialIso?: string | null }) {
+function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => Promise<void>; count: number; initialIso?: string | null }) {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
   const requestDate = new Date().toISOString().slice(0, 10);
@@ -272,16 +277,21 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
-  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && (!item.requiredGraphic || item.graphicDueDate) && dueOrderValid;
+  const graphicLeadValid = !item.requiredGraphic || (!!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate));
+  const canCreate = item.title.trim() && item.platforms.length > 0 && !!selectedCampaign && (!item.requiredGraphic || item.graphicDueDate) && dueOrderValid && graphicLeadValid;
   const missing = [
     !campaign.trim() ? "campaign" : null,
+    campaign.trim() && !selectedCampaign ? "campaign from the list" : null,
     !item.title.trim() ? "post title" : null,
     !item.platforms.length ? "platform" : null,
     item.requiredGraphic && !item.graphicDueDate ? "graphic due date" : null,
+    item.requiredGraphic && item.graphicDueDate && !graphicLeadValid ? `graphic due date at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days` : null,
     !dueOrderValid ? "graphic due date before publish date" : null,
   ].filter(Boolean) as string[];
-  const create = () => {
-    if (!canCreate) return;
+  const create = async () => {
+    if (!canCreate || saving) return;
+    setSaving(true);
+    setSaveError("");
     const iso = item.publishDate || initialIso || new Date().toISOString().slice(0, 10);
     const day = Math.max(1, Math.min(31, Number(iso.split("-")[2]) || 1));
     const post: ContentItem = {
@@ -292,7 +302,13 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
       captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
-    onCreate(post, item, campaign.trim(), selectedCampaign?.id);
+    try {
+      await onCreate(post, item, campaign.trim(), selectedCampaign?.id);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -312,10 +328,17 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
             </div>
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
-              <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+              <input
+                value={campaign}
+                onChange={(e) => setCampaign(e.target.value)}
+                list="content-campaign-options"
+                className={field}
+                placeholder={brandCampaigns.length ? "Type to search campaign…" : "No campaigns for this brand"}
+              />
+              <datalist id="content-campaign-options">
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
+              </datalist>
+              {campaign.trim() && !selectedCampaign && <div className="mt-1 text-[11px] font-semibold text-status-red">เลือก Campaign จากรายการที่มีอยู่ เพื่อให้ sync กลับ Campaign ได้ถูกต้อง</div>}
             </div>
           </div>
           {/* Shared content-item template */}
@@ -329,7 +352,12 @@ function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () =>
             Publish date / time stays editable later, and Campaign sync will start as soon as this post is saved.
           </div>
         </div>
-        <button onClick={create} disabled={!canCreate} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Save to Content Plan</button>
+        {saveError && (
+          <div className="mt-3 rounded-[12px] border border-status-red/30 bg-[#FBF3F1] px-4 py-3 text-[12px] font-semibold text-status-red">
+            บันทึกไม่สำเร็จ: {saveError}
+          </div>
+        )}
+        <button onClick={create} disabled={!canCreate || saving} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{saving ? "Saving…" : "Save to Content Plan"}</button>
       </div>
     </div>
   );

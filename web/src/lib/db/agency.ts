@@ -4,6 +4,7 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { AGENCY_TASKS, AgencyTask } from "@/lib/data/agency";
 import { BrandId } from "@/lib/brands";
+import { assertDbData, assertDbOk } from "@/lib/db/assert";
 
 type Row = {
   id: number; title: string; brand: BrandId; campaign: string; type: string;
@@ -48,11 +49,7 @@ export async function createAgencyTask(draft: Omit<AgencyTask, "id">, existing: 
     status: draft.status, due: draft.due, brief: draft.brief, link: draft.link, note: draft.note,
     ...(draft.agencyEmail ? { agency_email: draft.agencyEmail } : {}),
   }).select().single();
-  if (error || !data) {
-    const id = Math.max(0, ...existing.map((t) => t.id)) + 1;
-    return { ...draft, id };
-  }
-  return toTask(data as Row);
+  return toTask(assertDbData(data as Row | null, error, "Could not save agency task"));
 }
 
 /** Patch a task's editable fields (status / link / note). Fire-and-forget. */
@@ -67,5 +64,8 @@ export async function updateAgencyTask(id: number, patch: Partial<AgencyTask>): 
   if (patch.b !== undefined) row.brand = patch.b;
   if (patch.title !== undefined) row.title = patch.title;
   if (patch.agencyEmail !== undefined) row.agency_email = patch.agencyEmail || null;
-  if (Object.keys(row).length) await db.from("agency_tasks").update(row).eq("id", id);
+  if (Object.keys(row).length) {
+    const { error } = await db.from("agency_tasks").update(row).eq("id", id);
+    assertDbOk(error, "Could not update agency task");
+  }
 }

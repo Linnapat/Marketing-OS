@@ -19,6 +19,7 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { brandName } from "@/lib/brands";
+import { assertDbOk } from "@/lib/db/assert";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtRange(startIso: string, endIso: string): string {
@@ -223,11 +224,12 @@ function labelDate(iso: string): string {
   return m ? `${MON[m - 1]} ${d}` : "";
 }
 
-/** Store the full brief object in campaigns.data (best-effort; needs the jsonb column). */
+/** Store the full brief object in campaigns.data (needs the jsonb column). */
 async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("campaigns").update({ data: brief }).eq("id", brief.id);
+  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", brief.id);
+  assertDbOk(error, "Could not save campaign brief details");
 }
 
 /** All saved briefs keyed by campaign name — one query, for pages that show
@@ -277,7 +279,8 @@ export async function syncBriefKolFromRows(kol: Kol): Promise<void> {
     if (only.name && !/^new request/i.test(only.name)) item.name = only.name;
     if (only.h && only.h !== "@tbd") item.handle = only.h;
   }
-  await db.from("campaigns").update({ data: brief }).eq("id", kol.campaignId);
+  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", kol.campaignId);
+  assertDbOk(error, "Could not sync KOL changes back to campaign brief");
 }
 
 /** Two-way sync: a New Post created in the Content Calendar (using the same
@@ -294,7 +297,8 @@ export async function appendBriefItem(campaignName: string, item: BriefContentIt
   const existingIndex = brief.content.findIndex((c) => c.id === nextId);
   if (existingIndex >= 0) brief.content[existingIndex] = { ...item, id: nextId };
   else brief.content = [...brief.content, { ...item, id: nextId }];
-  await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
+  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
+  assertDbOk(error, "Could not sync content item back to campaign brief");
 }
 
 /** Two-way sync for KOL: a "Request KOL" created in the KOL module (using the
@@ -310,16 +314,18 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
     // Campaign has no brief (created outside the wizard) — the fee must still
     // count toward the campaign's committed budget, not vanish.
     const spend = (camp.spend || 0) + (item.budget || 0);
-    await db.from("campaigns").update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id);
+    const { error } = await db.from("campaigns").update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id);
+    assertDbOk(error, "Could not sync KOL budget to campaign");
     return;
   }
   brief.kols = [...brief.kols, { ...item, id: item.id || `kr-req-${Date.now()}` }];
   // Re-derive the campaign's committed budget so the row (Budget/Spend shown on
   // the Campaigns list, detail header, Finance) moves together with the plan.
   const s = budgetSummary(brief);
-  await db.from("campaigns").update({
+  const { error } = await db.from("campaigns").update({
     data: brief, spend: s.allocated, budget: Math.max(brief.budget.total || 0, s.allocated),
   }).eq("id", camp.id);
+  assertDbOk(error, "Could not sync KOL item back to campaign brief");
 }
 
 /** Append an approval-log entry + status change to a saved brief. */
@@ -331,5 +337,6 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
   const nextApproval = status === "Waiting for Approval" ? (brief.approver || "CMO") : "None";
-  await db.from("campaigns").update({ data: brief, status, next_approval: nextApproval }).eq("id", id);
+  const { error } = await db.from("campaigns").update({ data: brief, status, next_approval: nextApproval }).eq("id", id);
+  assertDbOk(error, "Could not save campaign approval status");
 }

@@ -10,6 +10,7 @@ import { REQUESTS, RequestRow, EXPENSES, ExpenseRow } from "@/lib/data/finance";
 import { BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
+import { assertDbData, assertDbOk } from "@/lib/db/assert";
 
 type Row = {
   id: number; category: string; brand: BrandId; campaign: string | null;
@@ -74,13 +75,15 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
     `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
   const db = supabase();
   if (!db || req._id === undefined) return;
-  await db.from("expense_requests").update({ status: "Approved", approved }).eq("id", req._id);
+  const { error } = await db.from("expense_requests").update({ status: "Approved", approved }).eq("id", req._id);
+  assertDbOk(error, "Could not approve expense request");
   // Separate so a DB missing the migration still keeps the approval.
   await db.from("expense_requests").update({ approved_at: new Date().toISOString() }).eq("id", req._id);
-  const { data: exp } = await db.from("expenses").insert({
+  const { data: exp, error: spendError } = await db.from("expenses").insert({
     vendor: req.vendor || req.category, category: req.category, brand: req.b,
     amount: approved, vat: req.vatAmt ?? 0, date: shortDate(), status: "Unpaid",
   }).select("id").single();
+  assertDbData(exp, spendError, "Could not save approved expense to spending log");
   // Separate so a DB missing expenses_p2.sql still gets the base spending row.
   if (exp?.id !== undefined) {
     await db.from("expenses").update({
@@ -97,7 +100,8 @@ export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: 
     `เหตุผล: ${reason} — โดย ${by}${req.requester ? ` → ${req.requester} แก้แล้ว submit ใหม่` : ""}`, "/expenses");
   const db = supabase();
   if (!db || req._id === undefined) return;
-  await db.from("expense_requests").update({ status: "Rejected" }).eq("id", req._id);
+  const { error } = await db.from("expense_requests").update({ status: "Rejected" }).eq("id", req._id);
+  assertDbOk(error, "Could not reject expense request");
   await db.from("expense_requests").update({ reject_reason: reason }).eq("id", req._id);
   if (req.ref) {
     await db.from("requests").update({ stage: "Revision" }).eq("id", req.ref);
@@ -111,7 +115,8 @@ export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: 
 export async function markExpensePaid(id: number | undefined): Promise<void> {
   const db = supabase();
   if (!db || id === undefined) return;
-  await db.from("expenses").update({ status: "Paid" }).eq("id", id);
+  const { error } = await db.from("expenses").update({ status: "Paid" }).eq("id", id);
+  assertDbOk(error, "Could not mark expense as paid");
 }
 
 /** Submit a Draft expense request (auto-created from an approved campaign
@@ -119,7 +124,8 @@ export async function markExpensePaid(id: number | undefined): Promise<void> {
 export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
   const db = supabase();
   if (!db || req._id === undefined) return;
-  await db.from("expense_requests").update({ status: "Waiting Approval" }).eq("id", req._id);
+  const { error } = await db.from("expense_requests").update({ status: "Waiting Approval" }).eq("id", req._id);
+  assertDbOk(error, "Could not submit expense draft");
   notify("approval", `📥 คำขอเบิกงบจากงบแคมเปญ · ${req.category}`,
     `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, "/my-tasks");
 }
@@ -131,14 +137,15 @@ export async function createExpenseRequest(r: RequestRow, extra?: {
 }): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { data } = await db.from("expense_requests").insert({
+  const { data, error } = await db.from("expense_requests").insert({
     category: r.category, brand: r.b, campaign: r.campaign === "—" ? null : r.campaign,
     requested: r.requested, approved: r.approved, due: r.due, status: r.status,
   }).select("id").single();
-  if (extra && data?.id !== undefined) {
+  const row = assertDbData(data, error, "Could not save expense request");
+  if (extra && row.id !== undefined) {
     await db.from("expense_requests").update({
       ref: extra.ref ?? null, requester: extra.requester ?? null, vendor: extra.vendor ?? null,
       reimburse_type: extra.reimburseType ?? null, vat: extra.vat ?? 0, wht: extra.wht ?? 0,
-    }).eq("id", data.id);
+    }).eq("id", row.id);
   }
 }

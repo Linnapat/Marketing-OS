@@ -349,10 +349,12 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
     ng.stage = stageFromDeliverables(ng);
     ng.blocker = ready ? null : g.blocker;
     ng.nextAction = ready ? "Ready to deploy — attached to Content Calendar" : g.nextAction;
-    updateGraphic(ng); onUpdate?.(ng);
+    updateGraphic(ng)
+      .then(() => onUpdate?.(ng))
+      .catch((error) => alert(`บันทึกงาน Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     // Fully approved → push approved asset links onto the linked content post.
     if (ready) {
-      syncApprovedAssetsToContent(ng).catch(() => {});
+      syncApprovedAssetsToContent(ng).catch((error) => alert(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content");
     }
   };

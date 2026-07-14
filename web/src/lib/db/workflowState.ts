@@ -3,6 +3,7 @@
 // No-ops in mock mode so the page still works purely in memory.
 
 import { supabase } from "@/lib/supabase";
+import { assertDbOk } from "@/lib/db/assert";
 
 export interface WorkflowState {
   overrides: Record<string, string>;
@@ -24,7 +25,8 @@ export async function fetchWorkflowState(): Promise<WorkflowState | null> {
 export async function saveWorkflowState(state: WorkflowState): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("workflow_state").upsert({
+  const { error } = await db.from("workflow_state").upsert({
     id: 1, overrides: state.overrides, done: state.done, updated_at: new Date().toISOString(),
   });
+  assertDbOk(error, "Could not save workflow state");
 }

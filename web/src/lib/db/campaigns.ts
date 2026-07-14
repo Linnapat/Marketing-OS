@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { CAMPAIGNS, CampaignRow, Readiness } from "@/lib/data/campaigns";
 import { BrandId } from "@/lib/brands";
+import { assertDbOk } from "@/lib/db/assert";
 
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
@@ -48,20 +49,22 @@ export async function fetchCampaignTypes(): Promise<string[]> {
 export async function addCampaignType(name: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("campaign_types").upsert({ name });
+  const { error } = await db.from("campaign_types").upsert({ name });
+  assertDbOk(error, "Could not save campaign type");
 }
 
 /** Insert a new campaign; returns it. */
 export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   const db = supabase();
   if (!db) return c;
-  await db.from("campaigns").upsert({
+  const { error } = await db.from("campaigns").upsert({
     id: c.id, name: c.name, brand: c.b, branch: c.branch, owner: c.owner, budget: c.budget, spend: c.spend,
     roi: c.roi, dates: c.dates, status: c.status, camp_type: c.campType, readiness: c.readiness,
     task_blocked: c.taskBlocked, task_waiting: c.taskWaiting, task_overdue: c.taskOverdue,
     task_total: c.taskTotal, task_done: c.taskDone, task_in_progress: c.taskInProgress,
     bottleneck_team: c.bottleneckTeam, next_approval: c.nextApproval,
   }, { onConflict: "id" });
+  assertDbOk(error, "Could not save campaign");
   return c;
 }
 
@@ -71,7 +74,8 @@ export async function updateCampaignStatus(id: string, status: string): Promise<
   const db = supabase();
   if (!db) return;
   const nextApproval = status === "Waiting Approval" || status === "Waiting for Approval" ? "CMO" : "None";
-  await db.from("campaigns").update({ status, next_approval: nextApproval }).eq("id", id);
+  const { error } = await db.from("campaigns").update({ status, next_approval: nextApproval }).eq("id", id);
+  assertDbOk(error, "Could not update campaign status");
 }
 
 /** Delete a campaign and the records Marketing OS generated from its brief so
@@ -80,15 +84,17 @@ export async function deleteCampaign(id: string): Promise<void> {
   const db = supabase();
   if (!db) return;
 
-  await Promise.all([
+  const results = await Promise.all([
     db.from("content_posts").delete().eq("campaign_id", id),
     db.from("graphic_requests").delete().eq("campaign_id", id),
     db.from("campaign_results").delete().eq("campaign_id", id),
     db.from("tasks").delete().filter("data->>relatedBrief", "eq", id),
     db.from("kols").delete().filter("data->>campaignId", "eq", id),
   ]);
+  for (const result of results) assertDbOk(result.error, "Could not delete linked campaign records");
 
-  await db.from("campaigns").delete().eq("id", id);
+  const { error } = await db.from("campaigns").delete().eq("id", id);
+  assertDbOk(error, "Could not delete campaign");
 }
 
 /** Roll the ad-level ACTUAL spend up to the campaign (spend = Σ budgetActual). The
@@ -102,7 +108,8 @@ export async function updateCampaignSpend(id: string, spend: number): Promise<vo
     if (c) c.spend = spend;
     return;
   }
-  await db.from("campaigns").update({ spend }).eq("id", id);
+  const { error } = await db.from("campaigns").update({ spend }).eq("id", id);
+  assertDbOk(error, "Could not update campaign spend");
 }
 
 /** CMO-approved budget revision. Spend stays untouched; only the campaign plan
@@ -114,7 +121,8 @@ export async function updateCampaignBudget(id: string, budget: number): Promise<
     if (c) c.budget = budget;
     return;
   }
-  await db.from("campaigns").update({ budget }).eq("id", id);
+  const { error } = await db.from("campaigns").update({ budget }).eq("id", id);
+  assertDbOk(error, "Could not update campaign budget");
 }
 
 /** A single campaign by id — for the detail page. */

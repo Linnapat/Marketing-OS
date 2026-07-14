@@ -4,6 +4,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
+  GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
 } from "@/lib/data/brief";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
@@ -24,6 +25,10 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   onPublishTimeChange?: (value: string) => void;
 }) {
   const requesterValue = item.requester?.trim() || "";
+  const graphicRequestDate = requestDate || todayIso();
+  const minGraphicDue = minGraphicDueDate(graphicRequestDate);
+  const graphicLeadValid = !item.graphicDueDate || isGraphicDueDateAllowed(item.graphicDueDate, graphicRequestDate);
+  const graphicAfterPublish = !!item.graphicDueDate && !!item.publishDate && item.graphicDueDate > item.publishDate;
   const togglePlatform = (p: string) => {
     const on = item.platforms.includes(p);
     onChange({
@@ -35,6 +40,21 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
     const has = item.assets.some((a) => a.platform === platform && a.size === size);
     onChange({ assets: has ? item.assets.filter((a) => !(a.platform === platform && a.size === size)) : [...item.assets, { platform, size }] });
   };
+  const graphicDueField = item.requiredGraphic ? (
+    <div>
+      <label className={label}>Graphic Due Date <span className="text-status-red">*</span></label>
+      <DatePicker
+        value={item.graphicDueDate || null}
+        onChange={(v) => onChange({ graphicDueDate: v })}
+        min={minGraphicDue}
+        max={item.publishDate || undefined}
+        invalid={!!item.graphicDueDate && (!graphicLeadValid || graphicAfterPublish)}
+      />
+      <div className="mt-1 text-[11px]" style={{ color: item.graphicDueDate && (!graphicLeadValid || graphicAfterPublish) ? "#B33A2E" : "#9A9387" }}>
+        กำหนดส่งงาน Creative · เร็วสุด {minGraphicDue} ({GRAPHIC_MIN_BUSINESS_DAYS} วันทำการหลัง Request date) · ต้องไม่เกิน Publish Date
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="grid md:grid-cols-2 gap-3">
@@ -58,7 +78,8 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
       <div><label className={label}>Content Type</label><select value={item.type} onChange={(e) => onChange({ type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
       {requestDate ? (
-        <div className="md:col-span-2 grid md:grid-cols-3 gap-3">
+        <div className={`md:col-span-2 grid gap-3 ${onPublishTimeChange ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+          {graphicDueField}
           <div>
             <label className={label}>Request date</label>
             <input value={requestDate} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
@@ -67,24 +88,18 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
             <label className={label}>Publish Date</label>
             <DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} />
           </div>
-          <div>
-            <label className={label}>Publish time</label>
-            <input type="time" value={publishTime || "10:00"} onChange={(e) => onPublishTimeChange?.(e.target.value)} className={field} />
-          </div>
+          {onPublishTimeChange && (
+            <div>
+              <label className={label}>Publish time</label>
+              <input type="time" value={publishTime || "10:00"} onChange={(e) => onPublishTimeChange(e.target.value)} className={field} />
+            </div>
+          )}
         </div>
       ) : (
-        <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
-      )}
-      {item.requiredGraphic && (
-        <div>
-          <label className={label}>Graphic Due Date <span className="text-status-red">*</span></label>
-          <DatePicker
-            value={item.graphicDueDate || null}
-            onChange={(v) => onChange({ graphicDueDate: v })}
-            invalid={!!item.graphicDueDate && !!item.publishDate && item.graphicDueDate > item.publishDate}
-          />
-          <div className="mt-1 text-[11px] text-faint">กำหนดส่งงาน Creative · ต้องไม่เกิน Publish Date</div>
-        </div>
+        <>
+          {graphicDueField}
+          <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
+        </>
       )}
       <div><label className={label}>Priority</label><select value={item.priority} onChange={(e) => onChange({ priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
       <div className="flex flex-col gap-1">

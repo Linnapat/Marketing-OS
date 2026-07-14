@@ -27,7 +27,7 @@ export async function createContent(post: ContentItem): Promise<ContentItem> {
     platforms: post.platforms ?? [post.plat], status: post.status, day: post.day, time: post.time,
     owner: post.owner, caption: post.caption, data: post,
   }).select("id").single();
-  if (error || !data) return post;
+  if (error || !data) throw new Error(error?.message || "Could not save content post to Supabase");
   return { ...post, id: `c${data.id}` };
 }
 
@@ -62,9 +62,10 @@ export async function createContentIfNew(post: ContentItem, existing?: Set<strin
 export async function updateContent(post: ContentItem): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("content_posts")
+  const { error } = await db.from("content_posts")
     .update({ status: post.status, caption: post.caption, data: post })
     .eq("data->>id", post.id);
+  if (error) throw new Error(error.message);
 }
 
 /** Backend-enforced Approve: re-checks the prerequisites (never trusts the

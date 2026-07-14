@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { ASSETS, Asset } from "@/lib/data/requests";
 import { BrandId } from "@/lib/brands";
+import { assertDbData } from "@/lib/db/assert";
 
 type Row = {
   id: number; name: string; type: string; brand: BrandId; campaign: string | null;
@@ -26,9 +27,10 @@ export async function fetchAssets(): Promise<Asset[]> {
 export async function createAsset(a: Asset): Promise<Asset> {
   const db = supabase();
   if (!db) return a;
-  const { data } = await db.from("assets").insert({
+  const { data, error } = await db.from("assets").insert({
     name: a.name, type: a.type, brand: a.b, campaign: a.campaign, version: a.version,
     approval: a.approval, updated: a.updated, drive_url: a.driveUrl, canva_url: a.canvaUrl,
   }).select("id").single();
-  return data ? { ...a, id: String(data.id) } : a;
+  const row = assertDbData(data, error, "Could not save asset");
+  return { ...a, id: String(row.id) };
 }

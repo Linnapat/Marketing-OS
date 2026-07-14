@@ -26,6 +26,7 @@ export interface ContentItem {
   caption: string;
   hashtags: string;
   cta: string;
+  footer?: string;
   captionStatus: string;
   assetStatus: string;
   approvalStatus: string;

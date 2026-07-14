@@ -6,6 +6,7 @@
 import { supabase } from "@/lib/supabase";
 import { CampaignResultRow, seedResults, allSeedResults } from "@/lib/data/campaignResult";
 import { updateCampaignSpend } from "@/lib/db/campaigns";
+import { assertDbOk } from "@/lib/db/assert";
 
 type Row = { id: number; campaign_id: string; data: CampaignResultRow };
 
@@ -52,25 +53,28 @@ export async function fetchResults(campaignId: string): Promise<CampaignResultRo
 export async function saveResultRow(row: CampaignResultRow): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("campaign_results").upsert(
+  const { error } = await db.from("campaign_results").upsert(
     { row_id: row.id, campaign_id: row.campaignId, data: row },
     { onConflict: "row_id" },
   );
+  assertDbOk(error, "Could not save performance result row");
 }
 
 /** Save every row of a campaign in one round-trip (the Save button). */
 export async function saveResults(rows: CampaignResultRow[]): Promise<void> {
   const db = supabase();
   if (!db || rows.length === 0) return;
-  await db.from("campaign_results").upsert(
+  const { error } = await db.from("campaign_results").upsert(
     rows.map((r) => ({ row_id: r.id, campaign_id: r.campaignId, data: r })),
     { onConflict: "row_id" },
   );
+  assertDbOk(error, "Could not save performance results");
 }
 
 /** Remove a row. */
 export async function deleteResultRow(id: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("campaign_results").delete().eq("row_id", id);
+  const { error } = await db.from("campaign_results").delete().eq("row_id", id);
+  assertDbOk(error, "Could not delete performance result row");
 }

@@ -13,14 +13,24 @@ import { DatePicker } from "@/components/ui/DatePicker";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
+type CaptionTemplates = { hashtags: string[]; footers: string[]; ctas: string[] };
+const CAPTION_TEMPLATE_KEY = "marketing_os_caption_templates_v1";
+const emptyTemplates: CaptionTemplates = { hashtags: [], footers: [], ctas: [] };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function uniq(values: string[]): string[] {
+  return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean))).slice(0, 12);
+}
 
 export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; onClose: () => void; onUpdate?: (next: ContentItem) => void }) {
   const [tab, setTab] = useState<DTab>("overview");
   const [caption, setCaption] = useState(item.caption);
   const [hashtags, setHashtags] = useState(item.hashtags);
   const [cta, setCta] = useState(item.cta);
+  const [footer, setFooter] = useState(item.footer ?? "");
+  const [templates, setTemplates] = useState<CaptionTemplates>(emptyTemplates);
+  const [copyDone, setCopyDone] = useState(false);
   const warnings = contentWarnings(item);
 
   const { member, user } = useAuth();
@@ -45,18 +55,48 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
     }).catch(() => {});
     return () => { alive = false; };
   }, [item.b]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CAPTION_TEMPLATE_KEY);
+      if (raw) setTemplates({ ...emptyTemplates, ...JSON.parse(raw) });
+    } catch {}
+  }, []);
+
+  const rememberTemplate = (kind: keyof CaptionTemplates, value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    const next = { ...templates, [kind]: uniq([v, ...templates[kind]]) };
+    setTemplates(next);
+    window.localStorage.setItem(CAPTION_TEMPLATE_KEY, JSON.stringify(next));
+  };
+  const composedCaption = [caption.trim(), cta.trim(), footer.trim(), hashtags.trim()].filter(Boolean).join("\n\n");
+  const copyCaption = async () => {
+    if (!composedCaption) return;
+    try {
+      await navigator.clipboard.writeText(composedCaption);
+      setCopyDone(true);
+      setTimeout(() => setCopyDone(false), 1400);
+    } catch {
+      alert("Copy ไม่สำเร็จ กรุณา copy จากกล่องข้อความโดยตรง");
+    }
+  };
 
   // Persist an approval action to the shared content_posts table and bubble
   // the fresh object up so the calendar reflects it without a refetch.
   const persist = async (next: ContentItem) => {
     setBusy(true);
-    try { await updateContent(next); onUpdate?.(next); } finally { setBusy(false); }
+    try {
+      await updateContent(next);
+      onUpdate?.(next);
+    } catch (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
 
   // Save caption/hashtags/cta; "Mark Ready" flips captionStatus and, if the post
   // is now fully ready, advanceApprovalState pushes it into My Approval.
-  const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta }));
-  const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, captionStatus: "Ready" }));
+  const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer }));
+  const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
 
   const approveBlockers = contentApproveBlockers(item);
   const approve = async () => {
@@ -192,10 +232,33 @@ export function ContentDrawer({ item, onClose, onUpdate }: { item: ContentItem; 
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Hashtags</label>
                 <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="#wagyu #bangkok #teppen" className={field} />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => rememberTemplate("hashtags", hashtags)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save hashtag set</button>
+                  {templates.hashtags.map((v) => <button key={v} onClick={() => setHashtags(v)} className="rounded-pill bg-[#EEF1F8] px-3 py-1 text-[11px] font-bold text-[#3E5C9A]">{v}</button>)}
+                </div>
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Call to Action</label>
                 <input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="e.g. Reserve now via link in bio" className={field} />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => rememberTemplate("ctas", cta)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save CTA</button>
+                  {templates.ctas.map((v) => <button key={v} onClick={() => setCta(v)} className="rounded-pill bg-[#EEF4EE] px-3 py-1 text-[11px] font-bold text-[#4E7A4E]">{v}</button>)}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Footer</label>
+                <input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="เช่น เงื่อนไข / สาขา / เวลาทำการ" className={field} />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => rememberTemplate("footers", footer)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save footer</button>
+                  {templates.footers.map((v) => <button key={v} onClick={() => setFooter(v)} className="rounded-pill bg-[#FFF6E8] px-3 py-1 text-[11px] font-bold text-[#C68A1E]">{v}</button>)}
+                </div>
+              </div>
+              <div className="rounded-[14px] border border-line2 bg-ivory p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-[11.5px] font-bold text-muted">Generated caption</div>
+                  <button onClick={copyCaption} disabled={!composedCaption} className="rounded-[9px] bg-panel px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-40">{copyDone ? "Copied ✓" : "Copy"}</button>
+                </div>
+                <textarea readOnly rows={5} value={composedCaption} placeholder="Caption + CTA + Footer + Hashtags จะรวมให้อัตโนมัติ" className={`${field} resize-y leading-[1.5] bg-surface`} />
               </div>
               <div className="flex gap-2">
                 <button onClick={saveCaption} disabled={busy} className="flex-1 text-[13.5px] font-bold py-[11px] rounded-[10px] bg-panel text-white disabled:opacity-40">{busy ? "Saving…" : "Save Caption"}</button>

@@ -4,6 +4,7 @@
 import { supabase } from "@/lib/supabase";
 import { KOLS, Kol } from "@/lib/data/kol";
 import { BrandId } from "@/lib/brands";
+import { assertDbData, assertDbOk } from "@/lib/db/assert";
 
 /** Read all creators — from Supabase (data blob) if configured, else the mock. */
 export async function fetchKols(): Promise<Kol[]> {
@@ -25,10 +26,10 @@ export async function createKol(kol: Kol): Promise<Kol> {
     platform: kol.plat, followers: kol.followers, rate: kol.fee, status: kol.status,
     owner: kol.owner, kol_id: kol.masterKolId ?? null, data: kol,
   }).select("id").single();
-  if (error || !data) return kol;
+  const row = assertDbData(data, error, "Could not save KOL request");
   // campaign_id is added by kol_content_integrity.sql; set it in a second step so
   // the row still saves on a DB that hasn't run the migration yet.
-  if (kol.campaignId) await db.from("kols").update({ campaign_id: kol.campaignId }).eq("id", data.id);
+  if (kol.campaignId) await db.from("kols").update({ campaign_id: kol.campaignId }).eq("id", row.id);
   return kol;
 }
 
@@ -99,20 +100,23 @@ export async function upsertKolRequirement(reqKol: Kol, existingRows: Kol[]): Pr
 export async function updateKol(kol: Kol): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("kols")
+  const { error } = await db.from("kols")
     .update({ status: kol.status, data: kol })
     .eq("data->>id", String(kol.id));
+  assertDbOk(error, "Could not update KOL request");
 }
 
 /** Approve a submitted KOL proposal from My Approval. */
 export async function approveKolProposal(kolId: number): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { data } = await db.from("kols").select("data").eq("data->>id", String(kolId)).maybeSingle();
+  const { data, error } = await db.from("kols").select("data").eq("data->>id", String(kolId)).maybeSingle();
+  assertDbOk(error, "Could not load KOL proposal");
   const kol = data?.data as Kol | undefined;
-  if (!kol) return;
+  if (!kol) throw new Error("KOL proposal not found");
   const next: Kol = { ...kol, quotationStatus: "Approved", currentBlocker: null };
-  await db.from("kols").update({ status: next.status, data: next }).eq("data->>id", String(kolId));
+  const { error: updateError } = await db.from("kols").update({ status: next.status, data: next }).eq("data->>id", String(kolId));
+  assertDbOk(updateError, "Could not approve KOL proposal");
 }
 
 /** Build a full Kol from the request form. Owner/Approver default to

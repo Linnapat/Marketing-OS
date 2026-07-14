@@ -8,6 +8,7 @@ import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
 import { Task } from "@/lib/data/tasks";
+import { assertDbOk } from "@/lib/db/assert";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
@@ -20,13 +21,14 @@ export async function fetchGraphics(): Promise<Graphic[]> {
 export async function createGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (db) {
-    await db.from("graphic_requests").insert({
+    const { error } = await db.from("graphic_requests").insert({
       title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,
       designer: g.designer, requester: g.requester,
       approver: g.approver, type: g.type, priority: g.priority, stage: g.stage, due: g.due,
       platform: g.platform, size: g.size, brief_complete: g.briefComplete, blocker: g.blocker,
       next_action: g.nextAction, data: g,
     });
+    assertDbOk(error, "Could not save graphic request");
   }
   await syncGraphicAssignmentTask(g);
 }
@@ -60,12 +62,13 @@ export async function createGraphicIfNew(g: Graphic, existing?: Set<string>): Pr
 export async function updateGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (db) {
-    await db.from("graphic_requests")
+    const { error } = await db.from("graphic_requests")
       .update({
         stage: g.stage, designer: g.designer, requester: g.requester, approver: g.approver,
         blocker: g.blocker, next_action: g.nextAction, data: g,
       })
       .eq("data->>id", String(g.id));
+    assertDbOk(error, "Could not update graphic request");
   }
   await syncGraphicAssignmentTask(g);
 }

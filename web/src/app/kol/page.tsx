@@ -74,11 +74,16 @@ export default function KolPage() {
   // 5 pages = 5 independently-trackable records), then sync ONE requirement item
   // back into the campaign's KOL Plan.
   const addKol = async (kolsToCreate: Kol[], item: BriefKolItem | null, campaignName: string) => {
-    setRequestOpen(false);
-    const results = await Promise.all(kolsToCreate.map((k) => createKolIfNew(k)));
-    const created = results.filter((r) => r.created).map((r) => r.kol);
-    setKols((ks) => [...created, ...ks]);
-    if (item && campaignName && campaignName !== "—") appendBriefKolItem(campaignName, item).catch(() => {});
+    try {
+      const results = await Promise.all(kolsToCreate.map((k) => createKolIfNew(k)));
+      if (item && campaignName && campaignName !== "—") await appendBriefKolItem(campaignName, item);
+      const created = results.filter((r) => r.created).map((r) => r.kol);
+      setKols((ks) => [...created, ...ks]);
+      setRequestOpen(false);
+    } catch (error) {
+      alert(`บันทึก KOL Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw error;
+    }
   };
 
   // Drop a "Need Approval" task into the requester's task list, due in 3 days —

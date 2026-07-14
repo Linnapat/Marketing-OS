@@ -3,6 +3,7 @@
 // the value just isn't shared across users until then.
 
 import { supabase } from "@/lib/supabase";
+import { assertDbOk } from "@/lib/db/assert";
 
 const ls = (key: string) => `mos-setting-${key}`;
 
@@ -20,5 +21,6 @@ export async function setAppSetting(key: string, value: string): Promise<void> {
   if (typeof window !== "undefined") localStorage.setItem(ls(key), value);
   const db = supabase();
   if (!db) return;
-  await db.from("app_settings").upsert({ key, value, updated_at: new Date().toISOString() });
+  const { error } = await db.from("app_settings").upsert({ key, value, updated_at: new Date().toISOString() });
+  assertDbOk(error, "Could not save app setting");
 }

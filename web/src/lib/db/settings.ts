@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { BRANDS_DATA, BrandCfg, ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
 import { CAMPAIGN_TYPES } from "@/lib/data/brief";
+import { assertDbOk } from "@/lib/db/assert";
 
 export interface Member {
   name: string; email: string; role: string; access: string;
@@ -46,10 +47,11 @@ export async function fetchMembers(): Promise<Member[]> {
 export async function createMember(m: Member): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("members").upsert({
+  const { error } = await db.from("members").upsert({
     email: m.email, name: m.name, role: m.role, access: m.access,
     brand_access: m.brandAccess, status: m.status, color: m.color,
   });
+  assertDbOk(error, "Could not save member");
 }
 
 /** Edit an existing member. Email is the PK, so pass origEmail when the email
@@ -57,14 +59,18 @@ export async function createMember(m: Member): Promise<void> {
 export async function updateMember(m: Member, origEmail?: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  if (origEmail && origEmail !== m.email) await db.from("members").delete().eq("email", origEmail);
+  if (origEmail && origEmail !== m.email) {
+    const { error } = await db.from("members").delete().eq("email", origEmail);
+    assertDbOk(error, "Could not replace member email");
+  }
   await createMember(m);
 }
 
 export async function deleteMember(email: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("members").delete().eq("email", email);
+  const { error } = await db.from("members").delete().eq("email", email);
+  assertDbOk(error, "Could not delete member");
 }
 
 export async function fetchMemberProfiles(): Promise<MemberProfileMap | null> {
@@ -87,11 +93,12 @@ export async function saveMemberProfile(email: string, profile: MemberProfile): 
       statusNote: profile.statusNote?.trim() || undefined,
     },
   };
-  await db.from("org_settings").upsert({
+  const { error } = await db.from("org_settings").upsert({
     key: "member_profiles_v1",
     label: "Member profile display settings",
     value: JSON.stringify(next),
   });
+  assertDbOk(error, "Could not save member profile");
 }
 
 /* ── Generic team-shared JSON settings (org_settings kv) ─────────────── */
@@ -107,7 +114,8 @@ export async function fetchJsonSetting<T>(key: string): Promise<T | null> {
 export async function saveJsonSetting<T>(key: string, label: string, value: T): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("org_settings").upsert({ key, label, value: JSON.stringify(value) });
+  const { error } = await db.from("org_settings").upsert({ key, label, value: JSON.stringify(value) });
+  assertDbOk(error, `Could not save ${label}`);
 }
 
 export async function fetchBrandConfigs(): Promise<BrandCfg[]> {
@@ -143,7 +151,8 @@ export async function fetchPermissions(): Promise<Record<string, Record<string, 
 export async function savePermissions(rows: PermRow[]): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("permissions").upsert(rows.map((r) => ({ role: r.role, descr: r.descr, perms: r.perms })));
+  const { error } = await db.from("permissions").upsert(rows.map((r) => ({ role: r.role, descr: r.descr, perms: r.perms })));
+  assertDbOk(error, "Could not save permissions");
 }
 
 /* ── Notification toggles (channels + triggers) ─────────────────────── */
@@ -169,10 +178,11 @@ export async function fetchNotifSettings(): Promise<NotifSettings | null> {
 export async function saveNotifSettings(s: NotifSettings): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("org_settings").upsert([
+  const { error } = await db.from("org_settings").upsert([
     { key: "notif_channels", label: "Notification channels", value: JSON.stringify(s.channels) },
     { key: "notif_triggers", label: "Notification triggers", value: JSON.stringify(s.triggers) },
   ]);
+  assertDbOk(error, "Could not save notification settings");
 }
 
 /* ── Approval Matrix (budget thresholds + module rules) ─────────────── */
@@ -200,10 +210,11 @@ export async function fetchApprovalMatrix(): Promise<ApprovalMatrix | null> {
 export async function saveApprovalMatrix(m: ApprovalMatrix): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("org_settings").upsert([
+  const { error } = await db.from("org_settings").upsert([
     { key: "approval_thresholds", label: "Approval budget thresholds", value: JSON.stringify(m.thresholds) },
     { key: "approval_rules", label: "Approval module rules", value: JSON.stringify(m.rules) },
   ]);
+  assertDbOk(error, "Could not save approval matrix");
 }
 
 /* ── Organization fields ────────────────────────────────────────────── */
@@ -226,5 +237,6 @@ export async function fetchOrg(): Promise<{ label: string; value: string }[] | n
 export async function saveOrg(fields: { label: string; value: string }[]): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("org_settings").upsert(fields.map((f) => ({ key: slug(f.label), label: f.label, value: f.value })));
+  const { error } = await db.from("org_settings").upsert(fields.map((f) => ({ key: slug(f.label), label: f.label, value: f.value })));
+  assertDbOk(error, "Could not save organization settings");
 }
