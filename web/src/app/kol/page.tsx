@@ -283,7 +283,7 @@ export default function KolPage() {
           <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />
         )}
         {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
-        {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
+        {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} />}
         {tab === "database" && <KolDatabase />}
       </div>
@@ -457,10 +457,40 @@ function PipelineList({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilter
   );
 }
 
-function KolPlan({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
+function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void; budgetOf?: (campaign: string) => number }) {
   const list = kols.filter((k) => brand === "all" || k.b === brand);
+  // Per-campaign budget context for the deal — from the campaign's KOL Plan.
+  const budgetRows = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const k of list) { if (!k.campaign || k.campaign === "—") continue; m.set(k.campaign, (m.get(k.campaign) || 0) + (k.totalCost || 0)); }
+    return Array.from(m.entries())
+      .map(([c, spent]) => ({ c, spent, budget: budgetOf?.(c) ?? 0 }))
+      .filter((r) => r.budget > 0)
+      .sort((a, b) => (a.budget - a.spent) - (b.budget - b.spent));
+  }, [list, budgetOf]);
   return (
     <div className="flex flex-col gap-4">
+      {/* Budget context — deal inside the campaign's KOL budget */}
+      {budgetRows.length > 0 && (
+        <div className="bg-surface border border-line rounded-cardLg p-4">
+          <div className="text-[12.5px] font-bold text-ink mb-2">งบ KOL ต่อแคมเปญ <span className="text-[10.5px] text-faint font-normal">· จาก Budget Allocation / KOL Plan — deal ให้อยู่ในงบ</span></div>
+          <div className="flex flex-wrap gap-2">
+            {budgetRows.map((r) => {
+              const remaining = r.budget - r.spent;
+              const over = remaining < 0;
+              return (
+                <span key={r.c} className="rounded-[10px] px-3 py-[7px] text-[11.5px] font-bold"
+                  style={over
+                    ? { background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }
+                    : { background: "#EEF4EE", border: "1px solid #CFE4C2", color: "#4E7A4E" }}>
+                  🎯 {r.c} — งบ {baht(r.budget, { compact: true })} · ใช้ {baht(r.spent, { compact: true })} · {over ? `⚠ เกิน ${baht(-remaining, { compact: true })}` : `เหลือ ${baht(remaining, { compact: true })}`}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Specialist dashboard */}
       <div className="bg-panel text-white rounded-cardLg p-5">
         <div className="text-[13px] font-bold mb-4">Specialist Task Dashboard — can they deal on plan?</div>
@@ -496,6 +526,9 @@ function KolPlan({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue
                   <div className="text-[13px] font-semibold text-ink">{k.name}</div>
                   <div className="text-[11px] text-faint">{k.campaign} · {brandName(k.b)}</div>
                 </div>
+                {(k.totalCost || k.fee) > 0 && (
+                  <span className="text-[11.5px] font-bold text-muted whitespace-nowrap">{baht(k.totalCost || k.fee, { compact: true })}</span>
+                )}
                 <StatusBadge tone={kolTone(k.status)}>{k.status}</StatusBadge>
               </button>
             );
