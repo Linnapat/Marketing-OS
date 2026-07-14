@@ -128,7 +128,12 @@ export interface BriefKolItem {
 
 export interface AdsPlatformBudget { platform: string; amount: number; }
 export interface MonthlyBudgetAllocation { month: string; amount: number; }
-export interface MonthlyKolAllocation { month: string; budget: number; pages: number; }
+export interface MonthlyKolAllocation {
+  month: string; budget: number; pages: number;
+  /** Posting window inside that month (ISO dates) — rolls up into the item's
+   *  overall postingStart/postingEnd automatically. */
+  postStart?: string; postEnd?: string;
+}
 
 export interface BriefBudget {
   total: number;

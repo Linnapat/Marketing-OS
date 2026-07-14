@@ -37,15 +37,21 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
     onChange({ contentRequired: on ? item.contentRequired.filter((x) => x !== c) : [...item.contentRequired, c] });
   };
   const monthlyRows = monthKeys.map((month) => item.monthly?.find((row) => row.month === month) ?? { month, budget: 0, pages: 0 });
-  const setMonthly = (month: string, patch: Partial<{ budget: number; pages: number }>) => {
+  const setMonthly = (month: string, patch: Partial<{ budget: number; pages: number; postStart: string; postEnd: string }>) => {
     const next = monthKeys.map((key) => {
       const current = item.monthly?.find((row) => row.month === key) ?? { month: key, budget: 0, pages: 0 };
       return key === month ? { ...current, ...patch } : current;
     });
     const budget = next.reduce((sum, row) => sum + (row.budget || 0), 0);
     const count = next.reduce((sum, row) => sum + (row.pages || 0), 0);
-    onChange({ monthly: next, budget: budget || item.budget, count: count || item.count });
+    // Overall posting window = earliest → latest of the per-month post dates.
+    const dates = next.flatMap((row) => [row.postStart, row.postEnd]).filter(Boolean) as string[];
+    const window = dates.length
+      ? { postingStart: dates.reduce((a, b) => (a < b ? a : b)), postingEnd: dates.reduce((a, b) => (a > b ? a : b)) }
+      : {};
+    onChange({ monthly: next, budget: budget || item.budget, count: count || item.count, ...window });
   };
+  const hasMonthlyDates = monthlyRows.some((row) => row.postStart || row.postEnd);
 
   return (
     <div className="grid md:grid-cols-3 gap-3">
@@ -106,21 +112,47 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
               {fmt(monthlyRows.reduce((sum, row) => sum + row.pages, 0)) || "0"} page · ฿{monthlyRows.reduce((sum, row) => sum + row.budget, 0).toLocaleString("en-US")}
             </div>
           </div>
-          {/* One row per month (Excel-style): Month | Pages | Budget */}
+          {/* One row per month (Excel-style): Month | Pages | Budget | Posting window */}
           <div className="rounded-[10px] border border-line3 overflow-hidden">
-            <div className="grid bg-ivory px-3 py-[6px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "1fr 1fr 1.2fr" }}>
-              <span>Month</span><span>Pages</span><span>Budget (฿)</span>
+            <div className="grid bg-ivory px-3 py-[6px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "0.8fr 0.7fr 1fr 1.6fr" }}>
+              <span>Month</span><span>Pages</span><span>Budget (฿)</span><span>วัน Post (เริ่ม → จบ)</span>
             </div>
-            {monthlyRows.map((row) => (
-              <div key={row.month} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[5px]" style={{ gridTemplateColumns: "1fr 1fr 1.2fr" }}>
-                <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
-                <input value={fmt(row.pages)} onChange={(e) => setMonthly(row.month, { pages: num(e.target.value) })} className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
-                <input value={fmt(row.budget)} onChange={(e) => setMonthly(row.month, { budget: num(e.target.value) })} className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
-              </div>
-            ))}
+            {monthlyRows.map((row) => {
+              // Clamp the pickers to that month so a typo can't land elsewhere.
+              const [y, m] = row.month.split("-").map(Number);
+              const monthFirst = `${row.month}-01`;
+              const monthLast = `${row.month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+              const dateCls = "w-full rounded-[7px] border border-line2 bg-ivory px-1.5 py-1 text-[11.5px] outline-none";
+              return (
+                <div key={row.month} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[5px]" style={{ gridTemplateColumns: "0.8fr 0.7fr 1fr 1.6fr" }}>
+                  <span className="text-[11.5px] font-extrabold text-muted">{row.month}</span>
+                  <input value={fmt(row.pages)} onChange={(e) => setMonthly(row.month, { pages: num(e.target.value) })} className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
+                  <input value={fmt(row.budget)} onChange={(e) => setMonthly(row.month, { budget: num(e.target.value) })} className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
+                  <span className="flex items-center gap-1">
+                    <input type="date" value={row.postStart || ""} min={monthFirst} max={row.postEnd || monthLast}
+                      onChange={(e) => setMonthly(row.month, { postStart: e.target.value })} className={dateCls} />
+                    <span className="text-faint text-[11px]">→</span>
+                    <input type="date" value={row.postEnd || ""} min={row.postStart || monthFirst} max={monthLast}
+                      onChange={(e) => setMonthly(row.month, { postEnd: e.target.value })} className={dateCls} />
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      {/* Posting window — after the monthly split so per-month post dates set
+          the overall range (auto = earliest → latest of the month rows). */}
+      <div>
+        <label className={label}>Posting Start{hasMonthlyDates && <span className="text-faint font-normal"> · auto จากวัน Post รายเดือน</span>}</label>
+        <DatePicker value={item.postingStart || null} onChange={(v) => onChange({ postingStart: v })} max={item.postingEnd || undefined} invalid={!!outOfRange?.(item.postingStart)} />
+      </div>
+      <div>
+        <label className={label}>Posting End{hasMonthlyDates && <span className="text-faint font-normal"> · auto จากวัน Post รายเดือน</span>}</label>
+        <DatePicker value={item.postingEnd || null} onChange={(v) => onChange({ postingEnd: v })} min={item.postingStart || undefined} />
+      </div>
+      <div><label className={label}>Owner <span className="text-faint font-normal">· KOL team</span></label><OwnerSelect value={item.owner} onChange={(v) => onChange({ owner: v })} team="KOL" /></div>
 
       {/* Engagement metric breakdown */}
       <div className="md:col-span-3 mt-1 pt-3 border-t border-line3">
@@ -138,9 +170,6 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
         </div>
       </div>
 
-      <div><label className={label}>Posting Start</label><DatePicker value={item.postingStart || null} onChange={(v) => onChange({ postingStart: v })} max={item.postingEnd || undefined} invalid={!!outOfRange?.(item.postingStart)} /></div>
-      <div><label className={label}>Posting End</label><DatePicker value={item.postingEnd || null} onChange={(v) => onChange({ postingEnd: v })} min={item.postingStart || undefined} /></div>
-      <div><label className={label}>Owner <span className="text-faint font-normal">· KOL team</span></label><OwnerSelect value={item.owner} onChange={(v) => onChange({ owner: v })} team="KOL" /></div>
       <div className="md:col-span-3"><label className={label}>Note</label><input value={item.note} onChange={(e) => onChange({ note: e.target.value })} className={field} /></div>
     </div>
   );
