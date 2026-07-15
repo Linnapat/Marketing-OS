@@ -103,6 +103,33 @@ export function deliverableProgress(g: Graphic) {
   return { total: d.length, submitted, approved, ready: d.length > 0 && approved === d.length };
 }
 
+// ── Daily request capacity guard ──────────────────────────────────────────
+// Each work TYPE can be requested at most this many times per due-date, so the
+// creative/production team is never overloaded on a single day.
+export const DAILY_WORK_CAP = 3;
+export type WorkKind = "graphic" | "vdo" | "vdo_shoot" | "photo_shoot";
+export const WORK_KIND_LABEL: Record<WorkKind, string> = {
+  graphic: "Graphic request",
+  vdo: "VDO request",
+  vdo_shoot: "VDO Shooting",
+  photo_shoot: "Photo shooting",
+};
+
+/** Classify a request into one of the four capped work kinds. */
+export function workKind(type: string, requiredVideo = false): WorkKind {
+  const t = (type || "").toLowerCase();
+  if (/photo shoot|photo shooting/.test(t)) return "photo_shoot";
+  if (/vdo shooting|video shoot/.test(t)) return "vdo_shoot";
+  if (requiredVideo || /vdo|video|reel|short/.test(t)) return "vdo";
+  return "graphic";
+}
+
+/** How many requests of `kind` are already booked on `dueIso` (a YYYY-MM-DD). */
+export function countWorkOnDay(graphics: Graphic[], kind: WorkKind, dueIso: string): number {
+  if (!dueIso) return 0;
+  return graphics.filter((g) => (g.dueIso || "").slice(0, 10) === dueIso && workKind(g.type) === kind).length;
+}
+
 /** Derive the request stage from its deliverables (values stay within STAGE_ORDER). */
 export function stageFromDeliverables(g: Graphic): string {
   const d = g.deliverables ?? [];

@@ -8,6 +8,7 @@ import {
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief } from "../src/lib/data/brief";
+import { Graphic, GRAPHICS, workKind, countWorkOnDay, DAILY_WORK_CAP } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -128,6 +129,22 @@ console.log("Campaign code — per-brand running number");
   check("teppen next = 003", nextCampaignCode("teppen", existing, 2026) === "TPN-2026-003");
   check("omakase next = 006 (independent of teppen)", nextCampaignCode("omakase", existing, 2026) === "OMD-2026-006");
   check("mainichi first = 001", nextCampaignCode("mainichi", existing, 2026) === "MNC-2026-001");
+}
+
+console.log("Graphic request — daily capacity guard (3/day per kind)");
+{
+  check("Photo shoot → photo_shoot", workKind("Photo shoot") === "photo_shoot");
+  check("VDO shooting → vdo_shoot", workKind("VDO shooting") === "vdo_shoot");
+  check("Reel → vdo", workKind("Reel") === "vdo");
+  check("requiredVideo flag → vdo", workKind("Poster", true) === "vdo");
+  check("Poster → graphic", workKind("Poster") === "graphic");
+  const gk = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), ...over });
+  const day = "2026-08-10";
+  const three = [gk({ id: 1, type: "Poster", dueIso: day }), gk({ id: 2, type: "Menu book", dueIso: day }), gk({ id: 3, type: "Artwork", dueIso: day })];
+  check("3 graphics booked that day", countWorkOnDay(three, "graphic", day) === 3);
+  check("at cap blocks a 4th", countWorkOnDay(three, "graphic", day) >= DAILY_WORK_CAP);
+  check("different kind not counted", countWorkOnDay(three, "photo_shoot", day) === 0);
+  check("different day not counted", countWorkOnDay(three, "graphic", "2026-08-11") === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

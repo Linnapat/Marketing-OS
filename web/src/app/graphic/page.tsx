@@ -11,6 +11,7 @@ import { BrandFilterValue, BrandId, brandName, BRANDS, BRAND_ORDER } from "@/lib
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   DESIGNERS, graphicKpis, emptyDeliverable, approveAllWaiting,
+  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { notify } from "@/lib/notify";
@@ -25,7 +26,7 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, todayIso } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, todayIso } from "@/lib/data/brief";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
@@ -213,7 +214,7 @@ export default function GraphicPage() {
           }}
         />
       )}
-      {reqOpen && <RequestModal nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1} onClose={() => setReqOpen(false)} onCreate={addGraphic} />}
+      {reqOpen && <RequestModal nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1} graphics={graphics} onClose={() => setReqOpen(false)} onCreate={addGraphic} />}
     </>
   );
 }
@@ -524,7 +525,7 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
   );
 }
 
-function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: () => void; onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string) => void }) {
+function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number; graphics: Graphic[]; onClose: () => void; onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string) => void }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
@@ -540,18 +541,36 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
   const [item, setItem] = useState<BriefContentItem>(() => ({ ...emptyContentItem(nextId), requiredGraphic: true }));
   const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
 
+  const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
   useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchAllBriefs().then((b) => { if (alive) setBriefs(b); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
 
+  // Match the brief's social platforms: picking a campaign pre-selects the
+  // platforms the brief actually plans to post on (only if none chosen yet).
+  useEffect(() => {
+    const brief = campaign ? briefs[campaign] : undefined;
+    if (!brief || item.platforms.length) return;
+    const social = brief.channels.filter((c) => (CONTENT_PLATFORMS as readonly string[]).includes(c));
+    if (social.length) onChange({ platforms: social });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaign, briefs]);
+
+  // Daily capacity guard — max DAILY_WORK_CAP requests of each kind per due date.
+  const kind = workKind(item.type, item.requiredVideo);
+  const dueDay = (item.graphicDueDate || "").slice(0, 10);
+  const usedToday = dueDay ? countWorkOnDay(graphics, kind, dueDay) : 0;
+  const atCap = !!dueDay && usedToday >= DAILY_WORK_CAP;
+
   const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
   const graphicLeadValid = !!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate);
-  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && item.graphicDueDate && dueOrderValid && graphicLeadValid;
+  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && item.graphicDueDate && dueOrderValid && graphicLeadValid && !atCap;
   const missing = [
     !campaign.trim() ? "campaign" : null,
     !item.title.trim() ? "brief title" : null,
@@ -559,6 +578,7 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
     !item.graphicDueDate ? "graphic due date" : null,
     item.graphicDueDate && !graphicLeadValid ? `graphic due date at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days` : null,
     !dueOrderValid ? "graphic due date before publish date" : null,
+    atCap ? `เกินโควตา ${WORK_KIND_LABEL[kind]} วันนั้น (สูงสุด ${DAILY_WORK_CAP}/วัน)` : null,
   ].filter(Boolean) as string[];
   const submit = () => {
     if (!canCreate) return;
@@ -626,7 +646,21 @@ function RequestModal({ nextId, onClose, onCreate }: { nextId: number; onClose: 
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
           <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} requestDate={requestDate} showAssignmentFields={false} />
         </div>
-        <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
+        {/* Daily capacity meter for the selected work kind + due date */}
+        {dueDay && (
+          <div className="mt-4 rounded-[12px] border px-4 py-[10px] flex items-center justify-between gap-2"
+            style={atCap
+              ? { background: "#FFF5F4", borderColor: "#F5C8C4", color: "#B33A2E" }
+              : { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }}>
+            <span className="text-[12px] font-bold">
+              📅 โควตา {WORK_KIND_LABEL[kind]} วันที่ {dueDay}: ใช้แล้ว {usedToday} / {DAILY_WORK_CAP}
+            </span>
+            <span className="text-[11px] font-semibold">
+              {atCap ? "⚠ เต็มแล้ว — เลือกวันอื่น" : `เหลือ ${DAILY_WORK_CAP - usedToday} ชิ้น`}
+            </span>
+          </div>
+        )}
+        <div className="mt-3 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
             {canCreate ? "Ready to send to Creative leader" : `Before sending, add ${missing.join(", ")}`}
           </div>
