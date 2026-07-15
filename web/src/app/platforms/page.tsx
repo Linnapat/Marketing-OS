@@ -15,7 +15,7 @@ import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Segmented } from "@/components/ui/Segmented";
-import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter, MONTHS } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter, rangeOverlapFraction, MONTHS } from "@/components/ui/DateFilterBar";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
@@ -145,6 +145,44 @@ export default function PlatformsPage() {
       .catch((error) => toastError(`บันทึก Target รายเดือนไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
   const totalVisits = filtered.reduce((s, r) => s + (r.marketingVisits || 0), 0);
+
+  // Campaign-derived targets: pick which campaigns count toward the month's
+  // target and pull Reach/Visit goals (Success Metrics) + the month's budget
+  // (Monthly Budget Plan row; overlap-share of the campaign budget otherwise).
+  const [pickOpen, setPickOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const monthCampaigns = useMemo(
+    () => !monthKey ? [] : campaigns.filter((c) =>
+      visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && rangeInFilter(date, c.dates)),
+    [campaigns, visibleBrands, brand, date, monthKey],
+  );
+  useEffect(() => {
+    setPicked(new Set(monthCampaigns.map((c) => c.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthKey, monthCampaigns.length]);
+  const goalNum = (v?: string) => Number((v ?? "").toString().replace(/[^\d.]/g, "")) || 0;
+  const campaignTargetOf = (c: CampaignRow) => {
+    const brief = briefs[c.name];
+    const reach = goalNum(brief?.successGoals?.["Reach"]);
+    const visits = goalNum(brief?.successGoals?.["Visit"]);
+    const monthlyRow = monthKey ? brief?.budget.monthly?.find((m) => m.month === monthKey) : undefined;
+    const budget = monthlyRow?.amount ?? Math.round((brief?.budget.total || c.budget || 0) * rangeOverlapFraction(date, c.dates));
+    return { reach, visits, budget };
+  };
+  const applyFromCampaigns = () => {
+    if (!monthKey) return;
+    const sum = monthCampaigns.filter((c) => picked.has(c.id)).reduce(
+      (acc, c) => { const t = campaignTargetOf(c); return { reach: acc.reach + t.reach, visits: acc.visits + t.visits, budget: acc.budget + t.budget }; },
+      { reach: 0, visits: 0, budget: 0 },
+    );
+    setMonthTargets((m) => {
+      const next = { ...m, [monthKey]: { ...m[monthKey], reach: sum.reach, visits: sum.visits, budget: sum.budget } };
+      setAppSetting("monthly_marketing_targets_v1", JSON.stringify(next))
+        .catch((error) => toastError(`บันทึก Target รายเดือนไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      return next;
+    });
+    setPickOpen(false);
+  };
 
   const totalPlan = filtered.reduce((s, r) => s + (r.budget || 0), 0);
   const totalActual = filtered.reduce((s, r) => s + (r.budgetActual || 0), 0);
@@ -350,7 +388,43 @@ export default function PlatformsPage() {
               🎯 Target Marketing — {MONTHS[date.month]} {date.year}
               <span className="text-[10.5px] text-faint font-normal"> · เป้ารวมทั้งเดือน (ทุกแคมเปญ) เทียบกับผลจริงในหน้านี้</span>
             </div>
+            <button type="button" onClick={() => setPickOpen((o) => !o)}
+              className="rounded-[8px] border px-2.5 py-1 text-[11px] font-bold"
+              style={{ borderColor: "#CFE4C2", background: pickOpen ? "#DFF0D8" : "#EEF4EE", color: "#4E7A4E" }}>
+              📌 ดึงเป้าจากแคมเปญ{pickOpen ? " ▴" : " ▾"}
+            </button>
           </div>
+          {pickOpen && (
+            <div className="mb-3 rounded-[12px] border border-line2 bg-ivory p-3">
+              <div className="text-[11px] font-bold text-muted mb-2">
+                เลือกแคมเปญที่จะนับรวมเป็นเป้าเดือนนี้ — Reach/Visit จาก Success Metrics · งบจาก Monthly Budget Plan ของแคมเปญ
+              </div>
+              {monthCampaigns.map((c) => {
+                const t = campaignTargetOf(c);
+                const on = picked.has(c.id);
+                return (
+                  <label key={c.id} className="flex items-center gap-2 py-[4px] text-[12px] cursor-pointer border-b border-line4 last:border-0">
+                    <input type="checkbox" checked={on}
+                      onChange={() => setPicked((p) => { const n = new Set(p); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n; })} />
+                    <span className="font-semibold text-ink flex-1 truncate">{c.name}</span>
+                    <span className="text-[11px] text-faint whitespace-nowrap">
+                      Reach {num(t.reach)} · Visit {num(t.visits)} · งบ {baht(t.budget, { compact: true })}
+                    </span>
+                  </label>
+                );
+              })}
+              {monthCampaigns.length === 0 && (
+                <div className="text-[11.5px] text-faint py-2">ไม่มีแคมเปญ active ในเดือนนี้</div>
+              )}
+              {monthCampaigns.length > 0 && (
+                <button type="button" onClick={applyFromCampaigns} disabled={picked.size === 0}
+                  className="mt-2 text-[11.5px] font-bold text-white rounded-[8px] px-3 py-[6px] disabled:opacity-40"
+                  style={{ background: "#4E7A4E" }}>
+                  ใช้ยอดรวมจาก {picked.size} แคมเปญ → ตั้งเป้า Reach / Visit / Budget
+                </button>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {([
               ["Reach", "reach", filtered.reduce((s, r) => s + (r.reachActual || 0), 0), (v: number) => num(v)],
