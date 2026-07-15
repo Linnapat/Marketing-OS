@@ -5,7 +5,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import {
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
-  deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails,
+  deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -511,8 +511,11 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <div className="text-[12.5px] font-bold text-muted">Deliverables · {dels.length} asset</div>
+        <div className="text-[12.5px] font-bold text-muted">Deliverables · {dels.length} asset · <span className="text-accent">{artworkUnits({ ...g, deliverables: dels })} artwork</span></div>
         <StatusBadge tone={prog.ready ? "green" : "gold"}>{prog.ready ? "Ready to deploy" : `${prog.approved}/${prog.total} approved`}</StatusBadge>
+      </div>
+      <div className="text-[10.5px] text-faint -mt-1">
+        นับ artwork: ไซซ์ต่างกัน = คนละชิ้น (platform เดียวกันไซซ์เดียว = 1) · ใส่เลข &quot;Art#&quot; เท่ากันเพื่อรวมเป็นชิ้นเดียว (ใช้ไฟล์มาสเตอร์เดียว)
       </div>
 
       {dels.map((d, i) => {
@@ -523,6 +526,14 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
             <div className="flex items-center justify-between gap-2 mb-2">
               <div><span className="text-[13.5px] font-bold">{d.platform}</span> <span className="text-[12px] text-faint">· {d.size}</span></div>
               <div className="flex items-center gap-2">
+                {/* Art# — deliverables with the same number count as one artwork */}
+                <label className="flex items-center gap-1 text-[10.5px] font-bold text-faint" title="ใส่เลขเท่ากันเพื่อรวมเป็น artwork ชิ้นเดียว">
+                  Art#
+                  <input type="number" min={1} value={d.artworkNo ?? ""} placeholder="auto"
+                    onChange={(e) => patch(i, { artworkNo: e.target.value ? Number(e.target.value) : undefined })}
+                    onBlur={() => persist(dels)}
+                    className="w-[46px] text-right text-[11px] px-1 py-[3px] rounded-[6px] border border-line2 bg-white outline-none" />
+                </label>
                 {d.version > 0 && <span className="text-[10.5px] font-bold text-faint">v{d.version}</span>}
                 <StatusBadge tone={DEL_TONE[d.status] ?? "neutral"}>{d.status}</StatusBadge>
               </div>

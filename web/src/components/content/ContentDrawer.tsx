@@ -239,7 +239,7 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
             return (
               <button key={id} onClick={() => setTab(id)} className="text-[12.5px] font-semibold px-[15px] py-[11px] whitespace-nowrap border-b-2 -mb-[1px]"
                 style={active ? { color: "#211F1C", borderColor: "#B8945A" } : { color: "#9A9387", borderColor: "transparent" }}>
-                {label}
+                {label}{id === "publish" && !metaConnected && <span className="ml-1" title="ต้องเชื่อม Meta ก่อน">🔒</span>}
               </button>
             );
           })}
@@ -456,7 +456,18 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
             </div>
           )}
 
-          {tab === "publish" && (
+          {tab === "publish" && !metaConnected && (
+            <div className="flex flex-col items-center text-center gap-3 py-10 px-6">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center text-[26px]" style={{ background: "#F2F0EB" }}>🔒</div>
+              <div className="text-[15px] font-extrabold text-ink">ยังใช้งาน Publish ไม่ได้</div>
+              <div className="text-[12.5px] text-muted leading-[1.6] max-w-[360px]">
+                หน้านี้ต้องเชื่อมบัญชี Meta (Facebook Page + Instagram Business) ก่อน
+                จึงจะ Schedule / Publish ได้ — ตั้งค่าที่ <b className="text-ink">Settings › Integrations</b>
+              </div>
+              <div className="text-[11px] text-faint mt-1">ระหว่างนี้ยังทำ Caption / Approval และแนบ asset ได้ตามปกติ</div>
+            </div>
+          )}
+          {tab === "publish" && metaConnected && (
             <div className="flex flex-col gap-[14px]">
               <div className="rounded-[12px] px-[14px] py-3" style={{ background: "#EEF3FF", border: "1px solid #C5D4F8" }}>
                 <div className="text-[12px] font-bold mb-1" style={{ color: "#1E3A8A" }}>Meta Publish Queue</div>
