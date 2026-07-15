@@ -143,6 +143,15 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         stage: "New Request",
         size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
         deliverables,
+        // Real creative brief content carried from the content item, so the
+        // Graphic drawer shows the actual message/mood/links — not workflow text.
+        keyMessage: ci.mainMessage || normalizedBrief.mainMessage || "",
+        moodDirection: normalizedBrief.kvDirection || ci.captionDirection || "",
+        driveLink: ci.driveLink || "",
+        referenceLink: ci.referenceImageLink || ci.competitorLink || "",
+        captionCopy: ci.captionDirection || "",
+        extraDetails: ci.doDont || ci.mandatoryText || "",
+        briefLink: ci.referenceBriefLink || "",
         nextAction: `KV: ${normalizedBrief.kvDirection || "—"} · Msg: ${ci.mainMessage || normalizedBrief.mainMessage || "—"}`,
         contentItem: ci.title || "—",
       };

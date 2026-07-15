@@ -8,6 +8,8 @@ import { Toaster } from "@/components/ui/Toaster";
 import { RoleProvider, useRole } from "@/lib/role";
 import { AuthProvider, useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { moduleForPath } from "@/lib/permissions";
+import { fetchBrandConfigs } from "@/lib/db/settings";
+import { applyBrandOverrides } from "@/lib/brands";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -47,6 +49,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   const [drawer, setDrawer] = useState(false);
+  // Hydrate brand name/colour overrides from Settings before the first paint,
+  // so edits made in Settings → Brands actually show across the app.
+  const [brandsReady, setBrandsReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchBrandConfigs()
+      .then((cfgs) => { applyBrandOverrides(cfgs); })
+      .catch(() => {})
+      .finally(() => { if (alive) setBrandsReady(true); });
+    return () => { alive = false; };
+  }, []);
   // Desktop sidebar can collapse to an icon-only rail; the choice is remembered.
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
@@ -57,6 +70,10 @@ function Shell({ children }: { children: React.ReactNode }) {
     localStorage.setItem("mos-sidebar-collapsed", next ? "1" : "0");
     return next;
   });
+
+  if (!brandsReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-ivory text-[13px] text-faint">Loading…</div>;
+  }
 
   return (
     <div className="min-h-screen bg-ivory">

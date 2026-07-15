@@ -3,7 +3,7 @@
 import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState, CSSProperties } from "react";
 import Link from "next/link";
-import { TASKS, Task, PEOPLE, GREETINGS, CELEBRATIONS, PERSON_ROLE, daysUntilDue, isDueToday, isDueThisWeek } from "@/lib/data/tasks";
+import { TASKS, Task, PEOPLE, CELEBRATIONS, PERSON_ROLE, daysUntilDue, isDueToday, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
@@ -203,8 +203,6 @@ export default function MyTasksPage() {
 
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date, brandOptions, brandVisibility]);
-  const [greetText, greetSubtext] = GREETINGS[viewAs] ?? [`Good to see you, ${viewAs.split(" ")[0]} 🌿`, "Let's move things forward today."];
-
   // Today's focus = due today or overdue (real calendar) or stuck.
   const todayTasks = myTasks.filter((t) => (daysUntilDue(t) ?? 1) <= 0 || getStatus(t) === "Stuck");
   const todayDone = todayTasks.filter((t) => getStatus(t) === "Done").length;
@@ -267,14 +265,9 @@ export default function MyTasksPage() {
 
       {activeTab === "myDay" ? (
         <div className="flex flex-col gap-[18px]">
-          {/* GREETING + BENTO */}
+          {/* BENTO (greeting card removed per request) */}
           <div className="flex gap-[14px] flex-wrap">
-            <div className="flex-1 min-w-[260px] rounded-[24px] px-[30px] py-[26px]" style={{ background: "linear-gradient(135deg,#FDF6E8 0%,#F5E8CE 100%)", border: "1px solid #E8D5AA" }}>
-              <div className="text-[11px] tracking-[0.08em] uppercase font-bold mb-2" style={{ color: "#B8945A" }}>{new Date().toLocaleDateString("en-US", { weekday: "long" })} · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
-              <div className="text-[26px] font-extrabold tracking-[-0.02em] mb-[6px]">{greetText}</div>
-              <div className="text-[14.5px] text-muted leading-[1.55]">{greetSubtext}</div>
-            </div>
-            <div className="flex flex-col gap-2 min-w-[240px] max-w-[276px]">
+            <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
               <div className="rounded-[18px] px-5 py-[18px] text-white" style={{ background: "#211F1C" }}>
                 <div className="text-[10px] tracking-[0.08em] uppercase font-bold mb-2" style={{ color: "#B8945A" }}>Today&apos;s Focus 🍱</div>
                 <div className="text-[40px] font-extrabold leading-none mb-1">{todayFocusCount}</div>

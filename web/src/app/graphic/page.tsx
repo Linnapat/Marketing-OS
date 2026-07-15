@@ -220,127 +220,114 @@ export default function GraphicPage() {
 /* ── Shoot Schedule — ตารางถ่ายงานของทีม Creative ─────────────────────────
    Manual shoot events live in one shared JSON setting; Content Plan items of
    type "Photo shoot"/"VDO shooting" appear automatically on their publish date. */
-interface ShootEvent { id: string; date: string; title: string; campaign?: string; time?: string; location?: string; owner?: string }
+// Shoot Schedule as a Promotion-style editable + printable template. Every
+// field is editable by the creative leader; rows are shared via org_settings.
+interface ShootRow { id: string; campaign: string; menu: string; requestDate: string; shootDate: string; location: string; owner: string; source?: "manual" | "content" }
 
 function ShootCalendar({ me }: { me: string }) {
-  const [events, setEvents] = useState<ShootEvent[]>([]);
-  const [autoShoots, setAutoShoots] = useState<{ date: string; title: string; campaign: string; kind: string }[]>([]);
-  const now = new Date();
-  const [ym, setYm] = useState<{ y: number; m: number }>({ y: now.getFullYear(), m: now.getMonth() });
-  const [adding, setAdding] = useState<string | null>(null); // ISO date being added to
-  const [draft, setDraft] = useState({ title: "", campaign: "", time: "", location: "" });
+  const [rows, setRows] = useState<ShootRow[]>([]);
+  const [autoRows, setAutoRows] = useState<ShootRow[]>([]);
 
   useEffect(() => {
     let alive = true;
-    fetchJsonSetting<ShootEvent[]>("creative_shoots_v1").then((v) => { if (alive && v) setEvents(v); }).catch(() => {});
-    // Shoot-type items come from the campaign briefs (Content Plan carries the
-    // content type); they land on their publish date.
+    fetchJsonSetting<ShootRow[]>("creative_shoots_v2").then((v) => { if (alive && v) setRows(v); }).catch(() => {});
+    // Photo shoot / VDO shooting items from Content Plan appear as read-only
+    // reference rows so the leader can see what the briefs already asked for.
     fetchAllBriefs().then((briefs) => {
       if (!alive) return;
-      setAutoShoots(Object.values(briefs).flatMap((b) =>
+      setAutoRows(Object.values(briefs).flatMap((b) =>
         (b.content ?? [])
-          .filter((c) => /photo shoot|vdo shooting/i.test(c.type || "") && (c.publishDate || c.graphicDueDate))
+          .filter((c) => /photo shoot|vdo shooting/i.test(c.type || ""))
           .map((c) => ({
-            date: (c.publishDate || c.graphicDueDate).slice(0, 10),
-            title: c.title || c.type,
-            campaign: b.name,
-            kind: /vdo/i.test(c.type) ? "🎥" : "📸",
+            id: `auto-${b.id}-${c.id}`, campaign: b.name, menu: c.title || c.type,
+            requestDate: (c.graphicDueDate || "").slice(0, 10), shootDate: (c.publishDate || "").slice(0, 10),
+            location: "", owner: "จาก Content Plan", source: "content" as const,
           }))));
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
-  const persist = (next: ShootEvent[]) => {
-    setEvents(next);
-    saveJsonSetting("creative_shoots_v1", "Creative shoot schedule", next)
+  const persist = (next: ShootRow[]) => {
+    setRows(next);
+    saveJsonSetting("creative_shoots_v2", "Creative shoot schedule", next)
       .catch((error) => toastError(`บันทึกตารางถ่ายงานไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
-  const addEvent = (dateIso: string) => {
-    if (!draft.title.trim()) return;
-    persist([...events, {
-      id: `shoot-${Date.now()}`, date: dateIso, title: draft.title.trim(),
-      campaign: draft.campaign.trim() || undefined, time: draft.time.trim() || undefined,
-      location: draft.location.trim() || undefined, owner: me,
-    }]);
-    setDraft({ title: "", campaign: "", time: "", location: "" });
-    setAdding(null);
-  };
-  const removeEvent = (id: string) => persist(events.filter((e) => e.id !== id));
+  const addRow = () => persist([...rows, { id: `shoot-${Date.now()}`, campaign: "", menu: "", requestDate: "", shootDate: "", location: "", owner: me, source: "manual" }]);
+  const editRow = (id: string, patch: Partial<ShootRow>) => persist(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeRow = (id: string) => persist(rows.filter((r) => r.id !== id));
+  const importAuto = (a: ShootRow) => persist([...rows, { ...a, id: `shoot-${Date.now()}`, owner: me, source: "manual" }]);
 
-  const first = new Date(ym.y, ym.m, 1);
-  const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
-  const startWeekday = first.getDay(); // 0 = Sunday
-  const iso = (d: number) => `${ym.y}-${String(ym.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  const todayIsoStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const monthLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const nav = (delta: number) => setYm(({ y, m }) => { const d = new Date(y, m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
-  const cells: (number | null)[] = [...Array(startWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  const cell = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
+  const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint px-[10px] py-2 border-b border-line";
+  const printedAt = new Date().toLocaleDateString("th-TH", { day: "2-digit", month: "long", year: "numeric" });
 
-  const inpCls = "w-full text-[11.5px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
   return (
-    <div className="bg-surface border border-line rounded-cardLg p-4">
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <div className="text-[13px] font-bold text-ink">🎬 Shoot Schedule <span className="text-[10.5px] text-faint font-normal">· ตารางถ่ายงานทีม Creative — คลิกวันเพื่อเพิ่มคิวถ่าย · งาน Photo shoot/VDO จาก Content Plan ขึ้นให้อัตโนมัติ</span></div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => nav(-1)} className="w-7 h-7 rounded-[8px] border border-line2 bg-white text-muted font-bold">‹</button>
-          <span className="text-[13px] font-extrabold text-ink min-w-[130px] text-center">{monthLabel}</span>
-          <button onClick={() => nav(1)} className="w-7 h-7 rounded-[8px] border border-line2 bg-white text-muted font-bold">›</button>
+    <div className="shoot-print">
+      <style jsx global>{`
+        @media print {
+          @page { size: A4 landscape; margin: 10mm; }
+          body { background: #fff !important; }
+          .no-print { display: none !important; }
+          .shoot-print { position: absolute; inset: 0; background: #fff; padding: 0; }
+          .shoot-print input { border: none !important; background: transparent !important; padding: 0 !important; }
+          .shoot-print .print-only { display: block !important; }
+        }
+      `}</style>
+
+      <div className="print-only hidden mb-3">
+        <div className="text-[20px] font-extrabold">🎬 Shoot Schedule — Creative</div>
+        <div className="text-[12px] text-faint">พิมพ์เมื่อ {printedAt}</div>
+      </div>
+
+      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+        <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-3 no-print">
+          <div className="text-[13px] font-bold text-ink">🎬 Shoot Schedule <span className="text-[10.5px] text-faint font-normal">· ตารางขอถ่ายงาน — Creative Leader แก้ได้ทุกช่อง · ปริ้นเป็นใบนัดถ่ายได้</span></div>
+          <div className="flex items-center gap-2">
+            <button onClick={addRow} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px]">+ เพิ่มคิวถ่าย</button>
+            <button onClick={() => window.print()} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">🖨 ปริ้น</button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse whitespace-nowrap">
+            <thead><tr className="bg-ivory">
+              <th className={th}>ชื่อแคมเปญ</th><th className={th}>เมนู/สิ่งที่จะถ่าย</th><th className={th}>วันที่ขอถ่าย</th>
+              <th className={th}>วันถ่ายจริง</th><th className={th}>สถานที่</th><th className={th}>ผู้ขอ</th><th className={`${th} no-print`}></th>
+            </tr></thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — กด &quot;เพิ่มคิวถ่าย&quot; หรือดึงจาก Content Plan ด้านล่าง</td></tr>
+              )}
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-line4 last:border-0">
+                  <td className="px-[10px] py-[5px]"><input value={r.campaign} onChange={(e) => editRow(r.id, { campaign: e.target.value })} placeholder="แคมเปญ" className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.menu} onChange={(e) => editRow(r.id, { menu: e.target.value })} placeholder="เมนู / งานที่ถ่าย" className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input type="date" value={r.requestDate} onChange={(e) => editRow(r.id, { requestDate: e.target.value })} className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input type="date" value={r.shootDate} onChange={(e) => editRow(r.id, { shootDate: e.target.value })} className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} placeholder="สถานที่" className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.owner} onChange={(e) => editRow(r.id, { owner: e.target.value })} placeholder="ผู้ขอ" className={cell} /></td>
+                  <td className="px-[10px] py-[5px] text-right no-print"><button onClick={() => removeRow(r.id)} className="text-[12px] text-status-red font-bold" aria-label="ลบ">✕</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-[6px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint mb-1">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="px-1">{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7 gap-[6px]">
-        {cells.map((d, i) => {
-          if (d === null) return <div key={`empty-${i}`} />;
-          const dayIso = iso(d);
-          const dayEvents = events.filter((e) => e.date === dayIso);
-          const dayAuto = autoShoots.filter((a) => a.date === dayIso);
-          const isToday = dayIso === todayIsoStr;
-          return (
-            <div key={dayIso} className="min-h-[86px] rounded-[10px] border p-[6px] flex flex-col gap-[4px]"
-              style={{ borderColor: isToday ? "#B8945A" : "#EEE8DE", background: isToday ? "#FBF6ED" : "#FCFBF8" }}>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold" style={{ color: isToday ? "#8A6930" : "#9A9387" }}>{d}</span>
-                <button onClick={() => { setAdding(adding === dayIso ? null : dayIso); }} title="เพิ่มคิวถ่าย"
-                  className="text-[12px] leading-none text-faint hover:text-ink">＋</button>
+
+      {autoRows.length > 0 && (
+        <div className="mt-3 bg-surface border border-line rounded-cardLg p-4 no-print">
+          <div className="text-[12px] font-bold text-muted mb-2">📎 จาก Content Plan (Photo shoot / VDO shooting) — กด &quot;＋&quot; เพื่อดึงเข้าตารางแล้วแก้ต่อได้</div>
+          <div className="flex flex-col gap-1">
+            {autoRows.map((a) => (
+              <div key={a.id} className="flex items-center gap-2 text-[12px] border-b border-line4 last:border-0 py-[5px]">
+                <span className="font-semibold text-ink flex-1 truncate">{a.menu}</span>
+                <span className="text-faint truncate">{a.campaign}</span>
+                <span className="text-faint">{a.shootDate || "—"}</span>
+                <button onClick={() => importAuto(a)} className="text-[11.5px] font-bold text-accent">＋ ดึงเข้า</button>
               </div>
-              {dayAuto.map((a, j) => (
-                <div key={`auto-${j}`} title={`${a.title} · ${a.campaign} (จาก Content Plan)`}
-                  className="text-[10px] font-semibold rounded-[6px] px-[5px] py-[3px] truncate" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>
-                  {a.kind} {a.title}
-                </div>
-              ))}
-              {dayEvents.map((e) => (
-                <div key={e.id} className="group text-[10px] font-semibold rounded-[6px] px-[5px] py-[3px] flex items-center gap-1"
-                  style={{ background: "#FDEBF3", color: "#9D3D6B" }}
-                  title={[e.title, e.campaign, e.time, e.location, e.owner && `โดย ${e.owner}`].filter(Boolean).join(" · ")}>
-                  <span className="flex-1 truncate">🎬 {e.time ? `${e.time} ` : ""}{e.title}</span>
-                  <button onClick={() => removeEvent(e.id)} className="hidden group-hover:inline text-[10px] leading-none">✕</button>
-                </div>
-              ))}
-              {adding === dayIso && (
-                <div className="flex flex-col gap-[4px] mt-[2px] p-[6px] rounded-[8px] border border-line2 bg-white">
-                  <input value={draft.title} onChange={(e) => setDraft((v) => ({ ...v, title: e.target.value }))} placeholder="ถ่ายอะไร *" className={inpCls} autoFocus />
-                  <input value={draft.campaign} onChange={(e) => setDraft((v) => ({ ...v, campaign: e.target.value }))} placeholder="แคมเปญ" className={inpCls} />
-                  <div className="flex gap-[4px]">
-                    <input value={draft.time} onChange={(e) => setDraft((v) => ({ ...v, time: e.target.value }))} placeholder="เวลา" className={inpCls} />
-                    <input value={draft.location} onChange={(e) => setDraft((v) => ({ ...v, location: e.target.value }))} placeholder="สถานที่" className={inpCls} />
-                  </div>
-                  <div className="flex gap-[4px]">
-                    <button onClick={() => addEvent(dayIso)} disabled={!draft.title.trim()}
-                      className="flex-1 text-[10.5px] font-bold text-white rounded-[7px] py-[4px] disabled:opacity-40" style={{ background: "#211F1C" }}>เพิ่ม</button>
-                    <button onClick={() => setAdding(null)} className="text-[10.5px] font-bold text-muted border border-line2 rounded-[7px] px-2 bg-white">ยกเลิก</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-3 text-[11px] text-faint">
-        🎬 = คิวถ่ายที่ทีมเพิ่มเอง (ลบได้ hover ที่การ์ด) · 📸/🎥 = งาน Photo shoot / VDO shooting จาก Content Plan ตามวัน publish — แชร์เห็นพร้อมกันทั้งทีม
-      </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

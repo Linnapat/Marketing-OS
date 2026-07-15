@@ -24,8 +24,9 @@ import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
 import { logCollaboration, ensureKolProfile, searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
-import { createTaskDb } from "@/lib/db/tasks";
+import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
+import { notify } from "@/lib/notify";
 
 const TABS = [
   ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
@@ -137,6 +138,40 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
     } finally { setBusy(false); }
   };
 
+  // Reject / Request Revision at the review gate: push the KOL back to
+  // Producing and bounce the fix into the responsible owner's My Tasks.
+  const [revising, setRevising] = useState(false);
+  const [reason, setReason] = useState("");
+  const atReview = normalizeStage(kol.status) === "In Review";
+  const requestRevision = async () => {
+    const r = reason.trim();
+    if (!r) return;
+    const now = new Date().toISOString();
+    const next: Kol = {
+      ...kol,
+      status: "Content Creating",
+      openComments: (kol.openComments || 0) + 1,
+      latestComment: r,
+      history: [...(kol.history ?? []), { type: "revision_requested", at: now, by: kol.pendingApprover || "Approver", note: r }],
+    };
+    setBusy(true);
+    try {
+      await updateKol(next);
+      const fixer = kol.owner && kol.owner !== "Unassigned" ? kol.owner : "";
+      if (fixer) {
+        await createRevisionTask({
+          module: "KOL", title: `แก้งาน KOL — ${kol.name}`, assignee: fixer,
+          brand: brandName(kol.b), campaign: kol.campaign, reason: r, by: kol.pendingApprover || "Approver",
+        });
+      }
+      notify("rejected", `↩ งาน KOL ถูกส่งกลับแก้: ${kol.name}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r}`, "/my-tasks");
+      onUpdate?.(next);
+      setRevising(false); setReason("");
+    } catch (error) {
+      toastError(`ส่งงาน KOL กลับแก้ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
+  };
+
   const advance = async () => {
     if (!ns) return;
     const gate = canTransition(kol, ns);
@@ -185,7 +220,24 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
                   {busy ? "Saving…" : `Continue → ${ns}`}
                 </button>
               )}
+              {atReview && (
+                <button onClick={() => setRevising((v) => !v)} disabled={busy}
+                  className="text-[12px] font-bold rounded-[9px] px-4 py-[8px] disabled:opacity-40"
+                  style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+                  {revising ? "ยกเลิก" : "↩ Reject / Request Revision"}
+                </button>
+              )}
               {missing.length > 0 && <span className="text-[11px] text-status-red">ยังขาด: {missing.join(" · ")}</span>}
+            </div>
+          )}
+          {atReview && revising && (
+            <div className="mt-2 flex gap-2 flex-wrap items-center max-w-[440px]">
+              <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ต้องแก้ (จำเป็น)…" autoFocus
+                className="flex-1 min-w-[220px] text-[12.5px] px-[12px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+              <button onClick={requestRevision} disabled={busy || !reason.trim()}
+                className="text-[12px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
+                ส่งกลับแก้ → {kol.owner || "owner"}
+              </button>
             </div>
           )}
         </div>

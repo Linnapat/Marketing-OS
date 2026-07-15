@@ -49,6 +49,8 @@ export interface Graphic {
   keyMessage?: string;
   moodDirection?: string;
   referenceLink?: string;
+  /** Google Drive link carried over from the content brief. */
+  driveLink?: string;
   captionCopy?: string;
   extraDetails?: string;
   /** Per-asset deliverables (Platform × Asset Size from the content brief).
@@ -317,11 +319,14 @@ export function creativeBriefDetails(g: Graphic): { label: string; value: string
   return [
     { label: "Brief link", value: briefLink ? "Open creative brief" : "ยังไม่มี link brief", href: briefLink || undefined },
     { label: "Objective", value: g.objective || `${g.campaign} · ${g.type} for ${brandName(g.b)}` },
-    { label: "Key message", value: g.keyMessage || g.nextAction || "รอ requester เติม key message" },
+    // Key message must NOT fall back to nextAction — that's a workflow status
+    // (e.g. "Design in progress"), not the creative message.
+    { label: "Key message", value: g.keyMessage || "รอ requester เติม key message" },
     { label: "Platform / usage", value: g.platform || "—" },
     { label: "Size / format", value: g.size || "—" },
     { label: "CI / mood direction", value: g.moodDirection || `${brandName(g.b)} brand direction · keep CI, tone, logo and visual hierarchy consistent.` },
-    { label: "Reference", value: g.referenceLink || briefLink ? "Open reference" : "ยังไม่มี reference link", href: g.referenceLink || briefLink || undefined },
+    { label: "Google Drive link", value: g.driveLink ? "เปิด Google Drive" : "ยังไม่มี Drive link", href: g.driveLink || undefined },
+    { label: "Reference", value: (g.referenceLink || briefLink) ? "Open reference" : "ยังไม่มี reference link", href: g.referenceLink || briefLink || undefined },
     { label: "Linked content item", value: g.contentItem && g.contentItem !== "—" ? g.contentItem : "ยังไม่ link กับ Content Plan" },
     { label: "Caption / copy", value: g.captionCopy || "ยังไม่มี caption/copy เพิ่มเติม" },
     { label: "Additional details", value: g.extraDetails || g.blocker || "ไม่มีรายละเอียดเพิ่มเติม" },

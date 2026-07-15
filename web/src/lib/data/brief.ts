@@ -464,7 +464,7 @@ export function taskPreview(brief: CampaignBrief): TaskPreview[] {
   if (brief.kols.length) out.push({ kind: "KOL Tasks", icon: "🤝", count: brief.kols.length, detail: `${brief.kols.reduce((s, k) => s + (k.count || 0), 0)} creator/page` });
   if (adsPlatforms) out.push({ kind: "Ads Setup Tasks", icon: "📣", count: adsPlatforms, detail: `${adsPlatforms} platform` });
   if (crm) out.push({ kind: "CRM Task", icon: "💬", count: 1, detail: "LINE OA / CRM" });
-  out.push({ kind: "Result Report", icon: "📊", count: 1, detail: "Campaign result tracking" });
+  // Result report is handled/sent separately, so it's not previewed here.
   return out;
 }
 

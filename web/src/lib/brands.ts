@@ -22,8 +22,25 @@ export const brandCode = (id: BrandId) => BRANDS[id]?.code ?? "GEN";
 
 export const BRAND_ORDER: BrandId[] = ["teppen", "omakase", "mainichi", "touka"];
 
-export const brandColor = (id: BrandId) => BRANDS[id]?.color ?? "#9A9387";
-export const brandName = (id: BrandId) => BRANDS[id]?.name ?? id;
+// ── Runtime overrides from Settings → Brands (brands_config) ────────────────
+// The static BRANDS above are the defaults; when a user edits a brand's name or
+// colour in Settings, applyBrandOverrides() layers the saved values on top so
+// brandName()/brandColor()/BrandDot reflect the change everywhere. Hydrated
+// once at app start (AppShell) before the first paint.
+const brandOverrides: Partial<Record<BrandId, { name?: string; color?: string }>> = {};
+
+export function applyBrandOverrides(configs: { key: string; name?: string; color?: string }[]): void {
+  for (const c of configs) {
+    if (!(c.key in BRANDS)) continue; // ignore custom brands not in the id union
+    brandOverrides[c.key as BrandId] = {
+      name: c.name?.trim() || undefined,
+      color: c.color?.trim() || undefined,
+    };
+  }
+}
+
+export const brandColor = (id: BrandId) => brandOverrides[id]?.color ?? BRANDS[id]?.color ?? "#9A9387";
+export const brandName = (id: BrandId) => brandOverrides[id]?.name ?? BRANDS[id]?.name ?? id;
 
 // Filter chips always include an "All Brands" option keyed as null.
 export type BrandFilterValue = BrandId | "all";
