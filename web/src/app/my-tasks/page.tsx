@@ -16,7 +16,7 @@ import { RequestRow } from "@/lib/data/requests";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { baht } from "@/lib/format";
-import { useAuth } from "@/lib/auth";
+import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
@@ -160,9 +160,13 @@ export default function MyTasksPage() {
 
   // Lock the view to the signed-in member; keep viewAs valid when the member list loads.
   useEffect(() => {
-    if (member?.name && people.some((p) => p.name === member.name)) setViewAs(member.name);
-    else if (!people.some((p) => p.name === viewAs)) setViewAs(people[0]?.name ?? viewAs);
-  }, [member, people, viewAs]);
+    if (member?.name && people.some((p) => p.name === member.name)) { setViewAs(member.name); return; }
+    // Signed in but no matching member row (usually a mismatched email in
+    // Settings → Users) → show the user's OWN identity, never a teammate's
+    // task list. Falling back to people[0] would silently show someone else.
+    if (AUTH_REQUIRED && user) { setViewAs(member?.name || user.email?.split("@")[0] || "You"); return; }
+    if (!people.some((p) => p.name === viewAs)) setViewAs(people[0]?.name ?? viewAs);
+  }, [member, people, viewAs, user]);
 
   // Optimistic local patch + persist — powers every action button.
   const patchTask = (id: number, p: Partial<Task>) => {
