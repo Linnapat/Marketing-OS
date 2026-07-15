@@ -30,6 +30,7 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
 import { fetchAllBriefs } from "@/lib/db/brief";
+import { fetchKols } from "@/lib/db/kol";
 import { CampaignBrief } from "@/lib/data/brief";
 import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
@@ -88,9 +89,10 @@ export default function PlatformsPage() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([fetchAllResults(), fetchCampaigns(), fetchAllBriefs()]).then(([res, camps, briefMap]) => {
+    Promise.all([fetchAllResults(), fetchCampaigns(), fetchAllBriefs(), fetchKols()]).then(([res, camps, briefMap, kolRows]) => {
       if (!live) return;
-      setRows(mergeBudgetAllocationRows(res, camps, briefMap));
+      // KOL actuals feed the "Planned KOL" rows so this page matches KOL Performance.
+      setRows(mergeBudgetAllocationRows(res, camps, briefMap, kolRows));
       setCampaigns(camps);
       setBriefs(briefMap);
       setLoading(false);
@@ -491,7 +493,7 @@ export default function PlatformsPage() {
                   — หรือกรอกยอดรวมครั้งเดียวที่แถว Σ Grand Total ด้านล่าง ระบบกระจายให้ · เสร็จแล้วกด &quot;บันทึก&quot; ครั้งเดียวมุมขวาบน ({entryRows.length} ads)
                 </span>
               </div>
-              <AdEditor rows={entryRows} nameOf={nameOf} datesOf={datesOf} onPatch={patchRow}
+              <AdEditor rows={entryRows} nameOf={nameOf} showCampaign onPatch={patchRow}
                 onSpreadTotal={(key, total) => spreadTotal(entryRows, key, total)} />
             </div>
           ) : groups.length === 0 ? (
@@ -549,7 +551,7 @@ export default function PlatformsPage() {
                         {isOpen && (
                           <tr>
                             <td colSpan={13} className="bg-ivory px-3 py-3 border-b border-line4">
-                              <AdEditor rows={gRows} nameOf={nameOf} datesOf={datesOf} onPatch={patchRow} />
+                              <AdEditor rows={gRows} nameOf={nameOf} onPatch={patchRow} />
                             </td>
                           </tr>
                         )}
@@ -638,10 +640,12 @@ function FragmentRow({ children }: { children: React.ReactNode }) {
 /** Editable ad-level drill-down under a group. Only actuals are editable.
  *  With `onSpreadTotal` (monthly-entry mode) a Grand Total row is appended —
  *  typing a total there spreads it across every row at once. */
-function AdEditor({ rows, nameOf, datesOf, onPatch, onSpreadTotal }: {
+function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }: {
   rows: CampaignResultRow[];
   nameOf: Record<string, string>;
-  datesOf: Record<string, string>;
+  // Campaign column only in the flat monthly-entry list; inside a campaign
+  // group it's redundant, so it's hidden there.
+  showCampaign?: boolean;
   onPatch: (id: string, key: keyof CampaignResultRow, value: number) => void;
   onSpreadTotal?: (key: "reachActual" | "budgetActual" | "conversions" | "marketingVisits", total: number) => void;
 }) {
@@ -655,7 +659,7 @@ function AdEditor({ rows, nameOf, datesOf, onPatch, onSpreadTotal }: {
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
         <thead>
           <tr className="text-faint">
-            {["Ad", "Campaign", "Period", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Marketing Visit", "CV%", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
+            {["Ad", ...(showCampaign ? ["Campaign"] : []), "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Marketing Visit", "CV%", "Cost/Visit", "CPR act", "% Deliver", "Alert Budget", "Updated", ""].map((h, i) => (
               <th key={i} className={`font-bold px-[9px] py-[6px] border-b border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
             ))}
           </tr>
@@ -666,12 +670,8 @@ function AdEditor({ rows, nameOf, datesOf, onPatch, onSpreadTotal }: {
             const alert = budgetAlert(r.budget, r.budgetActual);
             return (
               <tr key={r.id} className="border-b border-line4 last:border-0">
-                <td className="px-[9px] py-[6px] text-left font-bold text-ink">
-                  {r.ad || "—"}
-                  <div className="text-[10.5px] text-faint font-normal">{r.audience}</div>
-                </td>
-                <td className="px-[9px] py-[6px] text-right text-muted">{nameOf[r.campaignId] ?? r.campaignId}</td>
-                <td className="px-[9px] py-[6px] text-right text-muted">{datesOf[r.campaignId] ?? "—"}</td>
+                <td className="px-[9px] py-[6px] text-left font-bold text-ink">{r.ad || "—"}</td>
+                {showCampaign && <td className="px-[9px] py-[6px] text-right text-muted">{nameOf[r.campaignId] ?? r.campaignId}</td>}
                 <td className="px-[9px] py-[6px] text-right text-muted">{num(r.target)}</td>
                 <td className="px-[9px] py-[6px] text-right text-muted">{baht(r.budget, { compact: true })}</td>
                 <EditCell value={r.reachActual} onChange={(v) => onPatch(r.id, "reachActual", v)} />
@@ -701,7 +701,7 @@ function AdEditor({ rows, nameOf, datesOf, onPatch, onSpreadTotal }: {
         {onSpreadTotal && rows.length > 0 && (
           <tfoot>
             <tr className="border-t-2 border-line bg-[#FFFBEF] font-bold text-ink">
-              <td className="px-[9px] py-[8px] text-left" colSpan={3}>
+              <td className="px-[9px] py-[8px] text-left" colSpan={showCampaign ? 2 : 1}>
                 Σ Grand Total — กรอกยอดรวมทั้งเดือนที่นี่ ระบบกระจายลงราย ad ให้
               </td>
               <td className="px-[9px] py-[8px] text-right text-muted">{num(sum((r) => r.target || 0))}</td>

@@ -10,8 +10,10 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
 import { baht, num, pct } from "@/lib/format";
-import { CampaignResultRow, deriveResultRow, cpr, emptyResultRow } from "@/lib/data/campaignResult";
+import { CampaignResultRow, deriveResultRow, cpr, emptyResultRow, mergeBudgetAllocationRows } from "@/lib/data/campaignResult";
 import { fetchResults, saveResults } from "@/lib/db/campaignResult";
+import { fetchAllBriefs } from "@/lib/db/brief";
+import { fetchKols } from "@/lib/db/kol";
 import { CampaignHub, HubStats, hubStats, createPlannerTasks, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
@@ -804,9 +806,19 @@ function ResultTab({ detail }: { detail: CampaignDetail }) {
 
   useEffect(() => {
     let alive = true;
-    fetchResults(campaignId).then((r) => { if (alive) { setRows(r); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    // Merge planned Ads/KOL allocation rows (with KOL actuals) so this tab shows
+    // exactly what Platform Performance shows for the campaign — same rows, synced.
+    Promise.all([fetchResults(campaignId), fetchAllBriefs(), fetchKols()]).then(([real, briefMap, kols]) => {
+      if (!alive) return;
+      const brief = briefMap[detail.row.name];
+      const merged = brief
+        ? mergeBudgetAllocationRows(real, [detail.row], { [detail.row.name]: brief }, kols.filter((k) => k.campaignId === campaignId))
+        : real;
+      setRows(merged);
+      setLoading(false);
+    }).catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [campaignId]);
+  }, [campaignId, detail.row]);
 
   const patch = (id: string, key: keyof CampaignResultRow, value: number) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)));

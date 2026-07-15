@@ -9,6 +9,7 @@
 import { Tone } from "@/lib/status";
 import { CampaignBrief } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
+import type { Kol } from "@/lib/data/kol";
 
 export type ResultKpi = "Reach" | "Click" | "Conversion";
 
@@ -252,6 +253,7 @@ export function mergeBudgetAllocationRows(
   results: CampaignResultRow[],
   campaigns: CampaignRow[],
   briefsByCampaignName: Record<string, CampaignBrief>,
+  kols: Kol[] = [],
 ): CampaignResultRow[] {
   const out = [...results];
   const existing = new Set(results.map((r) => r.id));
@@ -295,21 +297,33 @@ export function mergeBudgetAllocationRows(
       const platforms = kol.platforms?.length ? kol.platforms : ["KOL"];
       const budgetPerPlatform = Math.round(budget / platforms.length);
       const reachPerPlatform = Math.round((kol.expectedReach || 0) * Math.max(1, kol.count || 1) / platforms.length);
+      // Match the KOL module's real results: sum actualReach + committed cost of
+      // the creator rows fanned out from this brief item, split across platforms
+      // so the Performance Bar KOL row shows the same numbers as KOL Performance.
+      const matched = kols.filter((k) => k.campaignId === campaign.id && (k.sourceKolRequirementId || "").split("#")[0] === kol.id);
+      const actualReachTotal = matched.reduce((s, k) => s + (k.actualReach || 0), 0);
+      const actualCostTotal = matched.reduce((s, k) => s + (k.totalCost || 0), 0);
+      const reachActualPer = Math.round(actualReachTotal / platforms.length);
+      const budgetActualPer = Math.round(actualCostTotal / platforms.length);
       platforms.forEach((platform, index) => {
-        pushIfMissing(planRow({
-          id: `plan-${campaign.id}-kol-${slug(kol.id)}-${slug(platform)}`,
-          campaignId: campaign.id,
-          ad: `Planned KOL — ${kol.name || kol.kolType || `Creator ${index + 1}`}`,
-          audience: kol.area || audience,
-          role: "KOL plan",
-          platform: platform || "KOL",
-          type: (kol.contentRequired ?? []).join(" + ") || "KOL Content",
-          kpi: "Reach",
-          target: reachPerPlatform,
-          budget: budgetPerPlatform,
-          days,
-          cvTargetPct: 0,
-        }));
+        pushIfMissing({
+          ...planRow({
+            id: `plan-${campaign.id}-kol-${slug(kol.id)}-${slug(platform)}`,
+            campaignId: campaign.id,
+            ad: `Planned KOL — ${kol.name || kol.kolType || `Creator ${index + 1}`}`,
+            audience: kol.area || audience,
+            role: "KOL plan",
+            platform: platform || "KOL",
+            type: (kol.contentRequired ?? []).join(" + ") || "KOL Content",
+            kpi: "Reach",
+            target: reachPerPlatform,
+            budget: budgetPerPlatform,
+            days,
+            cvTargetPct: 0,
+          }),
+          reachActual: reachActualPer,
+          budgetActual: budgetActualPer,
+        });
       });
     }
   }
