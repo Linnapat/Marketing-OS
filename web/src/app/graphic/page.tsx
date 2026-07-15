@@ -294,11 +294,21 @@ function ShootCalendar({ me }: { me: string }) {
       <style jsx global>{`
         @media print {
           @page { size: A4 landscape; margin: 10mm; }
-          body { background: #fff !important; }
-          .no-print { display: none !important; }
-          .shoot-print { position: absolute; inset: 0; background: #fff; padding: 0; }
-          .shoot-print input { border: none !important; background: transparent !important; padding: 0 !important; }
+          html, body { background: #fff !important; }
+          /* Print ONLY the shoot schedule: hide the whole app, then reveal
+             just this subtree and pin it to the top of the page. */
+          body * { visibility: hidden !important; }
+          .shoot-print, .shoot-print * { visibility: visible !important; }
+          .shoot-print { position: absolute; left: 0; top: 0; width: 100%; background: #fff; padding: 0; }
+          .no-print, .no-print * { display: none !important; }
           .shoot-print .print-only { display: block !important; }
+          /* Render the inline inputs/selects as plain values on paper. */
+          .shoot-print input, .shoot-print select {
+            border: none !important; background: transparent !important; padding: 0 !important;
+            -webkit-appearance: none; appearance: none; color: #000 !important;
+          }
+          .shoot-print table { width: 100% !important; }
+          .shoot-print th, .shoot-print td { border: 1px solid #ccc !important; }
         }
       `}</style>
 
