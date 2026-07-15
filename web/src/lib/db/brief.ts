@@ -237,12 +237,17 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   }
 
   // ── Result report task ─────────────────────────────────────────────────────
-  const madeReportTask = await upsertBriefTask(mkTask(++n, {
-    title: `Result report — ${brief.name}`, type: "Report", moduleIcon: "📊", moduleColor: "#B33A2E",
-    owner: brief.plannerOwner, due: labelDate(brief.endDate), dueIso: brief.endDate,
-    nextAction: `วัดผล: ${brief.successMetrics.join(", ") || "—"}`,
-  }), `${brief.id}:report`);
-  if (madeReportTask.created) tasks++;
+  // Only when the campaign actually defined Success Metrics — otherwise there's
+  // nothing to report against and the task is just noise sitting in My Tasks
+  // for the whole flight.
+  if (brief.successMetrics.length > 0) {
+    const madeReportTask = await upsertBriefTask(mkTask(++n, {
+      title: `Result report — ${brief.name}`, type: "Report", moduleIcon: "📊", moduleColor: "#B33A2E",
+      owner: brief.plannerOwner, due: labelDate(brief.endDate), dueIso: brief.endDate,
+      nextAction: `วัดผล: ${brief.successMetrics.join(", ")}`,
+    }), `${brief.id}:report`);
+    if (madeReportTask.created) tasks++;
+  }
 
   // Report the real materialised counts (idempotency may make a retry all-zero).
   return { campaign: row, created: { content, graphics, kols, tasks } };
