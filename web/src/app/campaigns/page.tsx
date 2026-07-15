@@ -16,7 +16,7 @@ import {
 } from "@/lib/data/campaigns";
 import { CAMPAIGN_TYPES } from "@/lib/data/brief";
 import { fetchCampaigns, createCampaign, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
-import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
+import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -36,6 +36,15 @@ export default function CampaignsPage() {
   const [search, setSearch] = useState<string>("");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Email → nickname map so the Owner column shows a person's name, not the
+  // raw login email that some campaigns were saved with.
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
+  const ownerLabel = (owner: string) => {
+    const key = (owner || "").toLowerCase();
+    if (ownerNames[key]) return ownerNames[key];
+    // Fallback: strip the domain so a bare email still reads as a handle.
+    return owner.includes("@") ? owner.split("@")[0] : owner;
+  };
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const configuredBrandIds = useMemo(() => new Set(brandConfigs.map((item) => item.key)), [brandConfigs]);
   const brandOptions = useMemo(
@@ -64,6 +73,12 @@ export default function CampaignsPage() {
   useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchMembers().then((ms) => {
+      if (!alive) return;
+      const map: Record<string, string> = {};
+      for (const m of ms) { if (m.email) map[m.email.toLowerCase()] = m.name; }
+      setOwnerNames(map);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -223,13 +238,13 @@ export default function CampaignsPage() {
                 <div className="border-t border-line4">
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-                    style={{ gridTemplateColumns: "2.2fr 1.25fr 0.9fr 0.85fr 0.75fr 1.05fr 1.6fr" }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROAS</div><div>Readiness</div><div>Actions</div>
+                    style={{ gridTemplateColumns: "2.1fr 1.15fr 0.95fr 0.8fr 0.7fr 0.55fr 2fr" }}>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROAS</div><div className="text-center">Ready</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
                     <div
                       key={c.id}
-                      className="grid grid-cols-1 md:grid-cols-[2.2fr_1.25fr_0.9fr_0.85fr_0.75fr_1.05fr_1.6fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 hover:bg-ivory/60 transition"
+                      className="grid grid-cols-1 md:grid-cols-[2.1fr_1.15fr_0.95fr_0.8fr_0.7fr_0.55fr_2fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 hover:bg-ivory/60 transition"
                     >
                       <div>
                         <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
@@ -246,15 +261,19 @@ export default function CampaignsPage() {
                       <div className="flex items-center gap-[6px] text-[12px] text-muted">
                         <BrandDot brand={c.b} size={7} />{branchLabel(c)}
                       </div>
-                      <div className="text-[12.5px] text-muted">{c.owner}</div>
+                      <div className="text-[12.5px] text-muted truncate" title={c.owner}>{ownerLabel(c.owner)}</div>
                       <div className="text-[13px] font-semibold text-ink">{baht(c.budget, { compact: true })}</div>
                       <div className="text-[13px] font-bold" style={{ color: !c.roi ? "#9A9387" : c.roi < 2 ? "#C68A1E" : "#4E7A4E" }}>
                         {c.roi ? `${c.roi}×` : "—"}
                       </div>
-                      <div>
-                        <StatusBadge tone={READINESS_META[c.readiness].tone}>{READINESS_META[c.readiness].label}</StatusBadge>
+                      {/* Readiness as a single symbol (label on hover) */}
+                      <div className="md:text-center" title={READINESS_META[c.readiness].label}>
+                        <span className="text-[17px] leading-none">
+                          {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
+                        </span>
                       </div>
-                      <div className="flex flex-col md:items-start gap-2">
+                      {/* Actions — status + edit + delete on one row */}
+                      <div className="flex items-center gap-2 flex-wrap">
                         {(() => {
                           const statusOptions = ACTION_STATUSES.includes(c.status) ? ACTION_STATUSES : [c.status, ...ACTION_STATUSES];
                           return (
@@ -262,31 +281,29 @@ export default function CampaignsPage() {
                           value={c.status}
                           onChange={(e) => onStatusChange(c.id, e.target.value)}
                           disabled={busyCampaignId === c.id}
-                          className="min-w-[132px] text-[11.5px] font-bold text-ink bg-white border rounded-[12px] px-3 py-[8px] cursor-pointer outline-none disabled:opacity-50"
+                          className="text-[11.5px] font-bold text-ink bg-white border rounded-[10px] px-2.5 py-[7px] cursor-pointer outline-none disabled:opacity-50"
                           style={{ borderColor: "#ECEAF2" }}
                         >
                           {statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}
                         </select>
                           );
                         })()}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Link
-                            href={`/campaigns/new?edit=${c.id}`}
-                            className="text-[11.5px] font-bold rounded-[12px] px-3 py-[7px] border bg-white text-[#5B4FD8]"
-                            style={{ borderColor: "#DCD6F7" }}
-                          >
-                            Edit
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => onDelete(c)}
-                            disabled={busyCampaignId === c.id}
-                            className="text-[11.5px] font-bold rounded-[12px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50"
-                            style={{ borderColor: "#F2CACA" }}
-                          >
-                            Delete
-                          </button>
-                        </div>
+                        <Link
+                          href={`/campaigns/new?edit=${c.id}`}
+                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8]"
+                          style={{ borderColor: "#DCD6F7" }}
+                        >
+                          Edit
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => onDelete(c)}
+                          disabled={busyCampaignId === c.id}
+                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50"
+                          style={{ borderColor: "#F2CACA" }}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   ))}
