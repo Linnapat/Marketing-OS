@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Bell, ChevronRight, FolderKanban, Megaphone, Radio,
+  BarChart3, Bell, ChevronRight, FolderKanban, Megaphone, Radio,
   Search, Sparkles, Target, Wallet,
 } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -54,8 +54,9 @@ const priorityTone: Record<string, { bg: string; fg: string }> = {
 const quickLinks = [
   { label: "Brand Guide", href: "/assets", icon: FolderKanban, bg: "#EEE9FF", fg: "#6C5CE7" },
   { label: "Campaign Brief", href: "/campaigns/new", icon: Target, bg: "#FFF3E5", fg: "#E08A34" },
+  { label: "Performance", href: "/performance", icon: BarChart3, bg: "#E3F7F5", fg: "#0EA5A0", newTab: true },
   { label: "KPI Dashboard", href: "/finance", icon: Radio, bg: "#FFF3D7", fg: "#B78E2D" },
-  { label: "CRM Dashboard", href: "/content", icon: Megaphone, bg: "#F0F8D8", fg: "#5D9E35" },
+  { label: "CRM Dashboard", href: "https://teppen-cdp-linnapats-projects.vercel.app/dashboard/templates", icon: Megaphone, bg: "#F0F8D8", fg: "#5D9E35", newTab: true },
 ];
 
 function initials(name: string) {
@@ -458,7 +459,13 @@ export default function DashboardPage() {
               {quickLinks.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <Link key={item.label} href={item.href} className="rounded-[18px] border border-line bg-[#FBFAF7] px-4 py-4 hover:opacity-95">
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    target={item.newTab ? "_blank" : undefined}
+                    rel={item.newTab ? "noreferrer" : undefined}
+                    className="rounded-[18px] border border-line bg-[#FBFAF7] px-4 py-4 hover:opacity-95"
+                  >
                     <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: item.bg, color: item.fg }}>
                       <Icon size={18} />
                     </div>

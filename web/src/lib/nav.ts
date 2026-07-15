@@ -12,6 +12,7 @@ export interface NavItem {
   /** Built in this session; others render a Coming-soon placeholder. */
   ready?: boolean;
   badge?: number;
+  newTab?: boolean;
 }
 
 export interface NavGroup {
@@ -24,8 +25,13 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/", label: "Mood & Metrics", icon: LayoutDashboard, ready: true },
       { href: "/campaigns", label: "Campaign Café", icon: Target, ready: true },
-      { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
       { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
+    ],
+  },
+  {
+    label: "Performance",
+    items: [
+      { href: "/performance", label: "Performance", icon: BarChart3, ready: true, newTab: true },
     ],
   },
   {
