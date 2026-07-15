@@ -54,7 +54,7 @@ const priorityTone: Record<string, { bg: string; fg: string }> = {
 const quickLinks = [
   { label: "Brand Guide", href: "/assets", icon: FolderKanban, bg: "#EEE9FF", fg: "#6C5CE7" },
   { label: "Campaign Brief", href: "/campaigns/new", icon: Target, bg: "#FFF3E5", fg: "#E08A34" },
-  { label: "Performance", href: "/performance", icon: BarChart3, bg: "#E3F7F5", fg: "#0EA5A0", newTab: true },
+  { label: "Performance Bar", href: "/platforms", icon: BarChart3, bg: "#E3F7F5", fg: "#0EA5A0" },
   { label: "KPI Dashboard", href: "/finance", icon: Radio, bg: "#FFF3D7", fg: "#B78E2D" },
   { label: "CRM Dashboard", href: "https://teppen-cdp-linnapats-projects.vercel.app/dashboard/templates", icon: Megaphone, bg: "#F0F8D8", fg: "#5D9E35", newTab: true },
 ];

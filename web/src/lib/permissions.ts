@@ -52,7 +52,6 @@ export function canSeeModule(matrix: PermMatrix | null, role: Role, module: stri
  *  internal role; the Agency role is confined to /agency separately. */
 const ROUTE_MODULE: [prefix: string, module: string][] = [
   ["/campaigns", "Campaign"],
-  ["/performance", "Campaign"],
   ["/platforms", "Campaign"],
   ["/requests", "Campaign"],
   ["/approvals", "Campaign"],
