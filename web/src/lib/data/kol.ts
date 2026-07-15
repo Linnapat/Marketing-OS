@@ -94,6 +94,9 @@ export interface KolPost {
   link: string;
   reach?: number;
   engagement?: number;
+  /** Auto-stamped the day a result is first entered (never typed by hand) —
+   *  same "when the number was recorded" idea as Platform Performance's Updated. */
+  submittedAt?: string;
 }
 
 /** A KOL's posts — the stored list, or a single fallback synthesised from the

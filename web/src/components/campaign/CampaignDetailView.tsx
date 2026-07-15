@@ -9,7 +9,9 @@ import { campaignTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
-import { baht } from "@/lib/format";
+import { baht, num, pct } from "@/lib/format";
+import { CampaignResultRow, deriveResultRow, cpr, emptyResultRow } from "@/lib/data/campaignResult";
+import { fetchResults, saveResults } from "@/lib/db/campaignResult";
 import { CampaignHub, HubStats, hubStats, createPlannerTasks, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
@@ -790,32 +792,119 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
   );
 }
 
+// Result / Report — same editable ad-result table as Platform Performance,
+// backed by the SAME campaign_results rows, so numbers stay in sync both ways.
 function ResultTab({ detail }: { detail: CampaignDetail }) {
-  const c = detail.row;
-  const results = detail.hasResult ? [
-    { label: "Revenue", value: detail.revenue },
-    { label: "Visits", value: detail.reach === "—" ? "—" : "2,840" },
-    { label: "New Visits", value: "1,120" },
-    { label: "Reach", value: detail.reach },
-    { label: "ROAS", value: `${c.roi}×` },
-    { label: "CPV", value: "฿137" },
-  ] : [];
-  return detail.hasResult ? (
-    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))" }}>
-      {results.map((r) => (
-        <div key={r.label} className="bg-surface border border-line rounded-card p-4">
-          <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold mb-[6px]">{r.label}</div>
-          <div className="text-[20px] font-extrabold letter-tightest">{r.value}</div>
+  const campaignId = detail.row.id;
+  const [rows, setRows] = useState<CampaignResultRow[]>([]);
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchResults(campaignId).then((r) => { if (alive) { setRows(r); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [campaignId]);
+
+  const patch = (id: string, key: keyof CampaignResultRow, value: number) => {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+    setDirty((d) => new Set(d).add(id));
+  };
+  const addRow = () => {
+    const row = { ...emptyResultRow(campaignId, rows.length + 1), ad: "" };
+    setRows((rs) => [...rs, row]);
+    setDirty((d) => new Set(d).add(row.id));
+  };
+  const save = async () => {
+    if (!dirty.size) return;
+    setSaving(true);
+    try {
+      await saveResults(rows.filter((r) => dirty.has(r.id)));
+      setDirty(new Set());
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      toastError(`บันทึกผลไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setSaving(false); }
+  };
+
+  const cell = "px-[9px] py-[6px] border-b border-line4";
+  const setAd = (id: string, ad: string) => {
+    setRows((rs) => rs.map((x) => (x.id === id ? { ...x, ad } : x)));
+    setDirty((s) => new Set(s).add(id));
+  };
+  // Plain render helper (not a component) so inputs never remount mid-typing.
+  const editCell = (id: string, k: keyof CampaignResultRow, v: number) => (
+    <td className="px-[9px] py-[5px] text-right">
+      <input type="number" min={0} value={v || ""} placeholder="0" onChange={(e) => patch(id, k, Number(e.target.value) || 0)}
+        className="w-[74px] text-right bg-white outline-none rounded-[6px] px-[6px] py-[3px] border border-line2 text-ink focus:border-accent" />
+    </td>
+  );
+
+  if (loading) return <div className="text-[13px] text-faint py-8 text-center">กำลังโหลดผล…</div>;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-[12.5px] text-faint">
+          รูปแบบเดียวกับ Platform Performance — กรอก Reach / Budget / Conv. / Marketing Visit แล้ว sync ข้อมูลกัน
         </div>
-      ))}
-    </div>
-  ) : (
-    <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-12 text-center">
-      <div>
-        <div className="text-[14px] font-bold text-ink">No result data yet</div>
-        <div className="text-[12px] text-faint mt-1 max-w-sm mx-auto">Upload post links, revenue, and visit data once the campaign has run to compute ROI and ROAS.</div>
-        <button className="mt-4 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">Upload Result Data</button>
+        <div className="flex items-center gap-2">
+          {dirty.size > 0 && <span className="text-[12px] text-status-orange font-bold">แก้ไข {dirty.size} แถว</span>}
+          <button onClick={save} disabled={saving || !dirty.size}
+            className="text-[12.5px] font-bold text-white rounded-[10px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#211F1C" }}>
+            {saved ? "บันทึกแล้ว ✓" : saving ? "กำลังบันทึก…" : "บันทึกผล"}
+          </button>
+        </div>
       </div>
+      {rows.length === 0 ? (
+        <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-10 text-center">
+          <div>
+            <div className="text-[14px] font-bold text-ink">ยังไม่มีข้อมูลผล</div>
+            <div className="text-[12px] text-faint mt-1 max-w-sm mx-auto">เพิ่มแถวผลของ ad ในแคมเปญนี้ — ข้อมูลจะ sync กับหน้า Platform Performance</div>
+            <button onClick={addRow} className="mt-4 text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">+ เพิ่มแถวผล</button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-cardLg border border-line bg-surface overflow-x-auto">
+          <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
+            <thead>
+              <tr className="text-faint">
+                {["Ad", "Target", "Budget", "Reach actual", "Budget actual", "Conv.", "Marketing Visit", "CV%", "CPR act", "% Deliver"].map((h, i) => (
+                  <th key={i} className={`font-bold px-[9px] py-2 border-b border-line bg-ivory ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const d = deriveResultRow(r);
+                return (
+                  <tr key={r.id} className="border-b border-line4 last:border-0">
+                    <td className={`${cell} text-left`}>
+                      <input value={r.ad} placeholder="ชื่อ ad / งาน" onChange={(e) => setAd(r.id, e.target.value)}
+                        className="w-[150px] bg-white outline-none rounded-[6px] px-[6px] py-[3px] border border-line2 text-ink focus:border-accent" />
+                    </td>
+                    <td className={`${cell} text-right text-muted`}>{num(r.target)}</td>
+                    <td className={`${cell} text-right text-muted`}>{baht(r.budget, { compact: true })}</td>
+                    {editCell(r.id, "reachActual", r.reachActual)}
+                    {editCell(r.id, "budgetActual", r.budgetActual)}
+                    {editCell(r.id, "conversions", r.conversions)}
+                    {editCell(r.id, "marketingVisits", r.marketingVisits || 0)}
+                    <td className={`${cell} text-right font-bold text-ink`}>{d.cvActual != null ? pct(d.cvActual * 100) : "—"}</td>
+                    <td className={`${cell} text-right font-bold text-ink`}>{cpr(d.cprActual)}</td>
+                    <td className={`${cell} text-right text-muted`}>{d.pctReach != null ? pct(d.pctReach * 100) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="px-3 py-2 border-t border-line4">
+            <button onClick={addRow} className="text-[11.5px] font-bold text-accent">+ เพิ่มแถวผล</button>
+          </div>
+        </div>
+      )}
+      <div className="text-[11px] text-faint px-1">CV% = Marketing Visit ÷ Reach · แก้ที่นี่หรือที่ Platform Performance ก็ sync กัน (ตาราง campaign_results เดียวกัน)</div>
     </div>
   );
 }

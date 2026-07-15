@@ -32,7 +32,7 @@ import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { Segmented } from "@/components/ui/Segmented";
-import { BriefKolItem, emptyKolItem, fmtPct } from "@/lib/data/brief";
+import { BriefKolItem, emptyKolItem, fmtPct, KOL_PLATFORMS } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { importKolProfilesFromSheet, KolSheetRow } from "@/lib/db/kolMaster";
@@ -552,7 +552,14 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
   // Update one post's result numbers (state only, so typing is smooth); the DB
   // write happens on blur. Keeps top-level actuals = sum of posts.
   const editPostResult = (k: Kol, idx: number, patch: Partial<KolPost>) => {
-    const posts = kolPosts(k).map((p, j) => (j === idx ? { ...p, ...patch } : p));
+    const posts = kolPosts(k).map((p, j) => {
+      if (j !== idx) return p;
+      const merged = { ...p, ...patch };
+      // Auto-stamp the submit date the moment a result is first entered.
+      const hasResult = (merged.reach || 0) > 0 || (merged.engagement || 0) > 0 || !!merged.link?.trim();
+      if (hasResult && !merged.submittedAt) merged.submittedAt = new Date().toISOString().slice(0, 10);
+      return merged;
+    });
     const totals = postsTotals(posts);
     onUpdate({ ...k, posts, actualReach: totals.reach, actualEngagement: totals.engagement });
   };
@@ -616,7 +623,14 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                   {posts.map((p, pi2) => (
                     <div key={pi2} className="grid gap-y-1 px-5 py-2 items-center bg-ivory/40" style={{ gridTemplateColumns: cols }}>
                       <span className="flex items-center gap-2 text-[11.5px] text-muted min-w-0 pl-6">
-                        <span className="font-semibold">{p.platform}</span>
+                        {/* Platform now editable per post */}
+                        <select value={p.platform}
+                          onChange={(e) => { editPostResult(k, pi2, { platform: e.target.value }); }}
+                          onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก platform ไม่สำเร็จ: ${error?.message || "Unknown error"}`))}
+                          className="text-[11px] font-semibold px-1.5 py-[3px] rounded-[6px] border border-line2 bg-white outline-none">
+                          {(KOL_PLATFORMS as readonly string[]).includes(p.platform) ? null : <option value={p.platform}>{p.platform}</option>}
+                          {KOL_PLATFORMS.map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+                        </select>
                         {p.link
                           ? <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-accent truncate hover:underline">{p.link} ↗</a>
                           : <input value={p.link} placeholder="วางลิงก์โพสต์…"
@@ -628,7 +642,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                       <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Reach ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
                       <input type="number" value={p.engagement || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { engagement: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Engagement ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
                       <span className="text-[11.5px] text-faint text-right">{fmtPct(rate(p.reach || 0, p.engagement || 0))}</span>
-                      <span></span><span></span>
+                      <span className="text-[10.5px] text-faint text-right col-span-2" title="วันที่กรอกผล (อัตโนมัติ)">{p.submittedAt ? `submit ${labelDate(p.submittedAt)}` : ""}</span>
                     </div>
                   ))}
                   <div className="px-5 py-2 pl-11 bg-ivory/40">
