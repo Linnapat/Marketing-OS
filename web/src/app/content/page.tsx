@@ -61,6 +61,7 @@ const campaignAccent = (campaign?: string) => CAMPAIGN_COLORS[Math.abs(hashText(
 const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || "guest"}`;
 
 export default function ContentPage() {
+  const brandVisibility = useBrandVisibility();
   const [view, setView] = useState<View>("month");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
@@ -120,8 +121,8 @@ export default function ContentPage() {
   const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
 
   const items = useMemo(
-    () => posts.filter((c) => (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
-    [posts, brand, date],
+    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
+    [posts, brand, date, brandVisibility],
   );
   const summary = useMemo(() => ({
     posts: items.length,

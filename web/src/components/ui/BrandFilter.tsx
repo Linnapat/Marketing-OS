@@ -35,7 +35,9 @@ export function BrandFilter({
         onChange={(e) => onChange(e.target.value as BrandFilterValue)}
         style={SELECT_STYLE}
       >
-        {visibility.allowAll && <option value="all">All Brands</option>}
+        {/* "All Brands" is always safe: rows are gated to the member's visible
+            brands, so a scoped user sees only the brands they manage. */}
+        <option value="all">{visibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
         {options.map((id) => (
           <option key={id} value={id}>{visibility.brandNames[id] ?? BRANDS[id].name}</option>
         ))}

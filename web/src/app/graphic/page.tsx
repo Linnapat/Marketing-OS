@@ -100,7 +100,7 @@ export default function GraphicPage() {
       .catch((error) => toastError(`Approve ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
-  const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
+  const items = graphics.filter((g) => brandVisibility.visibleBrands.includes(g.b) && (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
   const kpi = graphicKpis(items);
 
   const KPIS: { label: string; value: number; tone?: string; dark?: boolean }[] = [
@@ -133,7 +133,7 @@ export default function GraphicPage() {
                 <label className="flex items-center gap-[7px]">
                   <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
                   <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
-                    {brandVisibility.allowAll && <option value="all">All Brands</option>}
+                    <option value="all">{brandVisibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
                     {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
                   </select>
                 </label>

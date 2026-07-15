@@ -124,6 +124,8 @@ export default function CampaignsPage() {
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 
   const filtered = campaigns.filter((c) =>
+    // Brand-scope first: a member only ever sees campaigns of brands they manage.
+    brandVisibility.visibleBrands.includes(c.b) &&
     (brand === "all" || c.b === brand) &&
     (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
     rangeInFilter(date, c.dates),
@@ -207,7 +209,7 @@ export default function CampaignsPage() {
                 className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none"
                 style={{ borderColor: "#ECEAF2" }}
               >
-                {brandVisibility.allowAll && <option value="all">All Brands</option>}
+                <option value="all">{brandVisibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
                 {brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}
               </select>
             </div>

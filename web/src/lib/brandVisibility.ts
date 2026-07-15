@@ -88,8 +88,11 @@ export function useBrandVisibility() {
       brandConfigs: configs,
       scopeLabel: member?.brandAccess || "All brands",
       isVisible: (brand: BrandFilterValue) => isBrandVisible(brand, visibleBrands, allowAll),
+      // "all" = every brand this member may see (rows are gated by visibleBrands
+      // anyway), so it's always a valid selection. A specific brand that isn't
+      // visible falls back to "all" (their own brands), never someone else's.
       normalize: (brand: BrandFilterValue): BrandFilterValue => (
-        isBrandVisible(brand, visibleBrands, allowAll) ? brand : firstVisibleBrand(visibleBrands)
+        brand === "all" ? "all" : (visibleBrands.includes(brand) ? brand : "all")
       ),
     };
   }, [configs, member?.brandAccess, role]);

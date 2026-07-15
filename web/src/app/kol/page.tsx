@@ -54,6 +54,7 @@ type Tab = (typeof TABS)[number][0];
 interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: DateFilter }
 
 export default function KolPage() {
+  const brandVisibility = useBrandVisibility();
   const [tab, setTab] = useState<Tab>("list");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [campaign, setCampaign] = useState<string>("all");
@@ -149,7 +150,7 @@ export default function KolPage() {
     syncBriefKolFromRows(next).catch((error) => toastError(`sync KOL กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
-  const filtered = kols.filter((k) => (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
+  const filtered = kols.filter((k) => brandVisibility.visibleBrands.includes(k.b) && (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
   const kpi = kolKpis(filtered);
   const alerts = kolAlerts(filtered);
 
