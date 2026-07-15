@@ -116,17 +116,23 @@ export function stageFromDeliverables(g: Graphic): string {
  *  dig into the drawer. Returns null when nothing is waiting. */
 export function approveAllWaiting(g: Graphic, by: string): Graphic | null {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
-  const waiting = dels.filter((d) => d.status === "Waiting review");
-  if (!waiting.length) return null;
+  let targets = dels.filter((d) => d.status === "Waiting review");
+  // Requests parked in "Waiting Feedback" without per-deliverable review
+  // states (legacy rows): approving means everything not yet approved.
+  if (!targets.length && g.stage === "Waiting Feedback") {
+    targets = dels.filter((d) => d.status !== "Approved");
+  }
+  if (!targets.length) return null;
   const at = new Date().toISOString();
-  const next = dels.map((d) => (d.status === "Waiting review" ? { ...d, status: "Approved" as const } : d));
+  const next = dels.map((d) => (targets.includes(d) ? { ...d, status: "Approved" as const } : d));
   return {
     ...g,
     deliverables: next,
     stage: stageFromDeliverables({ ...g, deliverables: next }),
+    openFb: 0,
     history: [
       ...(g.history ?? []),
-      ...waiting.map((d) => ({ type: "approved" as const, at, by, deliverableKey: `${d.platform}::${d.size}` })),
+      ...targets.map((d) => ({ type: "approved" as const, at, by, deliverableKey: `${d.platform}::${d.size}` })),
     ],
   };
 }
