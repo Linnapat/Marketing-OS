@@ -149,9 +149,13 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
   const db = supabase();
   if (!db || !task.relatedGraphicId) return;
 
+  // Match the ONE assignment task by its deterministic id (`${graphicId}01`),
+  // not by relatedGraphicId — revision tasks now also carry relatedGraphicId,
+  // so a relatedGraphicId lookup returns multiple rows and .maybeSingle throws
+  // ("JSON object requested, multiple (or no) rows returned").
   const { data, error } = await db.from("tasks")
     .select("id, data")
-    .eq("data->>relatedGraphicId", String(task.relatedGraphicId))
+    .eq("data->>id", String(task.id))
     .maybeSingle();
   assertDbOk(error, "Could not check existing graphic task");
 
