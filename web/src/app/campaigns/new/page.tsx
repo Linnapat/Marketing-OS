@@ -225,6 +225,28 @@ export default function NewCampaignPage() {
   const finalize = (status: CampaignBrief["status"], log: CampaignBrief["approvalLog"], now: string): CampaignBrief =>
     withSyncedKolBudget({ ...brief, branch: brief.branches.join(", "), status, approvalLog: log, createdAt: now });
 
+  // Top-right Save Draft: saves the work-in-progress WITHOUT leaving the
+  // page, so stepping away mid-build never loses anything. The final-step
+  // Save Draft still saves-and-exits.
+  const [draftSaved, setDraftSaved] = useState(false);
+  const saveDraftStay = async () => {
+    if (!brief.name.trim()) {
+      setStep(0);
+      toastError("ตั้งชื่อแคมเปญก่อน แล้วกด Save Draft อีกครั้ง");
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveCampaignBrief(finalize("Draft", brief.approvalLog, new Date().toISOString()));
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 2500);
+    } catch (error) {
+      toastError(`บันทึก Draft ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (asDraft: boolean) => {
     // Save Draft is exempt from validation; Submit is blocked when required
     // fields are missing.
@@ -252,7 +274,19 @@ export default function NewCampaignPage() {
         eyebrow="Campaign Builder"
         title={editingId ? "Edit Campaign" : "Create Campaign"}
         subtitle={editingId ? "แก้ไข Campaign ได้ทุกสถานะ — เมื่อ Submit ระบบจะส่งเวอร์ชันล่าสุดให้ CMO อนุมัติอีกครั้ง" : "สร้าง campaign brief แบบ flexible — ออกแบบเอง มี guideline ช่วยไม่ให้ตกหล่น แล้วแตกงานอัตโนมัติ"}
-        right={<Link href="/campaigns" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">← Campaigns</Link>}
+        right={
+          <div className="flex items-center gap-2">
+            <button disabled={busy} onClick={saveDraftStay}
+              title="บันทึกงานที่ค้างไว้เป็น Draft — อยู่หน้านี้ทำต่อได้"
+              className="text-[12.5px] font-bold rounded-[9px] px-3 py-[7px] border disabled:opacity-40"
+              style={draftSaved
+                ? { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }
+                : { background: "#211F1C", borderColor: "#211F1C", color: "#fff" }}>
+              {draftSaved ? "✓ บันทึก Draft แล้ว" : busy ? "กำลังบันทึก…" : "💾 Save Draft"}
+            </button>
+            <Link href="/campaigns" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">← Campaigns</Link>
+          </div>
+        }
       />
 
       <div className="mt-4 flex items-center gap-1 overflow-x-auto pb-1">
