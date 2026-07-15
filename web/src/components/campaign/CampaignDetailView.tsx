@@ -14,6 +14,7 @@ import { CampaignHub, HubStats, hubStats, createPlannerTasks, createBudgetExpens
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
 import { createRevisionTask } from "@/lib/db/tasks";
+import { fetchMembers } from "@/lib/db/settings";
 import { brandName } from "@/lib/brands";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
 import { useAuth } from "@/lib/auth";
@@ -638,14 +639,28 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
   const [busy, setBusy] = useState(false);
   const [revising, setRevising] = useState(false);
   const [reason, setReason] = useState("");
+  // Real approver names from Settings for the fallback chain (no hardcoded people).
+  const [bglName, setBglName] = useState("—");
+  const [cmoName, setCmoName] = useState("CMO");
+  useEffect(() => {
+    let alive = true;
+    fetchMembers().then((ms) => {
+      if (!alive) return;
+      const bgl = ms.find((m) => /marketing manager|bgl|brand lead/i.test(m.role));
+      const cmo = ms.find((m) => /cmo/i.test(m.role) || m.access === "Admin");
+      if (bgl) setBglName(bgl.name);
+      if (cmo) setCmoName(cmo.name);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // Only campaigns created through the Brief builder carry a brief; older ones
   // fall back to the static chain view below.
   if (!brief) {
     const chain = [
       { role: "Marketing Executive", person: detail.row.owner, status: "Submitted", tone: "green" as const },
-      { role: "Marketing Manager / BGL", person: "Mei T.", status: "Reviewed", tone: "green" as const },
-      { role: "CMO", person: "Linnapat D.", status: detail.row.nextApproval === "CMO" ? "Pending" : "Approved", tone: detail.row.nextApproval === "CMO" ? "gold" as const : "green" as const },
+      { role: "Marketing Manager / BGL", person: bglName, status: "Reviewed", tone: "green" as const },
+      { role: "CMO", person: cmoName, status: detail.row.nextApproval === "CMO" ? "Pending" : "Approved", tone: detail.row.nextApproval === "CMO" ? "gold" as const : "green" as const },
     ];
     return (
       <div className="flex flex-col gap-4">
