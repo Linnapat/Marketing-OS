@@ -12,7 +12,8 @@ import {
   CONTENT, ContentItem, contentTone, platIcon, PLATFORMS, itemPlatforms, contentDateIso,
 } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
-import { fetchContent, createContent } from "@/lib/db/content";
+import { fetchContent, createContent, updateContent } from "@/lib/db/content";
+import { useRole } from "@/lib/role";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
 import { createGraphic, buildGraphic } from "@/lib/db/graphic";
@@ -71,6 +72,16 @@ export default function ContentPage() {
   const [newIso, setNewIso] = useState<string | null>(null);
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
+  // Only the creative team (Content Creator / Creative Leader; CMO as admin)
+  // may change Approval / Publish status inline from the list.
+  const { role } = useRole();
+  const canEditStatus = ["Content Creator", "Creative Leader", "CMO"].includes(role);
+  // Inline status update — persist + patch local state, no drawer needed.
+  const setStatus = (c: ContentItem, patch: Partial<ContentItem>) => {
+    const next = { ...c, ...patch };
+    setPosts((ps) => ps.map((p) => (p.id === c.id ? next : p)));
+    updateContent(next).catch((error) => toastError(`อัปเดตสถานะไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+  };
 
   useEffect(() => {
     let alive = true;
@@ -272,9 +283,9 @@ export default function ContentPage() {
       <div className="mt-5">
         {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} />}
         {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} />}
-        {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} />}
+        {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
         {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-        {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} />}
+        {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
       </div>
 
       {open && (
@@ -504,14 +515,14 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
 
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats, expandable to the post list inside. */
-function CampaignView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
+function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
     const m = new Map<string, ContentItem[]>();
     for (const c of items) { const k = c.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(c); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [items]);
-  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} />;
+  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} />;
   const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
     <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
   );
@@ -537,7 +548,7 @@ function CampaignView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: 
                 {chip("published", published, "#4E7A4E", "#EEF4EE")}
               </span>
             </button>
-            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} /></div>}
+            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} /></div>}
           </div>
         );
       })}
@@ -545,11 +556,31 @@ function CampaignView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: 
   );
 }
 
-function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
+const APPROVAL_OPTS = ["Draft", "Waiting Approval", "Approved", "Revision Requested"];
+const PUBLISH_OPTS = ["Draft", "Scheduled in OS", "Queued", "Published"];
+
+/** Inline status cell: an editable dropdown for the creative team, a read-only
+ *  badge for everyone else. Stops row-click so editing never opens the drawer. */
+function StatusCell({ value, opts, canEdit, onChange }: { value: string; opts: string[]; canEdit: boolean; onChange: (v: string) => void }) {
+  if (!canEdit) return <StatusBadge tone={contentTone(value)}>{value}</StatusBadge>;
+  const options = opts.includes(value) ? opts : [value, ...opts];
+  return (
+    <select
+      value={value}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => { e.stopPropagation(); onChange(e.target.value); }}
+      className="text-[11.5px] font-bold rounded-[9px] px-2 py-[5px] border border-line2 bg-white text-ink outline-none cursor-pointer max-w-[130px]"
+    >
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
+function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
-        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule</span>
+        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Approval/Publish ในแถวได้</span>}</span>
         <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
@@ -558,7 +589,7 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
       </div>
       {[...items].sort((a, b) => contentDateIso(a).localeCompare(contentDateIso(b))).map((c) => {
         return (
-          <button key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
+          <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
             <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
             <div className="flex items-center gap-2 min-w-0">
@@ -568,9 +599,9 @@ function ListView({ items, onOpen, onNew }: { items: ContentItem[]; onOpen: (c: 
             <span className="text-[12px] text-muted truncate">{c.campaign}</span>
             <StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge>
             <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
-            <StatusBadge tone={contentTone(c.approvalStatus)}>{c.approvalStatus}</StatusBadge>
-            <StatusBadge tone={contentTone(c.publishStatus)}>{c.publishStatus}</StatusBadge>
-          </button>
+            <StatusCell value={c.approvalStatus} opts={APPROVAL_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { approvalStatus: v })} />
+            <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
+          </div>
         );
       })}
       {items.length === 0 && (
