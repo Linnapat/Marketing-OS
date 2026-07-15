@@ -278,7 +278,7 @@ export default function PlatformsPage() {
     const brief = briefs[campaign.name];
     const amount = Number(reviseAmount) || 0;
     const requester = member?.name || "Requester";
-    const approver = brief?.approver?.trim() || "Aran P.";
+    const approver = brief?.approver?.trim() || "CMO";
     const task: Task = {
       id: Date.now(),
       title: `Revise budget request — ${campaign.name}`,

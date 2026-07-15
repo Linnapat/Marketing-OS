@@ -353,6 +353,38 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                 <textarea rows={6} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Write caption here…" className={`${field} resize-y leading-[1.5]`} />
                 <div className="text-[11px] text-faint mt-1 text-right">{caption.length} chars</div>
               </div>
+
+              {/* Brief guide — reference from the Content Plan for writing the caption */}
+              {(() => {
+                const guide: [string, string | undefined][] = [
+                  ["Main head", item.title],
+                  ["Sub head", item.subHead],
+                  ["Main message", item.mainMessage],
+                  ["CTA (เป้า)", item.cta],
+                  ["Product highlight", item.productHighlight],
+                  ["Caption direction", item.captionDirection],
+                  ["Mandatory text", item.mandatoryText],
+                  ["Do / Don't", item.doDont],
+                ];
+                const rows = guide.filter(([, v]) => (v ?? "").toString().trim());
+                return (
+                  <div className="rounded-[14px] border p-3" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
+                    <div className="text-[11.5px] font-extrabold text-[#5B4FB2] mb-2">📋 Brief guide · เขียน caption ตามนี้</div>
+                    {rows.length ? (
+                      <div className="flex flex-col gap-[7px]">
+                        {rows.map(([label, v]) => (
+                          <div key={label} className="grid gap-1" style={{ gridTemplateColumns: "110px 1fr" }}>
+                            <span className="text-[11px] font-bold text-[#7D72B4]">{label}</span>
+                            <span className="text-[12px] text-ink">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11.5px] text-faint">ยังไม่มีข้อมูลบรีฟ — โพสต์นี้อาจสร้างก่อนมีฟิลด์บรีฟ หรือกรอก brief ที่ Content Plan</div>
+                    )}
+                  </div>
+                );
+              })()}
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Hashtags</label>
                 <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="#wagyu #bangkok #teppen" className={field} />

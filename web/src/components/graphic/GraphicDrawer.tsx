@@ -1,7 +1,8 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchMembers } from "@/lib/db/settings";
 import { X } from "lucide-react";
 import {
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
@@ -28,6 +29,18 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
+  // Real Marketing Manager / BGL from Settings for the approval chain — no more
+  // hardcoded "Mei T." Shows "—" when the role has no member yet.
+  const [bglApprover, setBglApprover] = useState("—");
+  useEffect(() => {
+    let alive = true;
+    fetchMembers().then((ms) => {
+      if (!alive) return;
+      const m = ms.find((x) => /marketing manager|bgl|brand lead/i.test(x.role));
+      if (m) setBglApprover(m.name);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefDetails = creativeBriefDetails(g);
@@ -406,7 +419,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
 
           {tab === "approval" && (
             <div className="flex flex-col gap-3">
-              {[["Designer submitted", "green", g.designer], ["Requester reviewed", g.openFb > 0 ? "gold" : "green", g.requester], ["Marketing Manager / BGL approval", g.stage === "Approved" || g.stage === "Delivered" ? "green" : "neutral", "Mei T."], ["CMO approval", g.stage === "Delivered" ? "green" : g.pendingApprover === g.approver ? "gold" : "neutral", g.approver]].map(([role, tone, person], i) => (
+              {[["Designer submitted", "green", g.designer], ["Requester reviewed", g.openFb > 0 ? "gold" : "green", g.requester], ["Marketing Manager / BGL approval", g.stage === "Approved" || g.stage === "Delivered" ? "green" : "neutral", bglApprover], ["CMO approval", g.stage === "Delivered" ? "green" : g.pendingApprover === g.approver ? "gold" : "neutral", g.approver]].map(([role, tone, person], i) => (
                 <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: tone === "green" ? "#4E7A4E" : tone === "gold" ? "#C68A1E" : "#C0B8AD" }}>{i + 1}</div>
                   <div className="flex-1"><div className="text-[13px] font-bold">{role as string}</div><div className="text-[11.5px] text-faint">{person as string}</div></div>

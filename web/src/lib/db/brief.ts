@@ -109,7 +109,11 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       campaignId: normalizedBrief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
       requester: ci.requester, designer: ci.designer, approver: ci.approver,
       // Owner is assigned later inside the Creative team — leave unassigned here.
-      owner: "Unassigned", caption: "", hashtags: "", cta: "",
+      owner: "Unassigned", caption: "", hashtags: "", cta: ci.cta || "",
+      // Brief guide for the caption writer.
+      subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
+      productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,
+      mandatoryText: ci.mandatoryText || undefined, doDont: ci.doDont || undefined,
       captionStatus: "Missing", assetStatus: ci.requiredGraphic ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };

@@ -27,6 +27,14 @@ export interface ContentItem {
   hashtags: string;
   cta: string;
   footer?: string;
+  /** Brief guide carried from the Content Plan item — reference for the
+   *  caption writer (main head = title, plus these). All optional. */
+  subHead?: string;
+  mainMessage?: string;
+  productHighlight?: string;
+  captionDirection?: string;
+  mandatoryText?: string;
+  doDont?: string;
   captionStatus: string;
   assetStatus: string;
   approvalStatus: string;
