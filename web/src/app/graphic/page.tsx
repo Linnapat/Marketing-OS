@@ -19,6 +19,7 @@ import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { createContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
+import { fetchBrandConfigs } from "@/lib/db/settings";
 import { fetchJsonSetting, saveJsonSetting } from "@/lib/db/settings";
 import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -244,15 +245,25 @@ const normalizeShoot = (r: LegacyShootRow): ShootRow => ({
 function ShootCalendar({ me }: { me: string }) {
   const [rows, setRows] = useState<ShootRow[]>([]);
   const [autoRows, setAutoRows] = useState<ShootRow[]>([]);
+  // Dropdown option sources: branch names (Location) + Content Plan item titles.
+  const [locationOpts, setLocationOpts] = useState<string[]>([]);
+  const [contentOpts, setContentOpts] = useState<string[]>([]);
 
   useEffect(() => {
     let alive = true;
     fetchJsonSetting<LegacyShootRow[]>("creative_shoots_v2").then((v) => { if (alive && v) setRows(v.map(normalizeShoot)); }).catch(() => {});
+    fetchBrandConfigs().then((cfgs) => {
+      if (!alive) return;
+      setLocationOpts(Array.from(new Set(cfgs.flatMap((c) => c.branchList))).sort());
+    }).catch(() => {});
     // Photo shoot / VDO shooting items from Content Plan appear as read-only
     // reference rows so the leader can see what the briefs already asked for.
     fetchAllBriefs().then((briefs) => {
       if (!alive) return;
-      setAutoRows(Object.values(briefs).flatMap((b) =>
+      const all = Object.values(briefs);
+      // Every Content Plan item title → the Content dropdown/search source.
+      setContentOpts(Array.from(new Set(all.flatMap((b) => (b.content ?? []).map((c) => c.title).filter(Boolean)))).sort());
+      setAutoRows(all.flatMap((b) =>
         (b.content ?? [])
           .filter((c) => /photo shoot|vdo shooting/i.test(c.type || ""))
           .map((c) => normalizeShoot({
@@ -317,15 +328,28 @@ function ShootCalendar({ me }: { me: string }) {
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-line4 last:border-0">
                   <td className="px-[10px] py-[5px]"><input type="date" value={r.date} onChange={(e) => editRow(r.id, { date: e.target.value })} className={cell} /></td>
-                  <td className="px-[10px] py-[5px]"><input value={r.time} onChange={(e) => editRow(r.id, { time: e.target.value })} placeholder="เช่น 15:00-17:00" className={`${cell} min-w-[110px]`} /></td>
+                  <td className="px-[10px] py-[5px]">
+                    {/* Two time pickers → stored as "start-end" */}
+                    {(() => {
+                      const [ts, te] = (r.time || "").split("-");
+                      const setTime = (start: string, end: string) => editRow(r.id, { time: end ? `${start}-${end}` : start });
+                      return (
+                        <span className="flex items-center gap-1">
+                          <input type="time" value={ts || ""} onChange={(e) => setTime(e.target.value, te || "")} className={`${cell} min-w-[92px]`} />
+                          <span className="text-faint text-[11px]">–</span>
+                          <input type="time" value={te || ""} onChange={(e) => setTime(ts || "", e.target.value)} className={`${cell} min-w-[92px]`} />
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-[10px] py-[5px]">
                     <select value={r.brand} onChange={(e) => editRow(r.id, { brand: e.target.value })} className={cell}>
                       <option value="">—</option>
                       {BRAND_ORDER.map((id) => <option key={id} value={brandName(id)}>{brandName(id)}</option>)}
                     </select>
                   </td>
-                  <td className="px-[10px] py-[5px]"><input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} placeholder="Content / แคมเปญ" className={`${cell} min-w-[160px]`} /></td>
-                  <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} placeholder="สถานที่" className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} list="shoot-content-opts" placeholder="เลือก/พิมพ์จาก Content Plan" className={`${cell} min-w-[180px]`} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} list="shoot-location-opts" placeholder="เลือกสาขา" className={`${cell} min-w-[130px]`} /></td>
                   <td className="px-[10px] py-[5px]"><input value={r.menu} onChange={(e) => editRow(r.id, { menu: e.target.value })} placeholder="เมนู / งานที่ถ่าย" className={`${cell} min-w-[150px]`} /></td>
                   <td className="px-[10px] py-[5px]"><input value={r.cast} onChange={(e) => editRow(r.id, { cast: e.target.value })} placeholder="ทีม / cast" className={cell} /></td>
                   <td className="px-[10px] py-[5px] text-right no-print"><button onClick={() => removeRow(r.id)} className="text-[12px] text-status-red font-bold" aria-label="ลบ">✕</button></td>
@@ -333,6 +357,9 @@ function ShootCalendar({ me }: { me: string }) {
               ))}
             </tbody>
           </table>
+          {/* Shared option sources for Content (Content Plan titles) + Location (branches) */}
+          <datalist id="shoot-content-opts">{contentOpts.map((o) => <option key={o} value={o} />)}</datalist>
+          <datalist id="shoot-location-opts">{locationOpts.map((o) => <option key={o} value={o} />)}</datalist>
         </div>
       </div>
 
