@@ -180,9 +180,16 @@ export function preflight(c: ContentItem, metaConnected = false): { label: strin
   return [
     { label: "Caption ready", ok: ["Ready", "Approved"].includes(c.captionStatus) },
     { label: "Asset ready", ok: ["Approved", "Final"].includes(c.assetStatus) },
-    { label: "Meta account mapped", ok: metaConnected },
-    { label: "Server token configured", ok: metaConnected },
     { label: "Approval completed", ok: c.approvalStatus === "Approved" },
+    // Meta auto-publish gates only matter once a Meta account is connected —
+    // publishing is manual otherwise, so hiding them keeps the checklist from
+    // looking perpetually incomplete.
+    ...(metaConnected
+      ? [
+          { label: "Meta account mapped", ok: true },
+          { label: "Server token configured", ok: true },
+        ]
+      : []),
   ];
 }
 
