@@ -54,9 +54,13 @@ const priorityTone: Record<string, { bg: string; fg: string }> = {
 const quickLinks = [
   { label: "Brand Guide", href: "/assets", icon: FolderKanban, bg: "#EEE9FF", fg: "#6C5CE7" },
   { label: "Campaign Brief", href: "/campaigns/new", icon: Target, bg: "#FFF3E5", fg: "#E08A34" },
-  { label: "Performance Bar", href: "/platforms", icon: BarChart3, bg: "#E3F7F5", fg: "#0EA5A0" },
   { label: "KPI Dashboard", href: "/finance", icon: Radio, bg: "#FFF3D7", fg: "#B78E2D" },
   { label: "CRM Dashboard", href: "https://teppen-cdp-linnapats-projects.vercel.app/dashboard/templates", icon: Megaphone, bg: "#F0F8D8", fg: "#5D9E35", newTab: true },
+];
+
+const qcLinks = [
+  { label: "Performance Center", href: "/performance-center", icon: Sparkles, bg: "#E3F7F5", fg: "#0EA5A0", newTab: true },
+  { label: "Performance Bar", href: "/platforms", icon: BarChart3, bg: "#E3F7F5", fg: "#0EA5A0" },
 ];
 
 function initials(name: string) {
@@ -451,6 +455,28 @@ export default function DashboardPage() {
               <div className="mt-3 text-[20px] font-extrabold tracking-[-0.02em] text-ink">{announcement.title}</div>
               <div className="mt-2 text-[13px] text-muted">{announcement.date}</div>
               <div className="mt-3 text-[12.5px] text-muted">{announcement.note}</div>
+            </div>
+          </DashboardCard>
+
+          <DashboardCard title="QC">
+            <div className="grid grid-cols-2 gap-3">
+              {qcLinks.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    target={item.newTab ? "_blank" : undefined}
+                    rel={item.newTab ? "noreferrer" : undefined}
+                    className="rounded-[18px] border border-[#BCEBE6] bg-[#F7FFFD] px-4 py-4 hover:opacity-95"
+                  >
+                    <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: item.bg, color: item.fg }}>
+                      <Icon size={18} />
+                    </div>
+                    <div className="mt-3 text-[13px] font-bold text-ink">{item.label}</div>
+                  </Link>
+                );
+              })}
             </div>
           </DashboardCard>
 

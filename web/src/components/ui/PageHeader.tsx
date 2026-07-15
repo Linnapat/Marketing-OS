@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 
 const MODULE_STYLES: Record<string, { fg: string; bg: string; border: string }> = {
   "/campaigns": { fg: "#6C5CE7", bg: "#EEE9FF", border: "#D9D0FF" },
+  "/performance-center": { fg: "#0EA5A0", bg: "#E3F7F5", border: "#BCEBE6" },
   "/platforms": { fg: "#0EA5A0", bg: "#E3F7F5", border: "#BCEBE6" },
   "/content": { fg: "#5D9E35", bg: "#F0F8D8", border: "#DCECB4" },
   "/graphic": { fg: "#D876AA", bg: "#FDEBF3", border: "#F5CFE0" },
