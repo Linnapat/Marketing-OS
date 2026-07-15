@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsLeft, ChevronsRight, LogOut, Pencil, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, LogOut, Pencil, X } from "lucide-react";
 import { NAV } from "@/lib/nav";
 import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -19,6 +19,7 @@ const NAV_ACCENTS: Record<string, { bg: string; fg: string }> = {
   "/": { bg: "#EEE9FF", fg: "#6C5CE7" },
   "/campaigns": { bg: "#EEE9FF", fg: "#6C5CE7" },
   "/platforms": { bg: "#E3F7F5", fg: "#0EA5A0" },
+  "/performance-center": { bg: "#E3F7F5", fg: "#0EA5A0" },
   "/content": { bg: "#F0F8D8", fg: "#5D9E35" },
   "/graphic": { bg: "#FDEBF3", fg: "#D876AA" },
   "/kol": { bg: "#FFF3E5", fg: "#E08A34" },
@@ -60,6 +61,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
   const [statusNote, setStatusNote] = useState("");
   const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setAvatarUrl(member?.avatarUrl ?? "");
@@ -116,17 +118,26 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
 
       {/* Nav */}
       <nav className={clsx("flex-1 overflow-y-auto pb-4", collapsed ? "px-[14px]" : "px-3")}>
-        {groups.map((group, gi) => (
-          <div key={gi} className="mb-4">
+        {groups.map((group, gi) => {
+          const groupKey = group.label ?? `top-${gi}`;
+          const isGroupOpen = !group.label || !closedGroups[groupKey] || collapsed;
+          return (
+          <div key={groupKey} className="mb-4">
             {group.label && !collapsed && (
-              <div className="px-3 pt-3 pb-2 text-[10px] font-bold tracking-[0.12em] uppercase text-white/28">
-                {group.label}
-              </div>
+              <button
+                type="button"
+                onClick={() => setClosedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }))}
+                className="flex w-full items-center justify-between rounded-[10px] px-3 pt-3 pb-2 text-[10px] font-bold tracking-[0.12em] uppercase text-white/32 transition hover:bg-white/[0.04] hover:text-white/70"
+                aria-expanded={isGroupOpen}
+              >
+                <span>{group.label}</span>
+                {isGroupOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
             )}
             {group.label && collapsed && gi > 0 && (
               <div className="mx-auto my-3 h-px w-6 bg-white/[0.12]" />
             )}
-            {group.items.map((item) => {
+            {isGroupOpen && group.items.map((item) => {
               const active = isActive(item.href);
               const Icon = item.icon;
               const accent = NAV_ACCENTS[item.href] ?? NAV_ACCENTS["/"];
@@ -167,7 +178,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
               );
             })}
           </div>
-        ))}
+        );})}
       </nav>
 
       {/* Footer: role switcher + user */}

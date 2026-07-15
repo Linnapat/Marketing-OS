@@ -59,8 +59,8 @@ const quickLinks = [
 ];
 
 const qcLinks = [
-  { label: "Performance Center", href: "/performance-center", icon: Sparkles, bg: "#E3F7F5", fg: "#0EA5A0", newTab: true },
   { label: "Performance Bar", href: "/platforms", icon: BarChart3, bg: "#E3F7F5", fg: "#0EA5A0" },
+  { label: "Performance Center", href: "/performance-center", icon: Sparkles, bg: "#E3F7F5", fg: "#0EA5A0", newTab: true },
 ];
 
 function initials(name: string) {
