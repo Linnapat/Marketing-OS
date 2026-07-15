@@ -59,7 +59,7 @@ export default function KolPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [campaign, setCampaign] = useState<string>("all");
   // Request List can render flat or grouped by campaign.
-  const [group, setGroup] = useState<"list" | "campaign">("list");
+  const [group, setGroup] = useState<"list" | "campaign">("campaign");
   const [drawer, setDrawer] = useState<{ kol: Kol; tab: "profile" | "comments" } | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);

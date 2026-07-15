@@ -67,7 +67,7 @@ export default function PlatformsPage() {
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [date, setDate] = useState<DateFilter>(WIDE_RANGE);
   // "entry" = โหมดลงผลรายเดือน: ทุก ad ของเดือนที่เลือกในตารางแก้ไขตารางเดียว
-  const [dim, setDim] = useState<GroupDim | "entry">("platform");
+  const [dim, setDim] = useState<GroupDim | "entry">("campaign");
   const [alertOnly, setAlertOnly] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState<Set<string>>(new Set());

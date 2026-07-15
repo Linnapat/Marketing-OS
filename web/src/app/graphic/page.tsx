@@ -47,7 +47,7 @@ interface GraphicSavedView { view: GraphicView; brand: BrandFilterValue; designe
 export default function GraphicPage() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
-  const [view, setView] = useState<GraphicView>("board");
+  const [view, setView] = useState<GraphicView>("campaign");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [designer, setDesigner] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
