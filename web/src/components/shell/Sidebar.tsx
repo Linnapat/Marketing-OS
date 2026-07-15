@@ -18,6 +18,7 @@ const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0
 const NAV_ACCENTS: Record<string, { bg: string; fg: string }> = {
   "/": { bg: "#EEE9FF", fg: "#6C5CE7" },
   "/campaigns": { bg: "#EEE9FF", fg: "#6C5CE7" },
+  "/performance": { bg: "#E3F7F5", fg: "#0EA5A0" },
   "/platforms": { bg: "#E3F7F5", fg: "#0EA5A0" },
   "/content": { bg: "#F0F8D8", fg: "#5D9E35" },
   "/graphic": { bg: "#FDEBF3", fg: "#D876AA" },
@@ -134,6 +135,8 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
                 <Link
                   key={item.href}
                   href={item.href}
+                  target={item.newTab ? "_blank" : undefined}
+                  rel={item.newTab ? "noreferrer" : undefined}
                   onClick={onNavigate}
                   title={collapsed ? item.label : undefined}
                   className={clsx(
