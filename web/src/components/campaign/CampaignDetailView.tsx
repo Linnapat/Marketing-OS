@@ -12,7 +12,9 @@ import { Progress } from "@/components/ui/Progress";
 import { baht } from "@/lib/format";
 import { CampaignHub, HubStats, hubStats, createPlannerTasks, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
-import { logBriefApproval } from "@/lib/db/brief";
+import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
+import { createRevisionTask } from "@/lib/db/tasks";
+import { brandName } from "@/lib/brands";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
@@ -62,9 +64,14 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <div className="flex items-center gap-[10px]">
+          <div className="flex items-center gap-[10px] flex-wrap">
             <span className="w-[10px] h-[10px] rounded-full" style={{ background: detail.color }} />
             <h1 className="text-[24px] font-extrabold letter-tightest">{c.name}</h1>
+            {brief?.code && (
+              <span className="text-[12px] font-extrabold rounded-pill px-2.5 py-[3px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>
+                #{brief.code}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-[6px] flex-wrap text-[12.5px] text-faint">
             <span className="font-mono text-[11.5px] text-muted">{c.id}</span>
@@ -672,6 +679,16 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
     if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || "CMO"}`, "/my-tasks");
     else if (nextStatus === "Approved") {
       notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
+      // CMO approval is the gate: only now do content posts, graphic requests,
+      // KOL rows and tasks materialise into their modules (idempotent).
+      const made = await saveCampaignBrief(next).catch((error) => {
+        toastError(`อนุมัติแล้ว แต่สร้างงานเข้าโมดูลไม่สำเร็จ: ${error?.message || "Unknown error"}`);
+        return null;
+      });
+      if (made) {
+        const c = made.created;
+        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Calendar / Creative Kitchen แล้ว`, "/campaigns");
+      }
       // Approved budget flows straight into Finance as Draft expense requests —
       // one per funded bucket — so the finance team never re-keys the plan.
       const drafts = await createBudgetExpenseDrafts(detail.row, next)
@@ -681,7 +698,18 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
         });
       if (drafts > 0) notify("approval", `💰 เปิด Draft เบิกงบ ${drafts} รายการจากงบแคมเปญ: ${brief.name}`, `ตามงบที่อนุมัติ — ตรวจและกดส่งอนุมัติได้ในโมดูล Expenses`, "/expenses");
     }
-    else if (nextStatus === "Need Revision") notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — โดย ${reviewer}`, "/campaigns");
+    else if (nextStatus === "Need Revision") {
+      // Bounce the whole campaign back to the planner's My Tasks to fix + resubmit.
+      const planner = brief.plannerOwner || detail.row.owner;
+      if (planner && planner !== "Unassigned") {
+        await createRevisionTask({
+          module: "Campaign", title: `แก้แคมเปญ — ${brief.name}`, assignee: planner,
+          brand: brandName(brief.b), campaign: brief.name, reason: comment ?? "ขอให้แก้ก่อนอนุมัติ",
+          by: reviewer, relatedBrief: brief.id, dueDays: 2,
+        }).catch((error) => toastError(`สร้าง task แก้แคมเปญไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      }
+      notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — ถึง ${planner} · โดย ${reviewer}`, "/my-tasks");
+    }
   };
   const doRevision = () => {
     const r = reason.trim(); if (!r) return;

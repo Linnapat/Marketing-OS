@@ -30,6 +30,46 @@ export async function fetchTasks(): Promise<{ tasks: Task[]; doneIds: number[] }
 }
 
 /** Insert a newly created task. Fire-and-forget. */
+/** Shared revision → My Task helper. Any "Request Revision" across the OS
+ *  (content post, graphic deliverable, campaign brief) drops a high-priority
+ *  task into the person-to-fix's My Tasks, due in `dueDays` days, so nothing
+ *  that needs reworking lives only inside a drawer. */
+export async function createRevisionTask(opts: {
+  module: "Content" | "Graphic" | "Campaign" | "KOL";
+  title: string;
+  assignee: string;
+  brand: string;
+  campaign: string;
+  reason: string;
+  by: string;
+  relatedGraphicId?: string;
+  relatedBrief?: string;
+  dueDays?: number;
+}): Promise<void> {
+  const ICON: Record<string, { icon: string; color: string }> = {
+    Content: { icon: "📝", color: "#5D9E35" },
+    Graphic: { icon: "🎨", color: "#C2691E" },
+    Campaign: { icon: "🎯", color: "#6C5CE7" },
+    KOL: { icon: "🤝", color: "#B5577E" },
+  };
+  const meta = ICON[opts.module];
+  const due = new Date(); due.setDate(due.getDate() + (opts.dueDays ?? 2));
+  const task: Task = {
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    title: opts.title,
+    module: opts.module, moduleIcon: meta.icon, moduleColor: meta.color, type: opts.module,
+    assignee: opts.assignee, brand: opts.brand, campaign: opts.campaign,
+    status: "Todo", priority: "High", group: "doFirst",
+    due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+    dueIso: due.toISOString().slice(0, 10),
+    blocker: null, pendingApprover: null, isQuickWin: false,
+    nextAction: `แก้ตาม feedback จาก ${opts.by}: ${opts.reason}`,
+    checklist: ["อ่าน feedback", "แก้ไขงาน", "ส่งกลับให้ตรวจอีกครั้ง"],
+    relatedGraphicId: opts.relatedGraphicId, relatedBrief: opts.relatedBrief,
+  };
+  await createTaskDb(task);
+}
+
 export async function createTaskDb(t: Task): Promise<void> {
   notify("newTask", `🗒️ งานใหม่: ${t.title}`, `มอบหมายให้ ${t.assignee} · ${t.brand} · due ${t.due}`, "/my-tasks");
   const db = supabase();

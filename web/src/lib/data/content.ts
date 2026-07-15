@@ -45,6 +45,12 @@ export interface ContentItem {
   /** Approved graphic deliverables attached from the Graphic Request module.
    *  Populated automatically once every deliverable of the linked graphic is approved. */
   assets?: { platform: string; size: string; link: string }[];
+  /** External media link (Drive / Canva / final file) pasted on the schedule. */
+  mediaLink?: string;
+  /** Creative-ticked release state for the schedule: "" | "Released". */
+  releaseStatus?: string;
+  releasedBy?: string;
+  releasedAt?: string;
   /** Manual-publish trail — set when someone clicks Publish in the Content Calendar. */
   publishedBy?: string;
   publishedAt?: string;

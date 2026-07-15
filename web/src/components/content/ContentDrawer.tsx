@@ -7,6 +7,7 @@ import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, pre
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
+import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
@@ -108,6 +109,19 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
     const day = editDate ? Number(editDate.slice(8, 10)) || item.day : item.day;
     persist({ ...item, title: editTitle.trim() || item.title, dateIso: editDate ?? item.dateIso, day, time: editTime || item.time });
   };
+
+  // Media link + release status (Creative).
+  const [mediaLink, setMediaLink] = useState(item.mediaLink ?? "");
+  useEffect(() => { setMediaLink(item.mediaLink ?? ""); }, [item.mediaLink]);
+  const mediaDirty = mediaLink.trim() !== (item.mediaLink ?? "").trim();
+  const saveMedia = () => persist({ ...item, mediaLink: mediaLink.trim() || undefined });
+  const toggleRelease = () => {
+    const released = item.releaseStatus === "Released";
+    persist(released
+      ? { ...item, releaseStatus: "", releasedBy: undefined, releasedAt: undefined }
+      : { ...item, releaseStatus: "Released", releasedBy: reviewer, releasedAt: new Date().toISOString(), mediaLink: mediaLink.trim() || item.mediaLink });
+    if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+  };
   const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
 
   // Permanently delete the post (asks for confirmation first).
@@ -148,6 +162,15 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
       ...item, approvalStatus: "Revision Requested", feedbackRounds: round,
       feedback: [...(item.feedback ?? []), { round, reason: r, by: reviewer, at: new Date().toISOString() }],
     });
+    // Bounce it back into the fixer's My Tasks (creator, else requester).
+    const fixer = item.owner && item.owner !== "Unassigned" ? item.owner : (item.requester || item.designer || "");
+    if (fixer) {
+      createRevisionTask({
+        module: "Content", title: `แก้ Content — ${item.title}`, assignee: fixer,
+        brand: brandName(item.b), campaign: item.campaign, reason: r, by: reviewer,
+      }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    }
+    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, "/my-tasks");
     setReason(""); setRevising(false);
   };
 
@@ -271,6 +294,43 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                     className="text-[13px] font-bold py-[10px] rounded-[10px] bg-panel text-white disabled:opacity-40">
                     {busy ? "Saving…" : "Save changes"}
                   </button>
+                </div>
+              </div>
+
+              {/* Media link + Release status — Creative pastes the final file
+                  link and ticks Released when the asset is ready to publish. */}
+              <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+                <div className="text-[11.5px] font-bold text-muted mb-3">🎬 Media & release</div>
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-faint mb-[5px]">External media link <span className="font-normal">· Drive / Canva / ไฟล์จริง</span></label>
+                    <div className="flex items-center gap-2">
+                      <input value={mediaLink} onChange={(e) => setMediaLink(e.target.value)} placeholder="https://…" inputMode="url" className={field} />
+                      {mediaLink.trim().startsWith("http") && (
+                        <a href={mediaLink.trim()} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-accent whitespace-nowrap">เปิด ↗</a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[12px] font-semibold text-muted">
+                      Release status: {item.releaseStatus === "Released"
+                        ? <span className="text-status-green font-bold">✓ Released{item.releasedBy ? ` · ${item.releasedBy}` : ""}</span>
+                        : <span className="text-faint">ยังไม่ปล่อยงาน</span>}
+                    </div>
+                    <button onClick={toggleRelease} disabled={busy}
+                      className="text-[12px] font-bold px-3 py-[7px] rounded-[9px] disabled:opacity-40"
+                      style={item.releaseStatus === "Released"
+                        ? { background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }
+                        : { background: "#4E7A4E", color: "#fff" }}>
+                      {item.releaseStatus === "Released" ? "ยกเลิก Release" : "✓ Mark Released"}
+                    </button>
+                  </div>
+                  {mediaDirty && (
+                    <button onClick={saveMedia} disabled={busy}
+                      className="text-[13px] font-bold py-[9px] rounded-[10px] bg-panel text-white disabled:opacity-40">
+                      {busy ? "Saving…" : "Save media link"}
+                    </button>
+                  )}
                 </div>
               </div>
 

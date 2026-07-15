@@ -143,12 +143,18 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
           <div key={p} className="mb-2 pl-2 border-l-2" style={{ borderColor: "#E5DECF" }}>
             <div className="text-[11.5px] font-bold text-muted mb-1">{p} · optional size</div>
             <div className="flex flex-wrap gap-2 items-center">
-              {assetSizesFor(p).map((s) => {
+              {/* Preset sizes + any custom sizes already saved for this platform,
+                  so a typed-in artwork size shows as a checkbox you can save/untick. */}
+              {Array.from(new Set([
+                ...assetSizesFor(p),
+                ...item.assets.filter((a) => a.platform === p).map((a) => a.size),
+              ])).map((s) => {
                 const on = item.assets.some((a) => a.platform === p && a.size === s);
+                const isCustom = !assetSizesFor(p).includes(s);
                 return (
                   <label key={s} className="flex items-center gap-[6px] text-[11.5px] font-semibold px-[10px] py-[5px] rounded-pill border cursor-pointer"
                     style={on ? { background: "#EEF4EE", borderColor: "#4E7A4E", color: "#4E7A4E" } : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
-                    <input type="checkbox" checked={on} onChange={() => toggleAsset(p, s)} /> {s}
+                    <input type="checkbox" checked={on} onChange={() => toggleAsset(p, s)} /> {s}{isCustom && <span className="text-[9px] opacity-70">custom</span>}
                   </label>
                 );
               })}

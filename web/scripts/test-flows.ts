@@ -7,7 +7,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
-import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview } from "../src/lib/data/brief";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief } from "../src/lib/data/brief";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -108,6 +108,27 @@ console.log("Campaign planning — monthly budget + work-item alignment");
 }
 
 function tryCreateKey(set: Set<string>, key: string) { if (set.has(key)) return false; set.add(key); return true; }
+
+console.log("Budget — Production excluded from allocation");
+{
+  const b = emptyBrief("bud-test");
+  b.budget = { ...b.budget, total: 100000, ads: 40000, kol: 20000, graphic: 15000, printing: 5000, crm: 0, other: 0, adsByPlatform: [] };
+  const s = budgetSummary(b);
+  check("allocated excludes graphic/production", s.allocated === 40000 + 20000 + 5000); // 65k, not 80k
+  b.budget = { ...b.budget, other: 3000, otherNote: "" };
+  check("Other without a note warns", budgetSummary(b).warnings.some((w) => w.includes("Other")));
+  b.budget = { ...b.budget, otherNote: "ค่าขนส่ง POSM" };
+  check("Other with a note clears the warning", !budgetSummary(b).warnings.some((w) => w.includes("Other")));
+}
+
+console.log("Campaign code — per-brand running number");
+{
+  const mk = (b: CampaignBrief["b"], code?: string): CampaignBrief => ({ ...emptyBrief("x"), b, code });
+  const existing = [mk("teppen", "TPN-2026-001"), mk("teppen", "TPN-2026-002"), mk("omakase", "OMD-2026-005")];
+  check("teppen next = 003", nextCampaignCode("teppen", existing, 2026) === "TPN-2026-003");
+  check("omakase next = 006 (independent of teppen)", nextCampaignCode("omakase", existing, 2026) === "OMD-2026-006");
+  check("mainichi first = 001", nextCampaignCode("mainichi", existing, 2026) === "MNC-2026-001");
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

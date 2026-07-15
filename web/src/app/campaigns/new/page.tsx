@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import {
-  CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem,
+  CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem, nextCampaignCode,
   OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor,
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
@@ -183,6 +183,13 @@ export default function NewCampaignPage() {
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Auto-assign a per-brand running campaign code to NEW campaigns; recompute
+  // when the brand changes. Editing keeps whatever code the brief already has.
+  useEffect(() => {
+    if (editingId) return;
+    setBrief((b) => ({ ...b, code: nextCampaignCode(b.b, savedBriefs) }));
+  }, [brief.b, savedBriefs, editingId]);
 
   const branches = useMemo(() => brandConfigs.find((d) => d.key === brief.b)?.branchList ?? [], [brandConfigs, brief.b]);
   useEffect(() => {
@@ -384,7 +391,15 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
     <Panel title="Campaign Overview" hint="ข้อมูลหลักของแคมเปญ — ไม่มีเทมเพลตบังคับ กรอกตามที่แคมเปญนี้ต้องการ">
       <div className="grid md:grid-cols-2 gap-4">
         <div className="md:col-span-2" id="ov-name">
-          <label className={label}>Campaign Name <span className="text-status-red">*</span></label>
+          <div className="flex items-center justify-between gap-2 mb-[6px]">
+            <label className={label + " mb-0"}>Campaign Name <span className="text-status-red">*</span></label>
+            {brief.code && (
+              <span className="text-[11px] font-extrabold rounded-pill px-2.5 py-[3px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}
+                title="เลขแคมเปญอัตโนมัติ แยกตามแบรนด์">
+                #{brief.code}
+              </span>
+            )}
+          </div>
           <input value={brief.name} onChange={(e) => set("name", e.target.value)} className={field} style={errors.name ? errBorder : undefined} placeholder="เช่น Wagyu Festival — July" autoFocus />
           {errors.name && <p className={errText}>{errors.name}</p>}
         </div>
@@ -917,14 +932,32 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
               <button onClick={onEditKol} className="text-[11px] font-bold text-accent text-left whitespace-nowrap">KOL Plan →</button>
             </span>
           </div>
-          {otherBuckets.map(([lbl, key]) => (
-            <div key={key} className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
-              <span className="text-[12px] font-semibold text-ink">{lbl}</span>
-              <input value={fmtNum(brief.budget[key] as number)} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)}
-                className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
-              <span></span>
-            </div>
-          ))}
+          {otherBuckets.map(([lbl, key]) => {
+            const isProduction = key === "graphic";
+            const isOther = key === "other";
+            const amount = (brief.budget[key] as number) || 0;
+            return (
+              <div key={key}>
+                <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+                  <span className="text-[12px] font-semibold text-ink">
+                    {lbl}
+                    {isProduction && <span className="ml-1 text-[10px] text-faint font-normal">· ไม่นับในงบจัดสรร</span>}
+                  </span>
+                  <input value={fmtNum(brief.budget[key] as number)} onChange={(e) => setB({ [key]: num(e.target.value) } as Partial<CampaignBrief["budget"]>)}
+                    className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
+                  <span className="text-[10px] text-faint">{isProduction ? "cost ภายใน — แยกจาก media" : ""}</span>
+                </div>
+                {isOther && amount > 0 && (
+                  <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 2.2fr" }}>
+                    <span className="text-[11px] text-faint pl-3">↳ Other คืออะไร <span className="text-status-red">*</span></span>
+                    <input value={brief.budget.otherNote ?? ""} onChange={(e) => setB({ otherNote: e.target.value })}
+                      placeholder="อธิบายงบ Other เช่น ค่าขนส่ง POSM / ค่าอุปกรณ์ event"
+                      className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div className="grid items-center gap-2 border-t border-line2 bg-[#FBF9F4] px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
             <span className="text-[12px] font-bold text-ink">Ads Budget (total)</span>
             {brief.budget.adsByPlatform.length > 0 ? (

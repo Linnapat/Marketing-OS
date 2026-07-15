@@ -82,6 +82,17 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     relatedBrief: brief.id, relatedGraphicId: opts.relatedGraphicId, dueIso: opts.dueIso,
   });
 
+  // ── CMO-approval gate ──────────────────────────────────────────────────────
+  // Nothing flows downstream until the CMO approves the campaign. A Draft or
+  // "Waiting for Approval" brief only saves its plan; content posts, graphic
+  // requests, KOL rows and tasks are materialised the moment it turns
+  // "Approved" (or later), so the Content Calendar / Creative Kitchen never
+  // show work from an unapproved campaign.
+  const materialize = ["Approved", "In Progress", "Completed"].includes(normalizedBrief.status);
+  if (!materialize) {
+    return { campaign: row, created: { content: 0, graphics: 0, kols: 0, tasks: 0 } };
+  }
+
   // ── Content items → content posts + graphic requests + content/graphic tasks ─
   // Each row carries campaignId + sourceContentItemId; createXIfNew skips when
   // the pair already exists, so re-Submit is a no-op (no duplicates, no dupe tasks).

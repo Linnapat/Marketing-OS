@@ -14,7 +14,7 @@ import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
-import { createTaskDb } from "@/lib/db/tasks";
+import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
@@ -156,7 +156,14 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
       due: g.due,
       createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     }, ...fs]);
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · โดย ${currentUser}`, "/graphic");
+    // Bounce the revision into the designer's My Tasks.
+    if (g.designer && g.designer !== "Unassigned") {
+      createRevisionTask({
+        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: g.designer,
+        brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
+      }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    }
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks");
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -490,7 +497,13 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
       dels.map((x, j) => j === i ? { ...x, status: "Revision", feedback: [...x.feedback, { reason: r, by: me, at }] } : x),
       { type: "revision_requested", at, by: me, deliverableKey: `${d.platform}::${d.size}`, note: r },
     );
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${dels[i]?.platform ?? ""} — ${r} · โดย ${me}`, "/graphic");
+    if (g.designer && g.designer !== "Unassigned") {
+      createRevisionTask({
+        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: g.designer,
+        brand: brandName(g.b), campaign: g.campaign, reason: r, by: me, relatedGraphicId: String(g.id),
+      }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    }
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${dels[i]?.platform ?? ""} — ${r} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks");
     setReason(""); setRevising(null);
   };
 

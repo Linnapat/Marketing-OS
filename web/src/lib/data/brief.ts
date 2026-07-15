@@ -3,7 +3,7 @@
 // drive auto-generated graphics and tasks. Submit enforces a required-field set;
 // Save Draft does not.
 
-import { BrandId } from "@/lib/brands";
+import { BrandId, brandCode } from "@/lib/brands";
 
 // ── Option sets ───────────────────────────────────────────────────────────
 export const OBJECTIVES = [
@@ -144,6 +144,8 @@ export interface BriefBudget {
   printing: number;
   crm: number;
   other: number;
+  /** Free-text explanation for the Other bucket (shown when other > 0). */
+  otherNote?: string;
   adsByPlatform: AdsPlatformBudget[];
   monthly?: MonthlyBudgetAllocation[];
 }
@@ -154,6 +156,8 @@ export interface ApprovalLogEntry {
 
 export interface CampaignBrief {
   id: string;
+  /** Human-friendly running number, per brand — e.g. "TPN-2026-003". */
+  code?: string;
   name: string;
   b: BrandId;
   branch: string;           // derived: branches joined (kept for module compatibility)
@@ -279,6 +283,19 @@ export function emptyBrief(id: string): CampaignBrief {
   };
 }
 
+/** Next per-brand campaign code (e.g. TPN-2026-003). Counts existing briefs of
+ *  the same brand + year and takes the highest running number + 1, so numbers
+ *  stay unique and sequential within each brand without a central counter. */
+export function nextCampaignCode(brand: BrandId, existing: CampaignBrief[], year = new Date().getFullYear()): string {
+  const prefix = `${brandCode(brand)}-${year}-`;
+  const maxN = existing.reduce((max, b) => {
+    if (b.b !== brand || !b.code?.startsWith(prefix)) return max;
+    const n = parseInt(b.code.slice(prefix.length), 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return `${prefix}${String(maxN + 1).padStart(3, "0")}`;
+}
+
 // ── KOL engagement ────────────────────────────────────────────────────────
 /** Engagement rate as a percentage number. Uses Reach; falls back to Follower
  *  when Reach is 0/absent. Returns 0 when neither is available. */
@@ -334,7 +351,11 @@ export function budgetSummary(brief: CampaignBrief): BudgetSummary {
     ["Ads", bud.ads], ["KOL", bud.kol], ["Graphic / Production", bud.graphic],
     ["Printing / POSM", bud.printing], ["CRM / LINE OA", bud.crm], ["Other", bud.other],
   ];
-  const allocated = buckets.reduce((s, [, v]) => s + (v || 0), 0);
+  // Production (graphic) is an internal cost, NOT part of the campaign's media
+  // allocation — it's excluded from the allocated total so it never counts
+  // against the Total Campaign Budget or Finance "Committed".
+  const PRODUCTION_LABEL = "Graphic / Production";
+  const allocated = buckets.reduce((s, [label, v]) => s + (label === PRODUCTION_LABEL ? 0 : (v || 0)), 0);
   // Total auto-includes KOL: the effective total is at least the allocation.
   const effectiveTotal = Math.max(bud.total || 0, allocated);
   const remaining = effectiveTotal - allocated;
@@ -348,6 +369,7 @@ export function budgetSummary(brief: CampaignBrief): BudgetSummary {
   if (adsMismatch) warnings.push(`งบ Ads แยกตาม platform (${adsAllocated.toLocaleString()}) ไม่ตรงกับงบ Ads รวม (${bud.ads.toLocaleString()})`);
   if (brief.channels.some((c) => /crm|line oa/i.test(c)) && !bud.crm) warnings.push("เลือก channel CRM / LINE OA แต่ยังไม่ได้ใส่งบ CRM");
   if (brief.channels.some((c) => /facebook|instagram|tiktok|google/i.test(c)) && !bud.ads) warnings.push("เลือก channel โฆษณา แต่ยังไม่ได้ใส่งบ Ads");
+  if ((bud.other || 0) > 0 && !(bud.otherNote || "").trim()) warnings.push("มีงบ Other แต่ยังไม่ได้ใส่คำอธิบายว่าเป็นค่าอะไร");
   const campaignMonths = campaignMonthKeys(brief.startDate, brief.endDate);
   const monthlyAllocated = (bud.monthly ?? []).filter((row) => campaignMonths.includes(row.month)).reduce((sum, row) => sum + (row.amount || 0), 0);
   if (campaignMonths.length > 1 && monthlyAllocated !== (bud.total || 0)) {
