@@ -7,7 +7,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
-import { BrandFilterValue, BrandId, brandName, BRANDS } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   DESIGNERS, graphicKpis, emptyDeliverable, approveAllWaiting,
@@ -222,7 +222,24 @@ export default function GraphicPage() {
    type "Photo shoot"/"VDO shooting" appear automatically on their publish date. */
 // Shoot Schedule as a Promotion-style editable + printable template. Every
 // field is editable by the creative leader; rows are shared via org_settings.
-interface ShootRow { id: string; campaign: string; menu: string; requestDate: string; shootDate: string; location: string; owner: string; source?: "manual" | "content" }
+// Columns mirror the team's shoot Google Sheet: Date · Time · Brand · Content
+// · Location · Menu · Cast (no "request date" — dropped per the sheet).
+interface ShootRow { id: string; date: string; time: string; brand: string; content: string; location: string; menu: string; cast: string; source?: "manual" | "content" }
+
+// Back-compat: earlier rows used campaign/shootDate/owner/requestDate. Map the
+// old fields onto the new shape so existing shoots aren't lost.
+type LegacyShootRow = Partial<ShootRow> & { campaign?: string; shootDate?: string; owner?: string; requestDate?: string };
+const normalizeShoot = (r: LegacyShootRow): ShootRow => ({
+  id: r.id || `shoot-${Date.now()}`,
+  date: r.date ?? r.shootDate ?? "",
+  time: r.time ?? "",
+  brand: r.brand ?? "",
+  content: r.content ?? r.campaign ?? "",
+  location: r.location ?? "",
+  menu: r.menu ?? "",
+  cast: r.cast ?? r.owner ?? "",
+  source: r.source ?? "manual",
+});
 
 function ShootCalendar({ me }: { me: string }) {
   const [rows, setRows] = useState<ShootRow[]>([]);
@@ -230,7 +247,7 @@ function ShootCalendar({ me }: { me: string }) {
 
   useEffect(() => {
     let alive = true;
-    fetchJsonSetting<ShootRow[]>("creative_shoots_v2").then((v) => { if (alive && v) setRows(v); }).catch(() => {});
+    fetchJsonSetting<LegacyShootRow[]>("creative_shoots_v2").then((v) => { if (alive && v) setRows(v.map(normalizeShoot)); }).catch(() => {});
     // Photo shoot / VDO shooting items from Content Plan appear as read-only
     // reference rows so the leader can see what the briefs already asked for.
     fetchAllBriefs().then((briefs) => {
@@ -238,10 +255,9 @@ function ShootCalendar({ me }: { me: string }) {
       setAutoRows(Object.values(briefs).flatMap((b) =>
         (b.content ?? [])
           .filter((c) => /photo shoot|vdo shooting/i.test(c.type || ""))
-          .map((c) => ({
-            id: `auto-${b.id}-${c.id}`, campaign: b.name, menu: c.title || c.type,
-            requestDate: (c.graphicDueDate || "").slice(0, 10), shootDate: (c.publishDate || "").slice(0, 10),
-            location: "", owner: "จาก Content Plan", source: "content" as const,
+          .map((c) => normalizeShoot({
+            id: `auto-${b.id}-${c.id}`, content: c.title || c.type, brand: brandName(b.b),
+            date: (c.publishDate || "").slice(0, 10), menu: "", location: "", cast: "จาก Content Plan", source: "content",
           }))));
     }).catch(() => {});
     return () => { alive = false; };
@@ -252,10 +268,10 @@ function ShootCalendar({ me }: { me: string }) {
     saveJsonSetting("creative_shoots_v2", "Creative shoot schedule", next)
       .catch((error) => toastError(`บันทึกตารางถ่ายงานไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
-  const addRow = () => persist([...rows, { id: `shoot-${Date.now()}`, campaign: "", menu: "", requestDate: "", shootDate: "", location: "", owner: me, source: "manual" }]);
+  const addRow = () => persist([...rows, { id: `shoot-${Date.now()}`, date: "", time: "", brand: "", content: "", location: "", menu: "", cast: me, source: "manual" }]);
   const editRow = (id: string, patch: Partial<ShootRow>) => persist(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const removeRow = (id: string) => persist(rows.filter((r) => r.id !== id));
-  const importAuto = (a: ShootRow) => persist([...rows, { ...a, id: `shoot-${Date.now()}`, owner: me, source: "manual" }]);
+  const importAuto = (a: ShootRow) => persist([...rows, { ...a, id: `shoot-${Date.now()}`, cast: me, source: "manual" }]);
 
   const cell = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
   const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint px-[10px] py-2 border-b border-line";
@@ -290,21 +306,28 @@ function ShootCalendar({ me }: { me: string }) {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse whitespace-nowrap">
             <thead><tr className="bg-ivory">
-              <th className={th}>ชื่อแคมเปญ</th><th className={th}>เมนู/สิ่งที่จะถ่าย</th><th className={th}>วันที่ขอถ่าย</th>
-              <th className={th}>วันถ่ายจริง</th><th className={th}>สถานที่</th><th className={th}>ผู้ขอ</th><th className={`${th} no-print`}></th>
+              <th className={th}>Date</th><th className={th}>Time</th><th className={th}>Brand</th>
+              <th className={th}>Content</th><th className={th}>Location</th><th className={th}>Menu</th>
+              <th className={th}>Cast</th><th className={`${th} no-print`}></th>
             </tr></thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — กด &quot;เพิ่มคิวถ่าย&quot; หรือดึงจาก Content Plan ด้านล่าง</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — กด &quot;เพิ่มคิวถ่าย&quot; หรือดึงจาก Content Plan ด้านล่าง</td></tr>
               )}
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-line4 last:border-0">
-                  <td className="px-[10px] py-[5px]"><input value={r.campaign} onChange={(e) => editRow(r.id, { campaign: e.target.value })} placeholder="แคมเปญ" className={cell} /></td>
-                  <td className="px-[10px] py-[5px]"><input value={r.menu} onChange={(e) => editRow(r.id, { menu: e.target.value })} placeholder="เมนู / งานที่ถ่าย" className={cell} /></td>
-                  <td className="px-[10px] py-[5px]"><input type="date" value={r.requestDate} onChange={(e) => editRow(r.id, { requestDate: e.target.value })} className={cell} /></td>
-                  <td className="px-[10px] py-[5px]"><input type="date" value={r.shootDate} onChange={(e) => editRow(r.id, { shootDate: e.target.value })} className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input type="date" value={r.date} onChange={(e) => editRow(r.id, { date: e.target.value })} className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.time} onChange={(e) => editRow(r.id, { time: e.target.value })} placeholder="เช่น 15:00-17:00" className={`${cell} min-w-[110px]`} /></td>
+                  <td className="px-[10px] py-[5px]">
+                    <select value={r.brand} onChange={(e) => editRow(r.id, { brand: e.target.value })} className={cell}>
+                      <option value="">—</option>
+                      {BRAND_ORDER.map((id) => <option key={id} value={brandName(id)}>{brandName(id)}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-[10px] py-[5px]"><input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} placeholder="Content / แคมเปญ" className={`${cell} min-w-[160px]`} /></td>
                   <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} placeholder="สถานที่" className={cell} /></td>
-                  <td className="px-[10px] py-[5px]"><input value={r.owner} onChange={(e) => editRow(r.id, { owner: e.target.value })} placeholder="ผู้ขอ" className={cell} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.menu} onChange={(e) => editRow(r.id, { menu: e.target.value })} placeholder="เมนู / งานที่ถ่าย" className={`${cell} min-w-[150px]`} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.cast} onChange={(e) => editRow(r.id, { cast: e.target.value })} placeholder="ทีม / cast" className={cell} /></td>
                   <td className="px-[10px] py-[5px] text-right no-print"><button onClick={() => removeRow(r.id)} className="text-[12px] text-status-red font-bold" aria-label="ลบ">✕</button></td>
                 </tr>
               ))}
@@ -319,9 +342,9 @@ function ShootCalendar({ me }: { me: string }) {
           <div className="flex flex-col gap-1">
             {autoRows.map((a) => (
               <div key={a.id} className="flex items-center gap-2 text-[12px] border-b border-line4 last:border-0 py-[5px]">
-                <span className="font-semibold text-ink flex-1 truncate">{a.menu}</span>
-                <span className="text-faint truncate">{a.campaign}</span>
-                <span className="text-faint">{a.shootDate || "—"}</span>
+                <span className="font-semibold text-ink flex-1 truncate">{a.content}</span>
+                <span className="text-faint truncate">{a.brand}</span>
+                <span className="text-faint">{a.date || "—"}</span>
                 <button onClick={() => importAuto(a)} className="text-[11.5px] font-bold text-accent">＋ ดึงเข้า</button>
               </div>
             ))}
