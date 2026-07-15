@@ -62,7 +62,7 @@ const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || 
 
 export default function ContentPage() {
   const brandVisibility = useBrandVisibility();
-  const [view, setView] = useState<View>("month");
+  const [view, setView] = useState<View>("campaign");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [open, setOpen] = useState<ContentItem | null>(null);
