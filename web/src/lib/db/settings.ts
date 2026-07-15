@@ -44,6 +44,12 @@ export async function fetchMembers(): Promise<Member[]> {
   return withProfiles((data as Row[]).map(toMember), profiles);
 }
 
+/** Live sync: any member write announces itself so AuthProvider (sidebar
+ *  name/role) refreshes without a full page reload. */
+function announceMembersUpdated() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("members-updated"));
+}
+
 export async function createMember(m: Member): Promise<void> {
   const db = supabase();
   if (!db) return;
@@ -52,6 +58,7 @@ export async function createMember(m: Member): Promise<void> {
     brand_access: m.brandAccess, status: m.status, color: m.color,
   });
   assertDbOk(error, "Could not save member");
+  announceMembersUpdated();
 }
 
 /** Edit an existing member. Email is the PK, so pass origEmail when the email
@@ -71,6 +78,7 @@ export async function deleteMember(email: string): Promise<void> {
   if (!db) return;
   const { error } = await db.from("members").delete().eq("email", email);
   assertDbOk(error, "Could not delete member");
+  announceMembersUpdated();
 }
 
 export async function fetchMemberProfiles(): Promise<MemberProfileMap | null> {
@@ -99,6 +107,7 @@ export async function saveMemberProfile(email: string, profile: MemberProfile): 
     value: JSON.stringify(next),
   });
   assertDbOk(error, "Could not save member profile");
+  announceMembersUpdated();
 }
 
 /* ── Generic team-shared JSON settings (org_settings kv) ─────────────── */

@@ -70,6 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 
+  // Settings edits a member → sidebar name/role must follow without a full
+  // reload. db/settings dispatches "members-updated" after every member write.
+  useEffect(() => {
+    if (!AUTH_REQUIRED || !user?.email) return;
+    const refresh = () => {
+      fetchMembers()
+        .then((all) => setMember(all.find((x) => x.email.toLowerCase() === user.email!.toLowerCase()) ?? null))
+        .catch(() => {});
+    };
+    window.addEventListener("members-updated", refresh);
+    return () => window.removeEventListener("members-updated", refresh);
+  }, [user]);
+
   const signOut = async () => { await supabase()?.auth.signOut(); };
 
   // Auth off / demo → full access. Signed in → role from their members row.

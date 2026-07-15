@@ -49,7 +49,10 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
   const { user, member, role, signOut } = useAuth();
   const { can } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
-  const displayRole = member?.role ?? "CMO";
+  // Signed-in user without a members row must NOT be labeled CMO — that
+  // default is only for demo mode (no auth). Their real role lives in
+  // Settings → Users & Roles.
+  const displayRole = member?.role ?? (user ? "Member" : "CMO");
   const [profileOpen, setProfileOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [presence, setPresence] = useState("🟢 Available");
