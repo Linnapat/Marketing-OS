@@ -111,6 +111,26 @@ export function stageFromDeliverables(g: Graphic): string {
   return "New Request";
 }
 
+/** One-click approve from the board/list: approves every deliverable still
+ *  "Waiting review" (with history entries) so the approver doesn't have to
+ *  dig into the drawer. Returns null when nothing is waiting. */
+export function approveAllWaiting(g: Graphic, by: string): Graphic | null {
+  const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
+  const waiting = dels.filter((d) => d.status === "Waiting review");
+  if (!waiting.length) return null;
+  const at = new Date().toISOString();
+  const next = dels.map((d) => (d.status === "Waiting review" ? { ...d, status: "Approved" as const } : d));
+  return {
+    ...g,
+    deliverables: next,
+    stage: stageFromDeliverables({ ...g, deliverables: next }),
+    history: [
+      ...(g.history ?? []),
+      ...waiting.map((d) => ({ type: "approved" as const, at, by, deliverableKey: `${d.platform}::${d.size}` })),
+    ],
+  };
+}
+
 const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
   { col: "New Request", cards: [
     { id: 0, title: "Songkran key visual", b: "teppen", campaign: "Songkran Teppanyaki", due: "Jul 2", designer: "Unassigned", requester: "Ken S.", approver: "Aran P.", type: "Key Visual", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: false, pendingApprover: "—", blocker: "Brief incomplete", waitingSince: "Jun 28", nextAction: "Fill brief to proceed", platform: "IG + FB", size: "1080×1080 · 1920×1080", contentItem: "Songkran hero post" },

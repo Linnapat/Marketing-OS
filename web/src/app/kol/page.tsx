@@ -555,6 +555,12 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
     const totals = postsTotals(posts);
     onUpdate({ ...k, posts, actualReach: totals.reach, actualEngagement: totals.engagement });
   };
+  // Inline first-post entry — results can be typed right here, no drawer needed.
+  const addPost = (k: Kol) => {
+    const next = { ...k, posts: [...kolPosts(k), { platform: k.plat || "Instagram", link: "", reach: 0, engagement: 0 }] };
+    onUpdate(next);
+    updateKol(next).catch((error) => toastError(`เพิ่มโพสต์ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
 
   const rate = (reach: number, eng: number) => (reach ? (eng / reach) * 100 : 0);
   const cols = "1.7fr 0.95fr 0.95fr 1fr 0.9fr 0.9fr 0.7fr";
@@ -612,7 +618,10 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                         <span className="font-semibold">{p.platform}</span>
                         {p.link
                           ? <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-accent truncate hover:underline">{p.link} ↗</a>
-                          : <span className="text-faint italic">no link</span>}
+                          : <input value={p.link} placeholder="วางลิงก์โพสต์…"
+                              onChange={(e) => editPostResult(k, pi2, { link: e.target.value })}
+                              onBlur={() => updateKol(k).catch((error) => toastError(`บันทึกลิงก์ไม่สำเร็จ: ${error?.message || "Unknown error"}`))}
+                              className="flex-1 min-w-0 text-[11.5px] px-2 py-[4px] rounded-[7px] border border-line2 bg-white outline-none" />}
                       </span>
                       <span></span>
                       <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Reach ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
@@ -621,7 +630,12 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                       <span></span><span></span>
                     </div>
                   ))}
-                  {posts.length === 0 && <div className="px-5 py-2 pl-11 text-[11.5px] text-faint bg-ivory/40">ยังไม่มีโพสต์ — เพิ่ม platform + link ใน drawer ของ KOL คนนี้</div>}
+                  <div className="px-5 py-2 pl-11 bg-ivory/40">
+                    <button onClick={() => addPost(k)}
+                      className="text-[11.5px] font-bold text-accent hover:underline">
+                      ＋ {posts.length === 0 ? "กรอกผลโพสต์แรกตรงนี้เลย" : "เพิ่มโพสต์"}
+                    </button>
+                  </div>
                 </div>
               );
             })}

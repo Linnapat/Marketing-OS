@@ -15,7 +15,8 @@ import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Segmented } from "@/components/ui/Segmented";
-import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter, MONTHS } from "@/components/ui/DateFilterBar";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
@@ -122,6 +123,28 @@ export default function PlatformsPage() {
     }
     return m;
   }, [filtered, groupDim]);
+
+  // ── Monthly marketing targets — org-level, NOT per campaign. Stored as one
+  // shared JSON blob keyed by "YYYY-MM"; shown whenever a month is selected.
+  type MonthTarget = { reach?: number; visits?: number; conversions?: number; budget?: number };
+  const [monthTargets, setMonthTargets] = useState<Record<string, MonthTarget>>({});
+  useEffect(() => {
+    getAppSetting("monthly_marketing_targets_v1").then((raw) => {
+      if (!raw) return;
+      try { setMonthTargets(JSON.parse(raw)); } catch { /* keep empty */ }
+    }).catch(() => {});
+  }, []);
+  const monthKey = date.mode === "month" ? `${date.year}-${String(date.month + 1).padStart(2, "0")}` : null;
+  const target: MonthTarget = (monthKey && monthTargets[monthKey]) || {};
+  const patchTarget = (patch: Partial<MonthTarget>) => {
+    if (!monthKey) return;
+    setMonthTargets((m) => ({ ...m, [monthKey]: { ...m[monthKey], ...patch } }));
+  };
+  const saveTargets = () => {
+    setAppSetting("monthly_marketing_targets_v1", JSON.stringify(monthTargets))
+      .catch((error) => toastError(`บันทึก Target รายเดือนไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
+  const totalVisits = filtered.reduce((s, r) => s + (r.marketingVisits || 0), 0);
 
   const totalPlan = filtered.reduce((s, r) => s + (r.budget || 0), 0);
   const totalActual = filtered.reduce((s, r) => s + (r.budgetActual || 0), 0);
@@ -318,6 +341,46 @@ export default function PlatformsPage() {
         </div>
       </div>
       <div className="mt-2"><DateFilterBar value={date} onChange={setDate} /></div>
+
+      {/* Monthly marketing target — org-wide for the selected month, no per-campaign entry */}
+      {monthKey && !loading && (
+        <div className="mt-3 bg-surface border border-line rounded-cardLg p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <div className="text-[12.5px] font-bold text-ink">
+              🎯 Target Marketing — {MONTHS[date.month]} {date.year}
+              <span className="text-[10.5px] text-faint font-normal"> · เป้ารวมทั้งเดือน (ทุกแคมเปญ) เทียบกับผลจริงในหน้านี้</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {([
+              ["Reach", "reach", filtered.reduce((s, r) => s + (r.reachActual || 0), 0), (v: number) => num(v)],
+              ["Marketing Visit", "visits", totalVisits, (v: number) => num(v)],
+              ["Conversions", "conversions", filtered.reduce((s, r) => s + (r.conversions || 0), 0), (v: number) => num(v)],
+              ["Budget (฿)", "budget", filtered.reduce((s, r) => s + (r.budgetActual || 0), 0), (v: number) => baht(v, { compact: true })],
+            ] as [string, keyof MonthTarget, number, (v: number) => string][]).map(([labelText, key, actual, fmtVal]) => {
+              const t = target[key] || 0;
+              const pctDone = t > 0 ? Math.min(999, Math.round((actual / t) * 100)) : null;
+              return (
+                <div key={key} className="rounded-[12px] border border-line2 bg-ivory p-3">
+                  <div className="text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint mb-1">{labelText}</div>
+                  <input
+                    type="number" min={0} value={t || ""} placeholder="ตั้งเป้า…"
+                    onChange={(e) => patchTarget({ [key]: Number(e.target.value) || 0 })}
+                    onBlur={saveTargets}
+                    className="w-full rounded-[8px] border border-line2 bg-white px-2 py-[5px] text-[13px] font-bold text-ink outline-none focus:border-accent"
+                  />
+                  <div className="mt-2 text-[11px] font-semibold" style={{ color: pctDone == null ? "#9A9387" : pctDone >= 100 ? "#4E7A4E" : "#6b6258" }}>
+                    ทำได้ {fmtVal(actual)}{pctDone != null && <> · <b>{pctDone}%</b> ของเป้า</>}
+                  </div>
+                  <div className="mt-1 h-[5px] rounded-full bg-line overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, pctDone ?? 0)}%`, background: (pctDone ?? 0) >= 100 ? "#4E7A4E" : ACCENT }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-[13px] text-faint py-10 text-center">กำลังโหลดผล…</div>

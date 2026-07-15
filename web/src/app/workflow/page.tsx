@@ -34,7 +34,9 @@ export default function WorkCalendarPage() {
   const [edit, setEdit] = useState(false);
 
   const { role } = useRole();
-  const canEdit = role === "CMO";
+  // Team Calendar edits: CMO + Co-ordinator (cross-team scheduling is the
+  // co-ordinator's job); everyone else reads.
+  const canEdit = role === "CMO" || role === "Co-ordinator";
 
   // Load the shared calendar state once, then persist every change — the
   // overrides and checkmarks used to evaporate on refresh.

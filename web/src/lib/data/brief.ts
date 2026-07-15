@@ -26,6 +26,7 @@ export const CONTENT_TYPES = [
   "Photo", "Reel", "Short Video", "Carousel", "Story",
   "Photo album", "Photo shoot", "VDO shooting",
   "LINE Rich Message", "Poster", "Menu Insert", "POSM",
+  "Menu book", "Artwork", "Mock up", "Packaging",
 ] as const;
 
 export const CONTENT_PLATFORMS = [

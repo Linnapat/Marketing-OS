@@ -10,13 +10,16 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandName, BRANDS } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  DESIGNERS, graphicKpis, emptyDeliverable,
+  DESIGNERS, graphicKpis, emptyDeliverable, approveAllWaiting,
 } from "@/lib/data/graphic";
-import { fetchGraphics, createGraphic, buildGraphic } from "@/lib/db/graphic";
+import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
+import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { createContent } from "@/lib/db/content";
+import { fetchAllBriefs } from "@/lib/db/brief";
+import { fetchJsonSetting, saveJsonSetting } from "@/lib/db/settings";
 import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
@@ -36,7 +39,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
 
 
-type GraphicView = "board" | "list" | "campaign";
+type GraphicView = "board" | "list" | "campaign" | "shoot";
 interface GraphicSavedView { view: GraphicView; brand: BrandFilterValue; designer: string; date: DateFilter }
 
 export default function GraphicPage() {
@@ -75,6 +78,24 @@ export default function GraphicPage() {
       toastError(`บันทึก Graphic Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
       throw error;
     }
+  };
+
+  // One-click approve from any view — same effects as approving each
+  // deliverable in the drawer (history, stage, asset sync, notify).
+  const { member, user } = useAuth();
+  const me = member?.name || user?.email?.split("@")[0] || "Approver";
+  const quickApprove = (g: Graphic) => {
+    const ng = approveAllWaiting(g, me);
+    if (!ng) return;
+    setGraphics((gs) => gs.map((x) => (x.id === ng.id ? ng : x)));
+    updateGraphic(ng)
+      .then(() => {
+        if (ng.stage === "Approved") {
+          syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติแล้ว แต่ sync asset เข้า Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+          notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${ng.title}`, `โดย ${me} — แนบ asset เข้า Content Calendar ให้แล้ว`, "/content");
+        }
+      })
+      .catch((error) => toastError(`Approve ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
   const items = graphics.filter((g) => (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
@@ -129,7 +150,7 @@ export default function GraphicPage() {
                   current={{ view, brand, designer, date }}
                   onApply={(v) => { setView(v.view); setBrand(v.brand); setDesigner(v.designer); setDate(v.date); }}
                 />
-                <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "campaign", label: "By Campaign" }]} />
+                <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "campaign", label: "By Campaign" }, { value: "shoot", label: "🎬 Shoot Schedule" }]} />
               </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
@@ -174,9 +195,10 @@ export default function GraphicPage() {
       </div>
 
       <div className="mt-5">
-        {view === "board" && <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
-        {view === "list" && <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
-        {view === "campaign" && <CampaignGroupView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} />}
+        {view === "board" && <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
+        {view === "list" && <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
+        {view === "campaign" && <CampaignGroupView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
+        {view === "shoot" && <ShootCalendar me={me} />}
       </div>
 
       {drawer && (
@@ -195,7 +217,153 @@ export default function GraphicPage() {
   );
 }
 
-function BoardView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) => void }) {
+/* ── Shoot Schedule — ตารางถ่ายงานของทีม Creative ─────────────────────────
+   Manual shoot events live in one shared JSON setting; Content Plan items of
+   type "Photo shoot"/"VDO shooting" appear automatically on their publish date. */
+interface ShootEvent { id: string; date: string; title: string; campaign?: string; time?: string; location?: string; owner?: string }
+
+function ShootCalendar({ me }: { me: string }) {
+  const [events, setEvents] = useState<ShootEvent[]>([]);
+  const [autoShoots, setAutoShoots] = useState<{ date: string; title: string; campaign: string; kind: string }[]>([]);
+  const now = new Date();
+  const [ym, setYm] = useState<{ y: number; m: number }>({ y: now.getFullYear(), m: now.getMonth() });
+  const [adding, setAdding] = useState<string | null>(null); // ISO date being added to
+  const [draft, setDraft] = useState({ title: "", campaign: "", time: "", location: "" });
+
+  useEffect(() => {
+    let alive = true;
+    fetchJsonSetting<ShootEvent[]>("creative_shoots_v1").then((v) => { if (alive && v) setEvents(v); }).catch(() => {});
+    // Shoot-type items come from the campaign briefs (Content Plan carries the
+    // content type); they land on their publish date.
+    fetchAllBriefs().then((briefs) => {
+      if (!alive) return;
+      setAutoShoots(Object.values(briefs).flatMap((b) =>
+        (b.content ?? [])
+          .filter((c) => /photo shoot|vdo shooting/i.test(c.type || "") && (c.publishDate || c.graphicDueDate))
+          .map((c) => ({
+            date: (c.publishDate || c.graphicDueDate).slice(0, 10),
+            title: c.title || c.type,
+            campaign: b.name,
+            kind: /vdo/i.test(c.type) ? "🎥" : "📸",
+          }))));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const persist = (next: ShootEvent[]) => {
+    setEvents(next);
+    saveJsonSetting("creative_shoots_v1", "Creative shoot schedule", next)
+      .catch((error) => toastError(`บันทึกตารางถ่ายงานไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
+  const addEvent = (dateIso: string) => {
+    if (!draft.title.trim()) return;
+    persist([...events, {
+      id: `shoot-${Date.now()}`, date: dateIso, title: draft.title.trim(),
+      campaign: draft.campaign.trim() || undefined, time: draft.time.trim() || undefined,
+      location: draft.location.trim() || undefined, owner: me,
+    }]);
+    setDraft({ title: "", campaign: "", time: "", location: "" });
+    setAdding(null);
+  };
+  const removeEvent = (id: string) => persist(events.filter((e) => e.id !== id));
+
+  const first = new Date(ym.y, ym.m, 1);
+  const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
+  const startWeekday = first.getDay(); // 0 = Sunday
+  const iso = (d: number) => `${ym.y}-${String(ym.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const todayIsoStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const monthLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const nav = (delta: number) => setYm(({ y, m }) => { const d = new Date(y, m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const cells: (number | null)[] = [...Array(startWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+
+  const inpCls = "w-full text-[11.5px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
+  return (
+    <div className="bg-surface border border-line rounded-cardLg p-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="text-[13px] font-bold text-ink">🎬 Shoot Schedule <span className="text-[10.5px] text-faint font-normal">· ตารางถ่ายงานทีม Creative — คลิกวันเพื่อเพิ่มคิวถ่าย · งาน Photo shoot/VDO จาก Content Plan ขึ้นให้อัตโนมัติ</span></div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => nav(-1)} className="w-7 h-7 rounded-[8px] border border-line2 bg-white text-muted font-bold">‹</button>
+          <span className="text-[13px] font-extrabold text-ink min-w-[130px] text-center">{monthLabel}</span>
+          <button onClick={() => nav(1)} className="w-7 h-7 rounded-[8px] border border-line2 bg-white text-muted font-bold">›</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-[6px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint mb-1">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="px-1">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-[6px]">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`empty-${i}`} />;
+          const dayIso = iso(d);
+          const dayEvents = events.filter((e) => e.date === dayIso);
+          const dayAuto = autoShoots.filter((a) => a.date === dayIso);
+          const isToday = dayIso === todayIsoStr;
+          return (
+            <div key={dayIso} className="min-h-[86px] rounded-[10px] border p-[6px] flex flex-col gap-[4px]"
+              style={{ borderColor: isToday ? "#B8945A" : "#EEE8DE", background: isToday ? "#FBF6ED" : "#FCFBF8" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold" style={{ color: isToday ? "#8A6930" : "#9A9387" }}>{d}</span>
+                <button onClick={() => { setAdding(adding === dayIso ? null : dayIso); }} title="เพิ่มคิวถ่าย"
+                  className="text-[12px] leading-none text-faint hover:text-ink">＋</button>
+              </div>
+              {dayAuto.map((a, j) => (
+                <div key={`auto-${j}`} title={`${a.title} · ${a.campaign} (จาก Content Plan)`}
+                  className="text-[10px] font-semibold rounded-[6px] px-[5px] py-[3px] truncate" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>
+                  {a.kind} {a.title}
+                </div>
+              ))}
+              {dayEvents.map((e) => (
+                <div key={e.id} className="group text-[10px] font-semibold rounded-[6px] px-[5px] py-[3px] flex items-center gap-1"
+                  style={{ background: "#FDEBF3", color: "#9D3D6B" }}
+                  title={[e.title, e.campaign, e.time, e.location, e.owner && `โดย ${e.owner}`].filter(Boolean).join(" · ")}>
+                  <span className="flex-1 truncate">🎬 {e.time ? `${e.time} ` : ""}{e.title}</span>
+                  <button onClick={() => removeEvent(e.id)} className="hidden group-hover:inline text-[10px] leading-none">✕</button>
+                </div>
+              ))}
+              {adding === dayIso && (
+                <div className="flex flex-col gap-[4px] mt-[2px] p-[6px] rounded-[8px] border border-line2 bg-white">
+                  <input value={draft.title} onChange={(e) => setDraft((v) => ({ ...v, title: e.target.value }))} placeholder="ถ่ายอะไร *" className={inpCls} autoFocus />
+                  <input value={draft.campaign} onChange={(e) => setDraft((v) => ({ ...v, campaign: e.target.value }))} placeholder="แคมเปญ" className={inpCls} />
+                  <div className="flex gap-[4px]">
+                    <input value={draft.time} onChange={(e) => setDraft((v) => ({ ...v, time: e.target.value }))} placeholder="เวลา" className={inpCls} />
+                    <input value={draft.location} onChange={(e) => setDraft((v) => ({ ...v, location: e.target.value }))} placeholder="สถานที่" className={inpCls} />
+                  </div>
+                  <div className="flex gap-[4px]">
+                    <button onClick={() => addEvent(dayIso)} disabled={!draft.title.trim()}
+                      className="flex-1 text-[10.5px] font-bold text-white rounded-[7px] py-[4px] disabled:opacity-40" style={{ background: "#211F1C" }}>เพิ่ม</button>
+                    <button onClick={() => setAdding(null)} className="text-[10.5px] font-bold text-muted border border-line2 rounded-[7px] px-2 bg-white">ยกเลิก</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 text-[11px] text-faint">
+        🎬 = คิวถ่ายที่ทีมเพิ่มเอง (ลบได้ hover ที่การ์ด) · 📸/🎥 = งาน Photo shoot / VDO shooting จาก Content Plan ตามวัน publish — แชร์เห็นพร้อมกันทั้งทีม
+      </div>
+    </div>
+  );
+}
+
+/** Whether the request has work sitting in review — the quick-approve target. */
+const hasWaitingReview = (g: Graphic) =>
+  (g.deliverables ?? []).some((d) => d.status === "Waiting review") || g.stage === "Waiting Feedback";
+
+function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (g: Graphic) => void }) {
+  if (!onQuickApprove || !hasWaitingReview(g)) return null;
+  return (
+    <span
+      role="button" tabIndex={0}
+      onClick={(e) => { e.stopPropagation(); onQuickApprove(g); }}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onQuickApprove(g); } }}
+      title="อนุมัติทุกชิ้นที่รอรีวิวของงานนี้"
+      className="inline-flex items-center text-[11px] font-bold text-white rounded-[8px] px-2.5 py-[4px] cursor-pointer whitespace-nowrap"
+      style={{ background: "#4E7A4E" }}
+    >✓ Approve</span>
+  );
+}
+
+function BoardView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
       {STAGE_ORDER.map((stage) => {
@@ -211,7 +379,10 @@ function BoardView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =
                 <button key={g.id} onClick={() => onOpen(g)} className="w-full text-left bg-surface border border-line rounded-card p-[13px] hover:border-accent transition">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <span className="text-[13px] font-bold text-ink leading-tight">{g.title}</span>
-                    <StatusBadge tone={PRIORITY_TONE[g.priority]}>{g.priority}</StatusBadge>
+                    <span className="flex items-center gap-1.5">
+                      <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
+                      <StatusBadge tone={PRIORITY_TONE[g.priority]}>{g.priority}</StatusBadge>
+                    </span>
                   </div>
                   <div className="text-[11px] text-faint flex items-center gap-[5px] mb-2"><BrandDot brand={g.b} size={6} />{brandName(g.b)} · {g.type}</div>
                   {!g.briefComplete && <div className="text-[10.5px] font-bold text-status-red mb-2">⚠ Brief incomplete</div>}
@@ -242,14 +413,14 @@ function BoardView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =
 
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats, expandable to the request list inside. */
-function CampaignGroupView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) => void }) {
+function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
     const m = new Map<string, Graphic[]>();
     for (const g of items) { const k = g.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(g); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [items]);
-  if (items.length === 0) return <ListView items={items} onOpen={onOpen} />;
+  if (items.length === 0) return <ListView items={items} onOpen={onOpen} onQuickApprove={onQuickApprove} />;
   const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
     <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
   );
@@ -275,7 +446,7 @@ function CampaignGroupView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Gr
                 {chip("overdue", overdue, "#B33A2E", "#FFF5F4")}
               </span>
             </button>
-            {isOpen && <div className="border-t border-line4"><ListView items={gs} onOpen={onOpen} /></div>}
+            {isOpen && <div className="border-t border-line4"><ListView items={gs} onOpen={onOpen} onQuickApprove={onQuickApprove} /></div>}
           </div>
         );
       })}
@@ -283,7 +454,7 @@ function CampaignGroupView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Gr
   );
 }
 
-function ListView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) => void }) {
+function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
@@ -296,7 +467,10 @@ function ListView({ items, onOpen }: { items: Graphic[]; onOpen: (g: Graphic) =>
           <span className="text-[12px] text-muted truncate">{g.campaign}</span>
           <span className="text-[12px] text-muted">{g.designer}</span>
           <span className="text-[12px]" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
-          <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
+          <span className="flex items-center gap-1.5 flex-wrap">
+            <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
+            <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
+          </span>
           <span className="text-[12px] font-semibold" style={{ color: g.openFb > 0 ? "#B33A2E" : "#9A9387" }}>{g.openFb || "—"}</span>
           <span className="text-[12px] text-muted">{g.pendingApprover}</span>
         </button>

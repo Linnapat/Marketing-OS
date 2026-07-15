@@ -11,7 +11,8 @@ import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { moduleForPath } from "@/lib/permissions";
 import { MEMBER_PRESENCE_OPTIONS } from "@/lib/data/settings";
-import { saveMemberProfile } from "@/lib/db/settings";
+import { saveMemberProfile, updateMember } from "@/lib/db/settings";
+import { toastError } from "@/lib/toast";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
 const NAV_ACCENTS: Record<string, { bg: string; fg: string }> = {
@@ -57,12 +58,14 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
   const [avatarUrl, setAvatarUrl] = useState("");
   const [presence, setPresence] = useState("🟢 Available");
   const [statusNote, setStatusNote] = useState("");
+  const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setAvatarUrl(member?.avatarUrl ?? "");
     setPresence(member?.presence ?? "🟢 Available");
     setStatusNote(member?.statusNote ?? "");
+    setEditName(member?.name ?? "");
   }, [member]);
   // External agency users only see their portal (demo role-switcher included).
   const baseGroups = role === "Agency (External)"
@@ -217,6 +220,11 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
 
             <div className="flex flex-col gap-4">
               <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Display name</label>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+                <div className="text-[10.5px] text-faint mt-[4px]">ตำแหน่ง (role) แก้ได้โดย CMO ที่ Settings → Users &amp; Roles</div>
+              </div>
+              <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Profile photo URL</label>
                 <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." className="w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none" />
               </div>
@@ -241,8 +249,14 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
                   setSaving(true);
                   try {
                     await saveMemberProfile(member.email, { avatarUrl, presence, statusNote });
+                    if (editName.trim() && editName.trim() !== member.name) {
+                      await updateMember({ ...member, name: editName.trim() });
+                    }
                     setProfileOpen(false);
                     window.location.reload();
+                  } catch (error) {
+                    // Surface the failure — a silent throw looked like "can't edit profile".
+                    toastError(`บันทึกโปรไฟล์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
                   } finally {
                     setSaving(false);
                   }
