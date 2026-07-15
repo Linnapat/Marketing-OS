@@ -80,6 +80,10 @@ export interface GraphicDeliverable {
   submittedBy: string;
   submittedAt: string;
   feedback: { reason: string; by: string; at: string }[];
+  /** Manual artwork grouping (option 2): deliverables sharing the same number
+   *  are ONE artwork (e.g. one master exported to several ratios). Blank = auto:
+   *  counted by distinct size, platform collapsed (option 1). */
+  artworkNo?: number;
 }
 
 export function emptyDeliverable(platform: string, size: string, refLink = ""): GraphicDeliverable {
@@ -124,10 +128,37 @@ export function workKind(type: string, requiredVideo = false): WorkKind {
   return "graphic";
 }
 
-/** How many requests of `kind` are already booked on `dueIso` (a YYYY-MM-DD). */
+const normSize = (s: string) => (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+
+/** How many distinct ARTWORK pieces a request represents.
+ *  Option 1 (auto): distinct size, platform collapsed — same size on FB & IG is
+ *  one file; different sizes are separate work.
+ *  Option 2 (manual): deliverables sharing an artworkNo count as one, so a master
+ *  exported to several ratios is a single piece. */
+export function artworkUnits(g: Pick<Graphic, "deliverables" | "platform" | "size">): number {
+  const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g as Graphic);
+  if (!dels.length) return 1;
+  const seen = new Set<string>();
+  for (const d of dels) seen.add(d.artworkNo ? `n:${d.artworkNo}` : `s:${normSize(d.size)}`);
+  return Math.max(1, seen.size);
+}
+
+/** Artwork pieces of `kind` already booked on `dueIso` — the sum of each
+ *  request's artworkUnits, so the daily cap counts real pieces, not requests. */
 export function countWorkOnDay(graphics: Graphic[], kind: WorkKind, dueIso: string): number {
   if (!dueIso) return 0;
-  return graphics.filter((g) => (g.dueIso || "").slice(0, 10) === dueIso && workKind(g.type) === kind).length;
+  return graphics
+    .filter((g) => (g.dueIso || "").slice(0, 10) === dueIso && workKind(g.type) === kind)
+    .reduce((sum, g) => sum + artworkUnits(g), 0);
+}
+
+/** Artwork units a set of asset targets (platform×size pairs) would add — used
+ *  before a request exists, so the request modal can weigh it against the cap. */
+export function artworkUnitsOf(assets: { size?: string }[]): number {
+  if (!assets.length) return 1;
+  const seen = new Set<string>();
+  for (const a of assets) seen.add(`s:${normSize(a.size || "—")}`);
+  return Math.max(1, seen.size);
 }
 
 /** Derive the request stage from its deliverables (values stay within STAGE_ORDER). */

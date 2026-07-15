@@ -8,7 +8,7 @@ import {
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief } from "../src/lib/data/brief";
-import { Graphic, GRAPHICS, workKind, countWorkOnDay, DAILY_WORK_CAP } from "../src/lib/data/graphic";
+import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -138,13 +138,30 @@ console.log("Graphic request — daily capacity guard (3/day per kind)");
   check("Reel → vdo", workKind("Reel") === "vdo");
   check("requiredVideo flag → vdo", workKind("Poster", true) === "vdo");
   check("Poster → graphic", workKind("Poster") === "graphic");
+  const del = (platform: string, size: string, artworkNo?: number): GraphicDeliverable =>
+    ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [], artworkNo });
   const gk = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), ...over });
   const day = "2026-08-10";
-  const three = [gk({ id: 1, type: "Poster", dueIso: day }), gk({ id: 2, type: "Menu book", dueIso: day }), gk({ id: 3, type: "Artwork", dueIso: day })];
-  check("3 graphics booked that day", countWorkOnDay(three, "graphic", day) === 3);
+  const one = (id: number, type: string) => gk({ id, type, dueIso: day, deliverables: [del("FB", "1:1")] });
+  const three = [one(1, "Poster"), one(2, "Menu book"), one(3, "Artwork")];
+  check("3 requests × 1 artwork = 3 pieces", countWorkOnDay(three, "graphic", day) === 3);
   check("at cap blocks a 4th", countWorkOnDay(three, "graphic", day) >= DAILY_WORK_CAP);
   check("different kind not counted", countWorkOnDay(three, "photo_shoot", day) === 0);
   check("different day not counted", countWorkOnDay(three, "graphic", "2026-08-11") === 0);
+}
+
+console.log("Artwork counting — auto by size + manual grouping");
+{
+  const del = (platform: string, size: string, artworkNo?: number): GraphicDeliverable =>
+    ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [], artworkNo });
+  const g = (dels: GraphicDeliverable[]): Graphic => ({ ...(GRAPHICS[0] as Graphic), deliverables: dels });
+  check("same size, 2 platforms = 1 artwork", artworkUnits(g([del("FB", "1:1"), del("IG", "1:1")])) === 1);
+  check("different sizes = 2 artworks", artworkUnits(g([del("FB", "1:1"), del("IG", "9:16")])) === 2);
+  check("manual same artworkNo groups to 1", artworkUnits(g([del("FB", "1:1", 1), del("IG", "9:16", 1)])) === 1);
+  check("mixed: 2 grouped + 1 distinct = 2", artworkUnits(g([del("FB", "1:1", 1), del("IG", "9:16", 1), del("TT", "4:5")])) === 2);
+  check("never returns 0 (min 1)", artworkUnits(g([])) >= 1 && artworkUnits({ ...(GRAPHICS[0] as Graphic), deliverables: [] }) >= 1);
+  check("artworkUnitsOf: 2 same-size assets = 1", artworkUnitsOf([{ size: "1:1" }, { size: "1:1" }]) === 1);
+  check("artworkUnitsOf: 2 different sizes = 2", artworkUnitsOf([{ size: "1:1" }, { size: "9:16" }]) === 2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

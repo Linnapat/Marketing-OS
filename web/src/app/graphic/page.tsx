@@ -11,7 +11,7 @@ import { BrandFilterValue, BrandId, brandName, BRANDS, BRAND_ORDER } from "@/lib
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   DESIGNERS, graphicKpis, emptyDeliverable, approveAllWaiting,
-  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay,
+  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { notify } from "@/lib/notify";
@@ -572,11 +572,13 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaign, briefs]);
 
-  // Daily capacity guard — max DAILY_WORK_CAP requests of each kind per due date.
+  // Daily capacity guard — max DAILY_WORK_CAP ARTWORK PIECES of each kind per
+  // due date. This request adds its own pieces (distinct size, platform collapsed).
   const kind = workKind(item.type, item.requiredVideo);
   const dueDay = (item.graphicDueDate || "").slice(0, 10);
   const usedToday = dueDay ? countWorkOnDay(graphics, kind, dueDay) : 0;
-  const atCap = !!dueDay && usedToday >= DAILY_WORK_CAP;
+  const newUnits = artworkUnitsOf(item.assets.length ? item.assets : item.platforms.map((p) => ({ size: "" })));
+  const atCap = !!dueDay && usedToday + newUnits > DAILY_WORK_CAP;
 
   const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
   const graphicLeadValid = !!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate);
@@ -663,10 +665,10 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
               ? { background: "#FFF5F4", borderColor: "#F5C8C4", color: "#B33A2E" }
               : { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }}>
             <span className="text-[12px] font-bold">
-              📅 โควตา {WORK_KIND_LABEL[kind]} วันที่ {dueDay}: ใช้แล้ว {usedToday} / {DAILY_WORK_CAP}
+              📅 โควตา {WORK_KIND_LABEL[kind]} วันที่ {dueDay}: ใช้แล้ว {usedToday} + งานนี้ {newUnits} / {DAILY_WORK_CAP} artwork
             </span>
             <span className="text-[11px] font-semibold">
-              {atCap ? "⚠ เต็มแล้ว — เลือกวันอื่น" : `เหลือ ${DAILY_WORK_CAP - usedToday} ชิ้น`}
+              {atCap ? "⚠ เกินโควตา — ลดไซซ์/รวม artwork หรือเลือกวันอื่น" : `เหลือ ${DAILY_WORK_CAP - usedToday - newUnits} ชิ้น`}
             </span>
           </div>
         )}
