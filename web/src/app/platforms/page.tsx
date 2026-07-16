@@ -528,7 +528,7 @@ export default function PlatformsPage() {
                         </tr>
                         {isOpen && (
                           <tr>
-                            <td colSpan={11} className="bg-ivory px-3 py-3 border-b border-line4">
+                            <td colSpan={11} className="bg-white p-0 border-b border-line4">
                               <AdEditor rows={gRows} nameOf={nameOf} onPatch={patchRow} />
                             </td>
                           </tr>
@@ -556,7 +556,7 @@ export default function PlatformsPage() {
           <div className="mt-3 text-[11px] text-faint px-1">
             {dim === "entry"
               ? "กรอก actual ได้ทุกแถวโดยไม่ต้องเปิดทีละแคมเปญ · CV% คำนวณอัตโนมัติจาก Marketing Visit ÷ Reach · งบแผน fix ที่แคมเปญ · กด \"บันทึก\" ครั้งเดียวเมื่อกรอกครบ"
-              : "คลิกแถวเพื่อขยาย/อัพเดต actual ราย ad · กรอก Conversion รวมได้ที่ช่องในแถวกลุ่ม (กระจายลงราย ad ให้อัตโนมัติ) · งบแผน fix ที่แคมเปญ · CPR ต่างหน่วยตาม KPI ไม่นำมารวมกัน"}
+              : "คลิกแถวเพื่อขยาย/อัพเดต actual ราย ad · งบแผน fix ที่แคมเปญ · CPR ต่างหน่วยตาม KPI ไม่นำมารวมกัน"}
           </div>
         </>
       )}
@@ -631,12 +631,12 @@ function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }
   const tBudgetAct = sum((r) => r.budgetActual || 0);
   const tVisit = sum((r) => r.marketingVisits || 0);
   return (
-    <div className="rounded-[12px] border border-line bg-surface overflow-x-auto">
+    <div className="bg-white overflow-x-auto">
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
         <thead>
-          <tr className="text-faint">
+          <tr className="text-faint bg-[#FBFAF6]">
             {["Ad", ...(showCampaign ? ["Campaign"] : []), "Target", "Budget", "Budget actual", "Reach actual", "Marketing Visit", "CV%", "Cost/Visit", "CPR act", "Alert Budget", "Updated", ""].map((h, i) => (
-              <th key={i} className={`font-bold px-[9px] py-[6px] border-b border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+              <th key={i} className={`font-bold px-[9px] py-[6px] border border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -645,26 +645,26 @@ function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }
             const d = deriveResultRow(r);
             const alert = budgetAlert(r.budget, r.budgetActual);
             return (
-              <tr key={r.id} className="border-b border-line4 last:border-0">
-                <td className="px-[9px] py-[6px] text-left font-bold text-ink">{r.ad || "—"}</td>
-                {showCampaign && <td className="px-[9px] py-[6px] text-right text-muted">{nameOf[r.campaignId] ?? r.campaignId}</td>}
-                <td className="px-[9px] py-[6px] text-right text-muted">{num(r.target)}</td>
-                <td className="px-[9px] py-[6px] text-right text-muted">{baht(r.budget, { compact: true })}</td>
+              <tr key={r.id} className="hover:bg-[#FBFAF6]">
+                <td className="px-[9px] py-[6px] text-left font-bold text-ink border border-line4">{r.ad || "—"}</td>
+                {showCampaign && <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{nameOf[r.campaignId] ?? r.campaignId}</td>}
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{num(r.target)}</td>
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{baht(r.budget, { compact: true })}</td>
                 <EditCell value={r.budgetActual} onChange={(v) => onPatch(r.id, "budgetActual", v)} />
                 <EditCell value={r.reachActual} onChange={(v) => onPatch(r.id, "reachActual", v)} />
                 <EditCell value={r.marketingVisits || 0} onChange={(v) => onPatch(r.id, "marketingVisits", v)} />
                 {/* CV% (auto) = Marketing Visit ÷ Reach actual */}
-                <td className="px-[9px] py-[6px] text-right font-bold text-ink">
+                <td className="px-[9px] py-[6px] text-right font-bold text-ink border border-line4">
                   {d.cvActual != null ? pct(d.cvActual * 100) : "—"}
                 </td>
                 {/* Cost per visit (auto) = actual spend ÷ marketing visits */}
-                <td className="px-[9px] py-[6px] text-right font-bold text-ink">
+                <td className="px-[9px] py-[6px] text-right font-bold text-ink border border-line4">
                   {cpr(r.marketingVisits && r.budgetActual ? r.budgetActual / r.marketingVisits : null)}
                 </td>
-                <td className="px-[9px] py-[6px] text-right text-ink font-bold">{cpr(d.cprActual)}</td>
-                <td className="px-[9px] py-[6px] text-right"><StatusBadge tone={alert.tone}>{alert.label}</StatusBadge></td>
-                <td className="px-[9px] py-[6px] text-right text-[10.5px] text-faint" title={r.updatedBy ? `โดย ${r.updatedBy}` : undefined}>{fmtUpdated(r.updatedAt)}</td>
-                <td className="px-[9px] py-[6px] text-right">
+                <td className="px-[9px] py-[6px] text-right text-ink font-bold border border-line4">{cpr(d.cprActual)}</td>
+                <td className="px-[9px] py-[6px] text-right border border-line4"><StatusBadge tone={alert.tone}>{alert.label}</StatusBadge></td>
+                <td className="px-[9px] py-[6px] text-right text-[10.5px] text-faint border border-line4" title={r.updatedBy ? `โดย ${r.updatedBy}` : undefined}>{fmtUpdated(r.updatedAt)}</td>
+                <td className="px-[9px] py-[6px] text-right border border-line4">
                   <Link href={`/campaigns/${r.campaignId}?tab=result`} aria-label="เปิดในแคมเปญ"
                     className="text-faint hover:text-ink inline-flex"><ExternalLink size={13} /></Link>
                 </td>
@@ -674,20 +674,20 @@ function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }
         </tbody>
         {onSpreadTotal && rows.length > 0 && (
           <tfoot>
-            <tr className="border-t-2 border-line bg-[#FFFBEF] font-bold text-ink">
-              <td className="px-[9px] py-[8px] text-left" colSpan={showCampaign ? 2 : 1}>
+            <tr className="bg-[#FFFBEF] font-bold text-ink">
+              <td className="px-[9px] py-[8px] text-left border border-line4" colSpan={showCampaign ? 2 : 1}>
                 Σ Grand Total — กรอกยอดรวมทั้งเดือนที่นี่ ระบบกระจายลงราย ad ให้
               </td>
-              <td className="px-[9px] py-[8px] text-right text-muted">{num(sum((r) => r.target || 0))}</td>
-              <td className="px-[9px] py-[8px] text-right text-muted">{baht(sum((r) => r.budget || 0), { compact: true })}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{num(sum((r) => r.target || 0))}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{baht(sum((r) => r.budget || 0), { compact: true })}</td>
               <EditCell value={tBudgetAct} onChange={(v) => onSpreadTotal("budgetActual", v)} />
               <EditCell value={tReach} onChange={(v) => onSpreadTotal("reachActual", v)} />
               <EditCell value={tVisit} onChange={(v) => onSpreadTotal("marketingVisits", v)} />
               {/* Derived totals — same formulas as the per-ad columns */}
-              <td className="px-[9px] py-[8px] text-right">{tReach > 0 && tVisit > 0 ? pct((tVisit / tReach) * 100) : "—"}</td>
-              <td className="px-[9px] py-[8px] text-right">{cpr(tVisit > 0 && tBudgetAct > 0 ? tBudgetAct / tVisit : null)}</td>
-              <td className="px-[9px] py-[8px] text-right">{cpr(tReach > 0 && tBudgetAct > 0 ? tBudgetAct / tReach : null)}</td>
-              <td /><td /><td />
+              <td className="px-[9px] py-[8px] text-right border border-line4">{tReach > 0 && tVisit > 0 ? pct((tVisit / tReach) * 100) : "—"}</td>
+              <td className="px-[9px] py-[8px] text-right border border-line4">{cpr(tVisit > 0 && tBudgetAct > 0 ? tBudgetAct / tVisit : null)}</td>
+              <td className="px-[9px] py-[8px] text-right border border-line4">{cpr(tReach > 0 && tBudgetAct > 0 ? tBudgetAct / tReach : null)}</td>
+              <td className="border border-line4" /><td className="border border-line4" /><td className="border border-line4" />
             </tr>
           </tfoot>
         )}
@@ -698,13 +698,13 @@ function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }
 
 function EditCell({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
-    <td className="px-[9px] py-[6px] text-right">
+    <td className="px-[9px] py-[6px] text-right border border-line4">
       <input
         type="number" min={0} inputMode="numeric"
         value={value === 0 ? "" : value}
         placeholder="0"
         onChange={(e) => onChange(Number(e.target.value) || 0)}
-        className="w-[72px] text-right bg-transparent outline-none rounded-[6px] px-[6px] py-[3px] border border-line2 text-ink focus:border-accent"
+        className="w-[72px] text-right bg-white outline-none rounded-[4px] px-[6px] py-[3px] border border-line2 text-ink focus:border-accent"
       />
     </td>
   );
