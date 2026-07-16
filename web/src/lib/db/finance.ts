@@ -66,8 +66,6 @@ export async function fetchExpenses(): Promise<ExpenseLogRow[]> {
   return (data as ExpRow[]).map((r) => ({ _id: r.id, vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status, reimburseType: r.reimburse_type ?? undefined, wht: Number(r.wht ?? 0) }));
 }
 
-const shortDate = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
 /** Approve a request: persist status + amount, stamp approved_at, drop the
  *  approved spend into the Spending Log as "Unpaid" (Finance marks it Paid
  *  after the actual payment), and move the linked queue card to Approved. */
@@ -79,42 +77,22 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
       `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
     return;
   }
-  // Guard against a double-approve / concurrent-tab race: only a request that is
-  // still "Waiting Approval" may be approved, and we act on it in one conditional
-  // update. If no row comes back it was already approved elsewhere — abort BEFORE
-  // inserting into the spending log so we never book the spend twice.
-  const { data: claimed, error } = await db.from("expense_requests")
-    .update({ status: "Approved", approved })
-    .eq("id", req._id)
-    .eq("status", "Waiting Approval")
-    .select("id");
+  // Atomic: the RPC claims the still-"Waiting Approval" row, books the approved
+  // spend into the Spending Log (Unpaid), and moves the linked card to Approved —
+  // all in one transaction, so a mid-way failure can't leave a partial state, and
+  // a double-click / second tab can't book the spend twice (ok=false when the row
+  // was already processed). See supabase/finance_atomic.sql.
+  const { data, error } = await db.rpc("approve_expense_request", { p_id: req._id, p_approved: approved });
   assertDbOk(error, "Could not approve expense request");
-  if (!claimed || claimed.length === 0) {
+  if (!(data as { ok?: boolean } | null)?.ok) {
     throw new Error("คำขอนี้ถูกดำเนินการไปแล้ว (อาจมีการอนุมัติพร้อมกันจากอีกหน้าจอ) — รีเฟรชแล้วตรวจสอบสถานะอีกครั้ง");
   }
+  // Notifications + audit are best-effort side effects, kept on the client.
   notify("approved", `✅ อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
     `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
   logAudit(`อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`, "Finance", {
     before: `ขอ ${baht(req.requested)}`, after: `อนุมัติ ${baht(approved)}`, meta: { ref: req.ref, brand: req.b, campaign: req.campaign },
   });
-  // Separate so a DB missing the migration still keeps the approval.
-  await softColumnUpdate(
-    db.from("expense_requests").update({ approved_at: new Date().toISOString() }).eq("id", req._id),
-    "Could not stamp approval time",
-  );
-  const { data: exp, error: spendError } = await db.from("expenses").insert({
-    vendor: req.vendor || req.category, category: req.category, brand: req.b,
-    amount: approved, vat: req.vatAmt ?? 0, date: shortDate(), status: "Unpaid",
-  }).select("id").single();
-  assertDbData(exp, spendError, "Could not save approved expense to spending log");
-  // Separate so a DB missing expenses_p2.sql still gets the base spending row.
-  if (exp?.id !== undefined) {
-    await softColumnUpdate(
-      db.from("expenses").update({ reimburse_type: req.reimburseType ?? null, wht: req.whtAmt ?? 0 }).eq("id", exp.id),
-      "Could not save reimbursement detail",
-    );
-  }
-  if (req.ref) await db.from("requests").update({ stage: "Approved" }).eq("id", req.ref);
 }
 
 /** Reject a request with a mandatory reason; the linked queue card goes back
@@ -125,36 +103,19 @@ export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: 
   const db = supabase();
   if (!db || req._id === undefined) { rejectNote(); return; } // demo mode — just notify
 
-  // Conditional claim (mirrors approve): only a request still Waiting Approval
-  // may be rejected, in one update — so a double-click or a second tab can't
-  // reject the same request (and fire the notification) twice.
-  const { data: claimed, error } = await db.from("expense_requests")
-    .update({ status: "Rejected" })
-    .eq("id", req._id)
-    .eq("status", "Waiting Approval")
-    .select("id");
+  // Atomic: the RPC claims the still-"Waiting Approval" row, records the reason,
+  // sends the linked card back to Revision, and APPENDS to its feedback history —
+  // one transaction. ok=false means it was already processed (double-click / 2nd
+  // tab), so we don't notify twice. See supabase/finance_atomic.sql.
+  const { data, error } = await db.rpc("reject_expense_request", { p_id: req._id, p_reason: reason, p_by: by });
   assertDbOk(error, "Could not reject expense request");
-  if (!claimed || claimed.length === 0) {
+  if (!(data as { ok?: boolean } | null)?.ok) {
     throw new Error("คำขอนี้ถูกดำเนินการไปแล้ว (อาจมีการดำเนินการพร้อมกันจากอีกหน้าจอ) — รีเฟรชแล้วตรวจสอบสถานะอีกครั้ง");
   }
   rejectNote();
-  await softColumnUpdate(
-    db.from("expense_requests").update({ reject_reason: reason }).eq("id", req._id),
-    "Could not save reject reason",
-  );
   logAudit(`ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`, "Finance", {
     before: "Waiting Approval", after: "Rejected", actorName: by, meta: { reason, ref: req.ref },
   });
-  if (req.ref) {
-    await db.from("requests").update({ stage: "Revision" }).eq("id", req.ref);
-    // Append to the feedback history rather than overwriting it — earlier
-    // revision notes must survive so the requester keeps the full trail.
-    const { data: cur } = await db.from("requests").select("feedback").eq("id", req.ref).single();
-    const history = Array.isArray((cur as { feedback?: unknown })?.feedback) ? (cur as { feedback: unknown[] }).feedback : [];
-    await db.from("requests").update({
-      feedback: [...history, { stage: "Revision", reason, by, at: new Date().toISOString() }],
-    }).eq("id", req.ref);
-  }
 }
 
 /** Approver corrects a wrongly-submitted request (category / item / amount)
