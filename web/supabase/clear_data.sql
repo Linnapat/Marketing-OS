@@ -40,10 +40,11 @@ insert into brands (id, name, color) values
   ('touka',    'Touka',       '#C68A1E');
 
 -- 3) Re-seed ONE admin so you keep full access (Finance, Settings, approvals).
---    ⚠️ EDIT the email to YOUR real login email before running — a signed-in
---    user with no members row falls back to a limited role.
+--    ⚠️ REQUIRED: replace the placeholders below with YOUR real login email and
+--    name before running — a signed-in user with no members row falls back to a
+--    limited role. Do not commit a real personal email into this shared script.
 insert into members (email, name, role, access, brand_access, status)
-values ('Linnapat.d@teppenthailand.co.th', 'Linnapat', 'CMO', 'Admin', 'All brands', 'Active');
+values ('admin@example.com', 'Admin', 'CMO', 'Admin', 'All brands', 'Active');
 
 -- 4) (Optional) restore the default KOL rank-weights row, only if the master DB
 --    schema (kol_master.sql) has been applied.

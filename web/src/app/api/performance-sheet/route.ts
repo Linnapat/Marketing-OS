@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { spreadsheetId, csvUrl, parseCsv } from "@/lib/googleSheet";
 
 export const dynamic = "force-dynamic";
 
@@ -8,40 +9,6 @@ const GIDS = {
   meta: "2134092371",
   tiktok: "1722299042",
 };
-
-function spreadsheetId(shareUrl: string): string | null {
-  try {
-    const u = new URL(shareUrl);
-    const m = u.pathname.match(/\/spreadsheets\/d\/([\w-]+)/);
-    return m?.[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function csvUrl(id: string, gid: string): string {
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = "", inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQ) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') inQ = false;
-      else cell += ch;
-    } else if (ch === '"') inQ = true;
-    else if (ch === ",") { row.push(cell); cell = ""; }
-    else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); rows.push(row); row = []; cell = "";
-    } else cell += ch;
-  }
-  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
-  return rows;
-}
 
 async function fetchGrid(id: string, gid: string): Promise<string[][]> {
   const res = await fetch(csvUrl(id, gid), { cache: "no-store", redirect: "follow" });

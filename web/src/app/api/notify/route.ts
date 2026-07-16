@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
 
 const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const LINE_TO = process.env.LINE_TO; // group id (C…) or user id (U…)
@@ -57,6 +58,9 @@ async function sendEmail(subject: string, html: string): Promise<boolean> {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireApiUser(req);
+  if (isApiAuthError(guard)) return guard.error;
+
   let body: NotifyBody;
   try {
     body = (await req.json()) as NotifyBody;

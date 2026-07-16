@@ -7,6 +7,7 @@
 // Uses the shared PageHeader (per-module theme) and brand-visibility system.
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, ExternalLink, Save, Check } from "lucide-react";
@@ -22,7 +23,7 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
-  CampaignResultRow, GroupAgg, GroupDim, aggregateBy, platformMeta, cpr,
+  CampaignResultRow, GroupDim, aggregateBy, platformMeta, cpr,
   deriveResultRow, fmtUpdated, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
@@ -280,7 +281,7 @@ export default function PlatformsPage() {
     const brief = briefs[campaign.name];
     const amount = Number(reviseAmount) || 0;
     const requester = member?.name || "Requester";
-    const approver = brief?.approver?.trim() || "CMO";
+    const approver = brief?.approver?.trim() || DEFAULT_APPROVER;
     const task: Task = {
       id: Date.now(),
       title: `Revise budget request — ${campaign.name}`,

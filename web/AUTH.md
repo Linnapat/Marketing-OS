@@ -35,9 +35,10 @@ So the rules hold even outside the UI:
    each user's token from their members row).
 2. Dashboard → **Authentication → Hooks → Custom Access Token** → enable and
    select `public.custom_access_token_hook`.
-3. SQL Editor → run **`supabase/rls_production.sql`** (replaces the demo-open
-   policies: staff/admin get the internal tables; the **agency** role can reach
-   **only `agency_tasks`**).
+3. SQL Editor → run **`supabase/security_p1.sql`** then **`supabase/security_p2.sql`**
+   (replaces the demo-open policies: staff/admin get the internal tables; the
+   **agency** role can reach **only `agency_tasks`**). See `supabase/README.md`
+   for the full canonical apply order.
 
 After this, an agency user's session can read/write nothing but their external
 task list — enforced by Postgres, not just the UI.

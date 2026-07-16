@@ -12,11 +12,12 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
+import { fetchAuditLog, AuditEntry } from "@/lib/db/audit";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
   WF_MODULE_LABELS, STATUS_SETS, WfModule, WfStatus, NOTIF_CHANNELS, NOTIF_TRIGGERS,
-  INTEGRATIONS, TEMPLATES, AUDIT_LOG, TYPE_COLOR, ROLE_OPTIONS, BrandCfg,
+  INTEGRATIONS, TEMPLATES, TYPE_COLOR, ROLE_OPTIONS, BrandCfg,
 } from "@/lib/data/settings";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
@@ -328,6 +329,15 @@ export default function SettingsPage() {
   const { role } = useRole();
   const canEdit = role === "CMO";
   const [section, setSection] = useState("org");
+  // Audit Log tab reads real events from the audit_log table (audit P2-3); loaded
+  // lazily the first time the tab is opened.
+  const [auditRows, setAuditRows] = useState<AuditEntry[] | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  useEffect(() => {
+    if (section !== "audit" || auditRows !== null) return;
+    setAuditLoading(true);
+    fetchAuditLog().then(setAuditRows).catch(() => setAuditRows([])).finally(() => setAuditLoading(false));
+  }, [section, auditRows]);
   const [wfModule, setWfModule] = useState<WfModule>("campaign");
   const reportSaveError = (label: string) => (error: unknown) =>
     toastError(`${label} ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -1020,7 +1030,10 @@ export default function SettingsPage() {
                   <div className="text-[12px] text-muted mb-3">{it.desc}</div>
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-faint">Last sync · {it.lastSync}</span>
-                    <div className="flex gap-2">{it.actions.map((a) => <span key={a} className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] cursor-pointer" style={(a === "Connect" || a === "Sync now") ? { background: "#211F1C", color: "#fff" } : { border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{a}</span>)}</div>
+                    {/* These integrations aren't wired to a backend yet, so the
+                        controls are rendered disabled with a tooltip instead of
+                        looking clickable but doing nothing (audit P2-2). */}
+                    <div className="flex gap-2">{it.actions.map((a) => <button key={a} type="button" disabled title="ยังไม่เปิดใช้งาน — อยู่ระหว่างพัฒนา" className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] opacity-50 cursor-not-allowed" style={(a === "Connect" || a === "Sync now") ? { background: "#211F1C", color: "#fff" } : { border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{a}</button>)}</div>
                   </div>
                 </div>
               ))}
@@ -1066,12 +1079,19 @@ export default function SettingsPage() {
 
         {section === "audit" && (
           <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            {AUDIT_LOG.map((a, i) => (
+            {auditLoading && auditRows === null ? (
+              <div className="px-5 py-14 text-center text-[13px] text-faint">กำลังโหลด Audit Log…</div>
+            ) : (auditRows ?? []).length === 0 ? (
+              <div className="px-5 py-14 text-center">
+                <div className="text-[14px] font-bold text-ink mb-1">ยังไม่มีรายการใน Audit Log</div>
+                <div className="text-[12.5px] text-muted leading-[1.6]">การอนุมัติงบ, เปลี่ยนสถานะแคมเปญ, และการแก้ไข Settings จะถูกบันทึกที่นี่โดยอัตโนมัติ</div>
+              </div>
+            ) : (auditRows ?? []).map((a, i) => (
               <div key={i} className="grid grid-cols-1 md:grid-cols-[1.1fr_1.5fr_1fr_1.6fr] gap-y-1 items-center px-5 py-3 border-b border-line4 last:border-0">
                 <div className="text-[11.5px] font-mono text-faint">{a.time}</div>
                 <div><div className="text-[13px] font-semibold">{a.action}</div><div className="text-[11px] text-faint">by {a.user}</div></div>
                 <div>{typePill(a.module)}</div>
-                <div><div className="text-[11.5px] text-faint">{a.before}</div><div className="text-[11.5px] text-ink font-semibold">→ {a.after}</div></div>
+                <div><div className="text-[11.5px] text-faint">{a.before}</div>{a.after && <div className="text-[11.5px] text-ink font-semibold">→ {a.after}</div>}</div>
               </div>
             ))}
           </div>

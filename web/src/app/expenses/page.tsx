@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";

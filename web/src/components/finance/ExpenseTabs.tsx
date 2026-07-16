@@ -4,6 +4,7 @@
 // own "Expenses" page so day-to-day spending is reachable without Finance access.
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
 import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -46,6 +47,10 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const [applyVat, setApplyVat] = useState(true);
   const [applyWht, setApplyWht] = useState(true);
   const [submitted, setSubmitted] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Draft rows currently being submitted — keyed so only the clicked row's
+  // button disables, not the whole list.
+  const [busyDraftId, setBusyDraftId] = useState<number | null>(null);
   const [requests, setRequests] = useState<ExpenseReq[]>(REQUESTS);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [preparerSig, setPreparerSig] = useState<string | null>(null);
@@ -64,11 +69,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
 
   // Draft rows come from approved campaign budgets — one click sends them on.
   const submitDraft = async (r: ExpenseReq) => {
+    if (busyDraftId !== null) return; // ignore rapid repeat clicks
+    setBusyDraftId(r._id ?? -1);
     try {
       await submitExpenseDraft(r);
       setRequests((rs) => rs.map((x) => (x === r ? { ...x, status: "Waiting Approval" } : x)));
     } catch (error) {
       toastError(`ส่ง Draft เข้า Approval ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setBusyDraftId(null);
     }
   };
 
@@ -84,7 +93,8 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   }, [brandCampaigns, campaign]);
 
   const submit = async () => {
-    if (!campaign) return;
+    if (!campaign || busy) return; // guard against double-submit
+    setBusy(true);
     // Unique reference — time-based so equal amounts never collide.
     const ref = `REQ-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
     const row: RequestRow = {
@@ -109,6 +119,8 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       setSubmitted(ref);
     } catch (error) {
       toastError(`บันทึก Expense Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setBusy(false);
     }
   };
   // Additional line items
@@ -124,7 +136,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const net = amt + vat - wht;
   // catKey now holds the category NAME directly (so it matches the budget sheet).
   // Marketing expenses are approved by the CMO alone (no CFO tier).
-  const route = "CMO";
+  const route = DEFAULT_APPROVER;
   const grandTotal = amt + vat + lines.reduce((s, l) => s + l.amount + Math.round(l.amount * l.vat / 100), 0);
 
   // Category options come from the SAME budget Google Sheet the P&L uses, so a
@@ -351,9 +363,9 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             </div>
             <button
               onClick={submit}
-              disabled={!catKey || amt <= 0 || !campaign || !preparerSig}
+              disabled={!catKey || amt <= 0 || !campaign || !preparerSig || busy}
               className="text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40" style={{ background: "#211F1C" }}>
-              Send Approval Request
+              {busy ? "Sending…" : "Send Approval Request"}
             </button>
             {!preparerSig && <div className="text-[11px] text-faint -mt-2">กรุณาใส่ลายเซ็นผู้จัดทำก่อนส่งคำขอ</div>}
           </div>
@@ -395,8 +407,9 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             )}
             {r.status === "Draft" && (
               <button onClick={() => submitDraft(r)}
-                className="w-full text-[12px] font-bold text-white rounded-[8px] py-[7px] mb-3" style={{ background: "#211F1C" }}>
-                Continue to approval →
+                disabled={busyDraftId !== null}
+                className="w-full text-[12px] font-bold text-white rounded-[8px] py-[7px] mb-3 disabled:opacity-50" style={{ background: "#211F1C" }}>
+                {busyDraftId === (r._id ?? -1) ? "Sending…" : "Continue to approval →"}
               </button>
             )}
             <div className="grid grid-cols-3 gap-[6px]">

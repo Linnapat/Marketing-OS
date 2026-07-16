@@ -17,6 +17,7 @@ import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
+import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 type GTab = (typeof TABS)[number][0];
@@ -25,6 +26,18 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const [g, setGraphic] = useState(initialGraphic);
   const [tab, setTab] = useState<GTab>(initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
+  // Load persisted feedback (audit P2-5) — resolves survive a refresh now. The
+  // mock filter above is the demo-mode fallback and the initial paint.
+  useEffect(() => {
+    let alive = true;
+    fetchGraphicFeedback(g.id).then((rows) => { if (alive) setFeedback(rows); }).catch(() => {});
+    return () => { alive = false; };
+  }, [g.id]);
+  const resolveFeedback = async (id: number) => {
+    const prev = feedback;
+    setFeedback((fs) => fs.map((x) => (x.id === id ? { ...x, status: "Resolved" } : x)));
+    try { await resolveGraphicFeedback(id); } catch (e) { setFeedback(prev); toastError(`Resolve ไม่สำเร็จ: ${e instanceof Error ? e.message : "Unknown error"}`); }
+  };
   const [feedbackTarget, setFeedbackTarget] = useState(0);
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user } = useAuth();
@@ -155,20 +168,20 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     updateGraphic(next)
       .then(() => updateCurrentGraphic(next))
       .catch((error) => toastError(`บันทึก Feedback ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-    setFeedback((fs) => [{
-      id: Date.now(),
-      gid: g.id,
-      owner: currentUser,
-      team: "Requester / Approver",
-      ownerColor: "#B5577E",
-      type: "Design revision",
-      text: reason,
-      version: `V${d.version || 1}`,
-      status: "Open",
-      assignedTo: g.designer,
-      due: g.due,
-      createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    }, ...fs]);
+    // Persist the feedback entry so the Feedback tab keeps it across refreshes
+    // (audit P2-5). Fall back to a local-only row in demo mode.
+    const localEntry = {
+      id: Date.now(), gid: g.id, owner: currentUser, team: "Requester / Approver", ownerColor: "#B5577E",
+      type: "Design revision", text: reason, version: `V${d.version || 1}`, status: "Open",
+      assignedTo: g.designer, due: g.due, createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    };
+    setFeedback((fs) => [localEntry, ...fs]);
+    addGraphicFeedback(g.id, {
+      owner: currentUser, team: "Requester / Approver", ownerColor: "#B5577E", type: "Design revision",
+      text: reason, version: `V${d.version || 1}`, assignedTo: g.designer, due: g.due,
+    })
+      .then((saved) => { if (saved) setFeedback((fs) => fs.map((x) => (x === localEntry ? saved : x))); })
+      .catch(() => {});
     // Bounce the revision into the designer's My Tasks.
     if (g.designer && g.designer !== "Unassigned") {
       createRevisionTask({
@@ -410,7 +423,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
                     <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
                     <span>{f.version}</span><span>→ {f.assignedTo}</span>
-                    {f.status === "Open" && <button onClick={() => setFeedback((fs) => fs.map((x) => x.id === f.id ? { ...x, status: "Resolved" } : x))} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
+                    {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
                   </div>
                 </div>
               ))}

@@ -26,7 +26,7 @@ create trigger trg_touch_campaign_results
   for each row execute function touch_campaign_results();
 
 -- RLS: same posture as the rest of the app — authenticated users read/write.
--- Tighten per your rls_production.sql conventions before go-live.
+-- Tighten per your security_p1.sql conventions before go-live.
 alter table campaign_results enable row level security;
 
 drop policy if exists campaign_results_rw on campaign_results;

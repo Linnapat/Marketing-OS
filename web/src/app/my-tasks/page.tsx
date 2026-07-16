@@ -1,9 +1,10 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState, CSSProperties } from "react";
 import Link from "next/link";
-import { TASKS, Task, PEOPLE, CELEBRATIONS, PERSON_ROLE, daysUntilDue, isDueToday, isDueThisWeek } from "@/lib/data/tasks";
+import { TASKS, Task, PEOPLE, CELEBRATIONS, PERSON_ROLE, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
@@ -155,7 +156,7 @@ export default function MyTasksPage() {
   const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
   // Approve / reject inline — sync the row locally so the card updates at once.
   const { member, user } = useAuth();
-  const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
+  const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
   const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? FALLBACK_COLORS[n] ?? "#9A9387";
 
   // Lock the view to the signed-in member; keep viewAs valid when the member list loads.
@@ -217,7 +218,6 @@ export default function MyTasksPage() {
   const myApprovals = myTasks.filter((t) => getStatus(t) === "Need Approval").length;
   const myWaiting = myTasks.filter((t) => getStatus(t) === "Waiting").length;
   const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
-  const totalOpenTasks = myTasks.filter((t) => getStatus(t) !== "Done").length;
 
   const openMyDay = () => {
     setActiveTab("myDay");
@@ -484,6 +484,9 @@ function ExpenseApprovalCard({ r, onApprove, onReject }: {
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  // Latches on the first Approve/Reject click so a rapid second click can't fire
+  // a duplicate approval before the card is removed from the queue.
+  const [acted, setActed] = useState(false);
   const wait = daysWaiting(r.createdAt);
   return (
     <div className="bg-surface border border-line rounded-card p-4">
@@ -502,7 +505,7 @@ function ExpenseApprovalCard({ r, onApprove, onReject }: {
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น)" autoFocus
             className="w-full text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
           <div className="flex gap-2">
-            <button onClick={() => reason.trim() && onReject(r, reason.trim())} disabled={!reason.trim()}
+            <button onClick={() => { if (reason.trim() && !acted) { setActed(true); onReject(r, reason.trim()); } }} disabled={!reason.trim() || acted}
               className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
               Reject &amp; Send back
             </button>
@@ -511,8 +514,9 @@ function ExpenseApprovalCard({ r, onApprove, onReject }: {
         </div>
       ) : (
         <div className="flex gap-2">
-          <button onClick={() => onApprove(r)} className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px]" style={{ background: "#4E7A4E" }}>
-            Approve ✓
+          <button onClick={() => { if (!acted) { setActed(true); onApprove(r); } }} disabled={acted}
+            className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
+            {acted ? "Approving…" : "Approve ✓"}
           </button>
           <button onClick={() => setRejecting(true)} className="text-[12px] font-bold px-3 rounded-[9px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
             ✕ Reject

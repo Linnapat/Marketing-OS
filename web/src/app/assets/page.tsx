@@ -2,7 +2,6 @@
 
 import { toastError } from "@/lib/toast";
 import { useEffect, useState } from "react";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";

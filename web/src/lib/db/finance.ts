@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { REQUESTS, RequestRow, EXPENSES, ExpenseRow } from "@/lib/data/finance";
 import { BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
+import { logAudit } from "@/lib/db/audit";
 import { baht } from "@/lib/format";
 import { assertDbData, assertDbOk } from "@/lib/db/assert";
 
@@ -71,12 +72,31 @@ const shortDate = () => new Date().toLocaleDateString("en-US", { month: "short",
  *  approved spend into the Spending Log as "Unpaid" (Finance marks it Paid
  *  after the actual payment), and move the linked queue card to Approved. */
 export async function approveExpenseRequest(req: ExpenseReq, approved: number): Promise<void> {
+  const db = supabase();
+  if (!db || req._id === undefined) {
+    // Demo mode (no DB) — nothing to persist, but still fire the notification.
+    notify("approved", `✅ อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
+      `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
+    return;
+  }
+  // Guard against a double-approve / concurrent-tab race: only a request that is
+  // still "Waiting Approval" may be approved, and we act on it in one conditional
+  // update. If no row comes back it was already approved elsewhere — abort BEFORE
+  // inserting into the spending log so we never book the spend twice.
+  const { data: claimed, error } = await db.from("expense_requests")
+    .update({ status: "Approved", approved })
+    .eq("id", req._id)
+    .eq("status", "Waiting Approval")
+    .select("id");
+  assertDbOk(error, "Could not approve expense request");
+  if (!claimed || claimed.length === 0) {
+    throw new Error("คำขอนี้ถูกดำเนินการไปแล้ว (อาจมีการอนุมัติพร้อมกันจากอีกหน้าจอ) — รีเฟรชแล้วตรวจสอบสถานะอีกครั้ง");
+  }
   notify("approved", `✅ อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
     `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
-  const db = supabase();
-  if (!db || req._id === undefined) return;
-  const { error } = await db.from("expense_requests").update({ status: "Approved", approved }).eq("id", req._id);
-  assertDbOk(error, "Could not approve expense request");
+  logAudit(`อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`, "Finance", {
+    before: `ขอ ${baht(req.requested)}`, after: `อนุมัติ ${baht(approved)}`, meta: { ref: req.ref, brand: req.b, campaign: req.campaign },
+  });
   // Separate so a DB missing the migration still keeps the approval.
   await db.from("expense_requests").update({ approved_at: new Date().toISOString() }).eq("id", req._id);
   const { data: exp, error: spendError } = await db.from("expenses").insert({
@@ -103,6 +123,9 @@ export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: 
   const { error } = await db.from("expense_requests").update({ status: "Rejected" }).eq("id", req._id);
   assertDbOk(error, "Could not reject expense request");
   await db.from("expense_requests").update({ reject_reason: reason }).eq("id", req._id);
+  logAudit(`ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`, "Finance", {
+    before: "Waiting Approval", after: "Rejected", actorName: by, meta: { reason, ref: req.ref },
+  });
   if (req.ref) {
     await db.from("requests").update({ stage: "Revision" }).eq("id", req.ref);
     await db.from("requests").update({
@@ -147,8 +170,16 @@ export async function markExpensePaid(id: number | undefined): Promise<void> {
 export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
   const db = supabase();
   if (!db || req._id === undefined) return;
-  const { error } = await db.from("expense_requests").update({ status: "Waiting Approval" }).eq("id", req._id);
+  // Only a Draft may be submitted, in one conditional update — so a double-click
+  // or a second tab can't push the same request into the queue (and fire the
+  // approval notification) twice.
+  const { data: claimed, error } = await db.from("expense_requests")
+    .update({ status: "Waiting Approval" })
+    .eq("id", req._id)
+    .eq("status", "Draft")
+    .select("id");
   assertDbOk(error, "Could not submit expense draft");
+  if (!claimed || claimed.length === 0) return; // already submitted elsewhere — no-op
   notify("approval", `📥 คำขอเบิกงบจากงบแคมเปญ · ${req.category}`,
     `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, "/my-tasks");
 }

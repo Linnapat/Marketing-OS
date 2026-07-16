@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -19,7 +19,7 @@ import {
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
-import { searchKolProfiles, ensureKolProfile, KolMasterRow } from "@/lib/db/kolMaster";
+import { searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -28,7 +28,6 @@ import { CampaignBrief, kolBudgetTotal } from "@/lib/data/brief";
 import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { Segmented } from "@/components/ui/Segmented";

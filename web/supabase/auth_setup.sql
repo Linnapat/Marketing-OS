@@ -3,7 +3,7 @@
 --
 -- Adds an `app_role` claim ('admin' | 'staff' | 'agency') to every user's JWT,
 -- derived from their row in the `members` table (matched by email). This is what
--- rls_production.sql reads to enforce access at the database level.
+-- security_p1.sql reads to enforce access at the database level.
 --
 -- After running this: Supabase Dashboard → Authentication → Hooks →
 -- "Custom Access Token" → enable and select public.custom_access_token_hook.
