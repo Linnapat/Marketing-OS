@@ -69,10 +69,31 @@ To apply safely:
 The `audit_log` tamper-evidence in section 1 of the file is independent and safe to run
 on its own (it only removes UPDATE/DELETE on that one table).
 
-## 3. P3 — enable Leaked Password Protection
+## 3. P3 — Leaked Password Protection: BLOCKED (Pro plan only) — don't chase it
 
-Supabase → Authentication → Policies → enable **Leaked Password Protection**
-(HaveIBeenPwned). This is the only remaining security-advisor WARN.
+The `auth_leaked_password_protection` advisor WARN **cannot be cleared on this
+project's current (Free) plan**. Tried 2026-07-17 at
+Authentication → Attack Protection → "Prevent use of leaked passwords" →
+"Configure in email provider" → toggle on → Save, which returns:
+
+> Failed to update auth configuration: Configuring leaked password protection
+> via HaveIBeenPwned.org is available on Pro Plans and up.
+
+So this warning is **expected and accepted** until/unless the project is upgraded
+to Pro. Do not spend time on it again.
+
+**Free-plan mitigations (do these instead — Authentication → Sign In / Providers → Email):**
+- **Minimum password length: 6 → 8** (Supabase's own recommendation).
+- **Password requirements:** require letters + digits.
+
+Residual risk is low: self sign-up is disabled (step 1), so the only accounts are
+the handful of known team members — there's no public surface where a weak
+password could be introduced by a stranger.
+
+⚠️ Also on that Attack Protection page: **leave "Enable Captcha protection" OFF.**
+The app's login calls `signInWithPassword` without a captcha token, so switching
+Captcha on would lock everyone out. Enabling it later means changing the login
+page first.
 
 ## 4. Remove / protect the seed tool
 
