@@ -1,4 +1,4 @@
-import { BrandFilterValue, BrandId } from "@/lib/brands";
+import { BrandFilterValue, BrandId, emptyBrandTotals } from "@/lib/brands";
 import { getAppSetting } from "@/lib/db/appSettings";
 import { authHeaders } from "@/lib/supabase";
 
@@ -26,22 +26,26 @@ export async function fetchBudgetSheetRows(): Promise<BudgetSheetRow[]> {
   return (json?.rows ?? []) as BudgetSheetRow[];
 }
 
+// Accumulators are keyed by the CONFIGURED brands, not a hardcoded four — and each
+// add is guarded with `?? 0`, because a sheet row may still name a brand that has
+// since been removed from config. Without the guard that read is `undefined` and
+// `undefined + n` silently turns the whole budget into NaN.
 export function budgetByBrandFromSheet(rows: BudgetSheetRow[], month = currentBudgetMonthKey()): Record<BrandId, number> {
-  const totals: Record<BrandId, number> = { teppen: 0, omakase: 0, mainichi: 0, touka: 0 };
+  const totals = emptyBrandTotals();
   for (const row of rows) {
     if (row.month !== month) continue;
     if (!row.brand || row.brand === "all") continue;
-    totals[row.brand] += row.budget || 0;
+    totals[row.brand] = (totals[row.brand] ?? 0) + (row.budget || 0);
   }
   return totals;
 }
 
 export function annualBudgetByBrandFromSheet(rows: BudgetSheetRow[], year = currentBudgetYearKey()): Record<BrandId, number> {
-  const totals: Record<BrandId, number> = { teppen: 0, omakase: 0, mainichi: 0, touka: 0 };
+  const totals = emptyBrandTotals();
   for (const row of rows) {
     if (!row.month.startsWith(`${year}-`)) continue;
     if (!row.brand || row.brand === "all") continue;
-    totals[row.brand] += row.budget || 0;
+    totals[row.brand] = (totals[row.brand] ?? 0) + (row.budget || 0);
   }
   return totals;
 }

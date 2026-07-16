@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BRAND_ORDER, BRANDS, BrandFilterValue, BrandId } from "@/lib/brands";
+import { BRAND_ORDER, BRANDS, BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useAuth } from "@/lib/auth";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 
 const norm = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
+// Extra spellings the four seed brands appear under in external data. A brand the
+// team added has no entry here — matching falls back to its configured name, so
+// every read must tolerate a missing key (see `?? []` below).
 const BRAND_ALIASES: Record<BrandId, string[]> = {
   teppen: ["teppen", "teppenthailand"],
   omakase: ["omakase", "omakasedon"],
@@ -23,7 +26,7 @@ const configuredBrandIds = (configs: BrandCfg[]): BrandId[] => {
 const configuredBrandNames = (configs: BrandCfg[]): Record<BrandId, string> => (
   BRAND_ORDER.reduce((acc, id) => {
     const cfg = configs.find((b) => b.key === id);
-    acc[id] = cfg?.name?.replace(/\s+Thailand$/i, "") || BRANDS[id].name;
+    acc[id] = cfg?.name?.replace(/\s+Thailand$/i, "") || brandName(id);
     return acc;
   }, {} as Record<BrandId, string>)
 );
@@ -37,8 +40,8 @@ export function visibleBrandsFromScope(scope?: string | null, configs: BrandCfg[
 
   const normalized = norm(raw.replace(/^Branch\s*·\s*/i, ""));
   const visible = configuredIds.filter((id) => {
-    const name = norm(names[id] || BRANDS[id].name);
-    return normalized.includes(name) || BRAND_ALIASES[id].some((alias) => normalized.includes(norm(alias)));
+    const name = norm(names[id] || brandName(id));
+    return normalized.includes(name) || (BRAND_ALIASES[id] ?? []).some((alias) => normalized.includes(norm(alias)));
   });
 
   return visible.length ? visible : configuredIds;
@@ -76,7 +79,7 @@ export function useBrandVisibility() {
     const configuredIds = configuredBrandIds(configs);
     const brandNames = configuredBrandNames(configs);
     const brandColors = BRAND_ORDER.reduce((acc, id) => {
-      acc[id] = configs.find((b) => b.key === id)?.color || BRANDS[id].color;
+      acc[id] = configs.find((b) => b.key === id)?.color || brandColor(id);
       return acc;
     }, {} as Record<BrandId, string>);
     const visibleBrands = isAdmin ? configuredIds : visibleBrandsFromScope(member?.brandAccess, configs);

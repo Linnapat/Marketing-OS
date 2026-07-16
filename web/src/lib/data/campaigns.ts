@@ -70,6 +70,10 @@ const REACH: Record<BrandId, string> = { teppen: "580K", omakase: "1.5M", mainic
 const VISIT_TARGET: Record<BrandId, string> = { teppen: "800 covers", omakase: "200 seatings", mainichi: "1,200 covers", touka: "500 guests" };
 const ADS_BY_BRAND: Record<BrandId, string> = { teppen: "Meta Ads + Google + TikTok", omakase: "Meta Ads + LINE Ads", mainichi: "LINE Broadcast + TikTok", touka: "Meta Ads + Google" };
 
+/** These maps only cover the four seed brands. A brand the team added in Settings
+ *  has no entry, so read through this — otherwise the brief renders `undefined`. */
+const copy = (map: Record<BrandId, string>, b: BrandId, fallback = "—") => map[b] ?? fallback;
+
 export interface CampaignDetail {
   row: CampaignRow;
   color: string;
@@ -116,11 +120,11 @@ export function deriveDetail(c: CampaignRow): CampaignDetail {
     row: c,
     color: brandColor(c.b),
     brand: brandName(c.b),
-    objective: OBJ[c.b],
-    target: TARGET[c.b],
-    offer: OFFER[c.b],
-    keyMessage: MSG[c.b],
-    reach: REACH[c.b],
+    objective: copy(OBJ, c.b, "Awareness"),
+    target: copy(TARGET, c.b),
+    offer: copy(OFFER, c.b),
+    keyMessage: copy(MSG, c.b),
+    reach: copy(REACH, c.b),
     revenue: c.roi ? baht(Math.round(c.spend * c.roi), { compact: true }) : "—",
     budgetF: baht(c.budget, { compact: true }),
     spendF: c.spend ? baht(c.spend, { compact: true }) : "—",
@@ -140,9 +144,9 @@ export function deriveDetail(c: CampaignRow): CampaignDetail {
     ],
     kpiChips: ["Visit +20%", "ROAS ≥ 3.0×", c.roi > 0 ? `Actual: ${c.roi}×` : "ROI pending"],
     kpiRows: [
-      { label: "VISIT TARGET", value: VISIT_TARGET[c.b] },
+      { label: "VISIT TARGET", value: copy(VISIT_TARGET, c.b) },
       { label: "SALES TARGET", value: baht(Math.round(c.budget * 3), { compact: true }) },
-      { label: "REACH TARGET", value: REACH[c.b] },
+      { label: "REACH TARGET", value: copy(REACH, c.b) },
       { label: "ROAS TARGET", value: "3.0×" },
     ],
     readinessItems: [
@@ -155,7 +159,7 @@ export function deriveDetail(c: CampaignRow): CampaignDetail {
     moduleLinks: [
       { icon: "📝", label: "Content Calendar", sub: hasContent ? "Posts planned" : "No posts yet", status: hasContent ? "Planned" : "Missing", tone: hasContent ? "green" : "gold", iconBg: mib("#EEF4EE") },
       { icon: "🤝", label: "KOL Plan", sub: hasKol ? "Creators assigned" : "No KOL assigned", status: hasKol ? "Active" : "Missing", tone: hasKol ? "green" : "gold", iconBg: mib("#FBF6ED") },
-      { icon: "📢", label: "Ads Plan", sub: ADS_BY_BRAND[c.b], status: hasReq ? "Budget OK" : "Pending", tone: hasReq ? "green" : "neutral", iconBg: mib("#EEF1F8") },
+      { icon: "📢", label: "Ads Plan", sub: copy(ADS_BY_BRAND, c.b, "Meta Ads"), status: hasReq ? "Budget OK" : "Pending", tone: hasReq ? "green" : "neutral", iconBg: mib("#EEF1F8") },
       { icon: "🎨", label: "Graphic / Asset", sub: "Artwork in progress", status: "In Progress", tone: "blue", iconBg: mib("#F2EDE2") },
       { icon: "✅", label: "Approval Queue", sub: hasReq ? "Budget request submitted" : "No approval pending", status: hasReq ? "Pending" : "None", tone: hasReq ? "gold" : "neutral", iconBg: mib("#FBF3F1") },
       { icon: "📊", label: "Result / Report", sub: hasReport ? "Report available" : "Report pending", status: hasReport ? "Done" : "Pending", tone: hasReport ? "ink" : "neutral", iconBg: mib("#EEF4EE") },

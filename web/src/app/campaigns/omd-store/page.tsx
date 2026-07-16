@@ -12,7 +12,7 @@ import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
 import { toastError } from "@/lib/toast";
-import { BRAND_ORDER, BRANDS, type BrandId } from "@/lib/brands";
+import { BRAND_ORDER, brandName, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
@@ -92,7 +92,7 @@ function toCsv(items: OmdStorePromotion[]) {
   const header = ["Source", "Brand", "Category", "Title", "Detail", "POS", "Branch", "Start", "End", "Status"];
   const rows = items.map((item) => [
     sourceLabel(item.source),
-    BRANDS[item.brand].name,
+    brandName(item.brand),
     OMD_STORE_CATEGORY_META[item.category].label,
     item.title,
     item.description,
@@ -172,7 +172,7 @@ export default function OmdStoreCampaignPage() {
       (category === "all" || item.category === category) &&
       branchMatch(item, branch) &&
       inPeriod(item) &&
-      (!q || `${sourceLabel(item.source)} ${BRANDS[item.brand].name} ${item.title} ${item.description} ${item.posName} ${item.branches.join(" ")}`.toLowerCase().includes(q)),
+      (!q || `${sourceLabel(item.source)} ${brandName(item.brand)} ${item.title} ${item.description} ${item.posName} ${item.branches.join(" ")}`.toLowerCase().includes(q)),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allPromotions, branch, brand, category, search, period]);
@@ -321,7 +321,7 @@ export default function OmdStoreCampaignPage() {
                 Print-ready promotion summary synced from Campaign, grouped by type, brand, and branch with Marketing-OS colors.
               </p>
               <div className="omd-print-meta mt-3 hidden flex-wrap gap-2 text-[10px] font-bold text-[#706A84]">
-                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Brand: {brand === "all" ? "All Brands" : BRANDS[brand].name}</span>
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Brand: {brand === "all" ? "All Brands" : brandName(brand)}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Branch: {filterLabel(branch, "All Branches")}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Category: {category === "all" ? "All Categories" : OMD_STORE_CATEGORY_META[category].label}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Period: {periodLabel}</span>
@@ -375,7 +375,7 @@ export default function OmdStoreCampaignPage() {
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand</span>
                 <select value={brand} onChange={(e) => setBrand(e.target.value as BrandId | "all")} className="h-10 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold outline-none">
                   <option value="all">All Brands</option>
-                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+                  {BRAND_ORDER.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1.5">
@@ -433,7 +433,7 @@ export default function OmdStoreCampaignPage() {
           </div>
           <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
             <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand / Branch</div>
-            <div className="mt-2 text-[26px] font-extrabold">{brand === "all" ? "All" : BRANDS[brand].name}</div>
+            <div className="mt-2 text-[26px] font-extrabold">{brand === "all" ? "All" : brandName(brand)}</div>
             <div className="mt-1 text-[11px] font-bold text-[#8A879A]">{storeCount} branch groups</div>
           </div>
         </section>
@@ -466,7 +466,7 @@ export default function OmdStoreCampaignPage() {
                         <span className="inline-block h-4 w-4 rounded-[4px] border border-[#9D96AC] bg-white" />
                       </div>
                       <div className="omd-print-card-meta text-[11px] font-extrabold text-[#706A84]">
-                        {BRANDS[item.brand].name}<br />
+                        {brandName(item.brand)}<br />
                         <span className="font-bold text-[#9D96AC]">{sourceLabel(item.source)}</span>
                       </div>
                       <div>
