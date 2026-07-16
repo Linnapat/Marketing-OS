@@ -56,6 +56,16 @@ drop trigger if exists members_guard_trg on public.members;
 create trigger members_guard_trg before update on public.members
   for each row execute function public.members_guard();
 
+-- members_guard is a TRIGGER function and must not be callable as an RPC.
+-- PostgREST exposes SECURITY DEFINER functions in `public` at /rest/v1/rpc/…, so
+-- without this the security advisor (rightly) flags it as anon/authenticated
+-- executable. A trigger does NOT require the invoking user to hold EXECUTE, so
+-- revoking it keeps the guard working — verified on prod: staff still can't
+-- escalate, staff can still rename themselves.
+revoke execute on function public.members_guard() from public;
+revoke execute on function public.members_guard() from anon;
+revoke execute on function public.members_guard() from authenticated;
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- TEST (sign in as a NON-admin staff member):
 --   • Sidebar → Edit profile → change display name → must SAVE. ✅
