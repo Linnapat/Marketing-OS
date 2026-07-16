@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { spreadsheetId, csvUrl, parseCsv } from "@/lib/googleSheet";
+import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -205,6 +206,9 @@ function parseTikTok(grid: string[][]) {
 }
 
 export async function GET(req: NextRequest) {
+  const guard = await requireApiUser(req);
+  if (isApiAuthError(guard)) return guard.error;
+
   const sourceUrl = req.nextUrl.searchParams.get("url")?.trim() || DEFAULT_SHEET_URL;
   const id = spreadsheetId(sourceUrl);
   if (!id) return NextResponse.json({ error: "Invalid Google Sheets URL" }, { status: 400 });

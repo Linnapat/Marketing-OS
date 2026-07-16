@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { authHeaders } from "@/lib/supabase";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -708,7 +709,7 @@ function KolDatabase() {
     if (!url.trim()) { setSheetRows([]); setSheetStatus(""); return; }
     setSheetStatus("กำลังโหลด…");
     try {
-      const res = await fetch(`/api/kol-library-sheet?url=${encodeURIComponent(url.trim())}`);
+      const res = await fetch(`/api/kol-library-sheet?url=${encodeURIComponent(url.trim())}`, { headers: await authHeaders() });
       const j = await res.json();
       if (!res.ok || j.error) { setSheetRows([]); setSheetStatus(`⚠ ${j.error ?? "โหลดไม่สำเร็จ"}`); return; }
       setSheetRows(j.rows ?? []);

@@ -1,5 +1,6 @@
 import { BrandFilterValue, BrandId } from "@/lib/brands";
 import { getAppSetting } from "@/lib/db/appSettings";
+import { authHeaders } from "@/lib/supabase";
 
 export interface BudgetSheetRow {
   month: string;
@@ -19,7 +20,7 @@ export const currentBudgetYearKey = () => String(new Date().getFullYear());
 export async function fetchBudgetSheetRows(): Promise<BudgetSheetRow[]> {
   const url = await getAppSetting("budget_sheet_url");
   if (!url?.trim()) return [];
-  const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url.trim())}`);
+  const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url.trim())}`, { headers: await authHeaders() });
   const json = await res.json().catch(() => null);
   if (!res.ok || json?.error) return [];
   return (json?.rows ?? []) as BudgetSheetRow[];

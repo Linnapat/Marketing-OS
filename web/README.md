@@ -11,8 +11,11 @@ ivory/cream surfaces, charcoal navigation, champagne-gold accents, Thai Baht thr
 - **Next.js 14** (App Router) + **TypeScript**
 - **Tailwind CSS** — design tokens in `tailwind.config.ts` (palette, brand colors, radii)
 - **lucide-react** icons · **Hanken Grotesk** (next/font)
-- **Typed mock data**, structured to be swapped for a Supabase backend later (see the
-  Dev Handoff prototype for the target schema). No backend/auth yet, by design.
+- **Supabase backend + auth** wired behind `src/lib/db/*` and `src/lib/auth.tsx`. When the
+  Supabase env vars are absent the app transparently falls back to the bundled typed mock
+  data, so it still builds and runs with no database. Auth (login + role gating) is enforced
+  only when `NEXT_PUBLIC_REQUIRE_AUTH=true` **and** Supabase is configured — see `AUTH.md`
+  and `SUPABASE.md`. Row Level Security is the real authorization boundary (`supabase/*.sql`).
 
 ## Run
 

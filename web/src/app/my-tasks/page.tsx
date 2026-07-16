@@ -147,6 +147,8 @@ export default function MyTasksPage() {
   );
   const approvalTasks = useMemo(
     () => tasks.filter((t) => t.assignee === viewAs && !doneIds.has(t.id) && t.status === "Need Approval" && canSeeBrandLabel(t.brand)),
+    // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [tasks, viewAs, doneIds, brandOptions, brandVisibility],
   );
   const approvalGraphics = useMemo(
@@ -207,6 +209,8 @@ export default function MyTasksPage() {
   const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date, brandOptions, brandVisibility]);
   // Today's focus = due today or overdue (real calendar) or stuck.
   const todayTasks = myTasks.filter((t) => (daysUntilDue(t) ?? 1) <= 0 || getStatus(t) === "Stuck");

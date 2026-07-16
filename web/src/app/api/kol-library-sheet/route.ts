@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { csvUrlFromShareLink as csvUrl, parseCsv } from "@/lib/googleSheet";
+import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,9 @@ function followers(value: string): number {
 }
 
 export async function GET(req: NextRequest) {
+  const guard = await requireApiUser(req);
+  if (isApiAuthError(guard)) return guard.error;
+
   const url = req.nextUrl.searchParams.get("url") ?? "";
   const target = csvUrl(url);
   if (!target) return NextResponse.json({ error: "ลิงก์ไม่ใช่ Google Sheets — วางลิงก์จากปุ่ม Share ของ sheet" }, { status: 400 });

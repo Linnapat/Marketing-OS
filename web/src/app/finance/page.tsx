@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { authHeaders } from "@/lib/supabase";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -124,7 +125,7 @@ export default function FinancePage() {
     if (!url.trim()) { setSheetRows([]); setSheetStatus(""); return; }
     setSheetStatus("กำลังโหลด…");
     try {
-      const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url.trim())}`);
+      const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url.trim())}`, { headers: await authHeaders() });
       const j = await res.json();
       if (!res.ok || j.error) { setSheetRows([]); setSheetStatus(`⚠ ${j.error ?? "โหลดไม่สำเร็จ"}`); return; }
       setSheetRows(j.rows ?? []);

@@ -163,7 +163,6 @@ export default function DashboardPage() {
 
   const inBrand = <T extends { b: BrandFilterValue }>(x: T) => brand === "all" || x.b === brand;
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const view = useMemo(() => (raw ? {
     c: raw.c.filter(inBrand).filter((c) => rangeInFilter(date, c.dates)),
     t: raw.t.filter((t) => inDateFilter(date, t.dueIso || t.due)),
@@ -171,6 +170,8 @@ export default function DashboardPage() {
     ct: raw.ct.filter(inBrand),
     g: raw.g.filter(inBrand).filter((g) => inDateFilter(date, g.due)),
     er: raw.er.filter(inBrand).filter((e) => inDateFilter(date, e.createdAt)),
+    // inBrand derives only from `brand`, already a dep below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   } : null), [raw, brand, date]);
 
   const dash = useMemo(() => (view ? dashboardFromDb(view.c, view.t, view.k, view.er) : null), [view]);

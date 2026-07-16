@@ -81,7 +81,10 @@ export async function POST(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
   const fullLink = link && appUrl ? new URL(link, appUrl).toString() : link;
   const text = [title, detail, fullLink].filter(Boolean).join("\n");
-  const html = `<p><b>${title}</b></p>${detail ? `<p>${detail}</p>` : ""}${fullLink ? `<p><a href="${fullLink}">เปิดใน Marketing OS →</a></p>` : ""}`;
+  // Escape caller-supplied strings before embedding in the email HTML so a
+  // title/detail containing markup can't inject arbitrary HTML into the message.
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const html = `<p><b>${esc(title)}</b></p>${detail ? `<p>${esc(detail)}</p>` : ""}${fullLink ? `<p><a href="${esc(fullLink)}">เปิดใน Marketing OS →</a></p>` : ""}`;
 
   const [line, email] = await Promise.all([
     lineOn ? sendLine(text).catch(() => false) : Promise.resolve(false),

@@ -1,5 +1,6 @@
 import { BrandId } from "@/lib/brands";
 import { getAppSetting } from "@/lib/db/appSettings";
+import { authHeaders } from "@/lib/supabase";
 
 export const DEFAULT_PERFORMANCE_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1HGu12xge1T2jWx9-bVRPoZl7zB1prz0b5zHzgOeCISk/edit?gid=2134092371#gid=2134092371";
@@ -62,7 +63,7 @@ export interface PerformanceSheetPayload {
 export async function fetchPerformanceSheet(): Promise<PerformanceSheetPayload> {
   const saved = await getAppSetting("performance_sheet_url");
   const url = saved?.trim() || DEFAULT_PERFORMANCE_SHEET_URL;
-  const res = await fetch(`/api/performance-sheet?url=${encodeURIComponent(url)}`);
+  const res = await fetch(`/api/performance-sheet?url=${encodeURIComponent(url)}`, { headers: await authHeaders() });
   const json = await res.json().catch(() => null);
   if (!res.ok || json?.error) throw new Error(json?.error || "อ่าน Performance sheet ไม่ได้");
   return json as PerformanceSheetPayload;

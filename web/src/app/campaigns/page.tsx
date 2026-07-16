@@ -97,7 +97,7 @@ export default function CampaignsPage() {
   useEffect(() => {
     const valid = selectedNewCampaignBranches.filter((item) => newCampaignBranches.includes(item));
     if (valid.length !== selectedNewCampaignBranches.length) setNc((n) => ({ ...n, branch: valid.join(", ") }));
-  }, [nc.branch, newCampaignBranches]);
+  }, [selectedNewCampaignBranches, newCampaignBranches]);
 
   const configuredBrandName = (id: BrandId) => brandConfigs.find((item) => item.key === id)?.name ?? brandName(id);
 
