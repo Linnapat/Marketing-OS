@@ -11,7 +11,7 @@ import { BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
 import { logAudit } from "@/lib/db/audit";
 import { baht } from "@/lib/format";
-import { assertDbData, assertDbOk } from "@/lib/db/assert";
+import { assertDbData, assertDbOk, softColumnUpdate } from "@/lib/db/assert";
 
 type Row = {
   id: number; category: string; brand: BrandId; campaign: string | null;
@@ -98,7 +98,10 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
     before: `ขอ ${baht(req.requested)}`, after: `อนุมัติ ${baht(approved)}`, meta: { ref: req.ref, brand: req.b, campaign: req.campaign },
   });
   // Separate so a DB missing the migration still keeps the approval.
-  await db.from("expense_requests").update({ approved_at: new Date().toISOString() }).eq("id", req._id);
+  await softColumnUpdate(
+    db.from("expense_requests").update({ approved_at: new Date().toISOString() }).eq("id", req._id),
+    "Could not stamp approval time",
+  );
   const { data: exp, error: spendError } = await db.from("expenses").insert({
     vendor: req.vendor || req.category, category: req.category, brand: req.b,
     amount: approved, vat: req.vatAmt ?? 0, date: shortDate(), status: "Unpaid",
@@ -106,9 +109,10 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
   assertDbData(exp, spendError, "Could not save approved expense to spending log");
   // Separate so a DB missing expenses_p2.sql still gets the base spending row.
   if (exp?.id !== undefined) {
-    await db.from("expenses").update({
-      reimburse_type: req.reimburseType ?? null, wht: req.whtAmt ?? 0,
-    }).eq("id", exp.id);
+    await softColumnUpdate(
+      db.from("expenses").update({ reimburse_type: req.reimburseType ?? null, wht: req.whtAmt ?? 0 }).eq("id", exp.id),
+      "Could not save reimbursement detail",
+    );
   }
   if (req.ref) await db.from("requests").update({ stage: "Approved" }).eq("id", req.ref);
 }
@@ -116,20 +120,39 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
 /** Reject a request with a mandatory reason; the linked queue card goes back
  *  to Revision with the reason on its feedback history. */
 export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: string): Promise<void> {
-  notify("rejected", `↩️ ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
+  const rejectNote = () => notify("rejected", `↩️ ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
     `เหตุผล: ${reason} — โดย ${by}${req.requester ? ` → ${req.requester} แก้แล้ว submit ใหม่` : ""}`, "/expenses");
   const db = supabase();
-  if (!db || req._id === undefined) return;
-  const { error } = await db.from("expense_requests").update({ status: "Rejected" }).eq("id", req._id);
+  if (!db || req._id === undefined) { rejectNote(); return; } // demo mode — just notify
+
+  // Conditional claim (mirrors approve): only a request still Waiting Approval
+  // may be rejected, in one update — so a double-click or a second tab can't
+  // reject the same request (and fire the notification) twice.
+  const { data: claimed, error } = await db.from("expense_requests")
+    .update({ status: "Rejected" })
+    .eq("id", req._id)
+    .eq("status", "Waiting Approval")
+    .select("id");
   assertDbOk(error, "Could not reject expense request");
-  await db.from("expense_requests").update({ reject_reason: reason }).eq("id", req._id);
+  if (!claimed || claimed.length === 0) {
+    throw new Error("คำขอนี้ถูกดำเนินการไปแล้ว (อาจมีการดำเนินการพร้อมกันจากอีกหน้าจอ) — รีเฟรชแล้วตรวจสอบสถานะอีกครั้ง");
+  }
+  rejectNote();
+  await softColumnUpdate(
+    db.from("expense_requests").update({ reject_reason: reason }).eq("id", req._id),
+    "Could not save reject reason",
+  );
   logAudit(`ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`, "Finance", {
     before: "Waiting Approval", after: "Rejected", actorName: by, meta: { reason, ref: req.ref },
   });
   if (req.ref) {
     await db.from("requests").update({ stage: "Revision" }).eq("id", req.ref);
+    // Append to the feedback history rather than overwriting it — earlier
+    // revision notes must survive so the requester keeps the full trail.
+    const { data: cur } = await db.from("requests").select("feedback").eq("id", req.ref).single();
+    const history = Array.isArray((cur as { feedback?: unknown })?.feedback) ? (cur as { feedback: unknown[] }).feedback : [];
     await db.from("requests").update({
-      feedback: [{ stage: "Revision", reason, by, at: new Date().toISOString() }],
+      feedback: [...history, { stage: "Revision", reason, by, at: new Date().toISOString() }],
     }).eq("id", req.ref);
   }
 }
@@ -149,7 +172,10 @@ export async function updateExpenseRequest(req: ExpenseReq, patch: {
     .update({ category: patch.category, requested: patch.requested }).eq("id", req._id);
   assertDbOk(error, "Could not update expense request");
   // Separate so a DB missing expenses_p1.sql still keeps the base correction.
-  await db.from("expense_requests").update({ vendor: patch.vendor ?? null }).eq("id", req._id);
+  await softColumnUpdate(
+    db.from("expense_requests").update({ vendor: patch.vendor ?? null }).eq("id", req._id),
+    "Could not update vendor",
+  );
   if (req.ref) {
     await db.from("requests").update({
       title: `${patch.category} · ${baht(patch.requested)}${req.reimburseType ? ` · ${req.reimburseType}` : ""}${patch.vendor ? ` · ${patch.vendor}` : ""}`,
@@ -197,9 +223,12 @@ export async function createExpenseRequest(r: RequestRow, extra?: {
   }).select("id").single();
   const row = assertDbData(data, error, "Could not save expense request");
   if (extra && row.id !== undefined) {
-    await db.from("expense_requests").update({
-      ref: extra.ref ?? null, requester: extra.requester ?? null, vendor: extra.vendor ?? null,
-      reimburse_type: extra.reimburseType ?? null, vat: extra.vat ?? 0, wht: extra.wht ?? 0,
-    }).eq("id", row.id);
+    await softColumnUpdate(
+      db.from("expense_requests").update({
+        ref: extra.ref ?? null, requester: extra.requester ?? null, vendor: extra.vendor ?? null,
+        reimburse_type: extra.reimburseType ?? null, vat: extra.vat ?? 0, wht: extra.wht ?? 0,
+      }).eq("id", row.id),
+      "Could not save expense request detail",
+    );
   }
 }

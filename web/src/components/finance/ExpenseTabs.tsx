@@ -4,6 +4,7 @@
 // own "Expenses" page so day-to-day spending is reachable without Finance access.
 
 import { toastError } from "@/lib/toast";
+import { authHeaders } from "@/lib/supabase";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
 import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
@@ -148,7 +149,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     getAppSetting("budget_sheet_url").then(async (url) => {
       if (!url) return;
       try {
-        const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url)}`);
+        const res = await fetch(`/api/budget-sheet?url=${encodeURIComponent(url)}`, { headers: await authHeaders() });
         const j = await res.json();
         if (!alive || !res.ok || !Array.isArray(j.rows)) return;
         const map = new Map<string, Set<string>>();
