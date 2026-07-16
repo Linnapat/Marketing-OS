@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   if (isApiAuthError(guard)) return guard.error;
 
   // Resolve the ledger's brand labels against the brands configured in Settings.
-  const brandId = makeBrandResolver(await loadBrandConfig());
+  const brandId = makeBrandResolver(await loadBrandConfig(req.headers.get("authorization")));
 
   const url = req.nextUrl.searchParams.get("url") ?? "";
   const target = csvUrl(url);
