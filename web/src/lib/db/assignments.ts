@@ -18,13 +18,25 @@ async function kolTeam(): Promise<TeamCfg | null> {
   return teams.find((t) => /kol|creator/i.test(t.name)) ?? null;
 }
 
+function activeMemberForToken(token: string, members: Member[]): Member | null {
+  const t = token.trim().toLowerCase();
+  if (!t) return null;
+  return members
+    .filter((m) => (m.status || "").toLowerCase() === "active")
+    .find((m) => m.email.toLowerCase() === t || m.name.toLowerCase() === t) ?? null;
+}
+
 /** Owner for a new KOL: the KOL team lead, else its first member, else Unassigned. */
 export async function resolveKolOwner(): Promise<string> {
-  const team = await kolTeam();
+  const [team, members] = await Promise.all([kolTeam(), fetchMembers()]);
   if (!team) return UNASSIGNED;
-  const lead = (team.lead || "").trim();
-  if (lead) return lead;
-  return team.members[0]?.trim() || UNASSIGNED;
+  const lead = activeMemberForToken(team.lead || "", members);
+  if (lead) return lead.name;
+  for (const token of team.members ?? []) {
+    const member = activeMemberForToken(token, members);
+    if (member) return member.name;
+  }
+  return UNASSIGNED;
 }
 
 /** Match an approval-chain role label (e.g. "CMO", "Marketing Manager / BGL") to a

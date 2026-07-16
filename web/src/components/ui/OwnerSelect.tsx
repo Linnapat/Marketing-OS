@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Member } from "@/lib/db/settings";
-import { fetchMembers } from "@/lib/db/settings";
+import { fetchJsonSetting, fetchMembers } from "@/lib/db/settings";
+import { TEAMS_DATA } from "@/lib/data/settings";
 
 // One owner picker for the whole app. Pulls the Team Member master, shows only
 // active members as "Name — Role", and can be scoped to a functional team so a
@@ -22,9 +23,47 @@ export function memberTeam(role: string): OwnerTeam {
 }
 
 const isActive = (m: Member) => (m.status || "").toLowerCase() === "active";
+type TeamCfg = { icon: string; name: string; lead: string; scope: string; members: string[] };
+
+function memberToken(m: Member): string {
+  return (m.email || m.name).toLowerCase();
+}
+
+function memberMatchesToken(m: Member, token: string): boolean {
+  const t = token.toLowerCase().trim();
+  return memberToken(m) === t || m.name.toLowerCase() === t;
+}
+
+function teamPattern(team: OwnerTeam): RegExp | null {
+  if (team === "Creative") return /creative|agency|external/i;
+  if (team === "KOL") return /kol|creator|influ/i;
+  if (team === "Ads") return /ads|performance|media|paid/i;
+  if (team === "CRM") return /crm|line|loyalty/i;
+  if (team === "Planner") return /marketing|planner|campaign|operation|co-?ordination|coordination|bgl/i;
+  return null;
+}
+
+function teamMembers(team: OwnerTeam, members: Member[], teams: TeamCfg[]): Member[] {
+  const pattern = teamPattern(team);
+  if (team === "all" || !pattern) return [];
+  const cfg = teams.find((t) => pattern.test(`${t.name} ${t.scope}`));
+  if (!cfg) return [];
+  const tokens = [cfg.lead, ...(cfg.members ?? [])].filter(Boolean);
+  const seen = new Set<string>();
+  return tokens
+    .map((token) => members.find((m) => memberMatchesToken(m, token)))
+    .filter((m): m is Member => !!m && isActive(m))
+    .filter((m) => {
+      const key = memberToken(m);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
 
 // A tiny module-level cache so every dropdown on a page doesn't refetch.
 let _cache: Member[] | null = null;
+let _teamCache: TeamCfg[] | null = null;
 
 export function OwnerSelect({
   value, onChange, team = "all", roleMatch, placeholder = "Select owner", disabled, invalid, className,
@@ -40,17 +79,26 @@ export function OwnerSelect({
   className?: string;
 }) {
   const [members, setMembers] = useState<Member[]>(_cache ?? []);
+  const [teams, setTeams] = useState<TeamCfg[]>(_teamCache ?? []);
 
   useEffect(() => {
-    if (_cache) { setMembers(_cache); return; }
+    if (_cache && _teamCache) { setMembers(_cache); setTeams(_teamCache); return; }
     let alive = true;
-    fetchMembers().then((m) => { _cache = m; if (alive) setMembers(m); }).catch(() => {});
+    Promise.all([
+      _cache ? Promise.resolve(_cache) : fetchMembers(),
+      _teamCache ? Promise.resolve(_teamCache) : fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => t ?? (TEAMS_DATA as TeamCfg[])),
+    ]).then(([m, t]) => {
+      _cache = m;
+      _teamCache = t;
+      if (alive) { setMembers(m); setTeams(t); }
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const active = members.filter(isActive);
-  const scoped = active
-    .filter((m) => team === "all" || memberTeam(m.role) === team)
+  const configured = teamMembers(team, active, teams);
+  const fallback = active.filter((m) => team === "all" || memberTeam(m.role) === team);
+  const scoped = (configured.length ? configured : fallback)
     .filter((m) => !roleMatch || roleMatch.test(m.role));
   // Never hide a value that's already set even if it's out of the current scope.
   const list = value && !scoped.some((m) => m.name === value)
@@ -76,13 +124,17 @@ export function OwnerSelect({
 export function useDefaultOwner(team: OwnerTeam): string {
   const [name, setName] = useState("");
   useEffect(() => {
-    const pick = (ms: Member[]) => {
+    const pick = (ms: Member[], ts: TeamCfg[]) => {
       const active = ms.filter(isActive);
-      const m = active.find((x) => memberTeam(x.role) === team) ?? active[0];
+      const configured = teamMembers(team, active, ts);
+      const m = configured[0] ?? active.find((x) => memberTeam(x.role) === team) ?? active[0];
       if (m) setName(m.name);
     };
-    if (_cache) pick(_cache);
-    else fetchMembers().then((m) => { _cache = m; pick(m); }).catch(() => {});
+    if (_cache && _teamCache) pick(_cache, _teamCache);
+    else Promise.all([
+      _cache ? Promise.resolve(_cache) : fetchMembers(),
+      _teamCache ? Promise.resolve(_teamCache) : fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => t ?? (TEAMS_DATA as TeamCfg[])),
+    ]).then(([m, t]) => { _cache = m; _teamCache = t; pick(m, t); }).catch(() => {});
   }, [team]);
   return name;
 }

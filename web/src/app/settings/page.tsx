@@ -91,6 +91,119 @@ function BranchEditor({ branches, editable, placeholder = "branch", onChange }: 
   );
 }
 
+function memberForToken(token: string, users: Member[]): Member | undefined {
+  const t = token.trim().toLowerCase();
+  if (!t) return undefined;
+  return users.find((u) => u.email.toLowerCase() === t || u.name.toLowerCase() === t);
+}
+
+function memberTokenLabel(token: string, users: Member[]): string {
+  const m = memberForToken(token, users);
+  return m ? m.name : token;
+}
+
+function normalizeMemberToken(token: string, users: Member[]): string {
+  return memberForToken(token, users)?.email ?? token.trim();
+}
+
+function dedupeTokens(tokens: string[], users: Member[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of tokens) {
+    const token = normalizeMemberToken(raw, users);
+    const key = token.toLowerCase();
+    if (!token || seen.has(key)) continue;
+    seen.add(key);
+    out.push(token);
+  }
+  return out;
+}
+
+function TeamLeadSelect({
+  value,
+  users,
+  editable,
+  onChange,
+}: {
+  value: string;
+  users: Member[];
+  editable: boolean;
+  onChange: (next: string) => void;
+}) {
+  if (!editable) return <span className="text-[11.5px] text-faint">Lead · {memberTokenLabel(value, users) || "—"}</span>;
+  const current = memberForToken(value, users);
+  const currentValue = current?.email ?? value;
+  return (
+    <select
+      value={currentValue}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-[150px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none"
+    >
+      <option value="">No lead</option>
+      {value && !current && <option value={value}>{value}</option>}
+      {users.map((u) => (
+        <option key={u.email} value={u.email}>{u.name} — {u.role}</option>
+      ))}
+    </select>
+  );
+}
+
+function TeamMembersEditor({
+  members,
+  users,
+  editable,
+  onChange,
+}: {
+  members: string[];
+  users: Member[];
+  editable: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const selected = dedupeTokens(members, users);
+  if (!editable) {
+    return (
+      <div className="flex flex-wrap gap-[6px]">
+        {selected.map((token) => {
+          const m = memberForToken(token, users);
+          return (
+            <span key={token} className="text-[11px] font-semibold text-muted bg-ivory border border-line3 rounded-pill px-[9px] py-[3px]">
+              {m?.name ?? token}{m && m.status !== "Active" ? ` · ${m.status}` : ""}
+            </span>
+          );
+        })}
+        {!selected.length && <span className="text-[11px] text-faint">—</span>}
+      </div>
+    );
+  }
+  const selectedKeys = new Set(selected.map((token) => token.toLowerCase()));
+  const available = users.filter((u) => !selectedKeys.has(u.email.toLowerCase()) && !selectedKeys.has(u.name.toLowerCase()));
+  return (
+    <div className="flex flex-wrap items-center gap-[6px]">
+      {selected.map((token) => {
+        const m = memberForToken(token, users);
+        return (
+          <span key={token} className="flex items-center gap-1 text-[11px] font-semibold text-muted bg-ivory border border-line3 rounded-pill px-[9px] py-[3px]">
+            {m?.name ?? token}
+            <button onClick={() => onChange(selected.filter((x) => x !== token))} className="text-faint hover:text-status-red font-bold">×</button>
+          </span>
+        );
+      })}
+      <select
+        value=""
+        onChange={(e) => {
+          const email = e.target.value;
+          if (!email) return;
+          onChange([...selected, email]);
+        }}
+        className="text-[11px] min-w-[128px] px-[8px] py-[4px] rounded-pill border border-line2 bg-white outline-none"
+      >
+        <option value="">+ member</option>
+        {available.map((u) => <option key={u.email} value={u.email}>{u.name} — {u.role}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function BrandScopeEditor({ value, onChange, brands }: { value: string; onChange: (next: string) => void; brands: BrandCfg[] }) {
   const normalized = normalizeScopeText(value);
   const selectedBrands = splitBrandScope(normalized);
@@ -403,13 +516,32 @@ export default function SettingsPage() {
       .catch(reportSaveError("บันทึก Campaign types"));
   };
 
+  // Team members (invitable) — loaded from Supabase when configured. Teams below
+  // reference these members by email when possible, so edits in Users & Roles
+  // flow through to team labels and assignment dropdowns.
+  const [users, setUsers] = useState(() => USERS_DATA.map((u) => ({ ...u })));
+  useEffect(() => {
+    let alive = true;
+    fetchMembers().then((m) => { if (alive) setUsers(m); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   // Editable Teams (JSON blob in org_settings).
   type TeamCfg = typeof TEAMS_DATA[number];
   const [teams, setTeams] = useState<TeamCfg[]>(() => TEAMS_DATA.map((t) => ({ ...t, members: [...t.members] })));
   const [teamsEdit, setTeamsEdit] = useState(false);
   const [teamsDirty, setTeamsDirty] = useState(false);
   const editTeam = (i: number, patch: Partial<TeamCfg>) => { setTeams((ts) => ts.map((t, j) => j === i ? { ...t, ...patch } : t)); setTeamsDirty(true); };
-  const persistTeams = () => { saveJsonSetting("teams_config", "Teams", teams).then(() => { setTeamsEdit(false); setTeamsDirty(false); }).catch(reportSaveError("บันทึก Teams")); };
+  const persistTeams = () => {
+    const normalized = teams.map((t) => ({
+      ...t,
+      lead: normalizeMemberToken(t.lead, users),
+      members: dedupeTokens(t.members, users),
+    }));
+    saveJsonSetting("teams_config", "Teams", normalized)
+      .then(() => { setTeams(normalized); setTeamsEdit(false); setTeamsDirty(false); })
+      .catch(reportSaveError("บันทึก Teams"));
+  };
 
   // Editable Workflow Status per module (JSON blob in org_settings).
   const [statusSets, setStatusSets] = useState<Record<WfModule, WfStatus[]>>(() =>
@@ -488,13 +620,6 @@ export default function SettingsPage() {
       setBudgetYear(year);
       setBrandLiveStats(next);
     }).catch(() => { if (alive) setBrandLiveStats({}); });
-    return () => { alive = false; };
-  }, []);
-  // Team members (invitable) — loaded from Supabase when configured.
-  const [users, setUsers] = useState(() => USERS_DATA.map((u) => ({ ...u })));
-  useEffect(() => {
-    let alive = true;
-    fetchMembers().then((m) => { if (alive) setUsers(m); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -723,15 +848,13 @@ export default function SettingsPage() {
                     {teamsEdit
                       ? <input value={t.name} onChange={(e) => editTeam(i, { name: e.target.value })} className="flex-1 text-[14.5px] font-bold px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
                       : <div className="text-[14.5px] font-bold flex-1">{t.name}</div>}
-                    {teamsEdit
-                      ? <input value={t.lead} placeholder="Lead" onChange={(e) => editTeam(i, { lead: e.target.value })} className="w-[110px] text-[11.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
-                      : <span className="text-[11.5px] text-faint">Lead · {t.lead || "—"}</span>}
+                    <TeamLeadSelect value={t.lead} users={users} editable={teamsEdit} onChange={(lead) => editTeam(i, { lead })} />
                     {teamsEdit && <button onClick={() => { setTeams((ts) => ts.filter((_, j) => j !== i)); setTeamsDirty(true); }} className="text-[13px] text-status-red font-bold">✕</button>}
                   </div>
                   {teamsEdit
                     ? <input value={t.scope} placeholder="Scope / responsibilities" onChange={(e) => editTeam(i, { scope: e.target.value })} className="w-full text-[12px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none mb-3" />
                     : <div className="text-[12px] text-muted mb-3">{t.scope}</div>}
-                  <BranchEditor branches={t.members} editable={teamsEdit} placeholder="member" onChange={(members) => editTeam(i, { members })} />
+                  <TeamMembersEditor members={t.members} users={users} editable={teamsEdit} onChange={(members) => editTeam(i, { members })} />
                 </div>
               ))}
             </div>
