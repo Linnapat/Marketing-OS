@@ -21,6 +21,11 @@
 alter table agency_tasks add column if not exists agency_email text;
 
 -- ── 2. Auth role hook: members row → app_role claim ────────────────────
+-- ⚠️ SUPERSEDED — this copy is kept only so a fresh project can replay the files
+--    in order. It defaults to 'staff' (fail-OPEN: a signed-in non-member would get
+--    full staff access) and does not stamp `member_role`. security_p7.sql holds the
+--    current definition and MUST be run after this file. Never run this file alone
+--    to "fix auth" — it silently downgrades production.
 create or replace function public.custom_access_token_hook(event jsonb)
 returns jsonb language plpgsql stable as $$
 declare

@@ -65,6 +65,9 @@ $$;
 
 -- Keep the hook's own default fail-closed too, so a member removed from the
 -- table can't ride an old 'staff' default.
+-- ⚠️ SUPERSEDED — this copy is fail-closed but does NOT stamp `member_role`, which
+--    the Finance approval rules need. security_p7.sql holds the current definition
+--    and MUST be run after this file. Running this one alone silently drops the claim.
 create or replace function public.custom_access_token_hook(event jsonb)
 returns jsonb language plpgsql stable set search_path = public as $$
 declare
