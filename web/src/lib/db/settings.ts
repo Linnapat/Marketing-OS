@@ -54,7 +54,10 @@ function announceMembersUpdated() {
 export async function createMember(m: Member): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { error } = await db.from("members").upsert({
+  // Explicit INSERT (not upsert) so it maps to the admin-only INSERT policy on
+  // members — upsert would also be checked against that policy on every write,
+  // breaking a staff member's own-profile update. See supabase/security_p5.sql.
+  const { error } = await db.from("members").insert({
     email: m.email, name: m.name, role: m.role, access: m.access,
     brand_access: m.brandAccess, status: m.status, color: m.color,
   });
@@ -69,10 +72,22 @@ export async function updateMember(m: Member, origEmail?: string): Promise<void>
   const db = supabase();
   if (!db) return;
   if (origEmail && origEmail !== m.email) {
+    // Email is the PK — replace the row (admin-only path).
     const { error } = await db.from("members").delete().eq("email", origEmail);
     assertDbOk(error, "Could not replace member email");
+    await createMember(m);
+    return;
   }
-  await createMember(m);
+  // Pure UPDATE (not upsert) so it works under the members RLS: an admin may
+  // update anyone; a staff member may update only their own row, and a trigger
+  // freezes role/access/brand/status for non-admins (see supabase/security_p5.sql).
+  const { error } = await db.from("members").update({
+    name: m.name, role: m.role, access: m.access,
+    brand_access: m.brandAccess, status: m.status, color: m.color,
+  }).eq("email", m.email);
+  assertDbOk(error, "Could not update member");
+  logAudit(`บันทึกสมาชิก ${m.name}`, "Settings", { after: `${m.role} · ${m.access} · ${m.status}`, meta: { email: m.email } });
+  announceMembersUpdated();
 }
 
 export async function deleteMember(email: string): Promise<void> {
