@@ -85,8 +85,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => { await supabase()?.auth.signOut(); };
 
-  // Auth off / demo → full access. Signed in → role from their members row.
-  const role: Role = !AUTH_REQUIRED || !user ? "CMO" : memberRole(member);
+  // Auth off / demo → full access, a deliberate config choice (AUTH_REQUIRED is
+  // false). Auth required but no confirmed user yet (still loading, signed out,
+  // or session resolution failed) must NEVER fall back to the highest-privilege
+  // role — that would hand out CMO access to an unauthenticated caller. Fall
+  // back to the least-privileged role instead; AppShell's AuthGate already
+  // blocks rendering entirely in this state, but the auth layer itself should
+  // not hand out admin access just because identity hasn't been confirmed.
+  const role: Role = !AUTH_REQUIRED ? "CMO" : user ? memberRole(member) : "Content Creator";
 
   return (
     <Ctx.Provider value={{ user, member, role, loading, signOut }}>
@@ -97,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthCtx {
   const ctx = useContext(Ctx);
-  if (!ctx) return { user: null, member: null, role: "CMO", loading: false, signOut: async () => {} };
+  // Called outside AuthProvider (misuse/bug) — fail safe with the
+  // least-privileged role rather than handing out CMO access.
+  if (!ctx) return { user: null, member: null, role: "Content Creator", loading: false, signOut: async () => {} };
   return ctx;
 }
