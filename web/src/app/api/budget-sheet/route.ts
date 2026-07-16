@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { csvUrlFromShareLink as csvUrl, parseCsv } from "@/lib/googleSheet";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
+import { loadBrandConfig, makeBrandResolver } from "@/lib/serverBrands";
 
 export const dynamic = "force-dynamic";
 
@@ -20,26 +21,17 @@ function normMonth(s: string): string {
   return t;
 }
 
-/** Names used by the consolidated Finance sheet → app brand ids. The source
- * ledger uses trading/source names rather than the labels shown in the app. */
-function brandId(value: string): string | undefined {
-  const key = value.replace(/\s+/g, " ").trim().toLowerCase();
-  const aliases: Record<string, string> = {
-    "teppen": "teppen",
-    "omd by teppen": "omakase",
-    "omakase don": "omakase",
-    "omakase": "omakase",
-    "mainichi sushi": "mainichi",
-    "mainichi": "mainichi",
-    "takao": "touka",
-    "touka": "touka",
-  };
-  return aliases[key];
-}
+// Brand resolution lives in lib/serverBrands: the ledger's source names are matched
+// against the brands configured in Settings, so a brand the team adds resolves
+// without a code change. (The old hardcoded table mapped "takao" → "touka" —
+// posting one brand's budget onto a different brand.)
 
 export async function GET(req: NextRequest) {
   const guard = await requireApiUser(req);
   if (isApiAuthError(guard)) return guard.error;
+
+  // Resolve the ledger's brand labels against the brands configured in Settings.
+  const brandId = makeBrandResolver(await loadBrandConfig());
 
   const url = req.nextUrl.searchParams.get("url") ?? "";
   const target = csvUrl(url);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { spreadsheetId, csvUrl, parseCsv } from "@/lib/googleSheet";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
+import { loadBrandConfig, makeBrandResolver } from "@/lib/serverBrands";
 
 export const dynamic = "force-dynamic";
 
@@ -27,16 +28,14 @@ const percent = (value: string | undefined) => {
   return Number(raw.replace("%", "").replace(/[^\d.-]/g, "")) || 0;
 };
 
-function brandId(value: string): "teppen" | "omakase" | "mainichi" | "touka" | null {
-  const key = clean(value).toLowerCase();
-  if (/teppen/.test(key)) return "teppen";
-  if (/omd|omakase/.test(key)) return "omakase";
-  if (/mainichi/.test(key)) return "mainichi";
-  if (/touka|takao/.test(key)) return "touka";
-  return null;
-}
+// Brand labels are resolved against the brands configured in Settings (see
+// lib/serverBrands). The previous hardcoded matcher treated `/touka|takao/` as one
+// brand, so Takao's numbers were reported under Touka — two different brands — and
+// a brand the team added was unmatchable. `resolve` is threaded through the
+// parsers so they stay pure.
+type ResolveBrand = (value: string) => string | undefined;
 
-function parseSummary(grid: string[][]) {
+function parseSummary(grid: string[][], brandId: ResolveBrand) {
   const summaryRows: {
     brand: string;
     brandId: string | null;
@@ -65,7 +64,7 @@ function parseSummary(grid: string[][]) {
       if (!brand) break;
       summaryRows.push({
         brand,
-        brandId: brandId(brand),
+        brandId: brandId(brand) ?? null,
         actualReach: number(r[1]),
         goalPct: percent(r[2]),
         shareRate: percent(r[3]),
@@ -84,7 +83,7 @@ function parseSummary(grid: string[][]) {
       if (!/^\d{1,2}$/.test(month)) break;
       monthlyRows.push({
         brand: possibleBrand,
-        brandId: brandId(possibleBrand),
+        brandId: brandId(possibleBrand) ?? null,
         month: month.padStart(2, "0"),
         kpiReach: number(r[1]),
         actualReach: number(r[2]),
@@ -99,7 +98,7 @@ function parseSummary(grid: string[][]) {
   return { summaryRows, monthlyRows };
 }
 
-function parseMeta(grid: string[][]) {
+function parseMeta(grid: string[][], brandId: ResolveBrand) {
   const header = (grid[0] ?? []).map((h) => clean(h).toLowerCase());
   const col = (...names: string[]) => header.findIndex((h) => names.includes(h));
   const i = {
@@ -132,7 +131,7 @@ function parseMeta(grid: string[][]) {
       source: "Meta" as const,
       reportDate: clean(r[i.reportDate]),
       brand,
-      brandId: brandId(brand),
+      brandId: brandId(brand) ?? null,
       account: clean(r[i.account]),
       title: clean(r[i.description]).slice(0, 120),
       publishTime: clean(r[i.publishTime]),
@@ -154,7 +153,7 @@ function parseMeta(grid: string[][]) {
   }).filter((r) => r.brand && (r.views || r.reach || r.link));
 }
 
-function parseTikTok(grid: string[][]) {
+function parseTikTok(grid: string[][], brandId: ResolveBrand) {
   const header = (grid[0] ?? []).map((h) => clean(h).toLowerCase());
   const col = (...names: string[]) => header.findIndex((h) => names.includes(h));
   const i = {
@@ -183,7 +182,7 @@ function parseTikTok(grid: string[][]) {
       source: "TikTok" as const,
       reportDate: clean(r[i.reportDate]),
       brand,
-      brandId: brandId(brand),
+      brandId: brandId(brand) ?? null,
       account: "TikTok",
       title: clean(r[i.title]).slice(0, 120),
       publishTime: clean(r[i.publishTime]),
@@ -209,6 +208,9 @@ export async function GET(req: NextRequest) {
   const guard = await requireApiUser(req);
   if (isApiAuthError(guard)) return guard.error;
 
+  // Resolve sheet brand labels against the brands configured in Settings.
+  const brandId = makeBrandResolver(await loadBrandConfig());
+
   const sourceUrl = req.nextUrl.searchParams.get("url")?.trim() || DEFAULT_SHEET_URL;
   const id = spreadsheetId(sourceUrl);
   if (!id) return NextResponse.json({ error: "Invalid Google Sheets URL" }, { status: 400 });
@@ -219,9 +221,9 @@ export async function GET(req: NextRequest) {
       fetchGrid(id, GIDS.meta),
       fetchGrid(id, GIDS.tiktok),
     ]);
-    const { summaryRows, monthlyRows } = parseSummary(summaryGrid);
-    const metaPosts = parseMeta(metaGrid);
-    const tiktokPosts = parseTikTok(tiktokGrid);
+    const { summaryRows, monthlyRows } = parseSummary(summaryGrid, brandId);
+    const metaPosts = parseMeta(metaGrid, brandId);
+    const tiktokPosts = parseTikTok(tiktokGrid, brandId);
     return NextResponse.json({
       sourceUrl,
       generatedAt: new Date().toISOString(),
