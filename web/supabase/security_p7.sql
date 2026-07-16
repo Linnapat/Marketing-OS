@@ -4,10 +4,14 @@
 -- Applied to production 2026-07-16 and verified. Kept here as source of truth.
 --
 -- ⚠️ THIS FILE HOLDS THE CURRENT custom_access_token_hook DEFINITION.
---    security_p3.sql and security_p5.sql contain OLDER copies of the same
---    function that do NOT stamp member_role. Re-running either of those would
---    silently drop the claim and break anything that depends on it. If you need
---    to re-apply the hook, run THIS file (or re-run p3/p5 and then this one).
+--    security_p1.sql and security_p3.sql contain OLDER copies of the same
+--    function, kept only so a fresh project can replay the files in order:
+--      · security_p1.sql defaults to 'staff' — fail-OPEN, a signed-in non-member
+--        would get full staff access — and stamps no member_role.
+--      · security_p3.sql is fail-closed but still stamps no member_role.
+--    Running either of them ALONE silently downgrades production auth. If you need
+--    to re-apply the hook, run THIS file (or replay p1 → p3 → p7 in order).
+--    (auth_setup.sql held a third, fail-open copy and was removed.)
 --
 -- WHY: RLS/RPCs only knew app_role (admin|staff|agency), which can't express the
 -- real approval rules — "only CMO and Marketing Manager / BGL may approve an
