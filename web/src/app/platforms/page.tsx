@@ -62,6 +62,9 @@ function budgetAlert(plan: number, actual: number): { label: string; tone: Tone 
 const tableHeaders = [
   "Budget", "Spent actual", "%", "Reach goal", "Actual", "%", "MKT visit goal", "Actual", "%", "CV%", "CPR", "CPC", "Alert budget", "Status",
 ];
+const tableColWidths = [410, 96, 124, 62, 132, 108, 62, 148, 108, 62, 78, 78, 78, 128, 126];
+const tableMinWidth = tableColWidths.reduce((sum, width) => sum + width, 0);
+const cleanAdLabel = (label: string) => label.replace(/^Planned\s+Ads\s*—\s*/i, "").trim();
 
 const visitGoal = (r: CampaignResultRow) => Math.round((r.target || 0) * ((r.cvTargetPct || 0) / 100));
 const percentOf = (actual: number, goal: number) => goal > 0 ? pct((actual / goal) * 100) : "—";
@@ -531,11 +534,14 @@ export default function PlatformsPage() {
             </div>
           ) : (
             <div className="mt-3 overflow-x-auto border border-line rounded-cardLg bg-surface">
-              <table className="w-full text-[12px] whitespace-nowrap border-collapse">
+              <table className="w-full table-fixed text-[12px] whitespace-nowrap border-collapse" style={{ minWidth: tableMinWidth }}>
+                <PerformanceColGroup />
                 <thead>
                   <tr className="text-faint">
                     {[dimLabel, ...tableHeaders].map((h, i) => (
-                      <th key={i} className={`font-bold px-[10px] py-2 border-b border-line bg-ivory ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+                      <th key={i} className={`font-bold px-[10px] py-2 border-b border-line bg-ivory overflow-hidden ${i === 0 ? "text-left" : "text-right"}`}>
+                        <span className="block truncate">{h}</span>
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -552,16 +558,16 @@ export default function PlatformsPage() {
                           className="border-b border-line4 last:border-0 cursor-pointer hover:bg-ivory"
                           onClick={() => setOpen((o) => ({ ...o, [g.key]: !o[g.key] }))}
                         >
-                          <td className="px-[10px] py-[8px] text-left">
-                            <span className="inline-flex items-center gap-2">
+                          <td className="px-[10px] py-[8px] text-left overflow-hidden">
+                            <span className="flex min-w-0 items-center gap-2">
                               {isOpen ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
                               {dim === "platform"
                                 ? <Badge code={platformMeta(g.key).code} color={platformMeta(g.key).color} />
                                 : <BrandDot brand={brandOf[g.key] ?? "teppen"} size={9} />}
-                              <span className="min-w-0">
-                                <span className="block font-bold text-ink max-w-[220px] truncate">{g.label}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block font-bold text-ink truncate">{g.label}</span>
                                 {groupDim === "campaign" && (
-                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px]">{periodLabel(datesOf[g.key])}</span>
+                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px] truncate">{periodLabel(datesOf[g.key])}</span>
                                 )}
                               </span>
                             </span>
@@ -671,6 +677,16 @@ function FragmentRow({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PerformanceColGroup() {
+  return (
+    <colgroup>
+      {tableColWidths.map((width, index) => (
+        <col key={index} style={{ width: `${width}px` }} />
+      ))}
+    </colgroup>
+  );
+}
+
 /** Editable ad-level drill-down under a group. Only actuals are editable.
  *  With `onSpreadTotal` (monthly-entry mode) a Grand Total row is appended —
  *  typing a total there spreads it across every row at once. */
@@ -693,11 +709,14 @@ function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatc
   const tVisitGoal = sum(visitGoal);
   return (
     <div className="bg-white overflow-x-auto">
-      <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
+      <table className="w-full table-fixed text-[11.5px] whitespace-nowrap border-collapse" style={{ minWidth: tableMinWidth }}>
+        <PerformanceColGroup />
         <thead>
           <tr className="text-faint bg-[#FBFAF6]">
             {[showCampaign ? "Campaign / Ad" : "Ad", ...tableHeaders].map((h, i) => (
-              <th key={i} className={`font-bold px-[9px] py-[6px] border border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+              <th key={i} className={`font-bold px-[9px] py-[6px] border border-line4 overflow-hidden ${i === 0 ? "text-left" : "text-right"}`}>
+                <span className="block truncate">{h}</span>
+              </th>
             ))}
           </tr>
         </thead>
@@ -707,17 +726,18 @@ function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatc
             const alert = budgetAlert(r.budget, r.budgetActual);
             const vGoal = visitGoal(r);
             const vActual = r.marketingVisits || 0;
+            const adLabel = cleanAdLabel(r.ad || "—");
             return (
               <tr key={r.id} className="hover:bg-[#FBFAF6]">
-                <td className="px-[9px] py-[6px] text-left border border-line4">
+                <td className="px-[9px] py-[6px] text-left border border-line4 overflow-hidden">
                   {showCampaign ? (
-                    <span className="block">
-                      <span className="block font-bold text-ink max-w-[220px] truncate">{nameOf[r.campaignId] ?? r.campaignId}</span>
-                      <span className="block text-[10px] font-semibold text-faint mt-[1px]">{periodLabel(datesOf[r.campaignId])}</span>
-                      <span className="block text-[10.5px] text-muted mt-[2px] max-w-[220px] truncate">{r.ad || "—"}</span>
+                    <span className="block min-w-0">
+                      <span className="block font-bold text-ink truncate">{nameOf[r.campaignId] ?? r.campaignId}</span>
+                      <span className="block text-[10px] font-semibold text-faint mt-[1px] truncate">{periodLabel(datesOf[r.campaignId])}</span>
+                      <span className="block text-[10.5px] text-muted mt-[2px] truncate">{adLabel}</span>
                     </span>
                   ) : (
-                    <span className="font-bold text-ink max-w-[240px] truncate block">{r.ad || "—"}</span>
+                    <span className="font-bold text-ink truncate block">{adLabel}</span>
                   )}
                 </td>
                 <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{baht(r.budget, { compact: true })}</td>
