@@ -8,7 +8,6 @@
 import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { ChevronDown, ChevronRight, Save, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -23,7 +22,7 @@ import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
   CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformMeta, cpr,
-  deriveResultRow, fmtUpdated, mergeBudgetAllocationRows,
+  deriveResultRow, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchCampaigns } from "@/lib/db/campaigns";
