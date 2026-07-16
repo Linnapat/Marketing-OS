@@ -2,8 +2,7 @@
 
 // Platform Performance — cross-campaign result roll-up, viewable by Platform or by
 // Campaign. Updates actuals only; Save syncs the campaign's actual spend (budget
-// stays fixed at the campaign). Conversions can be entered per-ad in the drill-down
-// OR as a group total on the aggregate row (spread across the group's ads).
+// stays fixed at the campaign). Actual values are edited in an Excel-like grid.
 // Uses the shared PageHeader (per-module theme) and brand-visibility system.
 
 import { toastError } from "@/lib/toast";
@@ -700,11 +699,12 @@ function EditCell({ value, onChange }: { value: number; onChange: (v: number) =>
   return (
     <td className="px-[9px] py-[6px] text-right border border-line4">
       <input
-        type="number" min={0} inputMode="numeric"
-        value={value === 0 ? "" : value}
+        type="text"
+        inputMode="numeric"
+        value={value === 0 ? "" : num(value)}
         placeholder="0"
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
-        className="w-[72px] text-right bg-white outline-none rounded-[4px] px-[6px] py-[3px] border border-line2 text-ink focus:border-accent"
+        onChange={(e) => onChange(Number(e.target.value.replace(/[^\d.-]/g, "")) || 0)}
+        className="w-[72px] text-right bg-transparent outline-none px-0 py-[2px] text-ink placeholder:text-faint focus:bg-[#FFFBEF]"
       />
     </td>
   );
