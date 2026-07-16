@@ -9,7 +9,7 @@ import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, ExternalLink, Save, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Save, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -22,7 +22,7 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
-  CampaignResultRow, GroupDim, aggregateBy, platformMeta, cpr,
+  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformMeta, cpr,
   deriveResultRow, fmtUpdated, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
@@ -58,6 +58,42 @@ function budgetAlert(plan: number, actual: number): { label: string; tone: Tone 
   if (plan > 0 && actual / plan >= 0.9) return { label: "ใกล้เต็มงบ", tone: "gold" };
   return { label: "ในงบ", tone: "green" };
 }
+
+const tableHeaders = [
+  "Budget", "Spent actual", "%", "Reach goal", "Actual", "%", "MKT visit goal", "Actual", "%", "CV%", "CPR", "CPC", "Alert budget", "Status",
+];
+
+const visitGoal = (r: CampaignResultRow) => Math.round((r.target || 0) * ((r.cvTargetPct || 0) / 100));
+const percentOf = (actual: number, goal: number) => goal > 0 ? pct((actual / goal) * 100) : "—";
+const groupMetric = (rows: CampaignResultRow[]) => {
+  const sum = (f: (r: CampaignResultRow) => number) => rows.reduce((s, r) => s + f(r), 0);
+  const budget = sum((r) => r.budget || 0);
+  const spent = sum((r) => r.budgetActual || 0);
+  const reachGoal = sum((r) => r.target || 0);
+  const reachActual = sum((r) => r.reachActual || 0);
+  const mktGoal = sum(visitGoal);
+  const mktActual = sum((r) => r.marketingVisits || 0);
+  return {
+    budget, spent, reachGoal, reachActual, mktGoal, mktActual,
+    budgetPct: percentOf(spent, budget),
+    reachPct: percentOf(reachActual, reachGoal),
+    mktPct: percentOf(mktActual, mktGoal),
+    cv: reachActual > 0 && mktActual > 0 ? pct((mktActual / reachActual) * 100) : "—",
+    cpr: cpr(reachActual > 0 && spent > 0 ? spent / reachActual : null),
+    cpc: cpr(mktActual > 0 && spent > 0 ? spent / mktActual : null),
+  };
+};
+
+const dominantStatus = (rows: CampaignResultRow[]): ResultStatusKey => {
+  const counts = rows.reduce((acc, r) => {
+    const status = deriveResultRow(r).status;
+    acc[status] = (acc[status] ?? 0) + 1;
+    return acc;
+  }, {} as Record<ResultStatusKey, number>);
+  return (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] as ResultStatusKey) ?? "pending";
+};
+
+const periodLabel = (dates?: string) => dates ? `Period: ${dates}` : "Period: —";
 
 export default function PlatformsPage() {
   const { member } = useAuth();
@@ -209,6 +245,15 @@ export default function PlatformsPage() {
   const patchRow = (id: string, key: keyof CampaignResultRow, value: number) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
     setDirty((d) => new Set(d).add(id));
+  };
+  const patchRowStatus = (id: string, status: ResultStatusKey) => {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, statusOverride: status } : r)));
+    setDirty((d) => new Set(d).add(id));
+  };
+  const patchGroupStatus = (groupRows: CampaignResultRow[], status: ResultStatusKey) => {
+    const ids = new Set(groupRows.map((r) => r.id));
+    setRows((rs) => rs.map((r) => (ids.has(r.id) ? { ...r, statusOverride: status } : r)));
+    setDirty((d) => { const nd = new Set(d); ids.forEach((id) => nd.add(id)); return nd; });
   };
 
   // Grand-total entry (monthly mode): type the month's total once and spread it
@@ -477,7 +522,7 @@ export default function PlatformsPage() {
                   — หรือกรอกยอดรวมครั้งเดียวที่แถว Σ Grand Total ด้านล่าง ระบบกระจายให้ · เสร็จแล้วกด &quot;บันทึก&quot; ครั้งเดียวมุมขวาบน ({entryRows.length} ads)
                 </span>
               </div>
-              <AdEditor rows={entryRows} nameOf={nameOf} showCampaign onPatch={patchRow}
+              <AdEditor rows={entryRows} nameOf={nameOf} datesOf={datesOf} showCampaign onPatch={patchRow} onPatchStatus={patchRowStatus}
                 onSpreadTotal={(key, total) => spreadTotal(entryRows, key, total)} />
             </div>
           ) : groups.length === 0 ? (
@@ -489,7 +534,7 @@ export default function PlatformsPage() {
               <table className="w-full text-[12px] whitespace-nowrap border-collapse">
                 <thead>
                   <tr className="text-faint">
-                    {[dimLabel, "Unit", "Ads", "Budget plan", "Budget actual", "% Budget", "Target", "Actual", "CPR plan", "CPR actual", "Alert Budget"].map((h, i) => (
+                    {[dimLabel, ...tableHeaders].map((h, i) => (
                       <th key={i} className={`font-bold px-[10px] py-2 border-b border-line bg-ivory ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
                     ))}
                   </tr>
@@ -499,6 +544,8 @@ export default function PlatformsPage() {
                     const isOpen = !!open[g.key];
                     const alert = budgetAlert(g.budgetPlan, g.budgetActual);
                     const gRows = rowsByGroup[g.key] ?? [];
+                    const gm = groupMetric(gRows);
+                    const status = dominantStatus(gRows);
                     return (
                       <FragmentRow key={g.key}>
                         <tr
@@ -511,24 +558,35 @@ export default function PlatformsPage() {
                               {dim === "platform"
                                 ? <Badge code={platformMeta(g.key).code} color={platformMeta(g.key).color} />
                                 : <BrandDot brand={brandOf[g.key] ?? "teppen"} size={9} />}
-                              <span className="font-bold text-ink max-w-[220px] truncate">{g.label}</span>
+                              <span className="min-w-0">
+                                <span className="block font-bold text-ink max-w-[220px] truncate">{g.label}</span>
+                                {groupDim === "campaign" && (
+                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px]">{periodLabel(datesOf[g.key])}</span>
+                                )}
+                              </span>
                             </span>
                           </td>
-                          <td className="px-[10px] py-[8px] text-right text-muted">{g.unit}</td>
-                          <td className="px-[10px] py-[8px] text-right text-muted">{g.rows}</td>
-                          <td className="px-[10px] py-[8px] text-right text-muted">{baht(g.budgetPlan, { compact: true })}</td>
-                          <td className="px-[10px] py-[8px] text-right text-ink font-bold">{baht(g.budgetActual, { compact: true })}</td>
-                          <td className="px-[10px] py-[8px] text-right text-muted">{pct(g.budgetPct)}</td>
-                          <td className="px-[10px] py-[8px] text-right text-muted">{num(g.target)}</td>
-                          <td className="px-[10px] py-[8px] text-right text-ink font-bold">{num(g.actual)}</td>
-                          <td className="px-[10px] py-[8px] text-right text-muted">{cpr(g.cprPlan)}</td>
-                          <td className="px-[10px] py-[8px] text-right text-ink font-bold">{cpr(g.cprActual)}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{baht(gm.budget, { compact: true })}</td>
+                          <td className="px-[10px] py-[8px] text-right text-ink font-bold">{baht(gm.spent, { compact: true })}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{gm.budgetPct}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{num(gm.reachGoal)}</td>
+                          <td className="px-[10px] py-[8px] text-right text-ink font-bold">{num(gm.reachActual)}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{gm.reachPct}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{num(gm.mktGoal)}</td>
+                          <td className="px-[10px] py-[8px] text-right text-ink font-bold">{num(gm.mktActual)}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{gm.mktPct}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{gm.cv}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{gm.cpr}</td>
+                          <td className="px-[10px] py-[8px] text-right text-muted">{gm.cpc}</td>
                           <td className="px-[10px] py-[8px] text-right"><StatusBadge tone={alert.tone}>{alert.label}</StatusBadge></td>
+                          <td className="px-[10px] py-[8px] text-right" onClick={(e) => e.stopPropagation()}>
+                            <StatusSelect value={status} onChange={(next) => patchGroupStatus(gRows, next)} />
+                          </td>
                         </tr>
                         {isOpen && (
                           <tr>
-                            <td colSpan={11} className="bg-white p-0 border-b border-line4">
-                              <AdEditor rows={gRows} nameOf={nameOf} onPatch={patchRow} />
+                            <td colSpan={15} className="bg-white p-0 border-b border-line4">
+                              <AdEditor rows={gRows} nameOf={nameOf} datesOf={datesOf} onPatch={patchRow} onPatchStatus={patchRowStatus} />
                             </td>
                           </tr>
                         )}
@@ -539,13 +597,13 @@ export default function PlatformsPage() {
                 <tfoot>
                   <tr className="bg-ivory font-bold text-ink border-t border-line">
                     <td className="px-[10px] py-[9px] text-left">รวม (Total)</td>
-                    <td /><td className="px-[10px] py-[9px] text-right text-muted">{groups.reduce((s, g) => s + g.rows, 0)}</td>
                     <td className="px-[10px] py-[9px] text-right">{baht(footPlan, { compact: true })}</td>
                     <td className="px-[10px] py-[9px] text-right">{baht(footSpend, { compact: true })}</td>
                     <td className="px-[10px] py-[9px] text-right text-muted">{footPlan ? pct((footSpend / footPlan) * 100) : "—"}</td>
                     <td className="px-[10px] py-[9px] text-right text-muted">{num(footTarget)}</td>
                     <td className="px-[10px] py-[9px] text-right">{num(footActual)}</td>
-                    <td /><td /><td />
+                    <td className="px-[10px] py-[9px] text-right text-muted">{footTarget ? pct((footActual / footTarget) * 100) : "—"}</td>
+                    <td /><td /><td /><td /><td /><td /><td /><td />
                   </tr>
                 </tfoot>
               </table>
@@ -616,25 +674,29 @@ function FragmentRow({ children }: { children: React.ReactNode }) {
 /** Editable ad-level drill-down under a group. Only actuals are editable.
  *  With `onSpreadTotal` (monthly-entry mode) a Grand Total row is appended —
  *  typing a total there spreads it across every row at once. */
-function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }: {
+function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatchStatus, onSpreadTotal }: {
   rows: CampaignResultRow[];
   nameOf: Record<string, string>;
+  datesOf: Record<string, string>;
   // Campaign column only in the flat monthly-entry list; inside a campaign
   // group it's redundant, so it's hidden there.
   showCampaign?: boolean;
   onPatch: (id: string, key: keyof CampaignResultRow, value: number) => void;
+  onPatchStatus: (id: string, status: ResultStatusKey) => void;
   onSpreadTotal?: (key: "reachActual" | "budgetActual" | "conversions" | "marketingVisits", total: number) => void;
 }) {
   const sum = (f: (r: CampaignResultRow) => number) => rows.reduce((s, r) => s + f(r), 0);
   const tReach = sum((r) => r.reachActual || 0);
   const tBudgetAct = sum((r) => r.budgetActual || 0);
   const tVisit = sum((r) => r.marketingVisits || 0);
+  const tBudget = sum((r) => r.budget || 0);
+  const tVisitGoal = sum(visitGoal);
   return (
     <div className="bg-white overflow-x-auto">
       <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
         <thead>
           <tr className="text-faint bg-[#FBFAF6]">
-            {["Ad", ...(showCampaign ? ["Campaign"] : []), "Target", "Budget", "Budget actual", "Reach actual", "Marketing Visit", "CV%", "Cost/Visit", "CPR act", "Alert Budget", "Updated", ""].map((h, i) => (
+            {[showCampaign ? "Campaign / Ad" : "Ad", ...tableHeaders].map((h, i) => (
               <th key={i} className={`font-bold px-[9px] py-[6px] border border-line4 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
             ))}
           </tr>
@@ -643,29 +705,41 @@ function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }
           {rows.map((r) => {
             const d = deriveResultRow(r);
             const alert = budgetAlert(r.budget, r.budgetActual);
+            const vGoal = visitGoal(r);
+            const vActual = r.marketingVisits || 0;
             return (
               <tr key={r.id} className="hover:bg-[#FBFAF6]">
-                <td className="px-[9px] py-[6px] text-left font-bold text-ink border border-line4">{r.ad || "—"}</td>
-                {showCampaign && <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{nameOf[r.campaignId] ?? r.campaignId}</td>}
-                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{num(r.target)}</td>
+                <td className="px-[9px] py-[6px] text-left border border-line4">
+                  {showCampaign ? (
+                    <span className="block">
+                      <span className="block font-bold text-ink max-w-[220px] truncate">{nameOf[r.campaignId] ?? r.campaignId}</span>
+                      <span className="block text-[10px] font-semibold text-faint mt-[1px]">{periodLabel(datesOf[r.campaignId])}</span>
+                      <span className="block text-[10.5px] text-muted mt-[2px] max-w-[220px] truncate">{r.ad || "—"}</span>
+                    </span>
+                  ) : (
+                    <span className="font-bold text-ink max-w-[240px] truncate block">{r.ad || "—"}</span>
+                  )}
+                </td>
                 <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{baht(r.budget, { compact: true })}</td>
                 <EditCell value={r.budgetActual} onChange={(v) => onPatch(r.id, "budgetActual", v)} />
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{percentOf(r.budgetActual, r.budget)}</td>
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{num(r.target)}</td>
                 <EditCell value={r.reachActual} onChange={(v) => onPatch(r.id, "reachActual", v)} />
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{d.pctReach != null ? pct(d.pctReach * 100) : "—"}</td>
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{num(vGoal)}</td>
                 <EditCell value={r.marketingVisits || 0} onChange={(v) => onPatch(r.id, "marketingVisits", v)} />
+                <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{percentOf(vActual, vGoal)}</td>
                 {/* CV% (auto) = Marketing Visit ÷ Reach actual */}
                 <td className="px-[9px] py-[6px] text-right font-bold text-ink border border-line4">
                   {d.cvActual != null ? pct(d.cvActual * 100) : "—"}
                 </td>
-                {/* Cost per visit (auto) = actual spend ÷ marketing visits */}
-                <td className="px-[9px] py-[6px] text-right font-bold text-ink border border-line4">
-                  {cpr(r.marketingVisits && r.budgetActual ? r.budgetActual / r.marketingVisits : null)}
-                </td>
                 <td className="px-[9px] py-[6px] text-right text-ink font-bold border border-line4">{cpr(d.cprActual)}</td>
+                <td className="px-[9px] py-[6px] text-right font-bold text-ink border border-line4">
+                  {cpr(vActual && r.budgetActual ? r.budgetActual / vActual : null)}
+                </td>
                 <td className="px-[9px] py-[6px] text-right border border-line4"><StatusBadge tone={alert.tone}>{alert.label}</StatusBadge></td>
-                <td className="px-[9px] py-[6px] text-right text-[10.5px] text-faint border border-line4" title={r.updatedBy ? `โดย ${r.updatedBy}` : undefined}>{fmtUpdated(r.updatedAt)}</td>
                 <td className="px-[9px] py-[6px] text-right border border-line4">
-                  <Link href={`/campaigns/${r.campaignId}?tab=result`} aria-label="เปิดในแคมเปญ"
-                    className="text-faint hover:text-ink inline-flex"><ExternalLink size={13} /></Link>
+                  <StatusSelect value={deriveResultRow(r).status} onChange={(next) => onPatchStatus(r.id, next)} />
                 </td>
               </tr>
             );
@@ -674,24 +748,42 @@ function AdEditor({ rows, nameOf, showCampaign = false, onPatch, onSpreadTotal }
         {onSpreadTotal && rows.length > 0 && (
           <tfoot>
             <tr className="bg-[#FFFBEF] font-bold text-ink">
-              <td className="px-[9px] py-[8px] text-left border border-line4" colSpan={showCampaign ? 2 : 1}>
+              <td className="px-[9px] py-[8px] text-left border border-line4">
                 Σ Grand Total — กรอกยอดรวมทั้งเดือนที่นี่ ระบบกระจายลงราย ad ให้
               </td>
-              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{num(sum((r) => r.target || 0))}</td>
-              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{baht(sum((r) => r.budget || 0), { compact: true })}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{baht(tBudget, { compact: true })}</td>
               <EditCell value={tBudgetAct} onChange={(v) => onSpreadTotal("budgetActual", v)} />
+              <td className="px-[9px] py-[8px] text-right border border-line4">{percentOf(tBudgetAct, tBudget)}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{num(sum((r) => r.target || 0))}</td>
               <EditCell value={tReach} onChange={(v) => onSpreadTotal("reachActual", v)} />
+              <td className="px-[9px] py-[8px] text-right border border-line4">{percentOf(tReach, sum((r) => r.target || 0))}</td>
+              <td className="px-[9px] py-[8px] text-right text-muted border border-line4">{num(tVisitGoal)}</td>
               <EditCell value={tVisit} onChange={(v) => onSpreadTotal("marketingVisits", v)} />
-              {/* Derived totals — same formulas as the per-ad columns */}
+              <td className="px-[9px] py-[8px] text-right border border-line4">{percentOf(tVisit, tVisitGoal)}</td>
               <td className="px-[9px] py-[8px] text-right border border-line4">{tReach > 0 && tVisit > 0 ? pct((tVisit / tReach) * 100) : "—"}</td>
-              <td className="px-[9px] py-[8px] text-right border border-line4">{cpr(tVisit > 0 && tBudgetAct > 0 ? tBudgetAct / tVisit : null)}</td>
               <td className="px-[9px] py-[8px] text-right border border-line4">{cpr(tReach > 0 && tBudgetAct > 0 ? tBudgetAct / tReach : null)}</td>
-              <td className="border border-line4" /><td className="border border-line4" /><td className="border border-line4" />
+              <td className="px-[9px] py-[8px] text-right border border-line4">{cpr(tVisit > 0 && tBudgetAct > 0 ? tBudgetAct / tVisit : null)}</td>
+              <td className="border border-line4" /><td className="border border-line4" />
             </tr>
           </tfoot>
         )}
       </table>
     </div>
+  );
+}
+
+function StatusSelect({ value, onChange }: { value: ResultStatusKey; onChange: (v: ResultStatusKey) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as ResultStatusKey)}
+      className="min-w-[112px] bg-transparent text-right text-[11px] font-bold text-ink outline-none cursor-pointer"
+      aria-label="Performance status"
+    >
+      {(Object.keys(RESULT_STATUS_META) as ResultStatusKey[]).map((key) => (
+        <option key={key} value={key}>{RESULT_STATUS_META[key].label}</option>
+      ))}
+    </select>
   );
 }
 
