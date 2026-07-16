@@ -1,14 +1,15 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
+import { Modal } from "@/components/ui/Modal";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
-import { SELECT_STYLE_DARK } from "@/components/ui/selectStyle";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
@@ -104,12 +105,12 @@ export default function CampaignsPage() {
     if (!nc.name.trim()) return;
     const nextSeq = Math.max(0, ...campaigns.map((c) => Number(c.id.match(/(\d+)$/)?.[1] ?? 0))) + 1;
     const row: CampaignRow = {
-      id: `CAM-2026-${String(nextSeq).padStart(4, "0")}`, name: nc.name.trim(), b: nc.b,
+      id: `CAM-${new Date().getFullYear()}-${String(nextSeq).padStart(4, "0")}`, name: nc.name.trim(), b: nc.b,
       branch: nc.branch.trim() || "—", owner: nc.owner.trim() || "Unassigned",
       budget: parseFloat(nc.budget) || 0, spend: 0, roi: 0, dates: nc.dates.trim() || "TBD",
       status: nc.status, campType: nc.campType, readiness: "needs_attention" as Readiness,
       taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
-      bottleneckTeam: "None", nextApproval: "CMO",
+      bottleneckTeam: "None", nextApproval: DEFAULT_APPROVER,
     };
     try {
       await createCampaign(row);
@@ -146,7 +147,7 @@ export default function CampaignsPage() {
     setBusyCampaignId(id);
     const previous = campaigns.find((row) => row.id === id);
     setCampaigns((rows) => rows.map((row) => (
-      row.id === id ? { ...row, status: nextStatus, nextApproval: nextStatus.includes("Waiting") ? "CMO" : "None" } : row
+      row.id === id ? { ...row, status: nextStatus, nextApproval: nextStatus.includes("Waiting") ? DEFAULT_APPROVER : "None" } : row
     )));
     setCollapsed((state) => ({ ...state, [nextStatus]: false }));
     try {
@@ -314,17 +315,41 @@ export default function CampaignsPage() {
             </div>
           );
         })}
+
+        {/* Empty state — the filtered period has no campaigns. Without this the
+            list area renders blank and reads as a broken page (see audit P2-4). */}
+        {groups.length === 0 && (
+          <div className="bg-surface border border-line rounded-cardLg px-6 py-14 text-center">
+            <div className="text-[15px] font-extrabold text-ink mb-1">ไม่มี Campaign ในช่วงเวลานี้</div>
+            <div className="text-[13px] text-muted leading-[1.6] mb-5">
+              {campaigns.length === 0
+                ? "ยังไม่มี Campaign ในระบบ — เริ่มสร้าง Campaign แรกได้เลย"
+                : "ไม่พบ Campaign ที่ตรงกับช่วงเวลา/แบรนด์/คำค้นที่เลือก ลองดูทั้งปีหรือปรับตัวกรอง"}
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              {date.mode !== "year" && campaigns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDate((d) => ({ ...d, mode: "year", start: new Date(d.year, 0, 1).toISOString().slice(0, 10), end: new Date(d.year, 11, 31).toISOString().slice(0, 10) }))}
+                  className="text-[12.5px] font-bold rounded-[10px] px-4 py-[9px] border border-line2 bg-white text-ink hover:bg-ivory transition"
+                >
+                  ดูทั้งปี {date.year}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { setNc(emptyNew); setNewOpen(true); }}
+                className="text-[12.5px] font-bold rounded-[10px] px-4 py-[9px] bg-accent text-white hover:opacity-90 transition"
+              >
+                + New campaign
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* New Campaign modal */}
-      {newOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setNewOpen(false)} />
-          <div className="relative bg-surface rounded-cardLg border border-line shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between mb-4">
-              <div className="text-[16px] font-extrabold">New campaign</div>
-              <button onClick={() => setNewOpen(false)} className="text-[18px] text-faint leading-none -mt-1">✕</button>
-            </div>
+      {/* New Campaign modal — uses the shared Modal primitive (audit P3-2) */}
+      <Modal open={newOpen} onClose={() => setNewOpen(false)} title="New campaign" maxWidth="lg">
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign name <span className="text-status-red">*</span></label><input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. Wagyu Festival" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
@@ -352,9 +377,7 @@ export default function CampaignsPage() {
               <button onClick={addCampaign} disabled={!nc.name.trim()} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create campaign</button>
               <button onClick={() => setNewOpen(false)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
     </>
   );
 }

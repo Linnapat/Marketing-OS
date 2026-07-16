@@ -9,7 +9,7 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, PLATFORMS, itemPlatforms, contentDateIso,
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso,
 } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -114,8 +114,10 @@ export default function ContentPage() {
   };
 
   // The month the grid shows: the filter month, or the range's starting month.
-  const gy = date.mode === "month" ? date.year : Number((date.start || "2026-07-01").slice(0, 4));
-  const gm = date.mode === "month" ? date.month : Number((date.start || "2026-07-01").slice(5, 7)) - 1;
+  // Fallback to today (never a hardcoded year) when a range has no start date.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const gy = date.mode === "month" ? date.year : Number((date.start || todayIso).slice(0, 4));
+  const gm = date.mode === "month" ? date.month : Number((date.start || todayIso).slice(5, 7)) - 1;
   const ymKey = `${gy}-${String(gm + 1).padStart(2, "0")}`;
 
   const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
@@ -308,7 +310,7 @@ export default function ContentPage() {
   );
 }
 
-function NewPostModal({ onClose, onCreate, count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => Promise<void>; count: number; initialIso?: string | null }) {
+function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => Promise<void>; count: number; initialIso?: string | null }) {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");

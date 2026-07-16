@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -15,7 +16,7 @@ import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem, nextCampaignCode,
-  OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor,
+  OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS,
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
   kolBudgetTotal, kolMonthlyTotals, withSyncedKolBudget,
@@ -266,7 +267,7 @@ export default function NewCampaignPage() {
     const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
       await saveCampaignBrief(finalize(status, log, now));
-      if (!asDraft) notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || "CMO"} อนุมัติใน My Tasks`, "/my-tasks");
+      if (!asDraft) notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติใน My Tasks`, "/my-tasks");
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch (error) {

@@ -119,7 +119,7 @@ export function buildPlatformPerformance(input: PlatformPerformanceInput): { row
     for (const k of brief.kols ?? []) {
       const budget = k.budget || 0;
       if (budget <= 0) continue;
-      for (const p of k.platforms?.length ? k.platforms : ["KOL / Creator"]) {
+      for (const _p of k.platforms?.length ? k.platforms : ["KOL / Creator"]) {
         const row = touch("KOL / Creator", campaignName, brief.b);
         row.plannedBudget += budget / Math.max(1, k.platforms?.length || 1);
         row.committed += budget / Math.max(1, k.platforms?.length || 1);

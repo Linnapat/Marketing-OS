@@ -1,39 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { csvUrlFromShareLink as csvUrl, parseCsv } from "@/lib/googleSheet";
 
 export const dynamic = "force-dynamic";
-
-function csvUrl(shareUrl: string): string | null {
-  try {
-    const u = new URL(shareUrl);
-    if (u.hostname !== "docs.google.com") return null;
-    const m = u.pathname.match(/\/spreadsheets\/d\/([\w-]+)/);
-    if (!m) return null;
-    const gid = u.hash.match(/gid=(\d+)/)?.[1] ?? u.searchParams.get("gid") ?? "0";
-    return `https://docs.google.com/spreadsheets/d/${m[1]}/gviz/tq?tqx=out:csv&gid=${gid}`;
-  } catch {
-    return null;
-  }
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = "", inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQ) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') inQ = false;
-      else cell += ch;
-    } else if (ch === '"') inQ = true;
-    else if (ch === ",") { row.push(cell); cell = ""; }
-    else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); rows.push(row); row = []; cell = "";
-    } else cell += ch;
-  }
-  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
-  return rows;
-}
 
 function followers(value: string): number {
   const raw = (value ?? "").trim().toLowerCase().replace(/,/g, "");

@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { BRANDS_DATA, BrandCfg, ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
 import { CAMPAIGN_TYPES } from "@/lib/data/brief";
 import { assertDbOk } from "@/lib/db/assert";
+import { logAudit } from "@/lib/db/audit";
 
 export interface Member {
   name: string; email: string; role: string; access: string;
@@ -58,6 +59,7 @@ export async function createMember(m: Member): Promise<void> {
     brand_access: m.brandAccess, status: m.status, color: m.color,
   });
   assertDbOk(error, "Could not save member");
+  logAudit(`บันทึกสมาชิก ${m.name}`, "Settings", { after: `${m.role} · ${m.access} · ${m.status}`, meta: { email: m.email } });
   announceMembersUpdated();
 }
 
@@ -78,6 +80,7 @@ export async function deleteMember(email: string): Promise<void> {
   if (!db) return;
   const { error } = await db.from("members").delete().eq("email", email);
   assertDbOk(error, "Could not delete member");
+  logAudit(`ลบสมาชิก ${email}`, "Settings", { before: email, after: "ลบแล้ว" });
   announceMembersUpdated();
 }
 
@@ -162,6 +165,7 @@ export async function savePermissions(rows: PermRow[]): Promise<void> {
   if (!db) return;
   const { error } = await db.from("permissions").upsert(rows.map((r) => ({ role: r.role, descr: r.descr, perms: r.perms })));
   assertDbOk(error, "Could not save permissions");
+  logAudit("แก้ไข Permissions matrix", "Settings", { after: `${rows.length} role(s) updated` });
 }
 
 /* ── Notification toggles (channels + triggers) ─────────────────────── */
@@ -224,6 +228,7 @@ export async function saveApprovalMatrix(m: ApprovalMatrix): Promise<void> {
     { key: "approval_rules", label: "Approval module rules", value: JSON.stringify(m.rules) },
   ]);
   assertDbOk(error, "Could not save approval matrix");
+  logAudit("แก้ไข Approval matrix (งบ/rules)", "Settings", { after: "อัปเดต thresholds + rules" });
 }
 
 /* ── Organization fields ────────────────────────────────────────────── */

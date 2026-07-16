@@ -18,3 +18,18 @@ export function supabase(): SupabaseClient | null {
   if (!_client) _client = createClient(url!, anon!, { auth: { persistSession: true } });
   return _client;
 }
+
+/** Authorization header carrying the current session's access token, for
+ *  calling our own API routes that verify the caller (see lib/apiAuth). Empty
+ *  when Supabase is not configured or nobody is signed in (demo mode). */
+export async function authHeaders(): Promise<Record<string, string>> {
+  const db = supabase();
+  if (!db) return {};
+  try {
+    const { data } = await db.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}

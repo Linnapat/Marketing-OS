@@ -577,7 +577,7 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
   const kind = workKind(item.type, item.requiredVideo);
   const dueDay = (item.graphicDueDate || "").slice(0, 10);
   const usedToday = dueDay ? countWorkOnDay(graphics, kind, dueDay) : 0;
-  const newUnits = artworkUnitsOf(item.assets.length ? item.assets : item.platforms.map((p) => ({ size: "" })));
+  const newUnits = artworkUnitsOf(item.assets.length ? item.assets : item.platforms.map(() => ({ size: "" })));
   const atCap = !!dueDay && usedToday + newUnits > DAILY_WORK_CAP;
 
   const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;

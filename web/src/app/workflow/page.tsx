@@ -10,7 +10,7 @@ import {
 } from "@/components/campaign/CampaignHeadController";
 import { useRole } from "@/lib/role";
 import {
-  WORK_SECTIONS, MONTH_NAMES, monthMeta, isWeekendDate, projectMarks,
+  WORK_SECTIONS, MONTH_NAMES, monthMeta, projectMarks,
   applyOverrides, nextValue, TEMPLATE_YEAR, TEMPLATE_MONTH,
 } from "@/lib/data/workflow";
 import { fetchWorkflowState, saveWorkflowState } from "@/lib/db/workflowState";

@@ -205,7 +205,10 @@ $$;
 
 -- ── kol_master_view — one flat row per KOL for the "Request KOL" picker ─
 -- รวม profile + สรุป channel (platform หลัก + followers รวม) + rank ล่าสุด
-create or replace view kol_master_view as
+-- security_invoker: the view must run with the querying user's rights so the RLS
+-- on kol_profiles/kol_channels/kol_rank_scores applies (otherwise anon could read
+-- KOL data through the view — see security_p2.sql).
+create or replace view kol_master_view with (security_invoker = on) as
 select
   p.kol_id,
   p.display_name,

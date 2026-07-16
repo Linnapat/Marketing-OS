@@ -7,6 +7,7 @@ import {
   Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { fetchKolComments, resolveKolComment } from "@/lib/db/feedback";
 
 const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "2026-07-20" → "Jul 20" — same display format postDueDate already uses. */
@@ -37,6 +38,18 @@ type DrawerTab = (typeof TABS)[number][0];
 export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { kol: Kol; initialTab?: DrawerTab; onClose: () => void; onUpdate?: (k: Kol) => void }) {
   const [tab, setTab] = useState<DrawerTab>(initialTab === "comments" ? "profile" : initialTab);
   const [comments, setComments] = useState(() => KOL_COMMENTS.filter((c) => c.kolId === kol.id));
+  // Load persisted comments (audit P2-5) — resolves now survive a refresh. The
+  // mock filter above stays the demo-mode fallback and the initial paint.
+  useEffect(() => {
+    let alive = true;
+    fetchKolComments(kol.id).then((rows) => { if (alive) setComments(rows); }).catch(() => {});
+    return () => { alive = false; };
+  }, [kol.id]);
+  const resolveComment = async (id: number) => {
+    const prev = comments;
+    setComments((cs) => cs.map((c) => (c.id === id ? { ...c, status: "Resolved" } : c)));
+    try { await resolveKolComment(id); } catch (e) { setComments(prev); toastError(`Resolve ไม่สำเร็จ: ${e instanceof Error ? e.message : "Unknown error"}`); }
+  };
   const deliverables = DELIVERABLES.filter((d) => d.kolId === kol.id);
   const pi = platformIcon(kol.plat);
   const openCount = comments.filter((c) => c.status === "Open").length;
@@ -107,7 +120,7 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
           {tab === "deliverables" && <DeliverablesTab items={deliverables} />}
           {tab === "brief" && <BriefTab kol={kol} />}
           {tab === "results" && <ResultsTab kol={kol} onUpdate={onUpdate} />}
-          {tab === "comments" && <CommentsTab comments={comments} onResolve={(id) => setComments((cs) => cs.map((c) => c.id === id ? { ...c, status: "Resolved" } : c))} />}
+          {tab === "comments" && <CommentsTab comments={comments} onResolve={resolveComment} />}
         </div>
       </div>
     </div>

@@ -11,10 +11,8 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { num } from "@/lib/format";
 import {
   fetchPerformanceSheet,
-  PerformanceMonthlyRow,
   PerformancePostRow,
   PerformanceSheetPayload,
-  PerformanceSummaryRow,
 } from "@/lib/db/performanceSheet";
 
 const ACCENT = "#0EA5A0";

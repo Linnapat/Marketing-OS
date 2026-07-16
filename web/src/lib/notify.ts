@@ -12,14 +12,18 @@ export type NotifyEvent =
   | "launch";    // campaign submitted / published
 
 export function notify(event: NotifyEvent, title: string, detail?: string, link?: string): void {
-  try {
-    void fetch("/api/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event, title, detail, link }),
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    /* notifications are best-effort */
-  }
+  void (async () => {
+    try {
+      const { authHeaders } = await import("@/lib/supabase");
+      const res = await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ event, title, detail, link }),
+        keepalive: true,
+      });
+      void res;
+    } catch {
+      /* notifications are best-effort */
+    }
+  })();
 }

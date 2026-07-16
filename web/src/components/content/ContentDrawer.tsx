@@ -185,7 +185,11 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
     } finally { setBusy(false); }
   };
   const scheduleMeta = async () => {
-    const scheduledFor = `${scheduleDate || item.dateIso || `2026-07-${String(item.day || 1).padStart(2, "0")}`}T${scheduleTime || item.time || "10:00"}:00+07:00`;
+    // Fallback when neither a picked date nor the item's ISO date exists: use the
+    // current year/month with the post's day-of-month (never a hardcoded year).
+    const now = new Date();
+    const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(item.day || now.getDate()).padStart(2, "0")}`;
+    const scheduledFor = `${scheduleDate || item.dateIso || fallbackDate}T${scheduleTime || item.time || "10:00"}:00+07:00`;
     setBusy(true);
     try {
       const res = await scheduleContentToMeta(item, reviewer, scheduledFor, selectedChannels);

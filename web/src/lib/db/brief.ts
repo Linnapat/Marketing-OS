@@ -20,10 +20,12 @@ import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { brandName } from "@/lib/brands";
 import { assertDbOk } from "@/lib/db/assert";
+import { DEFAULT_APPROVER } from "@/lib/approval";
+import { logAudit } from "@/lib/db/audit";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtRange(startIso: string, endIso: string): string {
-  const one = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
+  const one = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
   const a = one(startIso), b = one(endIso);
   return a && b ? `${a} – ${b}` : a || b || "TBD";
 }
@@ -57,7 +59,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     dates: fmtRange(normalizedBrief.startDate, normalizedBrief.endDate), status: normalizedBrief.status,
     campType: normalizedBrief.campaignType || normalizedBrief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
-    bottleneckTeam: "None", nextApproval: normalizedBrief.status === "Waiting for Approval" ? (normalizedBrief.approver || "CMO") : "None",
+    bottleneckTeam: "None", nextApproval: normalizedBrief.status === "Waiting for Approval" ? (normalizedBrief.approver || DEFAULT_APPROVER) : "None",
   };
   await createCampaign(row);
   await persistBriefBlob(normalizedBrief);
@@ -269,7 +271,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
 function dayOf(iso: string): number { const d = Number(iso?.split("-")[2]); return Number.isFinite(d) ? d : 0; }
 function labelDate(iso: string): string {
   if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
+  const [, m, d] = iso.split("-").map(Number);
   return m ? `${MON[m - 1]} ${d}` : "";
 }
 
@@ -385,7 +387,10 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   if (!brief) return;
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
-  const nextApproval = status === "Waiting for Approval" ? (brief.approver || "CMO") : "None";
+  const nextApproval = status === "Waiting for Approval" ? (brief.approver || DEFAULT_APPROVER) : "None";
   const { error } = await db.from("campaigns").update({ data: brief, status, next_approval: nextApproval }).eq("id", id);
   assertDbOk(error, "Could not save campaign approval status");
+  logAudit(`Brief ${brief.name || id}: ${entry.action}`, "Campaign", {
+    after: status, actorName: entry.by, meta: { campaignId: id, comment: entry.comment },
+  });
 }

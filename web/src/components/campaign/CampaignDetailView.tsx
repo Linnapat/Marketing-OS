@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -25,6 +26,14 @@ import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { fmtDisplay } from "@/components/ui/DatePicker";
 
+// Rough planning ratios used only until per-campaign actuals are wired in. These
+// are NOT booked figures — any KPI derived from them is labelled "(ประมาณ)" so
+// nobody mistakes an estimate for a real number. Tune per brand later (see audit
+// P2-7 / P2-9): gross margin, and the share of budget/spend that goes to ads.
+const EST_GROSS_MARGIN = 0.38;
+const EST_AD_BUDGET_SHARE = 0.4;
+const EST_AD_SPEND_SHARE = 0.55;
+
 export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
   const [tab, setTab] = useState<CampaignTab>("overview");
   // Deep-link support: /campaigns/[id]?tab=approval opens that tab (client-only
@@ -36,7 +45,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   const c = detail.row;
   const effectiveStatus = brief?.status ?? c.status;
   const effectiveNextApproval = effectiveStatus === "Waiting for Approval"
-    ? (brief?.approver || c.nextApproval || "CMO")
+    ? (brief?.approver || c.nextApproval || DEFAULT_APPROVER)
     : "None";
   const s = hub ? hubStats(hub) : null;
   // Temporary approval action while the Approval Queue module is "SOON": the CMO /
@@ -197,7 +206,7 @@ function OverviewTab({ detail, hub, s, nextApproval }: { detail: CampaignDetail;
     { label: "Budget", value: detail.budgetF },
     { label: "Spend", value: detail.spendF },
     { label: "Revenue", value: detail.revenue },
-    { label: "Gross Profit", value: c.roi ? baht(Math.round(c.spend * c.roi * 0.38), { compact: true }) : "—" },
+    { label: "Gross Profit (ประมาณ)", value: c.roi ? baht(Math.round(c.spend * c.roi * EST_GROSS_MARGIN), { compact: true }) : "—" },
     { label: "ROAS", value: c.roi ? `${c.roi}×` : "—" },
     { label: "ROI", value: c.roi ? `${(c.roi - 1).toFixed(1)}×` : "—", color: detail.roiColor },
   ];
@@ -541,8 +550,8 @@ const CREATIVE_APPROVED = /Approved|Delivered/i;
 
 function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | null }) {
   const c = detail.row;
-  const adBudget = Math.round(c.budget * 0.4);
-  const adSpend = Math.round(c.spend * 0.55);
+  const adBudget = Math.round(c.budget * EST_AD_BUDGET_SHARE);
+  const adSpend = Math.round(c.spend * EST_AD_SPEND_SHARE);
   const adsTasks = hub ? hub.tasks.filter((t) => t.type === "Ads") : [];
   // An ad can only run on an approved creative. Gate on the campaign's graphics.
   const graphics = hub?.graphics ?? [];
@@ -565,8 +574,8 @@ function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | nu
       )}
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))" }}>
         {[
-          { label: "Ads Budget", value: baht(adBudget, { compact: true }) },
-          { label: "Ads Spent", value: baht(adSpend, { compact: true }) },
+          { label: "Ads Budget (ประมาณ)", value: baht(adBudget, { compact: true }) },
+          { label: "Ads Spent (ประมาณ)", value: baht(adSpend, { compact: true }) },
           { label: "Blended ROAS", value: c.roi ? `${c.roi}×` : "—" },
           { label: "Ad Tasks", value: String(adsTasks.length) },
         ].map((k) => (
@@ -695,7 +704,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
     const next: CampaignBrief = { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] };
     try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
     // Approval-flow steps ping the team on LINE/email.
-    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || "CMO"}`, "/my-tasks");
+    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || DEFAULT_APPROVER}`, "/my-tasks");
     else if (nextStatus === "Approved") {
       notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
       // CMO approval is the gate: only now do content posts, graphic requests,

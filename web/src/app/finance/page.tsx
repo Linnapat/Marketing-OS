@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Download, ExternalLink, Pencil, Search, X } from "lucide-react";
@@ -708,7 +709,7 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
   const [eVendor, setEVendor] = useState("");
   const [eAmt, setEAmt] = useState("");
   const { member, user } = useAuth();
-  const approverName = member?.name || user?.email?.split("@")[0] || "CMO";
+  const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
   const [sig, setSig] = useState<string | null>(null);
 
   useEffect(() => {

@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase";
 import { CAMPAIGNS, CampaignRow, Readiness } from "@/lib/data/campaigns";
 import { BrandId } from "@/lib/brands";
 import { assertDbOk } from "@/lib/db/assert";
+import { DEFAULT_APPROVER } from "@/lib/approval";
+import { logAudit } from "@/lib/db/audit";
 
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
@@ -73,9 +75,10 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
 export async function updateCampaignStatus(id: string, status: string): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const nextApproval = status === "Waiting Approval" || status === "Waiting for Approval" ? "CMO" : "None";
+  const nextApproval = status === "Waiting Approval" || status === "Waiting for Approval" ? DEFAULT_APPROVER : "None";
   const { error } = await db.from("campaigns").update({ status, next_approval: nextApproval }).eq("id", id);
   assertDbOk(error, "Could not update campaign status");
+  logAudit(`เปลี่ยนสถานะแคมเปญ ${id}`, "Campaign", { after: status, meta: { campaignId: id, nextApproval } });
 }
 
 /** Delete a campaign and the records Marketing OS generated from its brief so

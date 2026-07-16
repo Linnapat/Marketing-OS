@@ -120,9 +120,10 @@ export async function scheduleContentToMeta(post: ContentItem, by: string, sched
 export async function publishContentToMeta(post: ContentItem, by: string, channels: string[], account?: unknown): Promise<{ ok: boolean; reasons: string[]; post: ContentItem }> {
   const gate = canPublish(post);
   if (!gate.ok) return { ok: false, reasons: gate.reasons, post };
+  const { authHeaders } = await import("@/lib/supabase");
   const res = await fetch("/api/meta/publish", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ post, channels, account }),
   });
   const json = await res.json().catch(() => null);
