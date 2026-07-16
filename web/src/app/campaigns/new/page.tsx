@@ -12,7 +12,7 @@ import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
-import { BRANDS, BrandId, brandName } from "@/lib/brands";
+import { BRANDS, BrandId, brandName, emptyBrandTotals } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem, nextCampaignCode,
@@ -64,11 +64,13 @@ const effectiveBriefBudget = (brief: CampaignBrief) => Math.max(brief.budget.tot
 const isDigitalBudgetRow = (row: BudgetSheetRow) => (row.group || "").trim().toLowerCase() === "digital marketing";
 
 function digitalBudgetByBrandFromSheet(rows: BudgetSheetRow[], month: string): Record<BrandId, number> {
-  const totals: Record<BrandId, number> = { teppen: 0, omakase: 0, mainichi: 0, touka: 0 };
+  // Keyed by the configured brands; `?? 0` guards a sheet row naming a brand that
+  // config no longer lists (otherwise `undefined + n` = NaN).
+  const totals = emptyBrandTotals();
   for (const row of rows) {
     if (row.month !== month || !isDigitalBudgetRow(row)) continue;
     if (!row.brand || row.brand === "all") continue;
-    totals[row.brand] += row.budget || 0;
+    totals[row.brand] = (totals[row.brand] ?? 0) + (row.budget || 0);
   }
   return totals;
 }
