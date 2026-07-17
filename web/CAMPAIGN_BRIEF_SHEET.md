@@ -109,7 +109,76 @@ Month: 2026-08              | 50000
 
 > เคล็ดลับ: ถ้าให้ AI เติมใน Sheet ให้สั่งว่า *"วันที่ทุกช่องเป็น text รูปแบบ YYYY-MM-DD"*
 
-## 7. Import
+## 7. คำสั่งสำหรับ AI (ก็อปไปใช้ได้เลย)
+
+**1 sheet = 1 แคมเปญ** — ก็อป template เป็นไฟล์ใหม่ต่อแคมเปญ แล้วสั่ง AI ตามนี้
+ใช้ได้ทั้ง Gemini ใน Google Sheets (ให้เติมลงแท็บตรงๆ) และ Claude/ChatGPT (ให้ออกมาเป็นตารางแล้วก็อปวาง)
+
+กรอกเฉพาะ 6 บรรทัดในวงเล็บ `<>` ที่หัวคำสั่ง ที่เหลือปล่อยไว้ทั้งก้อน:
+
+````text
+คุณคือ marketing planner ของร้านอาหารญี่ปุ่นในเครือ TEPPEN ช่วยคิดแคมเปญแล้วกรอกลง Google Sheet
+ตาม template ของ Marketing OS (แท็บ Overview / Content / KOL / Budget)
+
+โจทย์: <อยากทำแคมเปญอะไร เพื่ออะไร มีอะไรพิเศษ>
+แบรนด์: <ชื่อแบรนด์ ตามที่ตั้งใน Settings เช่น Teppen Thailand>
+สาขา: <สาขาที่ร่วม เช่น Central World, EmQuartier>
+ช่วงแคมเปญ: <2026-08-01 ถึง 2026-08-31>  ·  Launch: <2026-08-05>
+งบรวม: <150000> บาท
+วันนี้: <2026-07-17>
+
+กติกาที่ห้ามพลาด:
+- ห้ามเปลี่ยนชื่อแท็บ ห้ามเพิ่ม/ลบ/สลับคอลัมน์ ห้ามใส่สูตร — ทุกช่องเป็นข้อความหรือตัวเลขล้วน
+- วันที่ทุกช่องเป็น text รูปแบบ YYYY-MM-DD เท่านั้น (ห้าม 7/1/2026 เพราะกำกวม)
+- ตัวเลขไม่ต้องมี ฿ (มี , ได้) — ทุกวันต้องอยู่ในช่วงแคมเปญ
+- ค่าที่เป็นตัวเลือก ต้องเลือกจากลิสต์ด้านล่างเป๊ะๆ ห้ามคิดค่าใหม่เอง ถ้าไม่มีอันที่ตรง ให้เลือกอันที่ใกล้สุด
+
+แท็บ Overview (คอลัมน์ Field | Value — เติมคอลัมน์ Value):
+- Objective เลือก 1: Awareness / New Customer / Repeater / CRM / Delivery / Store Visit / Launch / Seasonal / Brand Campaign
+- Campaign Type เลือก 1: Online + Offline / Online Only / Offline Only / CRM / LINE / Event / Store Activation /
+  Seasonal Promotion / Always-on / Product Launch
+- Priority เลือก 1: High / Med / Low
+- Channels เลือกได้หลายอัน คั่นด้วย , : Facebook / Instagram / TikTok / LINE OA / Google / In-store / CRM / LINE OA
+- Target Audience, Key Message, Main Offer ต้องมีทุกอัน (ระบบบังคับ) — เขียนให้เฉพาะเจาะจง ไม่เอากว้างๆ
+- Store Promotion = ข้อความโปรที่ลูกค้าเห็นหน้าร้าน ถ้าแคมเปญนี้ไม่มีโปรหน้าร้านให้เว้นว่าง
+- ใส่ Goal: Reach กับ Goal: CV% เป็นตัวเลข (ระบบคำนวณ Visit = Reach × CV% ให้เอง ไม่ต้องใส่)
+
+แท็บ Content (1 แถว = 1 ชิ้นงาน ให้ 3-6 แถว):
+- Title และ Sub Head ต้องมีทุกแถว (ระบบบังคับทั้งคู่)
+- Type เลือกจาก: Photo / Reel / Short Video / Carousel / Story / Photo album / Photo shoot / VDO shooting /
+  LINE Rich Message / Poster / Menu Insert / POSM / Menu book / Artwork / Mock up / Packaging
+- Platforms เลือกจาก: Facebook / Instagram / TikTok / LINE OA / Google Business Profile / In-store
+- Asset Sizes ต้องครอบคลุม **ทุก** platform ในแถวนั้น (ระบบบังคับ) — ใส่แค่สัดส่วนได้ เช่น 1:1
+  ถ้าคนละสัดส่วนต่อ platform ใช้รูป "Instagram: 9:16; Facebook: 1:1"
+  สัดส่วนที่มี — Facebook: 1:1, 4:5, 16:9, 9:16 · Instagram: 1:1, 4:5, 9:16 · TikTok: 9:16 ·
+  LINE OA: Rich Message 1040×1040, Rich Message 1040×520, Card 1200×628 ·
+  Google Business Profile: 1:1, 4:3, 16:9 · In-store: A4 Poster, A3 Poster, Table Tent, POSM Custom
+- Needs Graphic / Needs Video ใส่ Yes หรือ No
+- ถ้า Needs Graphic = Yes ต้องมี Graphic Due Date และต้อง **ห่างจาก "วันนี้" อย่างน้อย 5 วันทำการ**
+  และต้องไม่หลัง Publish Date (ปกติวางไว้ก่อน publish ~1 สัปดาห์)
+- Priority: High / Med / Low
+
+แท็บ KOL (1 แถว = 1 เพจ หรือ 1 กลุ่มเพจที่ยังไม่เลือก — ไม่ใช้ KOL ให้เว้นทั้งแท็บ):
+- ยังไม่รู้เพจ ใส่แค่ KOL Type + Count ได้ (เว้น Name)
+- KOL Type เลือกจาก: Foodie / Lifestyle / Office Worker / Japanese Food / Family / Micro / Nano / Macro
+- Platforms เลือกจาก: Instagram / TikTok / Facebook / YouTube / LINE VOOM
+- Content Required เลือกจาก: Reel / Story / Post / TikTok (หลายอันคั่นด้วย ,)
+- Budget = งบต่อเพจ (ไม่ใช่งบรวมแถว) · Followers ใส่ 120k หรือ 1.2M ได้
+- ผลรวมทุกแถว (Budget × Count) ต้องไม่เกินช่อง KOL ในแท็บ Budget
+
+แท็บ Budget (คอลัมน์ Category | Amount):
+- Total ต้องเท่ากับงบรวมที่โจทย์ให้
+- Ads + KOL + Printing + CRM + Other ต้องไม่เกิน Total (Graphic เป็นค่า production ไม่นับรวม)
+- แตกงบ Ads ด้วยแถว "Ads: <platform>" เลือกจาก: Facebook / Instagram · TikTok · Google · LINE Ads ·
+  Delivery (Grab/Line etc) · Other — ผลรวมต้องเท่ากับช่อง Ads
+- ถ้าแคมเปญข้ามเดือน ต้องมีแถว "Month: YYYY-MM" ทุกเดือน และผลรวม **ต้องเท่ากับ Total เป๊ะ** (ระบบบล็อกถ้าไม่ตรง)
+
+เสร็จแล้วสรุปสั้นๆ ว่าคิดอะไรไว้ และจุดไหนที่คุณเดา/ไม่มั่นใจ ให้ผมตรวจ
+````
+
+> **ทำไมต้องบอก "วันนี้" ให้ AI**: กฎ Graphic Due Date นับจากวันที่ขอ ไม่ใช่วันเริ่มแคมเปญ — AI ที่ไม่รู้วันปัจจุบันจะวางวันที่ทำให้ submit ไม่ผ่าน
+
+## 8. Import
 
 Create Campaign → step **Campaign Overview** → เปิด **Import จาก Google Sheet** → วางลิงก์ → **Import**
 
