@@ -7,18 +7,17 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
-import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
-import { Modal } from "@/components/ui/Modal";
 import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useRole } from "@/lib/role";
-import { baht } from "@/lib/format";
+import { baht, num } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
-  STATUS_ORDER, READINESS_META, CampaignRow, Readiness,
+  STATUS_ORDER, READINESS_META, CampaignRow,
 } from "@/lib/data/campaigns";
-import { CAMPAIGN_TYPES } from "@/lib/data/brief";
-import { fetchCampaigns, createCampaign, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
-import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers } from "@/lib/db/settings";
+import { CampaignBrief, visitGoalOf } from "@/lib/data/brief";
+import { fetchAllBriefs } from "@/lib/db/brief";
+import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
+import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -28,8 +27,15 @@ import {
   CampaignPageHeaderSection,
 } from "@/components/campaign/CampaignHeadController";
 
-const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 const ACTION_STATUSES = ["Draft", "Waiting Approval", "Approved", "Active", "Paused", "Inactive", "Completed", "Cancelled"];
+
+// Campaign · Brand·Branch · Owner · Budget · Visit · Ready · Actions.
+// Actions has a hard floor rather than a bare fr: it holds the status select,
+// Edit and Delete side by side, and the longest status ("Waiting for Approval")
+// makes that select wide. Given only a share of the row, the cell would run out
+// of room and drop Delete onto a second line, leaving the column two rows tall.
+// The floor keeps all three on one line; the fr only decides how it grows.
+const COLS = "1.9fr 1.05fr 0.9fr 0.8fr 0.7fr 0.55fr minmax(292px, 2fr)";
 
 type GroupBy = "status" | "brand";
 
@@ -44,6 +50,10 @@ export default function CampaignsPage() {
   const [search, setSearch] = useState<string>("");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Keyed by campaign NAME — that's the shape fetchAllBriefs returns, not by id.
+  const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+  // Older campaigns have no brief at all, so this reads 0 and the cell shows "—".
+  const visitGoal = (c: CampaignRow): number => visitGoalOf(briefs[c.name]);
   // Email → nickname map so the Owner column shows a person's name, not the
   // raw login email that some campaigns were saved with.
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
@@ -59,11 +69,6 @@ export default function CampaignsPage() {
     () => permittedBrandOptions.filter((item) => configuredBrandIds.has(item)),
     [configuredBrandIds, permittedBrandOptions],
   );
-  const [newOpen, setNewOpen] = useState(false);
-  const defaultBrand = brandOptions[0] ?? permittedBrandOptions[0] ?? "teppen";
-  const emptyNew = { name: "", b: defaultBrand as BrandId, branch: "", owner: "", budget: "", dates: "", status: "Draft", campType: CAMPAIGN_TYPES[0] as string };
-  const [nc, setNc] = useState(emptyNew);
-  const [typeOptions, setTypeOptions] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     Completed: true, Draft: true, Cancelled: true,
   });
@@ -102,12 +107,11 @@ export default function CampaignsPage() {
   }, [brand, brandVisibility]);
 
   useEffect(() => {
-    if (brandOptions.length && !brandOptions.includes(nc.b)) setNc((n) => ({ ...n, b: defaultBrand as BrandId, branch: "" }));
-  }, [brandOptions, defaultBrand, nc.b]);
-
-  useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    // Visit lives in the brief (campaigns.data), not in the campaigns columns,
+    // so the list has to read the briefs to show it.
+    fetchAllBriefs().then((m) => { if (alive) setBriefs(m); }).catch(() => {});
     fetchMembers().then((ms) => {
       if (!alive) return;
       const map: Record<string, string> = {};
@@ -118,45 +122,11 @@ export default function CampaignsPage() {
   }, []);
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchBrandConfigs(), fetchCampaignTypeConfigs()]).then(([configs, types]) => {
-      if (!alive) return;
-      setBrandConfigs(configs);
-      setTypeOptions(types);
-    }).catch(() => {});
+    fetchBrandConfigs().then((configs) => { if (alive) setBrandConfigs(configs); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
-  const newCampaignBranches = useMemo(() => brandConfigs.find((b) => b.key === nc.b)?.branchList ?? [], [brandConfigs, nc.b]);
-  const selectedNewCampaignBranches = useMemo(() => nc.branch.split(",").map((item) => item.trim()).filter(Boolean), [nc.branch]);
-  useEffect(() => {
-    const valid = selectedNewCampaignBranches.filter((item) => newCampaignBranches.includes(item));
-    if (valid.length !== selectedNewCampaignBranches.length) setNc((n) => ({ ...n, branch: valid.join(", ") }));
-  }, [selectedNewCampaignBranches, newCampaignBranches]);
-
   const configuredBrandName = (id: BrandId) => brandConfigs.find((item) => item.key === id)?.name ?? brandName(id);
-
-  const addCampaign = async () => {
-    if (!nc.name.trim()) return;
-    const nextSeq = Math.max(0, ...campaigns.map((c) => Number(c.id.match(/(\d+)$/)?.[1] ?? 0))) + 1;
-    const row: CampaignRow = {
-      id: `CAM-${new Date().getFullYear()}-${String(nextSeq).padStart(4, "0")}`, name: nc.name.trim(), b: nc.b,
-      branch: nc.branch.trim() || "—", owner: nc.owner.trim() || "Unassigned",
-      budget: parseFloat(nc.budget) || 0, spend: 0, roi: 0, dates: nc.dates.trim() || "TBD",
-      status: nc.status, campType: nc.campType, readiness: "needs_attention" as Readiness,
-      taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
-      bottleneckTeam: "None", nextApproval: DEFAULT_APPROVER,
-    };
-    try {
-      await createCampaign(row);
-      setNewOpen(false); setNc(emptyNew);
-      setCampaigns((cs) => [row, ...cs]);
-      setCollapsed((c) => ({ ...c, [row.status]: false }));
-    } catch (error) {
-      toastError(`สร้าง Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
-    }
-  };
-
-  const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 
   const filtered = campaigns.filter((c) =>
     // Brand-scope first: a member only ever sees campaigns of brands they manage.
@@ -295,6 +265,7 @@ export default function CampaignsPage() {
         {groups.map((g) => {
           const isCollapsed = collapsed[g.key];
           const totalBudget = g.rows.reduce((sum, c) => sum + (c.budget || 0), 0);
+          const totalVisit = g.rows.reduce((sum, c) => sum + visitGoal(c), 0);
           return (
             <div key={g.key} className="bg-surface border border-line rounded-cardLg overflow-hidden">
               <button
@@ -311,15 +282,18 @@ export default function CampaignsPage() {
                 )}
                 <span className="text-[12px] text-faint font-semibold">{g.rows.length}</span>
                 {g.brand && (
-                  <span className="ml-auto text-[12px] font-semibold text-faint">{baht(totalBudget, { compact: true })}</span>
+                  <span className="ml-auto flex items-baseline gap-3 text-[12px] font-semibold text-faint">
+                    <span>{baht(totalBudget, { compact: true })}</span>
+                    {totalVisit > 0 && <span title="รวม Visit goal ของกลุ่มนี้">{num(totalVisit)} visits</span>}
+                  </span>
                 )}
               </button>
               {!isCollapsed && (
                 <div className="border-t border-line4">
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-                    style={{ gridTemplateColumns: "2.1fr 1.15fr 0.95fr 0.8fr 0.7fr 0.55fr 2fr" }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>ROAS</div><div className="text-center">Ready</div><div>Actions</div>
+                    style={{ gridTemplateColumns: COLS }}>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center">Ready</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
                     <div
@@ -334,8 +308,11 @@ export default function CampaignsPage() {
                       style={{
                         background: `${brandColor(c.b)}0D`,
                         borderLeft: `3px solid ${brandColor(c.b)}`,
+                        // Fed to the md: grid rule below, so the row and its header
+                        // read their columns from the one COLS definition.
+                        ["--cols" as string]: COLS,
                       }}
-                      className="grid grid-cols-1 md:grid-cols-[2.1fr_1.15fr_0.95fr_0.8fr_0.7fr_0.55fr_2fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 transition hover:shadow-[inset_0_0_0_9999px_rgba(23,23,42,0.035)]"
+                      className="grid grid-cols-1 gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 transition hover:shadow-[inset_0_0_0_9999px_rgba(23,23,42,0.035)] md:[grid-template-columns:var(--cols)]"
                     >
                       <div>
                         <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
@@ -354,8 +331,8 @@ export default function CampaignsPage() {
                       </div>
                       <div className="text-[12.5px] text-muted truncate" title={c.owner}>{ownerLabel(c.owner)}</div>
                       <div className="text-[13px] font-semibold text-ink">{baht(c.budget, { compact: true })}</div>
-                      <div className="text-[13px] font-bold" style={{ color: !c.roi ? "#9A9387" : c.roi < 2 ? "#C68A1E" : "#4E7A4E" }}>
-                        {c.roi ? `${c.roi}×` : "—"}
+                      <div className="text-[13px] font-semibold" style={{ color: visitGoal(c) ? "#211F1C" : "#9A9387" }}>
+                        {visitGoal(c) ? num(visitGoal(c)) : "—"}
                       </div>
                       {/* Readiness as a single symbol (label on hover) */}
                       <div className="md:text-center" title={READINESS_META[c.readiness].label}>
@@ -363,8 +340,8 @@ export default function CampaignsPage() {
                           {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
                         </span>
                       </div>
-                      {/* Actions — status + edit + delete on one row */}
-                      <div className="flex items-center gap-2 flex-wrap">
+                      {/* Actions — status + edit + delete, always on one row */}
+                      <div className="flex items-center gap-2 flex-nowrap">
                         {canChangeStatus ? (() => {
                           const statusOptions = ACTION_STATUSES.includes(c.status) ? ACTION_STATUSES : [c.status, ...ACTION_STATUSES];
                           return (
@@ -372,7 +349,7 @@ export default function CampaignsPage() {
                           value={c.status}
                           onChange={(e) => onStatusChange(c.id, e.target.value)}
                           disabled={busyCampaignId === c.id}
-                          className="text-[11.5px] font-bold text-ink bg-white border rounded-[10px] px-2.5 py-[7px] cursor-pointer outline-none disabled:opacity-50"
+                          className="text-[11.5px] font-bold text-ink bg-white border rounded-[10px] px-2.5 py-[7px] cursor-pointer outline-none disabled:opacity-50 min-w-0 flex-1"
                           style={{ borderColor: "#ECEAF2" }}
                         >
                           {statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -385,7 +362,7 @@ export default function CampaignsPage() {
                         )}
                         <Link
                           href={`/campaigns/new?edit=${c.id}`}
-                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8]"
+                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
                           style={{ borderColor: "#DCD6F7" }}
                         >
                           Edit
@@ -394,7 +371,7 @@ export default function CampaignsPage() {
                           type="button"
                           onClick={() => onDelete(c)}
                           disabled={busyCampaignId === c.id}
-                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50"
+                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50 shrink-0 whitespace-nowrap"
                           style={{ borderColor: "#F2CACA" }}
                         >
                           Delete
@@ -428,48 +405,11 @@ export default function CampaignsPage() {
                   ดูทั้งปี {date.year}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => { setNc(emptyNew); setNewOpen(true); }}
-                className="text-[12.5px] font-bold rounded-[10px] px-4 py-[9px] bg-accent text-white hover:opacity-90 transition"
-              >
-                + New campaign
-              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* New Campaign modal — uses the shared Modal primitive (audit P3-2) */}
-      <Modal open={newOpen} onClose={() => setNewOpen(false)} title="New campaign" maxWidth="lg">
-            <div className="flex flex-col gap-4">
-              <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign name <span className="text-status-red">*</span></label><input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. Wagyu Festival" className={field} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nc.b} onChange={(e) => setNc({ ...nc, b: e.target.value as BrandId, branch: "" })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}</select></div>
-                <div>
-                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Branch</label>
-                  <MultiSelectDropdown options={newCampaignBranches} selected={selectedNewCampaignBranches} onChange={(next) => setNc({ ...nc, branch: next.join(", ") })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Owner</label><input value={nc.owner} onChange={(e) => setNc({ ...nc, owner: e.target.value })} placeholder="Name" className={field} /></div>
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Budget (฿)</label><input type="number" value={nc.budget} onChange={(e) => setNc({ ...nc, budget: e.target.value })} placeholder="0" className={field} /></div>
-              </div>
-              <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Dates</label><input value={nc.dates} onChange={(e) => setNc({ ...nc, dates: e.target.value })} placeholder="e.g. Jul 1 – Jul 31" className={field} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Status</label><select value={nc.status} onChange={(e) => setNc({ ...nc, status: e.target.value })} className={field}>{NEW_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></div>
-                <div>
-                  <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label>
-                  <select value={nc.campType} onChange={(e) => setNc({ ...nc, campType: e.target.value })} className={field}>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
-                  <div className="text-[10.5px] text-faint mt-[6px]">Manage options in Settings → Campaign Types</div>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button onClick={addCampaign} disabled={!nc.name.trim()} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Create campaign</button>
-              <button onClick={() => setNewOpen(false)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[11px] bg-white">Cancel</button>
-            </div>
-      </Modal>
     </>
   );
 }

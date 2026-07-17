@@ -30,7 +30,7 @@ export const CONTENT_TYPES = [
 ] as const;
 
 export const CONTENT_PLATFORMS = [
-  "Facebook", "Instagram", "TikTok", "LINE OA", "Google Business Profile", "In-store",
+  "Facebook", "Instagram", "TikTok", "LINE OA", "Google Business Profile", "In-store", "Delivery",
 ] as const;
 
 // Platform → available asset sizes. The Content Plan filters the Asset Size
@@ -42,8 +42,25 @@ export const ASSET_SIZES: Record<string, string[]> = {
   "LINE OA": ["Rich Message 1040×1040", "Rich Message 1040×520", "Card 1200×628"],
   "Google Business Profile": ["1:1 (720×720)", "4:3 (1200×900)", "16:9 (1200×675)"],
   "In-store": ["A4 Poster", "A3 Poster", "Table Tent", "POSM Custom"],
+  // Delivery has no fixed spec — deliberately absent, see needsAssetSize below.
 };
 export const assetSizesFor = (platform: string): string[] => ASSET_SIZES[platform] ?? [];
+
+/** A platform only needs an asset size when it actually has sizes to choose
+ * from. Delivery has none, and requiring one there would be a dead end: the
+ * dropdown would be empty, so Submit could never be satisfied and the only way
+ * out would be to deselect the platform. Keyed off the size list rather than a
+ * platform name so any future spec-less platform behaves the same. */
+export const needsAssetSize = (platform: string): boolean => assetSizesFor(platform).length > 0;
+
+/** The Visit goal a planner typed into the brief (auto = Reach × CV%). Goals are
+ * stored as free text, so this tolerates "12,000", blanks and junk, and answers
+ * 0 for anything it can't read — a bad parse must never surface as NaN in a
+ * column or poison a group total. */
+export function visitGoalOf(brief: Pick<CampaignBrief, "successGoals"> | undefined): number {
+  const n = parseFloat(String(brief?.successGoals?.["Visit"] ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 export const KOL_TYPES = [
   "Foodie", "Lifestyle", "Office Worker", "Japanese Food", "Family", "Micro", "Nano", "Macro",
@@ -53,7 +70,7 @@ export const KOL_PLATFORMS = ["Instagram", "TikTok", "Facebook", "YouTube", "LIN
 export const KOL_CONTENT = ["Reel", "Story", "Post", "TikTok"] as const;
 
 export const CHANNELS = [
-  "Facebook", "Instagram", "TikTok", "LINE OA", "Google", "In-store", "CRM / LINE OA",
+  "Facebook", "Instagram", "TikTok", "LINE OA", "Google", "In-store", "CRM / LINE OA", "Delivery",
 ] as const;
 
 export const ADS_PLATFORMS = ["Facebook / Instagram", "TikTok", "Google", "LINE Ads", "Delivery (Grab/Line etc)", "Other"] as const;
@@ -401,7 +418,7 @@ export function guidelineChecklist(brief: CampaignBrief): GuidelineItem[] {
     { key: "offer", label: "Offer / Promotion มีหรือไม่", done: !!b.offer.trim(), must: true },
     { key: "branch", label: "Branch ที่ใช้ campaign (อย่างน้อย 1 สาขา)", done: b.branches.length > 0, must: true },
     { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0, must: true },
-    { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบทุก platform", done: b.content.length > 0 && b.content.every((c) => c.platforms.length > 0 && c.platforms.every((p) => c.assets.some((a) => a.platform === p))), must: true },
+    { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบทุก platform", done: b.content.length > 0 && b.content.every((c) => c.platforms.length > 0 && c.platforms.filter(needsAssetSize).every((p) => c.assets.some((a) => a.platform === p))), must: true },
     { key: "launch", label: "Launch date กำหนดแล้วหรือยัง", done: !!b.launchDate, must: true },
     { key: "approval", label: "Approver (CMO) กำหนดแล้วหรือยัง", done: !!b.approver.trim(), must: true },
     { key: "channel", label: "Channel ที่ต้องใช้มีอะไรบ้าง", done: b.channels.length > 0, must: false },
@@ -436,7 +453,7 @@ export function validateSubmit(brief: CampaignBrief): string[] {
     if (!c.title.trim()) e.push(`Please enter a Content Title for Content #${i + 1}`);
     if (!c.subHead.trim()) e.push(`Please enter a Sub Head for “${tag}”`);
     if (c.platforms.length === 0) e.push(`Please select at least one platform for “${tag}”`);
-    c.platforms.forEach((p) => {
+    c.platforms.filter(needsAssetSize).forEach((p) => {
       if (!c.assets.some((a) => a.platform === p)) e.push(`Please select asset size for ${p}`);
     });
     if (c.requiredGraphic && !c.graphicDueDate) e.push(`Please select a Graphic Due Date for “${tag}”`);
