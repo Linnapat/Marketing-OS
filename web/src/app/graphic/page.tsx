@@ -720,12 +720,16 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      {/* No "Pending" column: it printed `pendingApprover`, which is set once when
+          the request is created and never moves, so it only ever repeated the
+          approver's name — it never tracked who the request was actually waiting
+          on. A column that looks live but isn't is worse than no column. */}
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 0.8fr 1fr 0.7fr 1.2fr" }}>
-        <div>Request</div><div>Campaign</div><div>Designer</div><div>Due</div><div>Stage</div><div>Fb</div><div>Pending</div>
+        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 0.8fr 1fr 0.7fr" }}>
+        <div>Request</div><div>Campaign</div><div>Designer</div><div>Due</div><div>Stage</div><div>Fb</div>
       </div>
       {items.map((g) => (
-        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.2fr_1fr_0.8fr_1fr_0.7fr_1.2fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
+        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.2fr_1fr_0.8fr_1fr_0.7fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
           <div><div className="text-[13px] font-bold text-ink">{g.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div></div>
           <span className="text-[12px] text-muted truncate">{g.campaign}</span>
           <span className="text-[12px] text-muted">{g.designer}</span>
@@ -735,7 +739,6 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
             <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
           </span>
           <span className="text-[12px] font-semibold" style={{ color: g.openFb > 0 ? "#B33A2E" : "#9A9387" }}>{g.openFb || "—"}</span>
-          <span className="text-[12px] text-muted">{g.pendingApprover}</span>
         </button>
       ))}
       {items.length === 0 && (
