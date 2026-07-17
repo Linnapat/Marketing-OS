@@ -15,7 +15,7 @@ import { fetchBrandConfigs } from "@/lib/db/settings";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import type { CampaignBrief } from "@/lib/data/brief";
 import { toastError } from "@/lib/toast";
-import { BRAND_ORDER, brandName, type BrandId } from "@/lib/brands";
+import { BRAND_ORDER, brandName, brandColor, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
@@ -221,8 +221,20 @@ export default function OmdStoreCampaignPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allPromotions, branch, brand, category, search, period]);
 
+  // Rows are ordered by brand inside each category so every brand reads as one
+  // contiguous colour band. Tinting rows that stayed interleaved would just look
+  // noisy — the point of the tint is to replace the Brand column we removed.
+  // Sort is stable, so same-brand rows keep their existing order.
+  const brandRank = (b: BrandId) => {
+    const i = BRAND_ORDER.indexOf(b);
+    return i === -1 ? BRAND_ORDER.length : i; // a brand dropped from config sinks last
+  };
   const grouped = categoryOrder
-    .map((key) => ({ key, items: filtered.filter((item) => item.category === key) }))
+    .map((key) => ({
+      key,
+      items: filtered.filter((item) => item.category === key)
+        .sort((a, b) => brandRank(a.brand) - brandRank(b.brand)),
+    }))
     .filter((group) => group.items.length > 0);
 
   const activeCount = filtered.filter((item) => item.status === "active" || item.status === "open_end").length;
@@ -485,11 +497,25 @@ export default function OmdStoreCampaignPage() {
         <section className="omd-print-sections mt-3 space-y-3">
           {grouped.map((group) => {
             const meta = OMD_STORE_CATEGORY_META[group.key];
+            // Brands actually present in this group, in the order the rows run.
+            const groupBrands = Array.from(new Set(group.items.map((item) => item.brand)));
             return (
               <div key={group.key} className="omd-print-section overflow-hidden rounded-[18px] border bg-white shadow-[0_8px_22px_rgba(23,23,42,0.04)]" style={{ borderColor: meta.border }}>
                 <div className="omd-category-head flex flex-wrap items-center justify-between gap-2 px-4 py-3" style={{ background: meta.bg, color: meta.fg }}>
                   <div className="omd-category-head-title text-[14px] font-extrabold">{meta.printLabel}</div>
-                  <div className="rounded-full bg-white/65 px-3 py-1 text-[11px] font-extrabold">{group.items.length} items</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Key for the row tints. Without the Brand column the colour is
+                        the only thing saying which brand a row belongs to, and a
+                        colour nobody can name is decoration. Only shown when the
+                        sheet actually mixes brands — one brand needs no key. */}
+                    {groupBrands.length > 1 && groupBrands.map((id) => (
+                      <span key={id} className="flex items-center gap-[5px] rounded-full bg-white/65 px-2.5 py-1 text-[10.5px] font-extrabold">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: brandColor(id) }} />
+                        {brandName(id)}
+                      </span>
+                    ))}
+                    <div className="rounded-full bg-white/65 px-3 py-1 text-[11px] font-extrabold">{group.items.length} items</div>
+                  </div>
                 </div>
 
                 <div className="omd-table-head hidden xl:grid grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
@@ -504,7 +530,19 @@ export default function OmdStoreCampaignPage() {
 
                 <div className="divide-y divide-[#ECEAF2]">
                   {group.items.map((item) => (
-                    <article key={item.id} className="omd-print-card grid gap-3 px-4 py-3 xl:grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr]">
+                    <article
+                      key={item.id}
+                      // The brand's own colour, barely there (8%), as the row's
+                      // background — it carries the brand identity the removed
+                      // Brand column used to, without spending a column on it.
+                      // The page sets print-color-adjust: exact, so it survives
+                      // the printer. A left rule in the full colour keeps the
+                      // band legible if a printer washes the tint out anyway.
+                      style={{
+                        background: `${brandColor(item.brand)}14`,
+                        borderLeft: `3px solid ${brandColor(item.brand)}`,
+                      }}
+                      className="omd-print-card grid gap-3 px-4 py-3 xl:grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr]">
                       <div className="omd-check-cell hidden">
                         <span className="inline-block h-4 w-4 rounded-[4px] border border-[#9D96AC] bg-white" />
                       </div>
