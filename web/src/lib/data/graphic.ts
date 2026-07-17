@@ -130,8 +130,25 @@ export function workKind(type: string, requiredVideo = false): WorkKind {
 
 /** Size key used to decide whether two deliverables are the same piece of
  *  artwork. Exported because the artwork report must group by exactly the same
- *  rule the app counts by — two answers to "how many pieces" is one too many. */
-export const normSize = (s: string) => (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+ *  rule the app counts by — two answers to "how many pieces" is one too many.
+ *
+ *  Two deliverables are the same piece when they are the same PIXELS, not when
+ *  they read the same. Every platform labels its presets differently — one
+ *  1080×1920 export is "9:16 Story (1080×1920)" on Facebook, "9:16 Reel/Story
+ *  (1080×1920)" on Instagram and "9:16 (1080×1920)" on TikTok — so comparing
+ *  the text counted a single file three times, and would have paid an
+ *  outsourced studio three times for it.
+ *
+ *  The ratio can't decide it either: Facebook's 1:1 is 1080×1080 while Google
+ *  Business Profile's 1:1 is 720×720, and those really are two files.
+ *
+ *  Sizes with no pixels in them (A4 Poster, Table Tent) fall back to their
+ *  name, which is all we know about them. */
+export const normSize = (s: string) => {
+  const raw = (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+  const px = /(\d{2,5})\s*[×x]\s*(\d{2,5})/.exec(raw);
+  return px ? `${px[1]}x${px[2]}` : raw;
+};
 
 /** How many distinct ARTWORK pieces a request represents.
  *  Option 1 (auto): distinct size, platform collapsed — same size on FB & IG is
