@@ -5,7 +5,7 @@ import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Copy, Trash2, X } from "lucide-react";
+import { Plus, Copy, Trash2, X, FileSpreadsheet } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
@@ -24,6 +24,8 @@ import {
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
+import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
+import { applyBriefPatch } from "@/lib/data/briefSheet";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
 import { BudgetSheetRow, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
@@ -266,6 +268,41 @@ export default function NewCampaignPage() {
     }
   };
 
+  // ── Import from a Google-Sheet brief ────────────────────────────────────
+  // Prefills the form only. Nothing is written until the planner saves, so the
+  // sheet can't bypass validation, the CMO approval flow, or the budget guard.
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importReport, setImportReport] = useState<{ counts: { content: number; kols: number }; warnings: string[] } | null>(null);
+
+  const runSheetImport = async () => {
+    if (!sheetUrl.trim() || importing) return;
+    setImporting(true);
+    setImportReport(null);
+    try {
+      const { patch, warnings, counts } = await fetchBriefFromSheet(sheetUrl);
+      const notes = [...warnings];
+
+      // The sheet may name a brand this planner isn't allowed to plan for —
+      // brand visibility decides, not the sheet.
+      if (patch.b && !brandOptions.includes(patch.b)) {
+        notes.push(`Brand: คุณไม่มีสิทธิ์สร้างแคมเปญของแบรนด์ “${brandName(patch.b)}” — ใช้แบรนด์เดิมในฟอร์ม`);
+        delete patch.b;
+      }
+
+      const branchesFor = (brand: BrandId) => brandConfigs.find((c) => c.key === brand)?.branchList ?? [];
+      const { brief: merged, warnings: mergeWarnings } = applyBriefPatch(brief, patch, branchesFor);
+      setBrief(merged);
+      setSeq(merged.content.length + merged.kols.length + 1);
+      setTriedNext(false);
+      setImportReport({ counts, warnings: [...notes, ...mergeWarnings] });
+    } catch (error) {
+      toastError(error instanceof Error ? error.message : "อ่าน sheet ไม่สำเร็จ");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const submit = async (asDraft: boolean) => {
     // Save Draft is exempt from validation; Submit is blocked when required
     // fields are missing.
@@ -320,7 +357,12 @@ export default function NewCampaignPage() {
       </div>
 
       <div className="mt-5 max-w-[900px]">
-        {step === 0 && <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />}
+        {step === 0 && (
+          <>
+            <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} />
+            <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
+          </>
+        )}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
         {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} />}
         {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
@@ -366,6 +408,60 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
       <div className="text-[14px] font-bold mb-1">{title}</div>
       {hint ? <div className="text-[12px] text-faint mb-4">{hint}</div> : <div className="mb-4" />}
       {children}
+    </div>
+  );
+}
+
+// ── Google-Sheet import (step 1) ────────────────────────────────────────────
+// Collapsed by default: most campaigns are still built by hand, and the sheet
+// path shouldn't push the actual form below the fold.
+function SheetImport({ url, setUrl, busy, onImport, report }: {
+  url: string; setUrl: (v: string) => void; busy: boolean; onImport: () => void;
+  report: { counts: { content: number; kols: number }; warnings: string[] } | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-surface border border-line rounded-cardLg p-5 mb-4">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 text-left">
+        <span className="flex items-center gap-2">
+          <FileSpreadsheet size={15} style={{ color: "#4E7A4E" }} />
+          <span className="text-[14px] font-bold">Import จาก Google Sheet</span>
+          <span className="text-[11px] font-semibold rounded-pill px-2 py-[2px]" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>ทางเลือก</span>
+        </span>
+        <span className="text-[12px] font-semibold text-faint">{open ? "ซ่อน" : "เปิด"}</span>
+      </button>
+      {open && (
+        <div className="mt-4">
+          <div className="text-[12px] text-faint mb-3">
+            วางลิงก์ sheet ที่ทำตาม template (แท็บ Overview / Content / KOL / Budget) — แชร์แบบ “Anyone with the link · Viewer” ก่อน
+            <br />ระบบจะกรอกฟอร์มให้ <span className="font-semibold">ตรวจและแก้ได้ก่อนบันทึก</span> — ไม่มีการบันทึกอัตโนมัติ
+          </div>
+          <div className="flex gap-2">
+            <input value={url} onChange={(e) => setUrl(e.target.value)} className={field} placeholder="https://docs.google.com/spreadsheets/d/…"
+              onKeyDown={(e) => { if (e.key === "Enter") onImport(); }} />
+            <button type="button" disabled={busy || !url.trim()} onClick={onImport}
+              className="text-[13px] font-bold text-white rounded-[10px] px-5 py-[9px] whitespace-nowrap disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+              {busy ? "กำลังอ่าน…" : "Import"}
+            </button>
+          </div>
+          {report && (
+            <div className="mt-3 rounded-[10px] border p-3" style={{ background: "#F7FAF7", borderColor: "#CFE4C2" }}>
+              <div className="text-[12.5px] font-bold" style={{ color: "#4E7A4E" }}>
+                ✓ กรอกฟอร์มจาก sheet แล้ว — content {report.counts.content} รายการ · KOL {report.counts.kols} รายการ
+              </div>
+              {report.warnings.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {report.warnings.map((w, i) => (
+                    <li key={i} className="text-[11.5px] text-muted flex gap-1.5">
+                      <span style={{ color: "#C68A1E" }}>⚠</span><span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
