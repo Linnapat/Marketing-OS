@@ -29,6 +29,14 @@ import {
 
 const ACTION_STATUSES = ["Draft", "Waiting Approval", "Approved", "Active", "Paused", "Inactive", "Completed", "Cancelled"];
 
+// Campaign · Brand·Branch · Owner · Budget · Visit · Ready · Actions.
+// Actions has a hard floor rather than a bare fr: it holds the status select,
+// Edit and Delete side by side, and the longest status ("Waiting for Approval")
+// makes that select wide. Given only a share of the row, the cell would run out
+// of room and drop Delete onto a second line, leaving the column two rows tall.
+// The floor keeps all three on one line; the fr only decides how it grows.
+const COLS = "1.9fr 1.05fr 0.9fr 0.8fr 0.7fr 0.55fr minmax(292px, 2fr)";
+
 type GroupBy = "status" | "brand";
 
 export default function CampaignsPage() {
@@ -284,7 +292,7 @@ export default function CampaignsPage() {
                 <div className="border-t border-line4">
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-                    style={{ gridTemplateColumns: "2.1fr 1.15fr 0.95fr 0.8fr 0.7fr 0.55fr 2fr" }}>
+                    style={{ gridTemplateColumns: COLS }}>
                     <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center">Ready</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
@@ -300,8 +308,11 @@ export default function CampaignsPage() {
                       style={{
                         background: `${brandColor(c.b)}0D`,
                         borderLeft: `3px solid ${brandColor(c.b)}`,
+                        // Fed to the md: grid rule below, so the row and its header
+                        // read their columns from the one COLS definition.
+                        ["--cols" as string]: COLS,
                       }}
-                      className="grid grid-cols-1 md:grid-cols-[2.1fr_1.15fr_0.95fr_0.8fr_0.7fr_0.55fr_2fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 transition hover:shadow-[inset_0_0_0_9999px_rgba(23,23,42,0.035)]"
+                      className="grid grid-cols-1 gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 transition hover:shadow-[inset_0_0_0_9999px_rgba(23,23,42,0.035)] md:[grid-template-columns:var(--cols)]"
                     >
                       <div>
                         <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
@@ -329,8 +340,8 @@ export default function CampaignsPage() {
                           {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
                         </span>
                       </div>
-                      {/* Actions — status + edit + delete on one row */}
-                      <div className="flex items-center gap-2 flex-wrap">
+                      {/* Actions — status + edit + delete, always on one row */}
+                      <div className="flex items-center gap-2 flex-nowrap">
                         {canChangeStatus ? (() => {
                           const statusOptions = ACTION_STATUSES.includes(c.status) ? ACTION_STATUSES : [c.status, ...ACTION_STATUSES];
                           return (
@@ -338,7 +349,7 @@ export default function CampaignsPage() {
                           value={c.status}
                           onChange={(e) => onStatusChange(c.id, e.target.value)}
                           disabled={busyCampaignId === c.id}
-                          className="text-[11.5px] font-bold text-ink bg-white border rounded-[10px] px-2.5 py-[7px] cursor-pointer outline-none disabled:opacity-50"
+                          className="text-[11.5px] font-bold text-ink bg-white border rounded-[10px] px-2.5 py-[7px] cursor-pointer outline-none disabled:opacity-50 min-w-0 flex-1"
                           style={{ borderColor: "#ECEAF2" }}
                         >
                           {statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -351,7 +362,7 @@ export default function CampaignsPage() {
                         )}
                         <Link
                           href={`/campaigns/new?edit=${c.id}`}
-                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8]"
+                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
                           style={{ borderColor: "#DCD6F7" }}
                         >
                           Edit
@@ -360,7 +371,7 @@ export default function CampaignsPage() {
                           type="button"
                           onClick={() => onDelete(c)}
                           disabled={busyCampaignId === c.id}
-                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50"
+                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50 shrink-0 whitespace-nowrap"
                           style={{ borderColor: "#F2CACA" }}
                         >
                           Delete
