@@ -123,6 +123,24 @@ is("start date", full.patch.startDate, "2026-07-01");
 is("channels", (full.patch.channels ?? []).join("|"), "Facebook|Instagram|TikTok");
 is("a goal implies its metric is a KPI", (full.patch.successMetrics ?? []).includes("Reach"), true);
 is("goal value", full.patch.successGoals?.["CV%"], "2.5");
+// Visit = Reach × CV%, the form's own fixed-metric rule — the list's Visit
+// column reads successGoals.Visit, so the importer must fill it in too.
+is("Visit derives from Reach × CV%", full.patch.successGoals?.["Visit"], "12500");
+is("…and Visit joins the KPI set", (full.patch.successMetrics ?? []).includes("Visit"), true);
+{
+  const explicit = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"], ["Goal: Reach", "300000"], ["Goal: CV%", "0.3"], ["Goal: Visit", "1234"]],
+    content: null, kol: null, budget: null,
+  }, resolve);
+  is("an explicit Visit wins over the derived one", explicit.patch.successGoals?.["Visit"], "1234");
+}
+{
+  const noCv = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"], ["Goal: Reach", "300000"]],
+    content: null, kol: null, budget: null,
+  }, resolve);
+  is("no CV% ⇒ no invented Visit", noCv.patch.successGoals?.["Visit"], undefined);
+}
 
 is("content rows", full.counts.content, 2);
 check("blank spacer row is skipped", full.patch.content?.length === 2);
