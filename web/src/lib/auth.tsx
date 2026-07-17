@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { fetchMembers, Member } from "@/lib/db/settings";
+import { fetchMembers, activateInvitedMember, Member } from "@/lib/db/settings";
 import type { Role } from "@/lib/role";
 
 /** Auth is only enforced when this flag is set AND Supabase is configured. */
@@ -51,7 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!u?.email) { setMember(null); return; }
       try {
         const all = await fetchMembers();
-        const m = all.find((x) => x.email.toLowerCase() === u.email!.toLowerCase()) ?? null;
+        let m = all.find((x) => x.email.toLowerCase() === u.email!.toLowerCase()) ?? null;
+        // Signing in is what proves an invite was accepted, so promote it here:
+        // `status` gates every owner/designer picker, and nothing else ever moved
+        // it off "Invited" — new members were silently unassignable until an admin
+        // edited them by hand. No-ops once Active; failures are swallowed so a
+        // hiccup here can never block sign-in.
+        if (m?.status === "Invited") m = (await activateInvitedMember(m.email)) ?? m;
         if (alive) setMember(m);
       } catch { /* ignore */ }
     };
