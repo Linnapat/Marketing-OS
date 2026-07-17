@@ -7,6 +7,7 @@
 
 import { briefFromSheet, applyBriefPatch, looksLikeTab, looksLikeCollapsedFieldTab, num, sheetDate, sheetMonth, briefFixture } from "../src/lib/data/briefSheet";
 import { budgetSummary } from "../src/lib/data/brief";
+import { csvUrlByTab } from "../src/lib/googleSheet";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -16,6 +17,15 @@ function check(name: string, cond: boolean) {
 function is(name: string, actual: unknown, expected: unknown) {
   if (actual !== expected) console.error(`    expected ${String(expected)}, got ${String(actual)}`);
   check(name, actual === expected);
+}
+
+console.log("\n— fresh Google Sheet CSV URL —");
+{
+  const url = csvUrlByTab("sheet-id", "Overview", 12345);
+  check("tab name is preserved", url.includes("sheet=Overview"));
+  check("cache-buster is appended", url.includes("_=12345"));
+  check("a later import gets a distinct URL",
+    url !== csvUrlByTab("sheet-id", "Overview", 12346));
 }
 
 // The brands as Settings has them (Takao and Touka are DIFFERENT brands — the

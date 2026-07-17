@@ -37,8 +37,9 @@ export function spreadsheetId(shareUrl: string): string | null {
 
 /** gviz CSV export URL for a given spreadsheet id + tab gid. The gviz endpoint
  *  is used instead of /export because /export rejects some link-shared sheets. */
-export function csvUrl(id: string, gid = "0"): string {
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+export function csvUrl(id: string, gid = "0", cacheBust?: string | number): string {
+  const fresh = cacheBust === undefined ? "" : `&_=${encodeURIComponent(String(cacheBust))}`;
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}${fresh}`;
 }
 
 /** Turn a normal share link into a CSV URL for the same tab, or null if the
@@ -57,7 +58,9 @@ export function csvUrlFromShareLink(shareUrl: string): string | null {
 
 /** Fetch a sheet tab and parse it into a grid of rows. Throws on HTTP error. */
 export async function fetchSheetGrid(id: string, gid = "0"): Promise<string[][]> {
-  const res = await fetch(csvUrl(id, gid), { cache: "no-store", redirect: "follow" });
+  // no-store only controls Next/Vercel. A unique query value also prevents the
+  // upstream gviz endpoint from returning an older CSV after a sheet was fixed.
+  const res = await fetch(csvUrl(id, gid, Date.now()), { cache: "no-store", redirect: "follow" });
   if (!res.ok) throw new Error(`Google Sheet fetch failed (${res.status})`);
   return parseCsv(await res.text());
 }
@@ -65,8 +68,9 @@ export async function fetchSheetGrid(id: string, gid = "0"): Promise<string[][]>
 /** CSV export URL for a tab addressed by NAME rather than gid. A gid is unique
  *  to one spreadsheet, so a template that gets copied gets new gids — the tab
  *  names survive the copy, which is what the campaign-brief importer relies on. */
-export function csvUrlByTab(id: string, tab: string): string {
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+export function csvUrlByTab(id: string, tab: string, cacheBust?: string | number): string {
+  const fresh = cacheBust === undefined ? "" : `&_=${encodeURIComponent(String(cacheBust))}`;
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}${fresh}`;
 }
 
 /** Fetch one named tab.
@@ -79,7 +83,7 @@ export function csvUrlByTab(id: string, tab: string): string {
  *  lib/data/briefSheet's looksLikeTab. Throws only when the whole sheet is
  *  unreachable or unshared. */
 export async function fetchSheetTab(id: string, tab: string): Promise<string[][]> {
-  const res = await fetch(csvUrlByTab(id, tab), { cache: "no-store", redirect: "follow" });
+  const res = await fetch(csvUrlByTab(id, tab, Date.now()), { cache: "no-store", redirect: "follow" });
   if (!res.ok) throw new Error(`Google Sheet fetch failed (${res.status})`);
   const text = await res.text();
   // A link-shared sheet returns CSV; an unshared one returns a sign-in HTML page.
