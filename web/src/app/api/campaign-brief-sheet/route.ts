@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { spreadsheetId, fetchSheetTab } from "@/lib/googleSheet";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
 import { loadBrandConfig, makeBrandResolver } from "@/lib/serverBrands";
-import { briefFromSheet, looksLikeTab, BRIEF_SHEET_TABS } from "@/lib/data/briefSheet";
+import { briefFromSheet, looksLikeTab, looksLikeCollapsedFieldTab, BRIEF_SHEET_TABS } from "@/lib/data/briefSheet";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,15 @@ export async function GET(req: NextRequest) {
   // again as content/KOL/budget.
   const [overview, content, kol, budget] = grids;
   if (!looksLikeTab("overview", overview)) {
+    // Distinguish "no Overview tab" from "the tab is there but every field got
+    // pasted into one cell" — the second is the likelier mistake and has a
+    // different fix, so saying "not found" would send people hunting the wrong thing.
+    if (looksLikeCollapsedFieldTab(overview)) {
+      return NextResponse.json(
+        { error: `แท็บ “${BRIEF_SHEET_TABS.overview}” มีอยู่ แต่ทุกฟิลด์ถูกวางรวมอยู่ในเซลล์เดียว (A1/B1) — ระบบแยกกลับไม่ได้เพราะ Google แปลงการขึ้นบรรทัดในเซลล์เป็นช่องว่าง วิธีแก้: ลบข้อมูลเดิม คลิกเซลล์ A2 “ครั้งเดียว” (อย่าดับเบิลคลิกเข้าโหมดแก้ไข) แล้ววางใหม่ — Sheets จะแตกเป็นแถวละฟิลด์ให้เอง` },
+        { status: 400 },
+      );
+    }
     return NextResponse.json(
       { error: `ไม่พบแท็บ “${BRIEF_SHEET_TABS.overview}” (หรือไม่มีคอลัมน์ Field / Value ตาม template) — ใช้ template ของ Marketing OS: แท็บ Overview / Content / KOL / Budget` },
       { status: 400 },

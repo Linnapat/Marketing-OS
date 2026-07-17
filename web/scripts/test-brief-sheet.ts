@@ -5,7 +5,7 @@
  * Run with:  npm test   (chained after test-brands.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { briefFromSheet, applyBriefPatch, looksLikeTab, num, sheetDate, sheetMonth, briefFixture } from "../src/lib/data/briefSheet";
+import { briefFromSheet, applyBriefPatch, looksLikeTab, looksLikeCollapsedFieldTab, num, sheetDate, sheetMonth, briefFixture } from "../src/lib/data/briefSheet";
 import { budgetSummary } from "../src/lib/data/brief";
 
 let pass = 0, fail = 0;
@@ -220,6 +220,27 @@ is("an empty grid is no tab at all", looksLikeTab("overview", []), false);
   is("no KOL is invented from the Overview tab", onlyOverview.counts.kols, 0);
   is("no budget is invented from the Overview tab", onlyOverview.patch.budget, undefined);
   is("…and the real Overview still imports", onlyOverview.patch.name, "Wagyu Festival");
+}
+
+console.log("\n— the paste-into-one-cell accident (from a real sheet) —");
+{
+  // Verbatim from a sheet a planner filled in: the rows were pasted while A1 was
+  // in edit mode, so every field name landed in A1 and every value in B1 — and
+  // Google's CSV export flattened the in-cell newlines to spaces on the way out.
+  const COLLAPSED = [
+    ["Field Campaign Name Brand Branches Objective Campaign Type Priority Start Date End Date Launch Date Target Audience Key Message Main Offer Store Promotion Channels Concept KV Direction Proposal Link",
+     "Value CRM-10% off for Must Eat OMD by TEPPEN 7 สาขาทั่วกรุงเทพฯ CRM CRM High 2026-09-01 2026-12-31 2026-09-01 สมาชิก OMD ทั้งหมด"],
+    ["Goal: Reach", "0"],
+    ["Goal: CV%", "3"],
+  ];
+  is("a collapsed tab is not accepted as Overview", looksLikeTab("overview", COLLAPSED), false);
+  is("…and is recognised as the paste accident", looksLikeCollapsedFieldTab(COLLAPSED), true);
+  is("a healthy Overview is NOT flagged as collapsed", looksLikeCollapsedFieldTab(OVERVIEW), false);
+  is("a Content tab is NOT flagged as collapsed", looksLikeCollapsedFieldTab(CONTENT), false);
+  is("a genuinely absent tab is NOT flagged as collapsed", looksLikeCollapsedFieldTab([["Something else", "x"]]), false);
+  // A long sentence that merely mentions one field name must not trip it.
+  is("prose mentioning one field name is not a collapsed tab",
+    looksLikeCollapsedFieldTab([["หมายเหตุ: กรุณากรอก Campaign Name ให้ครบทุกแคมเปญก่อนส่งให้ทีมตรวจสอบอีกครั้งนะครับ", ""]]), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

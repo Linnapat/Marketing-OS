@@ -193,6 +193,23 @@ export function looksLikeTab(kind: keyof typeof BRIEF_SHEET_TABS, grid: string[]
   }
 }
 
+/** The paste-into-one-cell accident, seen on a real sheet: every field name
+ *  landed in A1 and every value in B1, because the rows were pasted while the
+ *  cell was in edit mode. It cannot be undone here — Google's CSV export turns
+ *  in-cell newlines into plain spaces, and the values contain spaces of their
+ *  own, so "…Must Eat OMD by TEPPEN 7 สาขา…" has no recoverable boundaries.
+ *  Detect it only so the error can name the real cause and the fix, instead of
+ *  claiming the tab is missing when it is sitting right there. */
+export function looksLikeCollapsedFieldTab(grid: string[][]): boolean {
+  const first = norm(grid[0]?.[0] ?? "");
+  if (first.length < 60) return false;
+  const k = key(first);
+  const names = ["Campaign Name", "Brand", "Branches", "Objective", "Campaign Type", "Priority",
+    "Start Date", "End Date", "Launch Date", "Target Audience", "Key Message", "Main Offer"];
+  // Three or more field names crammed into one cell is no longer a coincidence.
+  return names.filter((n) => k.includes(key(n))).length >= 3;
+}
+
 /** A header-row tab → column resolver by any of several accepted names. */
 function columns(grid: string[][]) {
   const header = (grid[0] ?? []).map((h) => key(h));
