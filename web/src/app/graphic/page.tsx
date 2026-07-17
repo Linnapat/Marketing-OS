@@ -8,7 +8,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
-import { BrandFilterValue, BrandId, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   DESIGNERS, graphicKpis, emptyDeliverable, approveAllWaiting,
@@ -306,6 +306,107 @@ function CastPicker({ value, options, onChange }: { value: string; options: stri
 
 const cellBase = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
 
+/** Brand colour at low opacity — row tints and chips. */
+const tint = (hex: string, alpha: number): string => {
+  const n = parseInt((hex || "").replace("#", ""), 16);
+  if (Number.isNaN(n)) return `rgba(154, 147, 135, ${alpha})`;
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+};
+
+const fmtDate = (iso: string) =>
+  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+const fmtTime = (t: string) => (t ? t.split("-").filter(Boolean).join(" – ") : "—");
+
+/** Brand chip — the colour cue that carries through the table and the print sheet. */
+function BrandChip({ brand }: { brand: BrandId }) {
+  if (!brand) return <span className="text-[11.5px] text-faint">—</span>;
+  return (
+    <span
+      className="inline-flex items-center gap-[5px] rounded-full px-[7px] py-[2px] text-[11px] font-bold whitespace-nowrap"
+      style={{ background: tint(brandColor(brand), 0.14), color: brandColor(brand) }}
+    >
+      <BrandDot brand={brand} size={6} />
+      {brandName(brand)}
+    </span>
+  );
+}
+
+/** Print preview — the shoot sheet exactly as it will print (A4 landscape).
+ *  `window.print()` alone gave no in-app preview, so the leader could not see
+ *  what the crew would get before hitting print. */
+function ShootSheetPreview({ rows, printedAt, onClose }: { rows: ShootRow[]; printedAt: string; onClose: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+
+  const sorted = [...rows].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  const sh = "text-left text-[9.5px] font-extrabold uppercase tracking-[0.06em] text-white px-[8px] py-[6px]";
+  const sd = "px-[8px] py-[7px] text-[11px] text-ink align-top border-b border-line4";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] bg-black/45 overflow-y-auto p-6 flex flex-col items-center">
+      <div className="w-full max-w-[1100px] flex items-center justify-between gap-2 mb-3 no-print">
+        <div className="text-[13px] font-bold text-white">🖨 ตัวอย่างก่อนปริ้น · A4 แนวนอน</div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => window.print()} className="text-[12px] font-bold text-white bg-accent rounded-[9px] px-4 py-[8px]">ปริ้นเลย</button>
+          <button onClick={onClose} className="text-[12px] font-bold text-muted bg-white rounded-[9px] px-4 py-[8px]">ปิด</button>
+        </div>
+      </div>
+
+      <div className="shoot-sheet w-full max-w-[1100px] bg-white rounded-[10px] p-6 shadow-soft">
+        <div className="flex items-end justify-between border-b-[2px] border-ink pb-2 mb-3">
+          <div>
+            <div className="text-[19px] font-extrabold text-ink">🎬 Shoot Schedule — Creative</div>
+            <div className="text-[11px] text-faint">ใบนัดถ่าย · {sorted.length} คิว</div>
+          </div>
+          <div className="text-[11px] text-faint">พิมพ์เมื่อ {printedAt}</div>
+        </div>
+
+        <table className="w-full border-collapse">
+          <thead>
+            <tr style={{ background: "#17172A" }}>
+              <th className={sh}>Date</th><th className={sh}>Time</th><th className={sh}>Brand</th>
+              <th className={sh}>Content</th><th className={sh}>Location</th><th className={sh}>Menu</th>
+              <th className={sh}>Cast</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 && (
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-[11.5px] text-faint">ยังไม่มีคิวถ่าย</td></tr>
+            )}
+            {sorted.map((r) => (
+              <tr key={r.id} style={{ background: r.brand ? tint(brandColor(r.brand), 0.05) : undefined }}>
+                <td className={`${sd} font-bold whitespace-nowrap`} style={{ borderLeft: `3px solid ${r.brand ? brandColor(r.brand) : "transparent"}` }}>{fmtDate(r.date)}</td>
+                <td className={`${sd} whitespace-nowrap text-muted`}>{fmtTime(r.time)}</td>
+                <td className={sd}><BrandChip brand={r.brand} /></td>
+                <td className={`${sd} font-semibold`}>{r.content || "—"}</td>
+                <td className={sd}>{r.location || "—"}</td>
+                <td className={sd}>{r.menu || "—"}</td>
+                <td className={sd}>
+                  {castList(r.cast).length === 0 ? "—" : (
+                    <span className="flex flex-wrap gap-[3px]">
+                      {castList(r.cast).map((c) => (
+                        <span key={c} className="rounded-full bg-ivory border border-line2 px-[6px] py-[1px] text-[10.5px] font-semibold text-muted">{c}</span>
+                      ))}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="mt-4 pt-2 border-t border-line4 text-[10px] text-faint">
+          Marketing OS · Creative Kitchen — ตารางนี้แก้ได้ที่หน้า Graphic Request → Shoot Schedule
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function ShootCalendar({ me }: { me: string }) {
   const [rows, setRows] = useState<ShootRow[]>([]);
   const [autoRows, setAutoRows] = useState<ShootRow[]>([]);
@@ -314,6 +415,7 @@ function ShootCalendar({ me }: { me: string }) {
   const [branchesByBrand, setBranchesByBrand] = useState<Record<BrandId, string[]>>({});
   const [contentByBrand, setContentByBrand] = useState<Record<BrandId, string[]>>({});
   const [castOpts, setCastOpts] = useState<string[]>([]);
+  const [preview, setPreview] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -382,43 +484,41 @@ function ShootCalendar({ me }: { me: string }) {
   };
 
   const cell = `${cellBase} text-ink placeholder:text-faint`;
-  const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint px-[10px] py-2 border-b border-line";
+  const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-muted px-[10px] py-2 border-b border-line";
   const printedAt = new Date().toLocaleDateString("th-TH", { day: "2-digit", month: "long", year: "numeric" });
 
   return (
-    <div className="shoot-print">
+    <div>
       <style jsx global>{`
         @media print {
           @page { size: A4 landscape; margin: 10mm; }
           html, body { background: #fff !important; }
-          /* Print ONLY the shoot schedule: hide the whole app, then reveal
-             just this subtree and pin it to the top of the page. */
+          /* Print ONLY the preview sheet: hide the whole app, then reveal just
+             that subtree and pin it to the top of the page. What you see in the
+             preview modal is exactly what comes out of the printer. */
           body * { visibility: hidden !important; }
-          .shoot-print, .shoot-print * { visibility: visible !important; }
-          .shoot-print { position: absolute; left: 0; top: 0; width: 100%; background: #fff; padding: 0; }
-          .no-print, .no-print * { display: none !important; }
-          .shoot-print .print-only { display: block !important; }
-          /* Render the inline inputs/selects as plain values on paper. */
-          .shoot-print input, .shoot-print select, .shoot-print .cast-btn {
-            border: none !important; background: transparent !important; padding: 0 !important;
-            -webkit-appearance: none; appearance: none; color: #000 !important;
+          .shoot-sheet, .shoot-sheet * {
+            visibility: visible !important;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
           }
-          .shoot-print table { width: 100% !important; }
-          .shoot-print th, .shoot-print td { border: 1px solid #ccc !important; }
+          .shoot-sheet {
+            position: absolute; left: 0; top: 0; width: 100%;
+            margin: 0 !important; padding: 0 !important;
+            max-height: none !important; overflow: visible !important;
+            border: 0 !important; box-shadow: none !important; border-radius: 0 !important;
+          }
+          .no-print, .no-print * { display: none !important; }
         }
       `}</style>
 
-      <div className="print-only hidden mb-3">
-        <div className="text-[20px] font-extrabold">🎬 Shoot Schedule — Creative</div>
-        <div className="text-[12px] text-faint">พิมพ์เมื่อ {printedAt}</div>
-      </div>
+      {preview && <ShootSheetPreview rows={rows} printedAt={printedAt} onClose={() => setPreview(false)} />}
 
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
         <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-3 no-print">
           <div className="text-[13px] font-bold text-ink">🎬 Shoot Schedule <span className="text-[10.5px] text-faint font-normal">· ตารางขอถ่ายงาน — Creative Leader แก้ได้ทุกช่อง · ปริ้นเป็นใบนัดถ่ายได้</span></div>
           <div className="flex items-center gap-2">
             <button onClick={addRow} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px]">+ เพิ่มคิวถ่าย</button>
-            <button onClick={() => window.print()} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">🖨 ปริ้น</button>
+            <button onClick={() => setPreview(true)} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">🖨 Preview & ปริ้น</button>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -433,8 +533,9 @@ function ShootCalendar({ me }: { me: string }) {
                 <tr><td colSpan={8} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — กด &quot;เพิ่มคิวถ่าย&quot; หรือดึงจาก Content Plan ด้านล่าง</td></tr>
               )}
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-line4 last:border-0">
-                  <td className="px-[10px] py-[5px]"><input type="date" value={r.date} onChange={(e) => editRow(r.id, { date: e.target.value })} className={cell} /></td>
+                // Tinted by brand — the row reads as "whose shoot this is" at a glance.
+                <tr key={r.id} className="border-b border-line4 last:border-0" style={{ background: r.brand ? tint(brandColor(r.brand), 0.05) : undefined }}>
+                  <td className="px-[10px] py-[5px]" style={{ borderLeft: `3px solid ${r.brand ? brandColor(r.brand) : "transparent"}` }}><input type="date" value={r.date} onChange={(e) => editRow(r.id, { date: e.target.value })} className={cell} /></td>
                   <td className="px-[10px] py-[5px]">
                     {/* Two time pickers → stored as "start-end" */}
                     {(() => {
@@ -449,13 +550,22 @@ function ShootCalendar({ me }: { me: string }) {
                       );
                     })()}
                   </td>
+                  {/* Wide enough for the full brand name — the select was clipping it to "Om…". */}
                   <td className="px-[10px] py-[5px]">
-                    <select value={r.brand} onChange={(e) => setBrand(r, e.target.value)} className={cell}>
-                      <option value="">—</option>
-                      {BRAND_ORDER.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}
-                      {/* A brand since removed from Settings — keep the row readable. */}
-                      {r.brand && !BRAND_ORDER.includes(r.brand) && <option value={r.brand}>{brandName(r.brand)}</option>}
-                    </select>
+                    <span className="flex items-center gap-[6px]">
+                      {r.brand && <BrandDot brand={r.brand} />}
+                      <select
+                        value={r.brand}
+                        onChange={(e) => setBrand(r, e.target.value)}
+                        className={`${cell} min-w-[135px] font-semibold`}
+                        style={r.brand ? { color: brandColor(r.brand) } : undefined}
+                      >
+                        <option value="">—</option>
+                        {BRAND_ORDER.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}
+                        {/* A brand since removed from Settings — keep the row readable. */}
+                        {r.brand && !BRAND_ORDER.includes(r.brand) && <option value={r.brand}>{brandName(r.brand)}</option>}
+                      </select>
+                    </span>
                   </td>
                   <td className="px-[10px] py-[5px]"><input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} list={listId("content", r.brand)} placeholder="เลือก/พิมพ์จาก Content Plan" className={`${cell} min-w-[180px]`} /></td>
                   <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} list={listId("location", r.brand)} placeholder="เลือกสาขา" className={`${cell} min-w-[130px]`} /></td>
@@ -486,7 +596,7 @@ function ShootCalendar({ me }: { me: string }) {
             {autoRows.map((a) => (
               <div key={a.id} className="flex items-center gap-2 text-[12px] border-b border-line4 last:border-0 py-[5px]">
                 <span className="font-semibold text-ink flex-1 truncate">{a.content}</span>
-                <span className="text-faint truncate">{brandName(a.brand)}</span>
+                <BrandChip brand={a.brand} />
                 <span className="text-faint">{a.date || "—"}</span>
                 <button onClick={() => importAuto(a)} className="text-[11.5px] font-bold text-accent">＋ ดึงเข้า</button>
               </div>
