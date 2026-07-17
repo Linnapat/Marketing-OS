@@ -183,8 +183,8 @@ console.log("Graphic request — daily capacity guard (3/day per kind)");
   check("Reel → vdo", workKind("Reel") === "vdo");
   check("requiredVideo flag → vdo", workKind("Poster", true) === "vdo");
   check("Poster → graphic", workKind("Poster") === "graphic");
-  const del = (platform: string, size: string, artworkNo?: number): GraphicDeliverable =>
-    ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [], artworkNo });
+  const del = (platform: string, size: string): GraphicDeliverable =>
+    ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] });
   const gk = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), ...over });
   const day = "2026-08-10";
   const one = (id: number, type: string) => gk({ id, type, dueIso: day, deliverables: [del("FB", "1:1")] });
@@ -195,15 +195,18 @@ console.log("Graphic request — daily capacity guard (3/day per kind)");
   check("different day not counted", countWorkOnDay(three, "graphic", "2026-08-11") === 0);
 }
 
-console.log("Artwork counting — auto by size + manual grouping");
+console.log("Artwork counting — by pixels, platform collapsed");
 {
-  const del = (platform: string, size: string, artworkNo?: number): GraphicDeliverable =>
-    ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [], artworkNo });
+  const del = (platform: string, size: string): GraphicDeliverable =>
+    ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] });
   const g = (dels: GraphicDeliverable[]): Graphic => ({ ...(GRAPHICS[0] as Graphic), deliverables: dels });
   check("same size, 2 platforms = 1 artwork", artworkUnits(g([del("FB", "1:1"), del("IG", "1:1")])) === 1);
   check("different sizes = 2 artworks", artworkUnits(g([del("FB", "1:1"), del("IG", "9:16")])) === 2);
-  check("manual same artworkNo groups to 1", artworkUnits(g([del("FB", "1:1", 1), del("IG", "9:16", 1)])) === 1);
-  check("mixed: 2 grouped + 1 distinct = 2", artworkUnits(g([del("FB", "1:1", 1), del("IG", "9:16", 1), del("TT", "4:5")])) === 2);
+  // The real case: one 1080×1920 export, three platforms' labels — one piece.
+  check("same pixels under 3 labels = 1 artwork", artworkUnits(g([
+    del("FB", "9:16 Story (1080×1920)"), del("IG", "9:16 Reel/Story (1080×1920)"), del("TT", "9:16 (1080×1920)"),
+  ])) === 1);
+  check("same ratio, different pixels = 2", artworkUnits(g([del("FB", "1:1 (1080×1080)"), del("GBP", "1:1 (720×720)")])) === 2);
   check("never returns 0 (min 1)", artworkUnits(g([])) >= 1 && artworkUnits({ ...(GRAPHICS[0] as Graphic), deliverables: [] }) >= 1);
   check("artworkUnitsOf: 2 same-size assets = 1", artworkUnitsOf([{ size: "1:1" }, { size: "1:1" }]) === 1);
   check("artworkUnitsOf: 2 different sizes = 2", artworkUnitsOf([{ size: "1:1" }, { size: "9:16" }]) === 2);

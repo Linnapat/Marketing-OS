@@ -7,7 +7,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { artworkReport, artworkTotals, artworkMonths } from "../src/lib/data/artworkReport";
-import { Graphic, GraphicDeliverable, GraphicEvent } from "../src/lib/data/graphic";
+import { Graphic, GraphicDeliverable, GraphicEvent, artworkUnits, artworkUnitsOf } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -35,6 +35,33 @@ const req = (over: Partial<Graphic> = {}): Graphic => ({
   blocker: null, waitingSince: "", nextAction: "", platform: "IG", size: "—", contentItem: "—",
   deliverables: [], history: [], ...over,
 });
+
+console.log("\n— one piece = one set of PIXELS, whatever each platform calls it —");
+{
+  // From a real brief: the same 1080×1920 export ticked on three platforms. Each
+  // preset label is written differently — "9:16 Story (1080×1920)" on Facebook,
+  // "9:16 Reel/Story (1080×1920)" on Instagram, "9:16 (1080×1920)" on TikTok —
+  // but it is ONE file. Matching on the label counted it three times, which
+  // would have paid a studio triple for one piece of artwork.
+  const story = artworkUnitsOf([
+    { size: "9:16 Story (1080×1920)" }, { size: "9:16 Reel/Story (1080×1920)" }, { size: "9:16 (1080×1920)" },
+  ]);
+  is("the same pixels under three labels = ONE piece", story, 1);
+
+  const g: Graphic = req({ deliverables: [
+    del("Facebook", "9:16 Story (1080×1920)"), del("Instagram", "9:16 Reel/Story (1080×1920)"), del("TikTok", "9:16 (1080×1920)"),
+  ] });
+  is("…and the request agrees", artworkUnits(g), 1);
+}
+{
+  // The mirror, and why ratios cannot decide this: Facebook's 1:1 is 1080×1080
+  // while Google Business Profile's 1:1 is 720×720 — same ratio, two real files.
+  is("the same ratio at different pixels = two pieces", artworkUnitsOf([{ size: "1:1 (1080×1080)" }, { size: "1:1 (720×720)" }]), 2);
+  // Cross-platform reuse the labels hide: FB 16:9 and LINE's card are both 1200×628.
+  is("16:9 (1200×628) and Card 1200×628 = one piece", artworkUnitsOf([{ size: "16:9 (1200×628)" }, { size: "Card 1200×628" }]), 1);
+  // No pixels to compare (print) → fall back to the name.
+  is("A4 vs A3 poster = two pieces (by name)", artworkUnitsOf([{ size: "A4 Poster" }, { size: "A3 Poster" }]), 2);
+}
 
 console.log("\n— resize = a new piece —");
 {
