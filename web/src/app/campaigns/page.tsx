@@ -10,6 +10,7 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { Modal } from "@/components/ui/Modal";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
+import { useRole } from "@/lib/role";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
@@ -30,8 +31,14 @@ import {
 const NEW_STATUSES = ["Draft", "Planning", "Active", "In Progress", "Waiting Approval"];
 const ACTION_STATUSES = ["Draft", "Waiting Approval", "Approved", "Active", "Paused", "Inactive", "Completed", "Cancelled"];
 
+type GroupBy = "status" | "brand";
+
 export default function CampaignsPage() {
   const brandVisibility = useBrandVisibility();
+  const { role } = useRole();
+  // Status drives the approval flow, so only the CMO may move it.
+  const canChangeStatus = role === "CMO";
+  const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [search, setSearch] = useState<string>("");
@@ -131,9 +138,24 @@ export default function CampaignsPage() {
     (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
     rangeInFilter(date, c.dates),
   );
-  const groups = STATUS_ORDER
-    .map((s) => ({ status: s, rows: filtered.filter((c) => c.status === s) }))
-    .filter((g) => g.rows.length > 0);
+  const statusRank = (s: string) => {
+    const i = STATUS_ORDER.indexOf(s);
+    return i === -1 ? STATUS_ORDER.length : i;
+  };
+  // Groups carry a key of their own so the collapsed map can hold both modes at
+  // once; status keys stay bare to keep the defaults set above working.
+  const groups = groupBy === "status"
+    ? STATUS_ORDER
+      .map((s) => ({ key: s, status: s as string | null, brand: null as BrandId | null, rows: filtered.filter((c) => c.status === s) }))
+      .filter((g) => g.rows.length > 0)
+    : brandVisibility.visibleBrands
+      .map((b) => ({
+        key: `brand:${b}`,
+        status: null,
+        brand: b as BrandId | null,
+        rows: filtered.filter((c) => c.b === b).sort((a, z) => statusRank(a.status) - statusRank(z.status)),
+      }))
+      .filter((g) => g.rows.length > 0);
 
   // A campaign that covers every branch of its brand reads "All branches"
   // instead of the full comma-joined list.
@@ -220,22 +242,50 @@ export default function CampaignsPage() {
                 className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] outline-none w-full" style={{ borderColor: "#ECEAF2" }} />
             </div>
           </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Group by</span>
+            <div className="flex gap-1 p-[3px] rounded-[12px] bg-white border" style={{ borderColor: "#ECEAF2" }}>
+              {([["status", "สถานะ"], ["brand", "แบรนด์"]] as [GroupBy, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setGroupBy(key)}
+                  className="text-[12px] font-bold rounded-[9px] px-3 py-[6px] transition"
+                  style={groupBy === key
+                    ? { background: "#6C5CE7", color: "#fff" }
+                    : { background: "transparent", color: "#6B6577" }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </CampaignCommandBar>
       </div>
 
       {/* Status-grouped collapsible list */}
       <div className="mt-4 flex flex-col gap-3">
         {groups.map((g) => {
-          const isCollapsed = collapsed[g.status];
+          const isCollapsed = collapsed[g.key];
+          const totalBudget = g.rows.reduce((sum, c) => sum + (c.budget || 0), 0);
           return (
-            <div key={g.status} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <div key={g.key} className="bg-surface border border-line rounded-cardLg overflow-hidden">
               <button
-                onClick={() => setCollapsed((c) => ({ ...c, [g.status]: !c[g.status] }))}
+                onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
                 className="w-full flex items-center gap-2 px-5 py-[13px] hover:bg-ivory/60 transition"
               >
                 {isCollapsed ? <ChevronRight size={16} className="text-faint" /> : <ChevronDown size={16} className="text-faint" />}
-                <StatusBadge tone={campaignTone(g.status)}>{g.status}</StatusBadge>
+                {g.brand ? (
+                  <span className="flex items-center gap-[6px] text-[13px] font-extrabold text-ink">
+                    <BrandDot brand={g.brand} size={8} />{configuredBrandName(g.brand)}
+                  </span>
+                ) : (
+                  <StatusBadge tone={campaignTone(g.status!)}>{g.status}</StatusBadge>
+                )}
                 <span className="text-[12px] text-faint font-semibold">{g.rows.length}</span>
+                {g.brand && (
+                  <span className="ml-auto text-[12px] font-semibold text-faint">{baht(totalBudget, { compact: true })}</span>
+                )}
               </button>
               {!isCollapsed && (
                 <div className="border-t border-line4">
@@ -277,7 +327,7 @@ export default function CampaignsPage() {
                       </div>
                       {/* Actions — status + edit + delete on one row */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        {(() => {
+                        {canChangeStatus ? (() => {
                           const statusOptions = ACTION_STATUSES.includes(c.status) ? ACTION_STATUSES : [c.status, ...ACTION_STATUSES];
                           return (
                         <select
@@ -290,7 +340,11 @@ export default function CampaignsPage() {
                           {statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}
                         </select>
                           );
-                        })()}
+                        })() : (
+                          <span title="เฉพาะ CMO เท่านั้นที่เปลี่ยนสถานะแคมเปญได้">
+                            <StatusBadge tone={campaignTone(c.status)}>{c.status}</StatusBadge>
+                          </span>
+                        )}
                         <Link
                           href={`/campaigns/new?edit=${c.id}`}
                           className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8]"
