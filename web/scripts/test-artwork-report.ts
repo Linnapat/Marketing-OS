@@ -6,7 +6,7 @@
  * Run with:  npm test   (chained after test-agency-deliverables.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { artworkReport, artworkTotals, artworkMonths } from "../src/lib/data/artworkReport";
+import { artworkReport, artworkTotals, artworkMonths, creativeWorkload, revisionRate } from "../src/lib/data/artworkReport";
 import { Graphic, GraphicDeliverable, GraphicEvent } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
@@ -164,6 +164,38 @@ console.log("\n— video work counts as pieces —");
     history: [approved("Instagram", "1:1", "2026-08-05T10:00:00Z")],
   });
   is("…without the flag, Photo stays graphic", artworkReport([plain]).pieces[0]?.kind, "graphic");
+}
+
+console.log("\n— current workload (who carries what right now) —");
+{
+  const graphics = [
+    req({ id: 70, designer: "GID", type: "Photo", dueIso: "2026-09-02", deliverables: [del("Instagram", "1:1", "Not submitted")] }),
+    req({ id: 71, designer: "GID", type: "Reel", requiredVideo: true, dueIso: "2026-08-30", deliverables: [del("TikTok", "9:16", "Waiting review")] }),
+    req({ id: 72, designer: "GID", type: "Photo", dueIso: "2026-09-10", deliverables: [del("Facebook", "4:5", "Revision")] }),
+    req({ id: 73, designer: "Boss", type: "VDO Shooting", dueIso: "2026-09-03", deliverables: [del("Asset", "—", "Not submitted")] }),
+    // Approved work must NOT appear in the workload at all.
+    req({ id: 74, designer: "Boss", type: "Photo", deliverables: [del("Instagram", "1:1")] }),
+  ];
+  const rows = creativeWorkload(graphics, "2026-09-01");
+  const gid = rows.find((r) => r.designer === "GID")!;
+  is("open requests are bucketed by stage — in progress", gid.inProgress, 1);
+  is("…waiting review sits with the approver", gid.waitingReview, 1);
+  is("…revision is active fixing work", gid.revision, 1);
+  is("a due date before today is late", gid.overdue, 1);
+  is("due within 3 days is flagged, not late", gid.dueSoon, 1);
+  is("the mix names the kinds in the team's words", gid.mix.vdo, 1);
+  const boss = rows.find((r) => r.designer === "Boss")!;
+  is("a shoot day counts in the shoot kind", boss.mix.vdo_shoot, 1);
+  is("approved work is not workload", rows.reduce((s, r) => s + r.inProgress + r.waitingReview + r.revision, 0), 4);
+  is("busiest designer sorts first", rows[0].designer, "GID");
+
+  // Revision rate is piece-based: one piece bounced five times is one bad
+  // piece, not five — otherwise a single difficult job poisons the rate.
+  const pieces = [
+    { revisions: 5 }, { revisions: 0 }, { revisions: 1 }, { revisions: 0 },
+  ] as Parameters<typeof revisionRate>[0];
+  is("revision rate counts pieces, not bounces", revisionRate(pieces), 0.5);
+  is("empty month has rate 0", revisionRate([]), 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -17,7 +17,7 @@
 // July and accepted in August.
 
 import { BrandId } from "@/lib/brands";
-import { Graphic, GraphicDeliverable, WorkKind, deriveDeliverables, normSize, workKind } from "@/lib/data/graphic";
+import { Graphic, GraphicDeliverable, WorkKind, deriveDeliverables, normSize, workKind, stageFromDeliverables } from "@/lib/data/graphic";
 
 export interface ArtworkPiece {
   requestId: number;
@@ -155,4 +155,75 @@ export function artworkTotals(pieces: ArtworkPiece[]): ArtworkTotal[] {
 /** Months present in a set of pieces, newest first — drives the month picker. */
 export function artworkMonths(pieces: ArtworkPiece[]): string[] {
   return Array.from(new Set(pieces.map((p) => p.month))).filter(Boolean).sort().reverse();
+}
+
+// ── Current workload (the "who is carrying what RIGHT NOW" table) ─────────
+// The Artwork totals above answer "what got produced" — a billing question.
+// This answers the managing question: per person, what is open, what is stuck
+// in review or revision, what is late, and what lands within three days.
+
+export interface WorkloadRow {
+  designer: string;
+  /** Open requests being worked on (not yet waiting review / in revision). */
+  inProgress: number;
+  /** Submitted, sitting with the approver. The designer is NOT the bottleneck here. */
+  waitingReview: number;
+  /** Sent back — active fixing work. */
+  revision: number;
+  /** Open and past due. */
+  overdue: number;
+  /** Open and due within the next `DUE_SOON_DAYS` days (today included). */
+  dueSoon: number;
+  /** Open requests per work kind, for the "4 graphic · 2 ตัด" mix line. */
+  mix: Partial<Record<WorkKind, number>>;
+}
+
+export const DUE_SOON_DAYS = 3;
+
+const plusDays = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Open (unapproved) requests grouped per designer. `today` is an ISO date —
+ *  passed in, not read from the clock, so the maths is testable. */
+export function creativeWorkload(graphics: Graphic[], today: string): WorkloadRow[] {
+  const horizon = plusDays(today, DUE_SOON_DAYS);
+  const rows = new Map<string, WorkloadRow>();
+
+  for (const g of graphics) {
+    const stage = stageFromDeliverables(g);
+    if (stage === "Approved") continue;
+    const designer = g.designer?.trim() || "Unassigned";
+    const row = rows.get(designer) ?? { designer, inProgress: 0, waitingReview: 0, revision: 0, overdue: 0, dueSoon: 0, mix: {} };
+
+    if (stage === "Revision Requested") row.revision++;
+    else if (stage === "Waiting Feedback") row.waitingReview++;
+    else row.inProgress++;
+
+    const due = (g.dueIso || "").slice(0, 10);
+    if (due && due < today) row.overdue++;
+    else if (due && due <= horizon) row.dueSoon++;
+
+    const kind = workKind(g.type, g.requiredVideo);
+    row.mix[kind] = (row.mix[kind] ?? 0) + 1;
+    rows.set(designer, row);
+  }
+
+  // Busiest first; "Unassigned" last — it's a queue, not a person.
+  return Array.from(rows.values()).sort((a, b) => {
+    if (a.designer === "Unassigned") return 1;
+    if (b.designer === "Unassigned") return -1;
+    const load = (r: WorkloadRow) => r.inProgress + r.revision;
+    return load(b) - load(a) || a.designer.localeCompare(b.designer);
+  });
+}
+
+/** Share of this month's approved pieces that needed at least one revision —
+ *  0..1. Piece-based, not revision-count-based: one piece bounced five times
+ *  is one problematic piece, not five. */
+export function revisionRate(pieces: ArtworkPiece[]): number {
+  if (!pieces.length) return 0;
+  return pieces.filter((p) => p.revisions > 0).length / pieces.length;
 }

@@ -116,11 +116,14 @@ export function deliverableProgress(g: Graphic) {
 // creative/production team is never overloaded on a single day.
 export const DAILY_WORK_CAP = 3;
 export type WorkKind = "graphic" | "vdo" | "vdo_shoot" | "photo_shoot";
+// The team's own words: VDO work is either งานถ่าย (a shoot) or งานตัด (an
+// edit) — the rates differ, so the labels keep them apart everywhere counts
+// are shown. "vdo" is the edit kind: a Reel/Short/VDO request is cutting work.
 export const WORK_KIND_LABEL: Record<WorkKind, string> = {
-  graphic: "Graphic request",
-  vdo: "VDO request",
-  vdo_shoot: "VDO Shooting",
-  photo_shoot: "Photo shooting",
+  graphic: "Graphic",
+  vdo: "VDO · งานตัด",
+  vdo_shoot: "VDO · งานถ่าย",
+  photo_shoot: "Photo · งานถ่าย",
 };
 
 /** Classify a request into one of the four capped work kinds. */
