@@ -11,6 +11,7 @@ import {
 import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
+import { fetchBrandConfigs } from "@/lib/db/settings";
 import { toastError } from "@/lib/toast";
 import { BRAND_ORDER, brandName, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
@@ -50,6 +51,19 @@ function branchMatch(item: OmdStorePromotion, branch: string) {
   return branch === "all" || item.branches.includes(branch) || item.branches.includes("All Branch");
 }
 
+/** What to print in the Branch column. Listing every branch of a brand that runs
+ *  the promotion everywhere is noise on a printout — collapse it to "All branches".
+ *  `brandBranches` is the brand's configured branch list (Settings → Brands); when
+ *  it's unknown or the brand has a single branch we just name the branches, since
+ *  "All branches" would be less informative than the name itself. */
+function branchLabel(item: OmdStorePromotion, brandBranches: string[]): string {
+  const list = item.branches.filter(Boolean);
+  if (!list.length) return "—";
+  if (list.some((b) => /^all\s*branch(es)?$/i.test(b))) return "All branches";
+  if (brandBranches.length > 1 && brandBranches.every((b) => list.includes(b))) return "All branches";
+  return list.join(", ");
+}
+
 function filterLabel(value: string, fallback: string) {
   return value === "all" ? fallback : value;
 }
@@ -76,7 +90,9 @@ function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
     brand: campaign.b,
     category: "campaign",
     title: campaign.name,
-    description: `${campaign.campType} · Owner: ${campaign.owner} · Budget ${campaign.budget.toLocaleString("th-TH")} THB`,
+    // Owner is internal — the printout goes to store staff, who only need what
+    // the promotion is and what it costs.
+    description: `${campaign.campType} · Budget ${campaign.budget.toLocaleString("th-TH")} THB`,
     // POS name is typed by the team before printing (saved per item) — the
     // approval status was never the right content for this column.
     posName: "",
@@ -118,9 +134,22 @@ export default function OmdStoreCampaignPage() {
   const [syncState, setSyncState] = useState<"ready" | "synced">("ready");
   const [printTemplate, setPrintTemplate] = useState<PrintTemplate>("board");
   const [liveCampaigns, setLiveCampaigns] = useState<CampaignRow[]>(CAMPAIGNS);
+  // Each brand's configured branch list, so the Branch column can collapse a
+  // promotion that runs everywhere into "All branches".
+  const [brandBranches, setBrandBranches] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     refreshFromSupabase();
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetchBrandConfigs()
+      .then((cfgs) => {
+        if (alive) setBrandBranches(Object.fromEntries(cfgs.map((c) => [c.key, c.branchList ?? []])));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
   }, []);
 
   // POS names typed by the team — persisted per item in promotion_summary_items
@@ -253,14 +282,14 @@ export default function OmdStoreCampaignPage() {
           }
           .omd-table-head {
             display: grid !important;
-            grid-template-columns: .54fr 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+            grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
             padding: 7px 10px !important;
             font-size: 8px !important;
             background: #fbfaf7 !important;
           }
           .omd-print-card {
             display: grid !important;
-            grid-template-columns: .54fr 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+            grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
             gap: 8px !important;
             padding: 8px 10px !important;
             break-inside: avoid;
@@ -299,7 +328,7 @@ export default function OmdStoreCampaignPage() {
           }
           .template-checklist .omd-table-head,
           .template-checklist .omd-print-card {
-            grid-template-columns: .42fr .55fr 1.1fr 1.65fr 1fr .8fr .65fr .65fr !important;
+            grid-template-columns: .42fr 1.1fr 1.65fr 1fr .8fr .65fr .65fr !important;
           }
           .template-checklist .omd-check-cell {
             display: block !important;
@@ -448,9 +477,8 @@ export default function OmdStoreCampaignPage() {
                   <div className="rounded-full bg-white/65 px-3 py-1 text-[11px] font-extrabold">{group.items.length} items</div>
                 </div>
 
-                <div className="omd-table-head hidden xl:grid grid-cols-[.65fr_1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
+                <div className="omd-table-head hidden xl:grid grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
                   <div className="omd-check-cell hidden">Done</div>
-                  <div>Brand</div>
                   <div>Promotion</div>
                   <div>Details</div>
                   <div>POS Name</div>
@@ -461,13 +489,9 @@ export default function OmdStoreCampaignPage() {
 
                 <div className="divide-y divide-[#ECEAF2]">
                   {group.items.map((item) => (
-                    <article key={item.id} className="omd-print-card grid gap-3 px-4 py-3 xl:grid-cols-[.65fr_1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr]">
+                    <article key={item.id} className="omd-print-card grid gap-3 px-4 py-3 xl:grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr]">
                       <div className="omd-check-cell hidden">
                         <span className="inline-block h-4 w-4 rounded-[4px] border border-[#9D96AC] bg-white" />
-                      </div>
-                      <div className="omd-print-card-meta text-[11px] font-extrabold text-[#706A84]">
-                        {brandName(item.brand)}<br />
-                        <span className="font-bold text-[#9D96AC]">{sourceLabel(item.source)}</span>
                       </div>
                       <div>
                         <div className="omd-print-card-title text-[13px] font-extrabold leading-snug">{item.title}</div>
@@ -487,7 +511,7 @@ export default function OmdStoreCampaignPage() {
                         />
                         <span className="hidden print:inline">{item.posName || "—"}</span>
                       </div>
-                      <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{item.branches.join(", ")}</div>
+                      <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{branchLabel(item, brandBranches[item.brand] ?? [])}</div>
                       <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
                         {formatDate(item.startDate)}<br />
                         <span className="text-[#8A879A]">to {formatDate(item.endDate)}</span>
