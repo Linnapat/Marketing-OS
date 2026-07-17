@@ -68,6 +68,12 @@ export default function ArtworkCountPage() {
 
   const totalPieces = inMonth.length;
   const totalRequests = new Set(inMonth.map((p) => p.requestId)).size;
+  // The one-line answer to "ทีม Creative ทำกราฟฟิคกับวิดีโอไปเท่าไร": pieces per
+  // kind, before the per-designer breakdown below.
+  const kindCount = (kinds: WorkKind[]) => inMonth.filter((p) => kinds.includes(p.kind)).length;
+  const graphicPieces = kindCount(["graphic"]);
+  const videoPieces = kindCount(["vdo"]);
+  const shootPieces = kindCount(["vdo_shoot", "photo_shoot"]);
 
   return (
     <>
@@ -98,6 +104,9 @@ export default function ArtworkCountPage() {
         <ModuleSummaryCard title={`สรุป ${month ? monthLabel(month) : ""}`}>
           <div className="flex flex-wrap gap-3">
             <Stat label="ชิ้นงานที่อนุมัติ" value={totalPieces} note="นับตามไซซ์ · resize = คนละชิ้น" />
+            <Stat label="🎨 Graphic" value={graphicPieces} note="ชิ้นงานกราฟฟิค" />
+            <Stat label="🎬 VDO" value={videoPieces} note="ชิ้นงานวิดีโอ" />
+            {shootPieces > 0 && <Stat label="📷 Shooting" value={shootPieces} note="งานถ่ายทำ" />}
             <Stat label="จากใบงาน" value={totalRequests} note="1 ใบงานมีได้หลายชิ้น" />
             <Stat label="คนทำ" value={totals.length ? new Set(totals.map((t) => t.designer)).size : 0} note="แยกยอดรายคน" />
           </div>

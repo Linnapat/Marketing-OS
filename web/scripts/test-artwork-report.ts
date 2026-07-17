@@ -145,5 +145,26 @@ console.log("\n— totals for an invoice —");
   is("…July has its own piece", pieces.filter((p) => p.month === "2026-07").length, 1);
 }
 
+console.log("\n— video work counts as pieces —");
+{
+  // A "Photo" request flagged requiredVideo (the content item ticked Needs
+  // Video): the type string alone reads as graphic — the flag must win, or
+  // video work lands on the wrong invoice line (the rates differ).
+  const flagged = req({
+    id: 60, type: "Photo", requiredVideo: true,
+    deliverables: [del("Instagram", "1:1")],
+    history: [approved("Instagram", "1:1", "2026-08-05T10:00:00Z")],
+  });
+  const { pieces } = artworkReport([flagged]);
+  is("requiredVideo forces the vdo kind", pieces[0]?.kind, "vdo");
+
+  const plain = req({
+    id: 61, type: "Photo",
+    deliverables: [del("Instagram", "1:1")],
+    history: [approved("Instagram", "1:1", "2026-08-05T10:00:00Z")],
+  });
+  is("…without the flag, Photo stays graphic", artworkReport([plain]).pieces[0]?.kind, "graphic");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

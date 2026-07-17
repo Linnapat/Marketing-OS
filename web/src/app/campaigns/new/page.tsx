@@ -12,6 +12,8 @@ import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
+import { useRole } from "@/lib/role";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BRANDS, BrandId, brandName, emptyBrandTotals } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import {
@@ -39,6 +41,13 @@ const CMO_NAME = "Linnapat D.";
 
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
+
+/** Goal inputs show thousand separators, the way the Reach field already does —
+ *  but only for a purely numeric value: "3.5%" or free text passes through, and
+ *  the STORED value stays comma-free so downstream parsing never changes. */
+function fmtGoal(v: string): string {
+  return /^\d+$/.test(v) ? Number(v).toLocaleString("en-US") : v;
+}
 
 function newCampaignId(): string {
   const n = new Date();
@@ -118,6 +127,7 @@ function monthlyBudgetContext(brief: CampaignBrief, savedBriefs: CampaignBrief[]
 export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
+  const { role } = useRole();
   const brandVisibility = useBrandVisibility();
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [id, setId] = useState(newCampaignId);
@@ -359,7 +369,11 @@ export default function NewCampaignPage() {
       <div className="mt-5 max-w-[900px]">
         {step === 0 && (
           <>
-            <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} />
+            {/* Sheet import is CMO-only by request: planners build briefs in the
+                form; the bulk-import path stays with the person who approves them. */}
+            {role === "CMO" && (
+              <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} />
+            )}
             <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
           </>
         )}
@@ -461,6 +475,59 @@ function SheetImport({ url, setUrl, busy, onImport, report }: {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Target Audience with team-shared presets ────────────────────────────────
+// Audiences repeat across campaigns ("สมาชิก OMD ทั้งหมด…", "คนทำงานย่านสุขุมวิท…"),
+// so a written-once audience can be saved and picked next time. Stored in
+// app_settings (shared with the whole team, localStorage fallback) — the same
+// mechanism the budget-sheet URL already uses.
+const AUDIENCE_PRESETS_KEY = "audience_presets";
+
+function AudienceField({ value, onChange, invalid }: { value: string; onChange: (v: string) => void; invalid: boolean }) {
+  const [presets, setPresets] = useState<string[]>([]);
+  const [savedTick, setSavedTick] = useState(false);
+  useEffect(() => {
+    getAppSetting(AUDIENCE_PRESETS_KEY).then((raw) => {
+      try {
+        const list = JSON.parse(raw || "[]");
+        if (Array.isArray(list)) setPresets(list.filter((p) => typeof p === "string" && p.trim()));
+      } catch { /* an unreadable setting just means no presets yet */ }
+    }).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    const v = value.trim();
+    if (!v || presets.includes(v)) return;
+    const next = [v, ...presets].slice(0, 20); // newest first; cap keeps the dropdown scannable
+    setPresets(next);
+    setSavedTick(true);
+    setTimeout(() => setSavedTick(false), 2000);
+    try { await setAppSetting(AUDIENCE_PRESETS_KEY, JSON.stringify(next)); } catch { /* kept locally by the fallback */ }
+  };
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input value={value} onChange={(e) => onChange(e.target.value)} className={field}
+          style={invalid ? { borderColor: "#B33A2E", background: "#FFF7F6" } : undefined}
+          placeholder="เช่น คนทำงานย่านทองหล่อ 25–40 ชอบอาหารญี่ปุ่น" />
+        <button type="button" onClick={save} disabled={!value.trim() || presets.includes(value.trim())}
+          title="บันทึก audience นี้ไว้เลือกใช้ในแคมเปญถัดไป (แชร์ทั้งทีม)"
+          className="text-[12px] font-bold whitespace-nowrap rounded-[10px] px-3 border border-line2 disabled:opacity-40"
+          style={savedTick ? { background: "#EEF4EE", color: "#4E7A4E", borderColor: "#CFE4C2" } : { background: "#fff", color: "#6b6258" }}>
+          {savedTick ? "✓ บันทึกแล้ว" : "💾 บันทึก"}
+        </button>
+      </div>
+      {presets.length > 0 && (
+        <select value="" onChange={(e) => { if (e.target.value) onChange(e.target.value); }}
+          className="mt-2 w-full text-[12.5px] px-[13px] py-[8px] rounded-[10px] border border-line2 bg-surface text-muted outline-none">
+          <option value="">เลือกจาก audience ที่บันทึกไว้ ({presets.length})…</option>
+          {presets.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
       )}
     </div>
   );
@@ -626,7 +693,7 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
               {brief.successMetrics.filter((m) => !(FIXED_METRICS as readonly string[]).includes(m)).map((m) => (
                 <div key={m} className="flex items-center gap-2">
                   <span className="text-[12px] font-semibold text-muted w-28 flex-shrink-0">{m} goal</span>
-                  <input value={brief.successGoals[m] ?? ""} onChange={(e) => setGoal(m, e.target.value)} className="flex-1 text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="เช่น 50000 / 3.5%" />
+                  <input value={fmtGoal(brief.successGoals[m] ?? "")} onChange={(e) => setGoal(m, e.target.value.replace(/,/g, ""))} className="flex-1 text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" placeholder="เช่น 50,000 / 3.5%" />
                 </div>
               ))}
             </div>
@@ -652,7 +719,7 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
 
         <div className="md:col-span-2" id="ov-audience">
           <label className={label}>Target Audience <span className="text-status-red">*</span></label>
-          <input value={brief.audience} onChange={(e) => set("audience", e.target.value)} className={field} style={errors.audience ? errBorder : undefined} placeholder="เช่น คนทำงานย่านทองหล่อ 25–40 ชอบอาหารญี่ปุ่น" />
+          <AudienceField value={brief.audience} onChange={(v) => set("audience", v)} invalid={!!errors.audience} />
           {errors.audience && <p className={errText}>{errors.audience}</p>}
         </div>
         <div id="ov-mainMessage">

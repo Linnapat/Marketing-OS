@@ -106,7 +106,7 @@ export function artworkReport(graphics: Graphic[]): ArtworkReport {
         campaign: g.campaign,
         b: g.b,
         designer: g.designer,
-        kind: workKind(g.type, dels.some((d) => /video|reel/i.test(d.size))),
+        kind: workKind(g.type, g.requiredVideo || dels.some((d) => /video|reel/i.test(d.size))),
         size: dels[0].size,
         platforms: Array.from(new Set(dels.map((d) => d.platform))),
         approvedAt,

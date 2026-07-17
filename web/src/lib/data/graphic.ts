@@ -26,6 +26,10 @@ export interface Graphic {
   requester: string;
   approver: string;
   type: string;
+  /** The content item asked for video work. The type string alone can't say so
+   *  ("Photo" + Needs Video is video work) — this flag keeps the request counted
+   *  under VDO in the Artwork report and the day-load calendar. */
+  requiredVideo?: boolean;
   priority: "High" | "Med" | "Low";
   fb: number;
   openFb: number;
@@ -151,7 +155,7 @@ export function artworkUnits(g: Pick<Graphic, "deliverables" | "platform" | "siz
 export function countWorkOnDay(graphics: Graphic[], kind: WorkKind, dueIso: string): number {
   if (!dueIso) return 0;
   return graphics
-    .filter((g) => (g.dueIso || "").slice(0, 10) === dueIso && workKind(g.type) === kind)
+    .filter((g) => (g.dueIso || "").slice(0, 10) === dueIso && workKind(g.type, g.requiredVideo) === kind)
     .reduce((sum, g) => sum + artworkUnits(g), 0);
 }
 

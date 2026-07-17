@@ -186,7 +186,11 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       {/* Content brief block */}
       <div className="md:col-span-2 mt-1 pt-3 border-t border-line3 grid md:grid-cols-2 gap-3">
         <div><label className={label}>Main Message (item)</label><input value={item.mainMessage} onChange={(e) => onChange({ mainMessage: e.target.value })} className={field} /></div>
-        <div><label className={label}>Caption Direction</label><input value={item.captionDirection} onChange={(e) => onChange({ captionDirection: e.target.value })} className={field} /></div>
+        {/* A textarea, not an input: caption briefs run to whole sentences, and a
+            one-line box hides everything past the first clause. rows grows with
+            the text so a long brief is readable in place, without a fixed tall
+            box crowding the short ones. */}
+        <div><label className={label}>Caption Direction</label><textarea value={item.captionDirection} onChange={(e) => onChange({ captionDirection: e.target.value })} className={field + " resize-y"} rows={Math.min(6, Math.max(2, Math.ceil((item.captionDirection || "").length / 60)))} /></div>
         <div><label className={label}>CTA</label><input value={item.cta} onChange={(e) => onChange({ cta: e.target.value })} className={field} placeholder="เช่น จองโต๊ะ / สั่งเลย" /></div>
         <div><label className={label}>Product / Menu Highlight</label><input value={item.productHighlight} onChange={(e) => onChange({ productHighlight: e.target.value })} className={field} /></div>
         <div><label className={label}>Mandatory Text</label><input value={item.mandatoryText} onChange={(e) => onChange({ mandatoryText: e.target.value })} className={field} placeholder="ข้อความบังคับ เช่น เงื่อนไขโปร" /></div>
