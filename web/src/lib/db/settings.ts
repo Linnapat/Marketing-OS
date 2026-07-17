@@ -90,6 +90,31 @@ export async function updateMember(m: Member, origEmail?: string): Promise<void>
   announceMembersUpdated();
 }
 
+/** Turn an invite into a real member on first successful login.
+ *
+ *  `status` decides who appears in every owner/designer picker (OwnerSelect only
+ *  lists Active members) — but nothing ever flipped it, so an invited person
+ *  stayed unassignable forever and dropdowns read "No active members" until an
+ *  admin edited them by hand. The conditional `.eq("status", "Invited")` makes
+ *  this idempotent and means a member an admin deliberately set to another status
+ *  is never resurrected. Returns the updated row, or null if it didn't apply.
+ *
+ *  Best-effort by design: this must never block sign-in. RLS lets a member update
+ *  only their own row, and members_guard permits exactly this one transition
+ *  (see supabase/security_p8.sql). */
+export async function activateInvitedMember(email: string): Promise<Member | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data, error } = await db.from("members")
+    .update({ status: "Active" })
+    .eq("email", email)
+    .eq("status", "Invited")
+    .select("*")
+    .maybeSingle();
+  if (error || !data) return null;
+  return toMember(data as Row);
+}
+
 export async function deleteMember(email: string): Promise<void> {
   const db = supabase();
   if (!db) return;
