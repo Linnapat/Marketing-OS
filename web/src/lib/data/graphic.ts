@@ -84,10 +84,6 @@ export interface GraphicDeliverable {
   submittedBy: string;
   submittedAt: string;
   feedback: { reason: string; by: string; at: string }[];
-  /** Manual artwork grouping (option 2): deliverables sharing the same number
-   *  are ONE artwork (e.g. one master exported to several ratios). Blank = auto:
-   *  counted by distinct size, platform collapsed (option 1). */
-  artworkNo?: number;
 }
 
 export function emptyDeliverable(platform: string, size: string, refLink = ""): GraphicDeliverable {
@@ -134,19 +130,35 @@ export function workKind(type: string, requiredVideo = false): WorkKind {
 
 /** Size key used to decide whether two deliverables are the same piece of
  *  artwork. Exported because the artwork report must group by exactly the same
- *  rule the app counts by — two answers to "how many pieces" is one too many. */
-export const normSize = (s: string) => (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+ *  rule the app counts by — two answers to "how many pieces" is one too many.
+ *
+ *  Two deliverables are the same piece when they are the same PIXELS, not when
+ *  they read the same. Every platform labels its presets differently — one
+ *  1080×1920 export is "9:16 Story (1080×1920)" on Facebook, "9:16 Reel/Story
+ *  (1080×1920)" on Instagram and "9:16 (1080×1920)" on TikTok — so comparing
+ *  the text counted a single file three times, and would have paid an
+ *  outsourced studio three times for it.
+ *
+ *  The ratio can't decide it either: Facebook's 1:1 is 1080×1080 while Google
+ *  Business Profile's 1:1 is 720×720, and those really are two files.
+ *
+ *  Sizes with no pixels in them (A4 Poster, Table Tent) fall back to their
+ *  name, which is all we know about them. */
+export const normSize = (s: string) => {
+  const raw = (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+  const px = /(\d{2,5})\s*[×x]\s*(\d{2,5})/.exec(raw);
+  return px ? `${px[1]}x${px[2]}` : raw;
+};
 
-/** How many distinct ARTWORK pieces a request represents.
- *  Option 1 (auto): distinct size, platform collapsed — same size on FB & IG is
- *  one file; different sizes are separate work.
- *  Option 2 (manual): deliverables sharing an artworkNo count as one, so a master
- *  exported to several ratios is a single piece. */
+/** How many distinct ARTWORK pieces a request represents: distinct size,
+ *  platform collapsed — the same file used on Facebook and Instagram is one
+ *  piece, a different size is separate work. "Size" is compared by pixels (see
+ *  normSize), so the same export under three platforms' labels counts once. */
 export function artworkUnits(g: Pick<Graphic, "deliverables" | "platform" | "size">): number {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g as Graphic);
   if (!dels.length) return 1;
   const seen = new Set<string>();
-  for (const d of dels) seen.add(d.artworkNo ? `n:${d.artworkNo}` : `s:${normSize(d.size)}`);
+  for (const d of dels) seen.add(normSize(d.size));
   return Math.max(1, seen.size);
 }
 
