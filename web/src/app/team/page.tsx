@@ -13,6 +13,8 @@ import { CAPACITY_META, initials } from "@/lib/data/workload";
 import { teamFromDb, TeamView, TeamMemberView } from "@/lib/data/derive";
 import { fetchMembers, Member } from "@/lib/db/settings";
 import { fetchTasks } from "@/lib/db/tasks";
+import { fetchGraphics } from "@/lib/db/graphic";
+import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 
@@ -24,19 +26,21 @@ function Avatar({ name, color, avatarUrl, size = 40 }: { name: string; color: st
 export default function TeamWorkloadPage() {
   const [drawer, setDrawer] = useState<TeamMemberView | null>(null);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
-  const [raw, setRaw] = useState<{ m: Member[]; t: { tasks: Task[]; doneIds: number[] } } | null>(null);
+  const [raw, setRaw] = useState<{ m: Member[]; t: { tasks: Task[]; doneIds: number[] }; g: Graphic[] } | null>(null);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchMembers(), fetchTasks()])
-      .then(([m, t]) => { if (alive) setRaw({ m, t }); })
+    // Graphics come along so a request's real size count can weigh the load:
+    // three sizes in one request is three pieces of work, not one row.
+    Promise.all([fetchMembers(), fetchTasks(), fetchGraphics()])
+      .then(([m, t, g]) => { if (alive) setRaw({ m, t, g }); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
 
   // Workload for the selected period only (by task due date; undated stay in).
   const team: TeamView | null = useMemo(
-    () => (raw ? teamFromDb(raw.m, raw.t.tasks.filter((t) => inDateFilter(date, t.dueIso || t.due)), raw.t.doneIds) : null),
+    () => (raw ? teamFromDb(raw.m, raw.t.tasks.filter((t) => inDateFilter(date, t.dueIso || t.due)), raw.t.doneIds, raw.g) : null),
     [raw, date],
   );
 
@@ -117,9 +121,10 @@ export default function TeamWorkloadPage() {
                     <div className="text-[11px] text-faint">{m.role}</div>
                     {m.presence && <div className="text-[10.5px] text-faint">{m.presence}{m.statusNote ? ` · ${m.statusNote}` : ""}</div>}
                   </div>
-                  <span className="ml-auto text-[11px] font-bold text-status-red">{m.open} open</span>
+                  <span className="ml-auto text-[11px] font-bold text-status-red">{m.days} วันงาน</span>
                 </div>
-                <div className="text-[11.5px] text-muted mt-1">🧱 {m.stuck} stuck · ⏰ {m.overdue} overdue</div>
+                <div className="text-[12px] font-semibold text-status-red mt-1">{m.reason}</div>
+                <div className="text-[11.5px] text-muted mt-[2px]">🧱 {m.stuck} stuck · ⏰ {m.overdue} overdue · {m.pieces} ชิ้นค้าง</div>
               </button>
             ))}
           </div>

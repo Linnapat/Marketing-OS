@@ -9,7 +9,7 @@ import { collapseTaskWorkItems, Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
 import type { Member } from "@/lib/db/settings";
 import { ContentItem } from "@/lib/data/content";
-import { Graphic } from "@/lib/data/graphic";
+import { Graphic, artworkUnits } from "@/lib/data/graphic";
 import { BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import { DateFilter, rangeOverlapFraction } from "@/components/ui/DateFilterBar";
@@ -170,7 +170,16 @@ export interface TeamMemberView {
   waiting: number;
   stuck: number;
   overdue: number;
+  /** Open work in PIECES: a graphic request for three sizes weighs three, other
+   *  work weighs one each. */
+  pieces: number;
+  /** `pieces` expressed in working days at PIECES_PER_DAY — the readable form.
+   *  "12 pieces open" says little; "3½ days of work" says whether to step in. */
+  days: number;
   load: Load;
+  /** Why this person is flagged, in their own row — so the status can be acted
+   *  on without opening anything. */
+  reason: string;
 }
 
 export interface TeamView {
@@ -178,38 +187,93 @@ export interface TeamView {
   pulse: { healthy: number; busy: number; needsSupport: number; stuckTasks: number; overdue: number; done: number };
 }
 
+/** What one person clears in a working day, in pieces of artwork — the team's
+ *  own figure (3–4/day, 2026-07). Everything below is measured against it, so
+ *  when the pace changes this is the single number to change. */
+export const PIECES_PER_DAY = 3.5;
+/** Backlog past this many days of work is more than a week's runway: that is
+ *  overload, not a busy stretch. */
+const OVERLOADED_DAYS = 4;
+/** Below this it's a normal day's queue. */
+const BUSY_DAYS = 2;
+
 /** Per-person workload derived from real tasks (matched on assignee name).
- *  Load is a task-count heuristic — there's no stored capacity target. */
-export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[]): TeamView {
+ *
+ *  "Need help" means BLOCKED OR BURIED, not simply "has many rows". It used to
+ *  be `open >= 8`, counting every task as one regardless of what it holds: a
+ *  person with eight trivial items looked like an emergency, while someone with
+ *  three requests stuck behind a blocker for a fortnight read as "healthy" —
+ *  which is exactly the person a lead should be helping.
+ *
+ *  So two different questions are answered separately:
+ *    - Stuck / blocked work → 🛟 needs support. A lead can unblock it today,
+ *      and no threshold is needed to know that.
+ *    - Volume → weighed in artwork pieces (a 3-size request is 3 pieces, via
+ *      artworkUnits) and converted to days at PIECES_PER_DAY.
+ *
+ *  `graphics` is optional: without it every task weighs one and the view still
+ *  works, just less precisely.
+ */
+export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[], graphics: Graphic[] = []): TeamView {
+  // Per-person rows count each person's OWN tasks, uncollapsed. Collapsing is
+  // for the team totals, where one brief item spawning a Content task and a
+  // Graphic task must not be counted twice — but those are two people's work,
+  // and the collapse keeps only the Graphic side's assignee, which erased the
+  // writer's task from their own workload.
   const workItems = collapseTaskWorkItems(tasks, doneIds);
   const today = new Date().toISOString().slice(0, 10);
   const done = (t: Task) => doneIds.includes(t.id) || t.status === "Done";
   const isStuck = (t: Task) => t.status === "Stuck" || !!t.blocker;
   const isOverdue = (t: Task) => !done(t) && !!t.dueIso && t.dueIso < today;
 
+  // A graphic task weighs what it actually holds: three sizes = three pieces.
+  const graphicById = new Map(graphics.map((g) => [String(g.id), g]));
+  const piecesOf = (t: Task) => {
+    const g = t.relatedGraphicId ? graphicById.get(String(t.relatedGraphicId)) : undefined;
+    return g ? artworkUnits(g) : 1;
+  };
+
   const bucket = (mine: Task[]) => {
-    const open = mine.filter((t) => !done(t)).length;
+    const openTasks = mine.filter((t) => !done(t));
+    const pieces = openTasks.reduce((sum, t) => sum + piecesOf(t), 0);
+    const days = Math.round((pieces / PIECES_PER_DAY) * 10) / 10;
+    const stuck = mine.filter(isStuck).length;
+    const overdue = mine.filter(isOverdue).length;
+
+    // Blocked work comes first: it is the one a lead can move today.
+    const load: Load = stuck > 0 || days > OVERLOADED_DAYS ? "needsSupport"
+      : days >= BUSY_DAYS || overdue > 0 ? "busy"
+      : "healthy";
+    const reason = stuck > 0 ? `${stuck} งานติดอยู่ — ปลดล็อกได้วันนี้`
+      : days > OVERLOADED_DAYS ? `งานค้าง ${days} วันทำงาน — เกินหนึ่งสัปดาห์`
+      : overdue > 0 ? `${overdue} งานเลยกำหนด`
+      : days >= BUSY_DAYS ? `งานค้าง ${days} วันทำงาน`
+      : "ไหลอยู่ — ยังรับเพิ่มได้";
+
     return {
-      open,
+      open: openTasks.length,
       done: mine.filter(done).length,
       inProgress: mine.filter((t) => t.status === "In Progress").length,
       waiting: mine.filter((t) => t.status === "Waiting" || t.status === "Need Approval").length,
-      stuck: mine.filter(isStuck).length,
-      overdue: mine.filter(isOverdue).length,
-      load: (open >= 8 ? "needsSupport" : open >= 5 ? "busy" : "healthy") as Load,
+      stuck,
+      overdue,
+      pieces,
+      days,
+      load,
+      reason,
     };
   };
 
   const view: TeamMemberView[] = members.map((m) => ({
     name: m.name, role: m.role, color: m.color, avatarUrl: m.avatarUrl, presence: m.presence, statusNote: m.statusNote,
-    ...bucket(workItems.filter((t) => t.assignee === m.name)),
+    ...bucket(tasks.filter((t) => t.assignee === m.name)),
   }));
 
   // Work assigned to nobody — or to a name that isn't a real member — is still
   // load the team must absorb. Surface it as its own row instead of letting it
   // vanish from the summary.
   const known = new Set(members.map((m) => m.name));
-  const orphans = workItems.filter((t) => !known.has(t.assignee));
+  const orphans = tasks.filter((t) => !known.has(t.assignee));
   if (orphans.length) {
     view.push({
       name: "Unassigned", role: "งานที่ยังไม่มีเจ้าของจริงในระบบ — ต้องมีคนรับ", color: "#9A9387",
