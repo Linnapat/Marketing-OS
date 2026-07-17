@@ -295,6 +295,17 @@ function readOverview(grid: string[][], resolveBrand: BrandResolver, warn: strin
     goals[hit] = value;
     if (!metrics.includes(hit)) metrics.push(hit);
   }
+  // Visit auto-derives from Reach × CV% — the same rule the form applies when
+  // those two are typed in. Without this, an imported brief carries Reach and
+  // CV% but no Visit, and the campaign list's Visit column (which reads
+  // successGoals.Visit) shows "—" for a goal that is actually known. A Visit
+  // the sheet sets explicitly wins over the derived value.
+  const reach = num(goals["Reach"] ?? "");
+  const cv = parseFloat(goals["CV%"] ?? "");
+  if (!goals["Visit"] && reach > 0 && Number.isFinite(cv) && cv > 0) {
+    goals["Visit"] = String(Math.round(reach * (cv / 100)));
+    if (!metrics.includes("Visit")) metrics.push("Visit");
+  }
   if (metrics.length) patch.successMetrics = metrics;
   if (Object.keys(goals).length) patch.successGoals = goals;
 
