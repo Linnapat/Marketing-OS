@@ -1,7 +1,8 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -20,7 +21,7 @@ import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { createContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
-import { fetchBrandConfigs } from "@/lib/db/settings";
+import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { fetchJsonSetting, saveJsonSetting } from "@/lib/db/settings";
 import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -226,7 +227,16 @@ export default function GraphicPage() {
 // field is editable by the creative leader; rows are shared via org_settings.
 // Columns mirror the team's shoot Google Sheet: Date · Time · Brand · Content
 // · Location · Menu · Cast (no "request date" — dropped per the sheet).
-interface ShootRow { id: string; date: string; time: string; brand: string; content: string; location: string; menu: string; cast: string; source?: "manual" | "content" }
+// `brand` holds a BrandId, `cast` a comma-separated list of member names.
+interface ShootRow { id: string; date: string; time: string; brand: BrandId; content: string; location: string; menu: string; cast: string; source?: "manual" | "content" }
+
+// Rows saved before brand became data-driven stored the display NAME ("Omakase
+// Don"); match it back to its id so brand-scoped filtering works on old rows. An
+// unrecognised value is kept verbatim rather than dropped.
+const toBrandId = (v: string): BrandId => {
+  if (!v || BRANDS[v]) return v;
+  return BRAND_ORDER.find((id) => brandName(id).toLowerCase() === v.toLowerCase()) ?? v;
+};
 
 // Back-compat: earlier rows used campaign/shootDate/owner/requestDate. Map the
 // old fields onto the new shape so existing shoots aren't lost.
@@ -235,7 +245,7 @@ const normalizeShoot = (r: LegacyShootRow): ShootRow => ({
   id: r.id || `shoot-${Date.now()}`,
   date: r.date ?? r.shootDate ?? "",
   time: r.time ?? "",
-  brand: r.brand ?? "",
+  brand: toBrandId(r.brand ?? ""),
   content: r.content ?? r.campaign ?? "",
   location: r.location ?? "",
   menu: r.menu ?? "",
@@ -243,37 +253,111 @@ const normalizeShoot = (r: LegacyShootRow): ShootRow => ({
   source: r.source ?? "manual",
 });
 
+const castList = (v: string): string[] => (v || "").split(",").map((s) => s.trim()).filter(Boolean);
+
+/** Cast picker — tick several people per shoot; stored as "A, B, C".
+ *  The panel is portalled and fixed-positioned: the shoot table scrolls inside
+ *  `overflow-x-auto`, which would clip a normally-positioned dropdown. */
+function CastPicker({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [at, setAt] = useState<{ top: number; left: number; width: number } | null>(null);
+  const picked = castList(value);
+  // Someone typed in before, or a member who has since left — keep them tickable.
+  const all = Array.from(new Set([...options, ...picked]));
+  const toggle = (name: string) =>
+    onChange((picked.includes(name) ? picked.filter((p) => p !== name) : [...picked, name]).join(", "));
+
+  const open = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setAt({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (at ? setAt(null) : open())}
+        className={`cast-btn ${cellBase} text-left truncate ${picked.length ? "text-ink" : "text-faint"}`}
+      >
+        {picked.length ? picked.join(", ") : "เลือกทีม / cast"}
+      </button>
+      {at && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60] no-print" onClick={() => setAt(null)} />
+          <div
+            className="fixed z-[61] max-h-[240px] overflow-y-auto bg-white border border-line2 rounded-[9px] shadow-soft p-1 no-print"
+            style={{ top: at.top, left: at.left, minWidth: Math.max(at.width, 170) }}
+          >
+            {all.length === 0 && <div className="px-2 py-2 text-[11.5px] text-faint">ไม่มีรายชื่อทีม</div>}
+            {all.map((name) => (
+              <label key={name} className="flex items-center gap-2 px-2 py-[5px] rounded-[6px] text-[12px] text-muted hover:bg-ivory cursor-pointer">
+                <input type="checkbox" checked={picked.includes(name)} onChange={() => toggle(name)} className="accent-accent" />
+                <span className="truncate">{name}</span>
+              </label>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+const cellBase = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
+
 function ShootCalendar({ me }: { me: string }) {
   const [rows, setRows] = useState<ShootRow[]>([]);
   const [autoRows, setAutoRows] = useState<ShootRow[]>([]);
-  // Dropdown option sources: branch names (Location) + Content Plan item titles.
-  const [locationOpts, setLocationOpts] = useState<string[]>([]);
-  const [contentOpts, setContentOpts] = useState<string[]>([]);
+  // Dropdown option sources, both keyed by brand id so a row that picked a brand
+  // only offers that brand's branches (Location) and Content Plan items.
+  const [branchesByBrand, setBranchesByBrand] = useState<Record<BrandId, string[]>>({});
+  const [contentByBrand, setContentByBrand] = useState<Record<BrandId, string[]>>({});
+  const [castOpts, setCastOpts] = useState<string[]>([]);
 
   useEffect(() => {
     let alive = true;
     fetchJsonSetting<LegacyShootRow[]>("creative_shoots_v2").then((v) => { if (alive && v) setRows(v.map(normalizeShoot)); }).catch(() => {});
     fetchBrandConfigs().then((cfgs) => {
       if (!alive) return;
-      setLocationOpts(Array.from(new Set(cfgs.flatMap((c) => c.branchList))).sort());
+      setBranchesByBrand(Object.fromEntries(cfgs.map((c) => [c.key, [...c.branchList].sort()])));
+    }).catch(() => {});
+    fetchMembers().then((ms) => {
+      if (!alive) return;
+      setCastOpts(ms.filter((m) => (m.status || "").toLowerCase() === "active").map((m) => m.name).sort());
     }).catch(() => {});
     // Photo shoot / VDO shooting items from Content Plan appear as read-only
     // reference rows so the leader can see what the briefs already asked for.
     fetchAllBriefs().then((briefs) => {
       if (!alive) return;
       const all = Object.values(briefs);
-      // Every Content Plan item title → the Content dropdown/search source.
-      setContentOpts(Array.from(new Set(all.flatMap((b) => (b.content ?? []).map((c) => c.title).filter(Boolean)))).sort());
+      // Every Content Plan item title → the Content dropdown, grouped by brand.
+      const byBrand: Record<BrandId, string[]> = {};
+      for (const b of all) {
+        const titles = (b.content ?? []).map((c) => c.title).filter(Boolean);
+        byBrand[b.b] = Array.from(new Set([...(byBrand[b.b] ?? []), ...titles])).sort();
+      }
+      setContentByBrand(byBrand);
       setAutoRows(all.flatMap((b) =>
         (b.content ?? [])
           .filter((c) => /photo shoot|vdo shooting/i.test(c.type || ""))
           .map((c) => normalizeShoot({
-            id: `auto-${b.id}-${c.id}`, content: c.title || c.type, brand: brandName(b.b),
+            id: `auto-${b.id}-${c.id}`, content: c.title || c.type, brand: b.b,
             date: (c.publishDate || "").slice(0, 10), menu: "", location: "", cast: "จาก Content Plan", source: "content",
           }))));
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Datalists are shared by id, so emit one per brand (plus an unscoped list for
+  // rows with no brand yet) and point each row at the list matching its brand.
+  const brandKeys = useMemo(
+    () => Array.from(new Set([...BRAND_ORDER, ...Object.keys(branchesByBrand), ...Object.keys(contentByBrand)])),
+    [branchesByBrand, contentByBrand],
+  );
+  const allBranches = useMemo(() => Array.from(new Set(Object.values(branchesByBrand).flat())).sort(), [branchesByBrand]);
+  const allContent = useMemo(() => Array.from(new Set(Object.values(contentByBrand).flat())).sort(), [contentByBrand]);
+  const listId = (kind: "content" | "location", brand: BrandId) => `shoot-${kind}-opts-${brand || "all"}`;
 
   const persist = (next: ShootRow[]) => {
     setRows(next);
@@ -285,7 +369,19 @@ function ShootCalendar({ me }: { me: string }) {
   const removeRow = (id: string) => persist(rows.filter((r) => r.id !== id));
   const importAuto = (a: ShootRow) => persist([...rows, { ...a, id: `shoot-${Date.now()}`, cast: me, source: "manual" }]);
 
-  const cell = "w-full text-[12px] px-2 py-[5px] rounded-[7px] border border-line2 bg-white outline-none";
+  // Brand is what scopes Location + Content, so drop values that don't belong to
+  // the newly picked brand instead of leaving a wrong branch behind.
+  const setBrand = (r: ShootRow, brand: BrandId) => {
+    const branches = branchesByBrand[brand] ?? [];
+    const contents = contentByBrand[brand] ?? [];
+    editRow(r.id, {
+      brand,
+      location: branches.includes(r.location) ? r.location : "",
+      content: contents.includes(r.content) ? r.content : "",
+    });
+  };
+
+  const cell = `${cellBase} text-ink placeholder:text-faint`;
   const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint px-[10px] py-2 border-b border-line";
   const printedAt = new Date().toLocaleDateString("th-TH", { day: "2-digit", month: "long", year: "numeric" });
 
@@ -303,7 +399,7 @@ function ShootCalendar({ me }: { me: string }) {
           .no-print, .no-print * { display: none !important; }
           .shoot-print .print-only { display: block !important; }
           /* Render the inline inputs/selects as plain values on paper. */
-          .shoot-print input, .shoot-print select {
+          .shoot-print input, .shoot-print select, .shoot-print .cast-btn {
             border: none !important; background: transparent !important; padding: 0 !important;
             -webkit-appearance: none; appearance: none; color: #000 !important;
           }
@@ -354,23 +450,32 @@ function ShootCalendar({ me }: { me: string }) {
                     })()}
                   </td>
                   <td className="px-[10px] py-[5px]">
-                    <select value={r.brand} onChange={(e) => editRow(r.id, { brand: e.target.value })} className={cell}>
+                    <select value={r.brand} onChange={(e) => setBrand(r, e.target.value)} className={cell}>
                       <option value="">—</option>
-                      {BRAND_ORDER.map((id) => <option key={id} value={brandName(id)}>{brandName(id)}</option>)}
+                      {BRAND_ORDER.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}
+                      {/* A brand since removed from Settings — keep the row readable. */}
+                      {r.brand && !BRAND_ORDER.includes(r.brand) && <option value={r.brand}>{brandName(r.brand)}</option>}
                     </select>
                   </td>
-                  <td className="px-[10px] py-[5px]"><input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} list="shoot-content-opts" placeholder="เลือก/พิมพ์จาก Content Plan" className={`${cell} min-w-[180px]`} /></td>
-                  <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} list="shoot-location-opts" placeholder="เลือกสาขา" className={`${cell} min-w-[130px]`} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} list={listId("content", r.brand)} placeholder="เลือก/พิมพ์จาก Content Plan" className={`${cell} min-w-[180px]`} /></td>
+                  <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} list={listId("location", r.brand)} placeholder="เลือกสาขา" className={`${cell} min-w-[130px]`} /></td>
                   <td className="px-[10px] py-[5px]"><input value={r.menu} onChange={(e) => editRow(r.id, { menu: e.target.value })} placeholder="เมนู / งานที่ถ่าย" className={`${cell} min-w-[150px]`} /></td>
-                  <td className="px-[10px] py-[5px]"><input value={r.cast} onChange={(e) => editRow(r.id, { cast: e.target.value })} placeholder="ทีม / cast" className={cell} /></td>
+                  <td className="px-[10px] py-[5px] min-w-[150px]"><CastPicker value={r.cast} options={castOpts} onChange={(v) => editRow(r.id, { cast: v })} /></td>
                   <td className="px-[10px] py-[5px] text-right no-print"><button onClick={() => removeRow(r.id)} className="text-[12px] text-status-red font-bold" aria-label="ลบ">✕</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {/* Shared option sources for Content (Content Plan titles) + Location (branches) */}
-          <datalist id="shoot-content-opts">{contentOpts.map((o) => <option key={o} value={o} />)}</datalist>
-          <datalist id="shoot-location-opts">{locationOpts.map((o) => <option key={o} value={o} />)}</datalist>
+          {/* Option sources per brand: Content (Content Plan titles) + Location (branches).
+              The "all" pair serves rows that haven't picked a brand yet. */}
+          <datalist id={listId("content", "")}>{allContent.map((o) => <option key={o} value={o} />)}</datalist>
+          <datalist id={listId("location", "")}>{allBranches.map((o) => <option key={o} value={o} />)}</datalist>
+          {brandKeys.map((b) => (
+            <Fragment key={b}>
+              <datalist id={listId("content", b)}>{(contentByBrand[b] ?? []).map((o) => <option key={o} value={o} />)}</datalist>
+              <datalist id={listId("location", b)}>{(branchesByBrand[b] ?? []).map((o) => <option key={o} value={o} />)}</datalist>
+            </Fragment>
+          ))}
         </div>
       </div>
 
@@ -381,7 +486,7 @@ function ShootCalendar({ me }: { me: string }) {
             {autoRows.map((a) => (
               <div key={a.id} className="flex items-center gap-2 text-[12px] border-b border-line4 last:border-0 py-[5px]">
                 <span className="font-semibold text-ink flex-1 truncate">{a.content}</span>
-                <span className="text-faint truncate">{a.brand}</span>
+                <span className="text-faint truncate">{brandName(a.brand)}</span>
                 <span className="text-faint">{a.date || "—"}</span>
                 <button onClick={() => importAuto(a)} className="text-[11.5px] font-bold text-accent">＋ ดึงเข้า</button>
               </div>
