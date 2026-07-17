@@ -15,7 +15,7 @@ import { CampaignResultRow, deriveResultRow, cpr, emptyResultRow, mergeBudgetAll
 import { fetchResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchKols } from "@/lib/db/kol";
-import { CampaignHub, HubStats, hubStats, createPlannerTasks, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
+import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
 import { createRevisionTask } from "@/lib/db/tasks";
@@ -53,11 +53,25 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   // stuck permanently in "Waiting for Approval".
   const { role, member } = useAuth();
   const [approving, setApproving] = useState(false);
-  const canApprove = role === "CMO" || role === "Marketing Manager / BGL" || member?.name === effectiveNextApproval;
-  const decide = async (status: string) => {
+  // Status is the approval flow, so the CMO alone moves it — same gate as the
+  // campaign list's status dropdown.
+  const canApprove = role === "CMO";
+  const decide = async (approve: boolean) => {
     setApproving(true);
     try {
-      await updateCampaignStatus(c.id, status);
+      // Approving must run the brief pipeline, not just flip a column: it used
+      // to write status "Active" — a value no status list knows — straight onto
+      // the campaigns row, so the brief stayed "Waiting for Approval" and no
+      // content/graphic/KOL/task rows were ever materialised. Saving the brief
+      // with the real status does all of that in one place, and the decision is
+      // recorded in the brief's approval log like the Approval tab's own flow.
+      const next = approve ? "Approved" as const : "Draft" as const;
+      if (brief) {
+        const entry = { action: approve ? "Approved" : "Sent back to Draft", by: member?.name || role || "—", at: new Date().toISOString(), from: brief.status, to: next };
+        await saveCampaignBrief({ ...brief, status: next, approvalLog: [...(brief.approvalLog ?? []), entry] });
+      } else {
+        await updateCampaignStatus(c.id, next);
+      }
       onReload();
     } catch (error) {
       toastError(`บันทึก Approval status ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -134,8 +148,8 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
           </div>
           {canApprove && (
             <div className="flex gap-2">
-              <button disabled={approving} onClick={() => decide("Draft")} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px] bg-surface disabled:opacity-40">↩ Send back to Draft</button>
-              <button disabled={approving} onClick={() => decide("Active")} className="text-[12px] font-bold text-white rounded-[8px] px-4 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{approving ? "…" : "✓ Approve & Activate"}</button>
+              <button disabled={approving} onClick={() => decide(false)} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px] bg-surface disabled:opacity-40">↩ Send back to Draft</button>
+              <button disabled={approving} onClick={() => decide(true)} className="text-[12px] font-bold text-white rounded-[8px] px-4 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{approving ? "…" : "✓ Approve & Activate"}</button>
             </div>
           )}
         </div>
@@ -170,8 +184,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       <div className="mt-5">
         {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} nextApproval={effectiveNextApproval} />}
         {tab === "brief" && <BriefTab detail={detail} brief={brief} />}
-        {tab === "planner" && <PlannerTab detail={detail} hub={hub} onReload={onReload} />}
-        {tab === "content" && <ContentList hub={hub} />}
+        {tab === "content" && <ContentList hub={hub} brief={brief} />}
         {tab === "kol" && <KolList hub={hub} />}
         {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
         {tab === "budget" && <BudgetTab detail={detail} s={s} brief={brief} />}
@@ -397,94 +410,6 @@ function BriefTab({ detail, brief }: { detail: CampaignDetail; brief?: CampaignB
   );
 }
 
-const TEMPLATES = ["Lunch Awareness", "New Menu Launch", "Anniversary Event", "LINE Coupon", "Grand Opening", "CRM Repeater"];
-const TIMELINE = ["Brief", "Content", "Graphic", "KOL", "Ads", "Approval", "Launch", "Result"];
-
-function PlannerTab({ detail, hub, onReload }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void }) {
-  const [template, setTemplate] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const created = (hub?.content.length ?? 0) + (hub?.graphics.length ?? 0) + (hub?.kols.length ?? 0) > 0;
-
-  const draftTasks = [
-    { icon: "📝", label: "Content tasks", count: "4 tasks", module: "Content" },
-    { icon: "🎨", label: "Graphic tasks", count: "3 tasks", module: "Graphic" },
-    { icon: "🤝", label: "KOL tasks", count: "2 tasks", module: "KOL" },
-    { icon: "📢", label: "Ads tasks", count: "2 tasks", module: "Ads" },
-    { icon: "💰", label: "Budget requests", count: "1 task", module: "Budget" },
-    { icon: "📊", label: "Report tasks", count: "1 task", module: "Report" },
-  ];
-
-  const confirm = async () => {
-    setBusy(true);
-    try {
-      await createPlannerTasks(detail.row);
-      onReload();
-    } catch (error) {
-      toastError(`สร้าง Planner Tasks ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Panel title="Dependency Timeline">
-        <div className="flex items-center gap-1 overflow-x-auto pb-1">
-          {TIMELINE.map((step, i) => (
-            <div key={step} className="flex items-center gap-1 flex-shrink-0">
-              <div className="flex flex-col items-center gap-[6px]">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold"
-                  style={{ background: i < 3 ? "#4E7A4E" : i === 3 ? "#211F1C" : "#E5DECF", color: i <= 3 ? "#fff" : "#9A9387" }}>{i + 1}</div>
-                <span className="text-[10.5px] font-semibold whitespace-nowrap" style={{ color: i === 3 ? "#211F1C" : i < 3 ? "#4E7A4E" : "#9A9387" }}>{step}</span>
-              </div>
-              {i < TIMELINE.length - 1 && <div className="w-8 h-[2px] mb-4" style={{ background: i < 3 ? "#4E7A4E" : "#E5DECF" }} />}
-            </div>
-          ))}
-        </div>
-      </Panel>
-
-      {created && (
-        <div className="rounded-card px-4 py-3 flex items-center gap-2 text-[12.5px] font-semibold" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
-          ✓ Tasks are live for this campaign — see the Content, KOL, Assets, and Budget tabs.
-        </div>
-      )}
-
-      {!template ? (
-        <Panel title="Choose a Campaign Template">
-          <div className="text-[12px] text-faint mb-4">Pick a template to auto-generate real tasks across Content, Graphic, KOL, Ads, Budget, and Report — all linked to this campaign.</div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {TEMPLATES.map((t) => (
-              <button key={t} onClick={() => setTemplate(t)} className="text-left p-4 rounded-card border border-line2 bg-ivory hover:border-accent transition">
-                <div className="text-[13.5px] font-bold text-ink">{t}</div>
-                <div className="text-[11px] text-faint mt-1">Generates ~13 tasks</div>
-              </button>
-            ))}
-          </div>
-        </Panel>
-      ) : (
-        <Panel>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setTemplate(null)} className="text-[12px] text-faint hover:text-ink font-semibold">← Change Template</button>
-              <span className="text-[13px] font-bold">{template}</span>
-            </div>
-            <button onClick={confirm} disabled={busy} className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[8px] disabled:opacity-50">
-              {busy ? "Creating…" : "Confirm & Create Tasks"}
-            </button>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {draftTasks.map((t) => (
-              <div key={t.module} className="p-4 rounded-card border border-line3 bg-ivory">
-                <div className="flex items-center gap-2 mb-2"><span className="text-[16px]">{t.icon}</span><span className="text-[12.5px] font-bold text-ink">{t.module}</span></div>
-                <div className="text-[11.5px] text-muted">{t.count}</div>
-                <StatusBadge tone={created ? "green" : "neutral"} className="mt-2">{created ? "Live" : "Draft"}</StatusBadge>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      )}
-    </div>
-  );
-}
-
 /* ── Linked-record tabs (real data) ─────────────────────────────────── */
 function EmptyState({ title, note }: { title: string; note: string }) {
   return (
@@ -497,9 +422,35 @@ function EmptyState({ title, note }: { title: string; note: string }) {
   );
 }
 
-function ContentList({ hub }: { hub: CampaignHub | null }) {
+function ContentList({ hub, brief }: { hub: CampaignHub | null; brief?: CampaignBrief | null }) {
   if (!hub) return <div className="py-10 text-center text-faint text-[13px]">Loading…</div>;
-  if (hub.content.length === 0) return <EmptyState title="No content planned" note="Content items linked to this campaign will appear here. Generate them from the Planner tab or add a post in the Content module." />;
+  if (hub.content.length === 0) {
+    // Before approval nothing is materialised into the Content module — but the
+    // brief's plan exists, and "No content planned" here while Edit Campaign
+    // shows three items reads as data loss. Show the plan, labelled as a plan.
+    const planned = brief?.content?.filter((ci) => ci.title?.trim()) ?? [];
+    if (planned.length) {
+      return (
+        <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div className="px-5 py-3 border-b border-line bg-ivory text-[11.5px] text-muted font-semibold">
+            📋 แผนจาก Campaign Brief ({planned.length} รายการ) — จะถูกสร้างเป็นโพสต์จริงใน Content Plan เมื่อแคมเปญได้รับอนุมัติ
+          </div>
+          {planned.map((ci) => (
+            <div key={ci.id} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-bold truncate">{ci.title}</div>
+                <div className="text-[11px] text-faint">{ci.type} · {ci.platforms.join(", ") || "—"}{ci.publishDate ? ` · ${fmtDisplay(ci.publishDate)}` : ""}</div>
+              </div>
+              {ci.requiredVideo && <StatusBadge tone="neutral">🎬 VDO</StatusBadge>}
+              {ci.requiredGraphic && <StatusBadge tone="neutral">🎨 Graphic</StatusBadge>}
+              <StatusBadge tone="gold">Planned</StatusBadge>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return <EmptyState title="No content planned" note="Content items linked to this campaign will appear here. Add items in Edit Campaign → Content Plan, or add a post in the Content module." />;
+  }
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       {hub.content.map((c) => (

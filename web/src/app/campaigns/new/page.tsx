@@ -28,7 +28,7 @@ import {
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
 import { applyBriefPatch } from "@/lib/data/briefSheet";
-import { fetchBrandConfigs, fetchCampaignTypeConfigs } from "@/lib/db/settings";
+import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers } from "@/lib/db/settings";
 import { BudgetSheetRow, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
@@ -187,13 +187,18 @@ export default function NewCampaignPage() {
   }, [brandOptions, brief.b]);
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs(), fetchCampaignTypeConfigs()])
-      .then(([briefMap, sheetRows, configs, types]) => {
+    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs(), fetchCampaignTypeConfigs(), fetchMembers()])
+      .then(([briefMap, sheetRows, configs, types, members]) => {
         if (!alive) return;
         setSavedBriefs(Object.values(briefMap));
         setBudgetSheetRows(sheetRows);
         setBrandConfigs(configs);
         setCampaignTypes(types);
+        // Approver = the CMO member's profile name — the SAME source the planner
+        // name comes from, so one person never shows up under two names
+        // ("Gik" as planner, hardcoded "Linnapat D." as approver).
+        const cmo = members.find((m) => m.role === "CMO")?.name?.trim();
+        if (cmo) setBrief((b) => (b.approver === CMO_NAME || !b.approver ? { ...b, approver: cmo } : b));
       })
       .catch(() => {});
     return () => { alive = false; };

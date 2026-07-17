@@ -188,12 +188,12 @@ export function deriveDetail(c: CampaignRow): CampaignDetail {
 }
 
 export const CAMPAIGN_TABS = [
-  "overview", "brief", "planner", "content", "kol",
+  "overview", "brief", "content", "kol",
   "ads", "budget", "assets", "approval", "result",
 ] as const;
 export type CampaignTab = (typeof CAMPAIGN_TABS)[number];
 export const CAMPAIGN_TAB_LABELS: Record<CampaignTab, string> = {
-  overview: "Overview", brief: "Brief", planner: "Planner", content: "Content", kol: "KOL",
+  overview: "Overview", brief: "Brief", content: "Content", kol: "KOL",
   ads: "Ads", budget: "Budget", assets: "Assets", approval: "Approval", result: "Result / Report",
 };
 
