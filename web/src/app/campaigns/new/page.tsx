@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Copy, Trash2, X } from "lucide-react";
@@ -324,8 +324,22 @@ export default function NewCampaignPage() {
         <button disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}
           className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4 py-[9px] bg-surface disabled:opacity-40">← Back</button>
         {step < STEPS.length - 1 ? (
-          <button onClick={goNext}
-            className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px]">Next →</button>
+          <div className="flex gap-2">
+            {/* Save sits on every step, next to where the eye already is. The only
+                Save used to be in the page header or on the last step, so filling
+                one section and stopping meant scrolling back up or walking to the
+                end. Stays on the current step — it's a checkpoint, not an exit. */}
+            <button disabled={busy} onClick={saveDraftStay}
+              title="บันทึกงานที่ค้างไว้เป็น Draft — อยู่ step นี้ทำต่อได้"
+              className="text-[13px] font-semibold border rounded-[10px] px-4 py-[9px] disabled:opacity-40"
+              style={draftSaved
+                ? { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }
+                : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+              {draftSaved ? "✓ บันทึกแล้ว" : busy ? "กำลังบันทึก…" : "💾 Save Draft"}
+            </button>
+            <button onClick={goNext}
+              className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px]">Next →</button>
+          </div>
         ) : (
           <div className="flex gap-2">
             <button disabled={busy} onClick={() => submit(true)} className="text-[13px] font-semibold text-muted border border-line2 rounded-[10px] px-4 py-[9px] bg-surface disabled:opacity-40">Save Draft</button>
@@ -363,6 +377,36 @@ function Chips({ options, value, onChange }: { options: readonly string[]; value
 }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
+/** A textarea that grows to fit its text instead of scrolling inside a fixed box.
+ *  Promotion wording is what a customer reads on a shelf — you have to see all of
+ *  it while writing it, and it re-measures on `value` so text loaded into an edit
+ *  form is already full height on the first paint, not only after a keystroke. */
+function AutoGrowTextarea({ value, onChange, className, placeholder }: {
+  value: string; onChange: (v: string) => void; className?: string; placeholder?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";           // shrink first, or it can only ever grow
+    // scrollHeight excludes the border, but this field is border-box, so height
+    // sizes the *border* box — assigning scrollHeight straight across clips the
+    // last line by exactly the border width. Add it back.
+    const cs = getComputedStyle(el);
+    const border = cs.boxSizing === "border-box"
+      ? parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
+      : 0;
+    el.style.height = `${el.scrollHeight + border}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref} rows={1} value={value} placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={`${className ?? ""} resize-none overflow-hidden`}
+    />
+  );
+}
+
 function Overview({ brief, set, setBrief, branches, planner, errors, brandOptions, brandConfigs, campaignTypes }: {
   brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
@@ -518,7 +562,7 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
         </div>
         <div id="ov-storePromotion">
           <label className={label}>Promotion หน้าร้าน</label>
-          <input value={brief.storePromotion ?? ""} onChange={(e) => set("storePromotion", e.target.value)} className={field} placeholder="เช่น ลด 20% ทุกเมนู 1–31 ส.ค." />
+          <AutoGrowTextarea value={brief.storePromotion ?? ""} onChange={(v) => set("storePromotion", v)} className={field} placeholder="เช่น ลด 20% ทุกเมนู 1–31 ส.ค." />
           <p className="text-[11px] text-faint mt-[5px]">
             กรอกเมื่อแคมเปญนี้มีโปรฯ ที่ต้องติดหน้าร้าน — ข้อความนี้จะไปขึ้นใน Promotion Summary Print ให้ทีมหน้าร้านอ่าน
             <br />เว้นว่าง = ไม่ส่งเข้าใบพิมพ์
