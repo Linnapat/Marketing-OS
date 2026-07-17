@@ -349,7 +349,9 @@ export const VERSIONS: Version[] = [
   { gid: 12, name: "Final — Delivered", uploadedBy: "Boss", uploadedAt: "Jun 5", feedbackCount: 0, approvalStatus: "Approved", isLatest: true },
 ];
 
-export const DESIGNERS = ["Boss", "Aom", "New", "Unassigned"];
+// (There was a hardcoded DESIGNERS list of mock names here. Designers are real
+// people: read them from the Team Member master via OwnerSelect / memberTeam,
+// the same source the assign control uses.)
 
 const dueDateFromLabel = (label: string): Date | null => {
   const m = /^([A-Za-z]{3})\s+(\d{1,2})$/.exec((label || "").trim());
