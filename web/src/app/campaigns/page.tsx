@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { Modal } from "@/components/ui/Modal";
-import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useRole } from "@/lib/role";
 import { baht } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
@@ -68,6 +68,33 @@ export default function CampaignsPage() {
     Completed: true, Draft: true, Cancelled: true,
   });
   const [busyCampaignId, setBusyCampaignId] = useState<string | null>(null);
+
+  // Opening a campaign and coming back unmounts this page, so the month, grouping
+  // and filters reset — you'd land on "this month / by status" every time and have
+  // to dial your view back in after every edit. Remember it for the session.
+  // sessionStorage, not localStorage: picking up where you left off is about the
+  // sitting you're in; a month you chose last week shouldn't greet you tomorrow.
+  const VIEW_KEY = "mos-campaigns-view";
+  const [viewRestored, setViewRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(VIEW_KEY);
+      if (raw) {
+        const v = JSON.parse(raw) as Partial<{ groupBy: GroupBy; brand: BrandFilterValue; search: string; date: DateFilter }>;
+        if (v.groupBy) setGroupBy(v.groupBy);
+        if (v.brand) setBrand(v.brand);          // the normalize effect below still vets it
+        if (typeof v.search === "string") setSearch(v.search);
+        if (v.date) setDate(v.date);
+      }
+    } catch { /* a corrupt entry must never keep the page from rendering */ }
+    setViewRestored(true);
+  }, []);
+  useEffect(() => {
+    // Only after the restore has run — otherwise the first render's defaults
+    // overwrite the very thing we're trying to bring back.
+    if (!viewRestored) return;
+    try { sessionStorage.setItem(VIEW_KEY, JSON.stringify({ groupBy, brand, search, date })); } catch { /* private mode */ }
+  }, [viewRestored, groupBy, brand, search, date]);
 
   useEffect(() => {
     const next = brandVisibility.normalize(brand);
@@ -297,7 +324,18 @@ export default function CampaignsPage() {
                   {g.rows.map((c) => (
                     <div
                       key={c.id}
-                      className="grid grid-cols-1 md:grid-cols-[2.1fr_1.15fr_0.95fr_0.8fr_0.7fr_0.55fr_2fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 hover:bg-ivory/60 transition"
+                      // The row wears its brand's own colour: a 5% wash plus a rule
+                      // down the left edge. Grouped by brand it makes each group read
+                      // as one band; grouped by status — where brands are mixed
+                      // together — it's what lets you tell them apart while scanning.
+                      // Hover is an inset overlay rather than a background, because a
+                      // background would have to fight this tint and one of them would
+                      // have to lose.
+                      style={{
+                        background: `${brandColor(c.b)}0D`,
+                        borderLeft: `3px solid ${brandColor(c.b)}`,
+                      }}
+                      className="grid grid-cols-1 md:grid-cols-[2.1fr_1.15fr_0.95fr_0.8fr_0.7fr_0.55fr_2fr] gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 transition hover:shadow-[inset_0_0_0_9999px_rgba(23,23,42,0.035)]"
                     >
                       <div>
                         <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
