@@ -20,7 +20,8 @@ import {
 } from "@/lib/data/agency";
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 import { fetchGraphics, updateGraphic } from "@/lib/db/graphic";
-import { creativeBriefDetails, deriveDeliverables, Graphic, GraphicDeliverable } from "@/lib/data/graphic";
+import { creativeBriefDetails, Graphic } from "@/lib/data/graphic";
+import { AgencyDeliverables } from "@/components/agency/AgencyDeliverables";
 import { fetchMembers, Member } from "@/lib/db/settings";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
@@ -90,7 +91,14 @@ function graphicToTask(g: Graphic): PortalTask {
   };
 }
 
-function applyAgencyPatchToGraphic(g: Graphic, patch: Partial<AgencyTask>, by: string): Graphic {
+/** Apply a portal edit (status / note) to the linked request.
+ *
+ *  Artwork links are deliberately NOT handled here: they belong to a single
+ *  deliverable and go through submitDeliverable (see AgencyDeliverables). This
+ *  used to accept `patch.link` and stamp it on deliverable #0, which made a
+ *  three-size request look like one delivery and left the other two sizes
+ *  permanently "Not submitted" — unreviewable, uncountable, unpaid. */
+function applyAgencyPatchToGraphic(g: Graphic, patch: Partial<Pick<AgencyTask, "status" | "note">>, by: string): Graphic {
   const now = new Date().toISOString();
   const next: Graphic = {
     ...g,
@@ -98,36 +106,19 @@ function applyAgencyPatchToGraphic(g: Graphic, patch: Partial<AgencyTask>, by: s
     nextAction: patch.note ?? g.nextAction,
   };
 
-  if (patch.link !== undefined) {
-    const deliverables = (g.deliverables?.length ? g.deliverables : deriveDeliverables(g)).map((d, i): GraphicDeliverable => (
-      i === 0
-        ? {
-          ...d,
-          assetLink: patch.link || d.assetLink,
-          status: patch.link ? (patch.status === "Revision" ? "Revision" : "Waiting review") : d.status,
-          version: patch.link && !d.assetLink ? d.version + 1 : d.version,
-          submittedBy: patch.link ? by : d.submittedBy,
-          submittedAt: patch.link ? now : d.submittedAt,
-        }
-        : d
-    ));
-    next.deliverables = deliverables;
-    next.deliverableLink = patch.link || g.deliverableLink;
-  }
-
   if (patch.status === "Submitted") {
     next.submittedBy = by;
     next.submittedAt = now;
   }
 
-  if (patch.status || patch.link) {
+  if (patch.status) {
     next.history = [
       ...(g.history ?? []),
       {
         type: patch.status === "Submitted" ? "submitted" : "assigned",
         at: now,
         by,
-        note: patch.note || patch.link || patch.status,
+        note: patch.note || patch.status,
       },
     ];
   }
@@ -187,11 +178,16 @@ export default function AgencyPortalPage() {
     approved: rows.filter((t) => t.status === "Approved").length,
   }), [rows]);
 
+  /** Persist a linked request and reflect it locally — used by both the
+   *  status/note patches and the per-deliverable submits. */
+  const saveGraphic = (next: Graphic) => {
+    setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
+    updateGraphic(next).catch((error) => toastError(`บันทึกงาน Agency ที่ link กับ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
+
   const update = (task: PortalTask, patch: Partial<AgencyTask>) => {
     if (task.source === "graphic" && task.graphic) {
-      const next = applyAgencyPatchToGraphic(task.graphic, patch, currentUser);
-      setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
-      updateGraphic(next).catch((error) => toastError(`บันทึกงาน Agency ที่ link กับ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      saveGraphic(applyAgencyPatchToGraphic(task.graphic, patch, currentUser));
       return;
     }
     setManualTasks((ts) => ts.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
@@ -290,7 +286,7 @@ export default function AgencyPortalPage() {
 
       <div className="mt-5 flex flex-col gap-3">
         {rows.map((t) => (
-          <AgencyCard key={`${t.source}-${t.id}`} t={t} onUpdate={update} />
+          <AgencyCard key={`${t.source}-${t.id}`} t={t} onUpdate={update} onGraphicChange={saveGraphic} me={currentUser} />
         ))}
         {rows.length === 0 && (
           <div className="px-5 py-10 text-center bg-surface border border-line rounded-cardLg">
@@ -332,7 +328,12 @@ export default function AgencyPortalPage() {
   );
 }
 
-function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTask, patch: Partial<AgencyTask>) => void }) {
+function AgencyCard({ t, onUpdate, onGraphicChange, me }: {
+  t: PortalTask;
+  onUpdate: (task: PortalTask, patch: Partial<AgencyTask>) => void;
+  onGraphicChange: (next: Graphic) => void;
+  me: string;
+}) {
   const tone = AGENCY_STATUS_TONE[t.status];
   const locked = t.status === "Approved";
   const [briefOpen, setBriefOpen] = useState(false);
@@ -411,36 +412,54 @@ function AgencyCard({ t, onUpdate }: { t: PortalTask; onUpdate: (task: PortalTas
         )}
       </div>
 
-      {!locked && (
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[11px] font-bold text-faint mb-[5px]">Deliverable link</label>
-            <div className="flex items-center gap-2">
-              <input value={t.link} onChange={(e) => onUpdate(t, { link: e.target.value })} placeholder="Paste Drive / Canva link…" className={field} />
-              {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent whitespace-nowrap">Open ↗</a>}
+      {/* Graphic-linked work is submitted PER SIZE — each size is its own piece
+          of artwork, so it needs its own link, its own review and its own
+          count. Manual tasks have no size breakdown and keep the single box. */}
+      {t.graphic ? (
+        <>
+          <AgencyDeliverables g={t.graphic} by={me} onChange={onGraphicChange} />
+          {!locked && (
+            <div className="mt-3">
+              <label className="block text-[11px] font-bold text-faint mb-[5px]">Message to team</label>
+              <input value={t.note} onChange={(e) => onUpdate(t, { note: e.target.value })} placeholder="Add a note…" className={field} />
             </div>
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-faint mb-[5px]">Message to team</label>
-            <input value={t.note} onChange={(e) => onUpdate(t, { note: e.target.value })} placeholder="Add a note…" className={field} />
-          </div>
-        </div>
-      )}
+          )}
+          {locked && t.note && <div className="mt-3 text-[12px] text-faint">{t.note}</div>}
+        </>
+      ) : (
+        <>
+          {!locked && (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-faint mb-[5px]">Deliverable link</label>
+                <div className="flex items-center gap-2">
+                  <input value={t.link} onChange={(e) => onUpdate(t, { link: e.target.value })} placeholder="Paste Drive / Canva link…" className={field} />
+                  {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent whitespace-nowrap">Open ↗</a>}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-faint mb-[5px]">Message to team</label>
+                <input value={t.note} onChange={(e) => onUpdate(t, { note: e.target.value })} placeholder="Add a note…" className={field} />
+              </div>
+            </div>
+          )}
 
-      {locked && (t.link || t.note) && (
-        <div className="mt-3 flex items-center gap-3 text-[12px]">
-          {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="font-bold text-accent">Deliverable ↗</a>}
-          {t.note && <span className="text-faint">{t.note}</span>}
-        </div>
-      )}
+          {locked && (t.link || t.note) && (
+            <div className="mt-3 flex items-center gap-3 text-[12px]">
+              {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="font-bold text-accent">Deliverable ↗</a>}
+              {t.note && <span className="text-faint">{t.note}</span>}
+            </div>
+          )}
 
-      {!locked && (
-        <div className="mt-3 flex justify-end">
-          <button onClick={() => onUpdate(t, { status: "Submitted" })} disabled={t.status === "Submitted"}
-            className="text-[12px] font-bold text-white bg-status-blue rounded-[8px] px-4 py-[7px] disabled:opacity-40 disabled:cursor-default">
-            {t.status === "Submitted" ? "Submitted ✓" : "Submit for review"}
-          </button>
-        </div>
+          {!locked && (
+            <div className="mt-3 flex justify-end">
+              <button onClick={() => onUpdate(t, { status: "Submitted" })} disabled={t.status === "Submitted"}
+                className="text-[12px] font-bold text-white bg-status-blue rounded-[8px] px-4 py-[7px] disabled:opacity-40 disabled:cursor-default">
+                {t.status === "Submitted" ? "Submitted ✓" : "Submit for review"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

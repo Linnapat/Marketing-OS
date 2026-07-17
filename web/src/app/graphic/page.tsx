@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
@@ -11,7 +12,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  DESIGNERS, graphicKpis, emptyDeliverable, approveAllWaiting,
+  graphicKpis, emptyDeliverable, approveAllWaiting,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf,
 } from "@/lib/data/graphic";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
@@ -28,7 +29,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, todayIso } from "@/lib/data/brief";
-import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -56,9 +57,25 @@ export default function GraphicPage() {
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
 
+  // The Designer filter lists the people who can actually hold a request: the
+  // active Creative-team members (in-house designers, video editors, and any
+  // external studio), read from the Team Member master — the same source the
+  // drawer's assign control uses. It used to be a hardcoded ["Boss","Aom","New"]
+  // left over from the mock, so filtering by a real designer was impossible and
+  // every option found nothing.
+  const [designerOpts, setDesignerOpts] = useState<string[]>([]);
+
   useEffect(() => {
     let alive = true;
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
+    fetchMembers().then((ms) => {
+      if (!alive) return;
+      setDesignerOpts(
+        ms.filter((m) => (m.status || "").toLowerCase() === "active" && memberTeam(m.role || "") === "Creative")
+          .map((m) => m.name)
+          .sort(),
+      );
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -126,7 +143,14 @@ export default function GraphicPage() {
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>}
+          action={
+            <div className="flex items-center gap-2">
+              <Link href="/graphic/artwork" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[12px] px-4 py-[10px] bg-surface">
+                📊 Artwork Count
+              </Link>
+              <button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>
+            </div>
+          }
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -142,7 +166,8 @@ export default function GraphicPage() {
                   <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
                   <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
                     <option value="all">All</option>
-                    {DESIGNERS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    {designerOpts.map((d) => <option key={d} value={d}>{d}</option>)}
+                    <option value="Unassigned">Unassigned</option>
                   </select>
                 </label>
                 <span className="text-[12px] font-semibold text-faint">{items.length} requests in view</span>

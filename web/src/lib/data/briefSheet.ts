@@ -193,6 +193,30 @@ export function looksLikeTab(kind: keyof typeof BRIEF_SHEET_TABS, grid: string[]
   }
 }
 
+/** The paste-into-one-cell accident, seen on a real sheet: every field name
+ *  landed in A1 and every value in B1, because the rows were pasted while the
+ *  cell was in edit mode. It cannot be undone here — Google's CSV export turns
+ *  in-cell newlines into plain spaces, and the values contain spaces of their
+ *  own, so "…Must Eat OMD by TEPPEN 7 สาขา…" has no recoverable boundaries.
+ *  Detect it only so the error can name the real cause and the fix, instead of
+ *  claiming the tab is missing when it is sitting right there. */
+export function looksLikeCollapsedFieldTab(grid: string[][]): boolean {
+  const first = norm(grid[0]?.[0] ?? "");
+  if (first.length < 60) return false;
+  const k = key(first);
+  const names = ["Campaign Name", "Brand", "Branches", "Objective", "Campaign Type", "Priority",
+    "Start Date", "End Date", "Launch Date", "Target Audience", "Key Message", "Main Offer"];
+  // Three or more field names crammed into one cell is no longer a coincidence.
+  return names.filter((n) => k.includes(key(n))).length >= 3;
+}
+
+/** True for a row that carries text in its first column and nothing anywhere
+ *  else — a footnote or a leftover heading, never a real record. Both the
+ *  Content and KOL tabs end with such a line in the shipped template. */
+function isNoteRow(row: string[]): boolean {
+  return row.slice(1).every((cell) => !norm(cell));
+}
+
 /** A header-row tab → column resolver by any of several accepted names. */
 function columns(grid: string[][]) {
   const header = (grid[0] ?? []).map((h) => key(h));
@@ -332,6 +356,10 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
   grid.slice(1).forEach((row) => {
     const title = cTitle(row);
     if (!title) return; // blank/spacer row
+    // A row with a first column and NOTHING else is the template's footnote
+    // ("Asset Sizes: ใส่แค่สัดส่วน…"), not a content item — importing it would
+    // invent a piece of work and put a paragraph of instructions in its title.
+    if (isNoteRow(row)) return;
     const seq = items.length + 1;
     const base = emptyContentItem(seq);
     const platforms = matchList(cPlatforms(row), CONTENT_PLATFORMS, `Content “${title}” platforms`, warn);
@@ -390,6 +418,7 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
     // A KOL row is real if it names either a page or a type — the plan often
     // starts as "3 foodie micro pages, not chosen yet".
     if (!name && !typeRaw) return;
+    if (isNoteRow(row)) return; // the tab's trailing footnote, not a creator
     const seq = items.length + 1;
     const base = emptyKolItem(seq);
     const kolType = typeRaw ? matchOption(typeRaw, KOL_TYPES) : null;
