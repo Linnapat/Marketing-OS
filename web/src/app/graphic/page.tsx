@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
@@ -126,7 +127,14 @@ export default function GraphicPage() {
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>}
+          action={
+            <div className="flex items-center gap-2">
+              <Link href="/graphic/artwork" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[12px] px-4 py-[10px] bg-surface">
+                📊 Artwork Count
+              </Link>
+              <button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>
+            </div>
+          }
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">

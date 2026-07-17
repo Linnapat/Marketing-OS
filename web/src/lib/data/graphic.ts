@@ -128,7 +128,10 @@ export function workKind(type: string, requiredVideo = false): WorkKind {
   return "graphic";
 }
 
-const normSize = (s: string) => (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+/** Size key used to decide whether two deliverables are the same piece of
+ *  artwork. Exported because the artwork report must group by exactly the same
+ *  rule the app counts by — two answers to "how many pieces" is one too many. */
+export const normSize = (s: string) => (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
 
 /** How many distinct ARTWORK pieces a request represents.
  *  Option 1 (auto): distinct size, platform collapsed — same size on FB & IG is
@@ -278,7 +281,16 @@ const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
     { id: 10, title: "Cocktail menu card", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 24", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "Aran P.", blocker: "Waiting CMO approval", waitingSince: "Jun 23", nextAction: "Aran P. to approve final artwork", platform: "Print", size: "A5", contentItem: "Menu card" },
   ]},
   { col: "Approved", cards: [
-    { id: 11, title: "Wagyu teaser story", b: "teppen", campaign: "Wagyu Festival", due: "Jun 22", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "Story", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "Upload final files for delivery", platform: "IG Story", size: "1080×1920 ×3", contentItem: "Wagyu teaser 3-frame story" },
+    { id: 11, title: "Wagyu teaser story", b: "teppen", campaign: "Wagyu Festival", due: "Jun 22", designer: "Studio Nine", requester: "Ken S.", approver: "Aran P.", type: "Story", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "Upload final files for delivery", platform: "IG Story", size: "1080×1920 ×3", contentItem: "Wagyu teaser 3-frame story", deliverables: [
+      { platform: "Instagram", size: "9:16 (1080×1920)", refLink: "", assetLink: "https://drive.example/wagyu-story-9x16.png", sourceLink: "", status: "Approved", version: 2, submittedBy: "Studio Nine", submittedAt: "2026-07-06T04:00:00Z", feedback: [{ reason: "โลโก้เล็กไป ขอใหญ่ขึ้น", by: "Ken S.", at: "2026-07-05T08:00:00Z" }] },
+      { platform: "Instagram", size: "1:1 (1080×1080)", refLink: "", assetLink: "https://drive.example/wagyu-story-1x1.png", sourceLink: "", status: "Approved", version: 1, submittedBy: "Studio Nine", submittedAt: "2026-07-06T04:10:00Z", feedback: [] },
+      { platform: "Facebook", size: "1:1 (1080×1080)", refLink: "", assetLink: "https://drive.example/wagyu-story-1x1.png", sourceLink: "", status: "Approved", version: 1, submittedBy: "Studio Nine", submittedAt: "2026-07-06T04:10:00Z", feedback: [] },
+    ], history: [
+      { type: "revision_requested", at: "2026-07-05T08:00:00Z", by: "Ken S.", deliverableKey: "Instagram::9:16 (1080×1920)", note: "โลโก้เล็กไป ขอใหญ่ขึ้น" },
+      { type: "approved", at: "2026-07-07T03:00:00Z", by: "Ken S.", deliverableKey: "Instagram::9:16 (1080×1920)" },
+      { type: "approved", at: "2026-07-07T03:00:00Z", by: "Ken S.", deliverableKey: "Instagram::1:1 (1080×1080)" },
+      { type: "approved", at: "2026-07-07T03:00:00Z", by: "Ken S.", deliverableKey: "Facebook::1:1 (1080×1080)" },
+    ] },
   ]},
   { col: "Delivered", cards: [
     { id: 12, title: "Matcha dessert post", b: "mainichi", campaign: "LINE Coupon Drive", due: "Jun 5", designer: "Boss", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "Low", fb: 0, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "—", platform: "IG Feed", size: "1080×1080", contentItem: "Dessert promo post" },

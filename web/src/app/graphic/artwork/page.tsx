@@ -1,0 +1,217 @@
+"use client";
+
+// Artwork Count — how many pieces of artwork each designer got approved in a
+// month. Built for checking an outsourced studio's invoice, so it shows the
+// pieces themselves, not just a total: every number can be opened and read.
+//
+// The counting rules live in lib/data/artworkReport (and are unit-tested).
+// This page only picks a month and renders.
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { CampaignCommandBar, CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campaign/CampaignHeadController";
+import { BrandFilter } from "@/components/ui/BrandFilter";
+import { BrandDot } from "@/components/ui/BrandDot";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { useBrandVisibility } from "@/lib/brandVisibility";
+import { BrandFilterValue, brandName } from "@/lib/brands";
+import { fetchGraphics } from "@/lib/db/graphic";
+import { Graphic, WORK_KIND_LABEL, WorkKind } from "@/lib/data/graphic";
+import { artworkReport, artworkTotals, artworkMonths, ArtworkPiece } from "@/lib/data/artworkReport";
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthLabel = (m: string) => {
+  const [y, mm] = m.split("-").map(Number);
+  return mm ? `${MON[mm - 1]} ${y}` : m;
+};
+const dayLabel = (iso: string) => {
+  const [, m, d] = (iso.slice(0, 10)).split("-").map(Number);
+  return m ? `${MON[m - 1]} ${d}` : "";
+};
+
+const field = "text-[13px] px-[12px] py-[8px] rounded-[10px] border border-line2 bg-ivory outline-none";
+
+export default function ArtworkCountPage() {
+  const [graphics, setGraphics] = useState<Graphic[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [month, setMonth] = useState("");
+  const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [open, setOpen] = useState<string | null>(null);
+  const visibility = useBrandVisibility();
+
+  useEffect(() => {
+    let alive = true;
+    fetchGraphics()
+      .then((g) => { if (alive) { setGraphics(g); setLoading(false); } })
+      .catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const report = useMemo(() => artworkReport(graphics), [graphics]);
+  const visible = useMemo(
+    () => report.pieces.filter((p) => visibility.isVisible(p.b) && (brand === "all" || p.b === brand)),
+    [report.pieces, visibility, brand],
+  );
+  const months = useMemo(() => artworkMonths(visible), [visible]);
+
+  // Default to the newest month that actually has work in it.
+  useEffect(() => {
+    if (!month && months.length) setMonth(months[0]);
+  }, [months, month]);
+
+  const inMonth = useMemo(() => visible.filter((p) => p.month === month), [visible, month]);
+  const totals = useMemo(() => artworkTotals(inMonth), [inMonth]);
+  const undated = useMemo(
+    () => report.undated.filter((p) => visibility.isVisible(p.b) && (brand === "all" || p.b === brand)),
+    [report.undated, visibility, brand],
+  );
+
+  const totalPieces = inMonth.length;
+  const totalRequests = new Set(inMonth.map((p) => p.requestId)).size;
+
+  return (
+    <>
+      <CampaignPageHeaderSection
+        eyebrow="CREATIVE KITCHEN"
+        title="Artwork Count"
+        description="จำนวนชิ้นงานที่อนุมัติแล้วในแต่ละเดือน แยกตามคนทำ — สำหรับตรวจกับใบวางบิลของ outsource"
+      />
+
+      <div className="mt-5 flex flex-col gap-5">
+        <CampaignCommandBar>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-2">
+              <div className="text-[12px] font-bold tracking-[0.12em] uppercase text-[#9D96AC]">เดือนที่อนุมัติ</div>
+              <select value={month} onChange={(e) => setMonth(e.target.value)} className={field} disabled={!months.length}>
+                {months.length === 0 && <option value="">— ยังไม่มีงานที่อนุมัติ —</option>}
+                {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+              </select>
+            </div>
+            {/* BrandFilter renders its own "Brand" label — don't add a second one. */}
+            <BrandFilter value={brand} onChange={setBrand} />
+            <Link href="/graphic" className="ml-auto text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">
+              ← Creative Kitchen
+            </Link>
+          </div>
+        </CampaignCommandBar>
+
+        <ModuleSummaryCard title={`สรุป ${month ? monthLabel(month) : ""}`}>
+          <div className="flex flex-wrap gap-3">
+            <Stat label="ชิ้นงานที่อนุมัติ" value={totalPieces} note="นับตามไซซ์ · resize = คนละชิ้น" />
+            <Stat label="จากใบงาน" value={totalRequests} note="1 ใบงานมีได้หลายชิ้น" />
+            <Stat label="คนทำ" value={totals.length ? new Set(totals.map((t) => t.designer)).size : 0} note="แยกยอดรายคน" />
+          </div>
+        </ModuleSummaryCard>
+
+        {/* Totals — the invoice lines */}
+        <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div className="px-5 py-4 border-b border-line">
+            <div className="text-[14px] font-bold">ยอดรายคน · {month ? monthLabel(month) : "—"}</div>
+            <div className="text-[11.5px] text-faint mt-[2px]">
+              แยกตามประเภทงานเพราะเรตต่างกัน · แก้ revision ไม่นับเป็นชิ้นใหม่
+            </div>
+          </div>
+          {loading ? (
+            <div className="px-5 py-10 text-center text-[12.5px] text-faint">กำลังโหลด…</div>
+          ) : totals.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <div className="text-[13px] font-bold text-muted">ยังไม่มีชิ้นงานที่อนุมัติในเดือนนี้</div>
+              <div className="text-[11.5px] text-faint mt-1 max-w-[520px] mx-auto">
+                นับเฉพาะงานที่ requester กด Approve แล้ว — ถ้าเพิ่งส่งงานหรือยังรอรีวิวจะยังไม่ขึ้นที่นี่
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-faint border-b border-line">
+                    <th className="px-5 py-3">คนทำ</th>
+                    <th className="px-5 py-3">ประเภทงาน</th>
+                    <th className="px-5 py-3 text-right">ชิ้นงาน</th>
+                    <th className="px-5 py-3 text-right">ใบงาน</th>
+                    <th className="px-5 py-3 text-right">revision</th>
+                    <th className="px-5 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {totals.map((t) => {
+                    const key = `${t.designer}::${t.kind}`;
+                    const rows = inMonth.filter((p) => p.designer === t.designer && p.kind === t.kind);
+                    return (
+                      <>
+                        <tr key={key} className="border-b border-line2">
+                          <td className="px-5 py-3 font-bold">{t.designer}</td>
+                          <td className="px-5 py-3 text-muted">{WORK_KIND_LABEL[t.kind as WorkKind]}</td>
+                          <td className="px-5 py-3 text-right font-extrabold text-[15px]">{t.pieces}</td>
+                          <td className="px-5 py-3 text-right text-muted">{t.requests}</td>
+                          <td className="px-5 py-3 text-right text-muted">{t.revisions || "—"}</td>
+                          <td className="px-5 py-3 text-right">
+                            <button onClick={() => setOpen(open === key ? null : key)} className="text-[12px] font-bold text-accent">
+                              {open === key ? "ซ่อนรายชิ้น ↑" : "ดูรายชิ้น ↓"}
+                            </button>
+                          </td>
+                        </tr>
+                        {open === key && (
+                          <tr key={`${key}-detail`}>
+                            <td colSpan={6} className="px-5 py-4 bg-ivory border-b border-line2">
+                              <PieceList pieces={rows} />
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Approved work we can't date — real work, so never silently dropped. */}
+        {undated.length > 0 && (
+          <div className="rounded-cardLg p-5" style={{ background: "#FBF8EE", border: "1px solid #E8CCA0" }}>
+            <div className="text-[13px] font-bold" style={{ color: "#C68A1E" }}>
+              ⚠ {undated.length} ชิ้นอนุมัติแล้วแต่ไม่มีวันที่ — ไม่ได้นับรวมในเดือนไหน
+            </div>
+            <div className="text-[11.5px] text-muted mt-1 mb-3">
+              งานเหล่านี้ถูกอนุมัติโดยไม่มีการบันทึกเวลา (ข้อมูลเก่าก่อนมีประวัติ) เป็นงานจริงที่ทำไปแล้ว
+              แต่ระบบไม่เดาเดือนให้ เพราะจะทำให้ยอดไปโผล่ผิดใบวางบิล — ตรวจแล้วบวกมือเอง
+            </div>
+            <PieceList pieces={undated} />
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Stat({ label, value, note }: { label: string; value: number; note: string }) {
+  return (
+    <div className="min-w-[170px] flex-1 rounded-[20px] px-4 py-3" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(92,107,60,0.14)" }}>
+      <div className="text-[22px] font-extrabold leading-none text-ink">{value}</div>
+      <div className="mt-2 text-[12px] font-bold leading-tight text-muted">{label}</div>
+      <div className="mt-[2px] text-[10.5px] leading-tight text-faint">{note}</div>
+    </div>
+  );
+}
+
+/** The pieces behind a number — so a total can be checked, not just trusted. */
+function PieceList({ pieces }: { pieces: ArtworkPiece[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {pieces.map((p, i) => (
+        <div key={`${p.requestId}-${p.size}-${i}`} className="flex flex-wrap items-center gap-2 bg-surface border border-line rounded-card px-3 py-2">
+          <BrandDot brand={p.b} />
+          <span className="text-[12.5px] font-bold">{p.title}</span>
+          <span className="text-[11.5px] text-faint">· {p.size}</span>
+          <span className="text-[11px] text-faint">({p.platforms.join(" + ")})</span>
+          <span className="text-[11px] text-faint">· {brandName(p.b)} · {p.campaign}</span>
+          {p.revisions > 0 && <StatusBadge tone="gold">{p.revisions} revision</StatusBadge>}
+          <span className="ml-auto text-[11.5px] text-muted">
+            {p.approvedAt ? `approved ${dayLabel(p.approvedAt)}` : "ไม่มีวันที่อนุมัติ"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
