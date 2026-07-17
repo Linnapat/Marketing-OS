@@ -23,6 +23,7 @@ console.log("\n— fresh Google Sheet CSV URL —");
 {
   const url = csvUrlByTab("sheet-id", "Overview", 12345);
   check("tab name is preserved", url.includes("sheet=Overview"));
+  check("gviz is forced to use one header row", url.includes("headers=1"));
   check("cache-buster is appended", url.includes("_=12345"));
   check("a later import gets a distinct URL",
     url !== csvUrlByTab("sheet-id", "Overview", 12346));

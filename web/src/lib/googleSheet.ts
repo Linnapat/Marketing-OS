@@ -39,7 +39,7 @@ export function spreadsheetId(shareUrl: string): string | null {
  *  is used instead of /export because /export rejects some link-shared sheets. */
 export function csvUrl(id: string, gid = "0", cacheBust?: string | number): string {
   const fresh = cacheBust === undefined ? "" : `&_=${encodeURIComponent(String(cacheBust))}`;
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}${fresh}`;
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}&headers=1${fresh}`;
 }
 
 /** Turn a normal share link into a CSV URL for the same tab, or null if the
@@ -70,7 +70,7 @@ export async function fetchSheetGrid(id: string, gid = "0"): Promise<string[][]>
  *  names survive the copy, which is what the campaign-brief importer relies on. */
 export function csvUrlByTab(id: string, tab: string, cacheBust?: string | number): string {
   const fresh = cacheBust === undefined ? "" : `&_=${encodeURIComponent(String(cacheBust))}`;
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}${fresh}`;
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}&headers=1${fresh}`;
 }
 
 /** Fetch one named tab.
