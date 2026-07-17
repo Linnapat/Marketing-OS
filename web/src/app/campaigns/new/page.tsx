@@ -516,6 +516,14 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
           <input value={brief.offer} onChange={(e) => set("offer", e.target.value)} className={field} style={errors.offer ? errBorder : undefined} placeholder="เช่น ลด 20% / เซ็ตพิเศษ" />
           {errors.offer && <p className={errText}>{errors.offer}</p>}
         </div>
+        <div id="ov-storePromotion">
+          <label className={label}>Promotion หน้าร้าน</label>
+          <input value={brief.storePromotion ?? ""} onChange={(e) => set("storePromotion", e.target.value)} className={field} placeholder="เช่น ลด 20% ทุกเมนู 1–31 ส.ค." />
+          <p className="text-[11px] text-faint mt-[5px]">
+            กรอกเมื่อแคมเปญนี้มีโปรฯ ที่ต้องติดหน้าร้าน — ข้อความนี้จะไปขึ้นใน Promotion Summary Print ให้ทีมหน้าร้านอ่าน
+            <br />เว้นว่าง = ไม่ส่งเข้าใบพิมพ์
+          </p>
+        </div>
         <div className="md:col-span-2">
           <label className={label}>Channels</label>
           <Chips options={CHANNELS} value={brief.channels} onChange={(v) => set("channels", v)} />

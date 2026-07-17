@@ -171,6 +171,12 @@ export interface CampaignBrief {
   audience: string;
   mainMessage: string;
   offer: string;
+  /** Store-facing promotion wording, in the customer's words — optional, and it
+   *  is what decides whether the campaign reaches Promotion Summary Print at all
+   *  (a campaign with nothing to announce in-store simply leaves it blank).
+   *  Deliberately separate from `offer`, which is the internal brief's main offer
+   *  and is required on every campaign, so it can't express "no promotion". */
+  storePromotion?: string;
   channels: string[];
   concept: string;
   kvDirection: string;
@@ -277,7 +283,7 @@ export function emptyBrief(id: string): CampaignBrief {
   return {
     id, name: "", b: "teppen", branch: "", branches: [], objective: OBJECTIVES[0],
     campaignType: CAMPAIGN_TYPES[0], priority: "Med", startDate: "", endDate: "", launchDate: "",
-    audience: "", mainMessage: "", offer: "", channels: [], concept: "", kvDirection: "",
+    audience: "", mainMessage: "", offer: "", storePromotion: "", channels: [], concept: "", kvDirection: "",
     successMetrics: [], successGoals: {}, proposalLink: "", plannerOwner: "", approver: "", content: [], kols: [], budget: emptyBudget(),
     status: "Draft", approvalLog: [], createdAt: "",
   };

@@ -12,6 +12,8 @@ import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
 import { fetchBrandConfigs } from "@/lib/db/settings";
+import { fetchAllBriefs } from "@/lib/db/brief";
+import type { CampaignBrief } from "@/lib/data/brief";
 import { toastError } from "@/lib/toast";
 import { BRAND_ORDER, brandName, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
@@ -79,7 +81,7 @@ function isoDate(d: Date | null): string | undefined {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
+function campaignToStorePromotion(campaign: CampaignRow, storePromotion: string): OmdStorePromotion {
   // Real campaign dates ("Jul 1 – Jul 31") — the period filter and the printed
   // Period column must reflect the actual flight, not a fixed placeholder.
   const [startRaw, endRaw] = (campaign.dates ?? "").split(/[–—-]/).map((s) => s.trim());
@@ -90,9 +92,10 @@ function campaignToStorePromotion(campaign: CampaignRow): OmdStorePromotion {
     brand: campaign.b,
     category: "campaign",
     title: campaign.name,
-    // Owner is internal — the printout goes to store staff, who only need what
-    // the promotion is and what it costs.
-    description: `${campaign.campType} · Budget ${campaign.budget.toLocaleString("th-TH")} THB`,
+    // The planner's store-facing promotion wording, verbatim. This column used to
+    // print the campaign type and budget — internal facts the shop floor can't act
+    // on, and a budget has no business being on a printout that leaves the office.
+    description: storePromotion,
     // POS name is typed by the team before printing (saved per item) — the
     // approval status was never the right content for this column.
     posName: "",
@@ -137,6 +140,7 @@ export default function OmdStoreCampaignPage() {
   // Each brand's configured branch list, so the Branch column can collapse a
   // promotion that runs everywhere into "All branches".
   const [brandBranches, setBrandBranches] = useState<Record<string, string[]>>({});
+  const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
 
   useEffect(() => {
     refreshFromSupabase();
@@ -159,6 +163,8 @@ export default function OmdStoreCampaignPage() {
   const refreshFromSupabase = async () => {
     const campaignRows = await fetchCampaigns().catch(() => CAMPAIGNS);
     setLiveCampaigns(campaignRows.length ? campaignRows : CAMPAIGNS);
+    // The store-facing promotion wording lives on the brief, not the campaign row.
+    setBriefs(await fetchAllBriefs().catch(() => ({})));
     const saved = await fetchPromotionSummaryItems().catch(() => []);
     setPosOverrides(Object.fromEntries(saved.filter((s) => s.posName).map((s) => [s.id, s.posName])));
   };
@@ -169,9 +175,18 @@ export default function OmdStoreCampaignPage() {
       .catch((error) => toastError(`บันทึก POS name ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
   };
 
+  // Only campaigns the planner gave a store-facing promotion reach the printout —
+  // a campaign with nothing to announce in-store (brand work, always-on) would
+  // otherwise print as a row the shop floor can do nothing with. The wording lives
+  // on the brief (campaigns.data), so a campaign with no brief never prints.
   const campaignItems = useMemo(
-    () => liveCampaigns.map(campaignToStorePromotion).map((it) => ({ ...it, posName: posOverrides[it.id] ?? it.posName })),
-    [liveCampaigns, posOverrides],
+    () => liveCampaigns
+      // fetchAllBriefs keys by campaign NAME, not id — see lib/db/brief.ts.
+      .map((c) => ({ campaign: c, promo: (briefs[c.name]?.storePromotion ?? "").trim() }))
+      .filter(({ promo }) => promo.length > 0)
+      .map(({ campaign, promo }) => campaignToStorePromotion(campaign, promo))
+      .map((it) => ({ ...it, posName: posOverrides[it.id] ?? it.posName })),
+    [liveCampaigns, briefs, posOverrides],
   );
   const allPromotions = campaignItems;
 
@@ -523,6 +538,23 @@ export default function OmdStoreCampaignPage() {
               </div>
             );
           })}
+
+          {/* Nothing to print is now a normal state, not a fault: only campaigns
+              given a store promotion appear here. Say which of the two it is —
+              a filter that's too narrow, or a promotion nobody has written yet —
+              so an empty sheet never reads as a broken page. */}
+          {grouped.length === 0 && (
+            <div className="no-print rounded-[18px] border border-dashed border-[#D9B86A] bg-[#FFF8EA] px-6 py-8 text-center">
+              <div className="text-[14px] font-extrabold text-[#8A6930]">ไม่มีโปรโมชั่นให้พิมพ์</div>
+              <div className="mt-1 text-[12px] leading-relaxed text-[#9A7A47]">
+                {allPromotions.length === 0 ? (
+                  <>ยังไม่มีแคมเปญไหนกรอก <b>Promotion หน้าร้าน</b> — เปิดแคมเปญที่มีโปรฯ แล้วกด Edit เพื่อกรอกช่องนี้ แล้วมันจะขึ้นที่นี่</>
+                ) : (
+                  <>มี {allPromotions.length} โปรฯ อยู่ แต่ไม่ตรงกับตัวกรองที่เลือก — ลองขยาย Period หรือเปลี่ยน Brand / Branch</>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </main>
