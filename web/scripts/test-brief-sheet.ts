@@ -222,6 +222,27 @@ is("an empty grid is no tab at all", looksLikeTab("overview", []), false);
   is("…and the real Overview still imports", onlyOverview.patch.name, "Wagyu Festival");
 }
 
+console.log("\n— the template's own footnotes must not become records —");
+{
+  // The shipped template ends the Content and KOL tabs with a note in column A.
+  // A real sheet came back with those still in place: without a guard they
+  // import as a content item titled "Asset Sizes: ใส่แค่สัดส่วน…" and a KOL
+  // named "Budget = งบต่อเพจ…" — work items nobody planned.
+  const withNotes = briefFromSheet({
+    overview: OVERVIEW,
+    content: [...CONTENT, ["Asset Sizes: ใส่แค่สัดส่วน (1:1) = ใช้กับทุก platform ในแถว · เจาะจงได้ด้วย 'Instagram: 9:16'", "", "", "", "", "", ""]],
+    kol: [...KOL, ["Budget = งบต่อเพจ (งบรวมแถว = Budget × Count) · ยังไม่รู้เพจ ใส่แค่ KOL Type + Count ได้", "", "", "", "", "", "", ""]],
+    budget: BUDGET,
+  }, resolve);
+  is("the Content footnote is not imported", withNotes.counts.content, 2);
+  is("the KOL footnote is not imported", withNotes.counts.kols, 2);
+  check("no content item is titled with the footnote",
+    !(withNotes.patch.content ?? []).some((c) => c.title.includes("ใส่แค่สัดส่วน")));
+  check("no KOL is named after the footnote",
+    !(withNotes.patch.kols ?? []).some((k) => k.name.includes("งบต่อเพจ")));
+  is("…and the real rows still import untouched", withNotes.patch.content![0].title, "KV Launch");
+}
+
 console.log("\n— the paste-into-one-cell accident (from a real sheet) —");
 {
   // Verbatim from a sheet a planner filled in: the rows were pasted while A1 was

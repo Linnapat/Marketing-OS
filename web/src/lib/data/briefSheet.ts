@@ -210,6 +210,13 @@ export function looksLikeCollapsedFieldTab(grid: string[][]): boolean {
   return names.filter((n) => k.includes(key(n))).length >= 3;
 }
 
+/** True for a row that carries text in its first column and nothing anywhere
+ *  else — a footnote or a leftover heading, never a real record. Both the
+ *  Content and KOL tabs end with such a line in the shipped template. */
+function isNoteRow(row: string[]): boolean {
+  return row.slice(1).every((cell) => !norm(cell));
+}
+
 /** A header-row tab → column resolver by any of several accepted names. */
 function columns(grid: string[][]) {
   const header = (grid[0] ?? []).map((h) => key(h));
@@ -349,6 +356,10 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
   grid.slice(1).forEach((row) => {
     const title = cTitle(row);
     if (!title) return; // blank/spacer row
+    // A row with a first column and NOTHING else is the template's footnote
+    // ("Asset Sizes: ใส่แค่สัดส่วน…"), not a content item — importing it would
+    // invent a piece of work and put a paragraph of instructions in its title.
+    if (isNoteRow(row)) return;
     const seq = items.length + 1;
     const base = emptyContentItem(seq);
     const platforms = matchList(cPlatforms(row), CONTENT_PLATFORMS, `Content “${title}” platforms`, warn);
@@ -407,6 +418,7 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
     // A KOL row is real if it names either a page or a type — the plan often
     // starts as "3 foodie micro pages, not chosen yet".
     if (!name && !typeRaw) return;
+    if (isNoteRow(row)) return; // the tab's trailing footnote, not a creator
     const seq = items.length + 1;
     const base = emptyKolItem(seq);
     const kolType = typeRaw ? matchOption(typeRaw, KOL_TYPES) : null;
