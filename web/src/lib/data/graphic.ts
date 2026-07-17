@@ -197,6 +197,54 @@ export function approveAllWaiting(g: Graphic, by: string): Graphic | null {
   };
 }
 
+/** Submit ONE deliverable for review — the per-piece counterpart of
+ *  approveAllWaiting. Used by the Agency Portal; GraphicDrawer still carries an
+ *  equivalent inline version tied to its own local state (it records the same
+ *  history event, so counts agree — but the two should be unified).
+ *
+ *  Submitting per deliverable (not per request) is what makes the work
+ *  countable: a request for 1:1 + 4:5 + 9:16 is three pieces of artwork, and
+ *  whoever made them is paid per piece. A single link stamped on the request
+ *  would leave the other two sitting at "Not submitted" forever, so they would
+ *  never be approved, never be counted, and never be paid.
+ *
+ *  Returns null when there is nothing to submit (no such deliverable, or no
+ *  artwork link on it yet). */
+export function submitDeliverable(
+  g: Graphic,
+  index: number,
+  by: string,
+  patch: { assetLink?: string; sourceLink?: string } = {},
+): Graphic | null {
+  const dels = (g.deliverables?.length ? g.deliverables : deriveDeliverables(g)).map((d) => ({ ...d }));
+  const target = dels[index];
+  if (!target) return null;
+
+  const assetLink = (patch.assetLink ?? target.assetLink ?? "").trim();
+  if (!assetLink) return null; // nothing to review yet
+
+  const at = new Date().toISOString();
+  dels[index] = {
+    ...target,
+    assetLink,
+    sourceLink: patch.sourceLink ?? target.sourceLink,
+    status: "Waiting review",
+    version: target.version + 1,
+    submittedBy: by,
+    submittedAt: at,
+  };
+
+  return {
+    ...g,
+    deliverables: dels,
+    stage: stageFromDeliverables({ ...g, deliverables: dels }),
+    history: [
+      ...(g.history ?? []),
+      { type: "submitted" as const, at, by, deliverableKey: `${target.platform}::${target.size}` },
+    ],
+  };
+}
+
 const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
   { col: "New Request", cards: [
     { id: 0, title: "Songkran key visual", b: "teppen", campaign: "Songkran Teppanyaki", due: "Jul 2", designer: "Unassigned", requester: "Ken S.", approver: "Aran P.", type: "Key Visual", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: false, pendingApprover: "—", blocker: "Brief incomplete", waitingSince: "Jun 28", nextAction: "Fill brief to proceed", platform: "IG + FB", size: "1080×1080 · 1920×1080", contentItem: "Songkran hero post" },
@@ -209,7 +257,13 @@ const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
       { platform: "Instagram", size: "9:16 (1080×1920)", refLink: "https://brief.example/wagyu", assetLink: "https://figma.example/wagyu-story", sourceLink: "", status: "Waiting review", version: 1, submittedBy: "Boss", submittedAt: "2026-06-29T09:00:00Z", feedback: [] },
       { platform: "Facebook", size: "16:9 (1200×628)", refLink: "https://brief.example/wagyu", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] },
     ] },
-    { id: 4, title: "Lunch set carousel", b: "mainichi", campaign: "Rainy Season Promo", due: "Jun 28", designer: "Aom", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "Med", fb: 0, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 25", nextAction: "Complete V1 design", platform: "IG Carousel", size: "1080×1080 ×5", contentItem: "Lunch promotion carousel" },
+    // Outsourced to an external studio — this is the row that shows the Agency
+    // Portal flow in demo mode: three sizes = three pieces, submitted one by one.
+    { id: 4, title: "Lunch set carousel", b: "mainichi", campaign: "Rainy Season Promo", due: "Jun 28", designer: "Studio Nine", requester: "Nok W.", approver: "Ken S.", type: "Social Media", priority: "Med", fb: 0, openFb: 0, isOverdue: true, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 25", nextAction: "Complete V1 design", platform: "IG Carousel", size: "1080×1080 ×5", contentItem: "Lunch promotion carousel", deliverables: [
+      { platform: "Instagram", size: "1:1 (1080×1080)", refLink: "https://brief.example/lunch", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] },
+      { platform: "Instagram", size: "4:5 (1080×1350)", refLink: "https://brief.example/lunch", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] },
+      { platform: "Facebook", size: "1:1 (1080×1080)", refLink: "https://brief.example/lunch", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] },
+    ] },
     { id: 5, title: "Cocktail hour reel cover", b: "touka", campaign: "Cocktail Hour Launch", due: "Jul 1", designer: "Boss", requester: "Ploy R.", approver: "Ploy R.", type: "Reel Cover", priority: "High", fb: 0, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: "Jun 28", nextAction: "Design in progress", platform: "IG Reels", size: "1080×1920", contentItem: "Cocktail reel thumbnail" },
   ]},
   { col: "Waiting Feedback", cards: [

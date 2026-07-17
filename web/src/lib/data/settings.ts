@@ -69,6 +69,9 @@ export const USERS_DATA = [
   { name: "Nok W.", email: "nok@teppenthailand.co.th", role: "Marketing Executive", access: "Editor", brandAccess: "Mainichi · Touka", status: "Active", color: "#6b6258" },
   { name: "Ploy R.", email: "ploy@teppenthailand.co.th", role: "KOL Specialist", access: "Editor", brandAccess: "Touka", status: "Active", color: "#B5577E" },
   { name: "May T.", email: "may@teppenthailand.co.th", role: "Co-ordinator", access: "Editor", brandAccess: "Teppen · Mainichi", status: "Active", color: "#C2691E" },
+  // An outsourced studio — the Agency Portal only shows requests assigned to an
+  // external member, so the demo needs one or that whole module looks empty.
+  { name: "Studio Nine", email: "hello@studionine.co", role: "Agency (External)", access: "Viewer", brandAccess: "External only", status: "Active", color: "#7A6BA8" },
 ];
 
 export const MEMBER_PRESENCE_OPTIONS = [
