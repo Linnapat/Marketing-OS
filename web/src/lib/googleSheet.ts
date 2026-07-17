@@ -61,3 +61,28 @@ export async function fetchSheetGrid(id: string, gid = "0"): Promise<string[][]>
   if (!res.ok) throw new Error(`Google Sheet fetch failed (${res.status})`);
   return parseCsv(await res.text());
 }
+
+/** CSV export URL for a tab addressed by NAME rather than gid. A gid is unique
+ *  to one spreadsheet, so a template that gets copied gets new gids — the tab
+ *  names survive the copy, which is what the campaign-brief importer relies on. */
+export function csvUrlByTab(id: string, tab: string): string {
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+}
+
+/** Fetch one named tab.
+ *
+ *  ⚠ gviz does NOT fail when the tab doesn't exist: it answers 200 with the
+ *  FIRST tab of the spreadsheet (verified against a real sheet). So a caller
+ *  asking for four tabs on a one-tab sheet gets that one tab four times, and
+ *  cannot tell from the response alone. Callers MUST therefore check that the
+ *  grid they got back actually looks like the tab they asked for — see
+ *  lib/data/briefSheet's looksLikeTab. Throws only when the whole sheet is
+ *  unreachable or unshared. */
+export async function fetchSheetTab(id: string, tab: string): Promise<string[][]> {
+  const res = await fetch(csvUrlByTab(id, tab), { cache: "no-store", redirect: "follow" });
+  if (!res.ok) throw new Error(`Google Sheet fetch failed (${res.status})`);
+  const text = await res.text();
+  // A link-shared sheet returns CSV; an unshared one returns a sign-in HTML page.
+  if (text.trimStart().startsWith("<")) throw new Error("SHEET_NOT_SHARED");
+  return parseCsv(text);
+}
