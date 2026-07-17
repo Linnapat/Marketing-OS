@@ -138,7 +138,7 @@ Month: 2026-08              | 50000
 - Campaign Type เลือก 1: Online + Offline / Online Only / Offline Only / CRM / LINE / Event / Store Activation /
   Seasonal Promotion / Always-on / Product Launch
 - Priority เลือก 1: High / Med / Low
-- Channels เลือกได้หลายอัน คั่นด้วย , : Facebook / Instagram / TikTok / LINE OA / Google / In-store / CRM / LINE OA
+- Channels เลือกได้หลายอัน คั่นด้วย , : Facebook / Instagram / TikTok / LINE OA / Google / In-store / CRM / LINE OA / Delivery
 - Target Audience, Key Message, Main Offer ต้องมีทุกอัน (ระบบบังคับ) — เขียนให้เฉพาะเจาะจง ไม่เอากว้างๆ
 - Store Promotion = ข้อความโปรที่ลูกค้าเห็นหน้าร้าน ถ้าแคมเปญนี้ไม่มีโปรหน้าร้านให้เว้นว่าง
 - ใส่ Goal: Reach กับ Goal: CV% เป็นตัวเลข (ระบบคำนวณ Visit = Reach × CV% ให้เอง ไม่ต้องใส่)
