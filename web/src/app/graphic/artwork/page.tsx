@@ -17,7 +17,8 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import { BrandFilterValue, brandName } from "@/lib/brands";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic, WORK_KIND_LABEL, WorkKind } from "@/lib/data/graphic";
-import { artworkReport, artworkTotals, artworkMonths, ArtworkPiece } from "@/lib/data/artworkReport";
+import { artworkReport, artworkTotals, artworkMonths, ArtworkPiece, creativeWorkload, revisionRate, WorkloadRow, DUE_SOON_DAYS } from "@/lib/data/artworkReport";
+import { todayIso } from "@/lib/data/brief";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = (m: string) => {
@@ -69,11 +70,23 @@ export default function ArtworkCountPage() {
   const totalPieces = inMonth.length;
   const totalRequests = new Set(inMonth.map((p) => p.requestId)).size;
   // The one-line answer to "ทีม Creative ทำกราฟฟิคกับวิดีโอไปเท่าไร": pieces per
-  // kind, before the per-designer breakdown below.
+  // kind, before the per-designer breakdown below. VDO splits the way the team
+  // prices it: งานถ่าย is a shoot day (คิว), งานตัด is an edited clip (คลิป).
   const kindCount = (kinds: WorkKind[]) => inMonth.filter((p) => kinds.includes(p.kind)).length;
   const graphicPieces = kindCount(["graphic"]);
-  const videoPieces = kindCount(["vdo"]);
-  const shootPieces = kindCount(["vdo_shoot", "photo_shoot"]);
+  const editPieces = kindCount(["vdo"]);
+  const vdoShoots = kindCount(["vdo_shoot"]);
+  const photoShoots = kindCount(["photo_shoot"]);
+  const revRate = revisionRate(inMonth);
+
+  const visibleGraphics = useMemo(
+    () => graphics.filter((g) => visibility.isVisible(g.b) && (brand === "all" || g.b === brand)),
+    [graphics, visibility, brand],
+  );
+  const workload = useMemo(() => creativeWorkload(visibleGraphics, todayIso()), [visibleGraphics]);
+  const openTotal = workload.reduce((sum, w) => sum + w.inProgress + w.waitingReview + w.revision, 0);
+  const mixLabel = (w: WorkloadRow) =>
+    (Object.entries(w.mix) as [WorkKind, number][]).map(([k, n]) => `${n} ${WORK_KIND_LABEL[k]}`).join(" · ");
 
   return (
     <>
@@ -103,14 +116,60 @@ export default function ArtworkCountPage() {
 
         <ModuleSummaryCard title={`สรุป ${month ? monthLabel(month) : ""}`}>
           <div className="flex flex-wrap gap-3">
-            <Stat label="ชิ้นงานที่อนุมัติ" value={totalPieces} note="นับตามไซซ์ · resize = คนละชิ้น" />
-            <Stat label="🎨 Graphic" value={graphicPieces} note="ชิ้นงานกราฟฟิค" />
-            <Stat label="🎬 VDO" value={videoPieces} note="ชิ้นงานวิดีโอ" />
-            {shootPieces > 0 && <Stat label="📷 Shooting" value={shootPieces} note="งานถ่ายทำ" />}
-            <Stat label="จากใบงาน" value={totalRequests} note="1 ใบงานมีได้หลายชิ้น" />
-            <Stat label="คนทำ" value={totals.length ? new Set(totals.map((t) => t.designer)).size : 0} note="แยกยอดรายคน" />
+            <Stat label="🎨 Graphic" value={graphicPieces} note="ชิ้น" />
+            <Stat label="🎥 VDO · งานถ่าย" value={vdoShoots} note="คิว" />
+            <Stat label="🎬 VDO · งานตัด" value={editPieces} note="คลิป" />
+            <Stat label="📷 Photo · งานถ่าย" value={photoShoots} note="คิว" />
+            <Stat label="รวมอนุมัติ" value={totalPieces} note={`จาก ${totalRequests} ใบงาน`} />
+            <Stat label="ใน pipeline" value={openTotal} note="ยังไม่จบ (ทุกเดือน)" />
+            <Stat label="Revision rate" value={`${Math.round(revRate * 100)}%`} note="ชิ้นที่ถูกตีกลับ ≥1 ครั้ง" />
           </div>
         </ModuleSummaryCard>
+
+        {/* Current workload — the managing view: who is carrying what right now */}
+        <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div className="px-5 py-4 border-b border-line">
+            <div className="text-[14px] font-bold">ภาระงานตอนนี้ · รายคน</div>
+            <div className="text-[11.5px] text-faint mt-[2px]">
+              งานที่ยังไม่อนุมัติทั้งหมด — “รอ review” คืองานที่ค้างอยู่ฝั่งคนตรวจ ไม่ใช่คนทำ
+            </div>
+          </div>
+          {loading ? (
+            <div className="px-5 py-10 text-center text-[12.5px] text-faint">กำลังโหลด…</div>
+          ) : workload.length === 0 ? (
+            <div className="px-5 py-8 text-center text-[12.5px] text-faint">ไม่มีงานค้างอยู่เลย 🎉</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-faint border-b border-line">
+                    <th className="px-5 py-3">คนทำ</th>
+                    <th className="px-3 py-3 text-right">กำลังทำ</th>
+                    <th className="px-3 py-3 text-right">รอ review</th>
+                    <th className="px-3 py-3 text-right">แก้ revision</th>
+                    <th className="px-3 py-3 text-right">เลท</th>
+                    <th className="px-5 py-3 text-right">due ใน {DUE_SOON_DAYS} วัน</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workload.map((w) => (
+                    <tr key={w.designer} className="border-b border-line4 last:border-0">
+                      <td className="px-5 py-3">
+                        <div className="font-bold">{w.designer}</div>
+                        <div className="text-[11px] text-faint">{mixLabel(w)}</div>
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold">{w.inProgress || "—"}</td>
+                      <td className="px-3 py-3 text-right text-muted">{w.waitingReview || "—"}</td>
+                      <td className="px-3 py-3 text-right" style={w.revision ? { color: "#B8860B", fontWeight: 700 } : undefined}>{w.revision || "—"}</td>
+                      <td className="px-3 py-3 text-right" style={w.overdue ? { color: "#B33A2E", fontWeight: 700 } : undefined}>{w.overdue || "—"}</td>
+                      <td className="px-5 py-3 text-right" style={w.dueSoon ? { color: "#B8860B", fontWeight: 700 } : undefined}>{w.dueSoon || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* Totals — the invoice lines */}
         <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -194,7 +253,7 @@ export default function ArtworkCountPage() {
   );
 }
 
-function Stat({ label, value, note }: { label: string; value: number; note: string }) {
+function Stat({ label, value, note }: { label: string; value: number | string; note: string }) {
   return (
     <div className="min-w-[170px] flex-1 rounded-[20px] px-4 py-3" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(92,107,60,0.14)" }}>
       <div className="text-[22px] font-extrabold leading-none text-ink">{value}</div>
