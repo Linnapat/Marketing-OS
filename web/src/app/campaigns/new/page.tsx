@@ -201,6 +201,15 @@ export default function NewCampaignPage() {
       return nextBranches.length === b.branches.length ? b : { ...b, branches: nextBranches, branch: nextBranches.join(", ") };
     });
   }, [branches]);
+  // A new campaign starts covering every branch of its brand — brand-wide is the
+  // normal case, so ticking each box by hand was busywork. Only fills an empty
+  // selection, so deselecting branches sticks. Editing is exempt: a saved brief's
+  // branch list is a decision someone already made, and quietly widening it to
+  // every branch would change who the campaign runs for and who it prints for.
+  useEffect(() => {
+    if (editingId || !branches.length) return;
+    setBrief((b) => (b.branches.length ? b : { ...b, branches: [...branches], branch: branches.join(", ") }));
+  }, [branches, editingId]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
   const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
   const preview = useMemo(() => taskPreview(brief), [brief]);

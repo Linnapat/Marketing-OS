@@ -7,7 +7,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
-import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief } from "../src/lib/data/brief";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
@@ -109,6 +109,51 @@ console.log("Campaign planning — monthly budget + work-item alignment");
 }
 
 function tryCreateKey(set: Set<string>, key: string) { if (set.has(key)) return false; set.add(key); return true; }
+
+console.log("Asset size — only demanded from platforms that have sizes to offer");
+{
+  // Delivery ships with no size list on purpose. If Submit demanded one anyway
+  // the dropdown would be empty, so the campaign could never be submitted and
+  // the only escape would be to deselect Delivery. Guard both directions.
+  check("Delivery is offered as a platform", (CONTENT_PLATFORMS as readonly string[]).includes("Delivery"));
+  check("Delivery is exempt — it has no sizes", !needsAssetSize("Delivery"));
+  check("Instagram still requires a size", needsAssetSize("Instagram"));
+
+  const base = (platforms: string[], assets: { platform: string; size: string }[]) => {
+    const b = emptyBrief("asset-test");
+    b.name = "N"; b.objective = "Awareness"; b.campaignType = "Always-on"; b.b = "teppen";
+    b.branches = ["Central"]; b.startDate = "2026-08-01"; b.endDate = "2026-08-31";
+    b.launchDate = "2026-08-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O";
+    b.approver = "CMO";
+    b.budget = { ...b.budget, total: 1000 };
+    b.content = [{ ...emptyContentItem(1), id: "c1", title: "T", subHead: "S", platforms, assets }];
+    return b;
+  };
+  const sizeErr = (b: CampaignBrief) => validateSubmit(b).filter((e) => e.startsWith("Please select asset size"));
+
+  check("Delivery alone does not block submit", sizeErr(base(["Delivery"], [])).length === 0);
+  check("Instagram without a size still blocks", sizeErr(base(["Instagram"], [])).length === 1);
+  check("mixed: only Instagram is named, not Delivery",
+    sizeErr(base(["Delivery", "Instagram"], [])).join("|") === "Please select asset size for Instagram");
+  check("Delivery + sized Instagram is clean", sizeErr(base(["Delivery", "Instagram"], [{ platform: "Instagram", size: "1:1 (1080×1080)" }])).length === 0);
+  // The checklist gates Submit too, and had the same rule — it must agree.
+  check("guideline checklist agrees Delivery is complete",
+    guidelineChecklist(base(["Delivery"], [])).find((i) => i.key === "content")?.done === true);
+}
+
+console.log("Visit goal — free text off the brief, shown in the Campaign list");
+{
+  const g = (v: unknown) => visitGoalOf({ successGoals: { Visit: v as string } });
+  check("plain number", g("600") === 600);
+  check("thousands separator", g("12,000") === 12000);
+  check("blank reads 0, not NaN", g("") === 0);
+  check("junk reads 0, not NaN", g("n/a") === 0);
+  check("a campaign with no brief at all reads 0", visitGoalOf(undefined) === 0);
+  check("negative is not a goal", g("-5") === 0);
+  // A NaN here would render as "NaN" in the column and poison the group total.
+  const total = [g("600"), g(""), g("n/a"), g("1,400")].reduce((s, n) => s + n, 0);
+  check("totals stay finite when some briefs are unfilled", total === 2000);
+}
 
 console.log("Budget — Production excluded from allocation");
 {
