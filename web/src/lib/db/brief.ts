@@ -101,7 +101,11 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   let n = 0;
   for (const ci of normalizedBrief.content) {
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
-    const gid = ci.requiredGraphic ? stamp + 500 + n : undefined;
+    // Video work needs a Creative request just like graphic work — a content
+    // item with only "Needs Video" used to become a bare task, so VDO pieces
+    // never reached Creative Kitchen and were never counted in Artwork Count.
+    const needsCreative = ci.requiredGraphic || ci.requiredVideo;
+    const gid = needsCreative ? stamp + 500 + n : undefined;
     const post: ContentItem = {
       // No publish date yet → fall back to the campaign Start Date (stays inside the
       // campaign window) rather than day 1 of the month.
@@ -116,7 +120,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
       productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,
       mandatoryText: ci.mandatoryText || undefined, doDont: ci.doDont || undefined,
-      captionStatus: "Missing", assetStatus: ci.requiredGraphic ? "Waiting Design" : "No Asset",
+      captionStatus: "Missing", assetStatus: needsCreative ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
     const madeContent = await createContentIfNew(post, contentSeen);
@@ -124,7 +128,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       content++;
       // A content item with creative produces one Graphic work item only. The
       // Content Calendar post remains linked, but does not duplicate My Tasks.
-      if (!ci.requiredGraphic) {
+      if (!needsCreative) {
         const madeTask = await upsertBriefTask(mkTask(++n, {
           title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
           owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
@@ -134,7 +138,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       }
     }
 
-    if (ci.requiredGraphic && gid) {
+    if (needsCreative && gid) {
       // ONE graphic request per content item, carrying a deliverable per
       // Platform × Asset Size the content needs. The requester (Planner) approves.
       const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
@@ -148,6 +152,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         }),
         stage: "New Request",
         size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
+        requiredVideo: ci.requiredVideo || undefined,
         deliverables,
         // Real creative brief content carried from the content item, so the
         // Graphic drawer shows the actual message/mood/links — not workflow text.
