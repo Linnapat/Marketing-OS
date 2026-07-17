@@ -7,6 +7,7 @@ import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
   GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
 } from "@/lib/data/brief";
+import { artworkUnitsOf } from "@/lib/data/graphic";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
 // Content Plan step and the Content Calendar's New Post modal, so the "template"
@@ -126,7 +127,12 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
 
       {/* Platform + Asset Size — multi-select checkboxes */}
       <div className="md:col-span-2">
-        <label className={label}>Platforms <span className="text-status-red">*</span> <span className="text-faint font-normal">· Asset size optional</span></label>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <label className={label}>Platforms <span className="text-status-red">*</span> <span className="text-faint font-normal">· Asset size optional</span></label>
+          {/* Live piece count, from the same artworkUnitsOf the billing report
+              counts with — so what you commit to here is what gets invoiced. */}
+          {item.platforms.length > 0 && item.requiredGraphic && <ArtworkCounter assets={item.assets} />}
+        </div>
         <div className="mb-2 text-[11px] text-faint">Content Type กำหนดรูปแบบงาน ส่วน Platform จะรวมเป็น Graphic Request เดียว ไม่สร้างงานซ้ำ · ใส่ size เฉพาะตอนมี requirement พิเศษ</div>
         <div className="flex flex-wrap gap-2 mb-2">
           {CONTENT_PLATFORMS.map((p) => {
@@ -192,5 +198,27 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         <div className="md:col-span-2"><label className={label}>Note</label><input value={item.note} onChange={(e) => onChange({ note: e.target.value })} className={field} /></div>
       </div>
     </div>
+  );
+}
+
+/** How many pieces of artwork this item will actually cost, updated as sizes are
+ *  ticked. It reads the same rule the Artwork Count report bills by
+ *  (artworkUnitsOf): one piece per distinct size, platform collapsed — the same
+ *  size on Facebook and Instagram is one file used twice. Shown while planning
+ *  because that is when the number can still be changed. */
+function ArtworkCounter({ assets }: { assets: { platform: string; size: string }[] }) {
+  const sized = assets.filter((a) => a.size.trim());
+  const pieces = artworkUnitsOf(sized);
+  // With no size chosen yet the request is still one piece of work, but the
+  // count isn't settled — say so rather than showing a firm "1".
+  const provisional = sized.length === 0;
+  return (
+    <span
+      className="text-[11px] font-bold rounded-pill px-2.5 py-[3px] whitespace-nowrap"
+      style={{ background: "#FBF1E9", color: "#C2691E" }}
+      title="นับตามไซซ์ที่ต่างกัน · ไซซ์เดียวกันหลาย platform = 1 ชิ้น (ไฟล์เดียวใช้ซ้ำ) · ใช้เกณฑ์เดียวกับ Artwork Count ที่ใช้ตรวจใบวางบิล"
+    >
+      🎨 {provisional ? "≈ 1 ชิ้นงาน (ยังไม่เลือกไซซ์)" : `${pieces} ชิ้นงาน`}
+    </span>
   );
 }
