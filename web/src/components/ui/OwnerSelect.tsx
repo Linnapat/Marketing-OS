@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth";
 import { Member } from "@/lib/db/settings";
 import { fetchJsonSetting, fetchMembers } from "@/lib/db/settings";
 import { TEAMS_DATA } from "@/lib/data/settings";
@@ -80,6 +81,7 @@ export function OwnerSelect({
 }) {
   const [members, setMembers] = useState<Member[]>(_cache ?? []);
   const [teams, setTeams] = useState<TeamCfg[]>(_teamCache ?? []);
+  const { member: self } = useAuth();
 
   useEffect(() => {
     if (_cache && _teamCache) { setMembers(_cache); setTeams(_teamCache); return; }
@@ -98,12 +100,20 @@ export function OwnerSelect({
   const active = members.filter(isActive);
   const configured = teamMembers(team, active, teams);
   const fallback = active.filter((m) => team === "all" || memberTeam(m.role) === team);
-  const scoped = (configured.length ? configured : fallback)
-    .filter((m) => !roleMatch || roleMatch.test(m.role));
+  // UNION, not either/or: a half-filled Settings → Teams used to SHADOW the
+  // role-based list, so an active designer whose name wasn't (yet) typed into
+  // the team config silently vanished from every picker.
+  const union = [...configured, ...fallback.filter((f) => !configured.some((c) => memberToken(c) === memberToken(f)))];
+  const scoped = union.filter((m) => !roleMatch || roleMatch.test(m.role));
+  // The signed-in member can always pick themselves — while the team is not
+  // onboarded yet, work still has to land on someone real. (Not applied when a
+  // roleMatch narrows the picker, e.g. the CMO-only approver field.)
+  const me = !roleMatch && self?.name ? active.find((m) => m.name === self.name) : undefined;
+  const withSelf = me && !scoped.some((m) => memberToken(m) === memberToken(me)) ? [...scoped, me] : scoped;
   // Never hide a value that's already set even if it's out of the current scope.
-  const list = value && !scoped.some((m) => m.name === value)
-    ? [...scoped, ...active.filter((m) => m.name === value)]
-    : scoped;
+  const list = value && !withSelf.some((m) => m.name === value)
+    ? [...withSelf, ...active.filter((m) => m.name === value)]
+    : withSelf;
 
   const border = invalid ? "border-status-red" : "border-line2";
   return (
@@ -112,7 +122,7 @@ export function OwnerSelect({
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
       className={`w-full text-[13.5px] px-[12px] py-[10px] rounded-[10px] border ${border} bg-ivory outline-none disabled:opacity-50 ${className ?? ""}`}>
-      <option value="">{scoped.length ? placeholder : "No active members"}</option>
+      <option value="">{list.length ? placeholder : "No active members"}</option>
       {list.map((m) => (
         <option key={m.email || m.name} value={m.name}>{m.name} — {m.role}</option>
       ))}

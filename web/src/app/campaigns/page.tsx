@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useRole } from "@/lib/role";
+import { memberTeam } from "@/components/ui/OwnerSelect";
 import { baht, num } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
@@ -44,6 +45,9 @@ export default function CampaignsPage() {
   const { role } = useRole();
   // Status drives the approval flow, so only the CMO may move it.
   const canChangeStatus = role === "CMO";
+  // Creating campaigns is planning work — Creative-team roles (Graphic, VDO,
+  // Creative Leader) work INSIDE campaigns, they don't open them.
+  const canCreateCampaign = memberTeam(role) !== "Creative";
   // BUG-03 (RBAC test): access level "Editor" alone let every job function edit
   // and even DELETE approved campaigns with real budgets. First increment of
   // the agreed split: deleting a campaign is the CMO's call (like status), and
@@ -215,7 +219,9 @@ export default function CampaignsPage() {
               <Link href="/campaigns/omd-store" className="text-[13px] font-bold rounded-[14px] px-4 py-[11px] border border-[#ECEAF2] bg-white text-[#5B4FD8]">
                 Promotion Summary Print
               </Link>
-              <Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ Create Campaign</Link>
+              {canCreateCampaign && (
+                <Link href="/campaigns/new" className="text-[13px] font-bold text-white rounded-[14px] px-5 py-[11px] shadow-sm" style={{ background: "#6C5CE7" }}>+ Create Campaign</Link>
+              )}
             </>
           )}
         >
