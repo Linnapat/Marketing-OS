@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
+import { isCreativeSideRole } from "@/lib/roleGates";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
@@ -40,7 +41,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   };
   const [feedbackTarget, setFeedbackTarget] = useState(0);
   const [feedbackReason, setFeedbackReason] = useState("");
-  const { member, user } = useAuth();
+  const { member, user, role } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
   // The brief sign-off belongs to the RECEIVING side (content leader /
   // designer). The requester wrote the brief — approving it themselves would
@@ -48,6 +49,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const requesterKey = (g.requester || "").trim().toLowerCase();
   const isRequester = !!requesterKey &&
     [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
+  // Sign-off belongs to the CONTENT side: only creative-team roles (Creative
+  // Leader, designers, VDO, Content Creator) — or the CMO — may approve a
+  // brief, and never the person who requested it. A planner approving briefs
+  // for the team they are briefing defeats the check the same way
+  // self-approval did.
+  const canSignOffBrief = !isRequester && (role === "CMO" || isCreativeSideRole(role));
   // Real Marketing Manager / BGL from Settings for the approval chain — no more
   // hardcoded "Mei T." Shows "—" when the role has no member yet.
   const [bglApprover, setBglApprover] = useState("—");
@@ -342,11 +349,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                     {g.briefApprovedAt ? ` · ${new Date(g.briefApprovedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}
                   </div>
                 </div>
-              ) : isRequester ? (
+              ) : !canSignOffBrief ? (
                 <div className="rounded-card px-4 py-3" style={{ background: "#FBF8EE", border: "1px solid #EAD9A8" }}>
-                  <div className="text-[12.5px] font-bold" style={{ color: "#8A6D1E" }}>รอฝั่งรับงาน sign-off brief</div>
+                  <div className="text-[12.5px] font-bold" style={{ color: "#8A6D1E" }}>รอสาย Content sign-off brief</div>
                   <div className="text-[11.5px] text-muted mt-1">
-                    คุณเป็นผู้ส่งบรีฟนี้ — คนอนุมัติต้องเป็นฝั่งรับงาน (Content leader / Designer) เพื่อยืนยันว่าบรีฟครบพอเริ่มงานได้จริง
+                    {isRequester
+                      ? "คุณเป็นผู้ส่งบรีฟนี้ — คนอนุมัติต้องเป็นสาย Content/Creative เพื่อยืนยันว่าบรีฟครบพอเริ่มงานได้จริง"
+                      : "การอนุมัติบรีฟเป็นของสาย Content/Creative (Content leader / Designer / VDO) เท่านั้น"}
                   </div>
                 </div>
               ) : (
