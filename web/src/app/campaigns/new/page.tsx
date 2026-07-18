@@ -13,6 +13,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
+import { memberTeam } from "@/components/ui/OwnerSelect";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BRANDS, BrandId, brandName, emptyBrandTotals } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -338,6 +339,18 @@ export default function NewCampaignPage() {
       setBusy(false);
     }
   };
+
+  // Creative-team roles (Graphic / VDO / Creative Leader) don't create or edit
+  // campaigns — the button is hidden on the list, and this guards the direct URL.
+  if (memberTeam(role) === "Creative") {
+    return (
+      <div className="py-24 flex flex-col items-center gap-3 text-center">
+        <div className="text-[15px] font-bold text-ink">No access to Campaign Builder</div>
+        <div className="text-[13px] text-faint max-w-[420px]">การสร้าง/แก้แคมเปญเป็นงานฝั่งวางแผน — role ของคุณทำงานในแคมเปญผ่าน Content Plan และ Creative Kitchen ติดต่อ CMO หากต้องการสิทธิ์</div>
+        <Link href="/campaigns" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">← กลับไปหน้า Campaigns</Link>
+      </div>
+    );
+  }
 
   return (
     <>

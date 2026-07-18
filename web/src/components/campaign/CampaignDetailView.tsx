@@ -600,7 +600,12 @@ const BRIEF_TONE: Record<string, "neutral" | "gold" | "green" | "orange" | "blue
 };
 
 function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
-  const { member, user } = useAuth();
+  const { member, user, role } = useAuth();
+  // RBAC round 2: any Editor could press Approve here — the gate was only the
+  // STATUS. Deciding on a brief (approve / send back / start / complete) is the
+  // CMO's, same as every other status move. Submitting FOR approval stays open:
+  // that's how a planner asks.
+  const isCmo = role === "CMO";
   const reviewer = member?.name ?? user?.email ?? "CMO";
   const [busy, setBusy] = useState(false);
   const [revising, setRevising] = useState(false);
@@ -699,9 +704,9 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
   };
 
   const canSubmit = status === "Draft" || status === "Need Revision" || status === "Ready for Review";
-  const canApprove = status === "Waiting for Approval";
-  const canStart = status === "Approved";
-  const canComplete = status === "In Progress";
+  const canApprove = status === "Waiting for Approval" && isCmo;
+  const canStart = status === "Approved" && isCmo;
+  const canComplete = status === "In Progress" && isCmo;
 
   return (
     <div className="flex flex-col gap-4">
@@ -730,6 +735,11 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
           {canApprove && <button onClick={() => setRevising(true)} disabled={busy} className="text-[13px] font-bold rounded-[10px] px-5 py-[9px] border-[1.5px] border-line2 text-status-orange disabled:opacity-40">↩ Request Revision</button>}
           {canStart && <button onClick={() => act("In Progress", "Moved to In Progress")} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px] disabled:opacity-40">Mark In Progress</button>}
           {canComplete && <button onClick={() => act("Completed", "Marked completed")} disabled={busy} className="text-[13px] font-bold text-white rounded-[10px] px-5 py-[9px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>Mark Completed</button>}
+          {!isCmo && status === "Waiting for Approval" && (
+            <span className="text-[12px] text-faint self-center" title="เฉพาะ CMO เท่านั้นที่อนุมัติ/ส่งกลับแก้ได้">
+              รอ {brief.approver || DEFAULT_APPROVER} อนุมัติ — เฉพาะ CMO เท่านั้น
+            </span>
+          )}
         </div>
       )}
 
