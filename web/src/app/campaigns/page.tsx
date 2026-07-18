@@ -44,6 +44,13 @@ export default function CampaignsPage() {
   const { role } = useRole();
   // Status drives the approval flow, so only the CMO may move it.
   const canChangeStatus = role === "CMO";
+  // BUG-03 (RBAC test): access level "Editor" alone let every job function edit
+  // and even DELETE approved campaigns with real budgets. First increment of
+  // the agreed split: deleting a campaign is the CMO's call (like status), and
+  // editing the brief is campaign-management work — CMO or the Marketing
+  // Manager/BGL who runs it. Creative/VDO roles keep full read access.
+  const canDeleteCampaign = role === "CMO";
+  const canEditCampaign = role === "CMO" || role === "Marketing Manager / BGL";
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
@@ -360,22 +367,26 @@ export default function CampaignsPage() {
                             <StatusBadge tone={campaignTone(c.status)}>{c.status}</StatusBadge>
                           </span>
                         )}
-                        <Link
-                          href={`/campaigns/new?edit=${c.id}`}
-                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
-                          style={{ borderColor: "#DCD6F7" }}
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => onDelete(c)}
-                          disabled={busyCampaignId === c.id}
-                          className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50 shrink-0 whitespace-nowrap"
-                          style={{ borderColor: "#F2CACA" }}
-                        >
-                          Delete
-                        </button>
+                        {canEditCampaign && (
+                          <Link
+                            href={`/campaigns/new?edit=${c.id}`}
+                            className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
+                            style={{ borderColor: "#DCD6F7" }}
+                          >
+                            Edit
+                          </Link>
+                        )}
+                        {canDeleteCampaign && (
+                          <button
+                            type="button"
+                            onClick={() => onDelete(c)}
+                            disabled={busyCampaignId === c.id}
+                            className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50 shrink-0 whitespace-nowrap"
+                            style={{ borderColor: "#F2CACA" }}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
