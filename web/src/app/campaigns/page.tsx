@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useRole } from "@/lib/role";
-import { canCreateCampaign as roleCanCreateCampaign } from "@/lib/roleGates";
+import { useCanCreateCampaign } from "@/lib/usePermGates";
 import { baht, num } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
@@ -45,10 +45,9 @@ export default function CampaignsPage() {
   const { role } = useRole();
   // Status drives the approval flow, so only the CMO may move it.
   const canChangeStatus = role === "CMO";
-  // Creating campaigns is planning work — creative-side roles (Graphic, VDO,
-  // Creative Leader, Content Creator, Agency) work INSIDE campaigns, they
-  // don't open them. The list lives in lib/roleGates, unit-tested per role.
-  const canCreateCampaign = roleCanCreateCampaign(role);
+  // Creating campaigns follows Settings → Permissions: Campaign ≥ Edit.
+  // (Live matrix via usePermGates; the shipped seed answers until it loads.)
+  const canCreateCampaign = useCanCreateCampaign();
   // BUG-03 (RBAC test): access level "Editor" alone let every job function edit
   // and even DELETE approved campaigns with real budgets. First increment of
   // the agreed split: deleting a campaign is the CMO's call (like status), and
