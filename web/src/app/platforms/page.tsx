@@ -17,6 +17,9 @@ import { Segmented } from "@/components/ui/Segmented";
 import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter, rangeOverlapFraction, MONTHS } from "@/components/ui/DateFilterBar";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { useBrandVisibility } from "@/lib/brandVisibility";
+import { useRole } from "@/lib/role";
+import { canSeePlatformPerformance } from "@/lib/roleGates";
+import Link from "next/link";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
@@ -97,6 +100,7 @@ const periodLabel = (dates?: string) => dates ? `Period: ${dates}` : "Period: �
 export default function PlatformsPage() {
   const { member } = useAuth();
   const { visibleBrands } = useBrandVisibility();
+  const { role } = useRole();
 
   const [rows, setRows] = useState<CampaignResultRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -132,7 +136,7 @@ export default function PlatformsPage() {
       setBriefs(briefMap);
       setLoading(false);
     });
-    return () => { live = false; };
+      return () => { live = false; };
   }, []);
 
   // Brand visibility first (rows outside the user's brands never appear), then the
@@ -364,6 +368,20 @@ export default function PlatformsPage() {
   const footActual = groups.reduce((s, g) => s + g.actual, 0);
   const footPlan = groups.reduce((s, g) => s + g.budgetPlan, 0);
   const footSpend = groups.reduce((s, g) => s + g.budgetActual, 0);
+
+  // Platform Performance is company-wide budget + actual spend with a
+  // "Request revise budget" action — money data that never passes the Finance
+  // module's own door. Production-side roles (KOL, creative) don't see it
+  // (CMO decision 18 Jul 2026). Gate is in lib/roleGates, unit-tested.
+  if (!canSeePlatformPerformance(role)) {
+    return (
+      <div className="py-24 flex flex-col items-center gap-3 text-center">
+        <div className="text-[15px] font-bold text-ink">No access to Platform Performance</div>
+        <div className="text-[13px] text-faint max-w-[420px]">หน้านี้แสดงงบประมาณและยอดใช้จ่ายจริงของทุกแบรนด์ — เปิดให้เฉพาะสายวางแผน/บริหาร ติดต่อ CMO หากต้องการเข้าถึง</div>
+        <Link href="/" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">← กลับหน้าหลัก</Link>
+      </div>
+    );
+  }
 
   return (
     <>
