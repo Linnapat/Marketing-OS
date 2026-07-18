@@ -10,7 +10,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
 import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic } from "./graphic";
-import { emptyDeliverable } from "@/lib/data/graphic";
+import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
 import { Kol } from "@/lib/data/kol";
 import { resolveKolAssignment } from "./assignments";
@@ -142,7 +142,9 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       // ONE graphic request per content item, carrying a deliverable per
       // Platform × Asset Size the content needs. The requester (Planner) approves.
       const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
-      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", ci.referenceBriefLink || ""));
+      // Artwork numbers are assigned HERE, from the sizes the planner picked —
+      // same size across platforms = one artwork; no hand-numbering later.
+      const deliverables = autoNumberDeliverables(pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", ci.referenceBriefLink || "")));
       const g: Graphic = {
         ...buildGraphic({
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,

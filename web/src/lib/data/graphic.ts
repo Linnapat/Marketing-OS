@@ -100,7 +100,26 @@ export function deriveDeliverables(g: Graphic): GraphicDeliverable[] {
   const plats = (g.platform || "").split(/[+,/]/).map((s) => s.trim()).filter(Boolean);
   const sizes = (g.size || "").split(/[·,]/).map((s) => s.trim()).filter(Boolean);
   const list = plats.length ? plats : ["Asset"];
-  return list.map((p, i) => emptyDeliverable(p, sizes.length === list.length ? sizes[i] : (sizes.join(" · ") || "—")));
+  return autoNumberDeliverables(list.map((p, i) => emptyDeliverable(p, sizes.length === list.length ? sizes[i] : (sizes.join(" · ") || "—"))));
+}
+
+/** Assign artwork numbers automatically from the sizes chosen at request time:
+ *  deliverables sharing a (normalised) size are ONE artwork — the same master
+ *  file resized per platform — numbered 1..n in order of first appearance.
+ *  Numbers already set by hand (legacy rows) are respected, and new sizes
+ *  continue counting after the highest existing number. */
+export function autoNumberDeliverables(dels: GraphicDeliverable[]): GraphicDeliverable[] {
+  const bySize = new Map<string, number>();
+  let next = dels.reduce((max, d) => Math.max(max, d.artworkNo ?? 0), 0);
+  for (const d of dels) {
+    if (d.artworkNo) { bySize.set(normSize(d.size), d.artworkNo); }
+  }
+  return dels.map((d) => {
+    if (d.artworkNo) return d;
+    const key = normSize(d.size);
+    if (!bySize.has(key)) bySize.set(key, ++next);
+    return { ...d, artworkNo: bySize.get(key) };
+  });
 }
 
 /** Progress rollup for a request's deliverables. */

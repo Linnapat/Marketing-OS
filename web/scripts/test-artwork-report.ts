@@ -7,7 +7,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { artworkReport, artworkTotals, artworkMonths, creativeWorkload, revisionRate } from "../src/lib/data/artworkReport";
-import { Graphic, GraphicDeliverable, GraphicEvent } from "../src/lib/data/graphic";
+import { Graphic, GraphicDeliverable, GraphicEvent, autoNumberDeliverables, emptyDeliverable, artworkUnits } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -196,6 +196,30 @@ console.log("\n— current workload (who carries what right now) —");
   ] as Parameters<typeof revisionRate>[0];
   is("revision rate counts pieces, not bounces", revisionRate(pieces), 0.5);
   is("empty month has rate 0", revisionRate([]), 0);
+}
+
+console.log("\n— artwork numbers assign themselves from the chosen sizes —");
+{
+  // The Art# box is gone from the drawer: numbering happens at request time.
+  const dels = autoNumberDeliverables([
+    emptyDeliverable("Instagram", "4:5 (1080×1350)"),
+    emptyDeliverable("Facebook", "4:5 (1080×1350)"),   // same master file
+    emptyDeliverable("Instagram", "9:16 Reel/Story (1080×1920)"),
+  ]);
+  is("same size across platforms shares one number", dels[0].artworkNo, dels[1].artworkNo);
+  is("a different size gets the next number", dels[2].artworkNo, 2);
+  is("counting agrees with the numbers", artworkUnits({ deliverables: dels, platform: "", size: "" }), 2);
+}
+{
+  // Legacy rows numbered by hand keep their numbers; new sizes continue after.
+  const dels = autoNumberDeliverables([
+    { ...emptyDeliverable("Instagram", "1:1"), artworkNo: 5 },
+    emptyDeliverable("Facebook", "1:1"),
+    emptyDeliverable("TikTok", "9:16"),
+  ]);
+  is("hand-set number is respected", dels[0].artworkNo, 5)
+  is("same size follows the hand-set number", dels[1].artworkNo, 5);
+  is("new size continues after the highest", dels[2].artworkNo, 6);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
