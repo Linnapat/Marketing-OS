@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { CampaignDetail, CAMPAIGN_TABS, CAMPAIGN_TAB_LABELS, CampaignTab } from "@/lib/data/campaigns";
@@ -776,21 +776,39 @@ function ResultTab({ detail }: { detail: CampaignDetail }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Load ONCE per campaign. This effect used to depend on `detail.row` — a NEW
+  // object every time the parent refetched (which it does 2-3× while the page
+  // settles), and each run setRows() over the table, WIPING a row the user had
+  // just added or numbers they had just typed. That is the "กดเพิ่มแถวแล้วหาย /
+  // กรอกแล้วเด้งกลับเป็น 0" the QA kept hitting: not a save failure — the reload
+  // ate the edits before Save was ever pressed.
+  const loadedFor = useRef<string | null>(null);
+  // Ref mirror of `dirty` so the loader below can read it without re-running.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   useEffect(() => {
+    if (loadedFor.current === campaignId) return;
     let alive = true;
     // Merge planned Ads/KOL allocation rows (with KOL actuals) so this tab shows
     // exactly what Platform Performance shows for the campaign — same rows, synced.
     Promise.all([fetchResults(campaignId), fetchAllBriefs(), fetchKols()]).then(([real, briefMap, kols]) => {
       if (!alive) return;
+      loadedFor.current = campaignId;
       const brief = briefMap[detail.row.name];
       const merged = brief
         ? mergeBudgetAllocationRows(real, [detail.row], { [detail.row.name]: brief }, kols.filter((k) => k.campaignId === campaignId))
         : real;
-      setRows(merged);
+      // Belt-and-braces: never clobber rows the user already touched.
+      setRows((prev) => {
+        const touched = prev.filter((r) => dirtyRef.current.has(r.id));
+        const touchedIds = new Set(touched.map((r) => r.id));
+        return [...merged.filter((m) => !touchedIds.has(m.id)), ...touched];
+      });
       setLoading(false);
     }).catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [campaignId, detail.row]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId]);
 
   const patch = (id: string, key: keyof CampaignResultRow, value: number) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
