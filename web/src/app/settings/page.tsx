@@ -1,6 +1,7 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toast, toastError } from "@/lib/toast";
+import { authHeaders } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campaign/CampaignHeadController";
 import { clsx } from "@/lib/clsx";
@@ -630,6 +631,23 @@ export default function SettingsPage() {
     const opt = ROLE_OPTIONS.find((o) => o.role === role);
     setInv((v) => ({ ...v, role, access: opt?.access ?? v.access, brandAccess: opt?.brand ?? v.brandAccess }));
   };
+  // The members row alone cannot log in (signup is disabled) — this asks the
+  // server to send a Supabase invite email where the person sets a password.
+  const sendLoginInvite = async (email: string) => {
+    try {
+      const res = await fetch("/api/members/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ email }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.error) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      toast(json?.message ?? "ส่งคำเชิญแล้ว", "success");
+    } catch (error) {
+      toastError(`ส่งคำเชิญ login ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
   const inviteValid = inv.name.trim() !== "" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email.trim());
   const submitInvite = async () => {
     if (!canEdit || !inviteValid) return;
@@ -640,6 +658,7 @@ export default function SettingsPage() {
     };
     try {
       await createMember(member);
+      await sendLoginInvite(member.email);
       setUsers((us) => [...us, member]);
       setInviteOpen(false);
       setInv(emptyInvite);
@@ -883,6 +902,10 @@ export default function SettingsPage() {
                   <div><Pill text={u.status} fg={invited ? "#C68A1E" : "#4E7A4E"} bg={invited ? "#FBF8EE" : "#EEF4EE"} /></div>
                   {canEdit && (
                     <div className="flex items-center gap-2 justify-end">
+                      {invited && (
+                        <button onClick={() => sendLoginInvite(u.email)} title="ส่งอีเมลให้ตั้งรหัสผ่าน — จำเป็นสำหรับคนที่ยังไม่เคย login"
+                          className="text-[11.5px] font-bold" style={{ color: "#C68A1E" }}>ส่งคำเชิญ</button>
+                      )}
                       <button onClick={() => setEditUser({ orig: u.email, m: { ...u } })} className="text-[11.5px] font-bold text-accent">Edit</button>
                       <button onClick={() => {
                         if (!confirm(`ลบ ${u.name} ออกจากทีม?`)) return;
