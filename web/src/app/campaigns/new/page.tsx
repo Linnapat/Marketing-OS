@@ -13,7 +13,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
-import { canCreateCampaign } from "@/lib/roleGates";
+import { useCanCreateCampaign } from "@/lib/usePermGates";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BRANDS, BrandId, brandName, emptyBrandTotals } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -129,6 +129,7 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const { member, user } = useAuth();
   const { role } = useRole();
+  const allowedToCreate = useCanCreateCampaign();
   const brandVisibility = useBrandVisibility();
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [id, setId] = useState(newCampaignId);
@@ -340,10 +341,9 @@ export default function NewCampaignPage() {
     }
   };
 
-  // Creative-side roles (Graphic / VDO / Creative Leader / Content Creator /
-  // Agency) don't create or edit campaigns — the button is hidden on the list,
-  // and this guards the direct URL. Gate lives in lib/roleGates.
-  if (!canCreateCampaign(role)) {
+  // Campaign creation follows Settings → Permissions (Campaign ≥ Edit) — the
+  // button hides on the list, and this guards the direct URL.
+  if (!allowedToCreate) {
     return (
       <div className="py-24 flex flex-col items-center gap-3 text-center">
         <div className="text-[15px] font-bold text-ink">No access to Campaign Builder</div>
