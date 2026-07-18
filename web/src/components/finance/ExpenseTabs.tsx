@@ -87,6 +87,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     }
   };
 
+  // If the default (TEPPEN) is outside the member's scope, land on their first
+  // visible brand instead of an empty select. Safe to auto-switch here: this is
+  // the member's OWN new request, not someone else's saved data.
+  useEffect(() => {
+    const id = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
+    if (visibility.isVisible(id)) return;
+    const first = Object.entries(BRAND_NAME_TO_ID).find(([, bid]) => visibility.isVisible(bid));
+    if (first) setFormBrand(first[0]);
+  }, [visibility, formBrand]);
   const formBrandId = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
   // Campaigns available for the chosen brand (cascade by brand).
   const brandCampaigns = useMemo(
@@ -238,7 +247,14 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label>
-                <select value={formBrand} onChange={(e) => setFormBrand(e.target.value)} className={field}><option>TEPPEN</option><option>Omakase Don</option><option>Mainichi</option><option>Touka</option></select>
+                <select value={formBrand} onChange={(e) => setFormBrand(e.target.value)} className={field}>
+                  {/* Only brands inside the member's visibility scope — the
+                      hardcoded four let a scoped member pick (and see the name
+                      of) brands they don't manage. */}
+                  {Object.entries(BRAND_NAME_TO_ID).filter(([, id]) => visibility.isVisible(id)).map(([label]) => (
+                    <option key={label}>{label}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Amount (฿) <span className="text-status-red">*</span></label>

@@ -185,8 +185,13 @@ export default function NewCampaignPage() {
     return () => { alive = false; };
   }, []);
   useEffect(() => {
-    if (brandOptions.length && !brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: brandOptions[0] as BrandId, branches: [] }));
-  }, [brandOptions, brief.b]);
+    // NEW campaigns only. When EDITING, the brand is a fact of the saved
+    // campaign — "my dropdown doesn't have it" must never silently rebrand
+    // someone else's campaign (a scoped MM opening an out-of-scope campaign by
+    // URL used to see it flip to their first brand, one Save away from moving
+    // an Omakase campaign under Teppen). Out-of-scope edits are blocked below.
+    if (!editingId && brandOptions.length && !brandOptions.includes(brief.b)) setBrief((b) => ({ ...b, b: brandOptions[0] as BrandId, branches: [] }));
+  }, [brandOptions, brief.b, editingId]);
   useEffect(() => {
     let alive = true;
     Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs(), fetchCampaignTypeConfigs(), fetchMembers()])
@@ -340,6 +345,22 @@ export default function NewCampaignPage() {
       setBusy(false);
     }
   };
+
+  // Brand scope: the campaign list filters what a member may not see, but this
+  // form is reachable by URL with a guessable id. Checked at RENDER time so it
+  // re-evaluates once the member's real scope finishes loading — the loaded
+  // brief keeps its true brand (the auto-rebrand effect skips edits), so an
+  // out-of-scope campaign flips to this panel instead of an editable form.
+  const editBlocked = !!editingId && !brandVisibility.isVisible(brief.b);
+  if (editBlocked) {
+    return (
+      <div className="py-24 flex flex-col items-center gap-3 text-center">
+        <div className="text-[15px] font-bold text-ink">No access to this campaign</div>
+        <div className="text-[13px] text-faint max-w-[420px]">แคมเปญนี้อยู่นอกขอบเขตแบรนด์ที่บัญชีของคุณดูแล — ติดต่อ CMO หากต้องการสิทธิ์</div>
+        <Link href="/campaigns" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">← กลับไปหน้า Campaigns</Link>
+      </div>
+    );
+  }
 
   // Campaign creation follows Settings → Permissions (Campaign ≥ Edit) — the
   // button hides on the list, and this guards the direct URL.
