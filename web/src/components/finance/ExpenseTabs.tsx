@@ -17,6 +17,7 @@ import { fetchExpenseRequests, fetchExpenses, createExpenseRequest, markExpenseP
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createRequest } from "@/lib/db/requests";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import { RequestRow as QueueRow } from "@/lib/data/requests";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
@@ -59,6 +60,10 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const { member, user } = useAuth();
   // Real requester name from the signed-in account (demo mode falls back).
   const requesterName = member?.name || user?.email?.split("@")[0] || "You";
+  // Brand VISIBILITY is the caller's permission scope; the `brand` prop is only
+  // the page's filter dropdown. "All brands" on the dropdown must never widen
+  // past what the member may see — this money data leaked across brands before.
+  const visibility = useBrandVisibility();
 
   useEffect(() => {
     let alive = true;
@@ -85,8 +90,8 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const formBrandId = BRAND_NAME_TO_ID[formBrand] ?? "teppen";
   // Campaigns available for the chosen brand (cascade by brand).
   const brandCampaigns = useMemo(
-    () => campaigns.filter((c) => c.b === formBrandId),
-    [campaigns, formBrandId],
+    () => campaigns.filter((c) => visibility.isVisible(c.b) && c.b === formBrandId),
+    [campaigns, formBrandId, visibility],
   );
   // Reset the campaign choice when it no longer belongs to the selected brand.
   useEffect(() => {
@@ -385,7 +390,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       {/* RIGHT: Recent Requests */}
       <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
         <div className="text-[15px] font-bold">Recent Requests</div>
-        {requests.filter((r) => (brand === "all" || r.b === brand) && (!date || inDateFilter(date, r.createdAt))).map((r, i) => {
+        {requests.filter((r) => visibility.isVisible(r.b) && (brand === "all" || r.b === brand) && (!date || inDateFilter(date, r.createdAt))).map((r, i) => {
           const wait = daysWaiting(r.createdAt);
           return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
@@ -432,12 +437,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
 export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterValue; date?: DateFilter; onVoucher: (e: ExpenseRow) => void }) {
   // Real spending from the DB (empty on a fresh database), mock in demo mode.
   const [all, setAll] = useState<ExpenseLogRow[]>(EXPENSES);
+  // Same scope rule as Recent Requests: the member's brand visibility gates the
+  // rows; the dropdown only narrows further.
+  const visibility = useBrandVisibility();
   useEffect(() => {
     let alive = true;
     fetchExpenses().then((e) => { if (alive) setAll(e); }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  const rows = all.filter((e) => (brand === "all" || e.b === brand) && (!date || inDateFilter(date, e.date)));
+  const rows = all.filter((e) => visibility.isVisible(e.b) && (brand === "all" || e.b === brand) && (!date || inDateFilter(date, e.date)));
   const markPaid = (row: ExpenseLogRow) => {
     setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x)));
     markExpensePaid(row._id).catch((error) => toastError(`บันทึก Paid ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
