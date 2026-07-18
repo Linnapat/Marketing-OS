@@ -42,6 +42,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
+  // The brief sign-off belongs to the RECEIVING side (content leader /
+  // designer). The requester wrote the brief — approving it themselves would
+  // make the check meaningless, so the sign-off controls hide for them.
+  const requesterKey = (g.requester || "").trim().toLowerCase();
+  const isRequester = !!requesterKey &&
+    [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
   // Real Marketing Manager / BGL from Settings for the approval chain — no more
   // hardcoded "Mei T." Shows "—" when the role has no member yet.
   const [bglApprover, setBglApprover] = useState("—");
@@ -334,6 +340,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   <div className="text-[12.5px] font-bold" style={{ color: "#4E7A4E" }}>
                     ✓ Brief approved by {g.briefApprovedBy}
                     {g.briefApprovedAt ? ` · ${new Date(g.briefApprovedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}
+                  </div>
+                </div>
+              ) : isRequester ? (
+                <div className="rounded-card px-4 py-3" style={{ background: "#FBF8EE", border: "1px solid #EAD9A8" }}>
+                  <div className="text-[12.5px] font-bold" style={{ color: "#8A6D1E" }}>รอฝั่งรับงาน sign-off brief</div>
+                  <div className="text-[11.5px] text-muted mt-1">
+                    คุณเป็นผู้ส่งบรีฟนี้ — คนอนุมัติต้องเป็นฝั่งรับงาน (Content leader / Designer) เพื่อยืนยันว่าบรีฟครบพอเริ่มงานได้จริง
                   </div>
                 </div>
               ) : (
