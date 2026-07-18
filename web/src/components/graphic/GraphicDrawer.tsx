@@ -567,7 +567,7 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
         <StatusBadge tone={prog.ready ? "green" : "gold"}>{prog.ready ? "Ready to deploy" : `${prog.approved}/${prog.total} approved`}</StatusBadge>
       </div>
       <div className="text-[10.5px] text-faint -mt-1">
-        นับ artwork: ไซซ์ต่างกัน = คนละชิ้น (platform เดียวกันไซซ์เดียว = 1) · ใส่เลข &quot;Art#&quot; เท่ากันเพื่อรวมเป็นชิ้นเดียว (ใช้ไฟล์มาสเตอร์เดียว)
+        นับ artwork อัตโนมัติจากไซซ์ที่เลือกตอน request: ไซซ์เดียวกันหลาย platform = ชิ้นเดียว (ไฟล์มาสเตอร์เดียว) · คนละไซซ์ = คนละชิ้น
       </div>
 
       {dels.map((d, i) => {
@@ -578,14 +578,14 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
             <div className="flex items-center justify-between gap-2 mb-2">
               <div><span className="text-[13.5px] font-bold">{d.platform}</span> <span className="text-[12px] text-faint">· {d.size}</span></div>
               <div className="flex items-center gap-2">
-                {/* Art# — deliverables with the same number count as one artwork */}
-                <label className="flex items-center gap-1 text-[10.5px] font-bold text-faint" title="ใส่เลขเท่ากันเพื่อรวมเป็น artwork ชิ้นเดียว">
-                  Art#
-                  <input type="number" min={1} value={d.artworkNo ?? ""} placeholder="auto"
-                    onChange={(e) => patch(i, { artworkNo: e.target.value ? Number(e.target.value) : undefined })}
-                    onBlur={() => persist(dels)}
-                    className="w-[46px] text-right text-[11px] px-1 py-[3px] rounded-[6px] border border-line2 bg-white outline-none" />
-                </label>
+                {/* เลขชิ้นงานกำหนดอัตโนมัติจากไซซ์ตั้งแต่ตอนสร้าง request — แถวที่
+                    เลขเดียวกันคือไฟล์มาสเตอร์เดียวกัน แสดงอย่างเดียว ไม่ให้แก้มือ */}
+                {d.artworkNo && (
+                  <span className="text-[10.5px] font-bold rounded-pill px-2 py-[2px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}
+                    title="เลขชิ้นงาน — แถวที่เลขเดียวกันนับเป็น artwork ชิ้นเดียว (ไฟล์มาสเตอร์เดียว)">
+                    Art {d.artworkNo}
+                  </span>
+                )}
                 {d.version > 0 && <span className="text-[10.5px] font-bold text-faint">v{d.version}</span>}
                 <StatusBadge tone={DEL_TONE[d.status] ?? "neutral"}>{d.status}</StatusBadge>
               </div>
