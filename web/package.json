@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --import tsx scripts/test-flows.ts && node --import tsx scripts/test-money.ts && node --import tsx scripts/test-brands.ts && node --import tsx scripts/test-brief-sheet.ts && node --import tsx scripts/test-agency-deliverables.ts && node --import tsx scripts/test-artwork-report.ts && node --import tsx scripts/test-workload.ts"
+    "test": "node --import tsx scripts/test-flows.ts && node --import tsx scripts/test-money.ts && node --import tsx scripts/test-brands.ts && node --import tsx scripts/test-brief-sheet.ts && node --import tsx scripts/test-agency-deliverables.ts && node --import tsx scripts/test-artwork-report.ts && node --import tsx scripts/test-workload.ts && node --import tsx scripts/test-role-gates.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",
