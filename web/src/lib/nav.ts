@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Target, CalendarDays, Palette, Star,
+  Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, ClipboardCheck, FolderOpen,
   CalendarClock, Globe, BarChart3, Receipt, Sparkles,
   type LucideIcon,
@@ -22,7 +22,8 @@ export interface NavGroup {
 export const NAV: NavGroup[] = [
   {
     items: [
-      { href: "/", label: "Mood & Metrics", icon: LayoutDashboard, ready: true },
+      // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
+      // route now redirects to Campaign Café, which is the real front door.
       { href: "/campaigns", label: "Campaign Café", icon: Target, ready: true },
       { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
     ],
