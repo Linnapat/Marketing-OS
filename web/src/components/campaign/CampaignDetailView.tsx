@@ -110,7 +110,9 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {brief && (
+          {/* Same rule as the campaign list: editing the brief is campaign-
+              management work — CMO or Marketing Manager/BGL (BUG-03, increment 1). */}
+          {brief && (role === "CMO" || role === "Marketing Manager / BGL") && (
             <Link href={`/campaigns/new?edit=${encodeURIComponent(c.id)}`} className="text-[12px] font-bold rounded-[9px] px-3 py-[7px] border border-line2 bg-surface text-ink">
               ✏️ Edit Campaign
             </Link>
