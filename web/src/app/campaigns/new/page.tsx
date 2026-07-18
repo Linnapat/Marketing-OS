@@ -1,6 +1,6 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toast, toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
+import { briefDiffSummary } from "@/lib/data/briefDiff";
 import { applyBriefPatch } from "@/lib/data/briefSheet";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers } from "@/lib/db/settings";
 import { BudgetSheetRow, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
@@ -134,6 +135,9 @@ export default function NewCampaignPage() {
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [id, setId] = useState(newCampaignId);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Snapshot of the brief as loaded for editing — the base briefDiff compares
+  // against, so the CMO is told exactly what an edit changed.
+  const [originalBrief, setOriginalBrief] = useState<CampaignBrief | null>(null);
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -179,6 +183,7 @@ export default function NewCampaignPage() {
       };
       setId(editId);
       setEditingId(editId);
+      setOriginalBrief(JSON.parse(JSON.stringify(normalized)));
       setBrief(normalized);
       setSeq(normalized.content.length + normalized.kols.length + 1);
     }).catch(() => {});
@@ -280,7 +285,21 @@ export default function NewCampaignPage() {
     }
     setBusy(true);
     try {
-      await saveCampaignBrief(finalize("Draft", brief.approvalLog, new Date().toISOString()));
+      // Same rule as Submit: a non-CMO edit of an approved campaign cannot stay
+      // "Draft-saved" outside the approval flow — it revokes the approval and
+      // queues for the CMO, diff attached.
+      const APPROVED_STATES = ["Approved", "In Progress", "Completed"];
+      const mustReapprove = !!editingId && role !== "CMO" && APPROVED_STATES.includes(originalBrief?.status ?? "");
+      const now = new Date().toISOString();
+      if (mustReapprove && originalBrief) {
+        const changes = briefDiffSummary(originalBrief, brief);
+        const entry = { action: "Edited — approval revoked, sent back to CMO", by: brief.plannerOwner || "Planner", at: now, comment: changes || "ไม่มีการเปลี่ยนแปลงที่ตรวจพบ", from: originalBrief.status, to: "Waiting for Approval" };
+        await saveCampaignBrief(finalize("Waiting for Approval", [...brief.approvalLog, entry], now));
+        notify("approval", `✏️ แคมเปญแก้ไขแล้วรออนุมัติ: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"}${changes ? ` · สิ่งที่แก้: ${changes}` : ""}`, "/my-tasks");
+        toast("แคมเปญนี้เคยอนุมัติแล้ว — การแก้ไขถูกส่งให้ CMO อนุมัติใหม่", "info");
+      } else {
+        await saveCampaignBrief(finalize("Draft", brief.approvalLog, now));
+      }
       setDraftSaved(true);
       setTimeout(() => setDraftSaved(false), 2500);
     } catch (error) {
@@ -332,12 +351,23 @@ export default function NewCampaignPage() {
     if (asDraft && !brief.name.trim()) { setStep(0); return; }
     setBusy(true);
     const now = new Date().toISOString();
-    const status = asDraft ? "Draft" : "Waiting for Approval";
-    const logEntry = { action: editingId ? "Edited and resubmitted for approval" : "Submitted for approval", by: brief.plannerOwner || "Planner", at: now };
-    const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
+    // Editing an already-approved campaign REVOKES the approval for everyone
+    // but the CMO: even "Save Draft" cannot quietly keep (or drop) the approved
+    // state — the edit goes back into the CMO's queue, with a field-level diff
+    // of what changed in the approval log and the notification.
+    const APPROVED_STATES = ["Approved", "In Progress", "Completed"];
+    const mustReapprove = !!editingId && role !== "CMO" && APPROVED_STATES.includes(originalBrief?.status ?? "");
+    const status = asDraft ? (mustReapprove ? "Waiting for Approval" : "Draft") : "Waiting for Approval";
+    const changes = editingId && originalBrief ? briefDiffSummary(originalBrief, brief) : "";
+    const logEntry = {
+      action: editingId ? (mustReapprove && asDraft ? "Edited — approval revoked, sent back to CMO" : "Edited and resubmitted for approval") : "Submitted for approval",
+      by: brief.plannerOwner || "Planner", at: now,
+      ...(editingId ? { comment: changes || "ไม่มีการเปลี่ยนแปลงที่ตรวจพบ", from: originalBrief?.status, to: status } : {}),
+    };
+    const log = asDraft && !mustReapprove ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
       await saveCampaignBrief(finalize(status, log, now));
-      if (!asDraft) notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติใน My Tasks`, "/my-tasks");
+      if (status === "Waiting for Approval") notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติ${editingId && changes ? ` · สิ่งที่แก้: ${changes}` : ""}`, "/my-tasks");
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch (error) {
