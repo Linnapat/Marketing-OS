@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useRole } from "@/lib/role";
+import { useAuth } from "@/lib/auth";
 import { useCanCreateCampaign } from "@/lib/usePermGates";
 import { baht, num } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
@@ -16,7 +17,7 @@ import {
   STATUS_ORDER, READINESS_META, CampaignRow,
 } from "@/lib/data/campaigns";
 import { CampaignBrief, visitGoalOf } from "@/lib/data/brief";
-import { fetchAllBriefs } from "@/lib/db/brief";
+import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -43,6 +44,7 @@ type GroupBy = "status" | "brand";
 export default function CampaignsPage() {
   const brandVisibility = useBrandVisibility();
   const { role } = useRole();
+  const { member } = useAuth();
   // Status drives the approval flow, so only the CMO may move it.
   const canChangeStatus = role === "CMO";
   // Creating campaigns follows Settings → Permissions: Campaign ≥ Edit.
@@ -181,7 +183,25 @@ export default function CampaignsPage() {
     )));
     setCollapsed((state) => ({ ...state, [nextStatus]: false }));
     try {
-      await updateCampaignStatus(id, nextStatus);
+      // The dropdown used to write ONLY the campaigns.status column: the brief
+      // blob kept its old status (so the detail page still showed "Waiting for
+      // Approval" after approving here), nothing was written to the approval
+      // log, and — because approval is the gate that materialises work — no
+      // content posts / graphic requests / KOL rows / tasks were ever created.
+      // Route through the brief pipeline instead, exactly like the Approval tab.
+      const brief = await fetchCampaignBrief(id).catch(() => null);
+      if (brief) {
+        const entry = {
+          action: `Status changed to ${nextStatus}`,
+          by: member?.name || role || "—",
+          at: new Date().toISOString(),
+          from: brief.status,
+          to: nextStatus,
+        };
+        await saveCampaignBrief({ ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] });
+      } else {
+        await updateCampaignStatus(id, nextStatus);
+      }
     } catch (error) {
       if (previous) setCampaigns((rows) => rows.map((row) => row.id === id ? previous : row));
       toastError(`เปลี่ยนสถานะ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
