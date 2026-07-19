@@ -225,6 +225,12 @@ export default function NewCampaignPage() {
 
   const branches = useMemo(() => brandConfigs.find((d) => d.key === brief.b)?.branchList ?? [], [brandConfigs, brief.b]);
   useEffect(() => {
+    // Drop branches that don't belong to the brand — but ONLY once the brand's
+    // branch list has actually loaded. `brandConfigs` starts as seed data and is
+    // replaced by the saved config a moment later; running against the empty /
+    // stale list wiped every saved branch onan edit, so the planner had to
+    // re-tick them on every visit (and a stray Save stored the empty list).
+    if (!branches.length) return;
     setBrief((b) => {
       const nextBranches = b.branches.filter((br) => branches.includes(br));
       return nextBranches.length === b.branches.length ? b : { ...b, branches: nextBranches, branch: nextBranches.join(", ") };

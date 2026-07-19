@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { DatePicker } from "@/components/ui/DatePicker";
-import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
   GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
@@ -16,7 +15,7 @@ import { artworkUnitsOf } from "@/lib/data/graphic";
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, requestDate, publishTime, onPublishTimeChange, lockApproverToRequester }: {
+export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, requestDate, publishTime, onPublishTimeChange }: {
   item: BriefContentItem;
   onChange: (patch: Partial<BriefContentItem>) => void;
   outOfRange?: (iso: string) => boolean;
@@ -25,7 +24,6 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   requestDate?: string;
   publishTime?: string;
   onPublishTimeChange?: (value: string) => void;
-  lockApproverToRequester?: boolean;
 }) {
   const [customSizes, setCustomSizes] = useState<Record<string, string>>({});
   const requesterValue = item.requester?.trim() || "";
@@ -82,12 +80,12 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
             <input value={item.designer || "Creative leader will assign after brief"} readOnly aria-readonly="true" className={`${field} text-faint bg-ivory cursor-not-allowed`} />
           </div>
           <div>
-            <label className={label}>Approver <span className="text-faint font-normal">· default requester</span></label>
-            {lockApproverToRequester ? (
-              <input value={`= Requester (${approverDisplay})`} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
-            ) : (
-              <OwnerSelect value={item.approver} onChange={(v) => onChange({ approver: v })} placeholder="= Requester" />
-            )}
+            <label className={label}>Approver <span className="text-faint font-normal">· = requester</span></label>
+            {/* The approver of a content brief is its requester, always: they
+                asked for the work, they accept it. Showing a picker (defaulting
+                to the CMO) invited briefs to be routed to someone who never
+                asked for them — so the field is read-only on both surfaces. */}
+            <input value={`= Requester (${approverDisplay})`} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
           </div>
         </div>
       )}

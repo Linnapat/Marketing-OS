@@ -37,6 +37,7 @@ import { useAuth } from "@/lib/auth";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { importKolProfilesFromSheet, KolSheetRow } from "@/lib/db/kolMaster";
 import { useBrandVisibility } from "@/lib/brandVisibility";
+import { useStickyView } from "@/lib/useStickyView";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -55,14 +56,19 @@ interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; gr
 
 export default function KolPage() {
   const brandVisibility = useBrandVisibility();
-  const [tab, setTab] = useState<Tab>("list");
-  const [brand, setBrand] = useState<BrandFilterValue>("all");
-  const [campaign, setCampaign] = useState<string>("all");
-  // Request List can render flat or grouped by campaign.
-  const [group, setGroup] = useState<"list" | "campaign">("campaign");
+  // Filters stick per tab so leaving the page and coming back keeps the view.
+  const [sticky, setSticky] = useStickyView<{ tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: typeof DEFAULT_DATE_FILTER }>(
+    "kol", "", { tab: "list", brand: "all", campaign: "all", group: "campaign", date: DEFAULT_DATE_FILTER },
+  );
+  const { tab, brand, campaign, group } = sticky;
+  const setTab = (v: Tab) => setSticky({ ...sticky, tab: v });
+  const setBrand = (v: BrandFilterValue) => setSticky({ ...sticky, brand: v });
+  const setCampaign = (v: string) => setSticky({ ...sticky, campaign: v });
+  const setGroup = (v: "list" | "campaign") => setSticky({ ...sticky, group: v });
   const [drawer, setDrawer] = useState<{ kol: Kol; tab: "profile" | "comments" } | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
-  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  const date = sticky.date;
+  const setDate = (d: typeof DEFAULT_DATE_FILTER) => setSticky({ ...sticky, date: d });
   const [kols, setKols] = useState<Kol[]>(KOLS);
 
   // Campaign briefs — the KOL envelope from Budget Allocation / KOL Plan, so
@@ -104,7 +110,8 @@ export default function KolPage() {
     () => Array.from(new Set(kols.filter((k) => brand === "all" || k.b === brand).map((k) => k.campaign).filter((c) => c && c !== "—"))).sort(),
     [kols, brand],
   );
-  useEffect(() => { if (campaign !== "all" && !campaignOptions.includes(campaign)) setCampaign("all"); }, [campaignOptions, campaign]);
+  useEffect(() => { if (campaign !== "all" && !campaignOptions.includes(campaign)) setCampaign("all");   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignOptions, campaign]);
 
   // Create a request: persist EACH requested page as its own row (a request for
   // 5 pages = 5 independently-trackable records), then sync ONE requirement item

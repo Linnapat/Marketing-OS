@@ -14,6 +14,7 @@ import {
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
+import { useStickyView } from "@/lib/useStickyView";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
 import { createGraphic, buildGraphic } from "@/lib/db/graphic";
@@ -62,9 +63,14 @@ const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || 
 
 export default function ContentPage() {
   const brandVisibility = useBrandVisibility();
-  const [view, setView] = useState<View>("campaign");
-  const [brand, setBrand] = useState<BrandFilterValue>("all");
-  const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  // Filters stick per tab so leaving the page and coming back keeps the view.
+  const [sticky, setSticky] = useStickyView<{ view: View; brand: BrandFilterValue; date: typeof DEFAULT_DATE_FILTER }>(
+    "content", "", { view: "campaign", brand: "all", date: DEFAULT_DATE_FILTER },
+  );
+  const { view, brand, date } = sticky;
+  const setView = (v: View) => setSticky({ ...sticky, view: v });
+  const setBrand = (b: BrandFilterValue) => setSticky({ ...sticky, brand: b });
+  const setDate = (d: typeof DEFAULT_DATE_FILTER) => setSticky({ ...sticky, date: d });
   const [open, setOpen] = useState<ContentItem | null>(null);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [savedViews, setSavedViews] = useState<SavedContentView[]>([]);
@@ -587,12 +593,12 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
         <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "60px 2fr 1.2fr 1fr 1fr 1fr 1fr" }}>
-        <div>Date</div><div>Content</div><div>Campaign</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
+        style={{ gridTemplateColumns: "60px 2fr 1.2fr 0.7fr 1fr 1fr 1fr 1fr" }}>
+        <div>Date</div><div>Content</div><div>Campaign</div><div>Brief</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
       </div>
       {[...items].sort((a, b) => contentDateIso(a).localeCompare(contentDateIso(b))).map((c) => {
         return (
-          <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
+          <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_0.7fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
             <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
             <div className="flex items-center gap-2 min-w-0">
@@ -600,6 +606,13 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
               <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{c.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div></div>
             </div>
             <span className="text-[12px] text-muted truncate">{c.campaign}</span>
+            {/* Brief — the campaign's Drive folder, opened without leaving the plan. */}
+            {c.driveLink ? (
+              <a href={c.driveLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                className="text-[11.5px] font-bold text-accent" title={c.driveLink}>Drive ↗</a>
+            ) : (
+              <span className="text-[11.5px] text-faint">—</span>
+            )}
             <StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge>
             <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
             <StatusCell value={c.approvalStatus} opts={APPROVAL_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { approvalStatus: v })} />

@@ -119,6 +119,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       // Brief guide for the caption writer.
       subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
       productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,
+      driveLink: ci.driveLink || undefined,
       mandatoryText: ci.mandatoryText || undefined, doDont: ci.doDont || undefined,
       captionStatus: "Missing", assetStatus: needsCreative ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",

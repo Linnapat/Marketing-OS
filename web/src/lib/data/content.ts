@@ -33,6 +33,10 @@ export interface ContentItem {
   mainMessage?: string;
   productHighlight?: string;
   captionDirection?: string;
+  /** Google Drive folder from the campaign brief — the creative team's working
+   *  files for this post. Shown as a column in Content Plan so nobody has to
+   *  open the campaign to find it. */
+  driveLink?: string;
   mandatoryText?: string;
   doDont?: string;
   captionStatus: string;
