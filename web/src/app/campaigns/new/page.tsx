@@ -28,6 +28,7 @@ import {
 } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
+import { fetchContentSourceIds } from "@/lib/db/content";
 import { briefDiffSummary } from "@/lib/data/briefDiff";
 import { applyBriefPatch } from "@/lib/data/briefSheet";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers } from "@/lib/db/settings";
@@ -138,6 +139,9 @@ export default function NewCampaignPage() {
   // Snapshot of the brief as loaded for editing — the base briefDiff compares
   // against, so the CMO is told exactly what an edit changed.
   const [originalBrief, setOriginalBrief] = useState<CampaignBrief | null>(null);
+  // Content items that already became real posts — deleting one of these from
+  // the plan leaves live work behind, so the row warns before it goes.
+  const [materializedIds, setMaterializedIds] = useState<Set<string>>(new Set());
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -183,6 +187,7 @@ export default function NewCampaignPage() {
       };
       setId(editId);
       setEditingId(editId);
+      fetchContentSourceIds(editId).then(setMaterializedIds).catch(() => {});
       setOriginalBrief(JSON.parse(JSON.stringify(normalized)));
       setBrief(normalized);
       setSeq(normalized.content.length + normalized.kols.length + 1);
@@ -353,7 +358,26 @@ export default function NewCampaignPage() {
   const submit = async (asDraft: boolean) => {
     // Save Draft is exempt from validation; Submit is blocked when required
     // fields are missing.
-    if (!asDraft && errors.length) { setStep(6); return; }
+    if (!asDraft && errors.length) {
+      // Submitting from the header can happen on any step, so land on the step
+      // that actually needs work (Overview / Content / Budget) instead of the
+      // checklist at the end, and say what's missing.
+      const overview = overviewErrors(brief);
+      const firstOverview = Object.keys(overview)[0];
+      if (firstOverview) {
+        setTriedNext(true);
+        setStep(0);
+        setTimeout(() => document.getElementById(`ov-${firstOverview}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+      } else if (errors.some((e) => /Content|Sub Head|asset size|Graphic Due/i.test(e))) {
+        setStep(1);
+      } else if (errors.some((e) => /Budget|งบ/i.test(e))) {
+        setStep(2);
+      } else {
+        setStep(6);
+      }
+      toastError(`ยังส่งไม่ได้ — ${errors[0]}${errors.length > 1 ? ` (และอีก ${errors.length - 1} ข้อ)` : ""}`);
+      return;
+    }
     if (asDraft && !brief.name.trim()) { setStep(0); return; }
     setBusy(true);
     const now = new Date().toISOString();
@@ -426,6 +450,16 @@ export default function NewCampaignPage() {
                 : { background: "#211F1C", borderColor: "#211F1C", color: "#fff" }}>
               {draftSaved ? "✓ บันทึก Draft แล้ว" : busy ? "กำลังบันทึก…" : "💾 Save Draft"}
             </button>
+            {/* Submit lives in the header too: re-submitting an edit meant
+                scrolling through all seven steps to reach the button at the
+                bottom. Same guard as the final step — blocked while required
+                fields are missing, and it jumps to the step that needs work. */}
+            <button disabled={busy} onClick={() => submit(false)}
+              title={canSubmit ? "ส่งให้ CMO อนุมัติ" : "ยังกรอกไม่ครบ — กดแล้วระบบจะพาไปหน้าที่ต้องแก้"}
+              className="text-[12.5px] font-bold rounded-[9px] px-3 py-[7px] text-white disabled:opacity-40"
+              style={{ background: canSubmit ? "#4E7A4E" : "#9A9387" }}>
+              {busy ? "กำลังส่ง…" : editingId ? "↗ Submit ให้ CMO" : "↗ Submit Campaign"}
+            </button>
             <Link href="/campaigns" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">← Campaigns</Link>
           </div>
         }
@@ -453,7 +487,7 @@ export default function NewCampaignPage() {
             <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
           </>
         )}
-        {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} />}
+        {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} materialized={materializedIds} />}
         {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} />}
         {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 4 && <Preview preview={preview} warnings={allWarnings} />}
@@ -878,8 +912,10 @@ function Guideline({ checklist }: { checklist: GuidelineItem[] }) {
 }
 
 // ── Step 3 ──────────────────────────────────────────────────────────────────
-function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
+function ContentPlan({ brief, setBrief, nextSeq, outOfRange, materialized }: {
   brief: CampaignBrief; setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; nextSeq: () => number; outOfRange: (iso: string) => boolean | "" | undefined;
+  /** Content-item ids that already became real posts / creative requests. */
+  materialized?: Set<string>;
 }) {
   const requestDate = todayIso();
   const upd = (id: string, patch: Partial<BriefContentItem>) => setBrief((b) => ({ ...b, content: b.content.map((c) => c.id === id ? { ...c, ...patch } : c) }));
@@ -899,7 +935,22 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
     setOpenItems((o) => ({ ...o, [copy.id]: true }));
     return { ...b, content: [...b.content, copy] };
   });
-  const rm = (id: string) => setBrief((b) => ({ ...b, content: b.content.filter((c) => c.id !== id) }));
+  const rm = (id: string) => {
+    // Once a campaign is approved, a content item is not just a plan row: it
+    // has a real post in Content Plan and (usually) a creative request the team
+    // may already have started. Deleting it from the brief leaves those orphaned —
+    // which is exactly what happened with "Grand Menu Roundup". Warn first, and
+    // say plainly that the existing work stays put.
+    if (materialized?.has(id)) {
+      const item = brief.content.find((c) => c.id === id);
+      const ok = window.confirm(
+        `“${item?.title || "Content นี้"}” ถูกสร้างเป็นงานจริงแล้ว (โพสต์ใน Content Plan / ใบงาน Creative)\n\n`
+        + "ลบออกจากแคมเปญนี้ จะไม่ลบงานที่สร้างไปแล้ว — ต้องไปลบในหน้า Content Plan / Creative Kitchen เอง\n\nยืนยันลบออกจากแผน?",
+      );
+      if (!ok) return;
+    }
+    setBrief((b) => ({ ...b, content: b.content.filter((c) => c.id !== id) }));
+  };
 
   return (
     <Panel title="Content Plan" hint="เลือก Platform ได้หลายที่ (ช่องติ๊ก) แล้วเลือก Asset Size ของแต่ละ platform — คลิกหัวข้อเพื่อยุบ/ขยายแต่ละ item">
@@ -917,6 +968,10 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange }: {
                 </span>
                 <div className="ml-auto flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => dup(c.id)} title="Duplicate" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-muted"><Copy size={13} /></button>
+                  {materialized?.has(c.id) && (
+                    <span className="text-[10px] font-bold rounded-pill px-2 py-[2px] mr-1" style={{ background: "#EEF4EE", color: "#4E7A4E" }}
+                      title="สร้างเป็นโพสต์/ใบงานจริงแล้ว — ลบออกจากแผนจะไม่ลบงานที่สร้างไปแล้ว">มีงานจริงแล้ว</span>
+                  )}
                   <button onClick={() => rm(c.id)} title="Remove" className="w-7 h-7 rounded-[7px] border border-line2 bg-surface flex items-center justify-center text-status-red"><Trash2 size={13} /></button>
                 </div>
               </div>
