@@ -76,6 +76,7 @@ export function parseAdActuals(grid: string[][]): CampaignResultRow[] {
       budgetActual: num(get("budgetActual")),
       conversions: num(get("conversions")),
       updatedAt: now,
+      source: "sheet",
     });
   }
   return rows;

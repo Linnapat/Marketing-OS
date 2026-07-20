@@ -22,8 +22,11 @@ export function ImportAdActualsButton({ onDone }: { onDone?: () => void }) {
     setBusy(true); setMsg(null);
     try {
       localStorage.setItem(LS_KEY, clean);
-      const { imported } = await importAdActualsFromSheet(clean);
-      setMsg({ tone: "ok", text: `นำเข้าแล้ว ${imported} แถว` });
+      const { imported, removed } = await importAdActualsFromSheet(clean);
+      setMsg({
+        tone: "ok",
+        text: removed > 0 ? `นำเข้า ${imported} แถว · แทนที่ของเก่า ${removed}` : `นำเข้าแล้ว ${imported} แถว`,
+      });
       onDone?.();
     } catch (e) {
       setMsg({ tone: "err", text: e instanceof Error ? e.message : "นำเข้าไม่สำเร็จ" });
