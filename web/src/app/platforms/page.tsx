@@ -24,7 +24,7 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
-  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformMeta, cpr,
+  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformMeta, cpr, PERF_TABLE_HEADERS,
   deriveResultRow, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
@@ -61,9 +61,21 @@ function budgetAlert(plan: number, actual: number): { label: string; tone: Tone 
   return { label: "ในงบ", tone: "green" };
 }
 
-const tableHeaders = [
-  "Budget", "Spent actual", "%", "Reach goal", "Actual", "%", "MKT visit goal", "Actual", "%", "CV%", "CPR", "CPC", "Alert budget", "Status",
-];
+const tableHeaders = PERF_TABLE_HEADERS;
+
+// One column layout for BOTH the platform-group table and the nested ad table,
+// so a header and the cell under it line up exactly. Without a shared colgroup
+// + fixed layout each table sized its columns from its own content and the two
+// drifted apart (KOL group vs its ad rows). Widths are in the header order:
+// name, then the 14 tableHeaders columns.
+const COL_WIDTHS = ["auto", 70, 78, 44, 82, 72, 44, 92, 72, 44, 52, 52, 52, 86, 104];
+function PerfColGroup() {
+  return (
+    <colgroup>
+      {COL_WIDTHS.map((w, i) => <col key={i} style={w === "auto" ? { minWidth: 150 } : { width: w }} />)}
+    </colgroup>
+  );
+}
 
 const visitGoal = (r: CampaignResultRow) => Math.round((r.target || 0) * ((r.cvTargetPct || 0) / 100));
 const percentOf = (actual: number, goal: number) => goal > 0 ? pct((actual / goal) * 100) : "—";
@@ -548,7 +560,8 @@ export default function PlatformsPage() {
             </div>
           ) : (
             <div className="mt-3 overflow-x-auto border border-line rounded-cardLg bg-surface">
-              <table className="w-full text-[12px] whitespace-nowrap border-collapse">
+              <table className="w-full text-[12px] whitespace-nowrap border-collapse" style={{ tableLayout: "fixed" }}>
+                  <PerfColGroup />
                 <thead>
                   <tr className="text-faint">
                     {[dimLabel, ...tableHeaders].map((h, i) => (
@@ -710,7 +723,8 @@ function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatc
   const tVisitGoal = sum(visitGoal);
   return (
     <div className="bg-white overflow-x-auto">
-      <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
+      <table className="w-full text-[11.5px] whitespace-nowrap border-collapse" style={{ tableLayout: "fixed" }}>
+        <PerfColGroup />
         <thead>
           <tr className="text-faint bg-[#FBFAF6]">
             {[showCampaign ? "Campaign / Ad" : "Ad", ...tableHeaders].map((h, i) => (

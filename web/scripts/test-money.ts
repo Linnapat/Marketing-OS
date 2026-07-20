@@ -8,7 +8,7 @@ import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
-import { resultsRoas, deriveResultRow, CampaignResultRow } from "../src/lib/data/campaignResult";
+import { resultsRoas, deriveResultRow, CampaignResultRow, PERF_TABLE_HEADERS } from "../src/lib/data/campaignResult";
 import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
@@ -175,6 +175,13 @@ console.log("on-plan KPI — live overdue + on-time vs due date");
   check("kol Paused excluded", !computeKolOverdue(k({ postDueDate: `${Y}-07-10`, status: "Paused" }), now));
   eq("kol posted before due → onTime 1", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-09` })).onTime ?? -1, 1);
   eq("kol posted after due → onTime 0", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-12` })).onTime ?? -1, 0);
+}
+
+console.log("Performance table columns stay in sync (header count locked)");
+{
+  // The page's COL_WIDTHS must be PERF_TABLE_HEADERS.length + 1 (the name col).
+  // If someone adds a header without a width, columns drift — this pins the count.
+  eq("14 data columns after the name column", PERF_TABLE_HEADERS.length, 14);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

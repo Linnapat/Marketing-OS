@@ -346,6 +346,13 @@ export const PLATFORM_META: Record<string, { code: string; color: string }> = {
   "YouTube": { code: "YT", color: "#FF0000" },
 };
 
+// The Performance table's columns, in render order (after the name column).
+// Exported so both the page and the tests read ONE list — a header added here
+// must get a matching width in the page's COL_WIDTHS or the columns drift.
+export const PERF_TABLE_HEADERS = [
+  "Budget", "Spent actual", "%", "Reach goal", "Actual", "%", "MKT visit goal", "Actual", "%", "CV%", "CPR", "CPC", "Alert budget", "Status",
+] as const;
+
 export function platformMeta(name: string): { code: string; color: string } {
   return PLATFORM_META[name] ?? { code: name.slice(0, 2).toUpperCase(), color: "#9A9387" };
 }
