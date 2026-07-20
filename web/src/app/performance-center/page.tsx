@@ -14,6 +14,7 @@ import {
   Target,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ImportAdActualsButton } from "@/components/performance/ImportAdActualsButton";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -391,9 +392,12 @@ export default function PerformanceCenterPage() {
             title="Platform / Ads Performance"
             desc="สรุป budget, actual spend, reach/result และ CPR แยกตาม platform จากข้อมูลเดียวกับ Performance Bar"
             action={
-              <Link href="/platforms" className="inline-flex items-center gap-2 rounded-full bg-[#E3F7F5] px-3 py-2 text-[12px] font-extrabold text-[#0B7F7A]">
-                Open Performance Bar <ArrowRight size={14} />
-              </Link>
+              <div className="flex flex-col items-end gap-2">
+                <ImportAdActualsButton onDone={() => window.location.reload()} />
+                <Link href="/platforms" className="inline-flex items-center gap-2 rounded-full bg-[#E3F7F5] px-3 py-2 text-[12px] font-extrabold text-[#0B7F7A]">
+                  Open Performance Bar <ArrowRight size={14} />
+                </Link>
+              </div>
             }
           >
             <div className="grid gap-3 md:grid-cols-4">
