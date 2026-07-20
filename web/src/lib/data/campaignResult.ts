@@ -303,6 +303,16 @@ export function mergeBudgetAllocationRows(
       const matched = kols.filter((k) => k.campaignId === campaign.id && (k.sourceKolRequirementId || "").split("#")[0] === kol.id);
       const actualReachTotal = matched.reduce((s, k) => s + (k.actualReach || 0), 0);
       const actualCostTotal = matched.reduce((s, k) => s + (k.totalCost || 0), 0);
+      // Show the ASSIGNED page name(s) once the KOL specialist has picked real
+      // creators — otherwise the Performance row keeps the planner's placeholder
+      // ("Lifestyle") and it looks like the assignment never landed. The brief's
+      // kolType is the fallback until a page is chosen.
+      const assignedNames = Array.from(new Set(
+        matched.map((k) => (k.name || "").trim()).filter(Boolean),
+      ));
+      const kolLabel = assignedNames.length
+        ? assignedNames.slice(0, 2).join(", ") + (assignedNames.length > 2 ? ` +${assignedNames.length - 2}` : "")
+        : (kol.name || kol.kolType || "Creator");
       const reachActualPer = Math.round(actualReachTotal / platforms.length);
       const budgetActualPer = Math.round(actualCostTotal / platforms.length);
       platforms.forEach((platform, index) => {
@@ -310,7 +320,7 @@ export function mergeBudgetAllocationRows(
           ...planRow({
             id: `plan-${campaign.id}-kol-${slug(kol.id)}-${slug(platform)}`,
             campaignId: campaign.id,
-            ad: `Planned KOL — ${kol.name || kol.kolType || `Creator ${index + 1}`}`,
+            ad: `Planned KOL — ${kolLabel}`,
             audience: kol.area || audience,
             role: "KOL plan",
             platform: platform || "KOL",

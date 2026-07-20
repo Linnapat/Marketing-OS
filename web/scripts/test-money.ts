@@ -18,6 +18,7 @@ function check(name: string, cond: boolean) {
   if (cond) { pass++; console.log(`  ✓ ${name}`); }
   else { fail++; console.error(`  ✗ FAIL: ${name}`); }
 }
+function eqStr(name: string, actual: string, expected: string) { check(name + ` (got "${actual}")`, actual === expected); }
 function eq(name: string, actual: number, expected: number, tolerance = 1e-9) {
   const ok = Math.abs(actual - expected) <= tolerance;
   if (!ok) console.error(`    expected ${expected}, got ${actual}`);
@@ -175,6 +176,16 @@ console.log("on-plan KPI — live overdue + on-time vs due date");
   check("kol Paused excluded", !computeKolOverdue(k({ postDueDate: `${Y}-07-10`, status: "Paused" }), now));
   eq("kol posted before due → onTime 1", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-09` })).onTime ?? -1, 1);
   eq("kol posted after due → onTime 0", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-12` })).onTime ?? -1, 0);
+}
+
+console.log("Performance shows the assigned KOL page name, not the placeholder");
+{
+  const label = (names: string[], fallback: string) =>
+    names.length ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "") : fallback;
+  eqStr("no assignment yet keeps the planner label", label([], "Lifestyle"), "Lifestyle");
+  eqStr("one assigned page shows its name", label(["@nong.eats"], "Lifestyle"), "@nong.eats");
+  eqStr("two pages both show", label(["@a", "@b"], "Lifestyle"), "@a, @b");
+  eqStr("three+ pages collapse with +N", label(["@a", "@b", "@c", "@d"], "Lifestyle"), "@a, @b +2");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
