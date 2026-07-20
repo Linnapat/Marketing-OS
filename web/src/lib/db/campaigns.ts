@@ -2,7 +2,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { CAMPAIGNS, CampaignRow, Readiness } from "@/lib/data/campaigns";
-import { BrandId } from "@/lib/brands";
+import { BrandId, brandName } from "@/lib/brands";
 import { assertDbOk } from "@/lib/db/assert";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
@@ -77,22 +77,25 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
  *  browser — the server has no relative-URL base for the fetch. */
 function mirrorCampaignToSheet(c: CampaignRow): void {
   if (typeof window === "undefined") return;
+  // Match the reporting template's Campaigns tab columns so mirrored rows append
+  // cleanly. `dates` is a formatted range ("start – end") — split it back out;
+  // KPI/notes aren't tracked at campaign level, so they're left for the team.
+  const [start, end] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
   try {
     void fetch("/api/campaign-sheet-sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
       body: JSON.stringify({
-        created_at: new Date().toISOString(),
         campaign_id: c.id,
-        name: c.name,
-        brand: c.b,
+        campaign_name: c.name,
+        brand: brandName(c.b),
         branch: c.branch,
-        owner: c.owner,
-        budget: c.budget,
-        dates: c.dates,
-        status: c.status,
-        camp_type: c.campType,
+        KPI: "",
+        start: start || c.dates || "",
+        end: end || "",
+        budget_plan: c.budget,
+        notes: "",
       }),
     }).catch(() => {});
   } catch {

@@ -15,7 +15,7 @@ Create campaign (app)
 ## One-time setup
 
 1. **Create the Google Sheet** — a new blank spreadsheet (e.g. "Marketing OS —
-   Campaigns"). No need to add columns; the script creates the `Campaign_Log` tab
+   Campaigns"). No need to add columns; the script creates the `Campaigns` tab
    and header on the first campaign.
 
 2. **Add the Apps Script**
@@ -40,9 +40,11 @@ Create campaign (app)
    Redeploy / restart. Until this is set, the mirror is a silent no-op.
 
 ## Test it
-Create a campaign in the app → a new row appears on the `Campaign_Log` tab within a
-second. Columns: `created_at, campaign_id, name, brand, branch, owner, budget,
-dates, status, camp_type`.
+Create a campaign in the app → a new row appears on the `Campaigns` tab within a
+second, matching the reporting template's columns: `campaign_id, campaign_name,
+brand, branch, KPI, start, end, budget_plan, notes`. KPI and notes are left blank
+for the team to fill; when the mirror targets an existing template `Campaigns`
+tab, rows append below the current ones.
 
 ## Notes
 - **Re-deploying the script:** use `Deploy ▸ Manage deployments ▸ ✏ ▸ New
