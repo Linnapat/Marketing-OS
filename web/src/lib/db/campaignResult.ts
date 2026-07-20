@@ -3,7 +3,7 @@
 // so every UI field round-trips losslessly; `campaign_id` is mirrored to a column so
 // per-campaign queries stay indexable.
 
-import { supabase } from "@/lib/supabase";
+import { supabase, authHeaders } from "@/lib/supabase";
 import { CampaignResultRow, seedResults, allSeedResults } from "@/lib/data/campaignResult";
 import { assertDbOk } from "@/lib/db/assert";
 
@@ -64,6 +64,21 @@ export async function saveResults(rows: CampaignResultRow[]): Promise<void> {
     { onConflict: "row_id" },
   );
   assertDbOk(error, "Could not save performance results");
+}
+
+/** Import ad actuals from the shared "Ad_Actuals" Google Sheet tab into
+ *  campaign_results (upsert). Reads server-side (CORS-safe) then writes under the
+ *  user's own RLS session, so Supabase stays the source of truth. Returns how
+ *  many rows were upserted. */
+export async function importAdActualsFromSheet(sheetUrl: string): Promise<{ imported: number }> {
+  const res = await fetch(`/api/ad-actuals-sheet?url=${encodeURIComponent(sheetUrl)}`, {
+    headers: await authHeaders(),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || "นำเข้าไม่สำเร็จ");
+  const rows = (body.rows ?? []) as CampaignResultRow[];
+  await saveResults(rows);
+  return { imported: rows.length };
 }
 
 /** Remove a row. */
