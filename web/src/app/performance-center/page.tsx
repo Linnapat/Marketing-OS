@@ -14,6 +14,7 @@ import {
   Target,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ImportKolActualsButton } from "@/components/performance/ImportKolActualsButton";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -450,6 +451,7 @@ export default function PerformanceCenterPage() {
           <ReportShell
             title="KOL Performance"
             desc="แยก performance ของ KOL / influencer จาก budget allocation และ actual result ที่ลงไว้ใน Performance Bar"
+            action={<ImportKolActualsButton onDone={() => window.location.reload()} />}
           >
             <div className="grid gap-3 md:grid-cols-5">
               <KpiCard label="KOL lines" value={num(kolRows.length)} note="creator result rows" tone="#E08A34" />

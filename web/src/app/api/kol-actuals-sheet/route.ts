@@ -1,0 +1,33 @@
+// Reads the "KOL_Activities" tab of a shared Google Sheet and returns parsed
+// KOL rows for the client to sync into Supabase (kol_collaboration_history).
+// Read-only, server-side (CORS-safe); the sheet must be shared
+// "Anyone with the link — Viewer".
+
+import { NextRequest, NextResponse } from "next/server";
+import { spreadsheetId, fetchSheetTab } from "@/lib/googleSheet";
+import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
+import { parseKolActuals } from "@/lib/data/kolActualsSheet";
+
+export const dynamic = "force-dynamic";
+
+const TAB = "KOL_Activities";
+const SHARE_HINT = 'ตรวจว่าแชร์ sheet เป็น "Anyone with the link · Viewer" และมีแท็บชื่อ KOL_Activities';
+
+export async function GET(req: NextRequest) {
+  const guard = await requireApiUser(req);
+  if (isApiAuthError(guard)) return guard.error;
+
+  const url = req.nextUrl.searchParams.get("url") ?? "";
+  const id = spreadsheetId(url);
+  if (!id) return NextResponse.json({ error: "ลิงก์ Google Sheets ไม่ถูกต้อง" }, { status: 400 });
+
+  try {
+    const grid = await fetchSheetTab(id, TAB);
+    const rows = parseKolActuals(grid);
+    return NextResponse.json({ rows, count: rows.length, generatedAt: new Date().toISOString() });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const hint = message === "SHEET_NOT_SHARED" ? SHARE_HINT : message;
+    return NextResponse.json({ error: hint }, { status: 502 });
+  }
+}
