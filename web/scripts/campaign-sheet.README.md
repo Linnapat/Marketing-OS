@@ -15,7 +15,7 @@ Create campaign (app)
 ## One-time setup
 
 1. **Create the Google Sheet** — a new blank spreadsheet (e.g. "Marketing OS —
-   Campaigns"). No need to add columns; the script creates the `Campaigns` tab
+   Campaigns"). No need to add columns; the script creates the `Campaign_Log` tab
    and header on the first campaign.
 
 2. **Add the Apps Script**
@@ -40,7 +40,7 @@ Create campaign (app)
    Redeploy / restart. Until this is set, the mirror is a silent no-op.
 
 ## Test it
-Create a campaign in the app → a new row appears on the `Campaigns` tab within a
+Create a campaign in the app → a new row appears on the `Campaign_Log` tab within a
 second. Columns: `created_at, campaign_id, name, brand, branch, owner, budget,
 dates, status, camp_type`.
 

@@ -2,7 +2,7 @@
  * Marketing OS — Campaign Sheet mirror (Apps Script Web App).
  *
  * Receives a POST from /api/campaign-sheet-sync whenever a campaign is created
- * and appends one row to the "Campaigns" tab (created with a header on first
+ * and appends one row to the "Campaign_Log" tab (created with a header on first
  * run). Supabase stays the source of truth; this sheet is a human-readable
  * mirror the team can view/filter.
  *
@@ -11,7 +11,7 @@
  * app env var CAMPAIGN_SHEET_WEBHOOK_URL.
  */
 
-var TAB = "Campaigns";
+var TAB = "Campaign_Log";
 var HEADERS = [
   "created_at", "campaign_id", "name", "brand", "branch",
   "owner", "budget", "dates", "status", "camp_type",
