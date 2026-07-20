@@ -24,7 +24,7 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
-  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformMeta, cpr,
+  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformGroupKey, platformMeta, cpr,
   deriveResultRow, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
@@ -159,7 +159,9 @@ export default function PlatformsPage() {
   const rowsByGroup = useMemo(() => {
     const m: Record<string, CampaignResultRow[]> = {};
     for (const r of filtered) {
-      const key = groupDim === "platform" ? (r.platform || "—") : r.campaignId;
+      // KOL groups under its own platform bucket (see platformGroupKey) so
+      // the summary cards match the grouped table below.
+      const key = groupDim === "platform" ? platformGroupKey(r) : r.campaignId;
       (m[key] ??= []).push(r);
     }
     return m;

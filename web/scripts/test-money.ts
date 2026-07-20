@@ -8,7 +8,7 @@ import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
-import { resultsRoas, deriveResultRow, CampaignResultRow } from "../src/lib/data/campaignResult";
+import { resultsRoas, deriveResultRow, CampaignResultRow, aggregateBy, platformGroupKey } from "../src/lib/data/campaignResult";
 import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
@@ -175,6 +175,32 @@ console.log("on-plan KPI — live overdue + on-time vs due date");
   check("kol Paused excluded", !computeKolOverdue(k({ postDueDate: `${Y}-07-10`, status: "Paused" }), now));
   eq("kol posted before due → onTime 1", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-09` })).onTime ?? -1, 1);
   eq("kol posted after due → onTime 0", kolMetrics(k({ postDueDate: `${Y}-07-10`, status: "Posted", postedDate: `${Y}-07-12` })).onTime ?? -1, 0);
+}
+
+console.log("KOL is its own platform group, never folded into ads");
+{
+  const row = (over: Partial<CampaignResultRow>): CampaignResultRow => ({
+    id: over.id || "r", campaignId: "C1", ad: "", audience: "", role: "", platform: "TikTok",
+    type: "", kpi: "Reach", target: 0, budget: 0, days: 30, cvTargetPct: 0,
+    reachActual: 0, budgetActual: 0, conversions: 0, ...over,
+  });
+  // A creator posting a Reel on TikTok is KOL money, not TikTok-ads money.
+  check("planned KOL on TikTok groups as KOL", platformGroupKey(row({ ad: "Planned KOL — Lifestyle", role: "KOL plan", platform: "TikTok" })) === "KOL");
+  check("KOL role on Instagram groups as KOL", platformGroupKey(row({ ad: "KOL — Central", role: "KOL", platform: "Instagram" })) === "KOL");
+  check("a real TikTok ad stays TikTok", platformGroupKey(row({ ad: "Planned Ads — TikTok", role: "Ads", platform: "TikTok" })) === "TikTok");
+
+  const rows = [
+    row({ id: "a", ad: "Planned Ads — TikTok", role: "Ads", platform: "TikTok", budget: 5000 }),
+    row({ id: "b", ad: "Planned KOL — Lifestyle", role: "KOL plan", platform: "TikTok", budget: 15000 }),
+    row({ id: "c", ad: "Planned KOL — Lifestyle", role: "KOL plan", platform: "Instagram", budget: 15000 }),
+  ];
+  const groups = aggregateBy(rows, "platform");
+  const kol = groups.find((g) => g.key === "KOL");
+  const tiktok = groups.find((g) => g.key === "TikTok");
+  eq("KOL budget from BOTH platforms lands in one KOL group", kol?.budgetPlan ?? -1, 30000);
+  eq("TikTok ads keep only the real ad spend", tiktok?.budgetPlan ?? -1, 5000);
+  // Grouping must not lose money: every baht still counted once.
+  eq("total across groups is unchanged", groups.reduce((sum, g) => sum + g.budgetPlan, 0), 35000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
