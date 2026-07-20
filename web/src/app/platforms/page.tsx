@@ -582,16 +582,18 @@ export default function PlatformsPage() {
                           className="border-b border-line4 last:border-0 cursor-pointer hover:bg-ivory"
                           onClick={() => setOpen((o) => ({ ...o, [g.key]: !o[g.key] }))}
                         >
-                          <td className="px-[10px] py-[8px] text-left">
-                            <span className="inline-flex items-center gap-2">
-                              {isOpen ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
-                              {dim === "platform"
-                                ? <Badge code={platformMeta(g.key).code} color={platformMeta(g.key).color} />
-                                : <BrandDot brand={brandOf[g.key] ?? "teppen"} size={9} />}
-                              <span className="min-w-0">
-                                <span className="block font-bold text-ink max-w-[220px] truncate">{g.label}</span>
+                          <td className="px-[10px] py-[8px] text-left overflow-hidden">
+                            <span className="flex items-center gap-2 min-w-0">
+                              {isOpen ? <ChevronDown size={14} className="text-faint flex-shrink-0" /> : <ChevronRight size={14} className="text-faint flex-shrink-0" />}
+                              <span className="flex-shrink-0">
+                                {dim === "platform"
+                                  ? <Badge code={platformMeta(g.key).code} color={platformMeta(g.key).color} />
+                                  : <BrandDot brand={brandOf[g.key] ?? "teppen"} size={9} />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block font-bold text-ink truncate" title={g.label}>{g.label}</span>
                                 {groupDim === "campaign" && (
-                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px]">{periodLabel(datesOf[g.key])}</span>
+                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px] truncate">{periodLabel(datesOf[g.key])}</span>
                                 )}
                               </span>
                             </span>
@@ -740,15 +742,15 @@ function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatc
             const vActual = r.marketingVisits || 0;
             return (
               <tr key={r.id} className="hover:bg-[#FBFAF6]">
-                <td className="px-[9px] py-[6px] text-left border border-line4">
+                <td className="px-[9px] py-[6px] text-left border border-line4 overflow-hidden">
                   {showCampaign ? (
-                    <span className="block">
-                      <span className="block font-bold text-ink max-w-[220px] truncate">{nameOf[r.campaignId] ?? r.campaignId}</span>
-                      <span className="block text-[10px] font-semibold text-faint mt-[1px]">{periodLabel(datesOf[r.campaignId])}</span>
-                      <span className="block text-[10.5px] text-muted mt-[2px] max-w-[220px] truncate">{r.ad || "—"}</span>
+                    <span className="block min-w-0">
+                      <span className="block font-bold text-ink truncate" title={nameOf[r.campaignId] ?? r.campaignId}>{nameOf[r.campaignId] ?? r.campaignId}</span>
+                      <span className="block text-[10px] font-semibold text-faint mt-[1px] truncate">{periodLabel(datesOf[r.campaignId])}</span>
+                      <span className="block text-[10.5px] text-muted mt-[2px] truncate" title={r.ad || ""}>{r.ad || "—"}</span>
                     </span>
                   ) : (
-                    <span className="font-bold text-ink max-w-[240px] truncate block">{r.ad || "—"}</span>
+                    <span className="font-bold text-ink truncate block" title={r.ad || ""}>{r.ad || "—"}</span>
                   )}
                 </td>
                 <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{baht(r.budget, { compact: true })}</td>
