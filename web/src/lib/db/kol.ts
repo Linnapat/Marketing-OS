@@ -5,6 +5,26 @@ import { supabase } from "@/lib/supabase";
 import { KOLS, Kol, withLiveKolOverdue } from "@/lib/data/kol";
 import { BrandId } from "@/lib/brands";
 import { assertDbData, assertDbOk } from "@/lib/db/assert";
+import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
+
+// Columns of the reporting template's KOL_Activities tab, in order.
+const KOL_SHEET_HEADERS = [
+  "campaign_id", "campaign_name", "branch", "KOL ID", "KOL name", "category",
+  "followers", "status", "post_date", "total_reach", "total_engage", "food_cost",
+  "paid_cost", "total_cost", "cost/reach", "engage_rate", "reach/follow",
+  "performance_tag", "next_action",
+];
+
+/** Pre-fill the KOL_Activities structure in the Sheet when a KOL is assigned, so
+ *  the team only fills the actuals (reach / engage). Actual + formula columns are
+ *  left blank. Best-effort mirror — never blocks the save. */
+function mirrorKolToSheet(kol: Kol): void {
+  mirrorRowToSheet("KOL_Activities", KOL_SHEET_HEADERS, [
+    kol.campaignId || kol.campaign || "", "", kol.branch,
+    kol.masterKolId ?? String(kol.id), kol.name, kol.kolType, kol.followers, kol.status,
+    "", "", "", kol.foodCost || "", kol.fee || "", "", "", "", "", "", "",
+  ]);
+}
 
 /** Read all creators — from Supabase (data blob) if configured, else the mock. */
 export async function fetchKols(): Promise<Kol[]> {
@@ -30,6 +50,7 @@ export async function createKol(kol: Kol): Promise<Kol> {
   // campaign_id is added by kol_content_integrity.sql; set it in a second step so
   // the row still saves on a DB that hasn't run the migration yet.
   if (kol.campaignId) await db.from("kols").update({ campaign_id: kol.campaignId }).eq("id", row.id);
+  mirrorKolToSheet(kol);
   return kol;
 }
 

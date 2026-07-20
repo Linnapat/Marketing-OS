@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { CAMPAIGNS, CampaignRow, Readiness } from "@/lib/data/campaigns";
 import { BrandId, brandName } from "@/lib/brands";
 import { assertDbOk } from "@/lib/db/assert";
+import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
 
@@ -75,32 +76,19 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
  *  server route → Apps Script Web App. Fire-and-forget: any failure is swallowed
  *  so a Sheet hiccup never blocks (or reverts) a campaign save. Only runs in the
  *  browser — the server has no relative-URL base for the fetch. */
+// Columns of the reporting template's Campaigns tab, in order.
+const CAMPAIGN_SHEET_HEADERS = [
+  "campaign_id", "campaign_name", "brand", "branch",
+  "KPI", "start", "end", "budget_plan", "notes",
+];
+
 function mirrorCampaignToSheet(c: CampaignRow): void {
-  if (typeof window === "undefined") return;
-  // Match the reporting template's Campaigns tab columns so mirrored rows append
-  // cleanly. `dates` is a formatted range ("start – end") — split it back out;
-  // KPI/notes aren't tracked at campaign level, so they're left for the team.
+  // `dates` is a formatted range ("start – end") — split it back out; KPI/notes
+  // aren't tracked at campaign level, so they're left blank for the team.
   const [start, end] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
-  try {
-    void fetch("/api/campaign-sheet-sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      keepalive: true,
-      body: JSON.stringify({
-        campaign_id: c.id,
-        campaign_name: c.name,
-        brand: brandName(c.b),
-        branch: c.branch,
-        KPI: "",
-        start: start || c.dates || "",
-        end: end || "",
-        budget_plan: c.budget,
-        notes: "",
-      }),
-    }).catch(() => {});
-  } catch {
-    /* never throw from the mirror */
-  }
+  mirrorRowToSheet("Campaigns", CAMPAIGN_SHEET_HEADERS, [
+    c.id, c.name, brandName(c.b), c.branch, "", start || c.dates || "", end || "", c.budget, "",
+  ]);
 }
 
 /** Update a campaign's status (used by the temporary approve/reject action while

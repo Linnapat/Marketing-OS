@@ -1,16 +1,30 @@
-# Campaign → Google Sheet mirror
+# App → Google Sheet mirror
 
-Every campaign created in Marketing OS is also appended to a Google Sheet, so
-the team has a live, filterable copy. Supabase stays the source of truth; the
-sheet is a one-way mirror. If the sheet is unreachable, campaign creation still
-succeeds (the mirror is best-effort).
+Structure created in Marketing OS is also appended to a Google Sheet, so the
+team has a live copy and only fills the actuals. Supabase stays the source of
+truth; the mirror is one-way and best-effort (a Sheet hiccup never blocks the
+save).
+
+Two things mirror today:
+- **Create a campaign** → row on the **Campaigns** tab
+  (`campaign_id, campaign_name, brand, branch, KPI, start, end, budget_plan, notes`)
+- **Assign a KOL to a campaign** → row on the **KOL_Activities** tab
+  (structure only: `campaign_id, branch, KOL ID, KOL name, category, followers,
+  status, food_cost, paid_cost` — reach/engage and formula columns stay blank
+  for the team to fill)
 
 ```
-Create campaign (app)
-  └─ createCampaign() → Supabase (source of truth)
-       └─ POST /api/campaign-sheet-sync  (server, holds the secret URL)
-            └─ POST → Apps Script Web App → appendRow() to "Campaigns" tab
+Create campaign / assign KOL (app)
+  └─ createCampaign() / createKol() → Supabase (source of truth)
+       └─ mirrorRowToSheet(tab, headers, row)
+            └─ POST /api/campaign-sheet-sync  (server, holds the secret URL)
+                 └─ POST → Apps Script Web App → appendRow() to the named tab
 ```
+
+The Apps Script is **generic** (`{ tab, headers, row }`) — new mirrors just send a
+different tab, no re-deploy needed. Note: when a tab already has formula columns
+(e.g. KOL_Activities `cost/reach`), appended rows leave those cells blank —
+extend the formula down or use an `ARRAYFORMULA` header.
 
 ## One-time setup
 
