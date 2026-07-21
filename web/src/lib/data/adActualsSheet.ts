@@ -6,7 +6,7 @@
 
 import { CampaignResultRow, ResultKpi } from "@/lib/data/campaignResult";
 
-const norm = (s: string) => s.trim().toLowerCase().replace(/[\s_.-]+/g, "");
+const norm = (s: string) => s.trim().toLowerCase().replace(/[\s_.%-]+/g, "");
 
 const num = (v: string | undefined) => {
   if (!v) return 0;
