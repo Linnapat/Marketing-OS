@@ -15,6 +15,7 @@ import {
   Target,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ImportKolActualsButton } from "@/components/performance/ImportKolActualsButton";
 import { ImportAdActualsButton } from "@/components/performance/ImportAdActualsButton";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, rangeInFilter } from "@/components/ui/DateFilterBar";
@@ -434,7 +435,7 @@ export default function PerformanceCenterPage() {
             desc="สรุป budget, actual spend, reach/result และ CPR แยกตาม platform จากข้อมูลเดียวกับ Performance Bar"
             action={
               <div className="flex flex-col items-end gap-2">
-                <ImportAdActualsButton onDone={() => window.location.reload()} />
+                <ImportAdActualsButton onDone={() => window.location.reload()} brand={brand} />
                 <Link href="/platforms" className="inline-flex items-center gap-2 rounded-full bg-[#E3F7F5] px-3 py-2 text-[12px] font-extrabold text-[#0B7F7A]">
                   Open Performance Bar <ArrowRight size={14} />
                 </Link>
@@ -598,6 +599,7 @@ export default function PerformanceCenterPage() {
           <ReportShell
             title="KOL Performance"
             desc="แยก performance ของ KOL / influencer จาก budget allocation และ actual result ที่ลงไว้ใน Performance Bar"
+            action={<ImportKolActualsButton onDone={() => window.location.reload()} brand={brand} />}
           >
             <div className="grid gap-3 md:grid-cols-5">
               <KpiCard label="KOL lines" value={num(kolRows.length)} note="creator result rows" tone="#E08A34" />

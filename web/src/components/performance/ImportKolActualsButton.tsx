@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
-import { importAdActualsFromSheet } from "@/lib/db/campaignResult";
+import { importKolActualsFromSheet } from "@/lib/db/kolActualsImport";
 
-const LS_KEY = "mos.adActualsSheetUrl";
+const LS_KEY = "mos.kolActualsSheetUrl";
 
-/** Pulls ad actuals from the shared "Ad_Activities" Google Sheet tab into Supabase.
- *  The sheet URL is remembered in localStorage so the team pastes it once —
- *  scoped per brand (when one is selected) so a browser used across brands
- *  can't accidentally import the wrong brand's sheet. */
-export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; brand?: string }) {
+/** Pulls KOL actuals from the shared "KOL_Activities" Google Sheet tab into
+ *  Supabase. The sheet URL is remembered so the team pastes it once — scoped
+ *  per brand (when one is selected) so a browser used across brands can't
+ *  accidentally import the wrong brand's sheet. */
+export function ImportKolActualsButton({ onDone, brand }: { onDone?: () => void; brand?: string }) {
   const lsKey = brand && brand !== "all" ? `${LS_KEY}.${brand}` : LS_KEY;
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState<string>(() =>
@@ -19,8 +19,6 @@ export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
-  // Re-sync from storage when the selected brand changes (component stays
-  // mounted; the remembered URL for that brand may differ from the previous one).
   useEffect(() => {
     setUrl(localStorage.getItem(lsKey) ?? "");
     setMsg(null);
@@ -33,11 +31,11 @@ export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; 
     setBusy(true); setMsg(null);
     try {
       localStorage.setItem(lsKey, clean);
-      const { imported, removed } = await importAdActualsFromSheet(clean);
-      setMsg({
-        tone: "ok",
-        text: removed > 0 ? `นำเข้า ${imported} แถว · แทนที่ของเก่า ${removed}` : `นำเข้าแล้ว ${imported} แถว`,
-      });
+      const { imported, removed, skipped } = await importKolActualsFromSheet(clean);
+      const parts = [`นำเข้า ${imported} KOL`];
+      if (removed > 0) parts.push(`แทนที่ ${removed}`);
+      if (skipped > 0) parts.push(`ข้าม ${skipped}`);
+      setMsg({ tone: "ok", text: parts.join(" · ") });
       onDone?.();
     } catch (e) {
       setMsg({ tone: "err", text: e instanceof Error ? e.message : "นำเข้าไม่สำเร็จ" });
@@ -50,17 +48,17 @@ export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; 
     <div className="flex flex-col items-end gap-1.5">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-full bg-[#E3F7F5] px-3 py-2 text-[12px] font-extrabold text-[#0B7F7A]"
+        className="inline-flex items-center gap-2 rounded-full bg-[#FFF3E5] px-3 py-2 text-[12px] font-extrabold text-[#B4711F]"
       >
-        <Download size={14} /> Import ads จาก Sheet
+        <Download size={14} /> Import KOL จาก Sheet
       </button>
       {open && (
         <div className="flex flex-wrap items-center justify-end gap-2">
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="วางลิงก์ Google Sheet (แท็บ Ad_Activities)"
-            className="w-[260px] rounded-[9px] border border-line bg-white px-3 py-2 text-[12px] outline-none focus:border-[#0B7F7A]"
+            placeholder="วางลิงก์ Google Sheet (แท็บ KOL_Activities)"
+            className="w-[260px] rounded-[9px] border border-line bg-white px-3 py-2 text-[12px] outline-none focus:border-[#B4711F]"
           />
           <button
             onClick={run}
@@ -72,7 +70,7 @@ export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; 
         </div>
       )}
       {msg && (
-        <span className={`text-[11.5px] font-bold ${msg.tone === "ok" ? "text-[#0B7F7A]" : "text-status-gold"}`}>
+        <span className={`text-[11.5px] font-bold ${msg.tone === "ok" ? "text-[#B4711F]" : "text-status-gold"}`}>
           {msg.text}
         </span>
       )}
