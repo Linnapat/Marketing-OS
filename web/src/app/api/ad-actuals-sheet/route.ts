@@ -11,8 +11,8 @@ import { parseAdActuals } from "@/lib/data/adActualsSheet";
 
 export const dynamic = "force-dynamic";
 
-const TAB = "Ad_Actuals";
-const SHARE_HINT = 'ตรวจว่าแชร์ sheet เป็น "Anyone with the link · Viewer" และมีแท็บชื่อ Ad_Actuals';
+const TAB = "Ad_Activities";
+const SHARE_HINT = 'ตรวจว่าแชร์ sheet เป็น "Anyone with the link · Viewer" และมีแท็บชื่อ Ad_Activities';
 
 export async function GET(req: NextRequest) {
   const guard = await requireApiUser(req);

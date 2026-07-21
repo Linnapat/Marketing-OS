@@ -44,6 +44,10 @@ export interface CampaignResultRow {
   // Audit — stamped on each manual save (daily update trail).
   updatedAt?: string;    // ISO timestamp of the last actuals change
   updatedBy?: string;    // who made the change
+
+  // Origin of the row. "sheet" = imported from the Ad_Actuals Google Sheet
+  // (re-import replaces these); unset = entered by hand in the Performance Bar.
+  source?: "sheet";
 }
 
 export type ResultStatusKey =
