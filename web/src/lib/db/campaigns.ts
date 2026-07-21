@@ -67,7 +67,37 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
     bottleneck_team: c.bottleneckTeam, next_approval: c.nextApproval,
   }, { onConflict: "id" });
   assertDbOk(error, "Could not save campaign");
+  mirrorCampaignToSheet(c);
   return c;
+}
+
+/** Best-effort mirror of a new campaign into the campaign Google Sheet, via our
+ *  server route → Apps Script Web App. Fire-and-forget: any failure is swallowed
+ *  so a Sheet hiccup never blocks (or reverts) a campaign save. Only runs in the
+ *  browser — the server has no relative-URL base for the fetch. */
+function mirrorCampaignToSheet(c: CampaignRow): void {
+  if (typeof window === "undefined") return;
+  try {
+    void fetch("/api/campaign-sheet-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        created_at: new Date().toISOString(),
+        campaign_id: c.id,
+        name: c.name,
+        brand: c.b,
+        branch: c.branch,
+        owner: c.owner,
+        budget: c.budget,
+        dates: c.dates,
+        status: c.status,
+        camp_type: c.campType,
+      }),
+    }).catch(() => {});
+  } catch {
+    /* never throw from the mirror */
+  }
 }
 
 /** Update a campaign's status (used by the temporary approve/reject action while

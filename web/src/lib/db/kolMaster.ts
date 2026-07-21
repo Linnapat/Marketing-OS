@@ -151,10 +151,20 @@ export async function logCollaboration(input: {
   roas?: number;
   on_time_delivery?: boolean;
   brand_feedback_score?: number;
+  // Phase 2b: no dedicated columns for these — round-tripped in the `data`
+  // jsonb so the Monthly Branch Report can split cost and branch per post.
+  food_cost?: number;
+  branch?: string;
+  post_date?: string;
 }): Promise<void> {
   const db = supabase();
   if (!db) return;
-  await db.from("kol_collaboration_history").insert(input);
+  const { food_cost, branch, post_date, ...columns } = input;
+  const data: Record<string, string | number> = {};
+  if (food_cost != null) data.food_cost = food_cost;
+  if (branch) data.branch = branch;
+  if (post_date) data.post_date = post_date;
+  await db.from("kol_collaboration_history").insert({ ...columns, data });
   await db.rpc("recompute_kol_rank", { p_kol: input.kol_id });
 }
 

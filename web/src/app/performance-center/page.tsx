@@ -11,6 +11,7 @@ import {
   Megaphone,
   Sparkles,
   Star,
+  Store,
   Target,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -31,12 +32,14 @@ import {
   mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { CampaignBrief } from "@/lib/data/brief";
+import { KolCollabRow, kolBranchReport } from "@/lib/data/kolBranch";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchAllResults } from "@/lib/db/campaignResult";
+import { fetchCollaborations } from "@/lib/db/kolCollab";
 import { baht, num, pct } from "@/lib/format";
 
-type ReportKey = "overview" | "creative" | "platform" | "campaign" | "kol";
+type ReportKey = "overview" | "creative" | "platform" | "campaign" | "branch" | "kol";
 
 const REPORTS: {
   key: ReportKey;
@@ -50,6 +53,7 @@ const REPORTS: {
   { key: "creative", label: "Creative KPI Performance", short: "Creative KPI", icon: Sparkles, color: "#D876AA", bg: "#FDEBF3" },
   { key: "platform", label: "Platform / Ads Performance", short: "Platform / Ads", icon: BarChart3, color: "#0EA5A0", bg: "#E3F7F5" },
   { key: "campaign", label: "Campaign ROI Performance", short: "Campaign ROI", icon: Target, color: "#6C5CE7", bg: "#EEE9FF" },
+  { key: "branch", label: "Branch Performance", short: "Branch", icon: Store, color: "#2E8B7A", bg: "#E3F5F0" },
   { key: "kol", label: "KOL Performance", short: "KOL", icon: Star, color: "#E08A34", bg: "#FFF3E5" },
 ];
 
@@ -190,13 +194,15 @@ export default function PerformanceCenterPage() {
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [rows, setRows] = useState<CampaignResultRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [collabs, setCollabs] = useState<KolCollabRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let live = true;
-    Promise.all([fetchAllResults(), fetchCampaigns(), fetchAllBriefs()]).then(([resultRows, campaignRows, briefMap]) => {
+    Promise.all([fetchAllResults(), fetchCampaigns(), fetchAllBriefs(), fetchCollaborations()]).then(([resultRows, campaignRows, briefMap, collabRows]) => {
       if (!live) return;
       setCampaigns(campaignRows);
+      setCollabs(collabRows);
       setRows(mergeBudgetAllocationRows(resultRows, campaignRows, briefMap as Record<string, CampaignBrief>));
       setLoading(false);
     }).catch(() => {
@@ -241,6 +247,41 @@ export default function PerformanceCenterPage() {
     const reach = sum(brandRows, (r) => r.kpi === "Reach" ? r.reachActual : 0);
     return { brand: b, plan, actual, reach, rows: brandRows.length };
   }).filter((r) => r.rows > 0 || brand === "all"), [visibleBrands, filtered, brandOf, brand]);
+
+  const branchGroups = useMemo(() => {
+    const map = new Map<string, { branch: string; lines: number; kolLines: number; plan: number; adsSpend: number; kolSpend: number; reach: number }>();
+    filtered.forEach((row) => {
+      const branch = (campaignOf[row.campaignId]?.branch || "").trim() || "ไม่ระบุสาขา";
+      const group = map.get(branch) ?? { branch, lines: 0, kolLines: 0, plan: 0, adsSpend: 0, kolSpend: 0, reach: 0 };
+      const spend = row.budgetActual || 0;
+      group.lines += 1;
+      group.plan += row.budget || 0;
+      group.reach += row.reachActual || 0;
+      if (isKolRow(row)) {
+        group.kolSpend += spend;
+        group.kolLines += 1;
+      } else {
+        group.adsSpend += spend;
+      }
+      map.set(branch, group);
+    });
+    return Array.from(map.values())
+      .map((group) => {
+        const total = group.adsSpend + group.kolSpend;
+        return { ...group, total, cprActual: group.reach > 0 ? total / group.reach : null };
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [filtered, campaignOf]);
+
+  const kolBranchRows = useMemo(() => {
+    const scoped = collabs
+      .filter((c) => {
+        const b = (c.brand || brandOf[c.campaignId]) as BrandId | undefined;
+        return b && visibleBrands.includes(b) && (brand === "all" || b === brand);
+      })
+      .map((c) => ({ ...c, branch: c.branch || campaignOf[c.campaignId]?.branch || "" }));
+    return kolBranchReport(scoped);
+  }, [collabs, brandOf, campaignOf, visibleBrands, brand]);
 
   const activeMeta = REPORTS.find((r) => r.key === active) ?? REPORTS[0];
 
@@ -448,6 +489,109 @@ export default function PerformanceCenterPage() {
               }) : (
                 <div className="p-4"><EmptyPanel /></div>
               )}
+            </div>
+          </ReportShell>
+        ) : active === "branch" ? (
+          <ReportShell
+            title="Branch Performance"
+            desc="รวม Ads + KOL ต่อสาขา จากผลลัพธ์ที่ผูก campaign_id เดียวกัน — สาขามาจากแคมเปญของแต่ละบรรทัด"
+          >
+            <div className="grid gap-3 md:grid-cols-4">
+              <KpiCard label="Branches" value={num(branchGroups.length)} note="in selected view" tone="#2E8B7A" />
+              <KpiCard label="Ads spend" value={compact(sum(branchGroups, (g) => g.adsSpend))} note="non-KOL lines" tone="#0EA5A0" />
+              <KpiCard label="KOL spend" value={compact(sum(branchGroups, (g) => g.kolSpend))} note="creator lines" tone="#E08A34" />
+              <KpiCard label="Total spend" value={compact(sum(branchGroups, (g) => g.total))} note="ads + KOL" tone="#6C5CE7" />
+            </div>
+            <div className="mt-4 overflow-hidden rounded-[22px] border border-line">
+              <div className="grid grid-cols-[1.4fr_.8fr_.8fr_.8fr_.7fr_.6fr] gap-3 border-b border-line bg-[#FBFAF7] px-4 py-3 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-faint">
+                <div>Branch</div><div>Ads ฿</div><div>KOL ฿</div><div>Total ฿</div><div>Reach</div><div>CPR</div>
+              </div>
+              {branchGroups.length ? branchGroups.map((group) => (
+                <div key={group.branch} className="grid grid-cols-[1.4fr_.8fr_.8fr_.8fr_.7fr_.6fr] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
+                  <div className="min-w-0">
+                    <div className="truncate text-[13.5px] font-extrabold text-ink">{group.branch}</div>
+                    <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-[#F0EDE6]">
+                      <div className="h-full" style={{ width: `${safePct(group.adsSpend, group.total)}%`, background: "#0EA5A0" }} />
+                      <div className="h-full" style={{ width: `${safePct(group.kolSpend, group.total)}%`, background: "#E08A34" }} />
+                    </div>
+                  </div>
+                  <div className="text-[13px] font-bold text-[#0B7F7A]">{compact(group.adsSpend)}</div>
+                  <div className="text-[13px] font-bold text-[#B4711F]">{compact(group.kolSpend)}</div>
+                  <div className="text-[13px] font-extrabold text-ink">{compact(group.total)}</div>
+                  <div className="text-[13px] font-bold text-muted">{num(group.reach)}</div>
+                  <div className="text-[13px] font-extrabold text-[#2E8B7A]">{cpr(group.cprActual)}</div>
+                </div>
+              )) : (
+                <div className="p-4"><EmptyPanel /></div>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-[11.5px] font-bold text-faint">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#0EA5A0" }} /> Ads</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#E08A34" }} /> KOL</span>
+              <span className="ml-auto">Ads จาก campaign_results · KOL รายคนจาก kol_collaboration_history</span>
+            </div>
+
+            <div className="mt-6">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-[14px] font-extrabold text-ink">KOL รายสาขา · Monthly Branch Report</span>
+                <span className="rounded-full bg-[#FFF3E5] px-2 py-0.5 text-[10.5px] font-extrabold text-[#B4711F]">from kol_collaboration_history</span>
+              </div>
+              <div className="overflow-x-auto rounded-[22px] border border-line">
+                <table className="w-full min-w-[720px] border-collapse text-[12.5px]">
+                  <thead>
+                    <tr className="bg-[#FBFAF7] text-[10.5px] font-extrabold uppercase tracking-[0.12em] text-faint">
+                      <th className="px-3 py-2.5 text-left">Branch</th>
+                      <th className="px-3 py-2.5 text-right">KOL Used</th>
+                      <th className="px-3 py-2.5 text-right">Reach</th>
+                      <th className="px-3 py-2.5 text-right">Engage</th>
+                      <th className="px-3 py-2.5 text-right">Cost</th>
+                      <th className="px-3 py-2.5 text-right">Cost/Reach</th>
+                      <th className="px-3 py-2.5 text-right">Engage%</th>
+                      <th className="px-3 py-2.5 text-right">Followers</th>
+                      <th className="px-3 py-2.5 text-right">Reach/Follow</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kolBranchRows.length ? kolBranchRows.map((b) => (
+                      <tr key={b.branch} className="border-t border-line">
+                        <td className="px-3 py-2.5 text-left font-extrabold text-ink">{b.branch}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-muted">{num(b.kolUsed)}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-muted">{num(b.reach)}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-muted">{num(b.engagement)}</td>
+                        <td className="px-3 py-2.5 text-right font-extrabold text-ink">{baht(b.cost)}</td>
+                        <td className="px-3 py-2.5 text-right font-extrabold text-[#E08A34]">{cpr(b.costPerReach)}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-muted">{b.engageRate != null ? `${(b.engageRate * 100).toFixed(1)}%` : "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-muted">{num(b.followers)}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-muted">{b.reachPerFollow != null ? b.reachPerFollow.toFixed(2) : "—"}</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan={9} className="px-3 py-8 text-center text-[13px] font-bold text-faint">{empty}</td></tr>
+                    )}
+                  </tbody>
+                  {kolBranchRows.length > 0 && (() => {
+                    const kol = sum(kolBranchRows, (b) => b.kolUsed);
+                    const reach = sum(kolBranchRows, (b) => b.reach);
+                    const engage = sum(kolBranchRows, (b) => b.engagement);
+                    const cost = sum(kolBranchRows, (b) => b.cost);
+                    const foll = sum(kolBranchRows, (b) => b.followers);
+                    return (
+                      <tfoot>
+                        <tr className="border-t-2 border-line bg-[#F3F8F6] text-[12.5px] font-extrabold text-ink">
+                          <td className="px-3 py-2.5 text-left">TOTAL (all branches)</td>
+                          <td className="px-3 py-2.5 text-right">{num(kol)}</td>
+                          <td className="px-3 py-2.5 text-right">{num(reach)}</td>
+                          <td className="px-3 py-2.5 text-right">{num(engage)}</td>
+                          <td className="px-3 py-2.5 text-right">{baht(cost)}</td>
+                          <td className="px-3 py-2.5 text-right text-[#B4711F]">{cpr(reach > 0 ? cost / reach : null)}</td>
+                          <td className="px-3 py-2.5 text-right">{reach > 0 ? `${((engage / reach) * 100).toFixed(1)}%` : "—"}</td>
+                          <td className="px-3 py-2.5 text-right">{num(foll)}</td>
+                          <td className="px-3 py-2.5 text-right">{foll > 0 ? (reach / foll).toFixed(2) : "—"}</td>
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
+                </table>
+              </div>
             </div>
           </ReportShell>
         ) : (
