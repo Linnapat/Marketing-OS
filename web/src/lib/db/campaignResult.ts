@@ -70,15 +70,47 @@ export async function saveResults(rows: CampaignResultRow[]): Promise<void> {
  *  campaign_results (upsert). Reads server-side (CORS-safe) then writes under the
  *  user's own RLS session, so Supabase stays the source of truth. Returns how
  *  many rows were upserted. */
-export async function importAdActualsFromSheet(sheetUrl: string): Promise<{ imported: number }> {
+export async function importAdActualsFromSheet(
+  sheetUrl: string,
+): Promise<{ imported: number; removed: number }> {
   const res = await fetch(`/api/ad-actuals-sheet?url=${encodeURIComponent(sheetUrl)}`, {
     headers: await authHeaders(),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body?.error || "นำเข้าไม่สำเร็จ");
   const rows = (body.rows ?? []) as CampaignResultRow[];
+  const removed = await syncSheetResults(rows);
+  return { imported: rows.length, removed };
+}
+
+/** Make the sheet-sourced rows of every campaign in `rows` match the sheet
+ *  exactly: drop stale rows that came from the sheet but are no longer in it
+ *  (e.g. a renamed or deleted ad), then upsert the fresh set. Rows entered by
+ *  hand in the Performance Bar (no `source`) are never touched. Returns the
+ *  number of stale sheet rows removed. */
+async function syncSheetResults(rows: CampaignResultRow[]): Promise<number> {
+  const db = supabase();
+  if (!db) return 0;
+  const campaignIds = [...new Set(rows.map((r) => r.campaignId))];
+  let removed = 0;
+  if (campaignIds.length) {
+    const { data: existing, error } = await db
+      .from("campaign_results")
+      .select("row_id, data")
+      .in("campaign_id", campaignIds);
+    assertDbOk(error, "Could not read existing results");
+    const keep = new Set(rows.map((r) => r.id));
+    const staleIds = ((existing ?? []) as { row_id: string; data: CampaignResultRow | null }[])
+      .filter((r) => r.data?.source === "sheet" && !keep.has(r.row_id))
+      .map((r) => r.row_id);
+    if (staleIds.length) {
+      const { error: delErr } = await db.from("campaign_results").delete().in("row_id", staleIds);
+      assertDbOk(delErr, "Could not remove stale sheet rows");
+      removed = staleIds.length;
+    }
+  }
   await saveResults(rows);
-  return { imported: rows.length };
+  return removed;
 }
 
 /** Remove a row. */

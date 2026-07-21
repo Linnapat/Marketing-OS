@@ -6,7 +6,7 @@ import { importAdActualsFromSheet } from "@/lib/db/campaignResult";
 
 const LS_KEY = "mos.adActualsSheetUrl";
 
-/** Pulls ad actuals from the shared "Ad_Actuals" Google Sheet tab into Supabase.
+/** Pulls ad actuals from the shared "Ad_Activities" Google Sheet tab into Supabase.
  *  The sheet URL is remembered in localStorage so the team pastes it once —
  *  scoped per brand (when one is selected) so a browser used across brands
  *  can't accidentally import the wrong brand's sheet. */
@@ -33,8 +33,11 @@ export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; 
     setBusy(true); setMsg(null);
     try {
       localStorage.setItem(lsKey, clean);
-      const { imported } = await importAdActualsFromSheet(clean);
-      setMsg({ tone: "ok", text: `นำเข้าแล้ว ${imported} แถว` });
+      const { imported, removed } = await importAdActualsFromSheet(clean);
+      setMsg({
+        tone: "ok",
+        text: removed > 0 ? `นำเข้า ${imported} แถว · แทนที่ของเก่า ${removed}` : `นำเข้าแล้ว ${imported} แถว`,
+      });
       onDone?.();
     } catch (e) {
       setMsg({ tone: "err", text: e instanceof Error ? e.message : "นำเข้าไม่สำเร็จ" });
@@ -56,7 +59,7 @@ export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; 
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="วางลิงก์ Google Sheet (แท็บ Ad_Actuals)"
+            placeholder="วางลิงก์ Google Sheet (แท็บ Ad_Activities)"
             className="w-[260px] rounded-[9px] border border-line bg-white px-3 py-2 text-[12px] outline-none focus:border-[#0B7F7A]"
           />
           <button
