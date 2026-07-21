@@ -88,7 +88,7 @@ function mirrorCampaignToSheet(c: CampaignRow): void {
   const [start, end] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
   mirrorRowToSheet("Campaigns", CAMPAIGN_SHEET_HEADERS, [
     c.id, c.name, brandName(c.b), c.branch, "", start || c.dates || "", end || "", c.budget, "",
-  ]);
+  ], c.b);
 }
 
 /** Update a campaign's status (used by the temporary approve/reject action while

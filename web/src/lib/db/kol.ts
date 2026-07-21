@@ -23,7 +23,7 @@ function mirrorKolToSheet(kol: Kol): void {
     kol.campaignId || kol.campaign || "", "", kol.branch,
     kol.masterKolId ?? String(kol.id), kol.name, kol.kolType, kol.followers, kol.status,
     "", "", "", kol.foodCost || "", kol.fee || "", "", "", "", "", "", "",
-  ]);
+  ], kol.b);
 }
 
 /** Read all creators — from Supabase (data blob) if configured, else the mock. */
