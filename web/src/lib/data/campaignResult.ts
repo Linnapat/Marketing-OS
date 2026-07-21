@@ -430,10 +430,20 @@ export interface GroupAgg {
 
 /** Group rows by platform OR by campaign and roll up plan vs actual. `labelOf`
  *  maps campaign ids to names for the campaign view. Sorted by planned budget. */
+// When grouping media by platform, KOL spend is its OWN platform — a creator
+// posting a Reel on TikTok is KOL money, not TikTok-ads money, and mixing them
+// hid how much of the budget went to influencers. The row keeps its real
+// `platform` (KOL Performance needs to know where the creator posted); only the
+// grouping key is overridden, detected from the planned-KOL role/ad label.
+export function platformGroupKey(r: CampaignResultRow): string {
+  if ((r.role || "").toLowerCase().includes("kol") || /^(planned )?kol\b/i.test(r.ad || "")) return "KOL";
+  return r.platform || "—";
+}
+
 export function aggregateBy(rows: CampaignResultRow[], dim: GroupDim, labelOf?: Record<string, string>): GroupAgg[] {
   const groups = new Map<string, CampaignResultRow[]>();
   for (const r of rows) {
-    const key = dim === "platform" ? (r.platform || "—") : r.campaignId;
+    const key = dim === "platform" ? platformGroupKey(r) : r.campaignId;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
   }
 
