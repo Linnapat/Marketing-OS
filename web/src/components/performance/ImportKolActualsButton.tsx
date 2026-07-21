@@ -1,27 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { importKolActualsFromSheet } from "@/lib/db/kolActualsImport";
 
 const LS_KEY = "mos.kolActualsSheetUrl";
 
 /** Pulls KOL actuals from the shared "KOL_Activities" Google Sheet tab into
- *  Supabase. The sheet URL is remembered so the team pastes it once. */
-export function ImportKolActualsButton({ onDone }: { onDone?: () => void }) {
+ *  Supabase. The sheet URL is remembered so the team pastes it once — scoped
+ *  per brand (when one is selected) so a browser used across brands can't
+ *  accidentally import the wrong brand's sheet. */
+export function ImportKolActualsButton({ onDone, brand }: { onDone?: () => void; brand?: string }) {
+  const lsKey = brand && brand !== "all" ? `${LS_KEY}.${brand}` : LS_KEY;
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState<string>(() =>
-    typeof window !== "undefined" ? localStorage.getItem(LS_KEY) ?? "" : "",
+    typeof window !== "undefined" ? localStorage.getItem(lsKey) ?? "" : "",
   );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    setUrl(localStorage.getItem(lsKey) ?? "");
+    setMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lsKey]);
 
   const run = async () => {
     const clean = url.trim();
     if (!clean) { setMsg({ tone: "err", text: "วางลิงก์ Google Sheet ก่อน" }); return; }
     setBusy(true); setMsg(null);
     try {
-      localStorage.setItem(LS_KEY, clean);
+      localStorage.setItem(lsKey, clean);
       const { imported, removed, skipped } = await importKolActualsFromSheet(clean);
       const parts = [`นำเข้า ${imported} KOL`];
       if (removed > 0) parts.push(`แทนที่ ${removed}`);

@@ -1,27 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { importAdActualsFromSheet } from "@/lib/db/campaignResult";
 
 const LS_KEY = "mos.adActualsSheetUrl";
 
 /** Pulls ad actuals from the shared "Ad_Actuals" Google Sheet tab into Supabase.
- *  The sheet URL is remembered in localStorage so the team pastes it once. */
-export function ImportAdActualsButton({ onDone }: { onDone?: () => void }) {
+ *  The sheet URL is remembered in localStorage so the team pastes it once —
+ *  scoped per brand (when one is selected) so a browser used across brands
+ *  can't accidentally import the wrong brand's sheet. */
+export function ImportAdActualsButton({ onDone, brand }: { onDone?: () => void; brand?: string }) {
+  const lsKey = brand && brand !== "all" ? `${LS_KEY}.${brand}` : LS_KEY;
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState<string>(() =>
-    typeof window !== "undefined" ? localStorage.getItem(LS_KEY) ?? "" : "",
+    typeof window !== "undefined" ? localStorage.getItem(lsKey) ?? "" : "",
   );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  // Re-sync from storage when the selected brand changes (component stays
+  // mounted; the remembered URL for that brand may differ from the previous one).
+  useEffect(() => {
+    setUrl(localStorage.getItem(lsKey) ?? "");
+    setMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lsKey]);
 
   const run = async () => {
     const clean = url.trim();
     if (!clean) { setMsg({ tone: "err", text: "วางลิงก์ Google Sheet ก่อน" }); return; }
     setBusy(true); setMsg(null);
     try {
-      localStorage.setItem(LS_KEY, clean);
+      localStorage.setItem(lsKey, clean);
       const { imported } = await importAdActualsFromSheet(clean);
       setMsg({ tone: "ok", text: `นำเข้าแล้ว ${imported} แถว` });
       onDone?.();

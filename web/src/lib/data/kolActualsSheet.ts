@@ -15,6 +15,7 @@ export interface KolSheetRow {
   foodCost: number;
   paidCost: number;
   postDate: string;
+  status: string;
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/[\s_./-]+/g, "");
@@ -36,6 +37,7 @@ const ALIASES: Record<string, string> = {
   foodcost: "foodCost",
   paidcost: "paidCost", paid: "paidCost", fee: "paidCost",
   postdate: "postDate", visitedpostdate: "postDate",
+  status: "status",
 };
 
 export function parseKolActuals(grid: string[][]): KolSheetRow[] {
@@ -63,6 +65,7 @@ export function parseKolActuals(grid: string[][]): KolSheetRow[] {
       foodCost: num(get("foodCost")),
       paidCost: num(get("paidCost")),
       postDate: (get("postDate") ?? "").trim(),
+      status: (get("status") ?? "").trim(),
     });
   }
   return rows;

@@ -68,7 +68,7 @@ async function syncKolCollab(
       fee_paid: r.paidCost || null,
       actual_reach: r.reach || null,
       actual_engagement: r.engagement || null,
-      data: { source: "sheet", food_cost: r.foodCost, branch: r.branch, post_date: r.postDate },
+      data: { source: "sheet", food_cost: r.foodCost, branch: r.branch, post_date: r.postDate, status: r.status },
     });
   }
 
