@@ -652,6 +652,9 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         roas: roas || undefined,
         on_time_delivery: onTime,
         brand_feedback_score: feedback || undefined,
+        food_cost: kol.foodCost || undefined,
+        branch: kol.branch || undefined,
+        post_date: kol.postedDate || kol.postingDate || undefined,
       });
       setLogged(true); setTimeout(() => setLogged(false), 2500);
     } finally { setLogging(false); }
