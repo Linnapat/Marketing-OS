@@ -18,7 +18,7 @@ import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BRANDS, BrandId, brandName, emptyBrandTotals } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import {
-  CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem, nextCampaignCode,
+  CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem, nextCampaignCode, nextSeqFromItems,
   OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS,
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
@@ -190,7 +190,7 @@ export default function NewCampaignPage() {
       fetchContentSourceIds(editId).then(setMaterializedIds).catch(() => {});
       setOriginalBrief(JSON.parse(JSON.stringify(normalized)));
       setBrief(normalized);
-      setSeq(normalized.content.length + normalized.kols.length + 1);
+      setSeq(nextSeqFromItems(normalized.content, normalized.kols));
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -345,7 +345,7 @@ export default function NewCampaignPage() {
       const branchesFor = (brand: BrandId) => brandConfigs.find((c) => c.key === brand)?.branchList ?? [];
       const { brief: merged, warnings: mergeWarnings } = applyBriefPatch(brief, patch, branchesFor);
       setBrief(merged);
-      setSeq(merged.content.length + merged.kols.length + 1);
+      setSeq(nextSeqFromItems(merged.content, merged.kols));
       setTriedNext(false);
       setImportReport({ counts, warnings: [...notes, ...mergeWarnings] });
     } catch (error) {
@@ -1206,7 +1206,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
           </div>
         </div>
         <div className="mb-4">
-          <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· ต้องครอบคลุมยอด allocate ทุกรายการ (รวม KOL)</span></label>
+          <label className={label}>Total Campaign Budget <span className="text-faint font-normal">· ต้องครอบคลุมยอด allocate ทุกรายการ (รวม KOL) — เว้นว่าง/0 ได้ถ้าแคมเปญนี้ไม่มีค่าใช้จ่าย</span></label>
           <div className="flex items-center gap-3 flex-wrap">
             <input value={fmtNum(brief.budget.total)} onChange={(e) => setB({ total: num(e.target.value) })} className={`${field} max-w-[260px]`} placeholder="฿" />
             {bs.allocated > 0 && (

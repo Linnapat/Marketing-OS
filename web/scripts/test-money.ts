@@ -9,7 +9,7 @@ import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
 import { resultsRoas, deriveResultRow, CampaignResultRow, aggregateBy, platformGroupKey, PERF_TABLE_HEADERS } from "../src/lib/data/campaignResult";
-import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
+import { kolMonthlyTotals, CampaignBrief, nextSeqFromItems } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
 
@@ -219,6 +219,17 @@ console.log("Performance table columns stay in sync (header count locked)");
   // The page's COL_WIDTHS must be PERF_TABLE_HEADERS.length + 1 (the name col).
   // If someone adds a header without a width, columns drift — this pins the count.
   eq("14 data columns after the name column", PERF_TABLE_HEADERS.length, 14);
+}
+
+console.log("nextSeqFromItems — resuming after a delete must never reuse a live id");
+{
+  const c = (id: string) => ({ id });
+  eq("empty brief starts at 1", nextSeqFromItems([], []), 1);
+  eq("three items, none deleted → 4", nextSeqFromItems([c("ci-1"), c("ci-2"), c("ci-3")], []), 4);
+  // Deleting the middle item drops the count to 2 — length-based resume would
+  // hand out "ci-3" again, colliding with the surviving third item.
+  eq("middle item deleted → still resumes past the survivor", nextSeqFromItems([c("ci-1"), c("ci-3")], []), 4);
+  eq("kol ids share the same counter", nextSeqFromItems([c("ci-1")], [c("kr-5")]), 6);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

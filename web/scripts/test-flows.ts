@@ -167,6 +167,23 @@ console.log("Budget — Production excluded from allocation");
   check("Other with a note clears the warning", !budgetSummary(b).warnings.some((w) => w.includes("Other")));
 }
 
+console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-message quota) must still submit");
+{
+  const b = emptyBrief("no-budget-test");
+  b.name = "N"; b.objective = "Awareness"; b.campaignType = "Always-on"; b.b = "mainichi";
+  b.branches = ["Central"]; b.startDate = "2026-08-01"; b.endDate = "2026-08-31";
+  b.launchDate = "2026-08-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O";
+  b.approver = "CMO";
+  b.content = [{
+    ...emptyContentItem(1), id: "c1", title: "T", subHead: "S", platforms: ["Instagram"],
+    assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], graphicDueDate: "2026-07-31", publishDate: "2026-08-01",
+  }];
+  // budget.total stays 0 — untouched.
+  check("no budget-related blocker when total is 0", !validateSubmit(b).some((e) => /budget/i.test(e)));
+  check("guideline checklist no longer treats budget as must-have",
+    guidelineChecklist(b).find((i) => i.key === "budget")?.must === false);
+}
+
 console.log("Campaign code — per-brand running number");
 {
   const mk = (b: CampaignBrief["b"], code?: string): CampaignBrief => ({ ...emptyBrief("x"), b, code });
