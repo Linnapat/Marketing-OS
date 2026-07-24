@@ -8,7 +8,7 @@ import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
-import { resultsRoas, deriveResultRow, CampaignResultRow, aggregateBy, platformGroupKey } from "../src/lib/data/campaignResult";
+import { resultsRoas, deriveResultRow, CampaignResultRow, aggregateBy, platformGroupKey, PERF_TABLE_HEADERS } from "../src/lib/data/campaignResult";
 import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
@@ -212,6 +212,13 @@ console.log("Performance shows the assigned KOL page name, not the placeholder")
   eqStr("one assigned page shows its name", label(["@nong.eats"], "Lifestyle"), "@nong.eats");
   eqStr("two pages both show", label(["@a", "@b"], "Lifestyle"), "@a, @b");
   eqStr("three+ pages collapse with +N", label(["@a", "@b", "@c", "@d"], "Lifestyle"), "@a, @b +2");
+}
+
+console.log("Performance table columns stay in sync (header count locked)");
+{
+  // The page's COL_WIDTHS must be PERF_TABLE_HEADERS.length + 1 (the name col).
+  // If someone adds a header without a width, columns drift — this pins the count.
+  eq("14 data columns after the name column", PERF_TABLE_HEADERS.length, 14);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
