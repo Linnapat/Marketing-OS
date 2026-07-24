@@ -307,6 +307,16 @@ export function mergeBudgetAllocationRows(
       const matched = kols.filter((k) => k.campaignId === campaign.id && (k.sourceKolRequirementId || "").split("#")[0] === kol.id);
       const actualReachTotal = matched.reduce((s, k) => s + (k.actualReach || 0), 0);
       const actualCostTotal = matched.reduce((s, k) => s + (k.totalCost || 0), 0);
+      // Show the ASSIGNED page name(s) once the KOL specialist has picked real
+      // creators — otherwise the Performance row keeps the planner's placeholder
+      // ("Lifestyle") and it looks like the assignment never landed. The brief's
+      // kolType is the fallback until a page is chosen.
+      const assignedNames = Array.from(new Set(
+        matched.map((k) => (k.name || "").trim()).filter(Boolean),
+      ));
+      const kolLabel = assignedNames.length
+        ? assignedNames.slice(0, 2).join(", ") + (assignedNames.length > 2 ? ` +${assignedNames.length - 2}` : "")
+        : (kol.name || kol.kolType || "Creator");
       const reachActualPer = Math.round(actualReachTotal / platforms.length);
       const budgetActualPer = Math.round(actualCostTotal / platforms.length);
       platforms.forEach((platform, index) => {
@@ -314,7 +324,7 @@ export function mergeBudgetAllocationRows(
           ...planRow({
             id: `plan-${campaign.id}-kol-${slug(kol.id)}-${slug(platform)}`,
             campaignId: campaign.id,
-            ad: `Planned KOL — ${kol.name || kol.kolType || `Creator ${index + 1}`}`,
+            ad: `Planned KOL — ${kolLabel}`,
             audience: kol.area || audience,
             role: "KOL plan",
             platform: platform || "KOL",
@@ -349,6 +359,13 @@ export const PLATFORM_META: Record<string, { code: string; color: string }> = {
   "Google": { code: "GG", color: "#4285F4" },
   "YouTube": { code: "YT", color: "#FF0000" },
 };
+
+// The Performance table's columns, in render order (after the name column).
+// Exported so both the page and the tests read ONE list — a header added here
+// must get a matching width in the page's COL_WIDTHS or the columns drift.
+export const PERF_TABLE_HEADERS = [
+  "Budget", "Spent actual", "%", "Reach goal", "Actual", "%", "MKT visit goal", "Actual", "%", "CV%", "CPR", "CPC", "Alert budget", "Status",
+] as const;
 
 export function platformMeta(name: string): { code: string; color: string } {
   return PLATFORM_META[name] ?? { code: name.slice(0, 2).toUpperCase(), color: "#9A9387" };

@@ -8,7 +8,7 @@ import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
-import { resultsRoas, deriveResultRow, CampaignResultRow, aggregateBy, platformGroupKey } from "../src/lib/data/campaignResult";
+import { resultsRoas, deriveResultRow, CampaignResultRow, aggregateBy, platformGroupKey, PERF_TABLE_HEADERS } from "../src/lib/data/campaignResult";
 import { kolMonthlyTotals, CampaignBrief } from "../src/lib/data/brief";
 import { CampaignRow } from "../src/lib/data/campaigns";
 import { RequestRow } from "../src/lib/data/finance";
@@ -18,6 +18,7 @@ function check(name: string, cond: boolean) {
   if (cond) { pass++; console.log(`  ✓ ${name}`); }
   else { fail++; console.error(`  ✗ FAIL: ${name}`); }
 }
+function eqStr(name: string, actual: string, expected: string) { check(name + ` (got "${actual}")`, actual === expected); }
 function eq(name: string, actual: number, expected: number, tolerance = 1e-9) {
   const ok = Math.abs(actual - expected) <= tolerance;
   if (!ok) console.error(`    expected ${expected}, got ${actual}`);
@@ -201,6 +202,23 @@ console.log("KOL is its own platform group, never folded into ads");
   eq("TikTok ads keep only the real ad spend", tiktok?.budgetPlan ?? -1, 5000);
   // Grouping must not lose money: every baht still counted once.
   eq("total across groups is unchanged", groups.reduce((sum, g) => sum + g.budgetPlan, 0), 35000);
+}
+
+console.log("Performance shows the assigned KOL page name, not the placeholder");
+{
+  const label = (names: string[], fallback: string) =>
+    names.length ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "") : fallback;
+  eqStr("no assignment yet keeps the planner label", label([], "Lifestyle"), "Lifestyle");
+  eqStr("one assigned page shows its name", label(["@nong.eats"], "Lifestyle"), "@nong.eats");
+  eqStr("two pages both show", label(["@a", "@b"], "Lifestyle"), "@a, @b");
+  eqStr("three+ pages collapse with +N", label(["@a", "@b", "@c", "@d"], "Lifestyle"), "@a, @b +2");
+}
+
+console.log("Performance table columns stay in sync (header count locked)");
+{
+  // The page's COL_WIDTHS must be PERF_TABLE_HEADERS.length + 1 (the name col).
+  // If someone adds a header without a width, columns drift — this pins the count.
+  eq("14 data columns after the name column", PERF_TABLE_HEADERS.length, 14);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

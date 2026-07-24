@@ -24,7 +24,7 @@ import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { baht, num, pct } from "@/lib/format";
 import {
-  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformGroupKey, platformMeta, cpr,
+  CampaignResultRow, GroupDim, ResultStatusKey, RESULT_STATUS_META, aggregateBy, platformGroupKey, platformMeta, cpr, PERF_TABLE_HEADERS,
   deriveResultRow, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
@@ -61,9 +61,21 @@ function budgetAlert(plan: number, actual: number): { label: string; tone: Tone 
   return { label: "ในงบ", tone: "green" };
 }
 
-const tableHeaders = [
-  "Budget", "Spent actual", "%", "Reach goal", "Actual", "%", "MKT visit goal", "Actual", "%", "CV%", "CPR", "CPC", "Alert budget", "Status",
-];
+const tableHeaders = PERF_TABLE_HEADERS;
+
+// One column layout for BOTH the platform-group table and the nested ad table,
+// so a header and the cell under it line up exactly. Without a shared colgroup
+// + fixed layout each table sized its columns from its own content and the two
+// drifted apart (KOL group vs its ad rows). Widths are in the header order:
+// name, then the 14 tableHeaders columns.
+const COL_WIDTHS = ["auto", 70, 78, 44, 82, 72, 44, 92, 72, 44, 52, 52, 52, 86, 104];
+function PerfColGroup() {
+  return (
+    <colgroup>
+      {COL_WIDTHS.map((w, i) => <col key={i} style={w === "auto" ? { minWidth: 150 } : { width: w }} />)}
+    </colgroup>
+  );
+}
 
 const visitGoal = (r: CampaignResultRow) => Math.round((r.target || 0) * ((r.cvTargetPct || 0) / 100));
 const percentOf = (actual: number, goal: number) => goal > 0 ? pct((actual / goal) * 100) : "—";
@@ -550,7 +562,8 @@ export default function PlatformsPage() {
             </div>
           ) : (
             <div className="mt-3 overflow-x-auto border border-line rounded-cardLg bg-surface">
-              <table className="w-full text-[12px] whitespace-nowrap border-collapse">
+              <table className="w-full text-[12px] whitespace-nowrap border-collapse" style={{ tableLayout: "fixed" }}>
+                  <PerfColGroup />
                 <thead>
                   <tr className="text-faint">
                     {[dimLabel, ...tableHeaders].map((h, i) => (
@@ -571,16 +584,18 @@ export default function PlatformsPage() {
                           className="border-b border-line4 last:border-0 cursor-pointer hover:bg-ivory"
                           onClick={() => setOpen((o) => ({ ...o, [g.key]: !o[g.key] }))}
                         >
-                          <td className="px-[10px] py-[8px] text-left">
-                            <span className="inline-flex items-center gap-2">
-                              {isOpen ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
-                              {dim === "platform"
-                                ? <Badge code={platformMeta(g.key).code} color={platformMeta(g.key).color} />
-                                : <BrandDot brand={brandOf[g.key] ?? "teppen"} size={9} />}
-                              <span className="min-w-0">
-                                <span className="block font-bold text-ink max-w-[220px] truncate">{g.label}</span>
+                          <td className="px-[10px] py-[8px] text-left overflow-hidden">
+                            <span className="flex items-center gap-2 min-w-0">
+                              {isOpen ? <ChevronDown size={14} className="text-faint flex-shrink-0" /> : <ChevronRight size={14} className="text-faint flex-shrink-0" />}
+                              <span className="flex-shrink-0">
+                                {dim === "platform"
+                                  ? <Badge code={platformMeta(g.key).code} color={platformMeta(g.key).color} />
+                                  : <BrandDot brand={brandOf[g.key] ?? "teppen"} size={9} />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block font-bold text-ink truncate" title={g.label}>{g.label}</span>
                                 {groupDim === "campaign" && (
-                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px]">{periodLabel(datesOf[g.key])}</span>
+                                  <span className="block text-[10.5px] font-semibold text-faint mt-[2px] truncate">{periodLabel(datesOf[g.key])}</span>
                                 )}
                               </span>
                             </span>
@@ -712,7 +727,8 @@ function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatc
   const tVisitGoal = sum(visitGoal);
   return (
     <div className="bg-white overflow-x-auto">
-      <table className="w-full text-[11.5px] whitespace-nowrap border-collapse">
+      <table className="w-full text-[11.5px] whitespace-nowrap border-collapse" style={{ tableLayout: "fixed" }}>
+        <PerfColGroup />
         <thead>
           <tr className="text-faint bg-[#FBFAF6]">
             {[showCampaign ? "Campaign / Ad" : "Ad", ...tableHeaders].map((h, i) => (
@@ -728,15 +744,15 @@ function AdEditor({ rows, nameOf, datesOf, showCampaign = false, onPatch, onPatc
             const vActual = r.marketingVisits || 0;
             return (
               <tr key={r.id} className="hover:bg-[#FBFAF6]">
-                <td className="px-[9px] py-[6px] text-left border border-line4">
+                <td className="px-[9px] py-[6px] text-left border border-line4 overflow-hidden">
                   {showCampaign ? (
-                    <span className="block">
-                      <span className="block font-bold text-ink max-w-[220px] truncate">{nameOf[r.campaignId] ?? r.campaignId}</span>
-                      <span className="block text-[10px] font-semibold text-faint mt-[1px]">{periodLabel(datesOf[r.campaignId])}</span>
-                      <span className="block text-[10.5px] text-muted mt-[2px] max-w-[220px] truncate">{r.ad || "—"}</span>
+                    <span className="block min-w-0">
+                      <span className="block font-bold text-ink truncate" title={nameOf[r.campaignId] ?? r.campaignId}>{nameOf[r.campaignId] ?? r.campaignId}</span>
+                      <span className="block text-[10px] font-semibold text-faint mt-[1px] truncate">{periodLabel(datesOf[r.campaignId])}</span>
+                      <span className="block text-[10.5px] text-muted mt-[2px] truncate" title={r.ad || ""}>{r.ad || "—"}</span>
                     </span>
                   ) : (
-                    <span className="font-bold text-ink max-w-[240px] truncate block">{r.ad || "—"}</span>
+                    <span className="font-bold text-ink truncate block" title={r.ad || ""}>{r.ad || "—"}</span>
                   )}
                 </td>
                 <td className="px-[9px] py-[6px] text-right text-muted border border-line4">{baht(r.budget, { compact: true })}</td>
