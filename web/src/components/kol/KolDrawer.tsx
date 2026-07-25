@@ -532,7 +532,7 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
   const [busy, setBusy] = useState(false);
   const [proposalBudget, setProposalBudget] = useState(kol.fee || 0);
   const [foodSupport, setFoodSupport] = useState(kol.foodCost || 0);
-  const isPaid = /paid/i.test(kol.paymentStatus);
+  const isPaid = /\bpaid\b/i.test(kol.paymentStatus); // not "Unpaid"
   const set = async (patch: Partial<Kol>) => {
     setBusy(true);
     const next = { ...kol, ...patch } as Kol;
