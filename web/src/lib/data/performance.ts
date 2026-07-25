@@ -72,7 +72,11 @@ export function normalizePerformancePlatform(value?: string | null): Performance
   if (/tiktok/.test(v)) return "TikTok";
   if (/google map|gmb|maps/.test(v)) return "Google Map";
   if (/google|ppc|search|youtube/.test(v)) return "Google";
-  if (/facebook|instagram|meta|ig|fb|reel/.test(v)) return "Facebook / Instagram";
+  // "ig" and "fb" must match as whole words. As bare substrings they swallow
+  // ordinary copy — "campaign", "design", "assign", "digest" all contain "ig" —
+  // and tasks fall back to classifying on their free-text title, so every Ads
+  // task with "campaign" in its name was landing under Facebook / Instagram.
+  if (/facebook|instagram|meta|reel|\b(?:ig|fb)\b/.test(v)) return "Facebook / Instagram";
   return "Other";
 }
 
@@ -152,7 +156,10 @@ export function buildPlatformPerformance(input: PlatformPerformanceInput): { row
     row.kolReach += totals.reach || k.actualReach || 0;
     row.kolEngagement += totals.engagement || k.actualEngagement || 0;
     row.committed += k.fee || 0;
-    row.actualSpend += /paid/i.test(k.paymentStatus) ? (k.totalCost || k.fee || 0) : 0;
+    // \b matters: paymentStatus is "Paid" | "Unpaid" | "Pending" | "Not started",
+    // and a bare /paid/ matches "Unpaid" too — which booked every unpaid KOL fee
+    // as money already spent.
+    row.actualSpend += /\bpaid\b/i.test(k.paymentStatus) ? (k.totalCost || k.fee || 0) : 0;
   }
 
   for (const req of input.expenseRequests) {
