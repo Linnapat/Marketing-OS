@@ -9,7 +9,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
-import { BrandFilterValue, BrandId, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
+import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   graphicKpis, emptyDeliverable, approveAllWaiting,
@@ -263,6 +263,16 @@ const toBrandId = (v: string): BrandId => {
   return BRAND_ORDER.find((id) => brandName(id).toLowerCase() === v.toLowerCase()) ?? v;
 };
 
+// Short tag so the Content dropdown reads at a glance instead of a wall of
+// similar-sounding titles — brand code + 2-digit publish month + work type,
+// e.g. "OMD09_vdo" for a September Omakase video piece. Shown as the option's
+// label only; the title itself (what actually gets stored) is untouched.
+function contentDatalistTag(b: BrandId, ci: BriefContentItem): string {
+  const mm = (ci.publishDate || "").slice(5, 7);
+  const kind = ci.requiredVideo ? "vdo" : "photo";
+  return mm ? `${brandCode(b)}${mm}_${kind}` : `${brandCode(b)}_${kind}`;
+}
+
 // Back-compat: earlier rows used campaign/shootDate/owner/requestDate. Map the
 // old fields onto the new shape so existing shoots aren't lost.
 type LegacyShootRow = Partial<ShootRow> & { campaign?: string; shootDate?: string; owner?: string; requestDate?: string };
@@ -286,11 +296,20 @@ const castList = (v: string): string[] => (v || "").split(",").map((s) => s.trim
 function CastPicker({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [at, setAt] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [customName, setCustomName] = useState("");
   const picked = castList(value);
   // Someone typed in before, or a member who has since left — keep them tickable.
   const all = Array.from(new Set([...options, ...picked]));
   const toggle = (name: string) =>
     onChange((picked.includes(name) ? picked.filter((p) => p !== name) : [...picked, name]).join(", "));
+  // For cast who aren't in the team member list (models, guests) — typed once,
+  // then tickable like anyone else since `all` always unions in `picked`.
+  const addCustom = () => {
+    const name = customName.trim();
+    if (!name || picked.includes(name)) { setCustomName(""); return; }
+    onChange([...picked, name].join(", "));
+    setCustomName("");
+  };
 
   const open = () => {
     const r = btnRef.current?.getBoundingClientRect();
@@ -311,16 +330,30 @@ function CastPicker({ value, options, onChange }: { value: string; options: stri
         <>
           <div className="fixed inset-0 z-[60] no-print" onClick={() => setAt(null)} />
           <div
-            className="fixed z-[61] max-h-[240px] overflow-y-auto bg-white border border-line2 rounded-[9px] shadow-soft p-1 no-print"
+            className="fixed z-[61] bg-white border border-line2 rounded-[9px] shadow-soft no-print flex flex-col"
             style={{ top: at.top, left: at.left, minWidth: Math.max(at.width, 170) }}
           >
-            {all.length === 0 && <div className="px-2 py-2 text-[11.5px] text-faint">ไม่มีรายชื่อทีม</div>}
-            {all.map((name) => (
-              <label key={name} className="flex items-center gap-2 px-2 py-[5px] rounded-[6px] text-[12px] text-muted hover:bg-ivory cursor-pointer">
-                <input type="checkbox" checked={picked.includes(name)} onChange={() => toggle(name)} className="accent-accent" />
-                <span className="truncate">{name}</span>
-              </label>
-            ))}
+            <div className="max-h-[200px] overflow-y-auto p-1">
+              {all.length === 0 && <div className="px-2 py-2 text-[11.5px] text-faint">ไม่มีรายชื่อทีม</div>}
+              {all.map((name) => (
+                <label key={name} className="flex items-center gap-2 px-2 py-[5px] rounded-[6px] text-[12px] text-muted hover:bg-ivory cursor-pointer">
+                  <input type="checkbox" checked={picked.includes(name)} onChange={() => toggle(name)} className="accent-accent" />
+                  <span className="truncate">{name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 p-1 border-t border-line3">
+              <input
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
+                placeholder="พิมพ์ชื่อแคส…"
+                className="flex-1 min-w-0 text-[12px] px-2 py-[5px] rounded-[6px] border border-line2 bg-ivory outline-none"
+              />
+              <button type="button" onClick={addCustom} className="text-[11px] font-bold px-2 py-[5px] rounded-[6px] border border-[#DDD1FF] text-[#6C5CE7] bg-[#F7F2FF] flex-shrink-0">
+                + เพิ่ม
+              </button>
+            </div>
           </div>
         </>,
         document.body,
@@ -438,7 +471,7 @@ function ShootCalendar({ me }: { me: string }) {
   // Dropdown option sources, both keyed by brand id so a row that picked a brand
   // only offers that brand's branches (Location) and Content Plan items.
   const [branchesByBrand, setBranchesByBrand] = useState<Record<BrandId, string[]>>({});
-  const [contentByBrand, setContentByBrand] = useState<Record<BrandId, string[]>>({});
+  const [contentByBrand, setContentByBrand] = useState<Record<BrandId, { title: string; label: string }[]>>({});
   const [castOpts, setCastOpts] = useState<string[]>([]);
   const [preview, setPreview] = useState(false);
 
@@ -458,12 +491,17 @@ function ShootCalendar({ me }: { me: string }) {
     fetchAllBriefs().then((briefs) => {
       if (!alive) return;
       const all = Object.values(briefs);
-      // Every Content Plan item title → the Content dropdown, grouped by brand.
-      const byBrand: Record<BrandId, string[]> = {};
+      // Every Content Plan item title → the Content dropdown, grouped by brand,
+      // tagged with brand/month/type so lookalike titles are tellable apart.
+      const byBrand: Record<BrandId, { title: string; label: string }[]> = {};
       for (const b of all) {
-        const titles = (b.content ?? []).map((c) => c.title).filter(Boolean);
-        byBrand[b.b] = Array.from(new Set([...(byBrand[b.b] ?? []), ...titles])).sort();
+        for (const c of b.content ?? []) {
+          if (!c.title) continue;
+          const list = byBrand[b.b] ?? (byBrand[b.b] = []);
+          if (!list.some((o) => o.title === c.title)) list.push({ title: c.title, label: `${contentDatalistTag(b.b, c)} ${c.title}` });
+        }
       }
+      for (const key of Object.keys(byBrand)) byBrand[key].sort((a, b) => a.title.localeCompare(b.title));
       setContentByBrand(byBrand);
       setAutoRows(all.flatMap((b) =>
         (b.content ?? [])
@@ -483,7 +521,11 @@ function ShootCalendar({ me }: { me: string }) {
     [branchesByBrand, contentByBrand],
   );
   const allBranches = useMemo(() => Array.from(new Set(Object.values(branchesByBrand).flat())).sort(), [branchesByBrand]);
-  const allContent = useMemo(() => Array.from(new Set(Object.values(contentByBrand).flat())).sort(), [contentByBrand]);
+  const allContent = useMemo(() => {
+    const byTitle = new Map<string, { title: string; label: string }>();
+    for (const o of Object.values(contentByBrand).flat()) if (!byTitle.has(o.title)) byTitle.set(o.title, o);
+    return Array.from(byTitle.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }, [contentByBrand]);
   const listId = (kind: "content" | "location", brand: BrandId) => `shoot-${kind}-opts-${brand || "all"}`;
 
   const persist = (next: ShootRow[]) => {
@@ -504,7 +546,7 @@ function ShootCalendar({ me }: { me: string }) {
     editRow(r.id, {
       brand,
       location: branches.includes(r.location) ? r.location : "",
-      content: contents.includes(r.content) ? r.content : "",
+      content: contents.some((o) => o.title === r.content) ? r.content : "",
     });
   };
 
@@ -603,11 +645,11 @@ function ShootCalendar({ me }: { me: string }) {
           </table>
           {/* Option sources per brand: Content (Content Plan titles) + Location (branches).
               The "all" pair serves rows that haven't picked a brand yet. */}
-          <datalist id={listId("content", "")}>{allContent.map((o) => <option key={o} value={o} />)}</datalist>
+          <datalist id={listId("content", "")}>{allContent.map((o) => <option key={o.title} value={o.title} label={o.label} />)}</datalist>
           <datalist id={listId("location", "")}>{allBranches.map((o) => <option key={o} value={o} />)}</datalist>
           {brandKeys.map((b) => (
             <Fragment key={b}>
-              <datalist id={listId("content", b)}>{(contentByBrand[b] ?? []).map((o) => <option key={o} value={o} />)}</datalist>
+              <datalist id={listId("content", b)}>{(contentByBrand[b] ?? []).map((o) => <option key={o.title} value={o.title} label={o.label} />)}</datalist>
               <datalist id={listId("location", b)}>{(branchesByBrand[b] ?? []).map((o) => <option key={o} value={o} />)}</datalist>
             </Fragment>
           ))}

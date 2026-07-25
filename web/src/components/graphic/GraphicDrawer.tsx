@@ -255,7 +255,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                       history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: assigned }],
                     };
                     updateGraphic(ng)
-                      .then(() => onUpdate?.(ng))
+                      .then(() => updateCurrentGraphic(ng))
                       .catch((error) => toastError(`บันทึก Designer ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
                   }}
                   team="Creative"

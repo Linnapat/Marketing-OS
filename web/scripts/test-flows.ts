@@ -9,6 +9,7 @@ import {
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP } from "../src/lib/data/graphic";
+import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -174,6 +175,20 @@ console.log("Campaign code — per-brand running number");
   check("teppen next = 003", nextCampaignCode("teppen", existing, 2026) === "TPN-2026-003");
   check("omakase next = 006 (independent of teppen)", nextCampaignCode("omakase", existing, 2026) === "OMD-2026-006");
   check("mainichi first = 001", nextCampaignCode("mainichi", existing, 2026) === "MNC-2026-001");
+}
+
+console.log("memberTeam — any \"creative\"-titled role reaches the Creative bucket");
+{
+  // Previously only the exact phrase "creative leader" matched, so a role like
+  // "Creative Content" fell through to Planner and never showed up as an
+  // assignable designer in the Graphic drawer.
+  check("Creative Leader → Creative", memberTeam("Creative Leader") === "Creative");
+  check("Creative Content → Creative", memberTeam("Creative Content") === "Creative");
+  check("Creative Director → Creative", memberTeam("Creative Director") === "Creative");
+  check("Agency - GID → Creative", memberTeam("Agency - GID") === "Creative");
+  check("Agency - Freelance → Creative", memberTeam("Agency - Freelance") === "Creative");
+  // "creator" must not accidentally match "creative" — Content Creator stays Planner.
+  check("Content Creator stays Planner", memberTeam("Content Creator") === "Planner");
 }
 
 console.log("Graphic request — daily capacity guard (3/day per kind)");
