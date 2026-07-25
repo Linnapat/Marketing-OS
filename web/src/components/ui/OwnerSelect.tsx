@@ -15,7 +15,11 @@ export type OwnerTeam = "all" | "Creative" | "Planner" | "KOL" | "Ads" | "CRM";
 // Map a member's free-form role to a functional team for filtering / defaults.
 export function memberTeam(role: string): OwnerTeam {
   const r = (role || "").toLowerCase();
-  if (/creative leader|design|graphic|art|video|vdo|agency|external/.test(r)) return "Creative";
+  // Bare "creative" (not just "creative leader") — a role like "Creative
+  // Content" used to fall through to Planner and never show up as an
+  // assignable designer. "content creator" doesn't contain "creative" as a
+  // substring, so this doesn't pull Content Creator into the Creative bucket.
+  if (/creative|design|graphic|art|video|vdo|agency|external/.test(r)) return "Creative";
   if (/kol|influencer/.test(r)) return "KOL";
   if (/ads|performance|media|paid/.test(r)) return "Ads";
   if (/crm|line|loyalty/.test(r)) return "CRM";
