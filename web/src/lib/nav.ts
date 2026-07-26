@@ -1,6 +1,6 @@
 import {
   Target, CalendarDays, Palette, Star,
-  Wallet, CheckSquare, Users, Settings, Inbox, ClipboardCheck, FolderOpen,
+  Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
   CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList,
   type LucideIcon,
 } from "lucide-react";
@@ -43,7 +43,6 @@ export const NAV: NavGroup[] = [
       { href: "/graphic", label: "Creative Kitchen", icon: Palette, ready: true },
       { href: "/kol", label: "KOL/Influ Café", icon: Star, ready: true },
       { href: "/requests", label: "Brief & Bite", icon: Inbox, ready: false },
-      { href: "/approvals", label: "Ready to Serve", icon: ClipboardCheck, ready: false },
       { href: "/assets", label: "Asset Pantry", icon: FolderOpen, ready: true },
       { href: "/expenses", label: "Cashier", icon: Receipt, ready: true },
       { href: "/finance", label: "Finance Counter", icon: Wallet, ready: true },

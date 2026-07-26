@@ -462,7 +462,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, onOpen
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
             {requests.map((r) => (
-              <Link key={r.id} href="/approvals" className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+              <Link key={r.id} href="/status" className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-[13.5px] font-bold text-ink truncate">{r.typeIcon} {r.title}</span>
                   <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>{r.stage}</span>

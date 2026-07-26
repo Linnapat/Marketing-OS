@@ -26,7 +26,6 @@ const NAV_ACCENTS: Record<string, { bg: string; fg: string }> = {
   "/kol": { bg: "#FFF3E5", fg: "#E08A34" },
   "/ads": { bg: "#EDF8FE", fg: "#3FA7D6" },
   "/requests": { bg: "#FFF7E8", fg: "#D89C28" },
-  "/approvals": { bg: "#FFF3D7", fg: "#B78E2D" },
   "/assets": { bg: "#F1ECFF", fg: "#8A62D7" },
   "/expenses": { bg: "#EAF8EE", fg: "#4BA06B" },
   "/finance": { bg: "#FFF3D7", fg: "#B78E2D" },
