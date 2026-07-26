@@ -51,9 +51,13 @@ fourth, fail-open copy and was removed.)
    old code breaks a staff member's own-profile save.
 8. **`security_p6.sql`** — `org_settings` per-key: admin writes governance (approval
    thresholds, VAT, brands…), staff writes only `creative_shoots_v2` and
-   `member_profiles_v1`.
+   `member_profiles_v1`. **Superseded by `caption_templates.sql`**, which re-creates
+   `org_staff_write` with one more key — apply that after this one.
 9. **`security_p7.sql`** — the current hook: fail-closed default + `member_role`.
 10. `finance_atomic.sql` — atomic expense approve/reject RPCs.
+11. **`caption_templates.sql`** — lets staff write the shared caption-template key
+    (`caption_templates_config`). Required by the Caption tab's "Save hashtag set /
+    CTA / footer"; without it those saves fail for everyone but an admin.
 
 Then: enable the **Custom Access Token** hook (Authentication → Hooks), disable open
 sign-ups (Authentication → Email provider), and set `NEXT_PUBLIC_REQUIRE_AUTH=true`
