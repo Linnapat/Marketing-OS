@@ -55,10 +55,24 @@ export default function StatusDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<CampaignGroup[]>([]);
 
+  // Only the lanes this role may see are fetched. Filtering after the fetch
+  // would still ship every expense and KOL row to a browser whose role has no
+  // access to them: RLS on these tables authorises any authenticated staff and
+  // knows nothing about the Settings matrix, so the client is the only gate
+  // there is. Keyed by name, not array identity — `can` is rebuilt on every
+  // RoleProvider render and would otherwise refetch in a loop.
+  const moduleKey = allowedModules.join(",");
   useEffect(() => {
     let alive = true;
+    const want = new Set(moduleKey.split(",") as ModuleKey[]);
+    const none = <T,>(v: T) => Promise.resolve(v);
     Promise.all([
-      fetchCampaigns(), fetchContent(), fetchGraphics(), fetchKols(), fetchTasks(), fetchExpenseRequests(),
+      fetchCampaigns(),
+      want.has("content") ? fetchContent() : none([]),
+      want.has("graphic") ? fetchGraphics() : none([]),
+      want.has("kol") ? fetchKols() : none([]),
+      want.has("task") ? fetchTasks() : none({ tasks: [], doneIds: [] }),
+      want.has("expense") ? fetchExpenseRequests() : none([]),
     ]).then(([campaigns, content, graphics, kols, taskData, expenses]) => {
       if (!alive) return;
       const items: WorkItem[] = [
@@ -75,7 +89,7 @@ export default function StatusDashboardPage() {
       setLoading(false);
     }).catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [moduleKey]);
 
   // Filters apply to the work items, then the group is re-counted — filtering
   // the groups alone would leave a campaign showing counts for hidden items.

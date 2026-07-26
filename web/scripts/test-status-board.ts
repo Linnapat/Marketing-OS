@@ -57,6 +57,8 @@ is("Revision Requested = ติดปัญหา", kolHealth("Revision Requeste
 is("Waiting Review = รออนุมัติ", kolHealth("Waiting Review"), "waiting");
 is("Negotiating = กำลังทำ", kolHealth("Negotiating"), "active");
 is("Prospect = ยังไม่เริ่ม", kolHealth("Prospect"), "notStarted");
+// 17 of the 18 live KOL rows sit in "Request"; before this it read as กำลังทำ.
+is("Request = ยังไม่เริ่ม (ไม่ใช่กำลังทำ)", kolHealth("Request"), "notStarted");
 is("Approved to Post = เสร็จ", kolHealth("Approved to Post"), "done");
 
 console.log("\n— graphic: ชิ้นงานอ่อนสุดเป็นตัวตัดสิน —");
@@ -81,10 +83,22 @@ is(
   graphicHealth({ stage: "Draft", deliverables: [] } as never),
   "notStarted",
 );
+// Every live graphic request is stage "New Request".
+is(
+  "stage 'New Request' = ยังไม่เริ่ม",
+  graphicHealth({ stage: "New Request", deliverables: [] } as never),
+  "notStarted",
+);
 
 console.log("\n— content: 4 แกนยุบเหลือสถานะเดียว —");
 const c = (caption: string, asset: string, approval: string, publish: string) =>
   ({ captionStatus: caption, assetStatus: asset, approvalStatus: approval, publishStatus: publish });
+// The shape all 36 live posts are in.
+is(
+  "Waiting Design = ยังไม่เริ่ม (รอทีมออกแบบ ไม่ใช่รออนุมัติ)",
+  contentHealth(c("Approved", "Waiting Design", "Approved", "Draft")).health,
+  "notStarted",
+);
 is(
   "caption เสร็จแต่ยังไม่มีรูป → ติดที่ Asset",
   contentHealth(c("Approved", "No Asset", "Draft", "Draft")),

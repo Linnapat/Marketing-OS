@@ -75,7 +75,11 @@ function commonHealth(status: string): Health | null {
   if (["stuck", "blocked", "rejected", "cancelled", "canceled", "revision", "need revision", "revision requested", "unpaid"].includes(s)) return "blocked";
   if (["waiting approval", "waiting for approval", "need approval", "waiting review", "waiting feedback", "in review", "ready for review", "pending", "draft submitted"].includes(s)) return "waiting";
   if (["in progress", "active", "producing", "content creating", "publishing", "scheduled", "scheduled in os", "queued", "waiting", "working"].includes(s)) return "active";
-  if (["draft", "todo", "to do", "not started", "not submitted", "missing", "no asset", "prospect", "planning", "inactive", "—", "-"].includes(s)) return "notStarted";
+  // "request" / "new request" are the opening state of a KOL row and a graphic
+  // request, not work in flight — status.ts already tones them neutral.
+  // "waiting design" is waiting on an asset that does not exist yet, which is
+  // not started rather than waiting on an approver.
+  if (["draft", "todo", "to do", "not started", "not submitted", "missing", "no asset", "prospect", "planning", "inactive", "request", "new request", "waiting design", "—", "-"].includes(s)) return "notStarted";
   return null;
 }
 
