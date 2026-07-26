@@ -298,7 +298,14 @@ export default function ContentPage() {
       </div>
 
       {open && (
+        // Keyed by post id: the drawer seeds caption/hashtags/CTA/footer into
+        // useState from `item`, which only runs on mount. Clicking a second post
+        // in the list while the drawer is open swaps `item` without remounting,
+        // so those fields kept the previous post's text and "Save Caption" wrote
+        // it onto the wrong post. Editing a post keeps its id, so this only
+        // remounts when the drawer actually changes posts.
         <ContentDrawer
+          key={open.id}
           item={open}
           onClose={() => setOpen(null)}
           onUpdate={(next) => {
