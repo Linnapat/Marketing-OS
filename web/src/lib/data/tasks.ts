@@ -13,6 +13,10 @@ export interface Task {
   assignee: string;
   brand: string;
   campaign: string;
+  /** Relational link to the campaign. Lives in the `campaign_id` column rather
+   *  than the data blob, so fetchTasks merges it in — see lib/db/tasks.ts.
+   *  Prefer this over matching on `campaign`, which breaks on a rename. */
+  campaignId?: string;
   status: string;
   priority: "High" | "Med" | "Low";
   group: string;

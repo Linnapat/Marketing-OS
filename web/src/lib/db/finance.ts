@@ -14,7 +14,7 @@ import { baht } from "@/lib/format";
 import { assertDbData, assertDbOk, softColumnUpdate } from "@/lib/db/assert";
 
 type Row = {
-  id: number; category: string; brand: BrandId; campaign: string | null;
+  id: number; category: string; brand: BrandId; campaign: string | null; campaign_id?: string | null;
   requested: number; approved: number; due: string; status: string;
   ref?: string | null; requester?: string | null; vendor?: string | null;
   reimburse_type?: string | null; vat?: number | null; wht?: number | null;
@@ -24,6 +24,9 @@ type Row = {
 /** A request row that also carries its DB id (for status updates). */
 export type ExpenseReq = RequestRow & {
   _id?: number;
+  /** Relational link to the campaign — prefer it over the `campaign` name,
+   *  which breaks on a rename. Backfilled 2026-07-26. */
+  campaignId?: string;
   ref?: string;
   requester?: string;
   vendor?: string;
@@ -36,7 +39,7 @@ export type ExpenseReq = RequestRow & {
 };
 
 const toReq = (r: Row): ExpenseReq => ({
-  _id: r.id, category: r.category, b: r.brand, campaign: r.campaign ?? "—",
+  _id: r.id, category: r.category, b: r.brand, campaign: r.campaign ?? "—", campaignId: r.campaign_id ?? undefined,
   requested: Number(r.requested), approved: Number(r.approved), due: r.due, status: r.status,
   ref: r.ref ?? undefined, requester: r.requester ?? undefined, vendor: r.vendor ?? undefined,
   reimburseType: r.reimburse_type ?? undefined, vatAmt: Number(r.vat ?? 0), whtAmt: Number(r.wht ?? 0),

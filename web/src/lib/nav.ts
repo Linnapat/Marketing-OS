@@ -1,7 +1,7 @@
 import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, ClipboardCheck, FolderOpen,
-  CalendarClock, Globe, BarChart3, Receipt, Sparkles,
+  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +31,7 @@ export const NAV: NavGroup[] = [
   {
     label: "QA",
     items: [
+      { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
       { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: false },
     ],
