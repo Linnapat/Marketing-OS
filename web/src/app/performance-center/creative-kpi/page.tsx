@@ -172,7 +172,7 @@ export default function CreativeKpiPerformancePage() {
   return (
     <>
       <PageHeader
-        eyebrow="QC"
+        eyebrow="QA"
         title="Creative KPI Performance"
         subtitle="อ่านข้อมูลจาก Content_2026 Google Sheet เพื่อดู KPI งาน Creative, Meta, TikTok, top content และ brand health"
         right={

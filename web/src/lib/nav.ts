@@ -29,7 +29,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    label: "QC",
+    label: "QA",
     items: [
       { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: false },
