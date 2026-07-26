@@ -115,7 +115,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Content */}
-      <main className={collapsed ? "lg:pl-[78px] transition-[padding] duration-200" : "lg:pl-[280px] transition-[padding] duration-200"}>
+      <main className={collapsed ? "lg:pl-[78px] transition-[padding] duration-200" : "lg:pl-[248px] transition-[padding] duration-200"}>
         <div className="max-w-content mx-auto px-5 sm:px-6 lg:px-8 pt-5 pb-16">
           <ModuleGate>{children}</ModuleGate>
         </div>

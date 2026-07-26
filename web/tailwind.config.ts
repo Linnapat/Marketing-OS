@@ -48,8 +48,10 @@ const config: Config = {
         },
       },
       borderRadius: {
-        card: "20px",
-        cardLg: "24px",
+        // Tightened with the compact density pass (see globals.css): large radii
+        // read as "airy", so they shrink alongside the padding scale.
+        card: "16px",
+        cardLg: "18px",
         pill: "999px",
       },
       fontFamily: {

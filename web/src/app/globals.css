@@ -97,6 +97,110 @@ body {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Compact density layer
+ *
+ * The UI writes type and padding as literal pixels (`text-[13px]`, `py-[10px]`)
+ * across ~180 components, so density is tuned centrally here instead of in every
+ * file: these rules re-map the arbitrary utilities to a tighter scale. They sit
+ * after `@tailwind utilities`, so they win on source order at equal specificity.
+ *
+ * Two knobs:
+ *   - the `html` font-size below scales every rem-based utility (gap-2, px-3,
+ *     p-4, space-y-*) in one step — Tailwind's numeric scale is all rem, and no
+ *     text in the app is rem-sized, so this only tightens spacing;
+ *   - the explicit maps handle the pixel-literal utilities, which rem can't touch.
+ *
+ * Mobile keeps its own floors at the bottom so tap targets and Thai text stay
+ * comfortable — Thai needs more vertical room than Latin at the same size.
+ * ------------------------------------------------------------------------- */
+
+html {
+  /* 16px -> 14.5px: every Tailwind spacing utility shrinks to ~0.91x. */
+  font-size: 14.5px;
+}
+
+/* Type scale. Sizes at or below 10px are already at the legibility floor for
+   Thai and are deliberately left alone. */
+.text-\[10\.5px\] { font-size: 10px; }
+.text-\[11px\]    { font-size: 10.5px; }
+.text-\[11\.5px\] { font-size: 11px; }
+.text-\[12px\]    { font-size: 11.5px; }
+.text-\[12\.5px\] { font-size: 11.5px; }
+.text-\[13px\]    { font-size: 12px; }
+.text-\[13\.5px\] { font-size: 12.5px; }
+.text-\[14px\]    { font-size: 13px; }
+.text-\[14\.5px\] { font-size: 13px; }
+.text-\[15px\]    { font-size: 13.5px; }
+.text-\[16px\]    { font-size: 14.5px; }
+.text-\[17px\]    { font-size: 15px; }
+.text-\[18px\]    { font-size: 16px; }
+.text-\[19px\]    { font-size: 16.5px; }
+.text-\[20px\]    { font-size: 17px; }
+.text-\[22px\]    { font-size: 18.5px; }
+.text-\[23px\]    { font-size: 19px; }
+.text-\[24px\]    { font-size: 20px; }
+.text-\[25px\]    { font-size: 20.5px; }
+.text-\[26px\]    { font-size: 21px; }
+.text-\[28px\]    { font-size: 22.5px; }
+.text-\[30px\]    { font-size: 24px; }
+.text-\[34px\]    { font-size: 27px; }
+.text-\[40px\]    { font-size: 31px; }
+
+/* Vertical padding. */
+.py-\[5px\]  { padding-top: 4px;  padding-bottom: 4px; }
+.py-\[6px\]  { padding-top: 5px;  padding-bottom: 5px; }
+.py-\[7px\]  { padding-top: 6px;  padding-bottom: 6px; }
+.py-\[8px\]  { padding-top: 6px;  padding-bottom: 6px; }
+.py-\[9px\]  { padding-top: 7px;  padding-bottom: 7px; }
+.py-\[10px\] { padding-top: 8px;  padding-bottom: 8px; }
+.py-\[11px\] { padding-top: 8px;  padding-bottom: 8px; }
+.py-\[13px\] { padding-top: 10px; padding-bottom: 10px; }
+.py-\[14px\] { padding-top: 11px; padding-bottom: 11px; }
+.py-\[18px\] { padding-top: 13px; padding-bottom: 13px; }
+
+/* Horizontal padding — trimmed less than vertical, so pills and buttons keep
+   their shape instead of turning into tall slivers. */
+.px-\[6px\]  { padding-left: 5px;  padding-right: 5px; }
+.px-\[7px\]  { padding-left: 6px;  padding-right: 6px; }
+.px-\[8px\]  { padding-left: 7px;  padding-right: 7px; }
+.px-\[9px\]  { padding-left: 8px;  padding-right: 8px; }
+.px-\[10px\] { padding-left: 8px;  padding-right: 8px; }
+.px-\[11px\] { padding-left: 9px;  padding-right: 9px; }
+.px-\[12px\] { padding-left: 10px; padding-right: 10px; }
+.px-\[13px\] { padding-left: 11px; padding-right: 11px; }
+.px-\[14px\] { padding-left: 11px; padding-right: 11px; }
+.px-\[15px\] { padding-left: 12px; padding-right: 12px; }
+.px-\[18px\] { padding-left: 14px; padding-right: 14px; }
+
+/* Box padding. */
+.p-\[13px\] { padding: 10px; }
+.p-\[14px\] { padding: 11px; }
+
+/* The handful of `md:` type overrides in the app need scaling too. Tailwind
+   emits every responsive variant at the very end of the stylesheet — after this
+   file — so source order can't win here; the class is repeated to raise
+   specificity to (0,2,0) instead. */
+@media (min-width: 768px) {
+  .md\:text-\[12px\].md\:text-\[12px\] { font-size: 11.5px; }
+  .md\:text-\[23px\].md\:text-\[23px\] { font-size: 19px; }
+  .md\:text-\[30px\].md\:text-\[30px\] { font-size: 24px; }
+}
+
+/* Mobile floors: keep controls thumb-sized and body copy readable. The type
+   scale still applies — only the tightest paddings are given back. */
+@media (max-width: 767px) {
+  .py-\[9px\]  { padding-top: 8px;  padding-bottom: 8px; }
+  .py-\[10px\] { padding-top: 9px;  padding-bottom: 9px; }
+  .py-\[11px\] { padding-top: 10px; padding-bottom: 10px; }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 38px;
+  }
+}
+
 /* Printable voucher: when the print overlay is mounted, print ONLY it. */
 @media print {
   body * { visibility: hidden !important; }
