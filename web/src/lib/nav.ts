@@ -29,6 +29,13 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    label: "QA",
+    items: [
+      { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
+      { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: false },
+    ],
+  },
+  {
     label: "Plan & Produce",
     items: [
       { href: "/content", label: "Content Plan", icon: CalendarDays, ready: true },
@@ -47,13 +54,6 @@ export const NAV: NavGroup[] = [
       { href: "/my-tasks", label: "Busy but Brilliant", icon: CheckSquare, ready: true },
       { href: "/team", label: "Team Mood Board", icon: Users, ready: true },
       { href: "/settings", label: "Settings", icon: Settings, ready: true },
-    ],
-  },
-  {
-    label: "QC",
-    items: [
-      { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
-      { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: true },
     ],
   },
   {

@@ -289,7 +289,7 @@ export default function PerformanceCenterPage() {
   return (
     <>
       <PageHeader
-        eyebrow="QC"
+        eyebrow="QA"
         title="Performance Center"
         subtitle="อ่านผลลัพธ์จากข้อมูลเดียวกับ Performance Bar — เลือกแท็บเล็กด้านล่างเพื่อดูแต่ละรายงาน"
       />
