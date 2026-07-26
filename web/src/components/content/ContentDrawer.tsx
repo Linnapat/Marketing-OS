@@ -12,17 +12,35 @@ import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
+import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
-type CaptionTemplates = { hashtags: string[]; footers: string[]; ctas: string[] };
-const CAPTION_TEMPLATE_KEY = "marketing_os_caption_templates_v1";
-const emptyTemplates: CaptionTemplates = { hashtags: [], footers: [], ctas: [] };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function uniq(values: string[]): string[] {
-  return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean))).slice(0, 12);
+/** The saved-set picker under a caption field. Footers carry branch details and
+ *  run long, so each chip truncates and keeps the full text in its tooltip. */
+function TemplateChips({ values, bg, fg, onPick, onRemove }: {
+  values: string[];
+  bg: string;
+  fg: string;
+  onPick: (value: string) => void;
+  onRemove: (value: string) => void;
+}) {
+  return (
+    <>
+      {values.map((v) => (
+        <span key={v} className="inline-flex items-center gap-[5px] rounded-pill px-[10px] py-1 text-[11px] font-bold" style={{ background: bg, color: fg }}>
+          <button onClick={() => onPick(v)} title={v} className="max-w-[170px] truncate">{v}</button>
+          <button onClick={() => onRemove(v)} aria-label={`ลบชุดนี้: ${v}`} title="ลบชุดนี้" className="opacity-45 hover:opacity-100">
+            <X size={11} />
+          </button>
+        </span>
+      ))}
+    </>
+  );
 }
 
 export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
@@ -39,7 +57,7 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
   const [hashtags, setHashtags] = useState(item.hashtags);
   const [cta, setCta] = useState(item.cta);
   const [footer, setFooter] = useState(item.footer ?? "");
-  const [templates, setTemplates] = useState<CaptionTemplates>(emptyTemplates);
+  const [templateStore, setTemplateStore] = useState<CaptionTemplateStore>({});
   const [copyDone, setCopyDone] = useState(false);
   const warnings = contentWarnings(item);
 
@@ -66,19 +84,30 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
     return () => { alive = false; };
   }, [item.b]);
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(CAPTION_TEMPLATE_KEY);
-      if (raw) setTemplates({ ...emptyTemplates, ...JSON.parse(raw) });
-    } catch {}
+    let alive = true;
+    fetchCaptionTemplates()
+      .then((store) => { if (alive) setTemplateStore(store); })
+      .catch(() => {});
+    return () => { alive = false; };
   }, []);
 
-  const rememberTemplate = (kind: keyof CaptionTemplates, value: string) => {
-    const v = value.trim();
-    if (!v) return;
-    const next = { ...templates, [kind]: uniq([v, ...templates[kind]]) };
-    setTemplates(next);
-    window.localStorage.setItem(CAPTION_TEMPLATE_KEY, JSON.stringify(next));
+  // Saved sets are per brand, so a Teppen hashtag set never shows up while
+  // writing for Mainichi.
+  const templates = templatesFor(templateStore, item.b);
+  // The store is shared across the team now, so a failed write must not leave
+  // the picker showing an entry nobody else can see.
+  const persistTemplates = (next: CaptionTemplateStore) => {
+    const prev = templateStore;
+    setTemplateStore(next);
+    saveCaptionTemplates(next).catch((error) => {
+      setTemplateStore(prev);
+      toastError(`บันทึกชุด caption ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    });
   };
+  const saveTemplate = (kind: TemplateKind, value: string) =>
+    persistTemplates(rememberTemplate(templateStore, item.b, kind, value));
+  const removeTemplate = (kind: TemplateKind, value: string) =>
+    persistTemplates(forgetTemplate(templateStore, item.b, kind, value));
   const composedCaption = [caption.trim(), cta.trim(), footer.trim(), hashtags.trim()].filter(Boolean).join("\n\n");
   const copyCaption = async () => {
     if (!composedCaption) return;
@@ -393,24 +422,27 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Hashtags</label>
                 <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="#wagyu #bangkok #teppen" className={field} />
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={() => rememberTemplate("hashtags", hashtags)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save hashtag set</button>
-                  {templates.hashtags.map((v) => <button key={v} onClick={() => setHashtags(v)} className="rounded-pill bg-[#EEF1F8] px-3 py-1 text-[11px] font-bold text-[#3E5C9A]">{v}</button>)}
+                  <button onClick={() => saveTemplate("hashtags", hashtags)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save hashtag set</button>
+                  <TemplateChips values={templates.hashtags} bg="#EEF1F8" fg="#3E5C9A" onPick={setHashtags} onRemove={(v) => removeTemplate("hashtags", v)} />
+                </div>
+                <div className="text-[11px] text-faint mt-[6px]">
+                  ชุดที่บันทึกไว้เป็นของแบรนด์ <b>{brandName(item.b)}</b> และทั้งทีมใช้ร่วมกัน — เก็บได้แบรนด์ละ 12 ชุดต่อช่อง
                 </div>
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Call to Action</label>
                 <input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="e.g. Reserve now via link in bio" className={field} />
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={() => rememberTemplate("ctas", cta)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save CTA</button>
-                  {templates.ctas.map((v) => <button key={v} onClick={() => setCta(v)} className="rounded-pill bg-[#EEF4EE] px-3 py-1 text-[11px] font-bold text-[#4E7A4E]">{v}</button>)}
+                  <button onClick={() => saveTemplate("ctas", cta)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save CTA</button>
+                  <TemplateChips values={templates.ctas} bg="#EEF4EE" fg="#4E7A4E" onPick={setCta} onRemove={(v) => removeTemplate("ctas", v)} />
                 </div>
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Footer</label>
                 <input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="เช่น เงื่อนไข / สาขา / เวลาทำการ" className={field} />
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={() => rememberTemplate("footers", footer)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save footer</button>
-                  {templates.footers.map((v) => <button key={v} onClick={() => setFooter(v)} className="rounded-pill bg-[#FFF6E8] px-3 py-1 text-[11px] font-bold text-[#C68A1E]">{v}</button>)}
+                  <button onClick={() => saveTemplate("footers", footer)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save footer</button>
+                  <TemplateChips values={templates.footers} bg="#FFF6E8" fg="#C68A1E" onPick={setFooter} onRemove={(v) => removeTemplate("footers", v)} />
                 </div>
               </div>
               <div className="rounded-[14px] border border-line2 bg-ivory p-3">
