@@ -84,7 +84,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
 
   return (
     <div
-      className={clsx("flex flex-col h-full text-white transition-[width] duration-200", collapsed ? "w-[78px]" : "w-[280px]")}
+      className={clsx("flex flex-col h-full text-white transition-[width] duration-200", collapsed ? "w-[78px]" : "w-[248px]")}
       style={{ background: "#17172A" }}
     >
       {/* Brand */}
