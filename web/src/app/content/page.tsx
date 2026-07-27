@@ -2,6 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -17,8 +18,7 @@ import { useRole } from "@/lib/role";
 import { useStickyView } from "@/lib/useStickyView";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
-import { createGraphic, buildGraphic } from "@/lib/db/graphic";
-import { Graphic, emptyDeliverable } from "@/lib/data/graphic";
+import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
 import {
   CampaignCommandBar,
@@ -29,9 +29,8 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { Combobox } from "@/components/ui/Combobox";
 import { AssetThumb } from "@/components/content/AssetLinkList";
 import { assetLinkView } from "@/lib/data/assetLinks";
-import { emptyContentItem, BriefContentItem, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
-import { notify } from "@/lib/notify";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 
 /** Row of platform badges (one per selected channel). */
@@ -65,6 +64,7 @@ const campaignAccent = (campaign?: string) => CAMPAIGN_COLORS[Math.abs(hashText(
 const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || "guest"}`;
 
 export default function ContentPage() {
+  const router = useRouter();
   const brandVisibility = useBrandVisibility();
   // Filters stick per tab so leaving the page and coming back keeps the view.
   const [sticky, setSticky] = useStickyView<{ view: View; brand: BrandFilterValue; date: typeof DEFAULT_DATE_FILTER }>(
@@ -142,13 +142,19 @@ export default function ContentPage() {
     scheduled: items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)).length,
   }), [items]);
 
-  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => {
+  // Planning a post no longer raises a graphic request as a side effect. The
+  // two are separate records linked by campaign + post id: what the artwork is,
+  // which sizes, and when Creative must deliver it are decisions the requester
+  // often does not have while filling in a publish date, and print work (POSM,
+  // menus) had to be faked as a post just to reach the Creative queue.
+  // `askGraphic` carries the intent onward — the post is saved first so the
+  // brief can point at a real post id.
+  const addPost = async (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId: string | undefined, askGraphic: boolean) => {
     const requester = briefItem.requester?.trim() || me;
     const designer = briefItem.designer || "Unassigned";
     const approver = briefItem.approver?.trim() || requester;
     const normalizedBriefItem: BriefContentItem = { ...briefItem, requester, designer, approver };
     const sourceContentItemId = isTemplateContentId(briefItem.id) ? uniqueNewPostId("ci-cal") : briefItem.id;
-    const graphicRequestId = briefItem.requiredGraphic ? String(Date.now() + 700) : undefined;
     const post: ContentItem = {
       ...p,
       requester,
@@ -156,7 +162,11 @@ export default function ContentPage() {
       approver,
       campaignId,
       sourceContentItemId,
-      graphicRequestId,
+      // "Waiting Design" is earned by an actual brief, not by intending to
+      // raise one — abandoning the form on /graphic would otherwise leave the
+      // post waiting forever on work nobody requested. Submitting the brief
+      // flips it (see addGraphic).
+      assetStatus: "No Asset",
     };
     const created = await createContent(post);
     setPosts((ps) => [created, ...ps]);
@@ -166,31 +176,7 @@ export default function ContentPage() {
       appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId })
         .catch((error) => toastError(`บันทึก Post แล้ว แต่ sync กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    // "Required Graphic" checked → drop a linked request into the Graphic
-    // module (one deliverable per Platform × Asset Size). When every
-    // deliverable is approved there, the asset links flow back onto THIS post
-    // automatically (matched by campaign + content-item title) and unlock the
-    // Publish gate. Unchecked = "No Asset": no request, publish without one.
-    if (briefItem.requiredGraphic) {
-      const plats = normalizedBriefItem.platforms.length ? normalizedBriefItem.platforms : [p.plat];
-      const pairs = normalizedBriefItem.assets.length ? normalizedBriefItem.assets : plats.map((pl) => ({ platform: pl, size: "" }));
-      const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", normalizedBriefItem.referenceBriefLink || ""));
-      const g: Graphic = {
-        ...buildGraphic({
-          id: Number(graphicRequestId), b: p.b, campaign: p.campaign, title: p.title,
-          type: normalizedBriefItem.type, due: labelDate(normalizedBriefItem.graphicDueDate) || "TBD", dueIso: normalizedBriefItem.graphicDueDate,
-          designer, requester, approver, channels: plats,
-          campaignId, sourceContentItemId,
-        }),
-        stage: "New Request",
-        size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
-        deliverables,
-        nextAction: `Deliver ${deliverables.length} asset(s)`,
-        contentItem: p.title,
-      };
-      createGraphic(g).catch((error) => toastError(`บันทึก Content แล้ว แต่สร้าง Graphic Request ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-      notify("newTask", `🎨 คำขอกราฟฟิกใหม่: ${p.title}`, `${deliverables.length} asset · ${plats.join(", ")} · จาก Content Calendar โดย ${me}`, "/graphic");
-    }
+    if (askGraphic) router.push(`/graphic?${GRAPHIC_BRIEF_FOR_PARAM}=${encodeURIComponent(created.id)}`);
   };
 
   return (
@@ -326,7 +312,7 @@ export default function ContentPage() {
   );
 }
 
-function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId?: string) => Promise<void>; count: number; initialIso?: string | null }) {
+function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId: string | undefined, askGraphic: boolean) => Promise<void>; count: number; initialIso?: string | null }) {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
@@ -335,6 +321,9 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  // Off by default: a post that needs no new artwork is the common case once
+  // artwork stops being implied by planning a post.
+  const [askGraphic, setAskGraphic] = useState(false);
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
   const requestDate = new Date().toISOString().slice(0, 10);
@@ -362,17 +351,14 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   }, [brandCampaigns, campaign]);
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
-  const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
-  const graphicLeadValid = !item.requiredGraphic || (!!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate));
-  const canCreate = item.title.trim() && item.platforms.length > 0 && !!selectedCampaign && (!item.requiredGraphic || item.graphicDueDate) && dueOrderValid && graphicLeadValid;
+  // Graphic due date / asset sizes moved to the brief form, so nothing about
+  // artwork is validated here any more — only what makes a post a post.
+  const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!selectedCampaign;
   const missing = [
     !campaign.trim() ? "campaign" : null,
     campaign.trim() && !selectedCampaign ? "campaign from the list" : null,
     !item.title.trim() ? "post title" : null,
     !item.platforms.length ? "platform" : null,
-    item.requiredGraphic && !item.graphicDueDate ? "graphic due date" : null,
-    item.requiredGraphic && item.graphicDueDate && !graphicLeadValid ? `graphic due date at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days` : null,
-    !dueOrderValid ? "graphic due date before publish date" : null,
   ].filter(Boolean) as string[];
   const create = async () => {
     if (!canCreate || saving) return;
@@ -386,11 +372,11 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
       day, dateIso: iso, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
       status: "Draft", campaign: campaign.trim(), owner: "Unassigned",
       caption: "", hashtags: "", cta: "",
-      captionStatus: "Missing", assetStatus: item.requiredGraphic ? "Waiting Design" : "No Asset",
+      captionStatus: "Missing", assetStatus: "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
     try {
-      await onCreate(post, item, campaign.trim(), selectedCampaign?.id);
+      await onCreate(post, { ...item, requiredGraphic: askGraphic }, campaign.trim(), selectedCampaign?.id, askGraphic);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -438,12 +424,25 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
               {campaign.trim() && !selectedCampaign && <div className="mt-1 text-[11px] font-semibold text-status-red">เลือก Campaign จากรายการที่มีอยู่ เพื่อให้ sync กลับ Campaign ได้ถูกต้อง</div>}
             </div>
           </div>
-          {/* Shared content-item template */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} />
+          {/* Shared content-item template — post fields only; artwork lives in
+              the graphic brief now. */}
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} showGraphicFields={false} />
+
+          {/* Hand-off to Creative. Ticked, saving continues straight into the
+              brief form with this post already linked. */}
+          <label className="flex items-start gap-[10px] rounded-[14px] border border-[#DDD1FF] bg-[#F7F2FF] px-4 py-3 cursor-pointer">
+            <input type="checkbox" checked={askGraphic} onChange={(e) => setAskGraphic(e.target.checked)} className="mt-[2px]" />
+            <span>
+              <span className="block text-[12.5px] font-bold text-[#2C2553]">🎨 โพสต์นี้ต้องใช้งานกราฟฟิกใหม่</span>
+              <span className="block text-[11px] text-[#7D70CC] mt-[2px]">
+                บันทึกแล้วจะพาไปเปิดฟอร์ม Graphic Brief ต่อ โดยผูกกับโพสต์นี้ให้อัตโนมัติ — ไซซ์ artwork และวันส่งงานกรอกที่นั่น
+              </span>
+            </span>
+          </label>
         </div>
         <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
-            {canCreate ? "Ready to save into Content Plan" : `Before saving, add ${missing.join(", ")}`}
+            {canCreate ? (askGraphic ? "Ready — บันทึกแล้วไปต่อที่ Graphic Brief" : "Ready to save into Content Plan") : `Before saving, add ${missing.join(", ")}`}
           </div>
           <div className="mt-1 text-[11px]" style={{ color: canCreate ? "#5A7A4D" : "#9A8460" }}>
             Publish date / time stays editable later, and Campaign sync will start as soon as this post is saved.
