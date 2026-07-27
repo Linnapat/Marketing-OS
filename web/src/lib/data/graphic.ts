@@ -92,6 +92,10 @@ export interface Graphic {
   rushDecidedBy?: string;
   rushDecidedAt?: string;
   rushDecisionNote?: string;
+  /** When the request was raised, from the table's own column. Needed to age a
+   *  request nobody has touched yet — its history is empty, so there is nothing
+   *  else to measure "waiting since" from. */
+  createdAt?: string;
   history?: GraphicEvent[];
 }
 

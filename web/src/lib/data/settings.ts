@@ -153,9 +153,9 @@ export const STATUS_SETS: Record<WfModule, WfStatus[]> = {
 };
 
 export const NOTIF_CHANNELS = [
-  { icon: "💬", label: "LINE Notify", desc: "Push to LINE group", key: "line", def: true },
+  { icon: "💬", label: "LINE Notify", desc: "Push to LINE group", key: "line", def: false },
   { icon: "📧", label: "Email", desc: "Daily digest + alerts", key: "email", def: true },
-  { icon: "💼", label: "Slack", desc: "Team channel alerts", key: "slack", def: false },
+  { icon: "💼", label: "Slack", desc: "Push to a Slack channel (SLACK_WEBHOOK_URL)", key: "slack", def: true },
   { icon: "💬", label: "Google Chat", desc: "Future state", key: "gchat", def: false },
 ];
 export const NOTIF_TRIGGERS = [

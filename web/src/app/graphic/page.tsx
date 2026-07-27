@@ -20,6 +20,7 @@ import {
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { Combobox } from "@/components/ui/Combobox";
+import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
@@ -124,6 +125,19 @@ function GraphicPageInner() {
   };
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
+  // Work with nobody's name on it. Not a status — an owner problem: somebody
+  // has to hand it out, and until they do it ages silently. 43 of 46 live
+  // requests sat here, 28 of them a week or more.
+  const [queueOpen, setQueueOpen] = useState(false);
+  const assignQueue = useMemo(
+    () => assignmentQueue(
+      graphics.filter((g) => g.stage !== "Delivered" && g.stage !== "Approved"),
+      (g) => g.designer,
+      new Date().toISOString().slice(0, 10),
+    ),
+    [graphics],
+  );
+  const queueStats = useMemo(() => queueSummary(assignQueue), [assignQueue]);
 
   // The Designer filter lists the people who can actually hold a request: the
   // active Creative-team members (in-house designers, video editors, and any
@@ -329,6 +343,44 @@ function GraphicPageInner() {
           </div>
         </ModuleSummaryCard>
       </div>
+
+      {/* The assignment queue. Deliberately loud and above the board: a request
+          with no designer is not "in progress", it is waiting on a person, and
+          the only way it ever got noticed before was somebody scrolling past it. */}
+      {assignQueue.length > 0 && (
+        <div className="mt-4 rounded-cardLg border overflow-hidden"
+          style={queueStats.stuck > 0
+            ? { background: AGE_META.stuck.bg, borderColor: "#F5C8C4" }
+            : { background: AGE_META.slow.bg, borderColor: "#F0C89B" }}>
+          <button onClick={() => setQueueOpen((o) => !o)} className="w-full px-4 py-3 flex items-center gap-3 text-left">
+            <span className="text-[11px] w-3" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>{queueOpen ? "▾" : "▸"}</span>
+            <span className="text-[13px] font-extrabold" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
+              🙋 รอมอบหมาย {queueStats.total} งาน
+            </span>
+            <span className="text-[11.5px] font-semibold" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
+              {queueStats.stuck > 0
+                ? `· ${queueStats.stuck} งานรอเกิน ${ASSIGN_STUCK_DAYS} วัน (นานสุด ${queueStats.oldest} วัน)`
+                : queueStats.oldest !== null ? `· รอนานสุด ${queueStats.oldest} วัน` : ""}
+            </span>
+            <span className="ml-auto text-[11px] font-semibold text-muted">Creative Leader มอบหมาย</span>
+          </button>
+          {queueOpen && (
+            <div className="bg-surface border-t" style={{ borderColor: "#EFE7DA" }}>
+              {assignQueue.map(({ item, days, level }) => (
+                <button key={item.id} onClick={() => setDrawer({ g: item, tab: "overview" })}
+                  className="w-full px-4 py-2 border-b border-line4 last:border-0 flex items-center gap-3 text-left hover:bg-ivory/60">
+                  <span className="text-[11px] font-bold rounded-pill px-2 py-[2px] whitespace-nowrap"
+                    style={{ background: AGE_META[level].bg, color: AGE_META[level].fg }}>
+                    {days === null ? "ไม่ทราบ" : `รอ ${days} วัน`}
+                  </span>
+                  <span className="text-[12.5px] font-semibold truncate min-w-0">{item.title}</span>
+                  <span className="ml-auto text-[11px] text-faint whitespace-nowrap">{item.campaign} · {item.type}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-5">
         {view === "board" && <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
@@ -1124,7 +1176,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
       const postId = `c${nextId}-gfx`;
       post = {
         id: postId, day, dateIso: iso, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
-        status: "Draft", campaign: campaign.trim(), owner: "Unassigned", caption: "", hashtags: "", cta: "",
+        status: "Draft", campaign: campaign.trim(), owner: requester, caption: "", hashtags: "", cta: "",
         captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
         campaignId: selectedCampaign?.id,
       };
