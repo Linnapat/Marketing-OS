@@ -13,6 +13,11 @@ import {
   taskHealth,
   taskItems,
   worstHealth,
+  urgencyOf,
+  withUrgency,
+  summarise,
+  groupByOwner,
+  NO_OWNER,
   type Health,
   type WorkItem,
 } from "../src/lib/data/statusBoard";
@@ -125,8 +130,8 @@ const camps = [
   { id: "CAM-1", name: "Alpha", b: "teppen" as const, status: "Active" },
   { id: "CAM-2", name: "Beta", b: "mainichi" as const, status: "Active" },
 ];
-const wi = (id: string, campaignId: string, health: Health): WorkItem =>
-  ({ id, module: "task", title: id, campaignId, health, rawStatus: "x" });
+const wi = (id: string, campaignId: string, health: Health, over: Partial<WorkItem> = {}): WorkItem =>
+  ({ id, module: "task", title: id, campaignId, health, rawStatus: "x", urgency: "none", ...over });
 
 {
   const g = groupByCampaign(camps, [wi("a", "CAM-1", "done"), wi("b", "CAM-1", "blocked"), wi("c", "CAM-2", "active")]);
@@ -162,6 +167,87 @@ console.log("\n— taskItems: doneIds มีสิทธิ์เหนือ st
   is("ไม่อยู่ใน doneIds → ตาม status", taskItems([t], new Set())[0].health, "active");
   is("task ที่ไม่มี campaignId → campaignId ว่าง (ไปกอง unassigned)",
      taskItems([{ ...t, campaignId: undefined } as Task], new Set())[0].campaignId, "");
+}
+
+console.log("\n— แกนเวลา: เลยกำหนด / ใกล้ครบ / ยังมีเวลา —");
+{
+  const today = "2026-07-28";
+  is("เลยกำหนดเมื่อวาน", urgencyOf("2026-07-27", "notStarted", today), "overdue");
+  is("ครบกำหนดวันนี้ = ยังไม่เลย", urgencyOf("2026-07-28", "notStarted", today), "dueSoon");
+  is("อีก 7 วันพอดี ยังนับว่าใกล้", urgencyOf("2026-08-04", "notStarted", today), "dueSoon");
+  is("อีก 8 วัน = ยังมีเวลา", urgencyOf("2026-08-05", "notStarted", today), "later");
+  is("ไม่มีวันกำหนด = ไม่มีกำหนด", urgencyOf(undefined, "notStarted", today), "none");
+  is("ค่าว่างก็เหมือนไม่มี", urgencyOf("", "notStarted", today), "none");
+  // งานที่เสร็จแล้วต้องไม่ขึ้นแดง ไม่งั้นบอร์ดจะเต็มไปด้วยสีที่ไม่มีความหมาย
+  is("เสร็จแล้วแม้เลยวันมานาน = ไม่นับว่าสาย", urgencyOf("2020-01-01", "done", today), "none");
+  is("รับ timestamp เต็มได้ ตัดเอาเฉพาะวันที่", urgencyOf("2026-07-27T23:59:00Z", "notStarted", today), "overdue");
+  // ข้ามเดือน/ปี
+  is("ข้ามสิ้นเดือน", urgencyOf("2026-08-02", "notStarted", "2026-07-31"), "dueSoon");
+  is("ข้ามปี", urgencyOf("2027-01-02", "notStarted", "2026-12-31"), "dueSoon");
+  is("withUrgency ประทับค่าให้ทุกชิ้น", withUrgency([wi("a", "C", "notStarted", { dueIso: "2026-07-01" })], today)[0].urgency, "overdue");
+}
+
+console.log("\n— ตัวเลขสรุปบนสุด —");
+{
+  const today = "2026-07-28";
+  const items = withUrgency([
+    wi("late1", "C", "notStarted", { dueIso: "2026-07-01" }),
+    wi("late2", "C", "blocked", { dueIso: "2026-07-02" }),
+    wi("soon", "C", "waiting", { dueIso: "2026-07-30" }),
+    wi("later", "C", "notStarted", { dueIso: "2026-12-01" }),
+    wi("finished", "C", "done", { dueIso: "2026-01-01" }),
+  ], today);
+  const sum = summarise(items);
+  is("นับทั้งหมด", sum.total, 5);
+  is("งานที่ยังไม่จบ", sum.open, 4);
+  is("เลยกำหนด", sum.overdue, 2);
+  is("ใกล้ครบกำหนด", sum.dueSoon, 1);
+  is("ติดปัญหา", sum.blocked, 1);
+  is("รออนุมัติ", sum.waiting, 1);
+}
+
+console.log("\n— แคมเปญที่เลยกำหนดต้องมาก่อน แม้จะมีงานน้อยกว่า —");
+{
+  const today = "2026-07-28";
+  // CAM-2 มีงานน้อยกว่ามาก แต่สายแล้ว 1 ชิ้น — ต้องอยู่เหนือ CAM-1 ที่มี 3 ชิ้นแต่ยังไม่ถึงกำหนด
+  const items = withUrgency([
+    wi("a", "CAM-1", "notStarted", { dueIso: "2026-12-01" }),
+    wi("b", "CAM-1", "notStarted", { dueIso: "2026-12-02" }),
+    wi("c", "CAM-1", "notStarted", { dueIso: "2026-12-03" }),
+    wi("d", "CAM-2", "notStarted", { dueIso: "2026-07-01" }),
+  ], today);
+  const g = groupByCampaign(camps, items);
+  is("แคมเปญที่สายอยู่บนสุด แม้งานน้อยกว่า", g[0].campaignId, "CAM-2");
+  is("นับงานที่เลยกำหนดในกลุ่ม", g[0].overdueCount, 1);
+  is("กลุ่มที่ยังไม่ถึงกำหนด overdueCount = 0", g[1].overdueCount, 0);
+}
+
+console.log("\n— งานค้างอยู่ที่ใคร —");
+{
+  const today = "2026-07-28";
+  const items = withUrgency([
+    wi("1", "C", "notStarted", { owner: "Jeeno", dueIso: "2026-07-01" }),
+    wi("2", "C", "notStarted", { owner: "Jeeno", dueIso: "2026-07-02" }),
+    wi("3", "C", "blocked", { owner: "Jeeno", dueIso: "2026-12-01" }),
+    wi("4", "C", "notStarted", { owner: "Four", dueIso: "2026-07-03" }),
+    wi("5", "C", "waiting", { owner: "Four", dueIso: "2026-07-30" }),
+    wi("6", "C", "done", { owner: "Four", dueIso: "2026-01-01" }),
+    wi("7", "C", "notStarted", { owner: "Unassigned", dueIso: "2026-07-04" }),
+    wi("8", "C", "notStarted", { dueIso: "2026-07-05" }),
+  ], today);
+  const loads = groupByOwner(items);
+
+  is("คนที่สายมากที่สุดอยู่บนสุด", loads[0].owner, "Jeeno");
+  is("นับเฉพาะงานที่ยังไม่จบ", loads.find((l) => l.owner === "Four")?.total, 2);
+  is("งานที่เสร็จแล้วไม่นับเข้าภาระใคร", loads.find((l) => l.owner === "Four")?.items.some((i) => i.id === "6"), false);
+  is("นับงานสายของแต่ละคน", loads[0].overdue, 2);
+  is("นับงานติดปัญหา", loads[0].blocked, 1);
+  is("แยกตามโมดูลได้", loads[0].byModule.task, 3);
+  // "Unassigned" กับช่องว่าง = กองเดียวกัน และต้องอยู่ล่างสุดเสมอ
+  const noOwner = loads.find((l) => l.owner === NO_OWNER);
+  is("งานไม่มีเจ้าของรวมเป็นกองเดียว", noOwner?.total, 2);
+  is("กองไม่มีเจ้าของอยู่ล่างสุด", loads[loads.length - 1].owner, NO_OWNER);
+  is("ไม่มีใครหาย", loads.reduce((n, l) => n + l.total, 0), 7);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
