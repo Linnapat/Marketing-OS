@@ -27,6 +27,22 @@
 --
 -- ไม่แตะ: service role, auth hook, policy ของ staff/admin เดิมทั้งหมด
 -- rollback: security_p10_agency_portal_rollback.sql
+--
+-- apply แล้ว 27 ก.ค. 2026 — probe 11/11 PASS (จำลอง session ด้วย
+-- `set local role authenticated` + set_config('request.jwt.claims',…) ใน
+-- transaction แล้ว rollback ทุกครั้ง ข้อมูลจริงไม่ถูกแก้):
+--   agency เห็นเฉพาะงานตัวเอง 1 แถว (ไม่เห็น 43 แถว Unassigned / งาน
+--   designer คนอื่น) · เห็น members แถวตัวเองแถวเดียว · content_posts และ
+--   campaigns = 0 · แก้งานตัวเองตามปกติได้ (stage → In Progress) ·
+--   ตั้ง stage = Approved ทั้งทางคอลัมน์และทาง data blob ถูกบล็อกทั้งคู่ ·
+--   อนุมัติ deliverable ใน blob ถูกบล็อก · โยนงานให้คนอื่นถูกบล็อก ·
+--   brief_complete ถูกบล็อก · INSERT ถูก RLS ปฏิเสธ · UPDATE/DELETE งาน
+--   ของ designer คนอื่น = 0 แถว · อีเมลที่ไม่มีใน members = ไม่เห็นอะไรเลย
+--   (fail-closed) · staff และ CMO ยังเห็น 46 งาน / 9 members และอนุมัติได้เหมือนเดิม
+--
+-- ผลข้างเคียงที่ตั้งใจ: request ที่ stage เป็น Approved/Delivered แล้ว agency
+-- แก้อะไรไม่ได้อีกเลย (งานที่เซ็นรับแล้วถูกแช่แข็ง) — ถ้าต้องให้แก้ต่อ ทีมต้อง
+-- ตีกลับเป็น Revision Requested ก่อน
 
 set search_path = public;
 
