@@ -7,6 +7,7 @@ import {
   GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
+import { Combobox } from "@/components/ui/Combobox";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
 // Content Plan step and the Content Calendar's New Post modal, so the "template"
@@ -91,7 +92,9 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       )}
       <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={item.title} onChange={(e) => onChange({ title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
       <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
-      <div><label className={label}>Content Type</label><select value={item.type} onChange={(e) => onChange({ type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+      {/* Sixteen content types, so a type-to-search box beats scrolling a
+          native select — "vdo" lands on VDO shooting in one keystroke run. */}
+      <div><label className={label}>Content Type</label><Combobox value={item.type} onChange={(v) => onChange({ type: v })} options={[...CONTENT_TYPES]} inputClassName={field} placeholder="พิมพ์เพื่อค้นหา เช่น Reel, Poster…" emptyLabel="ไม่พบ content type ที่ตรงกับที่พิมพ์" /></div>
       {requestDate ? (
         <div className={`md:col-span-2 grid gap-3 ${onPublishTimeChange ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
           {graphicDueField}

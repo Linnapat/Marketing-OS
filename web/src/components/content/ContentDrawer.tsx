@@ -14,6 +14,8 @@ import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
+import { AssetLinkList } from "@/components/content/AssetLinkList";
+import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
@@ -142,6 +144,17 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
   // Media link + release status (Creative).
   const [mediaLink, setMediaLink] = useState(item.mediaLink ?? "");
   useEffect(() => { setMediaLink(item.mediaLink ?? ""); }, [item.mediaLink]);
+
+  // Hero artwork for the Overview tab, and a one-click grab of every asset.
+  const [heroBroken, setHeroBroken] = useState(false);
+  const hero = useMemo(() => heroPreview(item.assets, item.mediaLink), [item.assets, item.mediaLink]);
+  useEffect(() => { setHeroBroken(false); }, [hero?.previewUrl]);
+  const downloadAllAssets = () => {
+    const urls = (item.assets ?? []).map((a) => assetLinkView(a.link).downloadUrl).filter(Boolean) as string[];
+    if (!urls.length) { toastError("asset ชุดนี้ดาวน์โหลดตรงไม่ได้ — กด Open เพื่อเปิดไฟล์แทน"); return; }
+    // Staggered: browsers drop same-tick popups after the first one.
+    urls.forEach((url, i) => setTimeout(() => window.open(url, "_blank", "noopener"), i * 400));
+  };
   const mediaDirty = mediaLink.trim() !== (item.mediaLink ?? "").trim();
   const saveMedia = () => persist({ ...item, mediaLink: mediaLink.trim() || undefined });
   const toggleRelease = () => {
@@ -180,6 +193,8 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
       if (!res.ok) { toastError("ยัง Approve ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    } catch (error) {
+      toastError(`อนุมัติไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -211,6 +226,8 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
       if (!res.ok) { toastError("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    } catch (error) {
+      toastError(`Publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
   const scheduleMeta = async () => {
@@ -225,6 +242,8 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
       if (!res.ok) { toastError("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
       notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+    } catch (error) {
+      toastError(`Queue ไป Meta ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
   const publishMetaNow = async () => {
@@ -234,6 +253,8 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
       if (!res.ok) { toastError("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
       onUpdate?.(res.post);
       notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+    } catch (error) {
+      toastError(`Meta publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
 
@@ -281,10 +302,22 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
         <div className="flex-1 overflow-y-auto px-5 py-[18px]">
           {tab === "overview" && (
             <div className="flex flex-col gap-[14px]">
-              <div className="rounded-[14px] h-40 flex flex-col items-center justify-center gap-2" style={{ background: "#F0EBE0" }}>
-                <span className="text-[28px]">🖼</span>
-                <span className="text-[13px] text-faint font-semibold">{item.assetStatus}</span>
-              </div>
+              {/* The artwork itself when there is one to show — the tile used to
+                  be a permanent 🖼 placeholder even after Creative had attached
+                  approved assets. */}
+              {hero && !heroBroken ? (
+                <a href={hero.href} target="_blank" rel="noreferrer" title="เปิดไฟล์เต็ม"
+                  className="rounded-[14px] overflow-hidden block relative" style={{ background: "#F0EBE0" }}>
+                  <img src={hero.previewUrl} alt={item.title} loading="lazy" referrerPolicy="no-referrer"
+                    onError={() => setHeroBroken(true)} className="w-full max-h-[240px] object-contain bg-white" />
+                  <span className="absolute bottom-2 right-2 text-[10.5px] font-bold px-2 py-[3px] rounded-pill bg-black/55 text-white">{item.assetStatus}</span>
+                </a>
+              ) : (
+                <div className="rounded-[14px] h-40 flex flex-col items-center justify-center gap-2" style={{ background: "#F0EBE0" }}>
+                  <span className="text-[28px]">🖼</span>
+                  <span className="text-[13px] text-faint font-semibold">{item.assetStatus}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-[10px]">
                 {[["Status", <StatusBadge key="s" tone={contentTone(item.status)}>{item.status}</StatusBadge>],
                   ["Owner", <span key="o" className="text-[13.5px] font-semibold">{item.owner}</span>],
@@ -328,6 +361,20 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                     {busy ? "Saving…" : "Save changes"}
                   </button>
                 </div>
+              </div>
+
+              {/* Approved assets, with preview + download. This used to live only
+                  on the Publish tab, which is locked behind a connected Meta
+                  account — so the team could not reach the artwork Creative had
+                  already delivered. It belongs with the post. */}
+              <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div className="text-[11.5px] font-bold text-muted">🖼 Approved assets {item.assets?.length ? `(${item.assets.length})` : ""}</div>
+                  {item.assets && item.assets.length > 1 && (
+                    <button onClick={downloadAllAssets} className="text-[11px] font-bold text-accent">ดาวน์โหลดทั้งหมด</button>
+                  )}
+                </div>
+                <AssetLinkList assets={item.assets} />
               </div>
 
               {/* Media link + Release status — Creative pastes the final file
@@ -549,25 +596,7 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
               {/* Approved assets attached from the Graphic Request module */}
               <div>
                 <div className="text-[11.5px] font-bold text-muted mb-2">Approved assets {item.assets?.length ? `(${item.assets.length})` : ""}</div>
-                {item.assets && item.assets.length > 0 ? (
-                  <div className="flex flex-col gap-[7px]">
-                    {item.assets.map((a, i) => (
-                      <a key={i} href={a.link} target="_blank" rel="noreferrer"
-                        className="flex items-center justify-between px-[13px] py-[10px] rounded-[10px] border-[1.5px] hover:bg-ivory"
-                        style={{ borderColor: "#BFE0C4", background: "#F3FAF3" }}>
-                        <div className="flex items-center gap-[9px] min-w-0">
-                          <span className="text-[14px]">✅</span>
-                          <div className="min-w-0"><div className="text-[12.5px] font-semibold truncate">{a.platform}</div><div className="text-[11px] text-faint">{a.size}</div></div>
-                        </div>
-                        <span className="text-[11.5px] font-bold text-status-green flex-shrink-0">Open ↗</span>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-[12px] text-faint px-[13px] py-[10px] rounded-[10px]" style={{ background: "#F7F4EE" }}>
-                    ยังไม่มี asset — จะแนบอัตโนมัติเมื่อทีมกราฟฟิกส่งงานและอนุมัติครบทุกชิ้นใน Graphic Request
-                  </div>
-                )}
+                <AssetLinkList assets={item.assets} />
               </div>
               <div>
                 <div className="text-[11.5px] font-bold text-muted mb-2">Select channels</div>

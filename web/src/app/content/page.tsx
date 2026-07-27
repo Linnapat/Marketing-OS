@@ -26,6 +26,9 @@ import {
   ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
+import { Combobox } from "@/components/ui/Combobox";
+import { AssetThumb } from "@/components/content/AssetLinkList";
+import { assetLinkView } from "@/lib/data/assetLinks";
 import { emptyContentItem, BriefContentItem, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
@@ -350,6 +353,9 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   }, []);
   useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
+  // Two campaigns can share a name; the picker lists each name once so the
+  // dropdown does not show an unpickable duplicate row.
+  const brandCampaignNames = useMemo(() => Array.from(new Set(brandCampaigns.map((c) => c.name))), [brandCampaigns]);
   const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
@@ -417,16 +423,18 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
             </div>
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
-              <input
+              {/* Type-to-search over this brand's campaigns. Only a real campaign
+                  is accepted (the post has to sync back to one), so the box never
+                  keeps free text. */}
+              <Combobox
                 value={campaign}
-                onChange={(e) => setCampaign(e.target.value)}
-                list="content-campaign-options"
-                className={field}
-                placeholder={brandCampaigns.length ? "Type to search campaign…" : "No campaigns for this brand"}
+                onChange={setCampaign}
+                options={brandCampaignNames}
+                disabled={brandCampaigns.length === 0}
+                inputClassName={field}
+                placeholder={brandCampaigns.length ? "พิมพ์เพื่อค้นหา campaign…" : "No campaigns for this brand"}
+                emptyLabel="ไม่พบ campaign ที่ตรงกับที่พิมพ์"
               />
-              <datalist id="content-campaign-options">
-                {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </datalist>
               {campaign.trim() && !selectedCampaign && <div className="mt-1 text-[11px] font-semibold text-status-red">เลือก Campaign จากรายการที่มีอยู่ เพื่อให้ sync กลับ Campaign ได้ถูกต้อง</div>}
             </div>
           </div>
@@ -592,6 +600,14 @@ function StatusCell({ value, opts, canEdit, onChange }: { value: string; opts: s
   );
 }
 
+/** The single downloadable asset of a post, or null when it has none — or more
+ *  than one, where picking for the user would be guessing. */
+function assetDownload(c: ContentItem): string | null {
+  const links = (c.assets ?? []).map((a) => assetLinkView(a.link).downloadUrl).filter(Boolean) as string[];
+  const unique = Array.from(new Set(links));
+  return unique.length === 1 ? unique[0] : null;
+}
+
 function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -609,6 +625,9 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
             {/* Real publish date from dateIso — never a hardcoded month. */}
             <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
             <div className="flex items-center gap-2 min-w-0">
+              {/* Delivered artwork, right in the plan — no need to open the post
+                  to check which asset is attached. */}
+              <AssetThumb assets={c.assets} mediaLink={c.mediaLink} />
               <PlatBadges item={c} size={18} />
               <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{c.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div></div>
             </div>
@@ -621,7 +640,16 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
               <span className="text-[11.5px] text-faint">—</span>
             )}
             <StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge>
-            <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
+            <div className="flex items-center gap-[6px] min-w-0">
+              <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
+              {/* Grab the delivered file without opening the post. Multi-asset
+                  posts open the drawer instead — that is where the whole set,
+                  with previews, lives. */}
+              {assetDownload(c) && (
+                <a href={assetDownload(c)!} download target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                  title="ดาวน์โหลด asset" className="text-[11.5px] font-bold text-status-green flex-shrink-0">⬇</a>
+              )}
+            </div>
             <StatusCell value={c.approvalStatus} opts={APPROVAL_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { approvalStatus: v })} />
             <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
           </div>
