@@ -17,6 +17,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { DateFilterBar, DateFilter, DEFAULT_DATE_FILTER, rangeInFilter, rangeOverlapFraction, MONTHS } from "@/components/ui/DateFilterBar";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { useBrandVisibility } from "@/lib/brandVisibility";
+import { BRANDS } from "@/lib/brands";
 import { useRole } from "@/lib/role";
 import { canSeePlatformPerformance } from "@/lib/roleGates";
 import Link from "next/link";
@@ -29,6 +30,11 @@ import {
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
+import {
+  PERF_MIRROR_TAB, PERF_MIRROR_HEADERS, PERF_MIRROR_BRANDS_KEY,
+  perfMirrorRow, mirrorableRows, parseMirrorBrands,
+} from "@/lib/data/perfMirror";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
 import { fetchAllBriefs } from "@/lib/db/brief";
@@ -110,12 +116,39 @@ const dominantStatus = (rows: CampaignResultRow[]): ResultStatusKey => {
 const periodLabel = (dates?: string) => dates ? `Period: ${dates}` : "Period: —";
 
 export default function PlatformsPage() {
-  const { member } = useAuth();
-  const { visibleBrands } = useBrandVisibility();
+  const { member, role: authRole } = useAuth();
+  const brandVisibility = useBrandVisibility();
+  const { visibleBrands } = brandVisibility;
   const { role } = useRole();
+  // Read from auth, not the sidebar's "viewing as" switcher: this gate
+  // controls what leaves the system, so it must not be flippable from the rail.
+  const isCmo = authRole === "CMO";
 
   const [rows, setRows] = useState<CampaignResultRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Which brands mirror out to the reporting sheet. null = not configured yet,
+  // which mirrors everything (matching the campaign/KOL mirrors); an explicit
+  // empty list means somebody chose to mirror nothing.
+  const [mirrorBrands, setMirrorBrands] = useState<BrandId[] | null>(null);
+  const [mirrorSaving, setMirrorSaving] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(PERF_MIRROR_BRANDS_KEY)
+      .then((raw) => { if (alive) setMirrorBrands(parseMirrorBrands(raw)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const toggleMirrorBrand = async (id: BrandId) => {
+    const current = mirrorBrands ?? visibleBrands;
+    const next = current.includes(id) ? current.filter((b) => b !== id) : [...current, id];
+    setMirrorBrands(next);
+    setMirrorSaving(true);
+    try {
+      await setAppSetting(PERF_MIRROR_BRANDS_KEY, JSON.stringify(next));
+    } catch (error) {
+      toastError(`บันทึกแบรนด์ที่ sync ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setMirrorSaving(false); }
+  };
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [date, setDate] = useState<DateFilter>(WIDE_RANGE);
   // "entry" = โหมดลงผลรายเดือน: ทุก ad ของเดือนที่เลือกในตารางแก้ไขตารางเดียว
@@ -306,7 +339,21 @@ export default function PlatformsPage() {
       dirty.has(r.id) ? { ...r, updatedAt: nowIso, updatedBy: member?.name ?? "—" } : r,
     );
     try {
-      await saveResults(stamped.filter((r) => dirty.has(r.id)));
+      const changed = stamped.filter((r) => dirty.has(r.id));
+      await saveResults(changed);
+      // Mirror the saved rows out to the reporting sheet. Supabase stays the
+      // source of truth and the mirror is best-effort, exactly like the campaign
+      // and KOL mirrors — a Sheet hiccup must not fail a save that succeeded.
+      // Each row carries campaign_id AND campaign_name so the sheet can be
+      // joined back to the campaign by formula and still read by a person.
+      mirrorableRows(
+        changed,
+        (id) => { const c = campaigns.find((x) => x.id === id); return c ? { name: c.name, brand: c.b } : undefined; },
+        mirrorBrands,
+        nowIso,
+      ).forEach(({ row, ctx }) => {
+        mirrorRowToSheet(PERF_MIRROR_TAB, [...PERF_MIRROR_HEADERS], perfMirrorRow(row, ctx), ctx.brand);
+      });
       // Ad-level actuals stay in campaign_results — they must never overwrite
       // campaigns.spend (plan-time COMMITTED allocation). Revenue entry moved
       // out of this page (Marketing Visit instead), so no ROAS rollup here —
@@ -419,6 +466,40 @@ export default function PlatformsPage() {
           </div>
         }
       />
+
+      {/* Which brands mirror out to the reporting sheet. Sending data to a
+          spreadsheet whose sharing this app does not control is a decision, so
+          it is the CMO's; everyone else sees what is configured. */}
+      <div className="mt-3 rounded-card border border-line px-4 py-[10px] flex items-center gap-3 flex-wrap bg-surface">
+        <span className="text-[11px] font-bold text-faint uppercase tracking-[0.06em]">Sync เข้าชีตรายงาน</span>
+        {visibleBrands.map((id) => {
+          const on = mirrorBrands === null || mirrorBrands.includes(id);
+          return isCmo ? (
+            <button key={id} onClick={() => toggleMirrorBrand(id)} disabled={mirrorSaving}
+              className="text-[12px] font-bold px-[11px] py-[5px] rounded-[9px] border transition disabled:opacity-50"
+              style={on
+                ? { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }
+                : { background: "#fff", borderColor: "#E5DECF", color: "#9A9387" }}>
+              {on ? "✓ " : ""}{brandVisibility.brandNames[id] ?? BRANDS[id].name}
+            </button>
+          ) : (
+            <span key={id} className="text-[12px] font-semibold px-[11px] py-[5px] rounded-[9px] border"
+              style={on
+                ? { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }
+                : { background: "#fff", borderColor: "#E5DECF", color: "#9A9387" }}>
+              {on ? "✓ " : "✕ "}{brandVisibility.brandNames[id] ?? BRANDS[id].name}
+            </span>
+          );
+        })}
+        <span className="ml-auto text-[11px] text-faint">
+          {mirrorBrands === null
+            ? "ยังไม่ได้เลือก = sync ทุกแบรนด์"
+            : mirrorBrands.length === 0
+              ? "ปิด sync ทั้งหมด"
+              : `sync ${mirrorBrands.length} แบรนด์ · แถวมี campaign ID + ชื่อ ให้ join กลับได้`}
+          {!isCmo && " · แก้ได้เฉพาะ CMO"}
+        </span>
+      </div>
 
       {/* Command + filters — compact */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
