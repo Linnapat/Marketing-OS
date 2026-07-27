@@ -16,6 +16,7 @@ import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, t
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
+import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
@@ -368,6 +369,18 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                   account — so the team could not reach the artwork Creative had
                   already delivered. It belongs with the post. */}
               <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+                {/* Raising the brief is a separate step from planning the post;
+                    this is the link that keeps them tied by post id. */}
+                {!item.graphicRequestId && (
+                  <a href={`/graphic?${GRAPHIC_BRIEF_FOR_PARAM}=${encodeURIComponent(item.id)}`}
+                    className="mb-3 flex items-center justify-between gap-2 rounded-[10px] border border-[#DDD1FF] bg-[#F7F2FF] px-3 py-[9px]">
+                    <span className="text-[12px] font-bold text-[#2C2553]">🎨 ขอกราฟฟิกสำหรับโพสต์นี้</span>
+                    <span className="text-[11px] font-bold text-[#6C5CE7]">เปิดฟอร์ม ↗</span>
+                  </a>
+                )}
+                {item.graphicRequestId && (
+                  <div className="mb-3 text-[11px] text-faint">ผูกกับ Graphic Request #{item.graphicRequestId}</div>
+                )}
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className="text-[11.5px] font-bold text-muted">🖼 Approved assets {item.assets?.length ? `(${item.assets.length})` : ""}</div>
                   {item.assets && item.assets.length > 1 && (

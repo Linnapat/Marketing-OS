@@ -2,7 +2,7 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost } from "@/lib/data/graphic";
 import { BrandId, brandName } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
@@ -74,9 +74,10 @@ export async function updateGraphic(g: Graphic): Promise<void> {
 }
 
 /** When every deliverable of a graphic is approved, attach the approved asset
- *  links to the linked Content Calendar post and mark its asset ready. Matched
- *  by campaign + content-item title. No-op when nothing lines up or the graphic
- *  isn't fully approved yet. Safe to call on every deliverable save. */
+ *  links to the Content Plan post it serves and mark that post's asset ready.
+ *  No-op when the request serves no post (POSM / print work), when nothing
+ *  identifies exactly one post, or when the graphic isn't fully approved yet.
+ *  Safe to call on every deliverable save. */
 export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentItem | null> {
   if (!deliverableProgress(g).ready) return null;
   const assets = (g.deliverables ?? [])
@@ -85,16 +86,12 @@ export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentIt
   if (!assets.length) return null;
 
   const posts = await fetchContent();
-  const key = (s: string) => (s || "").trim().toLowerCase();
-  // Prefer the real relational link (graphicRequestId / sourceContentItemId);
-  // fall back to campaign + title match only for legacy rows without ids.
-  const post =
-    posts.find((c) => c.graphicRequestId && String(c.graphicRequestId) === String(g.id)) ??
-    (g.sourceContentItemId ? posts.find((c) => c.sourceContentItemId === g.sourceContentItemId) : undefined) ??
-    posts.find(
-      (c) => key(c.campaign) === key(g.campaign) &&
-        (key(c.title) === key(g.contentItem) || (g.contentItem && key(g.title).includes(key(c.title)))),
-    );
+  // The matching rule lives in lib/data/graphic (pure, unit-tested) — it used
+  // to sit inline here and matched sourceContentItemId without scoping it to a
+  // campaign, which could land one campaign's artwork on another's post.
+  const match = findLinkedPost(g, posts);
+  if (!match) return null;
+  const post = posts.find((p) => p.id === match.id);
   if (!post) return null;
 
   const next = attachApprovedAssets(post, assets);

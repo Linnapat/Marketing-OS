@@ -2,7 +2,8 @@
 
 import { toastError } from "@/lib/toast";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Segmented } from "@/components/ui/Segmented";
@@ -14,13 +15,15 @@ import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   graphicKpis, emptyDeliverable, approveAllWaiting,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf,
+  GRAPHIC_BRIEF_FOR_PARAM,
 } from "@/lib/data/graphic";
+import { Combobox } from "@/components/ui/Combobox";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { createContent } from "@/lib/db/content";
+import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { fetchJsonSetting, saveJsonSetting } from "@/lib/db/settings";
@@ -47,7 +50,18 @@ function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = 
 type GraphicView = "board" | "list" | "campaign" | "shoot";
 interface GraphicSavedView { view: GraphicView; brand: BrandFilterValue; designer: string; date: DateFilter }
 
+/** useSearchParams (for ?briefFor=) opts the tree into client rendering, which
+ *  Next requires a Suspense boundary around. */
 export default function GraphicPage() {
+  return (
+    <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
+      <GraphicPageInner />
+    </Suspense>
+  );
+}
+
+function GraphicPageInner() {
+  const router = useRouter();
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [view, setView] = useState<GraphicView>("campaign");
@@ -55,6 +69,33 @@ export default function GraphicPage() {
   const [designer, setDesigner] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
   const [reqOpen, setReqOpen] = useState(false);
+  // /graphic?briefFor=<post id> — the hand-off from Content Plan's "โพสต์นี้
+  // ต้องใช้งานกราฟฟิกใหม่". Resolved to the real post before the form opens so
+  // it can prefill from it; a stale id opens the form unlinked rather than
+  // silently pretending the link worked.
+  const searchParams = useSearchParams();
+  const briefForId = searchParams.get(GRAPHIC_BRIEF_FOR_PARAM);
+  const [briefForPost, setBriefForPost] = useState<ContentItem | null>(null);
+  useEffect(() => {
+    if (!briefForId) return;
+    let alive = true;
+    fetchContent()
+      .then((posts) => {
+        if (!alive) return;
+        const found = posts.find((p) => p.id === briefForId) ?? null;
+        if (!found) toastError("ไม่พบโพสต์ที่ขอกราฟฟิก — เปิดฟอร์มให้แบบยังไม่ผูกโพสต์");
+        setBriefForPost(found);
+        setReqOpen(true);
+      })
+      .catch(() => { if (alive) setReqOpen(true); });
+    return () => { alive = false; };
+  }, [briefForId]);
+  // Drop the param on close so reopening the form by hand starts clean.
+  const closeRequestModal = () => {
+    setReqOpen(false);
+    setBriefForPost(null);
+    if (briefForId) router.replace("/graphic");
+  };
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
 
@@ -88,10 +129,15 @@ export default function GraphicPage() {
   // Creating a graphic request now goes through the shared Content Plan template:
   // it spawns the graphic (with per-asset deliverables), a real content post, and
   // writes the item back into the campaign's Content Plan — one source of truth.
-  const addGraphic = async (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string) => {
+  const addGraphic = async (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string, linkedPost: ContentItem | null) => {
     try {
       await createGraphic(g);
       if (post) await createContent(post);
+      // Linking to a post that already exists: stamp the back-reference and
+      // flip it off "No Asset", so the Content Plan shows work is on the way.
+      if (linkedPost) {
+        await updateContent({ ...linkedPost, graphicRequestId: String(g.id), assetStatus: "Waiting Design" });
+      }
       if (briefItem && campaign && campaign !== "—") await appendBriefItem(campaign, briefItem);
       setGraphics((gs) => [g, ...gs]);
       setReqOpen(false);
@@ -246,7 +292,15 @@ export default function GraphicPage() {
           }}
         />
       )}
-      {reqOpen && <RequestModal nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1} graphics={graphics} onClose={() => setReqOpen(false)} onCreate={addGraphic} />}
+      {reqOpen && (
+        <RequestModal
+          nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1}
+          graphics={graphics}
+          prefillPost={briefForPost}
+          onClose={closeRequestModal}
+          onCreate={addGraphic}
+        />
+      )}
     </>
   );
 }
@@ -834,7 +888,14 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
   );
 }
 
-function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number; graphics: Graphic[]; onClose: () => void; onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string) => void }) {
+function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
+  nextId: number;
+  graphics: Graphic[];
+  /** Post this brief was raised for (arrived via ?briefFor=<id>). */
+  prefillPost?: ContentItem | null;
+  onClose: () => void;
+  onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string, linkedPost: ContentItem | null) => void;
+}) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
@@ -851,15 +912,49 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
   const onChange = (patch: Partial<BriefContentItem>) => setItem((it) => ({ ...it, ...patch }));
 
   const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+  // Which Content Plan post does this brief serve? Three honest answers, one of
+  // which ("none") the form could not express before — print, POSM and menu
+  // artwork had to be filed as a social post to reach the Creative queue.
+  const [postLink, setPostLink] = useState<"existing" | "new" | "none">(prefillPost ? "existing" : "new");
+  const [linkedPostId, setLinkedPostId] = useState(prefillPost?.id ?? "");
+  const [posts, setPosts] = useState<ContentItem[]>([]);
   useEffect(() => {
     let alive = true;
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     fetchAllBriefs().then((b) => { if (alive) setBriefs(b); }).catch(() => {});
+    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
+  const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
   useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
+
+  // Posts to choose from: this campaign's, since a brief belongs to one
+  // campaign and picking across them is the mistake the id scoping guards.
+  const campaignPosts = useMemo(
+    () => posts.filter((p) => p.b === b && (selectedCampaign?.id ? p.campaignId === selectedCampaign.id : p.campaign === campaign)),
+    [posts, b, campaign, selectedCampaign],
+  );
+  const linkedPost = postLink === "existing" ? (posts.find((p) => p.id === linkedPostId) ?? null) : null;
+  const postLabel = (p: ContentItem) => `${p.title} · ${p.dateIso ?? `day ${p.day}`}`;
+
+  // Arriving from "โพสต์นี้ต้องใช้งานกราฟฟิกใหม่": adopt the post's brand,
+  // campaign, title and channels so the brief starts where the post left off.
+  useEffect(() => {
+    if (!prefillPost) return;
+    setB(prefillPost.b);
+    setCampaign(prefillPost.campaign);
+    setLinkedPostId(prefillPost.id);
+    setPostLink("existing");
+    onChange({
+      title: prefillPost.title,
+      platforms: prefillPost.platforms?.length ? prefillPost.platforms : [prefillPost.plat],
+      publishDate: prefillPost.dateIso ?? "",
+      requiredGraphic: true,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillPost?.id]);
 
   // Match the brief's social platforms: picking a campaign pre-selects the
   // platforms the brief actually plans to post on (only if none chosen yet).
@@ -881,9 +976,11 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
 
   const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
   const graphicLeadValid = !!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate);
-  const canCreate = item.title.trim() && item.platforms.length > 0 && campaign.trim() && item.graphicDueDate && dueOrderValid && graphicLeadValid && !atCap;
+  const postLinkValid = postLink !== "existing" || !!linkedPost;
+  const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!campaign.trim() && !!item.graphicDueDate && dueOrderValid && graphicLeadValid && !atCap && postLinkValid;
   const missing = [
     !campaign.trim() ? "campaign" : null,
+    !postLinkValid ? "โพสต์ที่จะผูก" : null,
     !item.title.trim() ? "brief title" : null,
     !item.platforms.length ? "platform" : null,
     !item.graphicDueDate ? "graphic due date" : null,
@@ -902,21 +999,35 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
         id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
         type: item.type, due: labelDate(item.graphicDueDate) || "TBD", dueIso: item.graphicDueDate, designer: "Unassigned",
         requester, approver: approverName, channels: plats,
+        campaignId: selectedCampaign?.id,
+        sourceContentItemId: linkedPost?.sourceContentItemId,
       }),
       stage: "New Request",
       size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
       deliverables,
       nextAction: "Creative leader to assign in-house or outsource designer",
-      contentItem: item.title.trim() || "—",
+      contentItem: linkedPost?.title || item.title.trim() || "—",
+      // The link the whole split rests on. Absent for print/POSM work, which
+      // is now allowed to exist without a post rather than inventing one.
+      contentPostId: linkedPost?.id,
     };
-    const iso = item.publishDate || new Date().toISOString().slice(0, 10);
-    const day = Math.max(1, Math.min(31, Number(iso.split("-")[2]) || 1));
-    const post: ContentItem = {
-      id: `c${nextId}-gfx`, day, dateIso: iso, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
-      status: "Draft", campaign: campaign.trim(), owner: "Unassigned", caption: "", hashtags: "", cta: "",
-      captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
-    };
-    onCreate(g, post, item, campaign.trim());
+    // Only mint a post when the brief is for something that will be published
+    // and no post exists yet. Linking to an existing post, or "no post at all",
+    // both leave the Content Plan alone.
+    let post: ContentItem | null = null;
+    if (postLink === "new") {
+      const iso = item.publishDate || new Date().toISOString().slice(0, 10);
+      const day = Math.max(1, Math.min(31, Number(iso.split("-")[2]) || 1));
+      const postId = `c${nextId}-gfx`;
+      post = {
+        id: postId, day, dateIso: iso, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
+        status: "Draft", campaign: campaign.trim(), owner: "Unassigned", caption: "", hashtags: "", cta: "",
+        captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
+        campaignId: selectedCampaign?.id,
+      };
+      g.contentPostId = postId;
+    }
+    onCreate(g, post, postLink === "new" ? item : null, campaign.trim(), linkedPost ?? null);
   };
 
   return (
@@ -925,7 +1036,7 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
         <div className="text-[16px] font-extrabold mb-1">Send Graphic Brief</div>
-        <div className="text-[12px] text-faint mb-4">ฟอร์มเดียวกับ Content Plan — สร้างแล้วเป็น content + graphic (แยก asset ต่อ platform×size) และ sync กลับเข้า Campaign อัตโนมัติ</div>
+        <div className="text-[12px] text-faint mb-4">คำขอผลิตงานกราฟฟิก · ผูกกับโพสต์ใน Content Plan ด้วย Campaign + Post ID — หรือไม่ผูกเลยก็ได้ถ้าไม่ใช่งานลงโซเชียล</div>
         <div className="flex flex-col gap-4">
           {/* Context: brand, campaign, team */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -954,6 +1065,46 @@ function RequestModal({ nextId, graphics, onClose, onCreate }: { nextId: number;
             </div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Approver</label><OwnerSelect value={approver} onChange={setApprover} placeholder="= Requester" /></div>
           </div>
+          {/* The link between the two modules — the whole point of splitting
+              them. Stored as contentPostId on the request. */}
+          <div className="rounded-[14px] border border-[#DDD1FF] bg-[#F7F2FF] px-4 py-3">
+            <div className="text-[11.5px] font-bold text-[#2C2553] mb-2">งานนี้ใช้กับโพสต์ไหน</div>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {([
+                ["existing", "ผูกกับโพสต์ที่มีอยู่"],
+                ["new", "สร้างโพสต์ใหม่ให้ด้วย"],
+                ["none", "ไม่ผูกโพสต์ (POSM / ป้าย / เมนู)"],
+              ] as const).map(([value, label]) => {
+                const on = postLink === value;
+                return (
+                  <button key={value} type="button" onClick={() => setPostLink(value)}
+                    className="text-[12px] font-semibold px-[11px] py-[6px] rounded-[9px] border"
+                    style={on ? { background: "#2C2553", color: "#fff", borderColor: "#2C2553" } : { background: "#fff", borderColor: "#DDD1FF", color: "#6C5CE7" }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {postLink === "existing" && (
+              <>
+                <Combobox
+                  value={linkedPost ? postLabel(linkedPost) : ""}
+                  onChange={(label) => setLinkedPostId(campaignPosts.find((p) => postLabel(p) === label)?.id ?? "")}
+                  options={campaignPosts.map(postLabel)}
+                  disabled={!campaign.trim()}
+                  inputClassName={field}
+                  placeholder={!campaign.trim() ? "เลือก campaign ก่อน" : campaignPosts.length ? "พิมพ์เพื่อค้นหาโพสต์…" : "campaign นี้ยังไม่มีโพสต์"}
+                  emptyLabel="ไม่พบโพสต์ที่ตรงกับที่พิมพ์"
+                />
+                {!!campaign.trim() && campaignPosts.length === 0 && (
+                  <div className="mt-1 text-[11px] text-[#7D70CC]">ยังไม่มีโพสต์ใน campaign นี้ — เลือก &ldquo;สร้างโพสต์ใหม่ให้ด้วย&rdquo; หรือไปวางแผนโพสต์ที่ Content Plan ก่อน</div>
+                )}
+              </>
+            )}
+            {postLink === "new" && <div className="text-[11px] text-[#7D70CC]">จะสร้างโพสต์ Draft ใน Content Plan ให้ด้วย โดยใช้ชื่อและ platform จากบรีฟนี้</div>}
+            {postLink === "none" && <div className="text-[11px] text-[#7D70CC]">งานที่ไม่ได้ลงโซเชียล — จะไม่ไปโผล่ในปฏิทิน Content Plan และไม่มี asset ไหลกลับไปที่โพสต์</div>}
+          </div>
+
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
           <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} requestDate={requestDate} showAssignmentFields={false} />
         </div>
