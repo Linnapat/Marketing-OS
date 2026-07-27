@@ -18,7 +18,15 @@ export async function fetchContent(): Promise<ContentItem[]> {
     .filter(Boolean) as ContentItem[];
 }
 
-/** Insert a new post; returns it (with a stable id). */
+/** Insert a new post; returns it with the id every later write matches on.
+ *
+ *  That id is the one inside the `data` blob, not the table's serial primary
+ *  key: updateContent/deleteContent filter on `data->>id`, and fetchContent
+ *  hands the blob id to the UI. Returning `c<serial>` here instead handed the
+ *  caller an id that exists nowhere in the blob, so editing a just-created post
+ *  matched zero rows — Save Caption reported success and saved nothing until
+ *  the page was reloaded. Only fall back to the serial when the caller supplied
+ *  no id at all, and write it back so the blob agrees. */
 export async function createContent(post: ContentItem): Promise<ContentItem> {
   const db = supabase();
   if (!db) return post;
@@ -28,7 +36,11 @@ export async function createContent(post: ContentItem): Promise<ContentItem> {
     owner: post.owner, caption: post.caption, data: post,
   }).select("id").single();
   if (error || !data) throw new Error(error?.message || "Could not save content post to Supabase");
-  return { ...post, id: `c${data.id}` };
+  if (post.id) return post;
+  const seeded: ContentItem = { ...post, id: `c${data.id}` };
+  const { error: idError } = await db.from("content_posts").update({ data: seeded }).eq("id", data.id);
+  if (idError) throw new Error(idError.message);
+  return seeded;
 }
 
 /** Source content-item ids already materialised for a campaign — the
@@ -62,10 +74,15 @@ export async function createContentIfNew(post: ContentItem, existing?: Set<strin
 export async function updateContent(post: ContentItem): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { error } = await db.from("content_posts")
+  // `.select()` so a filter that matches nothing is caught. Postgres reports no
+  // error for an UPDATE that touches zero rows — whether the id is stale or RLS
+  // hid the row — and without this the caller shows "saved" over a lost edit.
+  const { data, error } = await db.from("content_posts")
     .update({ status: post.status, caption: post.caption, data: post })
-    .eq("data->>id", post.id);
+    .eq("data->>id", post.id)
+    .select("id");
   if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error(`ไม่พบโพสต์นี้ในฐานข้อมูล (id ${post.id}) — ลอง refresh หน้าแล้วบันทึกใหม่`);
 }
 
 /** Permanently delete a post. Matched on the stable id inside the data blob —
@@ -73,8 +90,9 @@ export async function updateContent(post: ContentItem): Promise<void> {
 export async function deleteContent(post: ContentItem): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { error } = await db.from("content_posts").delete().eq("data->>id", post.id);
+  const { data, error } = await db.from("content_posts").delete().eq("data->>id", post.id).select("id");
   if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error(`ไม่พบโพสต์นี้ในฐานข้อมูล (id ${post.id}) — ลอง refresh หน้าแล้วลบใหม่`);
 }
 
 /** Backend-enforced Approve: re-checks the prerequisites (never trusts the

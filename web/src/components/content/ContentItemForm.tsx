@@ -7,6 +7,7 @@ import {
   GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
+import { Combobox } from "@/components/ui/Combobox";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
 // Content Plan step and the Content Calendar's New Post modal, so the "template"
@@ -15,12 +16,17 @@ import { artworkUnitsOf } from "@/lib/data/graphic";
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, requestDate, publishTime, onPublishTimeChange }: {
+export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, showGraphicFields = true, requestDate, publishTime, onPublishTimeChange }: {
   item: BriefContentItem;
   onChange: (patch: Partial<BriefContentItem>) => void;
   outOfRange?: (iso: string) => boolean;
   requesterFallback?: string;
   showAssignmentFields?: boolean;
+  /** Production fields — graphic due date, Required Graphic/Video, per-platform
+   *  asset sizes and the artwork counter. Off when planning a post: what the
+   *  artwork is and when Creative must deliver it belongs to the graphic
+   *  request, which is now raised separately and linked by post id. */
+  showGraphicFields?: boolean;
   requestDate?: string;
   publishTime?: string;
   onPublishTimeChange?: (value: string) => void;
@@ -51,7 +57,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
     if (!exists) onChange({ assets: [...item.assets, { platform, size }] });
     setCustomSizes((map) => ({ ...map, [platform]: "" }));
   };
-  const graphicDueField = item.requiredGraphic ? (
+  const graphicDueField = showGraphicFields && item.requiredGraphic ? (
     <div>
       <label className={label}>Graphic Due Date <span className="text-status-red">*</span></label>
       <DatePicker
@@ -91,7 +97,9 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       )}
       <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={item.title} onChange={(e) => onChange({ title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
       <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
-      <div><label className={label}>Content Type</label><select value={item.type} onChange={(e) => onChange({ type: e.target.value })} className={field}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+      {/* Sixteen content types, so a type-to-search box beats scrolling a
+          native select — "vdo" lands on VDO shooting in one keystroke run. */}
+      <div><label className={label}>Content Type</label><Combobox value={item.type} onChange={(v) => onChange({ type: v })} options={[...CONTENT_TYPES]} inputClassName={field} placeholder="พิมพ์เพื่อค้นหา เช่น Reel, Poster…" emptyLabel="ไม่พบ content type ที่ตรงกับที่พิมพ์" /></div>
       {requestDate ? (
         <div className={`md:col-span-2 grid gap-3 ${onPublishTimeChange ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
           {graphicDueField}
@@ -113,15 +121,17 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         </>
       )}
       <div><label className={label}>Priority</label><select value={item.priority} onChange={(e) => onChange({ priority: e.target.value })} className={field}>{PRIORITIES.map((t) => <option key={t}>{t}</option>)}</select></div>
-      <div className="flex flex-col gap-1">
-        <div className="flex items-end gap-4">
-          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredGraphic} onChange={(e) => onChange({ requiredGraphic: e.target.checked })} /> Required Graphic</label>
-          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredVideo} onChange={(e) => onChange({ requiredVideo: e.target.checked })} /> Required Video</label>
+      {showGraphicFields && (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-end gap-4">
+            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredGraphic} onChange={(e) => onChange({ requiredGraphic: e.target.checked })} /> Required Graphic</label>
+            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredVideo} onChange={(e) => onChange({ requiredVideo: e.target.checked })} /> Required Video</label>
+          </div>
+          <div className="text-[11px] text-faint">
+            {item.requiredGraphic ? "ติ๊กไว้ = ส่งเข้า Graphic Request อัตโนมัติ · โพสต์จะ publish ได้เมื่องานกราฟฟิกอนุมัติครบ" : "ไม่ติ๊ก = ไม่ต้องใช้กราฟฟิก · publish ได้โดยไม่ต้องรอ asset"}
+          </div>
         </div>
-        <div className="text-[11px] text-faint">
-          {item.requiredGraphic ? "ติ๊กไว้ = ส่งเข้า Graphic Request อัตโนมัติ · โพสต์จะ publish ได้เมื่องานกราฟฟิกอนุมัติครบ" : "ไม่ติ๊ก = ไม่ต้องใช้กราฟฟิก · publish ได้โดยไม่ต้องรอ asset"}
-        </div>
-      </div>
+      )}
 
       {/* Platform + Asset Size — multi-select checkboxes */}
       <div className="md:col-span-2">
@@ -129,9 +139,13 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
           <label className={label}>Platforms <span className="text-status-red">*</span> <span className="text-faint font-normal">· Asset size optional</span></label>
           {/* Live piece count, from the same artworkUnitsOf the billing report
               counts with — so what you commit to here is what gets invoiced. */}
-          {item.platforms.length > 0 && item.requiredGraphic && <ArtworkCounter assets={item.assets} />}
+          {showGraphicFields && item.platforms.length > 0 && item.requiredGraphic && <ArtworkCounter assets={item.assets} />}
         </div>
-        <div className="mb-2 text-[11px] text-faint">Content Type กำหนดรูปแบบงาน ส่วน Platform จะรวมเป็น Graphic Request เดียว ไม่สร้างงานซ้ำ · ใส่ size เฉพาะตอนมี requirement พิเศษ</div>
+        <div className="mb-2 text-[11px] text-faint">
+          {showGraphicFields
+            ? "Content Type กำหนดรูปแบบงาน ส่วน Platform จะรวมเป็น Graphic Request เดียว ไม่สร้างงานซ้ำ · ใส่ size เฉพาะตอนมี requirement พิเศษ"
+            : "ช่องทางที่โพสต์นี้จะลง · ไซซ์ artwork จะระบุตอนขอกราฟฟิก ไม่ต้องกรอกที่นี่"}
+        </div>
         <div className="flex flex-wrap gap-2 mb-2">
           {CONTENT_PLATFORMS.map((p) => {
             const on = item.platforms.includes(p);
@@ -143,7 +157,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
             );
           })}
         </div>
-        {item.platforms.map((p) => (
+        {showGraphicFields && item.platforms.map((p) => (
           <div key={p} className="mb-2 pl-2 border-l-2" style={{ borderColor: "#E5DECF" }}>
             <div className="text-[11.5px] font-bold text-muted mb-1">{p} · optional size</div>
             <div className="flex flex-wrap gap-2 items-center">

@@ -67,9 +67,18 @@ export interface Graphic {
   submittedAt?: string;
   /** Real relational links: campaignId + the content item this graphic serves
    *  (sourceContentItemId). The pair is the idempotency key so re-running a
-   *  Submit doesn't fan out duplicate requests. */
+   *  Submit doesn't fan out duplicate requests.
+   *
+   *  sourceContentItemId is NOT unique on its own — it is the brief's row
+   *  number ("ci-1", "ci-2", …) and restarts per campaign, so live data has
+   *  "ci-1" in 13 different campaigns. Only the pair identifies anything. */
   campaignId?: string;
   sourceContentItemId?: string;
+  /** The Content Plan post this request produces artwork for, by post id.
+   *  Optional on purpose: POSM, posters and menu artwork are real creative
+   *  work that never becomes a social post, and used to be forced through a
+   *  placeholder post just to exist here. */
+  contentPostId?: string;
   history?: GraphicEvent[];
 }
 
@@ -120,6 +129,74 @@ export function autoNumberDeliverables(dels: GraphicDeliverable[]): GraphicDeliv
     if (!bySize.has(key)) bySize.set(key, ++next);
     return { ...d, artworkNo: bySize.get(key) };
   });
+}
+
+/* ── Which Content Plan post does this request serve? ──────────────────────
+ *
+ * Kept pure (no db) so the rule that decides where approved artwork lands is
+ * testable on its own. Order matters: each step is narrower than the next, and
+ * anything that cannot identify exactly one post returns null rather than
+ * guessing — attaching a brand's artwork to another brand's post is worse than
+ * attaching nothing, because nobody goes looking for a link that "worked". */
+
+/** Minimal shape of a post; avoids importing the Content module into this one. */
+export interface LinkablePost {
+  id: string;
+  campaign: string;
+  campaignId?: string;
+  title: string;
+  sourceContentItemId?: string;
+  graphicRequestId?: string;
+}
+
+/** Query param that opens /graphic's brief form already linked to a post:
+ *  /graphic?briefFor=<content post id>. A URL rather than shared modal state
+ *  because the two forms live on different pages, and it makes "raise a brief
+ *  for this post" a link anyone can send. */
+export const GRAPHIC_BRIEF_FOR_PARAM = "briefFor";
+
+const linkKey = (s?: string) => (s ?? "").trim().toLowerCase();
+
+/** Same campaign? Prefer ids; fall back to the name for rows predating them. */
+function sameCampaign(post: LinkablePost, g: Graphic): boolean {
+  if (post.campaignId && g.campaignId) return post.campaignId === g.campaignId;
+  return !!linkKey(post.campaign) && linkKey(post.campaign) === linkKey(g.campaign);
+}
+
+/** The only match, or null when there is none or more than one. */
+function only<T>(matches: T[]): T | null {
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export function findLinkedPost(g: Graphic, posts: LinkablePost[]): LinkablePost | null {
+  // 1. The request names its post outright (Phase 1 link).
+  if (g.contentPostId) {
+    const direct = posts.find((p) => p.id === g.contentPostId);
+    if (direct) return direct;
+    // A stated link that resolves to nothing is a broken link, not a hint to
+    // start guessing — the post was deleted, or belongs to another workspace.
+    return null;
+  }
+
+  // 2. The post points back at this request.
+  const backRef = only(posts.filter((p) => p.graphicRequestId && String(p.graphicRequestId) === String(g.id)));
+  if (backRef) return backRef;
+
+  // 3. Brief row, scoped to the campaign. Unscoped this was a real hazard:
+  //    "ci-1" alone matches posts in 13 campaigns.
+  if (g.sourceContentItemId) {
+    const scoped = only(posts.filter(
+      (p) => p.sourceContentItemId === g.sourceContentItemId && sameCampaign(p, g),
+    ));
+    if (scoped) return scoped;
+  }
+
+  // 4. Legacy rows carrying no ids at all: campaign + exact title. The old
+  //    substring variant (g.title.includes(p.title)) matched "Wagyu" against
+  //    every post whose title was a fragment of another, so it is gone.
+  const titled = linkKey(g.contentItem) || linkKey(g.title);
+  if (!titled) return null;
+  return only(posts.filter((p) => sameCampaign(p, g) && linkKey(p.title) === titled));
 }
 
 /** Progress rollup for a request's deliverables. */
@@ -202,15 +279,24 @@ export function stageFromDeliverables(g: Graphic): string {
 
 /** One-click approve from the board/list: approves every deliverable still
  *  "Waiting review" (with history entries) so the approver doesn't have to
- *  dig into the drawer. Returns null when nothing is waiting. */
+ *  dig into the drawer. Returns null when nothing is left to approve.
+ *
+ *  Deliverables `by` submitted themselves are skipped: a bulk action must not
+ *  do what the per-row Approve button refuses to do, or the self-approval rule
+ *  is one click away from being bypassed. */
 export function approveAllWaiting(g: Graphic, by: string): Graphic | null {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
+  const submittedByActor = (d: GraphicDeliverable) => {
+    const who = (d.submittedBy ?? "").trim().toLowerCase();
+    return !!who && who === (by ?? "").trim().toLowerCase();
+  };
   let targets = dels.filter((d) => d.status === "Waiting review");
   // Requests parked in "Waiting Feedback" without per-deliverable review
   // states (legacy rows): approving means everything not yet approved.
   if (!targets.length && g.stage === "Waiting Feedback") {
     targets = dels.filter((d) => d.status !== "Approved");
   }
+  targets = targets.filter((d) => !submittedByActor(d));
   if (!targets.length) return null;
   const at = new Date().toISOString();
   const next = dels.map((d) => (targets.includes(d) ? { ...d, status: "Approved" as const } : d));
