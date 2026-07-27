@@ -20,11 +20,20 @@ const brandId = (v: string): BrandId | null => {
 export async function fetchTasks(): Promise<{ tasks: Task[]; doneIds: number[] }> {
   const db = supabase();
   if (!db) return { tasks: TASKS.map((t) => ({ ...t })), doneIds: [...DEFAULT_DONE] };
-  const { data, error } = await db.from("tasks").select("id, done, data").order("id");
+  const { data, error } = await db.from("tasks").select("id, done, campaign_id, data").order("id");
   // Never show demo work when a configured production query fails; doing so
   // made dashboards report active tasks that did not exist in the live table.
   if (error || !data) return { tasks: [], doneIds: [] };
-  const tasks = data.map((r) => r.data as Task).filter(Boolean);
+  // campaign_id is a real column here, not a key inside the data blob (the
+  // blob predates it), so it has to be merged in on read or every consumer
+  // sees campaignId as undefined.
+  const tasks = data
+    .map((r) => {
+      const t = r.data as Task;
+      if (!t) return null;
+      return r.campaign_id ? { ...t, campaignId: r.campaign_id as string } : t;
+    })
+    .filter(Boolean) as Task[];
   const doneIds = data.filter((r) => r.done || (r.data as Task)?.status === "Done").map((r) => (r.data as Task).id);
   return { tasks, doneIds };
 }
@@ -75,7 +84,7 @@ export async function createTaskDb(t: Task): Promise<void> {
   const db = supabase();
   if (!db) return;
   const { error } = await db.from("tasks").insert({
-    title: t.title, brand: brandId(t.brand), campaign: t.campaign, assignee: t.assignee,
+    title: t.title, brand: brandId(t.brand), campaign: t.campaign, campaign_id: t.campaignId ?? null, assignee: t.assignee,
     type: t.type, priority: t.priority, status: t.status, due: t.due,
     next_action: t.nextAction, blocker: t.blocker, checklist: t.checklist ?? [],
     done: t.status === "Done", data: t,
@@ -113,7 +122,7 @@ export async function upsertBriefTask(task: Task, key: string): Promise<{ create
     comments: current.comments,
   };
   const { error: updateError } = await db.from("tasks").update({
-    title: merged.title, brand: brandId(merged.brand), campaign: merged.campaign, assignee: merged.assignee,
+    title: merged.title, brand: brandId(merged.brand), campaign: merged.campaign, campaign_id: merged.campaignId ?? null, assignee: merged.assignee,
     type: merged.type, priority: merged.priority, status: merged.status, due: merged.due,
     next_action: merged.nextAction, blocker: merged.blocker, checklist: merged.checklist ?? [],
     done: merged.status === "Done", data: merged,

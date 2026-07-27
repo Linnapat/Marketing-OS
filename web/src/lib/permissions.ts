@@ -55,7 +55,6 @@ const ROUTE_MODULE: [prefix: string, module: string][] = [
   ["/performance-center", "Campaign"],
   ["/platforms", "Campaign"],
   ["/requests", "Campaign"],
-  ["/approvals", "Campaign"],
   ["/ads", "Campaign"],
   ["/content", "Content"],
   ["/graphic", "Graphic"],

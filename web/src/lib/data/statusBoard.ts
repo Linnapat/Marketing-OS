@@ -1,0 +1,251 @@
+/* Status Dashboard — every work item in the OS, grouped under its campaign.
+ *
+ * Each module speaks its own status vocabulary: campaigns have 12 words, KOL
+ * ~25, tasks 7, expenses 7, graphics 3 per deliverable, and a content post
+ * carries four at once (caption / asset / approval / publish). None of them
+ * compare across modules, so everything is mapped onto one small set of health
+ * states and the board reads in a single glance.
+ *
+ * Pure on purpose — no fetching here, so the mapping is testable without a DB.
+ * See scripts/test-status-board.ts. */
+
+import { BrandId } from "@/lib/brands";
+import { ContentItem } from "@/lib/data/content";
+import { Graphic } from "@/lib/data/graphic";
+import { Task } from "@/lib/data/tasks";
+import { Tone } from "@/lib/status";
+
+/** The shared vocabulary every module is mapped onto, ordered worst-first.
+ *
+ *  `notStarted` deliberately outranks `active`: untouched work is the bigger
+ *  risk, and it is what should surface when a post rolls its four axes up —
+ *  a finished caption with no artwork must read as "Asset not started", not as
+ *  "Caption in progress". */
+export const HEALTH_ORDER = ["blocked", "waiting", "notStarted", "active", "done"] as const;
+export type Health = (typeof HEALTH_ORDER)[number];
+
+export const HEALTH_META: Record<Health, { label: string; tone: Tone }> = {
+  blocked: { label: "ติดปัญหา", tone: "red" },
+  waiting: { label: "รออนุมัติ", tone: "gold" },
+  active: { label: "กำลังทำ", tone: "blue" },
+  notStarted: { label: "ยังไม่เริ่ม", tone: "neutral" },
+  done: { label: "เสร็จ", tone: "green" },
+};
+
+/** Campaign id used for work whose campaign can't be resolved. Deliberately
+ *  visible on the board — silently dropping the rows is how work goes missing
+ *  after a campaign is renamed. */
+export const UNASSIGNED = "__unassigned__";
+
+export type ModuleKey = "content" | "graphic" | "kol" | "task" | "expense";
+
+export const MODULE_LABEL: Record<ModuleKey, string> = {
+  content: "Content",
+  graphic: "Graphic",
+  kol: "KOL",
+  task: "Task",
+  expense: "Expense",
+};
+
+export interface WorkItem {
+  id: string;
+  module: ModuleKey;
+  title: string;
+  campaignId: string;
+  brand?: BrandId;
+  health: Health;
+  /** The module's own word, kept so the board can show what it actually says. */
+  rawStatus: string;
+  owner?: string;
+}
+
+const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
+
+/* ── per-module status → health ──────────────────────────────────────── */
+
+/** Words that mean the same thing wherever they appear. Checked before the
+ *  per-module tables so a shared word can't drift between modules. */
+function commonHealth(status: string): Health | null {
+  const s = norm(status);
+  if (!s) return null;
+  // "approved" counts as done for the lane that owns it. A content post is not
+  // finished just because its approval axis is Approved — the publish axis is
+  // scored separately and drags the roll-up back down.
+  if (["done", "completed", "complete", "published", "posted", "paid", "final", "approved", "approved to post"].includes(s)) return "done";
+  if (["stuck", "blocked", "rejected", "cancelled", "canceled", "revision", "need revision", "revision requested", "unpaid"].includes(s)) return "blocked";
+  if (["waiting approval", "waiting for approval", "need approval", "waiting review", "waiting feedback", "in review", "ready for review", "pending", "draft submitted"].includes(s)) return "waiting";
+  if (["in progress", "active", "producing", "content creating", "publishing", "scheduled", "scheduled in os", "queued", "waiting", "working"].includes(s)) return "active";
+  // "request" / "new request" are the opening state of a KOL row and a graphic
+  // request, not work in flight — status.ts already tones them neutral.
+  // "waiting design" is waiting on an asset that does not exist yet, which is
+  // not started rather than waiting on an approver.
+  if (["draft", "todo", "to do", "not started", "not submitted", "missing", "no asset", "prospect", "planning", "inactive", "request", "new request", "waiting design", "—", "-"].includes(s)) return "notStarted";
+  return null;
+}
+
+export function taskHealth(status: string): Health {
+  return commonHealth(status) ?? "active";
+}
+
+export function expenseHealth(status: string): Health {
+  return commonHealth(status) ?? "waiting";
+}
+
+export function kolHealth(status: string): Health {
+  const s = norm(status);
+  if (["shortlisted", "negotiating", "contract pending", "brief sent", "owner assigned"].includes(s)) return "active";
+  if (["contract signed", "reporting"].includes(s)) return "active";
+  if (["paused"].includes(s)) return "blocked";
+  return commonHealth(status) ?? "active";
+}
+
+/** A graphic request is as healthy as its weakest deliverable: one asset still
+ *  unsubmitted means the request is not done, however many others are approved. */
+export function graphicHealth(g: Pick<Graphic, "deliverables" | "stage">): Health {
+  const dels = g.deliverables ?? [];
+  if (!dels.length) return commonHealth(g.stage) ?? "notStarted";
+  const healths = dels.map((d) => commonHealth(d.status) ?? "active");
+  return worstHealth(healths);
+}
+
+/** Content posts carry four independent axes. The CMO asked for one rolled-up
+ *  status, so the post reports its weakest stage — a finished caption with no
+ *  artwork reads as blocked on Asset, not as half done. `stage` names which
+ *  axis decided it, so the board can say why without opening the post. */
+export function contentHealth(c: Pick<ContentItem, "captionStatus" | "assetStatus" | "approvalStatus" | "publishStatus">): { health: Health; stage: string } {
+  const axes: [string, string][] = [
+    ["Caption", c.captionStatus],
+    ["Asset", c.assetStatus],
+    ["Approval", c.approvalStatus],
+    ["Publish", c.publishStatus],
+  ];
+  const scored = axes.map(([stage, raw]) => ({ stage, raw, health: commonHealth(raw) ?? "active" as Health }));
+  const worst = worstHealth(scored.map((s) => s.health));
+  const decider = scored.find((s) => s.health === worst);
+  return { health: worst, stage: decider?.stage ?? "Caption" };
+}
+
+/** Worst = earliest in HEALTH_ORDER. An empty list is treated as not started. */
+export function worstHealth(healths: Health[]): Health {
+  if (!healths.length) return "notStarted";
+  for (const h of HEALTH_ORDER) if (healths.includes(h)) return h;
+  return "notStarted";
+}
+
+/* ── grouping ────────────────────────────────────────────────────────── */
+
+export interface CampaignGroup {
+  campaignId: string;
+  name: string;
+  brand?: BrandId;
+  status?: string;
+  items: WorkItem[];
+  counts: Record<Health, number>;
+  /** Worst health across the group — what the campaign row shows collapsed. */
+  health: Health;
+  /** Items not yet finished. The number the CMO actually scans for. */
+  openCount: number;
+}
+
+export function emptyCounts(): Record<Health, number> {
+  return { blocked: 0, waiting: 0, active: 0, notStarted: 0, done: 0 };
+}
+
+/** Buckets work items under their campaign. Campaigns with no work still get a
+ *  row (an empty campaign is a real signal), and items whose campaignId matches
+ *  no campaign land in the UNASSIGNED group instead of vanishing. */
+export function groupByCampaign(
+  campaigns: { id: string; name: string; b?: BrandId; status?: string }[],
+  items: WorkItem[],
+): CampaignGroup[] {
+  const groups = new Map<string, CampaignGroup>();
+  const make = (id: string, name: string, brand?: BrandId, status?: string): CampaignGroup => ({
+    campaignId: id, name, brand, status, items: [], counts: emptyCounts(), health: "done", openCount: 0,
+  });
+
+  for (const c of campaigns) groups.set(c.id, make(c.id, c.name, c.b, c.status));
+
+  for (const item of items) {
+    let g = groups.get(item.campaignId);
+    if (!g) {
+      g = groups.get(UNASSIGNED) ?? make(UNASSIGNED, "ไม่ระบุแคมเปญ");
+      groups.set(UNASSIGNED, g);
+    }
+    g.items.push(item);
+    g.counts[item.health] += 1;
+  }
+
+  for (const g of groups.values()) {
+    g.health = worstHealth(g.items.map((i) => i.health));
+    g.openCount = g.items.length - g.counts.done;
+  }
+
+  // Worst first, then most open work, then by name — so whatever needs the
+  // CMO's attention is at the top without any filtering. Two buckets are
+  // pinned to the bottom regardless of health: UNASSIGNED (a data-hygiene
+  // bucket, not a campaign) and campaigns with no work at all, which would
+  // otherwise float up on `notStarted` and bury the campaigns in flight.
+  return [...groups.values()].sort((a, b) => {
+    if ((a.campaignId === UNASSIGNED) !== (b.campaignId === UNASSIGNED)) return a.campaignId === UNASSIGNED ? 1 : -1;
+    const ea = a.items.length === 0, eb = b.items.length === 0;
+    if (ea !== eb) return ea ? 1 : -1;
+    const ha = HEALTH_ORDER.indexOf(a.health), hb = HEALTH_ORDER.indexOf(b.health);
+    if (ha !== hb) return ha - hb;
+    if (a.openCount !== b.openCount) return b.openCount - a.openCount;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/* ── adapters: each module's rows → WorkItem ─────────────────────────── */
+
+export function contentItems(rows: ContentItem[]): WorkItem[] {
+  return rows.map((c) => {
+    const { health, stage } = contentHealth(c);
+    return {
+      id: `content:${c.id}`, module: "content" as const, title: c.title,
+      campaignId: c.campaignId ?? "", brand: c.b, health,
+      rawStatus: health === "done" ? "Published" : `${stage}: ${statusOfStage(c, stage)}`,
+      owner: c.owner,
+    };
+  });
+}
+
+function statusOfStage(c: ContentItem, stage: string): string {
+  if (stage === "Asset") return c.assetStatus;
+  if (stage === "Approval") return c.approvalStatus;
+  if (stage === "Publish") return c.publishStatus;
+  return c.captionStatus;
+}
+
+export function graphicItems(rows: Graphic[]): WorkItem[] {
+  return rows.map((g) => ({
+    id: `graphic:${g.id}`, module: "graphic" as const, title: g.title,
+    campaignId: g.campaignId ?? "", brand: g.b, health: graphicHealth(g),
+    rawStatus: g.stage, owner: g.designer,
+  }));
+}
+
+export function taskItems(rows: Task[], doneIds: Set<number>): WorkItem[] {
+  return rows.map((t) => ({
+    id: `task:${t.id}`, module: "task" as const, title: t.title,
+    campaignId: t.campaignId ?? "",
+    health: doneIds.has(t.id) ? "done" : taskHealth(t.status),
+    rawStatus: t.status, owner: t.assignee,
+  }));
+}
+
+export function expenseItems(rows: { _id?: number; campaignId?: string; category: string; b: BrandId; status: string; requester?: string }[]): WorkItem[] {
+  return rows.map((e) => ({
+    id: `expense:${e._id}`, module: "expense" as const, title: e.category,
+    campaignId: e.campaignId ?? "", brand: e.b, health: expenseHealth(e.status),
+    rawStatus: e.status, owner: e.requester,
+  }));
+}
+
+export function kolItems(rows: { id: string | number; campaignId?: string; name: string; b?: BrandId; status: string; owner?: string }[]): WorkItem[] {
+  return rows.map((k) => ({
+    id: `kol:${k.id}`, module: "kol" as const, title: k.name,
+    campaignId: k.campaignId ?? "", brand: k.b, health: kolHealth(k.status),
+    rawStatus: k.status, owner: k.owner,
+  }));
+}

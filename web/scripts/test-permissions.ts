@@ -91,7 +91,8 @@ console.log("\n— moduleForPath: route ไหนถูกคุมด้วย 
   is("/performance-center คุมด้วย Campaign", moduleForPath("/performance-center"), "Campaign");
   is("/platforms คุมด้วย Campaign", moduleForPath("/platforms"), "Campaign");
   is("/requests คุมด้วย Campaign", moduleForPath("/requests"), "Campaign");
-  is("/approvals คุมด้วย Campaign", moduleForPath("/approvals"), "Campaign");
+  is("/approvals ถูกถอดออกแล้ว — ไม่ผูกกับ module ไหน", moduleForPath("/approvals"), null);
+  is("/status ไม่ถูกกั้นด้วย module เดียว (กั้นราย lane ในหน้า)", moduleForPath("/status"), null);
   is("/ads คุมด้วย Campaign", moduleForPath("/ads"), "Campaign");
   is("/assets คุมด้วย Graphic", moduleForPath("/assets"), "Graphic");
   is("/expenses คุมด้วย Finance (เงินอยู่ใต้ Finance)", moduleForPath("/expenses"), "Finance");
