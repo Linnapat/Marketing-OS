@@ -14,6 +14,34 @@ export function isCreativeSideRole(role: string): boolean {
   return /creative|design|graphic|art|video|vdo|content creator|agency|external/i.test(role || "");
 }
 
+// ── Graphic deliverables: who signs off a submitted artwork ────────────────
+// The Approve button on a deliverable row had no gate at all: any role that
+// could open the Assets tab and saw a row in "Waiting review" could approve it,
+// including the designer who had just submitted it. The Permissions matrix says
+// Graphic = Approve for Creative Leader and the chain is
+// Requester → Creative Leader → Marketing Manager / BGL → CMO, but none of that
+// reached the button.
+//
+// The review step belongs to the person who asked for the work (they accept
+// it), the Creative Leader (final creative review), or the CMO. Marketing
+// Manager / BGL sits at a later step — approving the whole request — not at the
+// per-artwork review, so they are deliberately not here.
+
+/** May this person act on a submitted deliverable at all (approve or send back)? */
+export function canReviewDeliverable(role: string, isRequester: boolean): boolean {
+  return isRequester || role === "CMO" || role === "Creative Leader";
+}
+
+/** May they approve THIS row? Same reviewers, minus self-approval: signing off
+ *  your own submission is the check approving itself. Sending your own work
+ *  back stays allowed — a designer who spots their own mistake needs a way to
+ *  reopen the row, which is otherwise locked while it waits for review. */
+export function canApproveDeliverable(
+  { role, isRequester, isSubmitter }: { role: string; isRequester: boolean; isSubmitter: boolean },
+): boolean {
+  return canReviewDeliverable(role, isRequester) && !isSubmitter;
+}
+
 // ── Campaign creation: driven by the Settings → Permissions matrix ─────────
 // The source of truth the QA verified against. A role may create campaigns
 // when its Campaign module level is Edit or higher; "View" means exactly that.
