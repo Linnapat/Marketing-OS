@@ -95,6 +95,28 @@ console.log("\n— the full path: three pieces submitted, approved, counted —"
   is("same size on two platforms = one piece", artworkUnits(g), 1);
 }
 
+console.log("\n— bulk approve ข้ามชิ้นที่คนกดส่งเอง —");
+{
+  // The per-row Approve button refuses self-approval; the board's one-click
+  // Approve must refuse the same pieces or the rule is one click from bypass.
+  let g: Graphic = threeSizes();
+  g = submitDeliverable(g, 0, "Agency Studio", { assetLink: "https://drive/a.png" })!;
+  g = submitDeliverable(g, 1, "Ken S.", { assetLink: "https://drive/b.png" })!;
+
+  const byKen = approveAllWaiting(g, "Ken S.")!;
+  is("Ken อนุมัติได้เฉพาะชิ้นที่ Agency ส่ง", deliverableProgress(byKen).approved, 1);
+  is("…ชิ้นที่ Ken ส่งเองยังรอรีวิว", byKen.deliverables![1].status, "Waiting review");
+  is("…และ history บันทึกครั้งเดียว", byKen.history!.filter((e) => e.type === "approved").length, 1);
+  // ชื่อเทียบแบบไม่สนตัวพิมพ์/ช่องว่างหน้าหลัง
+  is("เทียบชื่อไม่สนตัวพิมพ์", deliverableProgress(approveAllWaiting(g, " ken s. ")!).approved, 1);
+
+  // ไม่เหลืออะไรให้อนุมัติ → null (ปุ่มจะขึ้น toast แทนที่จะเงียบ)
+  let mine: Graphic = threeSizes();
+  mine = submitDeliverable(mine, 0, "Ken S.", { assetLink: "https://drive/only.png" })!;
+  is("ทุกชิ้นที่รอเป็นของตัวเอง → null", approveAllWaiting(mine, "Ken S."), null);
+  is("…แต่คนอื่นอนุมัติได้", deliverableProgress(approveAllWaiting(mine, "Boss")!).approved, 1);
+}
+
 console.log("\n— the regression this replaces —");
 {
   // The old portal put its single link on deliverable #0 only. Reproduce that

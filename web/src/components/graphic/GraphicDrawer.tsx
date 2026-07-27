@@ -13,7 +13,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveDeliverable, canReviewDeliverable } from "@/lib/roleGates";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
@@ -382,7 +382,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
             </div>
           )}
 
-          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} onUpdate={updateCurrentGraphic} />}
+          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
@@ -499,7 +499,13 @@ const DEL_TONE: Record<string, "neutral" | "gold" | "green" | "red"> = {
 // Deliverable-level board: one row per Platform × Asset Size from the content
 // brief. The graphic team pastes a link + source per row and submits it; the
 // requester approves or sends it back — each row moves independently.
-function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpdate?: (g: Graphic) => void }) {
+function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
+  g: Graphic; me: string; role: string; isRequester: boolean; onUpdate?: (g: Graphic) => void;
+}) {
+  // Sign-off is the requester's, the Creative Leader's or the CMO's — see
+  // canReviewDeliverable. Everyone else sees the artwork but not the buttons.
+  const canReview = canReviewDeliverable(role, isRequester);
+  const sameName = (a: string, b: string) => !!a.trim() && a.trim().toLowerCase() === b.trim().toLowerCase();
   const [dels, setDels] = useState<GraphicDeliverable[]>(() =>
     g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
   const [revising, setRevising] = useState<number | null>(null);
@@ -573,6 +579,8 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
       {dels.map((d, i) => {
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const inReview = d.status === "Waiting review";
+        const isSubmitter = sameName(d.submittedBy ?? "", me);
+        const canApproveRow = canApproveDeliverable({ role, isRequester, isSubmitter });
         return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -608,7 +616,12 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
                   {d.sourceLink && <a href={d.sourceLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Source ↗</a>}
                   <span className="text-faint">by {d.submittedBy}</span>
                 </div>
-                {inReview && (
+                {inReview && !canReview && (
+                  <div className="text-[11.5px] rounded-[8px] px-3 py-2" style={{ background: "#F7F4EE", color: "#8A8175" }}>
+                    รออนุมัติ — คนที่อนุมัติได้คือ <b>{g.requester || "requester"}</b> (ผู้ขอ), Creative Leader หรือ CMO
+                  </div>
+                )}
+                {inReview && canReview && (
                   revising === i ? (
                     <div className="flex flex-col gap-2">
                       <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} autoFocus placeholder="เหตุผลที่ต้องแก้…" className="w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none resize-none" />
@@ -618,10 +631,17 @@ function DeliverablesEditor({ g, me, onUpdate }: { g: Graphic; me: string; onUpd
                       </div>
                     </div>
                   ) : (
-                    <div className="flex gap-2">
-                      <button onClick={() => approve(i)} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px]" style={{ background: "#4E7A4E" }}>✓ Approve</button>
+                    <div className="flex gap-2 flex-wrap">
+                      {/* Approving your own submission is the check approving
+                          itself — Send Back stays open so the submitter can
+                          still reopen a row they know is wrong. */}
+                      {canApproveRow && (
+                        <button onClick={() => approve(i)} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px]" style={{ background: "#4E7A4E" }}>✓ Approve</button>
+                      )}
                       <button onClick={() => setRevising(i)} className="text-[12px] font-bold text-status-orange border-[1.5px] border-line2 rounded-[8px] px-3 py-[7px]">↩ Request Revision</button>
-                      <span className="self-center text-[11px] text-faint">requester: {g.requester}</span>
+                      {canApproveRow
+                        ? <span className="self-center text-[11px] text-faint">requester: {g.requester}</span>
+                        : <span className="self-center text-[11px] text-faint">งานที่คุณส่งเอง — ต้องให้ {g.requester || "ผู้ขอ"}, Creative Leader หรือ CMO อนุมัติ</span>}
                     </div>
                   )
                 )}

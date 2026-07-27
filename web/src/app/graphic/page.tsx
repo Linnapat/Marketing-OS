@@ -32,6 +32,7 @@ import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, G
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
+import { canReviewDeliverable } from "@/lib/roleGates";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -106,7 +107,12 @@ export default function GraphicPage() {
   const me = member?.name || user?.email?.split("@")[0] || "Approver";
   const quickApprove = (g: Graphic) => {
     const ng = approveAllWaiting(g, me);
-    if (!ng) return;
+    // Null here also covers "every waiting piece is one you submitted yourself",
+    // which would otherwise look like a dead button.
+    if (!ng) {
+      if (hasWaitingReview(g)) toastError("อนุมัติงานที่คุณส่งเองไม่ได้ — ต้องให้ผู้ขอ, Creative Leader หรือ CMO อนุมัติ");
+      return;
+    }
     setGraphics((gs) => gs.map((x) => (x.id === ng.id ? ng : x)));
     updateGraphic(ng)
       .then(() => {
@@ -679,7 +685,15 @@ function ShootCalendar({ me }: { me: string }) {
 const hasWaitingReview = (g: Graphic) =>
   (g.deliverables ?? []).some((d) => d.status === "Waiting review") || g.stage === "Waiting Feedback";
 
+/** Reads the gate itself rather than taking it as a prop: this is the one place
+ *  the bulk-approve button is rendered, and three views pass through here — a
+ *  prop any of them could forget is a hole in the same rule the drawer enforces. */
 function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (g: Graphic) => void }) {
+  const { member, user, role } = useAuth();
+  const requesterKey = (g.requester || "").trim().toLowerCase();
+  const isRequester = !!requesterKey &&
+    [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
+  if (!canReviewDeliverable(role, isRequester)) return null;
   if (!onQuickApprove || !hasWaitingReview(g)) return null;
   return (
     <span

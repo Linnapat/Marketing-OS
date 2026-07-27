@@ -202,15 +202,24 @@ export function stageFromDeliverables(g: Graphic): string {
 
 /** One-click approve from the board/list: approves every deliverable still
  *  "Waiting review" (with history entries) so the approver doesn't have to
- *  dig into the drawer. Returns null when nothing is waiting. */
+ *  dig into the drawer. Returns null when nothing is left to approve.
+ *
+ *  Deliverables `by` submitted themselves are skipped: a bulk action must not
+ *  do what the per-row Approve button refuses to do, or the self-approval rule
+ *  is one click away from being bypassed. */
 export function approveAllWaiting(g: Graphic, by: string): Graphic | null {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
+  const submittedByActor = (d: GraphicDeliverable) => {
+    const who = (d.submittedBy ?? "").trim().toLowerCase();
+    return !!who && who === (by ?? "").trim().toLowerCase();
+  };
   let targets = dels.filter((d) => d.status === "Waiting review");
   // Requests parked in "Waiting Feedback" without per-deliverable review
   // states (legacy rows): approving means everything not yet approved.
   if (!targets.length && g.stage === "Waiting Feedback") {
     targets = dels.filter((d) => d.status !== "Approved");
   }
+  targets = targets.filter((d) => !submittedByActor(d));
   if (!targets.length) return null;
   const at = new Date().toISOString();
   const next = dels.map((d) => (targets.includes(d) ? { ...d, status: "Approved" as const } : d));
