@@ -15,6 +15,7 @@ import {
   CampaignGroup, Health, HEALTH_META, HEALTH_ORDER, MODULE_LABEL, ModuleKey,
   UNASSIGNED, WorkItem,
   contentItems, expenseItems, graphicItems, groupByCampaign, kolItems, taskItems,
+  withUrgency, summarise, groupByOwner, URGENCY_META, NO_OWNER, DUE_SOON_DAYS, type Urgency, type OwnerLoad,
 } from "@/lib/data/statusBoard";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchContent } from "@/lib/db/content";
@@ -54,6 +55,8 @@ export default function StatusDashboardPage() {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<CampaignGroup[]>([]);
+  const [groupBy, setGroupBy] = useState<"campaign" | "owner">("campaign");
+  const [urgency, setUrgency] = useState<Urgency | "all">("all");
 
   // Only the lanes this role may see are fetched. Filtering after the fetch
   // would still ship every expense and KOL row to a browser whose role has no
@@ -82,9 +85,12 @@ export default function StatusDashboardPage() {
         ...taskItems(taskData.tasks, new Set(taskData.doneIds)),
         ...expenseItems(expenses),
       ];
+      // Urgency is stamped once here, at the edge, so "today" is read from one
+      // clock rather than by each adapter.
+      const dated = withUrgency(items, new Date().toISOString().slice(0, 10));
       setGroups(groupByCampaign(
         campaigns.map((c) => ({ id: c.id, name: c.name, b: c.b, status: c.status })),
-        items,
+        dated,
       ));
       setLoading(false);
     }).catch(() => { if (alive) setLoading(false); });
@@ -100,6 +106,7 @@ export default function StatusDashboardPage() {
         const items = g.items.filter((i) =>
           modSet.has(i.module)
           && (health === "all" || i.health === health)
+          && (urgency === "all" || i.urgency === urgency)
           && (brand === "all" || i.brand === brand || (!i.brand && g.brand === brand))
           && (i.brand ? brandVisibility.isVisible(i.brand) : true));
         return { ...g, items };
@@ -112,7 +119,7 @@ export default function StatusDashboardPage() {
         const filtered = health !== "all" || modules.length !== allowedModules.length || brand !== "all";
         return filtered ? g.items.length > 0 : true;
       });
-  }, [groups, modules, health, brand, brandVisibility, allowedModules.length]);
+  }, [groups, modules, health, urgency, brand, brandVisibility, allowedModules.length]);
 
   const totals = useMemo(() => {
     const t = { blocked: 0, waiting: 0, active: 0, notStarted: 0, done: 0 } as Record<Health, number>;
@@ -121,6 +128,11 @@ export default function StatusDashboardPage() {
   }, [visible]);
 
   const totalItems = Object.values(totals).reduce((a, b) => a + b, 0);
+  // Summary and owner rollup read the FILTERED items, so the headline numbers
+  // always describe what is on screen rather than a hidden superset.
+  const visibleItems = useMemo(() => visible.flatMap((g) => g.items), [visible]);
+  const summary = useMemo(() => summarise(visibleItems), [visibleItems]);
+  const ownerLoads = useMemo(() => groupByOwner(visibleItems), [visibleItems]);
   const toggleModule = (m: ModuleKey) =>
     setModules((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
 
@@ -144,6 +156,14 @@ export default function StatusDashboardPage() {
               ...HEALTH_ORDER.map((h) => ({ value: h, label: HEALTH_META[h].label })),
             ]}
           />
+          <Segmented
+            value={groupBy}
+            onChange={(v) => setGroupBy(v as "campaign" | "owner")}
+            options={[
+              { value: "campaign", label: "ตามแคมเปญ" },
+              { value: "owner", label: "ตามคน" },
+            ]}
+          />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-bold text-faint uppercase tracking-[0.08em]">โมดูล</span>
@@ -164,7 +184,34 @@ export default function StatusDashboardPage() {
         </div>
       </div>
 
+      {/* What needs someone today, before any scrolling. Health alone could not
+          say it: nearly every item in the system maps to "not started", so the
+          pile was one colour and the late work was invisible inside it. */}
       {!loading && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          {([
+            ["overdue", "เลยกำหนดแล้ว", summary.overdue, "#B33A2E", "#FFF5F4", "#F5C8C4"],
+            ["dueSoon", `ครบกำหนดใน ${DUE_SOON_DAYS} วัน`, summary.dueSoon, "#B3641E", "#FFF7ED", "#F0C89B"],
+            ["all", "ติดปัญหา", summary.blocked, "#B33A2E", "#FBF3F1", "#E8C5BC"],
+            ["all", "รออนุมัติ", summary.waiting, "#8A6D1E", "#FBF6EC", "#EADBC1"],
+          ] as const).map(([key, label, value, fg, bg, border], i) => (
+            <button
+              key={i}
+              onClick={() => {
+                if (key === "all") { setHealth(label === "ติดปัญหา" ? "blocked" : "waiting"); setUrgency("all"); }
+                else { setUrgency(urgency === key ? "all" : key); setHealth("all"); }
+              }}
+              className="rounded-card px-4 py-3 text-left border transition"
+              style={{ background: bg, borderColor: border }}
+            >
+              <div className="text-[22px] font-extrabold leading-none" style={{ color: fg }}>{value}</div>
+              <div className="mt-1 text-[11.5px] font-bold" style={{ color: fg }}>{label}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!loading && groupBy === "campaign" && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
           {HEALTH_ORDER.map((h) => (
             <button
@@ -190,6 +237,19 @@ export default function StatusDashboardPage() {
         <div className="bg-surface border border-line rounded-cardLg py-16 text-center">
           <div className="text-[15px] font-bold text-ink">ไม่มีงานตรงกับตัวกรอง</div>
           <div className="text-[13px] text-faint mt-1">ลองเอาตัวกรองสถานะหรือโมดูลออก</div>
+        </div>
+      ) : groupBy === "owner" ? (
+        <div className="flex flex-col gap-2">
+          {ownerLoads.length === 0 ? (
+            <div className="bg-surface border border-line rounded-cardLg py-16 text-center text-[13px] text-faint">ไม่มีงานค้างตามตัวกรองนี้</div>
+          ) : ownerLoads.map((load) => (
+            <OwnerRow
+              key={load.owner}
+              load={load}
+              open={!!open[`owner:${load.owner}`]}
+              onToggle={() => setOpen((p) => ({ ...p, [`owner:${load.owner}`]: !p[`owner:${load.owner}`] }))}
+            />
+          ))}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -278,3 +338,61 @@ const TONE_FG: Record<Health, string> = {
 };
 const toneBg = (h: Health) => TONE_BG[h];
 const toneFg = (h: Health) => TONE_FG[h];
+
+/** One person's open work, worst-first. Answers "who do I go and talk to",
+ *  which grouping by campaign never could. */
+function OwnerRow({ load, open, onToggle }: { load: OwnerLoad; open: boolean; onToggle: () => void }) {
+  const nobody = load.owner === NO_OWNER;
+  const name = nobody ? "ยังไม่มีเจ้าของ" : load.owner;
+  return (
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      <button onClick={onToggle} className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-ivory/60">
+        <span className="text-[11px] text-faint w-3">{open ? "▾" : "▸"}</span>
+        <span className={clsx("text-[13.5px] font-bold min-w-0 truncate", nobody && "text-faint italic")}>{name}</span>
+        <div className="ml-auto flex items-center gap-[6px] flex-wrap justify-end">
+          {load.overdue > 0 && (
+            <span className="rounded-pill px-2.5 py-[3px] text-[11px] font-bold" style={{ background: "#FFF5F4", color: "#B33A2E" }}>
+              เลยกำหนด {load.overdue}
+            </span>
+          )}
+          {load.dueSoon > 0 && (
+            <span className="rounded-pill px-2.5 py-[3px] text-[11px] font-bold" style={{ background: "#FFF7ED", color: "#B3641E" }}>
+              ใกล้ครบ {load.dueSoon}
+            </span>
+          )}
+          {load.blocked > 0 && (
+            <span className="rounded-pill px-2.5 py-[3px] text-[11px] font-bold" style={{ background: "#FBF3F1", color: "#B33A2E" }}>
+              ติดปัญหา {load.blocked}
+            </span>
+          )}
+          <span className="text-[12px] font-semibold text-muted">{load.total} งาน</span>
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-line4">
+          {load.items
+            .slice()
+            .sort((a, b) => {
+              const rank = (u: Urgency) => (u === "overdue" ? 0 : u === "dueSoon" ? 1 : u === "later" ? 2 : 3);
+              const d = rank(a.urgency) - rank(b.urgency);
+              return d !== 0 ? d : (a.dueIso ?? "").localeCompare(b.dueIso ?? "");
+            })
+            .map((i) => (
+              <div key={i.id} className="px-4 py-2 border-b border-line4 last:border-0 flex items-center gap-3">
+                <span className="text-[10.5px] font-bold rounded-pill px-2 py-[2px] bg-ivory text-faint whitespace-nowrap">{MODULE_LABEL[i.module]}</span>
+                <span className="text-[12.5px] font-semibold truncate min-w-0">{i.title}</span>
+                <span className="ml-auto flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[11px] text-faint whitespace-nowrap">{i.rawStatus}</span>
+                  {i.urgency !== "none" && i.urgency !== "later" && (
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: i.urgency === "overdue" ? "#B33A2E" : "#B3641E" }}>
+                      {i.dueIso ?? URGENCY_META[i.urgency].label}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}

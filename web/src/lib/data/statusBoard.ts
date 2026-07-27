@@ -10,7 +10,7 @@
  * See scripts/test-status-board.ts. */
 
 import { BrandId } from "@/lib/brands";
-import { ContentItem } from "@/lib/data/content";
+import { ContentItem, contentDateIso } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { Tone } from "@/lib/status";
@@ -57,6 +57,57 @@ export interface WorkItem {
   /** The module's own word, kept so the board can show what it actually says. */
   rawStatus: string;
   owner?: string;
+  /** Deadline, where the module keeps one. Tasks, graphic requests and content
+   *  posts do; expenses only carry a display label ("Jul 5") and KOL rows none
+   *  at all, so those read as undated rather than as comfortably on time. */
+  dueIso?: string;
+  urgency: Urgency;
+}
+
+/* ── time ────────────────────────────────────────────────────────────────
+ *
+ * Health alone stopped discriminating: of 283 live items, 275 map to
+ * notStarted, because "todo", "new request", "waiting design", "request" and
+ * "draft" all mean the same thing to the board. A wall one colour answers
+ * "is there work?" — which nobody needed to ask — and hides the 21 items that
+ * are already past their date. Time is the axis that separates them. */
+
+export type Urgency = "overdue" | "dueSoon" | "later" | "none";
+
+export const URGENCY_META: Record<Urgency, { label: string; tone: Tone }> = {
+  overdue: { label: "เลยกำหนด", tone: "red" },
+  dueSoon: { label: "ครบกำหนดใน 7 วัน", tone: "gold" },
+  later: { label: "ยังมีเวลา", tone: "neutral" },
+  none: { label: "ไม่มีกำหนด", tone: "neutral" },
+};
+
+/** Days counted as "due soon". A week: long enough to act, short enough that
+ *  the bucket does not swallow the whole quarter. */
+export const DUE_SOON_DAYS = 7;
+
+/** Date arithmetic in UTC, never local. Building the date locally and reading
+ *  it back with toISOString() shifts it a day backwards everywhere east of
+ *  Greenwich — in Bangkok the seven-day window silently became six. */
+function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Finished work is never late, however old its date — marking it overdue is
+ *  how a board fills with red that no longer means anything. */
+export function urgencyOf(dueIso: string | undefined, health: Health, todayIso: string, soonDays = DUE_SOON_DAYS): Urgency {
+  if (health === "done") return "none";
+  const due = (dueIso ?? "").slice(0, 10);
+  if (!due) return "none";
+  if (due < todayIso) return "overdue";
+  return due <= addDays(todayIso, soonDays) ? "dueSoon" : "later";
+}
+
+/** Stamps urgency onto items the adapters produced. Kept separate so "today"
+ *  enters the pipeline once, at the edge, instead of every adapter reading a
+ *  clock of its own. */
+export function withUrgency(items: WorkItem[], todayIso: string, soonDays = DUE_SOON_DAYS): WorkItem[] {
+  return items.map((i) => ({ ...i, urgency: urgencyOf(i.dueIso, i.health, todayIso, soonDays) }));
 }
 
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
@@ -145,10 +196,94 @@ export interface CampaignGroup {
   health: Health;
   /** Items not yet finished. The number the CMO actually scans for. */
   openCount: number;
+  /** Open work already past its date — what decides where this campaign sorts. */
+  overdueCount: number;
+  dueSoonCount: number;
 }
 
 export function emptyCounts(): Record<Health, number> {
   return { blocked: 0, waiting: 0, active: 0, notStarted: 0, done: 0 };
+}
+
+/** The line at the top of the board: what needs a person today, in four
+ *  numbers, before any scrolling. */
+export interface BoardSummary {
+  total: number;
+  open: number;
+  overdue: number;
+  dueSoon: number;
+  blocked: number;
+  waiting: number;
+}
+
+export function summarise(items: WorkItem[]): BoardSummary {
+  const open = items.filter((i) => i.health !== "done");
+  return {
+    total: items.length,
+    open: open.length,
+    overdue: open.filter((i) => i.urgency === "overdue").length,
+    dueSoon: open.filter((i) => i.urgency === "dueSoon").length,
+    blocked: open.filter((i) => i.health === "blocked").length,
+    waiting: open.filter((i) => i.health === "waiting").length,
+  };
+}
+
+/* ── who is it sitting with? ─────────────────────────────────────────────
+ *
+ * The board grouped by campaign only, which answers "how is this campaign
+ * doing" but never "who do I go and talk to". Every module already records an
+ * owner — designer, assignee, requester — so the answer was in the data the
+ * whole time, just never rolled up. */
+
+export interface OwnerLoad {
+  owner: string;
+  total: number;
+  overdue: number;
+  dueSoon: number;
+  blocked: number;
+  waiting: number;
+  byModule: Record<ModuleKey, number>;
+  items: WorkItem[];
+}
+
+/** Work with nobody's name on it. Shown, never hidden: an unowned overdue item
+ *  is worse than an owned one, because nobody is even expected to move it. */
+export const NO_OWNER = "__no_owner__";
+
+export function groupByOwner(items: WorkItem[]): OwnerLoad[] {
+  const open = items.filter((i) => i.health !== "done");
+  const byOwner = new Map<string, OwnerLoad>();
+
+  for (const item of open) {
+    const raw = (item.owner ?? "").trim();
+    const key = !raw || /^unassigned$/i.test(raw) ? NO_OWNER : raw;
+    let load = byOwner.get(key);
+    if (!load) {
+      load = {
+        owner: key, total: 0, overdue: 0, dueSoon: 0, blocked: 0, waiting: 0,
+        byModule: { content: 0, graphic: 0, kol: 0, task: 0, expense: 0 },
+        items: [],
+      };
+      byOwner.set(key, load);
+    }
+    load.total += 1;
+    load.items.push(item);
+    load.byModule[item.module] += 1;
+    if (item.urgency === "overdue") load.overdue += 1;
+    if (item.urgency === "dueSoon") load.dueSoon += 1;
+    if (item.health === "blocked") load.blocked += 1;
+    if (item.health === "waiting") load.waiting += 1;
+  }
+
+  // Most overdue first — the person to talk to today. Unowned work sinks to
+  // the bottom: it is a queue to assign, not a person to chase.
+  return [...byOwner.values()].sort((a, b) => {
+    if ((a.owner === NO_OWNER) !== (b.owner === NO_OWNER)) return a.owner === NO_OWNER ? 1 : -1;
+    if (a.overdue !== b.overdue) return b.overdue - a.overdue;
+    if (a.dueSoon !== b.dueSoon) return b.dueSoon - a.dueSoon;
+    if (a.total !== b.total) return b.total - a.total;
+    return a.owner.localeCompare(b.owner);
+  });
 }
 
 /** Buckets work items under their campaign. Campaigns with no work still get a
@@ -161,6 +296,7 @@ export function groupByCampaign(
   const groups = new Map<string, CampaignGroup>();
   const make = (id: string, name: string, brand?: BrandId, status?: string): CampaignGroup => ({
     campaignId: id, name, brand, status, items: [], counts: emptyCounts(), health: "done", openCount: 0,
+    overdueCount: 0, dueSoonCount: 0,
   });
 
   for (const c of campaigns) groups.set(c.id, make(c.id, c.name, c.b, c.status));
@@ -178,6 +314,9 @@ export function groupByCampaign(
   for (const g of groups.values()) {
     g.health = worstHealth(g.items.map((i) => i.health));
     g.openCount = g.items.length - g.counts.done;
+    const open = g.items.filter((i) => i.health !== "done");
+    g.overdueCount = open.filter((i) => i.urgency === "overdue").length;
+    g.dueSoonCount = open.filter((i) => i.urgency === "dueSoon").length;
   }
 
   // Worst first, then most open work, then by name — so whatever needs the
@@ -189,6 +328,11 @@ export function groupByCampaign(
     if ((a.campaignId === UNASSIGNED) !== (b.campaignId === UNASSIGNED)) return a.campaignId === UNASSIGNED ? 1 : -1;
     const ea = a.items.length === 0, eb = b.items.length === 0;
     if (ea !== eb) return ea ? 1 : -1;
+    // Lateness outranks health: a campaign of 41 untouched items that are all
+    // weeks away is not the one to open first, and sorting by volume put it on
+    // top. Overdue work is the only thing that cannot wait.
+    if (a.overdueCount !== b.overdueCount) return b.overdueCount - a.overdueCount;
+    if (a.dueSoonCount !== b.dueSoonCount) return b.dueSoonCount - a.dueSoonCount;
     const ha = HEALTH_ORDER.indexOf(a.health), hb = HEALTH_ORDER.indexOf(b.health);
     if (ha !== hb) return ha - hb;
     if (a.openCount !== b.openCount) return b.openCount - a.openCount;
@@ -206,6 +350,10 @@ export function contentItems(rows: ContentItem[]): WorkItem[] {
       campaignId: c.campaignId ?? "", brand: c.b, health,
       rawStatus: health === "done" ? "Published" : `${stage}: ${statusOfStage(c, stage)}`,
       owner: c.owner,
+      // The publish date IS the deadline for a post: artwork or caption still
+      // missing the day before it goes out is late, whatever the asset says.
+      dueIso: contentDateIso(c),
+      urgency: "none",
     };
   });
 }
@@ -221,7 +369,7 @@ export function graphicItems(rows: Graphic[]): WorkItem[] {
   return rows.map((g) => ({
     id: `graphic:${g.id}`, module: "graphic" as const, title: g.title,
     campaignId: g.campaignId ?? "", brand: g.b, health: graphicHealth(g),
-    rawStatus: g.stage, owner: g.designer,
+    rawStatus: g.stage, owner: g.designer, dueIso: g.dueIso, urgency: "none",
   }));
 }
 
@@ -230,7 +378,7 @@ export function taskItems(rows: Task[], doneIds: Set<number>): WorkItem[] {
     id: `task:${t.id}`, module: "task" as const, title: t.title,
     campaignId: t.campaignId ?? "",
     health: doneIds.has(t.id) ? "done" : taskHealth(t.status),
-    rawStatus: t.status, owner: t.assignee,
+    rawStatus: t.status, owner: t.assignee, dueIso: t.dueIso, urgency: "none",
   }));
 }
 
@@ -238,7 +386,7 @@ export function expenseItems(rows: { _id?: number; campaignId?: string; category
   return rows.map((e) => ({
     id: `expense:${e._id}`, module: "expense" as const, title: e.category,
     campaignId: e.campaignId ?? "", brand: e.b, health: expenseHealth(e.status),
-    rawStatus: e.status, owner: e.requester,
+    rawStatus: e.status, owner: e.requester, urgency: "none",
   }));
 }
 
@@ -246,6 +394,6 @@ export function kolItems(rows: { id: string | number; campaignId?: string; name:
   return rows.map((k) => ({
     id: `kol:${k.id}`, module: "kol" as const, title: k.name,
     campaignId: k.campaignId ?? "", brand: k.b, health: kolHealth(k.status),
-    rawStatus: k.status, owner: k.owner,
+    rawStatus: k.status, owner: k.owner, urgency: "none",
   }));
 }
