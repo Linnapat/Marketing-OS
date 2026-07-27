@@ -7,7 +7,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { artworkReport, artworkTotals, artworkMonths, creativeWorkload, revisionRate } from "../src/lib/data/artworkReport";
-import { Graphic, GraphicDeliverable, GraphicEvent, autoNumberDeliverables, emptyDeliverable, artworkUnits } from "../src/lib/data/graphic";
+import { Graphic, GraphicDeliverable, GraphicEvent, autoNumberDeliverables, emptyDeliverable, artworkUnits, artworkUnitsOf } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -211,15 +211,35 @@ console.log("\n— artwork numbers assign themselves from the chosen sizes —")
   is("counting agrees with the numbers", artworkUnits({ deliverables: dels, platform: "", size: "" }), 2);
 }
 {
-  // Legacy rows numbered by hand keep their numbers; new sizes continue after.
+  // Stored numbers are recomputed, not respected. The number is derived from
+  // the size key and carries nothing that key does not — so a stored copy is
+  // only ever a stale answer, and the 82 deliverables numbered before normSize
+  // compared pixels hold numbers that split one file into three.
   const dels = autoNumberDeliverables([
     { ...emptyDeliverable("Instagram", "1:1"), artworkNo: 5 },
     emptyDeliverable("Facebook", "1:1"),
     emptyDeliverable("TikTok", "9:16"),
   ]);
-  is("hand-set number is respected", dels[0].artworkNo, 5)
-  is("same size follows the hand-set number", dels[1].artworkNo, 5);
-  is("new size continues after the highest", dels[2].artworkNo, 6);
+  is("stale number is recomputed from 1", dels[0].artworkNo, 1);
+  is("same size shares it", dels[1].artworkNo, 1);
+  is("a different size gets the next", dels[2].artworkNo, 2);
+  is("badge and count agree", artworkUnits({ deliverables: dels, platform: "", size: "" }), 2);
+}
+
+console.log("\n— one piece = one set of PIXELS, whatever each platform calls it —");
+{
+  // From a real brief: the same 1080×1920 export ticked on three platforms.
+  // Live data counted 98 pieces where 66 were made — a third of an invoice.
+  is("the same pixels under three labels = ONE piece", artworkUnitsOf([
+    { size: "9:16 Story (1080×1920)" }, { size: "9:16 Reel/Story (1080×1920)" }, { size: "9:16 (1080×1920)" },
+  ]), 1);
+  // The mirror, and why ratios cannot decide this: Facebook's 1:1 is 1080×1080
+  // while Google Business Profile's 1:1 is 720×720 — same ratio, two real files.
+  is("the same ratio at different pixels = two pieces", artworkUnitsOf([{ size: "1:1 (1080×1080)" }, { size: "1:1 (720×720)" }]), 2);
+  // Cross-platform reuse the labels hide: FB 16:9 and LINE's card are both 1200×628.
+  is("16:9 (1200×628) and Card 1200×628 = one piece", artworkUnitsOf([{ size: "16:9 (1200×628)" }, { size: "Card 1200×628" }]), 1);
+  // No pixels to compare (print) → fall back to the name.
+  is("A4 vs A3 poster = two pieces (by name)", artworkUnitsOf([{ size: "A4 Poster" }, { size: "A3 Poster" }]), 2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
