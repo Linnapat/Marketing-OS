@@ -182,7 +182,7 @@ export default function ContentPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="THE DAILY BOOST"
+        eyebrow="CONTENT PLAN"
         title="Content Plan"
         description="Plan, caption, approve, schedule, and publish every post from one shared calendar."
       />

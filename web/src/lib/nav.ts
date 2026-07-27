@@ -23,8 +23,8 @@ export const NAV: NavGroup[] = [
   {
     items: [
       // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
-      // route now redirects to Campaign Café, which is the real front door.
-      { href: "/campaigns", label: "Campaign Café", icon: Target, ready: true },
+      // route now redirects to Campaigns, which is the real front door.
+      { href: "/campaigns", label: "Campaigns", icon: Target, ready: true },
       { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
     ],
   },
@@ -32,7 +32,7 @@ export const NAV: NavGroup[] = [
     label: "QA",
     items: [
       { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
-      { href: "/platforms", label: "Performance Bar", icon: BarChart3, ready: true },
+      { href: "/platforms", label: "Platform Performance", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: false },
     ],
   },
@@ -40,19 +40,19 @@ export const NAV: NavGroup[] = [
     label: "Plan & Produce",
     items: [
       { href: "/content", label: "Content Plan", icon: CalendarDays, ready: true },
-      { href: "/graphic", label: "Creative Kitchen", icon: Palette, ready: true },
-      { href: "/kol", label: "KOL/Influ Café", icon: Star, ready: true },
-      { href: "/requests", label: "Brief & Bite", icon: Inbox, ready: false },
-      { href: "/assets", label: "Asset Pantry", icon: FolderOpen, ready: true },
-      { href: "/expenses", label: "Cashier", icon: Receipt, ready: true },
-      { href: "/finance", label: "Finance Counter", icon: Wallet, ready: true },
+      { href: "/graphic", label: "Graphic Request", icon: Palette, ready: true },
+      { href: "/kol", label: "KOL", icon: Star, ready: true },
+      { href: "/requests", label: "Requests", icon: Inbox, ready: false },
+      { href: "/assets", label: "Assets", icon: FolderOpen, ready: true },
+      { href: "/expenses", label: "Expenses", icon: Receipt, ready: true },
+      { href: "/finance", label: "Finance", icon: Wallet, ready: true },
     ],
   },
   {
     label: "Team",
     items: [
-      { href: "/my-tasks", label: "Busy but Brilliant", icon: CheckSquare, ready: true },
-      { href: "/team", label: "Team Mood Board", icon: Users, ready: true },
+      { href: "/my-tasks", label: "My Tasks", icon: CheckSquare, ready: true },
+      { href: "/team", label: "Team", icon: Users, ready: true },
       { href: "/settings", label: "Settings", icon: Settings, ready: true },
     ],
   },

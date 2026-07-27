@@ -673,7 +673,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
       });
       if (made) {
         const c = made.created;
-        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Calendar / Creative Kitchen แล้ว`, "/campaigns");
+        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, "/campaigns");
       }
       // Approved budget flows straight into Finance as Draft expense requests —
       // one per funded bucket — so the finance team never re-keys the plan.

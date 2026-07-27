@@ -34,11 +34,11 @@ then the page reloads with the imported actuals.
 - **Sync, not just append:** each import makes the sheet-sourced rows of every
   campaign in the sheet match the sheet exactly. Rows are tagged `source: "sheet"`;
   on re-import, stale sheet rows (a renamed or deleted ad) are removed and the
-  fresh set upserted. Rows entered by hand in the Performance Bar (no `source`)
+  fresh set upserted. Rows entered by hand in the Platform Performance (no `source`)
   are never touched.
 - **One source per ad:** if the same ad is both in the sheet and typed manually
-  in the Performance Bar, it becomes two rows (double count). Pick one entry point
-  per ad — the sheet, or the Performance Bar.
+  in the Platform Performance, it becomes two rows (double count). Pick one entry point
+  per ad — the sheet, or the Platform Performance.
 - **KOL** is not imported here yet — say the word to add a symmetric
   KOL actuals import.
 - Prefer a fixed sheet instead of pasting each time? We can store the URL as an

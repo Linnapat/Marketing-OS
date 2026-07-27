@@ -46,7 +46,7 @@ export interface CampaignResultRow {
   updatedBy?: string;    // who made the change
 
   // Origin of the row. "sheet" = imported from the Ad_Actuals Google Sheet
-  // (re-import replaces these); unset = entered by hand in the Performance Bar.
+  // (re-import replaces these); unset = entered by hand in the Platform Performance.
   source?: "sheet";
 }
 
@@ -250,7 +250,7 @@ function planRow(base: Omit<CampaignResultRow, "reachActual" | "budgetActual" | 
   return { ...base, reachActual: 0, budgetActual: 0, conversions: 0 };
 }
 
-/** Performance Bar should show planned media/KOL budget as soon as a Campaign
+/** Platform Performance should show planned media/KOL budget as soon as a Campaign
  *  Brief exists, even before actual rows have been entered. Existing saved
  *  result rows win; missing rows are derived from Budget allocation. */
 export function mergeBudgetAllocationRows(
@@ -303,7 +303,7 @@ export function mergeBudgetAllocationRows(
       const reachPerPlatform = Math.round((kol.expectedReach || 0) * Math.max(1, kol.count || 1) / platforms.length);
       // Match the KOL module's real results: sum actualReach + committed cost of
       // the creator rows fanned out from this brief item, split across platforms
-      // so the Performance Bar KOL row shows the same numbers as KOL Performance.
+      // so the Platform Performance KOL row shows the same numbers as KOL Performance.
       const matched = kols.filter((k) => k.campaignId === campaign.id && (k.sourceKolRequirementId || "").split("#")[0] === kol.id);
       const actualReachTotal = matched.reduce((s, k) => s + (k.actualReach || 0), 0);
       const actualCostTotal = matched.reduce((s, k) => s + (k.totalCost || 0), 0);

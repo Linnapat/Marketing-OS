@@ -400,7 +400,7 @@ export default function PlatformsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Performance"
+        eyebrow="PLATFORM PERFORMANCE"
         title="Platform Performance"
         subtitle="สรุปผลข้ามแคมเปญ — สลับดูราย Platform หรือราย Campaign, อัพเดต actual แล้ว sync กลับแคมเปญ (งบแผน fix ที่แคมเปญ)"
         right={

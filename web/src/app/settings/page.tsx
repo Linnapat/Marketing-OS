@@ -671,7 +671,7 @@ export default function SettingsPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="TEAM SETTINGS"
+        eyebrow="SETTINGS"
         title="Settings"
         description="Control people, permissions, workflow rules, and company-wide defaults for the whole OS."
       />

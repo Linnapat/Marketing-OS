@@ -61,7 +61,7 @@ export default function TeamWorkloadPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="TEAM MOOD BOARD"
+        eyebrow="TEAM"
         title="Team Workload & Support"
         description="See who is busy, who is stuck, and where the team needs support today."
       />

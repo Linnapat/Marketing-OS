@@ -88,7 +88,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   // Nothing flows downstream until the CMO approves the campaign. A Draft or
   // "Waiting for Approval" brief only saves its plan; content posts, graphic
   // requests, KOL rows and tasks are materialised the moment it turns
-  // "Approved" (or later), so the Content Calendar / Creative Kitchen never
+  // "Approved" (or later), so the Content Calendar / Graphic Request never
   // show work from an unapproved campaign.
   const materialize = ["Approved", "In Progress", "Completed"].includes(normalizedBrief.status);
   if (!materialize) {
@@ -103,7 +103,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
     // Video work needs a Creative request just like graphic work — a content
     // item with only "Needs Video" used to become a bare task, so VDO pieces
-    // never reached Creative Kitchen and were never counted in Artwork Count.
+    // never reached Graphic Request and were never counted in Artwork Count.
     const needsCreative = ci.requiredGraphic || ci.requiredVideo;
     const gid = needsCreative ? stamp + 500 + n : undefined;
     const post: ContentItem = {

@@ -245,7 +245,7 @@ export default function MyTasksPage() {
   return (
     <div style={{ paddingBottom: 40 }}>
       <CampaignPageHeaderSection
-        eyebrow="BUSY BUT BRILLIANT"
+        eyebrow="MY TASKS"
         title="My Tasks"
         description="Personal workspace, approvals, and team workload in one calm command center."
       />

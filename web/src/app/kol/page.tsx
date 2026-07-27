@@ -178,8 +178,8 @@ export default function KolPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="KOL/INFLU CAFÉ"
-        title="KOL/Influ Café"
+        eyebrow="KOL"
+        title="KOL"
         description="Track creator requests, approvals, performance, and your reusable KOL library in one place."
       />
 
@@ -212,7 +212,7 @@ export default function KolPage() {
         </CampaignCommandBar>
 
         <ModuleSummaryCard
-          title="KOL/Influ Café Summary"
+          title="KOL Summary"
           titleClassName="text-[#9D3D6B]"
           style={{
             background: "linear-gradient(180deg, #FCE8F2 0%, #F8DCEB 100%)",

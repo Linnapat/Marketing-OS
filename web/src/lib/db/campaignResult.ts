@@ -86,7 +86,7 @@ export async function importAdActualsFromSheet(
 /** Make the sheet-sourced rows of every campaign in `rows` match the sheet
  *  exactly: drop stale rows that came from the sheet but are no longer in it
  *  (e.g. a renamed or deleted ad), then upsert the fresh set. Rows entered by
- *  hand in the Performance Bar (no `source`) are never touched. Returns the
+ *  hand in the Platform Performance (no `source`) are never touched. Returns the
  *  number of stale sheet rows removed. */
 async function syncSheetResults(rows: CampaignResultRow[]): Promise<number> {
   const db = supabase();

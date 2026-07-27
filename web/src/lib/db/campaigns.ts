@@ -123,7 +123,7 @@ export async function deleteCampaign(id: string): Promise<void> {
 
 /** Keep the campaign's ROAS multiple (stored in the legacy `roi` column) in
  *  sync with entered results: ROAS = Σ ad revenue ÷ Σ ad actual spend. Called
- *  after saving result rows so Campaign Café / Finance show the real multiple. */
+ *  after saving result rows so Campaigns / Finance show the real multiple. */
 export async function updateCampaignRoas(id: string, roas: number): Promise<void> {
   const rounded = Math.round(roas * 100) / 100;
   const db = supabase();

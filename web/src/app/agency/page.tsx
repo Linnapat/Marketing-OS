@@ -215,9 +215,9 @@ export default function AgencyPortalPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="EXTERNAL CREATIVE KITCHEN"
+        eyebrow="AGENCY PORTAL"
         title="Agency Portal"
-        description="External creative workspace linked directly to Creative Kitchen assignments."
+        description="External creative workspace linked directly to Graphic Request assignments."
       />
 
       <div className="mt-5 flex flex-col gap-5">
@@ -267,7 +267,7 @@ export default function AgencyPortalPage() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {[
               { label: "Assigned", value: counts.total, emoji: "🤝", note: "External deliverables in view" },
-              { label: "Linked", value: counts.linked, emoji: "🎨", note: "Pulled from Creative Kitchen" },
+              { label: "Linked", value: counts.linked, emoji: "🎨", note: "Pulled from Graphic Request" },
               { label: "Open", value: counts.open, emoji: "🛠️", note: "Still being worked on" },
               { label: "Submitted", value: counts.submitted, emoji: "📤", note: "Waiting internal review" },
               { label: "Approved", value: counts.approved, emoji: "✅", note: "Signed off by internal team" },
@@ -292,7 +292,7 @@ export default function AgencyPortalPage() {
           <div className="px-5 py-10 text-center bg-surface border border-line rounded-cardLg">
             <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#D9B86A] bg-[#FFF8EA] px-6 py-5">
               <div className="text-[13px] font-bold text-[#8A6930]">No agency deliverables in this view</div>
-              <div className="text-[11.5px] text-[#9A7A47]">Assign a Creative Kitchen request to an Agency / External member and it will appear here automatically.</div>
+              <div className="text-[11.5px] text-[#9A7A47]">Assign a Graphic Request request to an Agency / External member and it will appear here automatically.</div>
             </div>
           </div>
         )}
@@ -304,7 +304,7 @@ export default function AgencyPortalPage() {
           <div className="relative bg-surface rounded-cardLg border border-line shadow-2xl w-full max-w-md p-6">
             <button onClick={() => setNewOpen(false)} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
             <div className="text-[16px] font-extrabold mb-1">Manual agency task</div>
-            <div className="text-[12px] text-faint mb-4">ใช้เฉพาะงาน external ที่ไม่ได้เริ่มจาก Creative Kitchen</div>
+            <div className="text-[12px] text-faint mb-4">ใช้เฉพาะงาน external ที่ไม่ได้เริ่มจาก Graphic Request</div>
             <div className="flex flex-col gap-4">
               <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Task title <span className="text-status-red">*</span></label><input value={nt.title} onChange={(e) => setNt({ ...nt, title: e.target.value })} placeholder="e.g. Story pack for launch" className={field} /></div>
               <div className="grid grid-cols-2 gap-3">
@@ -379,7 +379,7 @@ function AgencyCard({ t, onUpdate, onGraphicChange, me }: {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
-              <span className="text-[10.5px] font-bold text-[#8A6930]">{t.graphic ? "linked from Creative Kitchen" : "manual agency task"}</span>
+              <span className="text-[10.5px] font-bold text-[#8A6930]">{t.graphic ? "linked from Graphic Request" : "manual agency task"}</span>
             </div>
             <div className="mt-[4px] text-[11.5px] text-[#5B4630] truncate">
               {keyMessage}

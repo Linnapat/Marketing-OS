@@ -23,7 +23,7 @@ export const AGENCY_TYPES = ["Graphic", "Video", "Content", "Photo", "Print"];
 
 export interface AgencyTask {
   id: number;
-  /** When this row is derived from Creative Kitchen / Graphic Request. */
+  /** When this row is derived from Graphic Request / Graphic Request. */
   graphicId?: number;
   source?: "manual" | "graphic";
   title: string;
