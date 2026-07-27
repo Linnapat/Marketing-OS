@@ -211,6 +211,19 @@ export interface CampaignBrief {
   createdAt: string;
 }
 
+/** Next `ci-N` / `kr-N` sequence number, safe to resume after items were
+ *  removed. Counting surviving items (content.length + kols.length) undercounts
+ *  once anything has ever been deleted, and a resumed sequence can collide with
+ *  an id still in use — two items then share one id, so editing either one
+ *  patches both. Scanning the ids actually in play never collides. */
+export function nextSeqFromItems(content: { id: string }[], kols: { id: string }[]): number {
+  const maxOf = (items: { id: string }[]) => items.reduce((max, { id }) => {
+    const n = Number(id.slice(id.lastIndexOf("-") + 1));
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return Math.max(maxOf(content), maxOf(kols)) + 1;
+}
+
 // ── Factories ─────────────────────────────────────────────────────────────
 export function emptyContentItem(seq: number): BriefContentItem {
   return {
@@ -417,7 +430,9 @@ export function guidelineChecklist(brief: CampaignBrief): GuidelineItem[] {
     { key: "message", label: "Main message คืออะไร", done: !!b.mainMessage.trim(), must: true },
     { key: "offer", label: "Offer / Promotion มีหรือไม่", done: !!b.offer.trim(), must: true },
     { key: "branch", label: "Branch ที่ใช้ campaign (อย่างน้อย 1 สาขา)", done: b.branches.length > 0, must: true },
-    { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0, must: true },
+    // Not must-have: some campaigns genuinely spend nothing (e.g. a Mainichi
+    // free-message-quota campaign) — Budget stays a reminder, never a blocker.
+    { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0, must: false },
     { key: "content", label: "มี content item อย่างน้อย 1 ชิ้น + asset size ครบทุก platform", done: b.content.length > 0 && b.content.every((c) => c.platforms.length > 0 && c.platforms.filter(needsAssetSize).every((p) => c.assets.some((a) => a.platform === p))), must: true },
     { key: "launch", label: "Launch date กำหนดแล้วหรือยัง", done: !!b.launchDate, must: true },
     { key: "approval", label: "Approver (CMO) กำหนดแล้วหรือยัง", done: !!b.approver.trim(), must: true },
@@ -446,7 +461,6 @@ export function validateSubmit(brief: CampaignBrief): string[] {
   if (!brief.audience.trim()) e.push("Please enter the Target Audience");
   if (!brief.mainMessage.trim()) e.push("Please enter the Key Message");
   if (!brief.offer.trim()) e.push("Please enter the Main Offer");
-  if (brief.budget.total <= 0) e.push("Please enter the total Budget");
   if (brief.content.length === 0) e.push("Please add at least one Content item (Platform)");
   brief.content.forEach((c, i) => {
     const tag = c.title.trim() || `Content #${i + 1}`;
