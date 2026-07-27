@@ -31,7 +31,7 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, todayIso } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, graphicDueRangeImpossible, todayIso } from "@/lib/data/brief";
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
@@ -928,7 +928,15 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
   const brandCampaigns = useMemo(() => campaigns.filter((c) => c.b === b), [campaigns, b]);
   const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
-  useEffect(() => { if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign(""); }, [brandCampaigns, campaign]);
+  // Clearing a campaign that does not belong to the chosen brand — but not
+  // before the campaign list has arrived. fetchCampaigns resolves after the
+  // ?briefFor= prefill has already set the post's campaign, so running this
+  // against an empty list wiped it and the deep link landed on a blank
+  // Campaign field with the post picker disabled behind it.
+  useEffect(() => {
+    if (!campaigns.length) return;
+    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
+  }, [brandCampaigns, campaign, campaigns.length]);
 
   // Posts to choose from: this campaign's, since a brief belongs to one
   // campaign and picking across them is the mistake the id scoping guards.
@@ -974,7 +982,11 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   const newUnits = artworkUnitsOf(item.assets.length ? item.assets : item.platforms.map(() => ({ size: "" })));
   const atCap = !!dueDay && usedToday + newUnits > DAILY_WORK_CAP;
 
-  const dueOrderValid = !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
+  // "Deliver before it publishes" is only a rule while it is satisfiable; when
+  // the post publishes inside the lead time it becomes a trap that no date can
+  // clear (see graphicDueRangeImpossible). The form warns instead of blocking.
+  const dueRangeImpossible = graphicDueRangeImpossible(item.publishDate, requestDate);
+  const dueOrderValid = dueRangeImpossible || !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
   const graphicLeadValid = !!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate);
   const postLinkValid = postLink !== "existing" || !!linkedPost;
   const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!campaign.trim() && !!item.graphicDueDate && dueOrderValid && graphicLeadValid && !atCap && postLinkValid;

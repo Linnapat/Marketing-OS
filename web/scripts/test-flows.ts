@@ -7,7 +7,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
-import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf } from "../src/lib/data/brief";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
@@ -166,6 +166,42 @@ console.log("Budget — Production excluded from allocation");
   check("Other without a note warns", budgetSummary(b).warnings.some((w) => w.includes("Other")));
   b.budget = { ...b.budget, otherNote: "ค่าขนส่ง POSM" };
   check("Other with a note clears the warning", !budgetSummary(b).warnings.some((w) => w.includes("Other")));
+}
+
+console.log("Graphic due date — the lead time and the publish date can contradict each other");
+{
+  // 2026-07-27 is a Monday; five business days later is Monday 2026-08-03.
+  const request = "2026-07-27";
+  check("minimum due date is 5 business days out", minGraphicDueDate(request) === "2026-08-03");
+  check("a date before the minimum is rejected", !isGraphicDueDateAllowed("2026-07-30", request));
+  check("the minimum itself is allowed", isGraphicDueDateAllowed("2026-08-03", request));
+
+  // Found on production: raising a brief from a post that publishes inside the
+  // lead time gave the picker min 2026-08-03 and max 2026-07-27, so every date
+  // in every month was disabled and the form could not be submitted at all.
+  check("publish inside the lead time = impossible range", graphicDueRangeImpossible("2026-07-27", request));
+  check("publish after the lead time = fine", !graphicDueRangeImpossible("2026-08-10", request));
+  check("no publish date = nothing to contradict", !graphicDueRangeImpossible(undefined, request));
+  check("publish exactly on the minimum = fine", !graphicDueRangeImpossible("2026-08-03", request));
+
+  // …and Submit must not block on "due ≤ publish" when no date can satisfy it.
+  const brief = (publishDate: string, graphicDueDate: string): CampaignBrief => {
+    const b = emptyBrief("due-range-test");
+    b.name = "N"; b.objective = "Awareness"; b.campaignType = "Always-on"; b.b = "teppen";
+    b.branches = ["Central"]; b.startDate = "2026-07-01"; b.endDate = "2026-12-31";
+    b.launchDate = "2026-07-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O"; b.approver = "CMO";
+    b.content = [{
+      ...emptyContentItem(1), id: "c1", title: "T", subHead: "S", platforms: ["Instagram"],
+      assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], requiredGraphic: true,
+      publishDate, graphicDueDate,
+    }];
+    return b;
+  };
+  const afterPublish = (b: CampaignBrief) => validateSubmit(b).some((e) => /must not be after Publish Date/.test(e));
+  // A post far enough out: the rule still bites.
+  check("due after publish is still blocked when the range is possible", afterPublish(brief("2026-09-01", "2026-09-15")));
+  // A post inside the lead time: warned in the form, never blocked here.
+  check("…but not blocked when no date could satisfy both", !afterPublish(brief("2026-07-28", "2026-08-03")));
 }
 
 console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-message quota) must still submit");

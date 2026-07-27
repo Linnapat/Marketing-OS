@@ -641,7 +641,13 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                       <button onClick={() => setRevising(i)} className="text-[12px] font-bold text-status-orange border-[1.5px] border-line2 rounded-[8px] px-3 py-[7px]">↩ Request Revision</button>
                       {canApproveRow
                         ? <span className="self-center text-[11px] text-faint">requester: {g.requester}</span>
-                        : <span className="self-center text-[11px] text-faint">งานที่คุณส่งเอง — ต้องให้ {g.requester || "ผู้ขอ"}, Creative Leader หรือ CMO อนุมัติ</span>}
+                        : <span className="self-center text-[11px] text-faint">
+                            {/* Naming the requester is only useful when it is
+                                someone else — when you raised the brief AND
+                                submitted the work, the old copy read "you need
+                                <your own name> to approve". */}
+                            งานที่คุณส่งเอง — ต้องให้{isRequester ? "" : ` ${g.requester || "ผู้ขอ"},`} Creative Leader หรือ CMO {isRequester ? "คนอื่น" : ""}อนุมัติ
+                          </span>}
                     </div>
                   )
                 )}
