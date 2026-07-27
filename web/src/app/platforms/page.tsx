@@ -5,7 +5,7 @@
 // stays fixed at the campaign). Actual values are edited in an Excel-like grid.
 // Uses the shared PageHeader (per-module theme) and brand-visibility system.
 
-import { toastError } from "@/lib/toast";
+import { toast, toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Save, Check } from "lucide-react";
@@ -29,11 +29,11 @@ import {
   deriveResultRow, mergeBudgetAllocationRows,
 } from "@/lib/data/campaignResult";
 import { fetchAllResults, saveResults } from "@/lib/db/campaignResult";
-import { fetchCampaigns } from "@/lib/db/campaigns";
-import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
+import { fetchCampaigns, CAMPAIGN_SHEET_HEADERS } from "@/lib/db/campaigns";
+import { mirrorRowToSheet, replaceSheetTab } from "@/lib/db/sheetMirror";
 import {
   PERF_MIRROR_TAB, PERF_MIRROR_HEADERS, PERF_MIRROR_BRANDS_KEY,
-  perfMirrorRow, mirrorableRows, parseMirrorBrands,
+  perfMirrorRow, mirrorableRows, parseMirrorBrands, shouldMirrorBrand, splitDates,
 } from "@/lib/data/perfMirror";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
@@ -138,6 +138,42 @@ export default function PlatformsPage() {
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  // Full re-sync: clear both tabs and write everything the app knows. Needed
+  // because the sheet was keyed on hand-written codes for 5 of 21 campaigns —
+  // appending onto that would leave two id systems side by side in one column.
+  const [resyncing, setResyncing] = useState(false);
+  const resyncSheet = async () => {
+    const brandsLabel = mirrorBrands === null ? "ทุกแบรนด์" : `${mirrorBrands.length} แบรนด์`;
+    if (!window.confirm(
+      `ล้างแท็บ Campaigns และ Ad_Activities ใน Google Sheet แล้วเขียนใหม่จากแอป (${brandsLabel})\n\n` +
+      "หัวตารางและสูตรไม่ถูกแตะ แต่ข้อมูลเดิมในสองแท็บนี้จะหายทั้งหมด ย้อนกลับไม่ได้",
+    )) return;
+    setResyncing(true);
+    const nowIso = new Date().toISOString();
+    try {
+      const campaignsToSync = campaigns.filter((c) => shouldMirrorBrand(c.b, mirrorBrands));
+      const campaignRows = campaignsToSync.map((c) => {
+        const { start, end } = splitDates(c.dates);
+        return [c.id, c.name, brandVisibility.brandNames[c.b] ?? BRANDS[c.b].name, c.branch ?? "", "", start, end, c.budget ?? 0, ""];
+      });
+      const a = await replaceSheetTab("Campaigns", CAMPAIGN_SHEET_HEADERS, campaignRows);
+      if (!a.ok) throw new Error(a.error ?? "Campaigns tab failed");
+
+      const adRows = mirrorableRows(
+        rows,
+        (id) => { const c = campaigns.find((x) => x.id === id); return c ? { name: c.name, brand: c.b, dates: c.dates } : undefined; },
+        mirrorBrands,
+        nowIso,
+      ).map(({ row, ctx }) => perfMirrorRow(row, ctx));
+      const b = await replaceSheetTab(PERF_MIRROR_TAB, [...PERF_MIRROR_HEADERS], adRows);
+      if (!b.ok) throw new Error(b.error ?? "Ad_Activities tab failed");
+
+      toast(`sync ขึ้นชีตแล้ว · Campaigns ${campaignRows.length} แถว · Ad_Activities ${adRows.length} แถว`);
+    } catch (error) {
+      toastError(`sync ขึ้นชีตไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setResyncing(false); }
+  };
+
   const toggleMirrorBrand = async (id: BrandId) => {
     const current = mirrorBrands ?? visibleBrands;
     const next = current.includes(id) ? current.filter((b) => b !== id) : [...current, id];
@@ -548,6 +584,12 @@ export default function PlatformsPage() {
             ? "ยังไม่ได้เลือก = ส่งทุกแบรนด์"
             : mirrorBrands.length === 0 ? "ปิดการ sync ทั้งหมด" : `ส่ง ${mirrorBrands.length} แบรนด์`}
         </span>
+        <button type="button" onClick={resyncSheet} disabled={resyncing}
+          className="text-[11.5px] font-bold rounded-[9px] px-3 py-[6px] border disabled:opacity-50 whitespace-nowrap"
+          style={{ borderColor: "#F0C89B", background: "#FFF7ED", color: "#B3641E" }}
+          title="ล้างแท็บ Campaigns และ Ad_Activities แล้วเขียนใหม่ทั้งหมดจากแอป">
+          {resyncing ? "กำลัง sync…" : "↻ ล้างแล้ว sync ใหม่ทั้งหมด"}
+        </button>
       </div>
 
       {/* Monthly marketing target — org-wide for the selected month, no per-campaign entry */}
