@@ -115,7 +115,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       campaignId: normalizedBrief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
       requester: ci.requester, designer: ci.designer, approver: ci.approver,
       // Owner is assigned later inside the Creative team — leave unassigned here.
-      owner: "Unassigned", caption: "", hashtags: "", cta: ci.cta || "",
+      // The person who planned the item owns the post until someone else picks
+      // it up. "Unassigned" was a placeholder that never got replaced: all 51
+      // live posts carried it while the requester was known the whole time.
+      owner: ci.requester || "Unassigned", caption: "", hashtags: "", cta: ci.cta || "",
       // Brief guide for the caption writer.
       subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
       productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,
@@ -132,7 +135,8 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       if (!needsCreative) {
         const madeTask = await upsertBriefTask(mkTask(++n, {
           title: `${ci.title || "Content"} — ${ci.type}`, type: "Content", moduleIcon: "📝", moduleColor: "#3E5C9A",
-          owner: "", priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
+          // The requester asked for this item, so it is theirs until handed on.
+          owner: ci.requester, priority: ci.priority, due: labelDate(ci.publishDate), dueIso: ci.publishDate,
           nextAction: `${plats.join(", ")} · publish ${labelDate(ci.publishDate) || "TBD"}`,
         }), `${brief.id}:content:${ci.id}`);
         if (madeTask.created) tasks++;
@@ -174,7 +178,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         graphics++;
         const madeTask = await upsertBriefTask(mkTask(++n, {
           title: `Graphic — ${ci.title || ci.type} (${deliverables.length} asset)`, type: "Graphic", moduleIcon: "🎨", moduleColor: "#C68A1E",
-          owner: "", priority: ci.priority, due: labelDate(ci.graphicDueDate || ci.publishDate), dueIso: ci.graphicDueDate || ci.publishDate,
+          // Left unowned on purpose when no designer is set: Creative Leader
+          // assigns after the brief lands, and the assignment queue is where it
+          // waits. Parking it on the requester would hide it from that queue.
+          owner: ci.designer && ci.designer !== "Unassigned" ? ci.designer : "", priority: ci.priority, due: labelDate(ci.graphicDueDate || ci.publishDate), dueIso: ci.graphicDueDate || ci.publishDate,
           channel: plats.join(", "), relatedGraphicId: String(gid), nextAction: `Deliver ${deliverables.length} asset(s)`,
         }), `${brief.id}:graphic:${ci.id}`);
         if (madeTask.created) tasks++;

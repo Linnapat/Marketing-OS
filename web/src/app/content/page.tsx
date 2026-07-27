@@ -370,7 +370,7 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
     const post: ContentItem = {
       id: postId,
       day, dateIso: iso, time, title: item.title.trim(), b, plat: item.platforms[0] ?? "Instagram", platforms: item.platforms,
-      status: "Draft", campaign: campaign.trim(), owner: "Unassigned",
+      status: "Draft", campaign: campaign.trim(), owner: me,
       caption: "", hashtags: "", cta: "",
       captionStatus: "Missing", assetStatus: "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",

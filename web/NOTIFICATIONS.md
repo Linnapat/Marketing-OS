@@ -1,4 +1,24 @@
-# Notifications — LINE group + Email (ของจริง)
+# Notifications — Slack + Email (ของจริง)
+
+> **ช่องทางหลักคือ Slack** ตั้งแต่ 28 ก.ค. 2026 · ส่วน LINE ยังใช้ได้อยู่ถ้าตั้ง env ของมันไว้
+> แต่ค่าเริ่มต้นปิดแล้ว ทุกช่องทางเป็นอิสระต่อกัน ไม่ตั้ง env = ข้ามเงียบๆ
+
+## 0) Slack (ผ่าน Incoming Webhook)
+
+1. ไปที่ https://api.slack.com/apps → **Create New App** → From scratch → เลือก workspace
+2. เมนู **Incoming Webhooks** → เปิด **Activate Incoming Webhooks**
+3. **Add New Webhook to Workspace** → เลือกแชนแนลที่จะให้แจ้งเตือนเข้า → Allow
+4. คัดลอก Webhook URL (`https://hooks.slack.com/services/…`) ไปใส่เป็น env บน Vercel:
+
+```
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz
+```
+
+5. เช็คว่าทำงาน: ทำอะไรก็ได้ที่ยิง noti (เช่นอนุมัติงาน) แล้วดูว่าข้อความเข้าแชนแนลไหม
+   · `/api/notify` ตอบกลับมาพร้อม `configured.slack: true` เมื่อตั้งค่าถูก
+
+**ถ้าจะเลิกใช้ LINE:** ลบ `LINE_CHANNEL_ACCESS_TOKEN` กับ `LINE_TO` ออกจาก Vercel — ไม่ต้องแก้โค้ด และไม่มีช่วงที่แจ้งเตือนขาด
+
 
 ปิดช่องว่างจากคู่มือที่เคยต้อง "submit แล้วแจ้งกลุ่ม LINE เอง" — ตอนนี้ระบบส่งแจ้งเตือนให้อัตโนมัติผ่าน `/api/notify` เมื่อ:
 

@@ -15,6 +15,7 @@ import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { isCreativeSideRole, canApproveDeliverable, canReviewDeliverable, canApproveRushBrief } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
+import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
@@ -59,6 +60,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
 
   // Rush sign-off: Creative Leader owns the queue's capacity, CMO covers.
   const canApproveRush = canApproveRushBrief(role);
+  const stageAge = stageAgeDays(g, new Date().toISOString().slice(0, 10));
+  const stageLevel = ageLevel(stageAge);
   const [rushBusy, setRushBusy] = useState(false);
   const decideRush = async (decision: "Approved" | "Rejected") => {
     setRushBusy(true);
@@ -312,6 +315,23 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   ⚡ งานเร่งด่วน · อนุมัติแล้ว{g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}
                 </div>
               )}
+              {/* How long it has sat where it is. The stage alone never said
+                  whether that was two days or three weeks. */}
+              {stageAge !== null && (
+                <div className="rounded-[12px] border px-4 py-2 flex items-center gap-2"
+                  style={{ background: AGE_META[stageLevel].bg, borderColor: stageLevel === "fresh" ? "#CFE4C2" : stageLevel === "slow" ? "#F0C89B" : "#F5C8C4" }}>
+                  <span className="text-[11.5px] font-bold" style={{ color: AGE_META[stageLevel].fg }}>
+                    ⏱ อยู่สถานะ &ldquo;{g.stage}&rdquo; มา {stageAge} วัน
+                  </span>
+                  {stageLevel !== "fresh" && (
+                    <span className="text-[11px] font-semibold" style={{ color: AGE_META[stageLevel].fg }}>· {AGE_META[stageLevel].label}</span>
+                  )}
+                  {isUnowned(g.designer) && (
+                    <span className="ml-auto text-[11px] font-bold" style={{ color: AGE_META[stageLevel].fg }}>ยังไม่มี designer</span>
+                  )}
+                </div>
+              )}
+
               <div>
                 <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
                 <OwnerSelect

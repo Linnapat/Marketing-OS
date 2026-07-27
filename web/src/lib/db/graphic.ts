@@ -13,9 +13,12 @@ import { assertDbOk } from "@/lib/db/assert";
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
   if (!db) return GRAPHICS.map((g) => withLiveGraphicOverdue({ ...g }));
-  const { data, error } = await db.from("graphic_requests").select("id, data").order("id");
+  const { data, error } = await db.from("graphic_requests").select("id, data, created_at").order("id");
   if (error || !data) return []; // query error = no live data, never demo rows
-  return data.map((r) => r.data as Graphic).filter(Boolean).map(withLiveGraphicOverdue);
+  return data
+    .map((r) => (r.data ? { ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at } : null))
+    .filter(Boolean)
+    .map((g) => withLiveGraphicOverdue(g as Graphic));
 }
 
 export async function createGraphic(g: Graphic): Promise<void> {
