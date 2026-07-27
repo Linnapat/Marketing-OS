@@ -17,6 +17,8 @@ import {
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf,
   GRAPHIC_BRIEF_FOR_PARAM,
 } from "@/lib/data/graphic";
+import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
+import { getAppSetting } from "@/lib/db/appSettings";
 import { Combobox } from "@/components/ui/Combobox";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { notify } from "@/lib/notify";
@@ -31,7 +33,7 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, graphicDueRangeImpossible, todayIso } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, graphicDueRangeImpossible, minGraphicDueDate, todayIso } from "@/lib/data/brief";
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
@@ -915,6 +917,16 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   // Which Content Plan post does this brief serve? Three honest answers, one of
   // which ("none") the form could not express before — print, POSM and menu
   // artwork had to be filed as a social post to reach the Creative queue.
+  const [rushReason, setRushReason] = useState("");
+  // Monthly brief cutoff, set by the CMO in Settings; 0 turns the rule off.
+  const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(BRIEF_CUTOFF_SETTING_KEY)
+      .then((v) => { if (alive && v !== null && v !== "") setCutoffDay(Number(v) || 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [postLink, setPostLink] = useState<"existing" | "new" | "none">(prefillPost ? "existing" : "new");
   const [linkedPostId, setLinkedPostId] = useState(prefillPost?.id ?? "");
   const [posts, setPosts] = useState<ContentItem[]>([]);
@@ -987,18 +999,35 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   // clear (see graphicDueRangeImpossible). The form warns instead of blocking.
   const dueRangeImpossible = graphicDueRangeImpossible(item.publishDate, requestDate);
   const dueOrderValid = dueRangeImpossible || !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
-  const graphicLeadValid = !!item.graphicDueDate && isGraphicDueDateAllowed(item.graphicDueDate, requestDate);
   const postLinkValid = postLink !== "existing" || !!linkedPost;
-  const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!campaign.trim() && !!item.graphicDueDate && dueOrderValid && graphicLeadValid && !atCap && postLinkValid;
+
+  // Late, too soon, or over the day's ceiling: all three used to refuse the
+  // form outright, which taught people to nudge the due date until it went
+  // quiet. They now make the brief a RUSH — it goes in, carrying what it broke,
+  // and Creative Leader decides whether the month can take it.
+  const breaches = rushBreaches({
+    graphicDueIso: dueDay,
+    requestIso: requestDate,
+    cutoffDay,
+    minDueIso: minGraphicDueDate(requestDate),
+    capLimit: DAILY_WORK_CAP,
+    capUsed: usedToday,
+    capAdding: newUnits,
+    kindLabel: WORK_KIND_LABEL[kind],
+  });
+  const isRush = breaches.length > 0;
+  // The one thing a rush brief must carry: why it could not wait.
+  const rushReasonValid = !isRush || rushReason.trim().length >= 10;
+
+  const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!campaign.trim() && !!item.graphicDueDate && dueOrderValid && postLinkValid && rushReasonValid;
   const missing = [
     !campaign.trim() ? "campaign" : null,
     !postLinkValid ? "โพสต์ที่จะผูก" : null,
     !item.title.trim() ? "brief title" : null,
     !item.platforms.length ? "platform" : null,
     !item.graphicDueDate ? "graphic due date" : null,
-    item.graphicDueDate && !graphicLeadValid ? `graphic due date at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days` : null,
     !dueOrderValid ? "graphic due date before publish date" : null,
-    atCap ? `เกินโควตา ${WORK_KIND_LABEL[kind]} วันนั้น (สูงสุด ${DAILY_WORK_CAP}/วัน)` : null,
+    !rushReasonValid ? "เหตุผลที่ต้องเร่ง (อย่างน้อย 10 ตัวอักษร)" : null,
   ].filter(Boolean) as string[];
   const submit = () => {
     if (!canCreate) return;
@@ -1017,7 +1046,15 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
       stage: "New Request",
       size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
       deliverables,
-      nextAction: "Creative leader to assign in-house or outsource designer",
+      // Breaches are stamped, not recomputed later: the cap on a given day
+      // moves as other briefs land, and the decision has to be judged against
+      // what was true when it was asked for.
+      rushStatus: isRush ? "Pending" : "",
+      rushBreaches: isRush ? breaches.map((b) => b.label) : undefined,
+      rushReason: isRush ? rushReason.trim() : undefined,
+      nextAction: isRush
+        ? "รอ Creative Leader อนุมัติงานเร่งด่วน"
+        : "Creative leader to assign in-house or outsource designer",
       contentItem: linkedPost?.title || item.title.trim() || "—",
       // The link the whole split rests on. Absent for print/POSM work, which
       // is now allowed to exist without a post rather than inventing one.
@@ -1134,15 +1171,43 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
             </span>
           </div>
         )}
+
+        {/* Rush panel — what was broken, and the requester's case for it. */}
+        {isRush && (
+          <div className="mt-3 rounded-[14px] border px-4 py-3" style={{ background: "#FFF7ED", borderColor: "#F0C89B" }}>
+            <div className="text-[12.5px] font-extrabold" style={{ color: "#B3641E" }}>⚡ งานนี้นับเป็นงานเร่งด่วน — ต้องให้ Creative Leader อนุมัติก่อนเริ่มงาน</div>
+            <ul className="mt-2 mb-2 list-disc pl-5 text-[11.5px]" style={{ color: "#8A5418" }}>
+              {breaches.map((b) => <li key={b.code}>{b.label}</li>)}
+            </ul>
+            <label className="block text-[11.5px] font-bold mb-[5px]" style={{ color: "#B3641E" }}>เหตุผลที่รอรอบปกติไม่ได้ <span className="text-status-red">*</span></label>
+            <textarea
+              value={rushReason}
+              onChange={(e) => setRushReason(e.target.value)}
+              rows={2}
+              placeholder="เช่น โปรโมชั่นจับมือกับพาร์ทเนอร์ ประกาศวันนี้ ต้องลงพร้อมกันทุกช่องทาง"
+              className="w-full text-[13px] px-[12px] py-[9px] rounded-[10px] border border-[#F0C89B] bg-white outline-none resize-y"
+            />
+            <div className="mt-1 text-[11px]" style={{ color: rushReasonValid ? "#8A5418" : "#B33A2E" }}>
+              {rushReasonValid ? "Creative Leader จะเห็นเหตุผลนี้ตอนพิจารณา" : "เขียนอย่างน้อย 10 ตัวอักษร — คนอนุมัติต้องรู้ว่าเร่งเพราะอะไร"}
+            </div>
+          </div>
+        )}
+
         <div className="mt-3 rounded-[16px] border px-4 py-3" style={{ background: canCreate ? "#EEF8E8" : "#FBF6EC", borderColor: canCreate ? "#CFE4C2" : "#EADBC1" }}>
           <div className="text-[12px] font-bold" style={{ color: canCreate ? "#3F6A34" : "#8A6D1E" }}>
-            {canCreate ? "Ready to send to Creative leader" : `Before sending, add ${missing.join(", ")}`}
+            {canCreate
+              ? (isRush ? "พร้อมส่ง — จะเข้าคิวรอ Creative Leader อนุมัติ" : "Ready to send to Creative leader")
+              : `Before sending, add ${missing.join(", ")}`}
           </div>
           <div className="mt-1 text-[11px]" style={{ color: canCreate ? "#5A7A4D" : "#9A8460" }}>
             Requester stays fixed to login, and designer will be assigned after the brief comes in.
           </div>
         </div>
-        <button onClick={submit} disabled={!canCreate} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">Send Graphic Request</button>
+        <button onClick={submit} disabled={!canCreate}
+          className={`w-full mt-4 text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40 ${isRush ? "" : "bg-panel"}`}
+          style={isRush ? { background: "#B3641E" } : undefined}>
+          {isRush ? "⚡ ส่งบรีฟด่วน (รออนุมัติ)" : "Send Graphic Request"}
+        </button>
       </div>
     </div>
   );

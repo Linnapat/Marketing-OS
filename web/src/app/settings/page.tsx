@@ -1,6 +1,10 @@
 "use client";
 
 import { toast, toastError } from "@/lib/toast";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
+import { BRIEF_CUTOFF_SETTING_KEY, DEFAULT_BRIEF_CUTOFF_DAY } from "@/lib/data/briefDeadline";
+import { DAILY_WORK_CAP } from "@/lib/data/graphic";
+import { GRAPHIC_MIN_BUSINESS_DAYS } from "@/lib/data/brief";
 import { authHeaders } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { CampaignPageHeaderSection, ModuleSummaryCard } from "@/components/campaign/CampaignHeadController";
@@ -494,6 +498,28 @@ export default function SettingsPage() {
   const [thresholds, setThresholds] = useState<BudgetThreshold[]>(() => BUDGET_THRESHOLDS.map((b) => ({ ...b, chain: [...b.chain] })));
   const [rules, setRules] = useState<ModuleRule[]>(() => APPROVAL_RULES.map((r) => ({ ...r, chain: [...r.chain] })));
   const [apprEdit, setApprEdit] = useState(false);
+  // Brief cutoff day (app_settings). CMO-only in the UI — app_settings itself
+  // is staff-writable at the DB level, like every other setting here.
+  const isCmo = role === "CMO";
+  const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
+  const [cutoffDirty, setCutoffDirty] = useState(false);
+  const [cutoffBusy, setCutoffBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(BRIEF_CUTOFF_SETTING_KEY)
+      .then((v) => { if (alive && v !== null && v !== "") setCutoffDay(Number(v) || 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const saveCutoff = async () => {
+    setCutoffBusy(true);
+    try {
+      await setAppSetting(BRIEF_CUTOFF_SETTING_KEY, String(cutoffDay));
+      setCutoffDirty(false);
+    } catch (error) {
+      toastError(`บันทึกเดดไลน์ส่งบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setCutoffBusy(false); }
+  };
   const [apprDirty, setApprDirty] = useState(false);
   const persistApproval = () => { saveApprovalMatrix({ thresholds, rules }).then(() => { setApprEdit(false); setApprDirty(false); }).catch(reportSaveError("บันทึก Approval Matrix")); };
 
@@ -1013,6 +1039,34 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
+            {/* Brief cutoff — the date Creative closes next month's queue.
+                Editable by the CMO only: it decides whose work counts as
+                urgent, so it is not a field the requesters set for themselves. */}
+            <div>
+              <div className="text-[13px] font-bold mb-1">เดดไลน์ส่งบรีฟ Artwork</div>
+              <div className="text-[11.5px] text-faint mb-3">
+                บรีฟงานที่ส่งมอบเดือนถัดไป ต้องเข้ามาภายในวันที่นี้ของเดือนก่อนหน้า · เลยกำหนด / กระชั้นกว่า {GRAPHIC_MIN_BUSINESS_DAYS} วันทำการ / เกินโควตา {DAILY_WORK_CAP} ชิ้นต่อวัน → นับเป็นงานเร่งด่วน ต้องให้ Creative Leader อนุมัติก่อนเริ่มงาน
+              </div>
+              <div className="bg-surface border border-line rounded-card p-4 flex items-center gap-3 flex-wrap">
+                <label className="text-[12.5px] font-semibold text-muted">ปิดรับบรีฟวันที่</label>
+                <input
+                  type="number" min={0} max={28}
+                  value={cutoffDay}
+                  disabled={!isCmo}
+                  onChange={(e) => { setCutoffDay(Math.max(0, Math.min(28, Number(e.target.value) || 0))); setCutoffDirty(true); }}
+                  className="w-[90px] text-[13.5px] px-[10px] py-[7px] rounded-[9px] border border-line2 bg-ivory outline-none disabled:opacity-60"
+                />
+                <span className="text-[12px] text-faint">ของทุกเดือน {cutoffDay === 0 ? "· (0 = ปิดกฎนี้ ใช้แค่ lead time กับโควตา)" : `· เช่น งานส่งมอบเดือน ก.ย. ต้องบรีฟภายใน ${cutoffDay} ส.ค.`}</span>
+                {isCmo && cutoffDirty && (
+                  <button onClick={saveCutoff} disabled={cutoffBusy}
+                    className="ml-auto text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px] disabled:opacity-40">
+                    {cutoffBusy ? "Saving…" : "Save"}
+                  </button>
+                )}
+                {!isCmo && <span className="ml-auto text-[11px] text-faint">แก้ได้เฉพาะ CMO</span>}
+              </div>
+            </div>
+
             <div>
               <div className="text-[13px] font-bold mb-3">Module Approval Rules</div>
               <div className="flex flex-col gap-2">
