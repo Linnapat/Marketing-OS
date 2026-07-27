@@ -309,6 +309,22 @@ export function isGraphicDueDateAllowed(dueIso: string, requestIso?: string): bo
   return !!minDue && dueIso >= minDue;
 }
 
+/** True when the post publishes sooner than Creative can possibly deliver, so
+ *  "at least N business days out" and "no later than the publish date" cannot
+ *  both hold.
+ *
+ *  Found on production: raising a brief from a post publishing in three days
+ *  handed the date picker min > max, which disables every date in every month.
+ *  The form could not be submitted and showed no reason — the requester just
+ *  saw a calendar where nothing was clickable. When the range inverts the cap
+ *  is dropped and the conflict is stated instead, so the choice (move the post,
+ *  or accept artwork after it) belongs to a person rather than to a disabled
+ *  button. */
+export function graphicDueRangeImpossible(publishIso?: string, requestIso?: string): boolean {
+  if (!publishIso) return false;
+  return minGraphicDueDate(requestIso) > publishIso;
+}
+
 export function emptyBrief(id: string): CampaignBrief {
   return {
     id, name: "", b: "teppen", branch: "", branches: [], objective: OBJECTIVES[0],
@@ -472,7 +488,9 @@ export function validateSubmit(brief: CampaignBrief): string[] {
     });
     if (c.requiredGraphic && !c.graphicDueDate) e.push(`Please select a Graphic Due Date for “${tag}”`);
     if (c.requiredGraphic && c.graphicDueDate && !isGraphicDueDateAllowed(c.graphicDueDate, todayIso())) e.push(`Graphic Due Date for “${tag}” must be at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days after Request Date`);
-    if (c.requiredGraphic && c.graphicDueDate && c.publishDate && c.graphicDueDate > c.publishDate) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);
+    // Only enforceable when the two limits can both hold; see graphicDueRangeImpossible.
+    if (c.requiredGraphic && c.graphicDueDate && c.publishDate && c.graphicDueDate > c.publishDate
+        && !graphicDueRangeImpossible(c.publishDate)) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);
     // Reference Brief Link is optional — a real link often isn't known at planning time.
   });
   const months = campaignMonthKeys(brief.startDate, brief.endDate);

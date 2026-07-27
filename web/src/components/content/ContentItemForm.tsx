@@ -5,6 +5,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
   GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
+  graphicDueRangeImpossible,
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
 import { Combobox } from "@/components/ui/Combobox";
@@ -39,6 +40,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   const minGraphicDue = minGraphicDueDate(graphicRequestDate);
   const graphicLeadValid = !item.graphicDueDate || isGraphicDueDateAllowed(item.graphicDueDate, graphicRequestDate);
   const graphicAfterPublish = !!item.graphicDueDate && !!item.publishDate && item.graphicDueDate > item.publishDate;
+  const dueRangeImpossible = graphicDueRangeImpossible(item.publishDate, graphicRequestDate);
   const togglePlatform = (p: string) => {
     const on = item.platforms.includes(p);
     onChange({
@@ -64,12 +66,23 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         value={item.graphicDueDate || null}
         onChange={(v) => onChange({ graphicDueDate: v })}
         min={minGraphicDue}
-        max={item.publishDate || undefined}
-        invalid={!!item.graphicDueDate && (!graphicLeadValid || graphicAfterPublish)}
+        // Capping at the publish date is right only while a date can satisfy
+        // both limits. When the post publishes sooner than the lead time the
+        // cap sits below the floor and every date in every month is disabled —
+        // so the cap comes off and the conflict is spelled out below instead.
+        max={dueRangeImpossible ? undefined : (item.publishDate || undefined)}
+        invalid={!!item.graphicDueDate && (!graphicLeadValid || (graphicAfterPublish && !dueRangeImpossible))}
       />
-      <div className="mt-1 text-[11px]" style={{ color: item.graphicDueDate && (!graphicLeadValid || graphicAfterPublish) ? "#B33A2E" : "#9A9387" }}>
-        กำหนดส่งงาน Creative · เร็วสุด {minGraphicDue} ({GRAPHIC_MIN_BUSINESS_DAYS} วันทำการหลัง Request date) · ต้องไม่เกิน Publish Date
-      </div>
+      {dueRangeImpossible ? (
+        <div className="mt-1 text-[11px] font-semibold" style={{ color: "#B33A2E" }}>
+          ⚠ โพสต์นี้ลงวันที่ {item.publishDate} แต่งานกราฟฟิกเร็วสุดคือ {minGraphicDue} ({GRAPHIC_MIN_BUSINESS_DAYS} วันทำการ) —
+          ส่งบรีฟได้ แต่ artwork จะเสร็จหลังวันโพสต์ ถ้าไม่ต้องการแบบนั้นให้เลื่อนวันโพสต์ก่อน
+        </div>
+      ) : (
+        <div className="mt-1 text-[11px]" style={{ color: item.graphicDueDate && (!graphicLeadValid || graphicAfterPublish) ? "#B33A2E" : "#9A9387" }}>
+          กำหนดส่งงาน Creative · เร็วสุด {minGraphicDue} ({GRAPHIC_MIN_BUSINESS_DAYS} วันทำการหลัง Request date) · ต้องไม่เกิน Publish Date
+        </div>
+      )}
     </div>
   ) : null;
 
