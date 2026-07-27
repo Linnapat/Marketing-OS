@@ -18,7 +18,7 @@ import {
   GRAPHIC_BRIEF_FOR_PARAM,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
-import { getAppSetting } from "@/lib/db/appSettings";
+import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { Combobox } from "@/components/ui/Combobox";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { notify } from "@/lib/notify";
@@ -37,7 +37,7 @@ import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, g
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
-import { canReviewDeliverable } from "@/lib/roleGates";
+import { canReviewDeliverable, canApproveRushBrief } from "@/lib/roleGates";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -71,6 +71,30 @@ function GraphicPageInner() {
   const [designer, setDesigner] = useState<string>("all");
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
   const [reqOpen, setReqOpen] = useState(false);
+  // Monthly brief cutoff — read by everyone, moved by the people who also
+  // clear the rush briefs it creates (Creative Leader, CMO). Read from auth,
+  // not the "viewing as" switcher, so the gate cannot be flipped from the rail.
+  const { role: authRole } = useAuth();
+  const canEditCutoff = canApproveRushBrief(authRole);
+  const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
+  const [cutoffDirty, setCutoffDirty] = useState(false);
+  const [cutoffBusy, setCutoffBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(BRIEF_CUTOFF_SETTING_KEY)
+      .then((v) => { if (alive && v !== null && v !== "") setCutoffDay(Number(v) || 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const saveCutoff = async () => {
+    setCutoffBusy(true);
+    try {
+      await setAppSetting(BRIEF_CUTOFF_SETTING_KEY, String(cutoffDay));
+      setCutoffDirty(false);
+    } catch (error) {
+      toastError(`บันทึกเดดไลน์ส่งบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setCutoffBusy(false); }
+  };
   // /graphic?briefFor=<post id> — the hand-off from Content Plan's "โพสต์นี้
   // ต้องใช้งานกราฟฟิกใหม่". Resolved to the real post before the form opens so
   // it can prefill from it; a stale id opens the form unlinked rather than
@@ -225,6 +249,36 @@ function GraphicPageInner() {
                   </select>
                 </label>
                 <span className="text-[12px] font-semibold text-faint">{items.length} requests in view</span>
+                {/* The brief cutoff lives here, not in Settings: Creative
+                    Leader owns the queue's capacity but has no Settings access
+                    at all (Permissions matrix: Settings = none), so putting it
+                    there would have left the control reachable by nobody but
+                    the CMO. Everyone sees the date — it is the deadline they
+                    are working to — and only the people who clear rush briefs
+                    can move it. */}
+                <label className="flex items-center gap-[7px]" title="งานที่ส่งมอบเดือนถัดไป ต้องบรีฟเข้ามาภายในวันที่นี้ของเดือนก่อนหน้า">
+                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">ปิดรับบรีฟ</span>
+                  {canEditCutoff ? (
+                    <>
+                      <input
+                        type="number" min={0} max={28} value={cutoffDay}
+                        onChange={(e) => { setCutoffDay(Math.max(0, Math.min(28, Number(e.target.value) || 0))); setCutoffDirty(true); }}
+                        className="w-[64px] text-[12.5px] px-[9px] py-[6px] rounded-[9px] border border-line2 bg-ivory outline-none"
+                      />
+                      <span className="text-[11.5px] text-faint">ของทุกเดือน</span>
+                      {cutoffDirty && (
+                        <button onClick={saveCutoff} disabled={cutoffBusy}
+                          className="text-[11.5px] font-bold text-white bg-panel rounded-[8px] px-[10px] py-[5px] disabled:opacity-40">
+                          {cutoffBusy ? "…" : "Save"}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-[12px] font-semibold text-muted">
+                      {cutoffDay === 0 ? "ไม่กำหนด" : `วันที่ ${cutoffDay} ของทุกเดือน`}
+                    </span>
+                  )}
+                </label>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <SavedViewsBar<GraphicSavedView>
