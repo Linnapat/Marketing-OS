@@ -29,7 +29,7 @@ const ALL_MODULES: ModuleKey[] = ["content", "graphic", "kol", "task", "expense"
 /** Which Settings → Permissions module each lane belongs to. The route itself
  *  is ungated (it spans every module), so the gate is applied per lane instead:
  *  a role with no Finance access must not read expense rows here that it can't
- *  open in Cashier. Tasks are cross-cutting and ungated, same as /my-tasks. */
+ *  open in Expenses. Tasks are cross-cutting and ungated, same as /my-tasks. */
 const MODULE_MATRIX: Partial<Record<ModuleKey, string>> = {
   content: "Content", graphic: "Graphic", kol: "KOL", expense: "Finance",
 };

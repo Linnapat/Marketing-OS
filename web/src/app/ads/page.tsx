@@ -108,8 +108,8 @@ export default function PerformanceBarPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="PLATFORM PERFORMANCE CENTER"
-        title="Performance Bar"
+        eyebrow="PLATFORM PERFORMANCE"
+        title="Platform Performance"
         description="Track platform budget, creative readiness, content activity, KOL results, finance spend, and action tasks in one place."
       />
 
@@ -137,7 +137,7 @@ export default function PerformanceBarPage() {
         </CampaignCommandBar>
 
         <ModuleSummaryCard
-          title="Performance Bar Summary 📊"
+          title="Platform Performance Summary 📊"
           style={{
             background: "linear-gradient(135deg, #7C6CF6 0%, #5B4FD8 100%)",
             border: "1px solid #6C5CE7",

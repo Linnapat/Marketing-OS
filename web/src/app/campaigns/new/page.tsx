@@ -428,7 +428,7 @@ export default function NewCampaignPage() {
     return (
       <div className="py-24 flex flex-col items-center gap-3 text-center">
         <div className="text-[15px] font-bold text-ink">No access to Campaign Builder</div>
-        <div className="text-[13px] text-faint max-w-[420px]">การสร้าง/แก้แคมเปญเป็นงานฝั่งวางแผน — role ของคุณทำงานในแคมเปญผ่าน Content Plan และ Creative Kitchen ติดต่อ CMO หากต้องการสิทธิ์</div>
+        <div className="text-[13px] text-faint max-w-[420px]">การสร้าง/แก้แคมเปญเป็นงานฝั่งวางแผน — role ของคุณทำงานในแคมเปญผ่าน Content Plan และ Graphic Request ติดต่อ CMO หากต้องการสิทธิ์</div>
         <Link href="/campaigns" className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">← กลับไปหน้า Campaigns</Link>
       </div>
     );
@@ -945,7 +945,7 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange, materialized }: {
       const item = brief.content.find((c) => c.id === id);
       const ok = window.confirm(
         `“${item?.title || "Content นี้"}” ถูกสร้างเป็นงานจริงแล้ว (โพสต์ใน Content Plan / ใบงาน Creative)\n\n`
-        + "ลบออกจากแคมเปญนี้ จะไม่ลบงานที่สร้างไปแล้ว — ต้องไปลบในหน้า Content Plan / Creative Kitchen เอง\n\nยืนยันลบออกจากแผน?",
+        + "ลบออกจากแคมเปญนี้ จะไม่ลบงานที่สร้างไปแล้ว — ต้องไปลบในหน้า Content Plan / Graphic Request เอง\n\nยืนยันลบออกจากแผน?",
       );
       if (!ok) return;
     }

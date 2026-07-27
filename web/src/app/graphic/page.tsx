@@ -214,7 +214,7 @@ function GraphicPageInner() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="CREATIVE KITCHEN"
+        eyebrow="GRAPHIC REQUEST"
         title="Graphic Request"
         description="Brief, assign, review, approve, and deliver every creative request in one workspace."
       />
@@ -573,7 +573,7 @@ function ShootSheetPreview({ rows, printedAt, onClose }: { rows: ShootRow[]; pri
         </table>
 
         <div className="mt-4 pt-2 border-t border-line4 text-[10px] text-faint">
-          Marketing OS · Creative Kitchen — ตารางนี้แก้ได้ที่หน้า Graphic Request → Shoot Schedule
+          Marketing OS · Graphic Request — ตารางนี้แก้ได้ที่หน้า Graphic Request → Shoot Schedule
         </div>
       </div>
     </div>,

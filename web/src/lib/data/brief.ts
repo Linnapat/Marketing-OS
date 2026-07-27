@@ -508,7 +508,7 @@ export interface TaskPreview { kind: string; icon: string; count: number; detail
 // Items requiring creative become a Graphic task (with Platform × Size rows as
 // deliverables); no-asset items become a Content task. This prevents duplicates.
 export function taskPreview(brief: CampaignBrief): TaskPreview[] {
-  // Creative work = graphic OR video: both become a Creative Kitchen request
+  // Creative work = graphic OR video: both become a Graphic Request request
   // (mirrors saveCampaignBrief's needsCreative), so the preview counts match
   // what Submit will actually create.
   const withGraphic = brief.content.filter((c) => c.requiredGraphic || c.requiredVideo);

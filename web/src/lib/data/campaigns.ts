@@ -3,8 +3,8 @@
 //
 // Important: keep the seed list empty for production readiness. Live campaigns
 // must come from Supabase / the campaign builder, not demo rows. This prevents
-// cleared demo campaigns from reappearing in Settings, Campaign Café, Finance,
-// Performance Bar, or the admin seed endpoint.
+// cleared demo campaigns from reappearing in Settings, Campaigns, Finance,
+// Platform Performance, or the admin seed endpoint.
 
 import { BrandId, brandColor, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";

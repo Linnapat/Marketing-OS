@@ -228,8 +228,8 @@ export default function CampaignsPage() {
     <>
       <div className="flex flex-col gap-3" style={{ background: "#F8F7F3" }}>
         <CampaignPageHeaderSection
-          eyebrow="CAMPAIGN COMMAND CENTER"
-          title="Campaign Café"
+          eyebrow="CAMPAIGNS"
+          title="Campaigns"
           description="Plan, track, and profit from every activation"
         />
 

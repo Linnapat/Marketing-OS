@@ -91,7 +91,7 @@ export default function ArtworkCountPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="CREATIVE KITCHEN"
+        eyebrow="GRAPHIC REQUEST"
         title="Artwork Count"
         description="จำนวนชิ้นงานที่อนุมัติแล้วในแต่ละเดือน แยกตามคนทำ — สำหรับตรวจกับใบวางบิลของ outsource"
       />
@@ -109,7 +109,7 @@ export default function ArtworkCountPage() {
             {/* BrandFilter renders its own "Brand" label — don't add a second one. */}
             <BrandFilter value={brand} onChange={setBrand} />
             <Link href="/graphic" className="ml-auto text-[12.5px] font-semibold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-surface">
-              ← Creative Kitchen
+              ← Graphic Request
             </Link>
           </div>
         </CampaignCommandBar>

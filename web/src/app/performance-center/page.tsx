@@ -291,7 +291,7 @@ export default function PerformanceCenterPage() {
       <PageHeader
         eyebrow="QA"
         title="Performance Center"
-        subtitle="อ่านผลลัพธ์จากข้อมูลเดียวกับ Performance Bar — เลือกแท็บเล็กด้านล่างเพื่อดูแต่ละรายงาน"
+        subtitle="อ่านผลลัพธ์จากข้อมูลเดียวกับ Platform Performance — เลือกแท็บเล็กด้านล่างเพื่อดูแต่ละรายงาน"
       />
 
       <section className="mt-4 rounded-[24px] border border-line bg-white p-4 shadow-soft">
@@ -343,7 +343,7 @@ export default function PerformanceCenterPage() {
             <StatusBadge fg="#0B7F7A" bg="#E3F7F5">{filtered.length} performance line(s)</StatusBadge>
             <StatusBadge fg="#6C5CE7" bg="#EEE9FF">{rowsFilled}/{filtered.length} actual filled</StatusBadge>
             <Link href="/platforms" className="inline-flex items-center gap-1 rounded-full bg-[#17172A] px-3 py-2 text-[12px] font-extrabold text-white">
-              Update in Performance Bar <ArrowRight size={14} />
+              Update in Platform Performance <ArrowRight size={14} />
             </Link>
           </div>
         </div>
@@ -355,7 +355,7 @@ export default function PerformanceCenterPage() {
         ) : active === "overview" ? (
           <ReportShell
             title="Marketing Overview Performance"
-            desc="ภาพรวม health ของแบรนด์จาก plan budget, actual spend, reach, conversion และ revenue ที่ถูกบันทึกใน Performance Bar"
+            desc="ภาพรวม health ของแบรนด์จาก plan budget, actual spend, reach, conversion และ revenue ที่ถูกบันทึกใน Platform Performance"
           >
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <KpiCard label="Plan budget" value={compact(totalPlan)} note="from campaign allocation" tone="#0EA5A0" />
@@ -432,12 +432,12 @@ export default function PerformanceCenterPage() {
         ) : active === "platform" ? (
           <ReportShell
             title="Platform / Ads Performance"
-            desc="สรุป budget, actual spend, reach/result และ CPR แยกตาม platform จากข้อมูลเดียวกับ Performance Bar"
+            desc="สรุป budget, actual spend, reach/result และ CPR แยกตาม platform จากข้อมูลเดียวกับ Platform Performance"
             action={
               <div className="flex flex-col items-end gap-2">
                 <ImportAdActualsButton onDone={() => window.location.reload()} brand={brand} />
                 <Link href="/platforms" className="inline-flex items-center gap-2 rounded-full bg-[#E3F7F5] px-3 py-2 text-[12px] font-extrabold text-[#0B7F7A]">
-                  Open Performance Bar <ArrowRight size={14} />
+                  Open Platform Performance <ArrowRight size={14} />
                 </Link>
               </div>
             }
@@ -598,7 +598,7 @@ export default function PerformanceCenterPage() {
         ) : (
           <ReportShell
             title="KOL Performance"
-            desc="แยก performance ของ KOL / influencer จาก budget allocation และ actual result ที่ลงไว้ใน Performance Bar"
+            desc="แยก performance ของ KOL / influencer จาก budget allocation และ actual result ที่ลงไว้ใน Platform Performance"
             action={<ImportKolActualsButton onDone={() => window.location.reload()} brand={brand} />}
           >
             <div className="grid gap-3 md:grid-cols-5">
@@ -637,7 +637,7 @@ export default function PerformanceCenterPage() {
         <div className="flex flex-wrap items-center gap-3">
           <Megaphone size={18} className="text-[#0B7F7A]" />
           <div className="text-[13px] font-semibold text-[#4B766F]">
-            ใช้ Performance Bar เพื่อกรอก actual / budget result และใช้ Performance Center เพื่ออ่าน dashboard, compare และสรุป learning ให้ทีม
+            ใช้ Platform Performance เพื่อกรอก actual / budget result และใช้ Performance Center เพื่ออ่าน dashboard, compare และสรุป learning ให้ทีม
           </div>
           <div className="ml-auto inline-flex items-center gap-1 text-[12px] font-extrabold text-[#0B7F7A]">
             <CheckCircle2 size={14} /> Synced source

@@ -1,7 +1,7 @@
 "use client";
 
 // Per-deliverable submit for the Agency Portal — the external mirror of the
-// internal Creative Kitchen drawer's Deliverables tab, same shape and wording
+// internal Graphic Request drawer's Deliverables tab, same shape and wording
 // so a request looks the same to whoever opens it.
 //
 // The portal used to offer ONE link box per request, which landed on the first

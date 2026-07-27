@@ -80,8 +80,8 @@ export default function ExpensesPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="CASHIER"
-        title="Cashier"
+        eyebrow="EXPENSES"
+        title="Expenses"
         description="Submit expense requests, follow payment status, and export spending in Thai Baht."
       />
 
@@ -108,7 +108,7 @@ export default function ExpensesPage() {
         </CampaignCommandBar>
 
         <ModuleSummaryCard
-          title="Cashier Summary"
+          title="Expenses Summary"
           titleClassName="text-[#6C5CE7]"
           style={{
             background: "#FFFFFF",

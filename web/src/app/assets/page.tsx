@@ -138,8 +138,8 @@ export default function AssetLibraryPage() {
   return (
     <>
       <CampaignPageHeaderSection
-        eyebrow="READY TO SERVE"
-        title="Asset Pantry"
+        eyebrow="ASSETS"
+        title="Assets"
         description="Keep final artwork, versions, and production links tidy for every campaign."
       />
 
@@ -223,7 +223,7 @@ export default function AssetLibraryPage() {
           </div>
         </CampaignCommandBar>
 
-        <ModuleSummaryCard title="Asset Pantry Summary">
+        <ModuleSummaryCard title="Assets Summary">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: "Assets in view", value: rows.length, note: "Current brand + type filter" },
