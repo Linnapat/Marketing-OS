@@ -42,6 +42,17 @@ export function canApproveDeliverable(
   return canReviewDeliverable(role, isRequester) && !isSubmitter;
 }
 
+/** May this person clear a rush brief — the one that jumped the monthly
+ *  deadline, the lead time or the daily cap?
+ *
+ *  Creative Leader owns the queue's capacity, so the call is theirs; the CMO
+ *  can act when they are away. Deliberately NOT the requester: the whole point
+ *  of the gate is that someone other than the person in a hurry decides whether
+ *  the month can absorb the work. */
+export function canApproveRushBrief(role: string): boolean {
+  return role === "Creative Leader" || role === "CMO";
+}
+
 // ── Campaign creation: driven by the Settings → Permissions matrix ─────────
 // The source of truth the QA verified against. A role may create campaigns
 // when its Campaign module level is Edit or higher; "View" means exactly that.

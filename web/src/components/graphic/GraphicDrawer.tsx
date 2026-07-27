@@ -13,7 +13,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveDeliverable, canReviewDeliverable } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveDeliverable, canReviewDeliverable, canApproveRushBrief } from "@/lib/roleGates";
+import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
@@ -55,6 +56,33 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   // for the team they are briefing defeats the check the same way
   // self-approval did.
   const canSignOffBrief = !isRequester && (role === "CMO" || isCreativeSideRole(role));
+
+  // Rush sign-off: Creative Leader owns the queue's capacity, CMO covers.
+  const canApproveRush = canApproveRushBrief(role);
+  const [rushBusy, setRushBusy] = useState(false);
+  const decideRush = async (decision: "Approved" | "Rejected") => {
+    setRushBusy(true);
+    const at = new Date().toISOString();
+    const next: Graphic = {
+      ...g,
+      rushStatus: decision,
+      rushDecidedBy: currentUser,
+      rushDecidedAt: at,
+      nextAction: decision === "Approved"
+        ? (g.designer === "Unassigned" ? "Creative leader to assign designer" : `${g.designer} to start production`)
+        : `${g.requester} to move the due date into the normal round`,
+      history: [...(g.history ?? []), { type: decision === "Approved" ? "brief_approved" : "brief_revision_requested", at, by: currentUser, note: `rush ${decision.toLowerCase()}` }],
+    };
+    try {
+      await updateGraphic(next);
+      updateCurrentGraphic(next);
+      notify(decision === "Approved" ? "approved" : "rejected",
+        decision === "Approved" ? `⚡ อนุมัติงานเร่งด่วน: ${g.title}` : `⚡ ไม่อนุมัติงานเร่งด่วน: ${g.title}`,
+        `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, "/graphic");
+    } catch (error) {
+      toastError(`บันทึกผลอนุมัติงานเร่งด่วนไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setRushBusy(false); }
+  };
   // Real Marketing Manager / BGL from Settings for the approval chain — no more
   // hardcoded "Mei T." Shows "—" when the role has no member yet.
   const [bglApprover, setBglApprover] = useState("—");
@@ -242,6 +270,48 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
         <div className="flex-1 overflow-y-auto px-5 py-[18px]">
           {tab === "overview" && (
             <div className="flex flex-col gap-4">
+              {/* Rush sign-off. Sits above everything because until it is
+                  cleared, nothing else on this request should be started. */}
+              {g.rushStatus === "Pending" && (
+                <div className="rounded-[14px] border px-4 py-3" style={{ background: "#FFF7ED", borderColor: "#F0C89B" }}>
+                  <div className="text-[12.5px] font-extrabold" style={{ color: "#B3641E" }}>⚡ งานเร่งด่วน — รออนุมัติ</div>
+                  <ul className="mt-2 list-disc pl-5 text-[11.5px]" style={{ color: "#8A5418" }}>
+                    {(g.rushBreaches ?? []).map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                  {g.rushReason && (
+                    <div className="mt-2 rounded-[10px] bg-white px-3 py-2 text-[12px]" style={{ color: "#6b6258" }}>
+                      <span className="font-bold">เหตุผลจาก {g.requester}: </span>{g.rushReason}
+                    </div>
+                  )}
+                  {canApproveRush ? (
+                    <div className="mt-3 flex gap-2 flex-wrap">
+                      <button onClick={() => decideRush("Approved")} disabled={rushBusy}
+                        className="text-[12px] font-bold text-white rounded-[9px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                        ✓ อนุมัติให้เร่ง
+                      </button>
+                      <button onClick={() => decideRush("Rejected")} disabled={rushBusy}
+                        className="text-[12px] font-bold rounded-[9px] px-3 py-[7px] border disabled:opacity-40" style={{ borderColor: "#F0C89B", color: "#B3641E", background: "#fff" }}>
+                        ✕ ไม่อนุมัติ — ให้เข้ารอบปกติ
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-[11.5px] font-semibold" style={{ color: "#8A5418" }}>
+                      รอ Creative Leader หรือ CMO ตัดสิน — ระหว่างนี้ยังไม่เริ่มงาน
+                    </div>
+                  )}
+                </div>
+              )}
+              {g.rushStatus === "Rejected" && (
+                <div className="rounded-[14px] border px-4 py-3" style={{ background: "#FFF5F4", borderColor: "#F5C8C4" }}>
+                  <div className="text-[12.5px] font-extrabold text-status-red">✕ ไม่อนุมัติให้เร่ง{g.rushDecidedBy ? ` — โดย ${g.rushDecidedBy}` : ""}</div>
+                  <div className="mt-1 text-[11.5px] text-status-red">ปรับวันส่งงานให้เข้ารอบปกติ แล้วส่งใหม่{g.rushDecisionNote ? ` · ${g.rushDecisionNote}` : ""}</div>
+                </div>
+              )}
+              {g.rushStatus === "Approved" && (
+                <div className="rounded-[12px] border px-4 py-2 text-[11.5px] font-semibold" style={{ background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }}>
+                  ⚡ งานเร่งด่วน · อนุมัติแล้ว{g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}
+                </div>
+              )}
               <div>
                 <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
                 <OwnerSelect
@@ -505,6 +575,8 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
   // Sign-off is the requester's, the Creative Leader's or the CMO's — see
   // canReviewDeliverable. Everyone else sees the artwork but not the buttons.
   const canReview = canReviewDeliverable(role, isRequester);
+  // Production is on hold while an urgent brief is unresolved (or refused).
+  const rushHold = rushBlocksProduction(g.rushStatus);
   const sameName = (a: string, b: string) => !!a.trim() && a.trim().toLowerCase() === b.trim().toLowerCase();
   const [dels, setDels] = useState<GraphicDeliverable[]>(() =>
     g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
@@ -576,6 +648,19 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
         นับ artwork อัตโนมัติจากไซซ์ที่เลือกตอน request: ไซซ์เดียวกันหลาย platform = ชิ้นเดียว (ไฟล์มาสเตอร์เดียว) · คนละไซซ์ = คนละชิ้น
       </div>
 
+      {/* Asking for permission means nothing if the work can start while the
+          answer is pending — submitting is closed until the rush is decided. */}
+      {rushHold && (
+        <div className="rounded-[10px] border px-3 py-2 text-[11.5px] font-semibold"
+          style={g.rushStatus === "Rejected"
+            ? { background: "#FFF5F4", borderColor: "#F5C8C4", color: "#B33A2E" }
+            : { background: "#FFF7ED", borderColor: "#F0C89B", color: "#B3641E" }}>
+          {g.rushStatus === "Rejected"
+            ? "✕ งานเร่งด่วนไม่ได้รับอนุมัติ — ปรับวันส่งงานให้เข้ารอบปกติแล้วส่งบรีฟใหม่ ยังส่งงานไม่ได้"
+            : "⚡ รอ Creative Leader อนุมัติงานเร่งด่วน — ยังส่งงานเข้ารีวิวไม่ได้"}
+        </div>
+      )}
+
       {dels.map((d, i) => {
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const inReview = d.status === "Waiting review";
@@ -607,7 +692,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                 )}
                 <input value={d.assetLink} onChange={(e) => patch(i, { assetLink: e.target.value })} className={inp} placeholder="Artwork link (Drive / Figma / PNG) *" />
                 <input value={d.sourceLink} onChange={(e) => patch(i, { sourceLink: e.target.value })} className={inp} placeholder="Source file link" />
-                <button onClick={() => submit(i)} disabled={!d.assetLink.trim()} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>{d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}</button>
+                <button onClick={() => submit(i)} disabled={!d.assetLink.trim() || rushHold} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>{d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}</button>
               </div>
             ) : (
               <div className="flex flex-col gap-2 mt-2">

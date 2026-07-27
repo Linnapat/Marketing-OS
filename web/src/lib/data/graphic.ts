@@ -4,6 +4,7 @@
 
 import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
+import { RushStatus } from "@/lib/data/briefDeadline";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
@@ -79,6 +80,18 @@ export interface Graphic {
    *  work that never becomes a social post, and used to be forced through a
    *  placeholder post just to exist here. */
   contentPostId?: string;
+  /** Urgent-work sign-off. Set when the brief broke the monthly deadline, the
+   *  lead time or the daily cap: the request still exists, but production is
+   *  held until Creative Leader (or the CMO) decides. See lib/data/briefDeadline. */
+  rushStatus?: RushStatus;
+  /** What it broke, stamped at submit so the decision is not re-derived later
+   *  against a cap that has since moved. */
+  rushBreaches?: string[];
+  /** Why it could not wait — the requester's own words. */
+  rushReason?: string;
+  rushDecidedBy?: string;
+  rushDecidedAt?: string;
+  rushDecisionNote?: string;
   history?: GraphicEvent[];
 }
 
