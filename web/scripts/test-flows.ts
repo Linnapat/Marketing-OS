@@ -168,6 +168,23 @@ console.log("Budget — Production excluded from allocation");
   check("Other with a note clears the warning", !budgetSummary(b).warnings.some((w) => w.includes("Other")));
 }
 
+console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-message quota) must still submit");
+{
+  const b = emptyBrief("no-budget-test");
+  b.name = "N"; b.objective = "Awareness"; b.campaignType = "Always-on"; b.b = "mainichi";
+  b.branches = ["Central"]; b.startDate = "2026-08-01"; b.endDate = "2026-08-31";
+  b.launchDate = "2026-08-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O";
+  b.approver = "CMO";
+  b.content = [{
+    ...emptyContentItem(1), id: "c1", title: "T", subHead: "S", platforms: ["Instagram"],
+    assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], graphicDueDate: "2026-07-31", publishDate: "2026-08-01",
+  }];
+  // budget.total stays 0 — untouched.
+  check("no budget-related blocker when total is 0", !validateSubmit(b).some((e) => /budget/i.test(e)));
+  check("guideline checklist no longer treats budget as must-have",
+    guidelineChecklist(b).find((i) => i.key === "budget")?.must === false);
+}
+
 console.log("Campaign code — per-brand running number");
 {
   const mk = (b: CampaignBrief["b"], code?: string): CampaignBrief => ({ ...emptyBrief("x"), b, code });
@@ -210,15 +227,25 @@ console.log("Graphic request — daily capacity guard (3/day per kind)");
   check("different day not counted", countWorkOnDay(three, "graphic", "2026-08-11") === 0);
 }
 
-console.log("Artwork counting — auto by size + manual grouping");
+console.log("Artwork counting — by pixels, platform collapsed");
 {
   const del = (platform: string, size: string, artworkNo?: number): GraphicDeliverable =>
     ({ platform, size, refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [], artworkNo });
   const g = (dels: GraphicDeliverable[]): Graphic => ({ ...(GRAPHICS[0] as Graphic), deliverables: dels });
   check("same size, 2 platforms = 1 artwork", artworkUnits(g([del("FB", "1:1"), del("IG", "1:1")])) === 1);
   check("different sizes = 2 artworks", artworkUnits(g([del("FB", "1:1"), del("IG", "9:16")])) === 2);
-  check("manual same artworkNo groups to 1", artworkUnits(g([del("FB", "1:1", 1), del("IG", "9:16", 1)])) === 1);
-  check("mixed: 2 grouped + 1 distinct = 2", artworkUnits(g([del("FB", "1:1", 1), del("IG", "9:16", 1), del("TT", "4:5")])) === 2);
+  // The real case: one 1080×1920 export ticked on three platforms, each naming
+  // the preset differently. Matching the label billed it three times.
+  check("same pixels under 3 labels = 1 artwork", artworkUnits(g([
+    del("FB", "9:16 Story (1080×1920)"), del("IG", "9:16 Reel/Story (1080×1920)"), del("TT", "9:16 (1080×1920)"),
+  ])) === 1);
+  // Ratios cannot decide it: FB's 1:1 is 1080×1080, Google Business Profile's is 720×720.
+  check("same ratio, different pixels = 2", artworkUnits(g([del("FB", "1:1 (1080×1080)"), del("GBP", "1:1 (720×720)")])) === 2);
+  // A stored artworkNo no longer overrides the pixels it was derived from —
+  // rows numbered under the old label rule split one file into three.
+  check("stale artworkNo does not outvote the pixels", artworkUnits(g([
+    del("FB", "9:16 (1080×1920)", 1), del("IG", "9:16 Story (1080×1920)", 2),
+  ])) === 1);
   check("never returns 0 (min 1)", artworkUnits(g([])) >= 1 && artworkUnits({ ...(GRAPHICS[0] as Graphic), deliverables: [] }) >= 1);
   check("artworkUnitsOf: 2 same-size assets = 1", artworkUnitsOf([{ size: "1:1" }, { size: "1:1" }]) === 1);
   check("artworkUnitsOf: 2 different sizes = 2", artworkUnitsOf([{ size: "1:1" }, { size: "9:16" }]) === 2);

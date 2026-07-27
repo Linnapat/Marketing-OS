@@ -112,19 +112,20 @@ export function deriveDeliverables(g: Graphic): GraphicDeliverable[] {
   return autoNumberDeliverables(list.map((p, i) => emptyDeliverable(p, sizes.length === list.length ? sizes[i] : (sizes.join(" · ") || "—"))));
 }
 
-/** Assign artwork numbers automatically from the sizes chosen at request time:
- *  deliverables sharing a (normalised) size are ONE artwork — the same master
- *  file resized per platform — numbered 1..n in order of first appearance.
- *  Numbers already set by hand (legacy rows) are respected, and new sizes
- *  continue counting after the highest existing number. */
+/** Assign artwork numbers from the sizes chosen at request time: deliverables
+ *  sharing a (normalised) size are ONE artwork — the same master file resized
+ *  per platform — numbered 1..n in order of first appearance.
+ *
+ *  Always recomputed, never read back from the row. The number is derived from
+ *  normSize and carries nothing normSize does not already know, so a stored
+ *  copy is only ever a stale answer: the 82 deliverables numbered before
+ *  normSize compared pixels hold numbers that split one file into three. The
+ *  badge and the billing count have to agree, and the only way they can is if
+ *  both come from the same live key. */
 export function autoNumberDeliverables(dels: GraphicDeliverable[]): GraphicDeliverable[] {
   const bySize = new Map<string, number>();
-  let next = dels.reduce((max, d) => Math.max(max, d.artworkNo ?? 0), 0);
-  for (const d of dels) {
-    if (d.artworkNo) { bySize.set(normSize(d.size), d.artworkNo); }
-  }
+  let next = 0;
   return dels.map((d) => {
-    if (d.artworkNo) return d;
     const key = normSize(d.size);
     if (!bySize.has(key)) bySize.set(key, ++next);
     return { ...d, artworkNo: bySize.get(key) };
@@ -234,18 +235,35 @@ export function workKind(type: string, requiredVideo = false): WorkKind {
 /** Size key used to decide whether two deliverables are the same piece of
  *  artwork. Exported because the artwork report must group by exactly the same
  *  rule the app counts by — two answers to "how many pieces" is one too many. */
-export const normSize = (s: string) => (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+/*  Two deliverables are the same piece when they are the same PIXELS, not when
+ *  they read the same. Every platform labels its presets differently — one
+ *  1080×1920 export is "9:16 Story (1080×1920)" on Facebook, "9:16 Reel/Story
+ *  (1080×1920)" on Instagram and "9:16 (1080×1920)" on TikTok — and comparing
+ *  the text counted that single file three times. Across live requests that is
+ *  98 pieces billed where 66 were made.
+ *
+ *  The ratio cannot decide it either: Facebook's 1:1 is 1080×1080 while Google
+ *  Business Profile's 1:1 is 720×720, and those really are two files.
+ *
+ *  Sizes carrying no pixels (A4 Poster, Table Tent) fall back to their name,
+ *  which is all we know about them. */
+export const normSize = (s: string) => {
+  const raw = (s || "—").trim().toLowerCase().replace(/\s+/g, " ");
+  const px = /(\d{2,5})\s*[×x]\s*(\d{2,5})/.exec(raw);
+  return px ? `${px[1]}x${px[2]}` : raw;
+};
 
-/** How many distinct ARTWORK pieces a request represents.
- *  Option 1 (auto): distinct size, platform collapsed — same size on FB & IG is
- *  one file; different sizes are separate work.
- *  Option 2 (manual): deliverables sharing an artworkNo count as one, so a master
- *  exported to several ratios is a single piece. */
+/** How many distinct ARTWORK pieces a request represents: distinct size,
+ *  platform collapsed — the same file used on Facebook and Instagram is one
+ *  piece, a different size is separate work. "Same size" means the same pixels
+ *  (see normSize), so one export under three platforms' labels counts once. */
 export function artworkUnits(g: Pick<Graphic, "deliverables" | "platform" | "size">): number {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g as Graphic);
   if (!dels.length) return 1;
+  // Counted from the size key alone. Preferring a stored artworkNo let a row
+  // numbered under the old label rule outvote the pixels it was numbered from.
   const seen = new Set<string>();
-  for (const d of dels) seen.add(d.artworkNo ? `n:${d.artworkNo}` : `s:${normSize(d.size)}`);
+  for (const d of dels) seen.add(normSize(d.size));
   return Math.max(1, seen.size);
 }
 

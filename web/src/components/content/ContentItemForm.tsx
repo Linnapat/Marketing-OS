@@ -124,12 +124,19 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       {showGraphicFields && (
         <div className="flex flex-col gap-1">
           <div className="flex items-end gap-4">
-            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredGraphic} onChange={(e) => onChange({ requiredGraphic: e.target.checked })} /> Required Graphic</label>
-            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredVideo} onChange={(e) => onChange({ requiredVideo: e.target.checked })} /> Required Video</label>
+            {/* Graphic and Video are mutually exclusive — a content item asking
+                for both is really two deliverables with two publish dates. */}
+            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredGraphic} onChange={(e) => onChange({ requiredGraphic: e.target.checked, requiredVideo: e.target.checked ? false : item.requiredVideo })} /> Required Graphic</label>
+            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted"><input type="checkbox" checked={item.requiredVideo} onChange={(e) => onChange({ requiredVideo: e.target.checked, requiredGraphic: e.target.checked ? false : item.requiredGraphic })} /> Required Video</label>
           </div>
           <div className="text-[11px] text-faint">
-            {item.requiredGraphic ? "ติ๊กไว้ = ส่งเข้า Graphic Request อัตโนมัติ · โพสต์จะ publish ได้เมื่องานกราฟฟิกอนุมัติครบ" : "ไม่ติ๊ก = ไม่ต้องใช้กราฟฟิก · publish ได้โดยไม่ต้องรอ asset"}
+            {item.requiredGraphic
+              ? "ติ๊กไว้ = ส่งเข้า Graphic Request อัตโนมัติ · โพสต์จะ publish ได้เมื่องานกราฟฟิกอนุมัติครบ"
+              : item.requiredVideo
+                ? "ติ๊กไว้ = ส่งเข้า Graphic Request อัตโนมัติ (วิดีโอ) · โพสต์จะ publish ได้เมื่องานอนุมัติครบ"
+                : "ไม่ติ๊ก = ไม่ต้องใช้กราฟฟิก · publish ได้โดยไม่ต้องรอ asset"}
           </div>
+          <div className="text-[11px] text-faint">อยากได้ทั้ง Graphic และ Video สำหรับโพสต์เดียวกัน? สร้างเป็น Content ใหม่แยกกัน เพราะวันโพสต์มักไม่เหมือนกัน</div>
         </div>
       )}
 
