@@ -348,7 +348,7 @@ export default function PlatformsPage() {
       // joined back to the campaign by formula and still read by a person.
       mirrorableRows(
         changed,
-        (id) => { const c = campaigns.find((x) => x.id === id); return c ? { name: c.name, brand: c.b } : undefined; },
+        (id) => { const c = campaigns.find((x) => x.id === id); return c ? { name: c.name, brand: c.b, dates: c.dates } : undefined; },
         mirrorBrands,
         nowIso,
       ).forEach(({ row, ctx }) => {
@@ -522,6 +522,33 @@ export default function PlatformsPage() {
         </div>
       </div>
       <div className="mt-2"><DateFilterBar value={date} onChange={setDate} /></div>
+
+      {/* Which brands mirror out to the reporting sheet. Sat here rather than in
+          Settings because this is where the numbers are entered, and because
+          Creative/planning roles who own the sheet cannot open Settings. */}
+      <div className="mt-2 bg-surface border border-line rounded-cardLg px-4 py-[10px] flex items-center gap-3 flex-wrap">
+        <span className="text-[11.5px] font-bold text-muted whitespace-nowrap">📤 Sync ขึ้น Google Sheet</span>
+        <span className="text-[11px] text-faint whitespace-nowrap">แท็บ Ad_Activities · เชื่อมด้วย campaign_id + ชื่อแคมเปญ</span>
+        <div className="flex items-center gap-[6px] flex-wrap">
+          {visibleBrands.map((id) => {
+            const on = mirrorBrands === null || mirrorBrands.includes(id);
+            return (
+              <button key={id} type="button" onClick={() => toggleMirrorBrand(id)} disabled={mirrorSaving}
+                className="rounded-pill px-[10px] py-[4px] text-[11.5px] font-bold border transition disabled:opacity-50"
+                style={on
+                  ? { background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }
+                  : { background: "#F2F0EB", borderColor: "#E5DECF", color: "#9A9387" }}>
+                {on ? "✓ " : ""}{brandVisibility.brandNames[id] ?? BRANDS[id].name}
+              </button>
+            );
+          })}
+        </div>
+        <span className="ml-auto text-[11px] text-faint whitespace-nowrap">
+          {mirrorBrands === null
+            ? "ยังไม่ได้เลือก = ส่งทุกแบรนด์"
+            : mirrorBrands.length === 0 ? "ปิดการ sync ทั้งหมด" : `ส่ง ${mirrorBrands.length} แบรนด์`}
+        </span>
+      </div>
 
       {/* Monthly marketing target — org-wide for the selected month, no per-campaign entry */}
       {monthKey && !loading && (
