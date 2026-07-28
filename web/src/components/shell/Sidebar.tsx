@@ -79,8 +79,14 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
     .map((g) => ({ ...g, items: g.items.filter((it) => { const m = moduleForPath(it.href); return !m || can(m); }) }))
     .filter((g) => g.items.length > 0);
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  // Longest matching href wins, so a nested item (/performance-center/team-kpi)
+  // doesn't light up its parent (/performance-center) at the same time.
+  const activeHref = groups
+    .flatMap((g) => g.items.map((it) => it.href))
+    .filter((href) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`)))
+    .sort((a, b) => b.length - a.length)[0];
+
+  const isActive = (href: string) => href === activeHref;
 
   return (
     <div
