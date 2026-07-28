@@ -160,7 +160,7 @@ export default function TeamKpiPage() {
       <PageHeader
         eyebrow="QA"
         title="Team KPI — Creative"
-        subtitle="ประเมิน KPI รายเดือนตามตรรกะเดียวกับชีท KPI: Achievement% → cap 120% → คูณน้ำหนัก → KPI Score → multiplier · หน้านี้แสดงผลงานอย่างเดียว ไม่มีตัวเลขเงินเดือนหรือโบนัส"
+        subtitle="ประเมิน KPI รายเดือนจากการส่งงานจริงบนบอร์ด: งานที่ครบกำหนดในเดือนนั้น → ส่งทันกำหนดกี่ชิ้น สายกี่วัน (งานที่ยังไม่จบและเลยกำหนดแล้ว นับเป็นสาย) → ถูกขอแก้กี่ครั้ง · หน้านี้แสดงผลงานอย่างเดียว ไม่มีตัวเลขเงินเดือนหรือโบนัส"
         right={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <select
@@ -213,6 +213,9 @@ export default function TeamKpiPage() {
           <div>
             <div className="text-[12px] font-extrabold uppercase tracking-[0.13em] text-[#0B7F7A]">Creative team · {monthLabel(month)}</div>
             <div className="mt-1 text-[20px] font-extrabold text-ink">ทีม Creative เดือนนี้ทำได้แค่ไหน</div>
+            {/* The scoring chain moved off the page title, but it still has to be
+                readable where the scores themselves are shown. */}
+            <div className="mt-1 text-[11.5px] font-semibold text-[#0B7F7A]">คิดคะแนนแบบเดียวกับชีท KPI: Achievement% → cap 120% → คูณน้ำหนัก → KPI Score → multiplier</div>
           </div>
           <div className="text-[11.5px] font-semibold text-[#0B7F7A]">
             {shared ? "ข้อมูลใช้ร่วมกันทั้งทีม" : "ยังเก็บในเครื่องนี้ (ยังไม่ได้รัน migration)"}
