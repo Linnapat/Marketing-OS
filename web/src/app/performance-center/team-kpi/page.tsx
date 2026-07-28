@@ -28,6 +28,7 @@ import {
   summarize,
 } from "@/lib/data/teamKpi";
 import { KpiSignals, kpiSignals, signalsFor, totalSignals } from "@/lib/data/teamKpiSignals";
+import { AutoValue, autoInputs, isOverridden, mergeInputs } from "@/lib/data/teamKpiAuto";
 import { fetchTeamKpiMonth, saveTeamKpiMonth } from "@/lib/db/teamKpi";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
@@ -94,9 +95,25 @@ export default function TeamKpiPage() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const signals = useMemo(() => kpiSignals(graphics, month, today), [graphics, month, today]);
 
+  // Everything the system can work out on its own, per person. The reviewer's
+  // typed values are merged on top — kept separate so what is SAVED stays the
+  // judgement, and derived numbers re-read from live data every time.
+  const autoByPerson = useMemo(() => {
+    const map: Record<string, Record<string, AutoValue>> = {};
+    for (const person of review.people) {
+      map[person.id] = autoInputs(person.id, kpisFor(person.position), signalsFor(person.name, signals));
+    }
+    return map;
+  }, [review.people, signals]);
+
+  const effectiveInputs = useMemo(
+    () => mergeInputs(Object.assign({}, ...Object.values(autoByPerson)), review.inputs),
+    [autoByPerson, review.inputs],
+  );
+
   const results = useMemo(
-    () => review.people.map((person) => scorePerson(person, review.inputs)),
-    [review.people, review.inputs],
+    () => review.people.map((person) => scorePerson(person, effectiveInputs)),
+    [review.people, effectiveInputs],
   );
   const creative = useMemo(() => results.filter((r) => isCreativePosition(r.person.position)), [results]);
   const side = useMemo(() => results.filter((r) => isSidePosition(r.person.position)), [results]);
@@ -317,6 +334,8 @@ export default function TeamKpiPage() {
             hint="นับรวมในค่าเฉลี่ยของทีมด้านบน"
             results={creative}
             signals={signals}
+            autoByPerson={autoByPerson}
+            manual={review.inputs}
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -326,6 +345,8 @@ export default function TeamKpiPage() {
             hint="ประเมินด้วยเกณฑ์ของตัวเอง — ไม่ถูกนับรวมในค่าเฉลี่ยทีม Creative"
             results={side}
             signals={signals}
+            autoByPerson={autoByPerson}
+            manual={review.inputs}
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -362,12 +383,14 @@ function MiniStat({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 function PersonGroup({
-  title, hint, results, signals, canEdit, onPatch, onRemove,
+  title, hint, results, signals, autoByPerson, manual, canEdit, onPatch, onRemove,
 }: {
   title: string;
   hint: string;
   results: PersonResult[];
   signals: KpiSignals[];
+  autoByPerson: Record<string, Record<string, AutoValue>>;
+  manual: Record<string, KpiInput>;
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -382,6 +405,7 @@ function PersonGroup({
       <div className="mt-2 grid gap-3">
         {results.map((result) => (
           <PersonCard key={result.person.id} result={result} signals={signalsFor(result.person.name, signals)}
+            auto={autoByPerson[result.person.id] ?? {}} manual={manual}
             canEdit={canEdit} onPatch={onPatch} onRemove={onRemove} />
         ))}
       </div>
@@ -390,10 +414,12 @@ function PersonGroup({
 }
 
 function PersonCard({
-  result, signals, canEdit, onPatch, onRemove,
+  result, signals, auto, manual, canEdit, onPatch, onRemove,
 }: {
   result: PersonResult;
   signals: KpiSignals | null;
+  auto: Record<string, AutoValue>;
+  manual: Record<string, KpiInput>;
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -401,8 +427,6 @@ function PersonCard({
   const { person, rows, score, complete, multiplier: mult, band: tone } = result;
   const style = BAND_STYLE[tone];
   const defs = kpisFor(person.position);
-  // The judged KPI the counted on-time figure can fill in, when the position has one.
-  const onTimeKpi = defs.find((d) => d.direction === "Manual" && /on-time/i.test(d.name));
 
   return (
     <div className="rounded-[24px] border border-line bg-surface shadow-soft overflow-hidden">
@@ -435,17 +459,7 @@ function PersonCard({
 
       {signals ? (
         <div className="border-b border-line px-5 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">ตัวเลขที่ระบบนับให้เดือนนี้</div>
-            {onTimeKpi && signals.onTimeRate !== null && canEdit && (
-              <button
-                onClick={() => onPatch(person.id, onTimeKpi.name, { score: Number(signals.onTimeRate!.toFixed(1)) })}
-                className="inline-flex items-center gap-1 rounded-pill border border-[#BCEBE6] bg-[#E3F7F5] px-3 py-1 text-[11.5px] font-bold text-[#0B7F7A]"
-              >
-                <Wand2 size={13} /> ใช้ {pct(signals.onTimeRate, 0)} เป็นคะแนน {onTimeKpi.name}
-              </button>
-            )}
-          </div>
+          <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">ตัวเลขที่ระบบนับให้เดือนนี้</div>
           <div className="mt-2 grid gap-2 md:grid-cols-5">
             <MiniStat label="งานครบกำหนด" value={`${signals.due}`} hint={signals.pending ? `ยังไม่ถึงกำหนด ${signals.pending}` : undefined} />
             <MiniStat label="ส่งตรงเวลา" value={pct(signals.onTimeRate, 0)} hint={signals.onTime + signals.late ? `${signals.onTime} ตรง · ${signals.late} สาย` : "ยังสรุปไม่ได้"} />
@@ -471,15 +485,45 @@ function PersonCard({
           </thead>
           <tbody>
             {rows.map(({ def, input, achievement: ach, capped: cap, weighted: w }) => {
-              const manual = def.direction === "Manual";
+              const isManualKpi = def.direction === "Manual";
+              const key = inputKey(person.id, def.name);
+              const autoValue = auto[key];
+              const typed = manual[key];
+              const overridden = isOverridden(autoValue, typed);
               return (
                 <tr key={def.name} className="border-b border-line last:border-0">
-                  <td className="px-4 py-3 font-bold text-ink">{def.name}</td>
+                  <td className="px-4 py-3 font-bold text-ink">
+                    {def.name}
+                    {autoValue && (
+                      <span
+                        title={`${autoValue.source} · ${autoValue.basis}`}
+                        className={`ml-2 inline-flex items-center gap-1 rounded-pill px-2 py-[2px] text-[10px] font-bold ${overridden ? "bg-[#FFF3D7] text-[#B78E2D]" : "bg-[#E3F7F5] text-[#0B7F7A]"}`}
+                      >
+                        <Wand2 size={10} /> {overridden ? "แก้เอง" : "อัตโนมัติ"}
+                      </span>
+                    )}
+                    {!autoValue && (
+                      <span className="ml-2 text-[10.5px] font-semibold text-faint">ให้คะแนนเอง</span>
+                    )}
+                    {autoValue && (
+                      <div className="mt-[2px] text-[10.5px] font-semibold text-faint">
+                        {autoValue.basis}
+                        {overridden && canEdit && (
+                          <button
+                            onClick={() => onPatch(person.id, def.name, { target: null, actual: null, score: null })}
+                            className="ml-2 underline decoration-dotted hover:text-ink"
+                          >
+                            คืนค่าอัตโนมัติ
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-faint">{def.focus}</td>
                   <td className="px-4 py-3 text-faint">{(def.weight * 100).toFixed(0)}%</td>
                   <td className="px-4 py-3 text-faint">{def.direction}</td>
                   <td className="px-4 py-3 text-right">
-                    {manual ? (
+                    {isManualKpi ? (
                       <span className="text-faint">—</span>
                     ) : (
                       <NumberCell
@@ -491,10 +535,11 @@ function PersonCard({
                   </td>
                   <td className="px-4 py-3 text-right">
                     <NumberCell
-                      value={manual ? input.score ?? null : input.actual ?? null}
-                      suffix={manual ? "%" : undefined}
+                      value={isManualKpi ? input.score ?? null : input.actual ?? null}
+                      suffix={isManualKpi ? "%" : undefined}
                       disabled={!canEdit}
-                      onChange={(value) => onPatch(person.id, def.name, manual ? { score: value } : { actual: value })}
+                      auto={!!autoValue && !overridden}
+                      onChange={(value) => onPatch(person.id, def.name, isManualKpi ? { score: value } : { actual: value })}
                     />
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-ink">{pct(ach)}</td>
@@ -515,12 +560,14 @@ function PersonCard({
 /** Number input that keeps "empty" distinct from 0 — a blank KPI is unscored,
  *  and storing 0 for it would read as a genuine miss on the review. */
 function NumberCell({
-  value, onChange, disabled, suffix,
+  value, onChange, disabled, suffix, auto,
 }: {
   value: number | null;
   onChange: (value: number | null) => void;
   disabled?: boolean;
   suffix?: string;
+  /** Filled by the system — tinted so a reviewer can see what they didn't type. */
+  auto?: boolean;
 }) {
   return (
     <span className="inline-flex items-center gap-1">
@@ -530,7 +577,7 @@ function NumberCell({
         value={value === null ? "" : value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-        className="w-[96px] rounded-[10px] border border-line2 bg-white px-2 py-[6px] text-right text-[12.5px] font-semibold text-ink outline-none disabled:bg-ivory disabled:text-faint"
+        className={`w-[96px] rounded-[10px] border px-2 py-[6px] text-right text-[12.5px] font-semibold outline-none disabled:text-faint ${auto ? "border-[#BCEBE6] bg-[#F2FBFA] text-[#0B7F7A]" : "border-line2 bg-white text-ink disabled:bg-ivory"}`}
         placeholder="—"
       />
       {suffix && <span className="text-[11.5px] font-semibold text-faint">{suffix}</span>}
