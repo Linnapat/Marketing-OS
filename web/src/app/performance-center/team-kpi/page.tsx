@@ -6,7 +6,7 @@
 // Performance only: no salary, no bonus on this screen.
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Save, Trash2, TriangleAlert } from "lucide-react";
+import { Plus, RefreshCw, Save, Trash2, TriangleAlert, Wand2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useRole } from "@/lib/role";
@@ -27,7 +27,10 @@ import {
   scorePerson,
   summarize,
 } from "@/lib/data/teamKpi";
+import { KpiSignals, kpiSignals, signalsFor, totalSignals } from "@/lib/data/teamKpiSignals";
 import { fetchTeamKpiMonth, saveTeamKpiMonth } from "@/lib/db/teamKpi";
+import { fetchGraphics } from "@/lib/db/graphic";
+import { Graphic } from "@/lib/data/graphic";
 
 const ACCENT = "#0EA5A0";
 const BAND_STYLE: Record<KpiBand, { fg: string; bg: string; label: string }> = {
@@ -63,6 +66,9 @@ export default function TeamKpiPage() {
   const [shared, setShared] = useState(true);
   const [newName, setNewName] = useState("");
   const [newPosition, setNewPosition] = useState<string>(CREATIVE_POSITIONS[0]);
+  // Graphic Requests are the source of the counted numbers (revisions, lateness).
+  // Loaded once: they are re-sliced per month in memory rather than re-fetched.
+  const [graphics, setGraphics] = useState<Graphic[]>([]);
 
   const load = async (target: string) => {
     setLoading(true);
@@ -82,6 +88,11 @@ export default function TeamKpiPage() {
   };
 
   useEffect(() => { load(month); }, [month]);
+  useEffect(() => { fetchGraphics().then(setGraphics).catch(() => {}); }, []);
+
+  // Counted-for-you numbers: revisions and lateness per person, this month.
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const signals = useMemo(() => kpiSignals(graphics, month, today), [graphics, month, today]);
 
   const results = useMemo(
     () => review.people.map((person) => scorePerson(person, review.inputs)),
@@ -90,6 +101,12 @@ export default function TeamKpiPage() {
   const creative = useMemo(() => results.filter((r) => isCreativePosition(r.person.position)), [results]);
   const side = useMemo(() => results.filter((r) => isSidePosition(r.person.position)), [results]);
   const teamSummary = useMemo(() => summarize(creative), [creative]);
+  // Only the people actually being reviewed — the board also carries agency and
+  // other designers, and their work is not this team's number.
+  const teamSignals = useMemo(
+    () => totalSignals(creative.map((r) => signalsFor(r.person.name, signals)).filter(Boolean) as KpiSignals[]),
+    [creative, signals],
+  );
 
   const patchInput = (personId: string, kpiName: string, patch: Partial<KpiInput>) => {
     setReview((prev) => {
@@ -236,6 +253,21 @@ export default function TeamKpiPage() {
             </div>
           </div>
         )}
+
+        {/* Counted from Graphic Requests — the reviewer shouldn't tally these by hand. */}
+        <div className="mt-3 rounded-[20px] border border-[#BCEBE6] bg-white p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">ตัวเลขที่ระบบนับให้ · จาก Graphic Request</div>
+            <div className="text-[11px] font-semibold text-faint">นับเฉพาะคนที่อยู่ในรอบประเมินเดือนนี้</div>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-5">
+            <MiniStat label="งานครบกำหนดเดือนนี้" value={`${teamSignals.due}`} hint={teamSignals.pending ? `ยังไม่ถึงกำหนดอีก ${teamSignals.pending}` : "ถึงกำหนดครบแล้ว"} />
+            <MiniStat label="ส่งตรงเวลา" value={pct(teamSignals.onTimeRate, 0)} hint={teamSignals.onTime + teamSignals.late ? `${teamSignals.onTime} ตรง · ${teamSignals.late} สาย` : "ยังไม่มีงานที่สรุปได้"} />
+            <MiniStat label="สายเฉลี่ย" value={teamSignals.late ? `${teamSignals.avgDaysLate.toFixed(1)} วัน` : "—"} hint={teamSignals.stillOpen ? `ค้างเลยกำหนด ${teamSignals.stillOpen} · มากสุด ${teamSignals.maxDaysLate} วัน` : teamSignals.late ? `มากสุด ${teamSignals.maxDaysLate} วัน` : "ไม่มีงานสาย"} />
+            <MiniStat label="ถูกขอแก้" value={`${teamSignals.revisions} ครั้ง`} hint={`${teamSignals.piecesRevised} ชิ้นที่ต้องแก้`} />
+            <MiniStat label="ผ่านรวดเดียว" value={pct(teamSignals.cleanRate, 0)} hint={teamSignals.pieces ? `จาก ${teamSignals.pieces} ชิ้นที่อนุมัติ` : "ยังไม่มีชิ้นงานอนุมัติ"} />
+          </div>
+        </div>
       </section>
 
       {/* ── Roster ─────────────────────────────────────────────────── */}
@@ -281,6 +313,7 @@ export default function TeamKpiPage() {
             title="ทีม Creative"
             hint="นับรวมในค่าเฉลี่ยของทีมด้านบน"
             results={creative}
+            signals={signals}
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -289,6 +322,7 @@ export default function TeamKpiPage() {
             title="KOL Specialist"
             hint="ประเมินด้วยเกณฑ์ของตัวเอง — ไม่ถูกนับรวมในค่าเฉลี่ยทีม Creative"
             results={side}
+            signals={signals}
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -314,12 +348,23 @@ function MetricCard({ label, value, hint }: { label: string; value: string; hint
   );
 }
 
+function MiniStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-[14px] bg-[#F8F7F3] p-3">
+      <div className="text-[11px] font-semibold text-faint">{label}</div>
+      <div className="mt-1 text-[17px] font-extrabold text-ink">{value}</div>
+      {hint && <div className="mt-[2px] text-[10.5px] font-semibold text-faint">{hint}</div>}
+    </div>
+  );
+}
+
 function PersonGroup({
-  title, hint, results, canEdit, onPatch, onRemove,
+  title, hint, results, signals, canEdit, onPatch, onRemove,
 }: {
   title: string;
   hint: string;
   results: PersonResult[];
+  signals: KpiSignals[];
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -333,7 +378,8 @@ function PersonGroup({
       </div>
       <div className="mt-2 grid gap-3">
         {results.map((result) => (
-          <PersonCard key={result.person.id} result={result} canEdit={canEdit} onPatch={onPatch} onRemove={onRemove} />
+          <PersonCard key={result.person.id} result={result} signals={signalsFor(result.person.name, signals)}
+            canEdit={canEdit} onPatch={onPatch} onRemove={onRemove} />
         ))}
       </div>
     </section>
@@ -341,9 +387,10 @@ function PersonGroup({
 }
 
 function PersonCard({
-  result, canEdit, onPatch, onRemove,
+  result, signals, canEdit, onPatch, onRemove,
 }: {
   result: PersonResult;
+  signals: KpiSignals | null;
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -351,6 +398,8 @@ function PersonCard({
   const { person, rows, score, complete, multiplier: mult, band: tone } = result;
   const style = BAND_STYLE[tone];
   const defs = kpisFor(person.position);
+  // The judged KPI the counted on-time figure can fill in, when the position has one.
+  const onTimeKpi = defs.find((d) => d.direction === "Manual" && /on-time/i.test(d.name));
 
   return (
     <div className="rounded-[24px] border border-line bg-surface shadow-soft overflow-hidden">
@@ -380,6 +429,33 @@ function PersonCard({
           )}
         </div>
       </div>
+
+      {signals ? (
+        <div className="border-b border-line px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">ตัวเลขที่ระบบนับให้เดือนนี้</div>
+            {onTimeKpi && signals.onTimeRate !== null && canEdit && (
+              <button
+                onClick={() => onPatch(person.id, onTimeKpi.name, { score: Number(signals.onTimeRate!.toFixed(1)) })}
+                className="inline-flex items-center gap-1 rounded-pill border border-[#BCEBE6] bg-[#E3F7F5] px-3 py-1 text-[11.5px] font-bold text-[#0B7F7A]"
+              >
+                <Wand2 size={13} /> ใช้ {pct(signals.onTimeRate, 0)} เป็นคะแนน {onTimeKpi.name}
+              </button>
+            )}
+          </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-5">
+            <MiniStat label="งานครบกำหนด" value={`${signals.due}`} hint={signals.pending ? `ยังไม่ถึงกำหนด ${signals.pending}` : undefined} />
+            <MiniStat label="ส่งตรงเวลา" value={pct(signals.onTimeRate, 0)} hint={signals.onTime + signals.late ? `${signals.onTime} ตรง · ${signals.late} สาย` : "ยังสรุปไม่ได้"} />
+            <MiniStat label="สาย" value={signals.late ? `${signals.late} ชิ้น` : "—"} hint={signals.late ? `เฉลี่ย ${signals.avgDaysLate.toFixed(1)} วัน · มากสุด ${signals.maxDaysLate}${signals.stillOpen ? ` · ค้าง ${signals.stillOpen}` : ""}` : "ไม่มีงานสาย"} />
+            <MiniStat label="ถูกขอแก้" value={`${signals.revisions} ครั้ง`} hint={`${signals.piecesRevised} ชิ้น`} />
+            <MiniStat label="ผ่านรวดเดียว" value={pct(signals.cleanRate, 0)} hint={signals.pieces ? `จาก ${signals.pieces} ชิ้นอนุมัติ` : "ยังไม่มีชิ้นอนุมัติ"} />
+          </div>
+        </div>
+      ) : (
+        <div className="border-b border-line px-5 py-3 text-[11.5px] font-semibold text-faint">
+          ไม่พบงานของชื่อนี้ใน Graphic Request เดือนนี้ — ตัวเลขนับให้ไม่ได้ ต้องให้คะแนนเอง (ชื่อในหน้านี้ต้องตรงกับชื่อ designer บนบอร์ด)
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-[12px]">
