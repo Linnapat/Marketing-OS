@@ -5,6 +5,8 @@
 
 import {
   ACHIEVEMENT_CAP,
+  ROLE_TO_POSITION,
+  boardNameOf,
   ALL_POSITIONS,
   CREATIVE_POSITIONS,
   KPI_TEMPLATE,
@@ -131,6 +133,26 @@ is("เก็บคนที่ตำแหน่งถูกต้อง",
 is("ค่าที่ไม่ใช่ตัวเลขกลายเป็น null",
   parseMonth("2026-07", { inputs: { k: { target: "สามสิบ", actual: 31 } } }).inputs.k,
   { target: null, actual: 31, score: null, note: "" });
+
+console.log("— ผูกคนกับชื่อบนบอร์ด —");
+is("ไม่ได้ตั้งชื่อบนบอร์ด → ใช้ชื่อในหน้าประเมิน",
+  boardNameOf({ id: "p", name: "Jeeno", position: "Video Creator" }), "Jeeno");
+is("ตั้งไว้แล้ว → ใช้ชื่อบนบอร์ด",
+  boardNameOf({ id: "p", name: "Jeeno", position: "Video Creator", boardName: "Jino" }), "Jino");
+is("ชื่อบนบอร์ดว่าง ไม่ทำให้ค้นไม่เจอ",
+  boardNameOf({ id: "p", name: "Four", position: "Video Creator", boardName: "" }), "Four");
+is("parseMonth เก็บชื่อบนบอร์ดไว้",
+  parseMonth("2026-07", { people: [{ id: "x", name: "Jeeno", position: "Video Creator", boardName: "Jino" }] }).people[0].boardName,
+  "Jino");
+
+console.log("— role ในระบบ → ชุด KPI ที่ใช้วัด —");
+is("Senior Graphic Designer → Graphic Designer", ROLE_TO_POSITION["Senior Graphic Designer"], "Graphic Designer");
+is("VDO Editor → Video Creator", ROLE_TO_POSITION["VDO Editor"], "Video Creator");
+is("Creative Leader → Creative Leader", ROLE_TO_POSITION["Creative Leader"], "Creative Leader");
+is("KOL Specialist → KOL Specialist", ROLE_TO_POSITION["KOL Specialist"], "KOL Specialist");
+is("role ที่ไม่ได้ประเมินในหน้านี้ → ไม่เดาให้", ROLE_TO_POSITION["CMO"], undefined);
+is("ทุกตำแหน่งที่ map ไว้มีอยู่จริงในเทมเพลต",
+  Object.values(ROLE_TO_POSITION).every((p) => ALL_POSITIONS.includes(p)), true);
 
 console.log("— recentMonths —");
 is("เดือนล่าสุดอยู่หัวลิสต์", recentMonths(new Date(2026, 6, 28), 3), ["2026-07", "2026-06", "2026-05"]);

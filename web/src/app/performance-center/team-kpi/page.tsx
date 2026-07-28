@@ -13,6 +13,8 @@ import { useRole } from "@/lib/role";
 import {
   ALL_POSITIONS,
   CREATIVE_POSITIONS,
+  ROLE_TO_POSITION,
+  boardNameOf,
   KpiBand,
   KpiInput,
   KpiPerson,
@@ -27,10 +29,11 @@ import {
   scorePerson,
   summarize,
 } from "@/lib/data/teamKpi";
-import { KpiSignals, kpiSignals, signalsFor, totalSignals } from "@/lib/data/teamKpiSignals";
+import { KpiSignals, boardDesigners, kpiSignals, signalsFor, totalSignals } from "@/lib/data/teamKpiSignals";
 import { AutoValue, autoInputs, isOverridden, mergeInputs } from "@/lib/data/teamKpiAuto";
 import { fetchTeamKpiMonth, saveTeamKpiMonth } from "@/lib/db/teamKpi";
 import { fetchGraphics } from "@/lib/db/graphic";
+import { fetchMembers, Member } from "@/lib/db/settings";
 import { Graphic } from "@/lib/data/graphic";
 
 const ACCENT = "#0EA5A0";
@@ -67,6 +70,9 @@ export default function TeamKpiPage() {
   const [shared, setShared] = useState(true);
   const [newName, setNewName] = useState("");
   const [newPosition, setNewPosition] = useState<string>(CREATIVE_POSITIONS[0]);
+  // The roster comes from Settings → Users & Roles, so a name is never typed
+  // (and never mistyped) on this screen.
+  const [members, setMembers] = useState<Member[]>([]);
   // Graphic Requests are the source of the counted numbers (revisions, lateness).
   // Loaded once: they are re-sliced per month in memory rather than re-fetched.
   const [graphics, setGraphics] = useState<Graphic[]>([]);
@@ -90,10 +96,18 @@ export default function TeamKpiPage() {
 
   useEffect(() => { load(month); }, [month]);
   useEffect(() => { fetchGraphics().then(setGraphics).catch(() => {}); }, []);
+  useEffect(() => { fetchMembers().then(setMembers).catch(() => {}); }, []);
 
   // Counted-for-you numbers: revisions and lateness per person, this month.
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const signals = useMemo(() => kpiSignals(graphics, month, today), [graphics, month, today]);
+  const designers = useMemo(() => boardDesigners(graphics), [graphics]);
+  // Members not yet in this month's review, with the KPI set their role implies.
+  const addable = useMemo(() => members
+    .filter((m) => m.status !== "Inactive" && !review.people.some((p) => p.name === m.name))
+    .map((m) => ({ name: m.name, role: m.role, position: ROLE_TO_POSITION[m.role] ?? "" }))
+    .sort((a, b) => (b.position ? 1 : 0) - (a.position ? 1 : 0) || a.name.localeCompare(b.name)),
+    [members, review.people]);
 
   // Everything the system can work out on its own, per person. The reviewer's
   // typed values are merged on top — kept separate so what is SAVED stays the
@@ -101,7 +115,7 @@ export default function TeamKpiPage() {
   const autoByPerson = useMemo(() => {
     const map: Record<string, Record<string, AutoValue>> = {};
     for (const person of review.people) {
-      map[person.id] = autoInputs(person.id, kpisFor(person.position), signalsFor(person.name, signals));
+      map[person.id] = autoInputs(person.id, kpisFor(person.position), signalsFor(boardNameOf(person), signals));
     }
     return map;
   }, [review.people, signals]);
@@ -121,7 +135,7 @@ export default function TeamKpiPage() {
   // Only the people actually being reviewed — the board also carries agency and
   // other designers, and their work is not this team's number.
   const teamSignals = useMemo(
-    () => totalSignals(creative.map((r) => signalsFor(r.person.name, signals)).filter(Boolean) as KpiSignals[]),
+    () => totalSignals(creative.map((r) => signalsFor(boardNameOf(r.person), signals)).filter(Boolean) as KpiSignals[]),
     [creative, signals],
   );
 
@@ -136,9 +150,17 @@ export default function TeamKpiPage() {
   const addPerson = () => {
     const name = newName.trim();
     if (!name) return;
-    const person: KpiPerson = { id: newId(), name, position: newPosition };
+    // Link to the board straight away when the same name is already there; the
+    // reviewer only has to choose when the two spellings differ.
+    const match = designers.find((d) => d.toLowerCase() === name.toLowerCase());
+    const person: KpiPerson = { id: newId(), name, position: newPosition, boardName: match ?? "" };
     setReview((prev) => ({ ...prev, people: [...prev.people, person] }));
     setNewName("");
+    setDirty(true);
+  };
+
+  const setBoardName = (id: string, boardName: string) => {
+    setReview((prev) => ({ ...prev, people: prev.people.map((p) => (p.id === id ? { ...p, boardName } : p)) }));
     setDirty(true);
   };
 
@@ -296,16 +318,24 @@ export default function TeamKpiPage() {
           <div className="flex flex-wrap items-end gap-2">
             <div>
               <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">เพิ่มคนที่จะประเมิน</div>
-              <div className="mt-1 text-[12px] text-faint">ชื่อพนักงานเก็บอยู่ในฐานข้อมูล ไม่ได้อยู่ในโค้ด — เลือกตำแหน่งให้ตรงกับชุด KPI ที่จะใช้วัด</div>
+              <div className="mt-1 text-[12px] text-faint">รายชื่อดึงจาก Settings → Users &amp; Roles · ตำแหน่งเดาให้จาก role แล้ว เปลี่ยนได้ถ้าไม่ตรง</div>
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <input
+              <select
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") addPerson(); }}
-                placeholder="ชื่อ / ชื่อเล่น"
-                className="rounded-[12px] border border-line2 bg-white px-3 py-2 text-[12.5px] font-semibold text-ink outline-none"
-              />
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setNewName(name);
+                  const suggested = addable.find((m) => m.name === name)?.position;
+                  if (suggested) setNewPosition(suggested);
+                }}
+                className="rounded-[12px] border border-line2 bg-white px-3 py-2 text-[12.5px] font-bold text-ink outline-none"
+              >
+                <option value="">เลือกคนจาก Settings…</option>
+                {addable.map((m) => (
+                  <option key={m.name} value={m.name}>{m.name} · {m.role}</option>
+                ))}
+              </select>
               <select
                 value={newPosition}
                 onChange={(e) => setNewPosition(e.target.value)}
@@ -336,6 +366,8 @@ export default function TeamKpiPage() {
             signals={signals}
             autoByPerson={autoByPerson}
             manual={review.inputs}
+            designers={designers}
+            onBoardName={setBoardName}
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -347,6 +379,8 @@ export default function TeamKpiPage() {
             signals={signals}
             autoByPerson={autoByPerson}
             manual={review.inputs}
+            designers={designers}
+            onBoardName={setBoardName}
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -383,7 +417,7 @@ function MiniStat({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 function PersonGroup({
-  title, hint, results, signals, autoByPerson, manual, canEdit, onPatch, onRemove,
+  title, hint, results, signals, autoByPerson, manual, designers, onBoardName, canEdit, onPatch, onRemove,
 }: {
   title: string;
   hint: string;
@@ -391,6 +425,8 @@ function PersonGroup({
   signals: KpiSignals[];
   autoByPerson: Record<string, Record<string, AutoValue>>;
   manual: Record<string, KpiInput>;
+  designers: string[];
+  onBoardName: (id: string, boardName: string) => void;
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -404,8 +440,9 @@ function PersonGroup({
       </div>
       <div className="mt-2 grid gap-3">
         {results.map((result) => (
-          <PersonCard key={result.person.id} result={result} signals={signalsFor(result.person.name, signals)}
+          <PersonCard key={result.person.id} result={result} signals={signalsFor(boardNameOf(result.person), signals)}
             auto={autoByPerson[result.person.id] ?? {}} manual={manual}
+            designers={designers} onBoardName={onBoardName}
             canEdit={canEdit} onPatch={onPatch} onRemove={onRemove} />
         ))}
       </div>
@@ -414,12 +451,14 @@ function PersonGroup({
 }
 
 function PersonCard({
-  result, signals, auto, manual, canEdit, onPatch, onRemove,
+  result, signals, auto, manual, designers, onBoardName, canEdit, onPatch, onRemove,
 }: {
   result: PersonResult;
   signals: KpiSignals | null;
   auto: Record<string, AutoValue>;
   manual: Record<string, KpiInput>;
+  designers: string[];
+  onBoardName: (id: string, boardName: string) => void;
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -433,7 +472,10 @@ function PersonCard({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div>
           <div className="text-[16px] font-extrabold text-ink">{person.name}</div>
-          <div className="text-[12px] text-faint">{person.position} · {defs.length} KPI</div>
+          <div className="text-[12px] text-faint">
+            {person.position} · {defs.length} KPI
+            {person.boardName && person.boardName !== person.name && ` · บนบอร์ดชื่อ “${person.boardName}”`}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-right">
@@ -469,8 +511,23 @@ function PersonCard({
           </div>
         </div>
       ) : (
-        <div className="border-b border-line px-5 py-3 text-[11.5px] font-semibold text-faint">
-          ไม่พบงานของชื่อนี้ใน Graphic Request เดือนนี้ — ตัวเลขนับให้ไม่ได้ ต้องให้คะแนนเอง (ชื่อในหน้านี้ต้องตรงกับชื่อ designer บนบอร์ด)
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3 text-[11.5px] font-semibold text-faint">
+          <span>ยังไม่พบงานของคนนี้บนบอร์ดเดือนนี้ —</span>
+          {canEdit && designers.length > 0 ? (
+            <>
+              <span>ถ้าบนบอร์ดใช้ชื่ออื่น เลือกให้ตรงได้เลย:</span>
+              <select
+                value={person.boardName ?? ""}
+                onChange={(e) => onBoardName(person.id, e.target.value)}
+                className="rounded-[10px] border border-line2 bg-white px-2 py-[5px] text-[11.5px] font-bold text-ink outline-none"
+              >
+                <option value="">— ชื่อบนบอร์ด —</option>
+                {designers.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </>
+          ) : (
+            <span>เดือนนี้ยังไม่มีงานที่จ่ายให้คนนี้</span>
+          )}
         </div>
       )}
 
