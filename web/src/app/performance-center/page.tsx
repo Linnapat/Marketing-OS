@@ -399,9 +399,15 @@ export default function PerformanceCenterPage() {
             title="Creative KPI Performance"
             desc="อ่าน performance ตามชนิด creative / content เพื่อดูว่า asset แบบไหนควรทำซ้ำ หรือแบบไหนควรปรับ"
             action={
-              <Link href="/performance-center/creative-kpi" className="inline-flex items-center gap-2 rounded-full bg-[#FDEBF3] px-3 py-2 text-[12px] font-extrabold text-[#C65391]">
-                Open detailed Creative KPI <ArrowRight size={14} />
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href="/performance-center/creative-kpi" className="inline-flex items-center gap-2 rounded-full bg-[#FDEBF3] px-3 py-2 text-[12px] font-extrabold text-[#C65391]">
+                  Open detailed Creative KPI <ArrowRight size={14} />
+                </Link>
+                {/* People, not content: the monthly KPI review of the Creative team. */}
+                <Link href="/performance-center/team-kpi" className="inline-flex items-center gap-2 rounded-full bg-[#E3F7F5] px-3 py-2 text-[12px] font-extrabold text-[#0B7F7A]">
+                  Team KPI (ประเมินรายคน) <ArrowRight size={14} />
+                </Link>
+              </div>
             }
           >
             <div className="grid gap-3 md:grid-cols-4">
