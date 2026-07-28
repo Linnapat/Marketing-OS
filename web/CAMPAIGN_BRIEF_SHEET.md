@@ -55,11 +55,13 @@ Goal: CV%          | 2.5
 ## 3. แท็บ Content
 
 ```
-Title      | Type  | Platforms            | Asset Sizes        | Publish Date | Graphic Due Date | Priority | Needs Graphic | Needs Video | Caption Direction | Key Message | CTA     | Note
-KV Launch  | Photo | Facebook, Instagram  | 1:1                | 2026-07-05   | 2026-06-28       | High     | Yes           | No          | ...               | ...         | จองเลย  | ...
-Teaser     | Reel  | Instagram            | Instagram: 9:16    | 2026-07-02   |                  | Med      | No            | Yes         |                   |             |         |
+Title      | Sub Head                    | Type  | Platforms            | Asset Sizes        | Publish Date | Graphic Due Date | Priority | Needs Graphic | Needs Video | Caption Direction | Key Message | CTA     | Note
+KV Launch  | วากิว A5 ที่กินได้บ่อยกว่าปีละครั้ง | Photo | Facebook, Instagram  | 1:1                | 2026-07-05   | 2026-06-28       | High     | Yes           | No          | ...               | ...         | จองเลย  | ...
+Teaser     | เสียงย่างวากิว 5 วิแรก          | Reel  | Instagram            | Instagram: 9:16    | 2026-07-02   |                  | Med      | No            | Yes         |                   |             |         |
 ```
 
+- **Title / Sub Head**: ต้องมีทั้งคู่ทุกแถว — ฟอร์มบังคับก่อน submit
+  sheet ที่ไม่มีคอลัมน์ `Sub Head` import ได้ (ช่องจะว่าง) แต่ต้องมากรอกในฟอร์มเองทุกแถว
 - **Asset Sizes**: ใส่แค่สัดส่วน (`1:1`) ก็ได้ → จับคู่กับทุก platform ในแถวนั้นให้เอง
   ถ้าจะเจาะจง platform ใช้ `Instagram: 9:16` คั่นหลายอันด้วย `;`
 - **Needs Graphic / Needs Video**: `Yes` / `No`
