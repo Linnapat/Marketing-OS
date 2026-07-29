@@ -50,6 +50,22 @@ function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
   );
 }
 
+/** Everything the search box reads. Title and campaign are what people look for
+ *  first, but a post is also findable by its caption text, the people on it, its
+ *  channel or its status — so "ยังไม่อนุมัติ" style hunting works too. */
+const searchText = (c: ContentItem) => [
+  c.title, c.campaign, c.caption, c.hashtags, c.cta,
+  c.subHead, c.mainMessage, c.productHighlight,
+  c.owner, c.requester, c.designer, c.approver,
+  brandName(c.b), itemPlatforms(c).join(" "),
+  c.status, c.captionStatus, c.assetStatus, c.approvalStatus, c.publishStatus,
+  contentDateIso(c),
+].filter(Boolean).join(" ").toLowerCase();
+
+/** Every word must match somewhere — "ocean ig" finds the Ocean Don post on IG. */
+const matchesQuery = (c: ContentItem, terms: string[]) =>
+  terms.length === 0 || (() => { const hay = searchText(c); return terms.every((t) => hay.includes(t)); })();
+
 type View = "month" | "week" | "list" | "queue" | "campaign";
 type SavedContentView = { name: string; view: View; brand: BrandFilterValue; date: DateFilter };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -80,6 +96,9 @@ export default function ContentPage() {
   const [savedViewName, setSavedViewName] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const [newIso, setNewIso] = useState<string | null>(null);
+  // Deliberately not part of the sticky view: a saved filter set that silently
+  // still holds a search would explain away an empty calendar days later.
+  const [query, setQuery] = useState("");
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
   // Only the creative team (Content Creator / Creative Leader; CMO as admin)
@@ -131,10 +150,22 @@ export default function ContentPage() {
 
   const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
 
-  const items = useMemo(
-    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
-    [posts, brand, date, brandVisibility],
+  const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  const scoped = useMemo(
+    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand)),
+    [posts, brand, brandVisibility],
   );
+  const items = useMemo(
+    () => scoped.filter((c) => inDateFilter(date, contentDateIso(c)) && matchesQuery(c, terms)),
+    [scoped, date, terms],
+  );
+  // Hits the period filter hides. A calendar can only draw one month, so instead
+  // of letting the post look non-existent, offer to widen the window.
+  const hiddenByDate = useMemo(
+    () => (terms.length === 0 ? 0 : scoped.filter((c) => matchesQuery(c, terms) && !inDateFilter(date, contentDateIso(c))).length),
+    [scoped, date, terms],
+  );
+  const searchEverywhere = () => setDate({ ...date, mode: "range", start: "", end: "" });
   const summary = useMemo(() => ({
     posts: items.length,
     waitingApproval: items.filter((c) => c.approvalStatus === "Waiting Approval").length,
@@ -194,6 +225,24 @@ export default function ContentPage() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-[12px] text-faint pointer-events-none">🔍</span>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="ค้นหา content / campaign…"
+                    className="w-[230px] text-[12px] rounded-pill border border-line2 bg-white pl-[30px] pr-[28px] py-[8px] outline-none focus:border-[#6C5CE7]"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery("")}
+                      title="ล้างคำค้น"
+                      className="absolute right-[9px] top-1/2 -translate-y-1/2 text-faint hover:text-ink"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
                 <BrandFilter value={brand} onChange={setBrand} label="" />
                 <select
                   value=""
@@ -219,7 +268,18 @@ export default function ContentPage() {
                 >
                   Save view
                 </button>
-                <span className="text-[12px] font-semibold text-faint">{items.length} posts in view</span>
+                <span className="text-[12px] font-semibold text-faint">
+                  {terms.length > 0 ? `พบ ${items.length} โพสต์` : `${items.length} posts in view`}
+                </span>
+                {hiddenByDate > 0 && (
+                  <button
+                    onClick={searchEverywhere}
+                    className="text-[11.5px] font-bold rounded-pill px-3 py-[7px]"
+                    style={{ background: "#FBF8EE", color: "#C68A1E", border: "1px solid #EFE2C4" }}
+                  >
+                    อีก {hiddenByDate} โพสต์อยู่นอกช่วงวันที่ · ค้นทุกช่วงเวลา →
+                  </button>
+                )}
               </div>
               <div className="flex items-center rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px] shadow-[0_8px_22px_rgba(108,92,231,0.08)]">
                 {[
@@ -278,13 +338,26 @@ export default function ContentPage() {
 
       </div>
 
-      <div className="mt-5">
-        {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} />}
-        {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} />}
-        {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
-        {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-        {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
-      </div>
+      {/* A search with no hits replaces the views outright — an empty calendar
+          under an empty table reads as two different problems. */}
+      {terms.length > 0 && items.length === 0 ? (
+        <div className="mt-5 border-2 border-dashed border-line2 rounded-cardLg p-10 text-center">
+          <div className="text-[14px] font-bold text-ink">ไม่พบ content หรือ campaign ที่ตรงกับ “{query.trim()}”</div>
+          <div className="text-[12px] text-faint mt-1">
+            {hiddenByDate > 0
+              ? `มี ${hiddenByDate} โพสต์ที่ตรงกันอยู่นอกช่วงวันที่ที่เลือก — กด “ค้นทุกช่วงเวลา” ด้านบน`
+              : "ลองคำสั้นลง หรือเช็คตัวกรองแบรนด์ / ช่วงวันที่"}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5">
+          {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} />}
+          {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} />}
+          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+          {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
+          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+        </div>
+      )}
 
       {open && (
         // Keyed by post id: the drawer seeds caption/hashtags/CTA/footer into
