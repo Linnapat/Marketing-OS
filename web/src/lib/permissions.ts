@@ -48,8 +48,16 @@ export function canSeeModule(matrix: PermMatrix | null, role: Role, module: stri
 }
 
 /** Permission-matrix module guarding each route prefix. Routes not listed
- *  (Dashboard, My Tasks, Team, Work Calendar, Agency Portal) are open to every
- *  internal role; the Agency role is confined to /agency separately. */
+ *  (Dashboard, My Tasks, Team, Work Calendar, Agency Portal, Expenses) are open
+ *  to every internal role; the Agency role is confined to /agency separately.
+ *
+ *  /expenses is deliberately NOT here. Submitting an expense request is
+ *  everyone's job (CMO, 2026-07-30) — gating the page on the Finance module
+ *  locked the five roles with Finance="—" (Creative Leader, Designer, VDO
+ *  Editor, KOL Specialist) out of claiming their own money. The page gates its
+ *  Spending Log tab on Finance instead, and the database scopes what each
+ *  person can read: your own requests always, everyone else's only with
+ *  Finance >= View (supabase/security_p12_expense_approval.sql). */
 const ROUTE_MODULE: [prefix: string, module: string][] = [
   ["/campaigns", "Campaign"],
   ["/performance-center", "Campaign"],
@@ -61,7 +69,6 @@ const ROUTE_MODULE: [prefix: string, module: string][] = [
   ["/assets", "Graphic"],
   ["/kol", "KOL"],
   ["/finance", "Finance"],
-  ["/expenses", "Finance"],
   ["/settings", "Settings"],
   ["/admin", "Settings"],
 ];

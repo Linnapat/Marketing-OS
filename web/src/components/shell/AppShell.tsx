@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/Toaster";
 import { RoleProvider, useRole } from "@/lib/role";
 import { AuthProvider, useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { moduleForPath } from "@/lib/permissions";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { applyBrandOverrides } from "@/lib/brands";
 
@@ -117,10 +118,33 @@ function Shell({ children }: { children: React.ReactNode }) {
       {/* Content */}
       <main className={collapsed ? "lg:pl-[78px] transition-[padding] duration-200" : "lg:pl-[248px] transition-[padding] duration-200"}>
         <div className="max-w-content mx-auto px-5 sm:px-6 lg:px-8 pt-5 pb-16">
+          <DemoModeBanner />
           <ModuleGate>{children}</ModuleGate>
         </div>
       </main>
       <Toaster />
+    </div>
+  );
+}
+
+/** Says out loud when the app is running on the bundled demo dataset.
+ *
+ *  Every db/* reader falls back to typed mock data when Supabase is not
+ *  configured (`if (!db) return MOCK`), and writes quietly succeed without
+ *  storing anything. That is the right behaviour for local development and a
+ *  trap everywhere else: drop an env var and the app keeps looking normal while
+ *  serving invented campaigns and swallowing saves. A permanent banner is the
+ *  cheapest way to make sure nobody reads demo numbers as real ones. */
+function DemoModeBanner() {
+  if (isSupabaseConfigured) return null;
+  return (
+    <div
+      className="mb-4 rounded-card border px-4 py-3 text-[12.5px] font-semibold"
+      style={{ background: "#FBF1E9", borderColor: "#E4C79B", color: "#8A5A1E" }}
+      role="status"
+    >
+      โหมด DEMO — ยังไม่ได้เชื่อมฐานข้อมูล ตัวเลขทั้งหมดเป็นข้อมูลตัวอย่าง และการบันทึกจะไม่ถูกเก็บไว้
+      <span className="font-normal"> (ตั้ง NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY แล้ว redeploy)</span>
     </div>
   );
 }

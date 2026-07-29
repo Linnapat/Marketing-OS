@@ -58,6 +58,12 @@ fourth, fail-open copy and was removed.)
 11. **`caption_templates.sql`** — lets staff write the shared caption-template key
     (`caption_templates_config`). Required by the Caption tab's "Save hashtag set /
     CTA / footer"; without it those saves fail for everyone but an admin.
+12. `security_p9_brand_scope.sql`, `security_p11_module_matrix.sql` — brand scoping
+    and the per-module levels behind `has_module()`.
+13. **`security_p12_expense_approval.sql`** — the expense-approval rules move into
+    the database (CMO-only approve, own-row submit for everyone, brand-scoped reads,
+    non-forgeable audit actors) **and** the fail-closed `app_role()`. Rollback lives
+    in `security_p12_expense_approval_rollback.sql`.
 
 Then: enable the **Custom Access Token** hook (Authentication → Hooks), disable open
 sign-ups (Authentication → Email provider), and set `NEXT_PUBLIC_REQUIRE_AUTH=true`
@@ -66,23 +72,61 @@ build time.
 
 ## Production status
 
-Applied: `security_p1` → `p7` plus `finance_atomic.sql`. Auth is enforced, roles are
-fail-closed, sign-up is invite-only, `audit_log` is tamper-evident, and the sensitive
-tables (`permissions`, `pnl`, `budget_items`, `members`, `org_settings`) are
-admin-write only.
+**Last verified against production: 2026-07-30** (audit + `security_p12`).
 
-Deliberately **not** applied: `security_p3.sql` **§2** (`app_role()` fallback `staff`
-→ `none`). With the hook defaulting to `none` and sign-up disabled it is
-belt-and-braces, and applying it costs every stale token its access until the next
-refresh.
+Applied: `security_p1` → `p7`, `finance_atomic.sql`, `security_p9_brand_scope.sql`,
+`security_p11_module_matrix.sql`, and **`security_p12_expense_approval.sql`**. Auth is
+enforced, roles are fail-closed, sign-up is invite-only, and the sensitive tables
+(`permissions`, `pnl`, `budget_items`, `members`, `org_settings`) are admin-write only.
 
-Security advisor is clean except `auth_leaked_password_protection`, which **cannot be
-enabled on this plan** ("available on Pro Plans and up") — expected; see
+`security_p3.sql` §2 (`app_role()` fallback `staff` → `none`) **is now applied** — it
+moved into `security_p12`. It had been deferred as belt-and-braces; the 2026-07-30
+audit re-raised it because a token minted without the hook resolved to full staff
+access. Applied off-hours since every un-refreshed token loses access until it renews
+(~1 hour).
+
+### What `security_p12` changed (2026-07-30 audit findings)
+
+The rule "เฉพาะ CMO อนุมัติเบิกงบ" lived only in the UI and in these docs. In the
+database:
+
+| | before | after |
+|---|---|---|
+| `approve_expense_request()` | no role check at all | raises unless `app_role()='admin'` or `member_role()='CMO'` |
+| `expense_requests` UPDATE | `has_module('Finance','View')` | `has_module('Finance','Approve')` |
+| `expense_requests` SELECT | `Finance >= View`, **no brand scope** | own rows always, others need `Finance >= View` **and** `brand_visible()` |
+| `expense_requests` INSERT | `Finance >= View` | anyone internal, but only as themselves and only as `Waiting Approval` with `approved = 0` |
+| `audit_log.actor_email` | no default, never compared to the JWT | defaults from the JWT and must match it |
+| money decisions in `audit_log` | client-side, best-effort, skipped entirely by a direct RPC call | written **inside** the approve/reject transaction |
+
+Verified after applying: a Co-ordinator calling the RPC gets `42501`; a Marketing
+Manager / BGL sees 17 of 32 requests instead of all 32; the CMO still approves.
+
+Submitting is deliberately **not** gated on the Finance module — the CMO confirmed on
+2026-07-30 that everyone on the team may submit an expense request, and the old gate
+locked out the five roles with `Finance = "—"`. `/expenses` is therefore no longer in
+`ROUTE_MODULE` (`src/lib/permissions.ts`); the Spending Log tab keeps the Finance gate.
+
+Security advisor: `function_search_path_mutable` on `owns_designer_slot` is fixed. The
+remaining warnings are the `SECURITY DEFINER` functions reachable over `/rest/v1/rpc`
+(they return null/false without a JWT) and `auth_leaked_password_protection`, which
+**cannot be enabled on this plan** ("available on Pro Plans and up") — expected; see
 `../PRODUCTION_HARDENING.md`.
 
-Still open: **24 tables remain on the blanket `staff_rw` policy** — notably `expenses`
-and `expense_requests`, where a staff can write money rows directly and bypass the
-approval flow. `../PRODUCTION_HARDENING.md` has the plan and the query that counts them.
+**Do not trust a "still open" list here without re-running the query.** The line this
+section used to carry — "24 tables remain on the blanket `staff_rw` policy, notably
+`expenses` and `expense_requests`" — was already false when the audit checked: both had
+been moved to `has_module()` by `security_p11`. A stale security doc is worse than none,
+because it stops people looking. Count them for yourself:
+
+```sql
+select tablename, policyname, cmd
+from pg_policies
+where schemaname='public'
+  and coalesce(qual,'') !~ 'has_module|brand_visible'
+  and coalesce(with_check,'') !~ 'has_module|brand_visible'
+order by tablename;
+```
 
 ## Superseded / removed
 

@@ -5,7 +5,7 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -91,6 +91,39 @@ is("Agency (External) แก้ไม่ได้", canEditContentPlan("Agency (
 is("role ว่างแก้ไม่ได้", canEditContentPlan(""), false);
 is("role ที่ไม่รู้จักแก้ไม่ได้", canEditContentPlan("Intern"), false);
 is("เว้นวรรคหน้า-หลังยังจับได้", canEditContentPlan("  CMO  "), true);
+
+console.log("\n— ใครอนุมัติคำขอเบิกงบได้ (ต้องตรงกับ RLS: has_module('Finance','Approve')) —");
+// นี่คือช่องโหว่ที่ audit เจอ: UI ปล่อยให้ Co-ordinator กด Approve และ DB ก็ยอม
+is("CMO อนุมัติได้", canApproveExpense("CMO"), true);
+is("Co-ordinator (Finance=Edit) อนุมัติไม่ได้", canApproveExpense("Co-ordinator"), false);
+is("Marketing Manager / BGL (Finance=View) อนุมัติไม่ได้", canApproveExpense("Marketing Manager / BGL"), false);
+is("Creative Leader อนุมัติไม่ได้", canApproveExpense("Creative Leader"), false);
+is("Senior Graphic Designer อนุมัติไม่ได้", canApproveExpense("Senior Graphic Designer"), false);
+is("VDO Editor อนุมัติไม่ได้", canApproveExpense("VDO Editor"), false);
+is("KOL Specialist อนุมัติไม่ได้", canApproveExpense("KOL Specialist"), false);
+is("Agency (External) อนุมัติไม่ได้", canApproveExpense("Agency (External)"), false);
+// ตัวตนที่ยังไม่รู้ ต้องไม่ได้สิทธิ์อนุมัติเงิน (fail-closed)
+is("role ว่างอนุมัติไม่ได้", canApproveExpense(""), false);
+is("role ที่ไม่รู้จักอนุมัติไม่ได้", canApproveExpense("Intern"), false);
+
+console.log("\n— ใครเห็น Spending Log ทั้งบริษัท (การ 'ส่งคำขอ' ไม่ต้องใช้สิทธิ์นี้) —");
+// ค่าตั้งต้นที่ ship มากับโค้ด (seed matrix)
+is("CMO เห็น", canSeeAllSpending("CMO"), true);
+is("Marketing Manager / BGL เห็น", canSeeAllSpending("Marketing Manager / BGL"), true);
+is("Co-ordinator ตาม seed ยังไม่เห็น", canSeeAllSpending("Co-ordinator"), false);
+is("Senior Graphic Designer ไม่เห็น", canSeeAllSpending("Senior Graphic Designer"), false);
+is("VDO Editor ไม่เห็น", canSeeAllSpending("VDO Editor"), false);
+is("KOL Specialist ไม่เห็น", canSeeAllSpending("KOL Specialist"), false);
+is("role ว่างไม่เห็น", canSeeAllSpending(""), false);
+
+// matrix ที่ admin แก้ใน Settings ต้องชนะ seed เสมอ — production วันนี้ตั้ง
+// Co-ordinator เป็น Finance=Edit ซึ่งต่างจาก seed ที่เป็น "—"
+console.log("\n— matrix ที่บันทึกไว้ต้องชนะค่า seed —");
+const live = { ...seedPermMatrix(), "Co-ordinator": { ...seedPermMatrix()["Co-ordinator"], Finance: "Edit" } };
+is("Co-ordinator (live Finance=Edit) เห็น Spending Log", canSeeAllSpending("Co-ordinator", live), true);
+is("Co-ordinator (live Finance=Edit) ยังอนุมัติไม่ได้", canApproveExpense("Co-ordinator", live), false);
+const promoted = { ...seedPermMatrix(), "Co-ordinator": { ...seedPermMatrix()["Co-ordinator"], Finance: "Approve" } };
+is("ถ้าตั้งเป็น Finance=Approve ถึงจะอนุมัติได้", canApproveExpense("Co-ordinator", promoted), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

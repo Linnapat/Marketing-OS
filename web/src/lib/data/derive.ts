@@ -81,7 +81,17 @@ export function financeFromDb(campaigns: CampaignRow[], reqs: RequestRow[], peri
     return { name: c.name, b: c.b, revenue: Math.round(expense * roi), budget: Math.round((c.budget || 0) * f), expense, roi, roas: roi };
   });
 
-  return { totalPlan, committed, actualSpend, available: totalPlan - committed, byBrand, byCategory, pnl };
+  // Available = what is left of the plan once both kinds of claim on it are
+  // taken off: money allocated to campaigns (committed) and money that has
+  // actually left through an approved expense request (actualSpend). It used
+  // to subtract only `committed`, so production showed Plan ฿1 · Actual ฿31K ·
+  // Available ฿1 — a budget reporting itself untouched while ฿31K had gone out.
+  // The two sources cannot double-count: `committed` is the campaigns.spend
+  // field, maintained by hand, and nothing in the approval path writes to it
+  // (approve_expense_request touches expense_requests, expenses and requests
+  // only). Going negative is the point — that is what overspend looks like.
+  const available = totalPlan - committed - actualSpend;
+  return { totalPlan, committed, actualSpend, available, byBrand, byCategory, pnl };
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

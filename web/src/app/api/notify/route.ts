@@ -101,7 +101,13 @@ export async function POST(req: NextRequest) {
   const emailOn = prefs.channels.email !== false;
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-  const fullLink = link && appUrl ? new URL(link, appUrl).toString() : link;
+  // `link` is an in-app path and nothing else. new URL(link, appUrl) lets an
+  // ABSOLUTE url win over the base, so a caller could push any external link
+  // into the company LINE group / Slack / mailbox under the bot's name — a
+  // ready-made phishing channel, since every notification looks like ours.
+  // Anything that isn't a same-origin relative path is dropped.
+  const safeLink = /^\/(?!\/)/.test(link) ? link : "";
+  const fullLink = safeLink && appUrl ? new URL(safeLink, appUrl).toString() : safeLink;
   const text = [title, detail, fullLink].filter(Boolean).join("\n");
   // Escape caller-supplied strings before embedding in the email HTML so a
   // title/detail containing markup can't inject arbitrary HTML into the message.

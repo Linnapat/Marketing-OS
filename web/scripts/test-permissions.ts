@@ -95,7 +95,13 @@ console.log("\n— moduleForPath: route ไหนถูกคุมด้วย 
   is("/status ไม่ถูกกั้นด้วย module เดียว (กั้นราย lane ในหน้า)", moduleForPath("/status"), null);
   is("/ads คุมด้วย Campaign", moduleForPath("/ads"), "Campaign");
   is("/assets คุมด้วย Graphic", moduleForPath("/assets"), "Graphic");
-  is("/expenses คุมด้วย Finance (เงินอยู่ใต้ Finance)", moduleForPath("/expenses"), "Finance");
+  // /expenses ไม่ถูกคุมด้วย Finance อีกต่อไป — CMO ยืนยัน 30 ก.ค. 2026 ว่า
+  // "ทุกคนในทีมส่งคำขอเบิกได้" การคุมทั้งหน้าด้วย Finance ทำให้ 5 บทบาทที่
+  // Finance="—" (Creative Leader, Designer, VDO Editor, KOL Specialist)
+  // เบิกเงินของตัวเองไม่ได้เลย แท็บ Spending Log ยังคุมด้วย Finance เหมือนเดิม
+  // และ RLS เป็นคนกำหนดว่าใครเห็นแถวไหน (ของตัวเองเสมอ / ของคนอื่นต้อง Finance≥View)
+  is("/expenses ไม่ถูกคุมด้วยโมดูล (ทุกคนส่งคำขอเบิกได้)", moduleForPath("/expenses"), null);
+  is("/finance ยังคุมด้วย Finance", moduleForPath("/finance"), "Finance");
   is("/admin คุมด้วย Settings", moduleForPath("/admin"), "Settings");
 
   console.log("  · เส้นทางลูกต้องสืบสิทธิ์จากพ่อ");
