@@ -6,7 +6,7 @@ import { TASKS, Task } from "@/lib/data/tasks";
 import { BRANDS, BRAND_ORDER, BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
 import { assertDbOk } from "@/lib/db/assert";
-import { liveOnly, trashReady, moveToTrash } from "@/lib/db/trash";
+import { liveOnly, trashReady } from "@/lib/db/trash";
 
 const DEFAULT_DONE = [1, 4, 7, 8, 12, 14, 18, 20];
 

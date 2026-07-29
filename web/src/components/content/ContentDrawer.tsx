@@ -3,21 +3,25 @@
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, sameDayWarning } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, sameDayWarning, moveToCampaign, withChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
 import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { useAuth } from "@/lib/auth";
+import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
-import { GRAPHIC_BRIEF_FOR_PARAM, Graphic, WORK_KIND_LABEL, workKind } from "@/lib/data/graphic";
-import { fetchGraphicById } from "@/lib/db/graphic";
+import { GRAPHIC_BRIEF_FOR_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice } from "@/lib/data/graphic";
+import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
+import { canEditContentPlan } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -71,6 +75,11 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
 
   const { member, user } = useAuth();
   const reviewer = member?.name ?? user?.email ?? "CMO";
+  // Editing the schedule is planning work; producing against it is not.
+  // useRole (not useAuth) to match the rest of the Content module — the same
+  // source its inline status gate reads, so "Viewing as" reflects reality here.
+  const { role } = useRole();
+  const canEditPlan = canEditContentPlan(role);
   const [revising, setRevising] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -80,6 +89,10 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // The graphic request this post is waiting on — fetched by id so the modal can
   // say what kind of artwork it is, not just that one exists.
   const [linkedGraphic, setLinkedGraphic] = useState<Graphic | null>(null);
+  // A planner stops once Creative has taken the job on — the brief they are
+  // working to must not change under them.
+  const lock = contentEditLock(linkedGraphic);
+  const canChangePost = canEditPlan && !lock.locked;
   const metaChannels = useMemo(() => itemPlatforms(item).filter((p) => /facebook|instagram|reel/i.test(p)), [item]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>(metaChannels);
   const metaConnected = hasMetaAccount(metaAccount);
@@ -141,21 +154,77 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
 
   // Persist an approval action to the shared content_posts table and bubble
   // the fresh object up so the calendar reflects it without a refetch.
-  const persist = async (next: ContentItem) => {
+  // Every write goes through here, so the "Action สำเร็จ" confirmation the team
+  // asked for lives here too rather than being remembered at each call site.
+  // Returns whether it saved, so callers can skip follow-up work on failure.
+  const persist = async (next: ContentItem, success = "บันทึกเรียบร้อย"): Promise<boolean> => {
     setBusy(true);
     try {
       await updateContent(next);
       onUpdate?.(next);
+      if (success) toastSuccess(success);
+      return true;
     } catch (error) {
       toastError(`บันทึกไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return false;
     } finally { setBusy(false); }
+  };
+
+  /** Tell Creative what the planner changed, on the request itself.
+   *
+   *  Best-effort: a notice that fails to save must never roll back the edit the
+   *  planner just made. It is a message, not part of the record. */
+  const noticeCreative = (text: string) => {
+    if (!linkedGraphic) return;
+    const next = withNotice(linkedGraphic, reviewer, text);
+    setLinkedGraphic(next);
+    updateGraphic(next).catch(() => {});
   };
 
   // Save the post basics (title / date / time). `day` is derived from the ISO
   // date so the month calendar re-slots the post immediately.
   const saveBasics = () => {
+    if (!canChangePost) return;
     const day = editDate ? Number(editDate.slice(8, 10)) || item.day : item.day;
-    persist({ ...item, title: editTitle.trim() || item.title, dateIso: editDate ?? item.dateIso, day, time: editTime || item.time });
+    const dateChanged = (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
+    const titleChanged = editTitle.trim() !== item.title;
+    let next: ContentItem = { ...item, title: editTitle.trim() || item.title, dateIso: editDate ?? item.dateIso, day, time: editTime || item.time };
+    if (titleChanged) next = withChange(next, reviewer, "แก้ชื่อโพสต์", `${item.title} → ${editTitle.trim()}`);
+    if (dateChanged) next = withChange(next, reviewer, "แก้กำหนดลง", `${item.dateIso ?? "—"} ${item.time} → ${editDate ?? "—"} ${editTime}`);
+    void persist(next, "บันทึกการแก้ไขเรียบร้อย").then((ok) => {
+      if (!ok) return;
+      if (dateChanged) noticeCreative(`เลื่อนกำหนดลงโพสต์เป็น ${editDate ?? "—"} ${editTime}`);
+      if (titleChanged) noticeCreative(`เปลี่ยนชื่อโพสต์เป็น “${editTitle.trim()}”`);
+    });
+  };
+
+  // ── Move to another campaign ────────────────────────────────────────────
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [moveTo, setMoveTo] = useState("");
+  const [moving, setMoving] = useState(false);
+  useEffect(() => {
+    if (!canEditPlan) return;
+    let alive = true;
+    fetchCampaigns().then((cs) => { if (alive) setCampaigns(cs); }).catch(() => {});
+    return () => { alive = false; };
+  }, [canEditPlan]);
+  // Same brand only — moving a Teppen post under a Mainichi campaign would put
+  // it outside the brand scope its own row is filtered by.
+  const moveOptions = useMemo(
+    () => campaigns.filter((c) => c.b === item.b && c.name !== item.campaign),
+    [campaigns, item.b, item.campaign],
+  );
+  const doMove = () => {
+    if (!canChangePost || !moveTo) return;
+    const target = campaigns.find((c) => c.id === moveTo);
+    if (!target) return;
+    setMoving(true);
+    const next = moveToCampaign(item, { id: target.id, name: target.name }, reviewer);
+    void persist(next, `ย้ายไปแคมเปญ “${target.name}” เรียบร้อย`).then((ok) => {
+      if (!ok) return;
+      noticeCreative(`ย้ายโพสต์นี้ไปแคมเปญ “${target.name}” (เดิม “${item.campaign || "—"}”)`);
+      setMoveTo("");
+    }).finally(() => setMoving(false));
   };
 
   // Media link + release status (Creative).
@@ -365,7 +434,22 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               {/* Edit post basics */}
               <div className="rounded-[14px] border border-line2 bg-ivory p-4">
                 <div className="text-[11.5px] font-bold text-muted mb-3">✏️ Edit post</div>
-                <div className="flex flex-col gap-3">
+
+                {/* Why the fields below are dead, when they are. Two different
+                    reasons, and telling them apart matters: "not your job" is
+                    permanent, "Creative is mid-way through" is a conversation. */}
+                {lock.locked && (
+                  <div className="mb-3 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+                    🔒 {lock.reason}
+                  </div>
+                )}
+                {!canEditPlan && (
+                  <div className="mb-3 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#F0EDE6", border: "1px solid #E5DECF", color: "#6b6258" }}>
+                    ตารางลงโพสต์แก้ได้โดยฝั่ง Marketing — ดูได้อย่างเดียว
+                  </div>
+                )}
+
+                <fieldset disabled={!canChangePost} className="flex flex-col gap-3 disabled:opacity-60">
                   <div>
                     <label className="block text-[11px] font-bold text-faint mb-[5px]">Title</label>
                     <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className={field} />
@@ -392,7 +476,40 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                     className="text-[13px] font-bold py-[10px] rounded-[10px] bg-panel text-white disabled:opacity-40">
                     {busy ? "Saving…" : "Save changes"}
                   </button>
-                </div>
+
+                  {/* Move to another campaign — same brand only, and logged. */}
+                  <div className="pt-3 border-t border-line3">
+                    <label className="block text-[11px] font-bold text-faint mb-[5px]">ย้ายไปแคมเปญอื่น</label>
+                    <div className="flex gap-2">
+                      <select value={moveTo} onChange={(e) => setMoveTo(e.target.value)} className={field}>
+                        <option value="">{moveOptions.length ? "เลือกแคมเปญปลายทาง…" : "ไม่มีแคมเปญอื่นของแบรนด์นี้"}</option>
+                        {moveOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <button onClick={doMove} disabled={!moveTo || moving}
+                        className="text-[12.5px] font-bold px-4 rounded-[10px] border border-line2 bg-surface text-ink disabled:opacity-40 whitespace-nowrap">
+                        {moving ? "กำลังย้าย…" : "ย้าย"}
+                      </button>
+                    </div>
+                    <div className="mt-1 text-[11px] text-faint">
+                      ปัจจุบัน: {item.campaign || "—"} · ย้ายได้เฉพาะแคมเปญของแบรนด์เดียวกัน · ระบบจะบันทึก log และแจ้งทีม Creative ในใบงาน
+                    </div>
+                  </div>
+                </fieldset>
+
+                {/* What has already been changed on this post. */}
+                {(item.changeLog ?? []).length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-line3">
+                    <div className="text-[11px] font-bold text-faint mb-[6px]">ประวัติการแก้ไข</div>
+                    <ul className="flex flex-col gap-[3px]">
+                      {[...(item.changeLog ?? [])].reverse().slice(0, 6).map((h, i) => (
+                        <li key={`${h.at}-${i}`} className="text-[11px] text-muted">
+                          <span className="font-bold">{h.action}</span>{h.detail ? ` · ${h.detail}` : ""}
+                          <span className="text-faint"> — {h.by} · {new Date(h.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Approved assets, with preview + download. This used to live only

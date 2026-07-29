@@ -72,6 +72,38 @@ export interface ContentItem {
   campaignId?: string;
   sourceContentItemId?: string;
   graphicRequestId?: string;
+  /** In-app trail of planner-side changes — who moved this post between
+   *  campaigns, who rescheduled it. Creative asked to be told when a post they
+   *  are producing for changes; this is the record that backs the banner on the
+   *  graphic request. */
+  changeLog?: ContentChange[];
+}
+
+export interface ContentChange {
+  at: string;
+  by: string;
+  /** Short verb for the row: "ย้ายแคมเปญ", "แก้กำหนดลง", … */
+  action: string;
+  detail?: string;
+}
+
+/** Append a change, newest last, capped so the data blob stays bounded. */
+export function withChange(c: ContentItem, by: string, action: string, detail?: string): ContentItem {
+  const changeLog = [...(c.changeLog ?? []), { at: new Date().toISOString(), by, action, detail }];
+  return { ...c, changeLog: changeLog.slice(-30) };
+}
+
+/** Move a post to another campaign, recording it.
+ *
+ *  campaignId moves with the name: matching campaigns by name alone breaks on a
+ *  rename, and a post whose id still points at the old campaign shows up under
+ *  both. Passing an empty id detaches the post from any campaign. */
+export function moveToCampaign(
+  c: ContentItem, to: { id?: string; name: string }, by: string,
+): ContentItem {
+  const from = c.campaign?.trim() || "—";
+  const moved: ContentItem = { ...c, campaign: to.name, campaignId: to.id || undefined };
+  return withChange(moved, by, "ย้ายแคมเปญ", `${from} → ${to.name || "—"}`);
 }
 
 export const CONTENT: ContentItem[] = [

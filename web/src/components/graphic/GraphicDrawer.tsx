@@ -1,12 +1,13 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { fetchMembers } from "@/lib/db/settings";
 import { X } from "lucide-react";
 import {
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
+  isAccepted, unseenNotices,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -110,6 +111,47 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const updateCurrentGraphic = (next: Graphic) => {
     setGraphic(next);
     onUpdate?.(next);
+  };
+
+  // ── รับงาน / ปล่อยงานคืน ────────────────────────────────────────────
+  // The producing side owns this: creative-team roles (or the CMO covering for
+  // them). Deliberately NOT the requester — a planner who could accept on
+  // Creative's behalf could lock their own post against everyone else.
+  const canAcceptWork = !isRequester && (role === "CMO" || isCreativeSideRole(role));
+
+  const saveGraphic = (next: Graphic, failMessage: string) => {
+    updateGraphic(next)
+      .then(() => updateCurrentGraphic(next))
+      .catch((error) => toastError(`${failMessage}: ${error?.message || "Unknown error"}`));
+  };
+
+  const acceptWork = () => {
+    const next: Graphic = {
+      ...g,
+      acceptedBy: currentUser,
+      acceptedAt: new Date().toISOString(),
+      // Taking the job on IS starting it — a request that sits in "New Request"
+      // after someone accepted it reads as unclaimed on the board.
+      stage: g.stage === "New Request" ? "In Progress" : g.stage,
+      nextAction: `${currentUser} กำลังผลิตงาน`,
+      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: `รับงาน (${currentUser})` }],
+    };
+    saveGraphic(next, "บันทึกการรับงานไม่สำเร็จ");
+    toastSuccess(`รับงาน “${g.title}” แล้ว — Marketing จะแก้โพสต์นี้ไม่ได้จนกว่าจะปล่อยคืน`);
+  };
+
+  const releaseWork = () => {
+    if (!window.confirm(`ปล่อยงาน “${g.title}” คืน?\n\nMarketing จะกลับมาแก้ไข/ย้ายโพสต์นี้ได้อีกครั้ง`)) return;
+    const next: Graphic = { ...g, acceptedBy: undefined, acceptedAt: undefined };
+    saveGraphic(next, "ปล่อยงานคืนไม่สำเร็จ");
+    toastSuccess(`ปล่อยงาน “${g.title}” คืนแล้ว`);
+  };
+
+  /** Creative has read the planner's change notices. Marked seen, not deleted —
+   *  the trail of what changed mid-production is worth keeping. */
+  const dismissNotices = () => {
+    const next: Graphic = { ...g, notices: (g.notices ?? []).map((n) => ({ ...n, seen: true })) };
+    saveGraphic(next, "บันทึกไม่สำเร็จ");
   };
 
   const markDelivered = () => {
@@ -331,6 +373,54 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   )}
                 </div>
               )}
+
+              {/* Notices from the planning side — the post this request serves
+                  was moved or rescheduled. Shown here, on the work itself,
+                  because a message in a channel gets missed. */}
+              {unseenNotices(g).length > 0 && (
+                <div className="rounded-[14px] border px-4 py-3" style={{ background: "#FFF7ED", borderColor: "#F0C89B" }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12.5px] font-extrabold" style={{ color: "#B3641E" }}>📌 Marketing แก้ไขงานนี้</span>
+                    <button onClick={dismissNotices} className="ml-auto text-[11px] font-bold" style={{ color: "#8A5418" }}>รับทราบ</button>
+                  </div>
+                  <ul className="mt-2 list-disc pl-5 text-[11.5px]" style={{ color: "#8A5418" }}>
+                    {unseenNotices(g).map((n, i) => (
+                      <li key={`${n.at}-${i}`}>{n.text} <span className="opacity-70">— {n.by} · {new Date(n.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* รับงาน — the explicit hand-off. Until Creative presses this the
+                  planner may still rewrite the post; after it, the brief is
+                  frozen (see contentEditLock). */}
+              <div className="rounded-[14px] border px-4 py-3" style={{ background: isAccepted(g) ? "#EEF4EE" : "#FBF9F4", borderColor: isAccepted(g) ? "#CFE4C2" : "#E5DECF" }}>
+                {isAccepted(g) ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[12.5px] font-extrabold" style={{ color: "#4E7A4E" }}>✓ รับงานแล้ว</span>
+                    <span className="text-[11.5px] font-semibold" style={{ color: "#4E7A4E" }}>
+                      โดย {g.acceptedBy || "—"} · {g.acceptedAt ? new Date(g.acceptedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : ""}
+                    </span>
+                    {canAcceptWork && (
+                      <button onClick={releaseWork} className="ml-auto text-[11.5px] font-bold rounded-[9px] px-3 py-[6px] border border-line2 bg-surface text-muted">
+                        ปล่อยงานคืน
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="text-[12.5px] font-bold text-ink">ยังไม่มีใครรับงานนี้</div>
+                      <div className="text-[11px] text-faint">กด &ldquo;รับงาน&rdquo; เมื่อเริ่มทำ — หลังจากนั้น Marketing จะแก้ไข/ย้ายโพสต์นี้ไม่ได้</div>
+                    </div>
+                    {canAcceptWork && (
+                      <button onClick={acceptWork} className="ml-auto text-[12px] font-bold rounded-[10px] px-4 py-[8px] text-white bg-panel">
+                        รับงาน
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>

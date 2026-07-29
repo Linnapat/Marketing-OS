@@ -5,7 +5,7 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -73,6 +73,24 @@ console.log("\n— artwork sign-off: ผู้ขอ / Creative Leader / CMO เ
 
 console.log("\n— edges —");
 is("role ว่างไม่ถือเป็น creative", isCreativeSideRole(""), false);
+
+console.log("\n— ใครแก้/ย้ายโพสต์ใน Content Plan ได้ —");
+// ฝั่งวางแผนเป็นเจ้าของตาราง
+is("CMO แก้ได้", canEditContentPlan("CMO"), true);
+is("Marketing Manager / BGL แก้ได้", canEditContentPlan("Marketing Manager / BGL"), true);
+is("Marketing Executive แก้ได้", canEditContentPlan("Marketing Executive"), true);
+is("Co-ordinator แก้ได้", canEditContentPlan("Co-ordinator"), true);
+// ฝั่งผลิตอ่านแผน ไม่ใช่คนเลื่อนแผน
+is("Creative Leader แก้ไม่ได้", canEditContentPlan("Creative Leader"), false);
+is("Senior Graphic Designer แก้ไม่ได้", canEditContentPlan("Senior Graphic Designer"), false);
+is("VDO Editor แก้ไม่ได้", canEditContentPlan("VDO Editor"), false);
+is("Content Creator แก้ไม่ได้", canEditContentPlan("Content Creator"), false);
+is("KOL Specialist แก้ไม่ได้", canEditContentPlan("KOL Specialist"), false);
+is("Agency (External) แก้ไม่ได้", canEditContentPlan("Agency (External)"), false);
+// role ว่าง/ไม่รู้จัก ต้องไม่หลุด
+is("role ว่างแก้ไม่ได้", canEditContentPlan(""), false);
+is("role ที่ไม่รู้จักแก้ไม่ได้", canEditContentPlan("Intern"), false);
+is("เว้นวรรคหน้า-หลังยังจับได้", canEditContentPlan("  CMO  "), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

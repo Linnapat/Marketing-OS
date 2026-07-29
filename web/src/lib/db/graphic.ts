@@ -9,7 +9,7 @@ import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
 import { Task } from "@/lib/data/tasks";
 import { assertDbOk } from "@/lib/db/assert";
-import { liveOnly, trashReady, moveToTrash } from "@/lib/db/trash";
+import { liveOnly, trashReady } from "@/lib/db/trash";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();

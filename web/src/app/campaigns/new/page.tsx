@@ -1,6 +1,6 @@
 "use client";
 
-import { toast, toastError } from "@/lib/toast";
+import { toast, toastError, toastSuccess } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -320,6 +320,7 @@ export default function NewCampaignPage() {
         await saveCampaignBrief(finalize("Draft", brief.approvalLog, now));
       }
       setDraftSaved(true);
+      toastSuccess("บันทึก Draft เรียบร้อย");
       setTimeout(() => setDraftSaved(false), 2500);
     } catch (error) {
       toastError(`บันทึก Draft ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -405,6 +406,9 @@ export default function NewCampaignPage() {
     const log = asDraft && !mustReapprove ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
       await saveCampaignBrief(finalize(status, log, now));
+      toastSuccess(status === "Waiting for Approval"
+        ? `ส่ง “${brief.name}” ให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติแล้ว`
+        : `บันทึก “${brief.name}” เรียบร้อย`);
       if (status === "Waiting for Approval") notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติ${editingId && changes ? ` · สิ่งที่แก้: ${changes}` : ""}`, "/my-tasks");
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");

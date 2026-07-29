@@ -148,10 +148,6 @@ export default function CampaignsPage() {
     (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
     rangeInFilter(date, c.dates),
   );
-  const statusRank = (s: string) => {
-    const i = STATUS_ORDER.indexOf(s);
-    return i === -1 ? STATUS_ORDER.length : i;
-  };
   // Campaigns read in date order — the team plans and reviews by calendar, so a
   // brand's list should run the way the months do. Rows whose range cannot be
   // parsed sink to the bottom rather than jumping to the front on NaN, and the

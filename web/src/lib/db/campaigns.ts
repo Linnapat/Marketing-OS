@@ -7,7 +7,7 @@ import { assertDbOk } from "@/lib/db/assert";
 import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
-import { liveOnly, trashReady, moveToTrash } from "@/lib/db/trash";
+import { liveOnly, trashReady } from "@/lib/db/trash";
 
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
