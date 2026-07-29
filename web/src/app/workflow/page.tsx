@@ -15,6 +15,7 @@ import {
 } from "@/lib/data/workflow";
 import { fetchWorkflowState, saveWorkflowState } from "@/lib/db/workflowState";
 import { downloadXlsx } from "@/lib/xlsx";
+import { resetDeadlineCache } from "@/lib/useDeadlines";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
@@ -53,6 +54,10 @@ export default function WorkCalendarPage() {
   const setOverrides: typeof setOverridesRaw = (action) => {
     setOverridesRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
+      // Other modules read these markers as their deadlines and cache them once
+      // per session; without this, editing the calendar left Content Plan and
+      // the Graphic drawer showing the old dates until a full reload.
+      resetDeadlineCache();
       saveWorkflowState({ overrides: next, done: stateRef.current.done })
         .catch((error) => toastError(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;

@@ -20,6 +20,8 @@ import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { useDeadlines } from "@/lib/useDeadlines";
+import { monthServedByFinalAw } from "@/lib/data/deadlinePolicy";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
@@ -149,6 +151,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   };
 
   // ── Production pipeline: storyboard → ถ่าย → asset ────────────────────
+  // Which month's work this request serves — derived from its Final AW date, so
+  // the storyboard deadline resolves against the same month the artwork does.
+  const deadlines = useDeadlines();
+  const servedMonth = monthServedByFinalAw(g.dueIso);
+  const sbDeadline = servedMonth ? deadlines.milestone("storyboard", servedMonth) : null;
+
   const [sbLink, setSbLink] = useState(g.storyboardLink ?? "");
   const [sbNote, setSbNote] = useState("");
   const [footage, setFootage] = useState(g.footageLink ?? "");
@@ -526,6 +534,14 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                       <StatusBadge tone={g.storyboardStatus === "Approved" ? "green" : g.storyboardStatus === "Revision" ? "orange" : g.storyboardStatus === "Submitted" ? "gold" : "neutral"}>
                         {g.storyboardStatus || "ยังไม่ส่ง"}
                       </StatusBadge>
+                      {/* From the Team Calendar, not a constant here. */}
+                      {sbDeadline && (
+                        <span className="ml-auto text-[11px] font-bold rounded-pill px-2.5 py-[3px]"
+                          style={{ background: "#F7F2FF", color: "#6C5CE7" }}
+                          title={`ปฏิทินทีม · ${sbDeadline.governs} · งานของเดือน ${sbDeadline.forMonth}`}>
+                          กำหนดส่ง {sbDeadline.iso}
+                        </span>
+                      )}
                     </div>
                     {canRunPipeline && (
                       <div className="mb-2">

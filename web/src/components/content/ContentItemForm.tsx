@@ -9,6 +9,7 @@ import {
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
 import { Combobox } from "@/components/ui/Combobox";
+import { useDeadlines } from "@/lib/useDeadlines";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
 // Content Plan step and the Content Calendar's New Post modal, so the "template"
@@ -63,7 +64,12 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   // Content work: derived from the publish date and locked. Adhoc work (no
   // publish date): the planner's own choice. See finalArtworkDue for why.
   const needsArtwork = item.requiredGraphic || item.requiredVideo;
-  const finalDue = finalArtworkDue(item.publishDate || undefined, graphicRequestDate);
+  // The Team Calendar is the team's own deadline policy, so it decides when it
+  // has something to say about the month this post publishes in; the
+  // publish-minus-buffer rule is the fallback for months it does not cover.
+  const deadlines = useDeadlines();
+  const calendarFinalAw = deadlines.forDate("finalAw", item.publishDate || undefined);
+  const finalDue = finalArtworkDue(item.publishDate || undefined, graphicRequestDate, calendarFinalAw?.iso);
   useEffect(() => {
     // Keep the stored value in step with the publish date, so what the Graphic
     // Request is created with is the date shown here — a display-only

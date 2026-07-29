@@ -8,6 +8,7 @@ import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
+import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
   CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule,
@@ -276,6 +277,11 @@ export default function ContentPage() {
           </div>
         </ModuleSummaryCard>
 
+      </div>
+
+      {/* What the Team Calendar says is due for the month on screen. */}
+      <div className="mt-4">
+        <DeadlineStrip forMonth={ymKey} />
       </div>
 
       <div className="mt-5">

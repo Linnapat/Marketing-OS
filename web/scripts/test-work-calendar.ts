@@ -7,6 +7,10 @@ import {
   monthMeta, isWeekendDate, isWeekend, projectMarks, nextValue, valueCycleFor, applyOverrides,
   VALUE_CYCLE, MONTH_NAMES, TEMPLATE_YEAR, TEMPLATE_MONTH, WEEKDAYS, DAYS, ALL_WORK_TASKS, WORK_SECTIONS,
 } from "../src/lib/data/workflow";
+import {
+  resolveMilestone, milestonesFor, markerMonths, shiftMonthKey, MILESTONES,
+  outOfSequence, inProcessOrder, monthServedByFinalAw,
+} from "../src/lib/data/deadlinePolicy";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -192,6 +196,79 @@ is("วันที่ของ marker ทุกตัวอยู่ในช�
     return Object.keys(projectMarks(marks, 2026, 11)).length <= Object.keys(marks).length;
   });
   is("project ไปเดือน 31 วันแล้ว marker ไม่งอกเกินเดิม", longMonth, true);
+}
+
+console.log("\n— ปฏิทินทีม = แหล่งเดดไลน์ของทั้งระบบ —");
+// marker คือ "เดือนของงาน" ไม่ใช่เดือนที่อยู่ ปีจึงต้องเดาจากระยะห่าง
+is("marker 9 มองจาก ก.ค.2026", markerMonths("9", 2026, 7), ["2026-09"]);
+is("ช่วง 8-9 ได้สองเดือน", markerMonths("8-9", 2026, 7), ["2026-08", "2026-09"]);
+// เคสข้ามปี: ยืนเดือน 11 เห็น marker 1 ต้องเป็นมกราคมปีหน้า ไม่ใช่ถอยหลัง 11 เดือน
+is("marker 1 มองจาก พ.ย.2026 = ม.ค.2027", markerMonths("1", 2026, 11), ["2027-01"]);
+is("marker 12 มองจาก ม.ค.2027 = ธ.ค.2026 (เดือนก่อน)", markerMonths("12", 2027, 1), ["2026-12"]);
+is("marker ที่ไม่ใช่เลขเดือน ถูกทิ้ง", markerMonths("99", 2026, 7), []);
+is("marker ว่างได้ลิสต์ว่าง", markerMonths("", 2026, 7), []);
+is("เลื่อนเดือนข้ามปีถอยหลัง", shiftMonthKey("2026-01", -2), "2025-11");
+is("เลื่อนเดือนข้ามปีไปหน้า", shiftMonthKey("2026-11", 3), "2027-02");
+
+{
+  // งานของเดือน 9 ถูกทำในเดือน 7 (ล่วงหน้า 2 เดือน) ตามจังหวะจริงของทีม
+  const brief = resolveMilestone("campaignBrief", "2026-09");
+  const plan = resolveMilestone("contentPlan", "2026-09");
+  const sb = resolveMilestone("storyboard", "2026-09");
+  const aw = resolveMilestone("finalAw", "2026-09");
+  is("Campaign Brief ของเดือน 9 = 10 ก.ค.", brief?.iso, "2026-07-10");
+  is("Content Plan ของเดือน 9 = 13 ก.ค.", plan?.iso, "2026-07-13");
+  is("Storyboard ของเดือน 9 = 16 ก.ค.", sb?.iso, "2026-07-16");
+  is("Final AW ของเดือน 9 = 23 ก.ค.", aw?.iso, "2026-07-23");
+  // Campaign Brief กินวัน 1–10 เดดไลน์ต้องเป็นวันสุดท้าย ไม่ใช่วันแรก
+  is("ช่วงหลายวัน = ปิดที่วันสุดท้าย", brief?.day, 10);
+  // ลำดับต้องเรียงตามเวลาจริงของงาน
+  is("ลำดับเดดไลน์ถูกต้อง", milestonesFor("2026-09").map((m) => m.key),
+    ["campaignBrief", "contentPlan", "storyboard", "finalAw"]);
+  is("ทุก milestone บอกเดือนที่ทำงานให้", aw?.forMonth, "2026-09");
+  is("และบอกว่าอ่านมาจากเดือนไหน", aw?.fromMonth, "2026-07");
+}
+{
+  // เดือนอื่นต้องเลื่อนตามกัน ไม่ใช่ค้างที่ ก.ค.
+  is("งานเดือน 10 อ่านจากเดือน 8", resolveMilestone("finalAw", "2026-10")?.fromMonth, "2026-08");
+  is("งานเดือน 1 ปีหน้า อ่านจาก พ.ย. ปีนี้", resolveMilestone("finalAw", "2027-01")?.fromMonth, "2026-11");
+}
+{
+  // admin แก้ปฏิทิน แล้วเดดไลน์ต้องขยับตาม — นี่คือทั้งหมดของฟีเจอร์นี้
+  const key = "creative::Final AW";
+  // ย้าย Final AW ของเดือน 9 จากวันที่ 23 ไป 25 (ในตาราง ก.ค. 2026 → monthKey 2026-6)
+  const moved = { [`2026-6::${key}::23`]: "", [`2026-6::${key}::25`]: "9" };
+  is("แก้ปฏิทินแล้วเดดไลน์ขยับ", resolveMilestone("finalAw", "2026-09", moved)?.iso, "2026-07-25");
+  // ลบ marker ทิ้งทั้งเดือน = ปฏิทินไม่ได้บอก ต้องคืน null ไม่ใช่เดาวันเอง
+  const cleared = { [`2026-6::${key}::23`]: "" };
+  is("ปฏิทินไม่ได้บอก = null (ให้ผู้เรียก fallback)", resolveMilestone("finalAw", "2026-09", cleared), null);
+}
+{
+  // แถวที่ไม่มีอยู่จริงต้องไม่ทำให้พัง และต้องไม่ไปคว้าแถวอื่นมาแทน
+  is("ทุก milestone ผูกกับแถวที่มีจริง", MILESTONES.every((m) => !!resolveMilestone(m.key, "2026-09")), true);
+  is("เดือนที่ผิดรูปแบบ = null", resolveMilestone("finalAw", "ไม่ใช่เดือน"), null);
+  is("เดือน 13 = null", resolveMilestone("finalAw", "2026-13"), null);
+}
+
+console.log("\n— ลำดับขั้นตอน + ย้อนกลับจากวัน Final AW —");
+{
+  // ก.ย. 2026 เรียงถูกอยู่แล้ว
+  is("เดือนที่ลำดับถูก ไม่มีคำเตือน", outOfSequence(milestonesFor("2026-09")), []);
+  is("inProcessOrder เรียงตามขั้นตอนเสมอ", inProcessOrder(milestonesFor("2026-09")).map((m) => m.key),
+    ["campaignBrief", "contentPlan", "storyboard", "finalAw"]);
+  // ก.ค. 2026 ปฏิทิน project แล้ววันสลับกัน (Content Plan มาก่อน Campaign Brief)
+  // ต้องตรวจจับได้ ไม่ใช่เรียงใหม่เงียบ ๆ แล้วแกล้งว่าไม่มีปัญหา
+  is("เดือนที่ลำดับสลับ ต้องตรวจเจอ", outOfSequence(milestonesFor("2026-07")).length > 0, true);
+}
+{
+  // ใบงานเก็บแค่วันส่ง Final AW จึงต้องย้อนได้ว่าเป็นงานของเดือนไหน
+  const aw = resolveMilestone("finalAw", "2026-09")!;
+  is("ย้อนจากวัน Final AW กลับไปเดือนของงาน", monthServedByFinalAw(aw.iso), "2026-09");
+  is("วันที่ไม่ตรงกับปฏิทิน = null", monthServedByFinalAw("2026-07-02"), null);
+  is("ไม่มีวัน = null", monthServedByFinalAw(undefined), null);
+  // เดือนอื่นก็ต้องย้อนได้ ไม่ใช่แค่เดือน template
+  const oct = resolveMilestone("finalAw", "2026-10")!;
+  is("ย้อนได้ทุกเดือน", monthServedByFinalAw(oct.iso), "2026-10");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
