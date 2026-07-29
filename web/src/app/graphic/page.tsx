@@ -14,7 +14,7 @@ import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BR
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   graphicKpis, emptyDeliverable, approveAllWaiting,
-  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf,
+  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
@@ -1137,6 +1137,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   ].filter(Boolean) as string[];
   const submit = () => {
     if (!canCreate) return;
+    const needsStoryboardFor = needsStoryboard({ type: item.type, requiredVideo: item.requiredVideo });
     const plats = item.platforms;
     const pairs = item.assets.length ? item.assets : plats.map((p) => ({ platform: p, size: "" }));
     const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", item.referenceBriefLink || ""));
@@ -1158,9 +1159,16 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
       rushStatus: isRush ? "Pending" : "",
       rushBreaches: isRush ? breaches.map((b) => b.label) : undefined,
       rushReason: isRush ? rushReason.trim() : undefined,
+      // Video work starts at the storyboard, not the artwork. Raising a Reel
+      // therefore lands on Creative Content first — "ถ้ามีการคลิกสร้าง reel ให้
+      // เด้งมาที่ตำแหน่ง creative content" — and the request says so from the
+      // moment it exists rather than after someone notices.
+      storyboardStatus: needsStoryboardFor ? "Waiting" : undefined,
       nextAction: isRush
         ? "รอ Creative Leader อนุมัติงานเร่งด่วน"
-        : "Creative leader to assign in-house or outsource designer",
+        : needsStoryboardFor
+          ? "Creative Content ทำ storyboard แล้วส่งให้เจ้าของงานอนุมัติ"
+          : "Creative leader to assign in-house or outsource designer",
       contentItem: linkedPost?.title || item.title.trim() || "—",
       // The link the whole split rests on. Absent for print/POSM work, which
       // is now allowed to exist without a post rather than inventing one.

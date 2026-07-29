@@ -10,6 +10,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
 import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic } from "./graphic";
+import { needsStoryboard } from "@/lib/data/graphic";
 import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
 import { Kol } from "@/lib/data/kol";
@@ -170,6 +171,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         captionCopy: ci.captionDirection || "",
         extraDetails: ci.doDont || ci.mandatoryText || "",
         briefLink: ci.referenceBriefLink || "",
+        // Video items start at the storyboard, exactly as they do when raised
+        // by hand — otherwise a Reel materialised from an approved campaign
+        // would skip straight to artwork and lose the step.
+        storyboardStatus: needsStoryboard({ type: ci.type, requiredVideo: ci.requiredVideo }) ? "Waiting" as const : undefined,
         nextAction: `KV: ${normalizedBrief.kvDirection || "—"} · Msg: ${ci.mainMessage || normalizedBrief.mainMessage || "—"}`,
         contentItem: ci.title || "—",
       };

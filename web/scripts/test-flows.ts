@@ -9,7 +9,8 @@ import {
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange } from "../src/lib/data/content";
 import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible } from "../src/lib/data/brief";
-import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices } from "../src/lib/data/graphic";
+import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
+  needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -372,6 +373,75 @@ console.log("Artwork counting — by pixels, platform collapsed");
     let c = post;
     for (let i = 0; i < 35; i++) c = withChange(c, "Gik", "แก้", `#${i}`);
     check("changeLog ถูก cap ที่ 30", (c.changeLog ?? []).length === 30);
+  }
+}
+
+// ── Production pipeline: storyboard → ถ่าย → ส่ง asset (feedback graphic request) ──
+{
+  const g = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), deliverables: [], ...over });
+
+  // needsStoryboard: งานวิดีโอเท่านั้น
+  check("Reel ต้องมี storyboard", needsStoryboard({ type: "Reel", requiredVideo: false }) === true);
+  check("Short Video ต้องมี storyboard", needsStoryboard({ type: "Short Video", requiredVideo: false }) === true);
+  check("VDO shooting ต้องมี storyboard", needsStoryboard({ type: "VDO shooting", requiredVideo: false }) === true);
+  check("ติ๊ก Required Video ก็ต้องมี", needsStoryboard({ type: "Photo", requiredVideo: true }) === true);
+  check("Poster ไม่ต้องมี storyboard", needsStoryboard({ type: "Poster", requiredVideo: false }) === false);
+  check("Photo shoot ไม่ต้องมี storyboard", needsStoryboard({ type: "Photo shoot", requiredVideo: false }) === false);
+
+  // footageReady: ไม่ได้ require shooting = ผ่านเสมอ
+  check("ไม่ require shooting = footage ผ่าน", footageReady({ requiresShooting: false, footageLink: "" }) === true);
+  check("require shooting แต่ยังไม่มี footage = ไม่ผ่าน", footageReady({ requiresShooting: true, footageLink: "" }) === false);
+  check("ช่องว่าง ๆ ไม่นับว่ามี footage", footageReady({ requiresShooting: true, footageLink: "   " }) === false);
+  check("มี footage แล้ว = ผ่าน", footageReady({ requiresShooting: true, footageLink: "https://drive/x" }) === true);
+
+  // gate ส่ง asset
+  const poster = g({ type: "Poster", requiredVideo: false, requiresShooting: false });
+  check("Poster ธรรมดา ส่ง asset ได้เลย", productionBlockers(poster).length === 0);
+
+  const reelFresh = g({ type: "Reel", requiredVideo: true, storyboardStatus: "" });
+  check("Reel ยังไม่มี storyboard = บล็อก", productionBlockers(reelFresh).length === 1);
+  check("บอกให้ Creative Content ส่งก่อน", productionBlockers(reelFresh)[0].includes("Creative Content"));
+  check("storyboard ส่งแล้วรออนุมัติ = ยังบล็อก", productionBlockers(g({ type: "Reel", storyboardStatus: "Submitted" }))[0].includes("รอเจ้าของงานอนุมัติ"));
+  check("storyboard ถูกตีกลับ = ยังบล็อก", productionBlockers(g({ type: "Reel", storyboardStatus: "Revision" }))[0].includes("ส่งกลับแก้"));
+  check("storyboard อนุมัติแล้ว = ผ่าน", productionBlockers(g({ type: "Reel", storyboardStatus: "Approved" })).length === 0);
+
+  const shootPending = g({ type: "Poster", requiredVideo: false, requiresShooting: true, shooter: "Jeeno" });
+  check("require shooting ยังไม่ส่ง footage = บล็อก", productionBlockers(shootPending).length === 1);
+  check("บอกชื่อคนถ่าย", productionBlockers(shootPending)[0].includes("Jeeno"));
+  check("ยังไม่ระบุคนถ่ายก็บอกได้", productionBlockers(g({ type: "Poster", requiresShooting: true }))[0].includes("ยังไม่ได้ระบุคนถ่าย"));
+  // ติดทั้งสองอย่างต้องบอกทั้งสองอย่าง ไม่ใช่ปล่อยให้แก้ทีละรอบ
+  check("ติดทั้ง storyboard และ footage = 2 เหตุผล", productionBlockers(g({ type: "Reel", requiresShooting: true, shooter: "Four" })).length === 2);
+
+  // ลำดับขั้น
+  {
+    const steps = productionSteps(g({ type: "Reel", requiredVideo: true, requiresShooting: true, shooter: "Four", storyboardStatus: "" }));
+    check("Reel + ถ่าย = 3 ขั้น", steps.length === 3);
+    check("ขั้นแรกคือ storyboard", steps[0].key === "storyboard" && steps[0].state === "active");
+    // ถ่ายก่อน storyboard เสร็จไม่ได้ ต้องเป็น waiting ไม่ใช่ active
+    check("ถ่ายยังรอ storyboard อยู่", steps[1].key === "shoot" && steps[1].state === "waiting");
+    check("ส่ง asset ยังรอ", steps[2].key === "asset" && steps[2].state === "waiting");
+  }
+  {
+    const steps = productionSteps(g({ type: "Reel", requiredVideo: true, requiresShooting: true, shooter: "Four", storyboardStatus: "Approved" }));
+    check("storyboard ผ่านแล้ว ถ่ายกลายเป็น active", steps[1].state === "active");
+    check("storyboard แสดงว่าเสร็จ", steps[0].state === "done");
+  }
+  {
+    const steps = productionSteps(g({ type: "Poster", requiredVideo: false, requiresShooting: false }));
+    check("Poster มีขั้นเดียว", steps.length === 1 && steps[0].key === "asset");
+    check("Poster ส่ง asset ได้เลย", steps[0].state === "active");
+  }
+
+  // วันที่ทำงานจริง / เดือนที่ทำงานจริง
+  check("ไม่มีวันถ่าย ใช้ due date", workDayIso({ dueIso: "2026-08-20" }) === "2026-08-20");
+  check("มีวันถ่าย ใช้วันถ่าย", workDayIso({ shootDate: "2026-09-03", dueIso: "2026-08-20" }) === "2026-09-03");
+  check("เดือนที่ทำงานจริงย้ายตามวันถ่าย", workingMonth({ shootDate: "2026-09-03", dueIso: "2026-08-20" }) === "2026-09");
+  check("ไม่มีอะไรเลยได้ค่าว่าง", workDayIso({}) === "" && workingMonth({}) === "");
+  // โควตารายวันต้องนับที่วันถ่าย ไม่ใช่วัน due
+  {
+    const shoot = g({ id: 9001, type: "VDO shooting", dueIso: "2026-08-20", shootDate: "2026-09-03", deliverables: [] });
+    check("โควตานับที่วันถ่าย", countWorkOnDay([shoot], "vdo_shoot", "2026-09-03") >= 1);
+    check("วัน due ไม่ถูกนับซ้ำ", countWorkOnDay([shoot], "vdo_shoot", "2026-08-20") === 0);
   }
 }
 
