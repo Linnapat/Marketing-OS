@@ -16,7 +16,7 @@ import { fetchResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchKols } from "@/lib/db/kol";
 import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
-import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
+import { CampaignBrief, budgetSummary, materialised } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
 import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
@@ -430,7 +430,13 @@ function ContentList({ hub, brief }: { hub: CampaignHub | null; brief?: Campaign
     // Before approval nothing is materialised into the Content module — but the
     // brief's plan exists, and "No content planned" here while Edit Campaign
     // shows three items reads as data loss. Show the plan, labelled as a plan.
-    const planned = brief?.content?.filter((ci) => ci.title?.trim()) ?? [];
+    //
+    // Only BEFORE approval, though. Once a campaign has been approved its posts
+    // are real, and an empty list means they were deleted. Falling back to the
+    // brief there redisplayed every deleted post as a plan row, so deleting a
+    // post looked like it had not worked ("Content บางอันถูกลบแล้วแต่ยังไม่ลบ
+    // ในแคมเปญ"). The plan lives in Edit Campaign; this tab tracks real work.
+    const planned = materialised(brief) ? [] : (brief?.content?.filter((ci) => ci.title?.trim()) ?? []);
     if (planned.length) {
       return (
         <div className="bg-surface border border-line rounded-cardLg overflow-hidden">

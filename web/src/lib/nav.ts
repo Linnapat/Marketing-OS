@@ -1,7 +1,7 @@
 import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
-  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge,
+  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +56,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/my-tasks", label: "My Tasks", icon: CheckSquare, ready: true },
       { href: "/team", label: "Team", icon: Users, ready: true },
+      { href: "/trash", label: "Trash", icon: Trash2, ready: true },
       { href: "/settings", label: "Settings", icon: Settings, ready: true },
     ],
   },

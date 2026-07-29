@@ -92,11 +92,66 @@ export interface Graphic {
   rushDecidedBy?: string;
   rushDecidedAt?: string;
   rushDecisionNote?: string;
+  /** Creative has taken the job on — set by "รับงาน" in the drawer.
+   *
+   *  This is the point of no return for the planning side: once a designer has
+   *  started, Marketing may no longer rewrite the post underneath them. An
+   *  explicit action rather than an inferred one (assigned, or stage moved to
+   *  In Progress) because the lock has to be something a person chose and can
+   *  be pointed at — "the stage changed" is not an answer to "who locked this?" */
+  acceptedBy?: string;
+  acceptedAt?: string;
+  /** Notices raised when the planner edited or moved the post this request
+   *  serves. Shown as a banner on the request so Creative sees the change
+   *  where the work is, not in a channel they may have muted. */
+  notices?: GraphicNotice[];
   /** When the request was raised, from the table's own column. Needed to age a
    *  request nobody has touched yet — its history is empty, so there is nothing
    *  else to measure "waiting since" from. */
   createdAt?: string;
   history?: GraphicEvent[];
+}
+
+export interface GraphicNotice {
+  at: string;
+  by: string;
+  text: string;
+  /** Dismissed by Creative — kept in history rather than deleted. */
+  seen?: boolean;
+}
+
+/** Has Creative taken this job on? The single question the edit lock asks. */
+export function isAccepted(g: Pick<Graphic, "acceptedAt"> | null | undefined): boolean {
+  return !!g?.acceptedAt;
+}
+
+/** May the planning side still change the post this request serves?
+ *
+ *  Locked once Creative has accepted: the brief they are working to must not
+ *  change under them. Before that, planners edit freely — the request is still
+ *  just a queued ask. The CMO is not exempted on purpose: the lock protects
+ *  work in flight, and "the CMO said so" is a conversation with Creative, not a
+ *  button that silently rewrites what someone is mid-way through. */
+export function contentEditLock(g: Graphic | null | undefined): { locked: boolean; reason: string } {
+  if (!isAccepted(g)) return { locked: false, reason: "" };
+  const who = g?.acceptedBy?.trim() || "Creative";
+  const when = g?.acceptedAt ? new Date(g.acceptedAt).toLocaleDateString("th-TH", { dateStyle: "medium" }) : "";
+  return {
+    locked: true,
+    reason: `${who} รับงานนี้แล้ว${when ? ` (${when})` : ""} — แก้ไข/ย้ายแคมเปญไม่ได้ ต้องแจ้ง Creative ให้ปล่อยงานคืนก่อน`,
+  };
+}
+
+/** Append a notice, newest last, capped so one chatty week cannot bloat the
+ *  request's data blob without bound. */
+export function withNotice(g: Graphic, by: string, text: string): Graphic {
+  const notices = [...(g.notices ?? []), { at: new Date().toISOString(), by, text }];
+  return { ...g, notices: notices.slice(-20) };
+}
+
+/** Notices Creative has not dismissed yet. */
+export function unseenNotices(g: Graphic | null | undefined): GraphicNotice[] {
+  return (g?.notices ?? []).filter((n) => !n.seen);
 }
 
 export interface GraphicDeliverable {

@@ -7,6 +7,7 @@ import { assertDbOk } from "@/lib/db/assert";
 import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
+import { liveOnly, trashReady } from "@/lib/db/trash";
 
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
@@ -30,7 +31,7 @@ const toCampaign = (r: Row): CampaignRow => ({
 export async function fetchCampaigns(): Promise<CampaignRow[]> {
   const db = supabase();
   if (!db) return CAMPAIGNS.map((c) => ({ ...c }));
-  const { data, error } = await db.from("campaigns").select("*").order("id");
+  const { data, error } = await liveOnly(db.from("campaigns").select("*"), await trashReady()).order("id");
   // In production, never fall back to demo campaigns when Supabase is present.
   // A query error should read as "no live campaign data" instead of showing
   // sample work that has already been cleared for real usage.
@@ -103,10 +104,31 @@ export async function updateCampaignStatus(id: string, status: string): Promise<
 }
 
 /** Delete a campaign and the records Marketing OS generated from its brief so
- * the list, planner modules, and task views stay in sync. */
-export async function deleteCampaign(id: string): Promise<void> {
+ * the list, planner modules, and task views stay in sync.
+ *
+ * With Trash enabled this is a soft delete, and the cascade is soft too — the
+ * campaign and everything raised from it go to the bin together, so restoring
+ * the campaign brings its posts, briefs and tasks back with it. A cascade that
+ * hard-deleted the children would make "กู้คืน" return an empty shell.
+ *
+ * campaign_results and kols have no deleted_at column (they are derived rows,
+ * not things anyone restores on their own), so they still cascade hard. */
+export async function deleteCampaign(id: string, by = ""): Promise<void> {
   const db = supabase();
   if (!db) return;
+
+  if (await trashReady()) {
+    const stamp = { deleted_at: new Date().toISOString(), deleted_by: by };
+    const soft = await Promise.all([
+      db.from("content_posts").update(stamp).eq("campaign_id", id).is("deleted_at", null),
+      db.from("graphic_requests").update(stamp).eq("campaign_id", id).is("deleted_at", null),
+      db.from("tasks").update(stamp).filter("data->>relatedBrief", "eq", id).is("deleted_at", null),
+    ]);
+    for (const result of soft) assertDbOk(result.error, "Could not move linked campaign records to trash");
+    const { error: softError } = await db.from("campaigns").update(stamp).eq("id", id).is("deleted_at", null);
+    assertDbOk(softError, "Could not move campaign to trash");
+    return;
+  }
 
   const results = await Promise.all([
     db.from("content_posts").delete().eq("campaign_id", id),

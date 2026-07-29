@@ -6,6 +6,7 @@ import { TASKS, Task } from "@/lib/data/tasks";
 import { BRANDS, BRAND_ORDER, BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
 import { assertDbOk } from "@/lib/db/assert";
+import { liveOnly, trashReady } from "@/lib/db/trash";
 
 const DEFAULT_DONE = [1, 4, 7, 8, 12, 14, 18, 20];
 
@@ -20,7 +21,7 @@ const brandId = (v: string): BrandId | null => {
 export async function fetchTasks(): Promise<{ tasks: Task[]; doneIds: number[] }> {
   const db = supabase();
   if (!db) return { tasks: TASKS.map((t) => ({ ...t })), doneIds: [...DEFAULT_DONE] };
-  const { data, error } = await db.from("tasks").select("id, done, campaign_id, data").order("id");
+  const { data, error } = await liveOnly(db.from("tasks").select("id, done, campaign_id, data"), await trashReady()).order("id");
   // Never show demo work when a configured production query fails; doing so
   // made dashboards report active tasks that did not exist in the live table.
   if (error || !data) return { tasks: [], doneIds: [] };

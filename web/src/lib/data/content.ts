@@ -72,6 +72,38 @@ export interface ContentItem {
   campaignId?: string;
   sourceContentItemId?: string;
   graphicRequestId?: string;
+  /** In-app trail of planner-side changes — who moved this post between
+   *  campaigns, who rescheduled it. Creative asked to be told when a post they
+   *  are producing for changes; this is the record that backs the banner on the
+   *  graphic request. */
+  changeLog?: ContentChange[];
+}
+
+export interface ContentChange {
+  at: string;
+  by: string;
+  /** Short verb for the row: "ย้ายแคมเปญ", "แก้กำหนดลง", … */
+  action: string;
+  detail?: string;
+}
+
+/** Append a change, newest last, capped so the data blob stays bounded. */
+export function withChange(c: ContentItem, by: string, action: string, detail?: string): ContentItem {
+  const changeLog = [...(c.changeLog ?? []), { at: new Date().toISOString(), by, action, detail }];
+  return { ...c, changeLog: changeLog.slice(-30) };
+}
+
+/** Move a post to another campaign, recording it.
+ *
+ *  campaignId moves with the name: matching campaigns by name alone breaks on a
+ *  rename, and a post whose id still points at the old campaign shows up under
+ *  both. Passing an empty id detaches the post from any campaign. */
+export function moveToCampaign(
+  c: ContentItem, to: { id?: string; name: string }, by: string,
+): ContentItem {
+  const from = c.campaign?.trim() || "—";
+  const moved: ContentItem = { ...c, campaign: to.name, campaignId: to.id || undefined };
+  return withChange(moved, by, "ย้ายแคมเปญ", `${from} → ${to.name || "—"}`);
 }
 
 export const CONTENT: ContentItem[] = [
@@ -105,6 +137,18 @@ export function contentTone(status: string): Tone {
  *  July 2026 calendar, so they resolve there instead of floating month-to-month. */
 export function contentDateIso(c: ContentItem): string {
   return c.dateIso ?? `2026-07-${String(c.day || 1).padStart(2, "0")}`;
+}
+
+/** Schedule order: by publish date, then time of day, then title.
+ *
+ *  One comparator for every surface that lists posts, so the Content Plan reads
+ *  in calendar order wherever you look. Two posts on the same date used to fall
+ *  back to insertion order, which put the 18:00 post above the 09:00 one; the
+ *  title tie-break keeps the order stable across reloads. */
+export function bySchedule(a: ContentItem, b: ContentItem): number {
+  return contentDateIso(a).localeCompare(contentDateIso(b))
+    || (a.time || "").localeCompare(b.time || "")
+    || (a.title || "").localeCompare(b.title || "");
 }
 
 /** All channels for an item — the multi-select array, or [plat] as fallback. */
@@ -155,6 +199,27 @@ export function contentWarnings(c: ContentItem): string[] {
   if (c.assetStatus === "Waiting Design") w.push("Asset waiting on design");
   if (c.approvalStatus === "Waiting Approval") w.push("Waiting for approval");
   return w;
+}
+
+/** Other posts of the SAME BRAND already planned on this post's publish date.
+ *
+ *  Scoped to the brand on purpose: Teppen and Mainichi posting the same day is
+ *  normal — they are different audiences — while two Teppen posts on one day is
+ *  the thing the team wants to catch before it ships. Deleted posts never reach
+ *  here (fetchContent filters them), so a clash with something already in the
+ *  bin is not reported. */
+export function sameDayPosts(c: ContentItem, all: ContentItem[]): ContentItem[] {
+  const iso = contentDateIso(c);
+  return all.filter((o) => o.id !== c.id && o.b === c.b && contentDateIso(o) === iso);
+}
+
+/** One-line warning about same-day clashes, or null when the day is clear. */
+export function sameDayWarning(c: ContentItem, all: ContentItem[]): string | null {
+  const clash = sameDayPosts(c, all);
+  if (!clash.length) return null;
+  const names = clash.slice(0, 3).map((o) => `“${o.title || "ไม่มีชื่อ"}” (${o.time || "—"})`).join(" · ");
+  const more = clash.length > 3 ? ` และอีก ${clash.length - 3} โพสต์` : "";
+  return `วันนี้มีโพสต์ของแบรนด์เดียวกันอีก ${clash.length} รายการ: ${names}${more}`;
 }
 
 /** Preflight checklist for the Publish tab. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -19,9 +19,10 @@ import {
 import { CampaignBrief, visitGoalOf } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
+import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
-import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter, parseRowDate } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
@@ -148,22 +149,27 @@ export default function CampaignsPage() {
     (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
     rangeInFilter(date, c.dates),
   );
-  const statusRank = (s: string) => {
-    const i = STATUS_ORDER.indexOf(s);
-    return i === -1 ? STATUS_ORDER.length : i;
+  // Campaigns read in date order — the team plans and reviews by calendar, so a
+  // brand's list should run the way the months do. Rows whose range cannot be
+  // parsed sink to the bottom rather than jumping to the front on NaN, and the
+  // name breaks ties so the order is stable between loads.
+  const byStartDate = (a: CampaignRow, z: CampaignRow) => {
+    const at = parseRowDate((a.dates || "").split(/[–—-]/)[0]?.trim())?.getTime() ?? Infinity;
+    const zt = parseRowDate((z.dates || "").split(/[–—-]/)[0]?.trim())?.getTime() ?? Infinity;
+    return at - zt || a.name.localeCompare(z.name);
   };
   // Groups carry a key of their own so the collapsed map can hold both modes at
   // once; status keys stay bare to keep the defaults set above working.
   const groups = groupBy === "status"
     ? STATUS_ORDER
-      .map((s) => ({ key: s, status: s as string | null, brand: null as BrandId | null, rows: filtered.filter((c) => c.status === s) }))
+      .map((s) => ({ key: s, status: s as string | null, brand: null as BrandId | null, rows: filtered.filter((c) => c.status === s).sort(byStartDate) }))
       .filter((g) => g.rows.length > 0)
     : brandVisibility.visibleBrands
       .map((b) => ({
         key: `brand:${b}`,
         status: null,
         brand: b as BrandId | null,
-        rows: filtered.filter((c) => c.b === b).sort((a, z) => statusRank(a.status) - statusRank(z.status)),
+        rows: filtered.filter((c) => c.b === b).sort(byStartDate),
       }))
       .filter((g) => g.rows.length > 0);
 
@@ -211,11 +217,16 @@ export default function CampaignsPage() {
   };
 
   const onDelete = async (campaign: CampaignRow) => {
-    if (!window.confirm(`Delete campaign "${campaign.name}"? This will remove linked planner rows and tasks too.`)) return;
+    if (!window.confirm(
+      `ย้ายแคมเปญ "${campaign.name}" ลงถังขยะ?\n\n`
+      + `โพสต์ ใบงาน Creative และทาสก์ที่แตกจากแคมเปญนี้จะถูกย้ายไปด้วย `
+      + `กู้คืนพร้อมกันได้ภายใน ${TRASH_RETENTION_DAYS} วันที่หน้า Trash`,
+    )) return;
     setBusyCampaignId(campaign.id);
     setCampaigns((rows) => rows.filter((row) => row.id !== campaign.id));
     try {
-      await deleteCampaign(campaign.id);
+      await deleteCampaign(campaign.id, member?.name ?? "");
+      toastSuccess(`ย้าย “${campaign.name}” ลงถังขยะแล้ว · กู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วัน`);
     } catch (error) {
       setCampaigns((rows) => [campaign, ...rows]);
       toastError(`ลบ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);

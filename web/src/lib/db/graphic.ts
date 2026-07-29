@@ -9,16 +9,31 @@ import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
 import { Task } from "@/lib/data/tasks";
 import { assertDbOk } from "@/lib/db/assert";
+import { liveOnly, trashReady } from "@/lib/db/trash";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
   if (!db) return GRAPHICS.map((g) => withLiveGraphicOverdue({ ...g }));
-  const { data, error } = await db.from("graphic_requests").select("id, data, created_at").order("id");
+  const { data, error } = await liveOnly(db.from("graphic_requests").select("id, data, created_at"), await trashReady()).order("id");
   if (error || !data) return []; // query error = no live data, never demo rows
   return data
     .map((r) => (r.data ? { ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at } : null))
     .filter(Boolean)
     .map((g) => withLiveGraphicOverdue(g as Graphic));
+}
+
+/** One request by its id — for surfaces that already know which request they
+ *  want (the Content drawer showing what kind of artwork a post is waiting on)
+ *  and should not pull the whole board to find it. */
+export async function fetchGraphicById(id: string | number): Promise<Graphic | null> {
+  const db = supabase();
+  if (!db) return GRAPHICS.find((g) => String(g.id) === String(id)) ?? null;
+  const { data, error } = await liveOnly(
+    db.from("graphic_requests").select("id, data, created_at").eq("data->>id", String(id)),
+    await trashReady(),
+  ).maybeSingle();
+  if (error || !data?.data) return null;
+  return withLiveGraphicOverdue({ ...(data.data as Graphic), createdAt: (data as { created_at?: string }).created_at });
 }
 
 export async function createGraphic(g: Graphic): Promise<void> {

@@ -83,6 +83,22 @@ export const BRIEF_STATUSES = [
 ] as const;
 export type BriefStatus = (typeof BRIEF_STATUSES)[number];
 
+/** Statuses at or past CMO approval — the point where Submit turns the plan
+ *  into real posts, graphic requests and tasks. "Need Revision" is deliberately
+ *  NOT here: it is sent back before anything is created. */
+const MATERIALISED_STATUSES: readonly string[] = ["Approved", "In Progress", "Completed"];
+
+/** Has this campaign's plan been turned into real work yet?
+ *
+ *  Used to decide whether an empty Content tab means "not created yet" (show
+ *  the plan) or "created and then deleted" (show nothing). Reading it off the
+ *  brief's own status rather than counting live posts matters: counting posts
+ *  makes a campaign whose posts were ALL deleted look like it was never
+ *  approved, and the deleted rows come back on screen as plan items. */
+export function materialised(brief: { status?: string } | null | undefined): boolean {
+  return !!brief?.status && MATERIALISED_STATUSES.includes(brief.status);
+}
+
 // ── Row types ─────────────────────────────────────────────────────────────
 /** A chosen platform + asset size pair (content can target several). */
 export interface AssetTarget { platform: string; size: string; }

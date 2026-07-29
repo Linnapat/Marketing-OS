@@ -14,6 +14,19 @@ export function isCreativeSideRole(role: string): boolean {
   return /creative|design|graphic|art|video|vdo|content creator|agency|external/i.test(role || "");
 }
 
+// ── Content Plan: who may rewrite or move a planned post ──────────────────
+// The planning side owns the schedule — "แก้ไขหรือย้ายแคมเปญได้โดย Marketing".
+// Creative roles read the plan and produce against it; they do not reschedule
+// it, and the request they work from is the thing that locks (contentEditLock).
+// Named explicitly rather than derived as "not creative", so a role added later
+// gets no schedule-editing power by accident.
+const PLANNER_ROLES = ["CMO", "Marketing Manager / BGL", "Marketing Executive", "Co-ordinator"];
+
+/** May this role edit a planned post, or move it to another campaign? */
+export function canEditContentPlan(role: string): boolean {
+  return PLANNER_ROLES.includes((role || "").trim());
+}
+
 // ── Graphic deliverables: who signs off a submitted artwork ────────────────
 // The Approve button on a deliverable row had no gate at all: any role that
 // could open the Assets tab and saw a row in "Waiting review" could approve it,
