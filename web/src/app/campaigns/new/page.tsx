@@ -145,7 +145,15 @@ export default function NewCampaignPage() {
   const [brief, setBrief] = useState<CampaignBrief>(() => ({ ...emptyBrief(id), approver: CMO_NAME }));
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [seq, setSeq] = useState(1);
+  // Item-id allocator. A ref, not state, and deliberately so: ids were handed
+  // out by `const s = seq; setSeq(x => x + 1); return s` from *inside* the
+  // setBrief updater. That reads `seq` from the render closure, so two calls
+  // landing in the same React batch — a double-click on Copy is enough — both
+  // returned the same number and produced two content items sharing one id.
+  // upd() patches by id, so editing the copy also rewrote the original: the
+  // "แก้ Content #2 แล้ว Content #1 เปลี่ยนตาม" report. A ref increments once
+  // per call, whatever React does with batching or re-invoked updaters.
+  const seqRef = useRef(1);
   const [triedNext, setTriedNext] = useState(false); // show step-1 inline errors after first Next
   const [ackWarn, setAckWarn] = useState(false);      // acknowledge unresolved warnings before Submit
   const [savedBriefs, setSavedBriefs] = useState<CampaignBrief[]>([]);
@@ -159,7 +167,7 @@ export default function NewCampaignPage() {
   );
 
   const set = <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => setBrief((b) => ({ ...b, [k]: v }));
-  const nextSeq = () => { const s = seq; setSeq((x) => x + 1); return s; };
+  const nextSeq = () => seqRef.current++;
 
   // Planner = the logged-in user (auto, read-only). Keep it synced to auth.
   const me = member?.name ?? user?.email ?? "";
@@ -190,7 +198,7 @@ export default function NewCampaignPage() {
       fetchContentSourceIds(editId).then(setMaterializedIds).catch(() => {});
       setOriginalBrief(JSON.parse(JSON.stringify(normalized)));
       setBrief(normalized);
-      setSeq(nextSeqFromItems(normalized.content, normalized.kols));
+      seqRef.current = nextSeqFromItems(normalized.content, normalized.kols);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -345,7 +353,7 @@ export default function NewCampaignPage() {
       const branchesFor = (brand: BrandId) => brandConfigs.find((c) => c.key === brand)?.branchList ?? [];
       const { brief: merged, warnings: mergeWarnings } = applyBriefPatch(brief, patch, branchesFor);
       setBrief(merged);
-      setSeq(nextSeqFromItems(merged.content, merged.kols));
+      seqRef.current = nextSeqFromItems(merged.content, merged.kols);
       setTriedNext(false);
       setImportReport({ counts, warnings: [...notes, ...mergeWarnings] });
     } catch (error) {
@@ -923,18 +931,34 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange, materialized }: {
   // opens so you can fill it right away.
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
   const toggleItem = (id: string) => setOpenItems((o) => ({ ...o, [id]: !o[id] }));
-  const add = () => setBrief((b) => {
-    const item = { ...emptyContentItem(nextSeq()) };
+  // Ids are allocated here, in the event handler — never inside the setBrief
+  // updater. React may run an updater more than once for a single dispatch, and
+  // two dispatches in one batch share a render closure; either way an id minted
+  // in there is not guaranteed unique, and two items with one id are edited as
+  // one.
+  const add = () => {
+    const item = emptyContentItem(nextSeq());
     setOpenItems((o) => ({ ...o, [item.id]: true }));
-    return { ...b, content: [...b.content, item] };
-  });
-  const dup = (id: string) => setBrief((b) => {
-    const src = b.content.find((c) => c.id === id);
-    if (!src) return b;
-    const copy = { ...src, id: `ci-${nextSeq()}` };
-    setOpenItems((o) => ({ ...o, [copy.id]: true }));
-    return { ...b, content: [...b.content, copy] };
-  });
+    setBrief((b) => ({ ...b, content: [...b.content, item] }));
+  };
+  const dup = (id: string) => {
+    const copyId = `ci-${nextSeq()}`;
+    setOpenItems((o) => ({ ...o, [copyId]: true }));
+    setBrief((b) => {
+      const src = b.content.find((c) => c.id === id);
+      if (!src) return b;
+      // Deep-copy the nested arrays. A spread alone leaves the copy pointing at
+      // the original's platforms/assets, so the two items are only separate
+      // until something edits an array in place.
+      const copy: BriefContentItem = {
+        ...src,
+        id: copyId,
+        platforms: [...src.platforms],
+        assets: src.assets.map((a) => ({ ...a })),
+      };
+      return { ...b, content: [...b.content, copy] };
+    });
+  };
   const rm = (id: string) => {
     // Once a campaign is approved, a content item is not just a plan row: it
     // has a real post in Content Plan and (usually) a creative request the team
@@ -997,8 +1021,24 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
   brief: CampaignBrief; setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; nextSeq: () => number; branches: string[]; outOfRange: (iso: string) => boolean | "" | undefined;
 }) {
   const upd = (id: string, patch: Partial<BriefKolItem>) => setBrief((b) => ({ ...b, kols: b.kols.map((k) => k.id === id ? { ...k, ...patch } : k) }));
-  const add = () => setBrief((b) => ({ ...b, kols: [...b.kols, { ...emptyKolItem(nextSeq()) }] }));
-  const dup = (id: string) => setBrief((b) => { const src = b.kols.find((k) => k.id === id); return src ? { ...b, kols: [...b.kols, { ...src, id: `kr-${nextSeq()}` }] } : b; });
+  // Same rule as the Content Plan above: mint the id in the handler, and copy
+  // the nested arrays rather than sharing them.
+  const add = () => { const item = emptyKolItem(nextSeq()); setBrief((b) => ({ ...b, kols: [...b.kols, item] })); };
+  const dup = (id: string) => {
+    const copyId = `kr-${nextSeq()}`;
+    setBrief((b) => {
+      const src = b.kols.find((k) => k.id === id);
+      if (!src) return b;
+      const copy: BriefKolItem = {
+        ...src,
+        id: copyId,
+        platforms: [...src.platforms],
+        contentRequired: [...src.contentRequired],
+        monthly: src.monthly?.map((m) => ({ ...m })),
+      };
+      return { ...b, kols: [...b.kols, copy] };
+    });
+  };
   const rm = (id: string) => setBrief((b) => ({ ...b, kols: b.kols.filter((k) => k.id !== id) }));
 
   // Envelope from Budget Allocation (previous step) — the KOL plan draws it down.
