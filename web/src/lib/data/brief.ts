@@ -341,6 +341,90 @@ export function graphicDueRangeImpossible(publishIso?: string, requestIso?: stri
   return minGraphicDueDate(requestIso) > publishIso;
 }
 
+/** Business days the final artwork must land BEFORE the post publishes.
+ *
+ *  Not slack. It is the requester's review, one revision round, and the
+ *  scheduling itself. Artwork that arrives on publish day leaves room for none
+ *  of those, which is how posts went out unreviewed — or late. */
+export const FINAL_AW_BUFFER_DAYS = 2;
+
+export function subtractBusinessDays(startIso: string, days: number): string {
+  const start = parseIsoLocal(startIso);
+  if (!start) return "";
+  const d = new Date(start);
+  let removed = 0;
+  while (removed < days) {
+    d.setDate(d.getDate() - 1);
+    if (isBusinessDay(d)) removed += 1;
+  }
+  return toIsoLocal(d);
+}
+
+export interface FinalArtworkDue {
+  /** The date the request should carry. "" when nothing can be derived. */
+  iso: string;
+  /** Derived, and not to be hand-edited — the publish date decides it. */
+  fixed: boolean;
+  /** The full buffer could not be met: this is the earliest Creative can
+   *  physically deliver, and the brief counts as a rush. */
+  rushed: boolean;
+  reason: string;
+}
+
+/** When must the final artwork be in, so the post can go out on its day?
+ *
+ *  Two kinds of work, two answers — this is the whole point of the rule:
+ *
+ *  CONTENT work has a publish date, and that date is the fixed point. The
+ *  artwork deadline is therefore DERIVED from it (publish − buffer) and locked,
+ *  because the deadline is not really a choice: if you want the post live on
+ *  the 20th, the artwork has to be in by the 18th. Letting people type this
+ *  produced dates equal to the publish date, leaving no review window, and
+ *  dates chosen to dodge the lead-time warning.
+ *
+ *  ADHOC work has no publish date — nothing to derive from — so it stays a
+ *  manual choice, floored at the minimum lead time like any other brief.
+ *
+ *  When the ideal buffer cannot be met, we do NOT silently pick an impossible
+ *  date: the date becomes the earliest Creative can actually deliver and the
+ *  brief is flagged as a rush, so a person decides whether the month can take
+ *  it (or moves the publish date, which is the real fix). */
+export function finalArtworkDue(publishIso?: string, requestIso?: string): FinalArtworkDue {
+  const floor = minGraphicDueDate(requestIso);
+  if (!publishIso) {
+    return {
+      iso: "",
+      fixed: false,
+      rushed: false,
+      reason: `งาน adhoc — ยังไม่มีวันโพสต์ กำหนดวันส่งงานเอง (เร็วสุด ${floor} · ${GRAPHIC_MIN_BUSINESS_DAYS} วันทำการ)`,
+    };
+  }
+  const target = subtractBusinessDays(publishIso, FINAL_AW_BUFFER_DAYS);
+  if (target >= floor) {
+    return {
+      iso: target,
+      fixed: true,
+      rushed: false,
+      reason: `ล็อกจากวันโพสต์ ${publishIso} − ${FINAL_AW_BUFFER_DAYS} วันทำการ (กันเวลารีวิว + แก้ 1 รอบ)`,
+    };
+  }
+  // Can still be delivered before it publishes, just without the full buffer.
+  if (floor <= publishIso) {
+    return {
+      iso: floor,
+      fixed: true,
+      rushed: true,
+      reason: `เวลาไม่พอสำหรับ buffer ${FINAL_AW_BUFFER_DAYS} วันทำการ — ใช้วันที่เร็วที่สุดที่ทำได้ (${floor}) และนับเป็นงานเร่ง`,
+    };
+  }
+  return {
+    iso: floor,
+    fixed: true,
+    rushed: true,
+    reason: `โพสต์ลงวันที่ ${publishIso} แต่งานเร็วสุดคือ ${floor} — artwork จะเสร็จหลังวันโพสต์ ถ้าไม่ต้องการแบบนั้นให้เลื่อนวันโพสต์`,
+  };
+}
+
 export function emptyBrief(id: string): CampaignBrief {
   return {
     id, name: "", b: "teppen", branch: "", branches: [], objective: OBJECTIVES[0],

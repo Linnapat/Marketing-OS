@@ -4,7 +4,7 @@
 import { supabase } from "@/lib/supabase";
 import { KOLS, Kol, withLiveKolOverdue } from "@/lib/data/kol";
 import { BrandId } from "@/lib/brands";
-import { assertDbData, assertDbOk } from "@/lib/db/assert";
+import { assertDbData, assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
 
 // Columns of the reporting template's KOL_Activities tab, in order.
@@ -121,10 +121,13 @@ export async function upsertKolRequirement(reqKol: Kol, existingRows: Kol[]): Pr
 export async function updateKol(kol: Kol): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { error } = await db.from("kols")
-    .update({ status: kol.status, data: kol })
-    .eq("data->>id", String(kol.id));
-  assertDbOk(error, "Could not update KOL request");
+  await assertRowsTouched(
+    db.from("kols")
+      .update({ status: kol.status, data: kol })
+      .eq("data->>id", String(kol.id))
+      .select("id"),
+    "บันทึก KOL request ไม่สำเร็จ",
+  );
 }
 
 /** Approve a submitted KOL proposal from My Approval. */
@@ -136,8 +139,10 @@ export async function approveKolProposal(kolId: number): Promise<void> {
   const kol = data?.data as Kol | undefined;
   if (!kol) throw new Error("KOL proposal not found");
   const next: Kol = { ...kol, quotationStatus: "Approved", currentBlocker: null };
-  const { error: updateError } = await db.from("kols").update({ status: next.status, data: next }).eq("data->>id", String(kolId));
-  assertDbOk(updateError, "Could not approve KOL proposal");
+  await assertRowsTouched(
+    db.from("kols").update({ status: next.status, data: next }).eq("data->>id", String(kolId)).select("id"),
+    "อนุมัติ KOL proposal ไม่สำเร็จ",
+  );
 }
 
 /** Build a full Kol from the request form. Owner/Approver default to

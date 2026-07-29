@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
-  GRAPHIC_MIN_BUSINESS_DAYS, isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
-  graphicDueRangeImpossible,
+  isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
+  graphicDueRangeImpossible, finalArtworkDue,
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
 import { Combobox } from "@/components/ui/Combobox";
@@ -59,30 +59,57 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
     if (!exists) onChange({ assets: [...item.assets, { platform, size }] });
     setCustomSizes((map) => ({ ...map, [platform]: "" }));
   };
+  // ── Final artwork date ──────────────────────────────────────────────
+  // Content work: derived from the publish date and locked. Adhoc work (no
+  // publish date): the planner's own choice. See finalArtworkDue for why.
+  const needsArtwork = item.requiredGraphic || item.requiredVideo;
+  const finalDue = finalArtworkDue(item.publishDate || undefined, graphicRequestDate);
+  useEffect(() => {
+    // Keep the stored value in step with the publish date, so what the Graphic
+    // Request is created with is the date shown here — a display-only
+    // derivation would have left the request carrying the old typed date.
+    if (!showGraphicFields || !needsArtwork || !finalDue.fixed) return;
+    if (item.graphicDueDate === finalDue.iso) return;   // settled; no loop
+    onChange({ graphicDueDate: finalDue.iso });
+    // onChange is a fresh closure each render; depending on it would re-fire
+    // every render. The guard above is what makes this settle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGraphicFields, needsArtwork, finalDue.fixed, finalDue.iso, item.graphicDueDate]);
+
   const graphicDueField = showGraphicFields && item.requiredGraphic ? (
     <div>
-      <label className={label}>Graphic Due Date <span className="text-status-red">*</span></label>
-      <DatePicker
-        value={item.graphicDueDate || null}
-        onChange={(v) => onChange({ graphicDueDate: v })}
-        min={minGraphicDue}
-        // Capping at the publish date is right only while a date can satisfy
-        // both limits. When the post publishes sooner than the lead time the
-        // cap sits below the floor and every date in every month is disabled —
-        // so the cap comes off and the conflict is spelled out below instead.
-        max={dueRangeImpossible ? undefined : (item.publishDate || undefined)}
-        invalid={!!item.graphicDueDate && (!graphicLeadValid || (graphicAfterPublish && !dueRangeImpossible))}
-      />
-      {dueRangeImpossible ? (
-        <div className="mt-1 text-[11px] font-semibold" style={{ color: "#B33A2E" }}>
-          ⚠ โพสต์นี้ลงวันที่ {item.publishDate} แต่งานกราฟฟิกเร็วสุดคือ {minGraphicDue} ({GRAPHIC_MIN_BUSINESS_DAYS} วันทำการ) —
-          ส่งบรีฟได้ แต่ artwork จะเสร็จหลังวันโพสต์ ถ้าไม่ต้องการแบบนั้นให้เลื่อนวันโพสต์ก่อน
+      <label className={label}>
+        วันส่ง Final Artwork <span className="text-status-red">*</span>
+        {finalDue.fixed && <span className="text-faint font-normal"> · 🔒 ล็อกจากวันโพสต์</span>}
+      </label>
+      {finalDue.fixed ? (
+        // Content work: the publish date is the fixed point, so this is not a
+        // choice — it is arithmetic. Read-only, and the way to change it is to
+        // move the publish date, which is the decision that actually matters.
+        <div
+          className={`${field} flex items-center gap-2 cursor-not-allowed`}
+          style={finalDue.rushed ? { borderColor: "#F0C89B", background: "#FFF7ED" } : undefined}
+          aria-readonly="true"
+        >
+          <span className="font-bold text-ink">{finalDue.iso || "—"}</span>
+          {finalDue.rushed && <span className="text-[11px] font-bold" style={{ color: "#B3641E" }}>⚡ งานเร่ง</span>}
         </div>
       ) : (
-        <div className="mt-1 text-[11px]" style={{ color: item.graphicDueDate && (!graphicLeadValid || graphicAfterPublish) ? "#B33A2E" : "#9A9387" }}>
-          กำหนดส่งงาน Creative · เร็วสุด {minGraphicDue} ({GRAPHIC_MIN_BUSINESS_DAYS} วันทำการหลัง Request date) · ต้องไม่เกิน Publish Date
-        </div>
+        <DatePicker
+          value={item.graphicDueDate || null}
+          onChange={(v) => onChange({ graphicDueDate: v })}
+          min={minGraphicDue}
+          // Capping at the publish date is right only while a date can satisfy
+          // both limits. When the post publishes sooner than the lead time the
+          // cap sits below the floor and every date in every month is disabled —
+          // so the cap comes off and the conflict is spelled out below instead.
+          max={dueRangeImpossible ? undefined : (item.publishDate || undefined)}
+          invalid={!!item.graphicDueDate && (!graphicLeadValid || (graphicAfterPublish && !dueRangeImpossible))}
+        />
       )}
+      <div className="mt-1 text-[11px]" style={{ color: finalDue.rushed ? "#B3641E" : "#9A9387" }}>
+        {finalDue.reason}
+      </div>
     </div>
   ) : null;
 

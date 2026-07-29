@@ -20,7 +20,7 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { brandName } from "@/lib/brands";
-import { assertDbOk } from "@/lib/db/assert";
+import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
 
@@ -299,8 +299,12 @@ function labelDate(iso: string): string {
 async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", brief.id);
-  assertDbOk(error, "Could not save campaign brief details");
+  // The brief IS the campaign's content — a write that lands on no row loses
+  // the whole plan while the builder reports a successful save.
+  await assertRowsTouched(
+    db.from("campaigns").update({ data: brief }).eq("id", brief.id).select("id"),
+    "บันทึกรายละเอียดแคมเปญไม่สำเร็จ",
+  );
 }
 
 /** All saved briefs keyed by campaign name — one query, for pages that show

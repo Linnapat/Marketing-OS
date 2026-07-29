@@ -968,11 +968,11 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           approver's name — it never tracked who the request was actually waiting
           on. A column that looks live but isn't is worse than no column. */}
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 0.8fr 1fr 0.7fr" }}>
-        <div>Request</div><div>Campaign</div><div>Designer</div><div>Due</div><div>Stage</div><div>Fb</div>
+        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 0.8fr 1fr 0.6fr 0.7fr" }}>
+        <div>Request</div><div>Campaign</div><div>Designer</div><div>Due</div><div>Stage</div><div>Drive</div><div>Fb</div>
       </div>
       {items.map((g) => (
-        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.2fr_1fr_0.8fr_1fr_0.7fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
+        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.2fr_1fr_0.8fr_1fr_0.6fr_0.7fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
           <div><div className="text-[13px] font-bold text-ink">{g.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div></div>
           <span className="text-[12px] text-muted truncate">{g.campaign}</span>
           <span className="text-[12px] text-muted">{g.designer}</span>
@@ -980,6 +980,18 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           <span className="flex items-center gap-1.5 flex-wrap">
             <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
             <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
+          </span>
+          {/* The working-files folder, one click from the list. It was only ever
+              visible after opening the request, so anyone fetching files had to
+              open every row to find the one they wanted. stopPropagation, or the
+              row's own onOpen swallows the click and the drawer opens instead. */}
+          <span className="text-[12px]">
+            {g.driveLink ? (
+              <a href={g.driveLink} target="_blank" rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title={g.driveLink}
+                className="font-bold text-accent hover:underline">📁 เปิด ↗</a>
+            ) : <span className="text-faint">—</span>}
           </span>
           <span className="text-[12px] font-semibold" style={{ color: g.openFb > 0 ? "#B33A2E" : "#9A9387" }}>{g.openFb || "—"}</span>
         </button>

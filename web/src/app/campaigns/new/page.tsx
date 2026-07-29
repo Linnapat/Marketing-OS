@@ -159,6 +159,9 @@ export default function NewCampaignPage() {
   const [savedBriefs, setSavedBriefs] = useState<CampaignBrief[]>([]);
   const [budgetSheetRows, setBudgetSheetRows] = useState<Awaited<ReturnType<typeof fetchBudgetSheetRows>>>([]);
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
+  // The seed above is a placeholder for the first paint, NOT the truth. Nothing
+  // may prune a saved brief against it — the branch filter below waits for this.
+  const [brandConfigsLoaded, setBrandConfigsLoaded] = useState(false);
   const [campaignTypes, setCampaignTypes] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
   const configuredBrandIds = useMemo(() => new Set(brandConfigs.map((brand) => brand.key)), [brandConfigs]);
   const brandOptions = useMemo(
@@ -175,6 +178,14 @@ export default function NewCampaignPage() {
   useEffect(() => {
     const editId = new URLSearchParams(window.location.search).get("edit");
     if (!editId) return;
+    // Mark "this is an edit" NOW, not when the fetch lands. Every guard below
+    // that spares a saved brief — the brand lock, the code generator, the
+    // select-all-branches default — reads editingId, and while it stayed null
+    // they all treated an edit as a brand-new campaign for as long as the
+    // request took. That is how a saved Omakase campaign came back with the
+    // seed branch list (which begins "IconSiam") ticked.
+    setId(editId);
+    setEditingId(editId);
     let alive = true;
     fetchCampaignBrief(editId).then((saved) => {
       if (!alive || !saved) return;
@@ -193,8 +204,6 @@ export default function NewCampaignPage() {
         budget: { ...defaults.budget, ...saved.budget, monthly: saved.budget?.monthly ?? [] },
         approvalLog: saved.approvalLog ?? [],
       };
-      setId(editId);
-      setEditingId(editId);
       fetchContentSourceIds(editId).then(setMaterializedIds).catch(() => {});
       setOriginalBrief(JSON.parse(JSON.stringify(normalized)));
       setBrief(normalized);
@@ -218,6 +227,7 @@ export default function NewCampaignPage() {
         setSavedBriefs(Object.values(briefMap));
         setBudgetSheetRows(sheetRows);
         setBrandConfigs(configs);
+        setBrandConfigsLoaded(true);
         setCampaignTypes(types);
         // Approver = the CMO member's profile name — the SAME source the planner
         // name comes from, so one person never shows up under two names
@@ -239,25 +249,26 @@ export default function NewCampaignPage() {
   const branches = useMemo(() => brandConfigs.find((d) => d.key === brief.b)?.branchList ?? [], [brandConfigs, brief.b]);
   useEffect(() => {
     // Drop branches that don't belong to the brand — but ONLY once the brand's
-    // branch list has actually loaded. `brandConfigs` starts as seed data and is
-    // replaced by the saved config a moment later; running against the empty /
-    // stale list wiped every saved branch onan edit, so the planner had to
-    // re-tick them on every visit (and a stray Save stored the empty list).
-    if (!branches.length) return;
+    // real branch list has loaded. `brandConfigs` starts as SEED data, which is
+    // non-empty, so "is it empty?" was never the right question: an Omakase
+    // brief saved against the real config was pruned against the seed list and
+    // came back with every branch gone (and a stray Save stored that). Wait for
+    // the config the campaign was actually saved against.
+    if (!brandConfigsLoaded || !branches.length) return;
     setBrief((b) => {
       const nextBranches = b.branches.filter((br) => branches.includes(br));
       return nextBranches.length === b.branches.length ? b : { ...b, branches: nextBranches, branch: nextBranches.join(", ") };
     });
-  }, [branches]);
+  }, [branches, brandConfigsLoaded]);
   // A new campaign starts covering every branch of its brand — brand-wide is the
   // normal case, so ticking each box by hand was busywork. Only fills an empty
   // selection, so deselecting branches sticks. Editing is exempt: a saved brief's
   // branch list is a decision someone already made, and quietly widening it to
   // every branch would change who the campaign runs for and who it prints for.
   useEffect(() => {
-    if (editingId || !branches.length) return;
+    if (editingId || !brandConfigsLoaded || !branches.length) return;
     setBrief((b) => (b.branches.length ? b : { ...b, branches: [...branches], branch: branches.join(", ") }));
-  }, [branches, editingId]);
+  }, [branches, editingId, brandConfigsLoaded]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
   const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
   const preview = useMemo(() => taskPreview(brief), [brief]);
