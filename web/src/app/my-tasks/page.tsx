@@ -54,6 +54,12 @@ const TYPE_COLORS: Record<string, [string, string]> = {
 };
 const BENTO_MESSAGES = ["You're almost there", "Small wins count ✓", "One task at a time", "Let's clear this gently", "Nearly done — just a few more"];
 
+// created_at is a full timestamp — fmtShort only reads a plain YYYY-MM-DD.
+const fmtThaiDate = (iso: string) => fmtShort(iso.slice(0, 10)) || iso.slice(0, 10);
+
+/** Campaign budget context shown to the approver on an expense request. */
+type ExpenseBudgetInfo = { budget: number; committed: number; left: number; campaignId: string };
+
 const badge = (s: string, map: Record<string, [string, string]>): CSSProperties => {
   const [fg, bg] = map[s] ?? ["#6b6258", "#F0EDE6"];
   return { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: bg, color: fg, display: "inline-block", whiteSpace: "nowrap" };
@@ -156,6 +162,22 @@ export default function MyTasksPage() {
     [graphics, viewAs, brandVisibility],
   );
   const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
+  // Budget context for an expense request: the campaign's budget, what's already
+  // been approved against it, and what's left if this one goes through. Matches
+  // on campaign_id when the row has it (a rename breaks name matching), else on
+  // brand + name — never on name alone, since names repeat across brands.
+  const budgetOf = useMemo(() => {
+    const sameCampaign = (a: ExpenseReq, b: ExpenseReq) =>
+      a.campaignId && b.campaignId ? a.campaignId === b.campaignId : a.b === b.b && a.campaign === b.campaign;
+    return (r: ExpenseReq): ExpenseBudgetInfo | null => {
+      const c = campaigns.find((x) => (r.campaignId ? x.id === r.campaignId : x.b === r.b && x.name === r.campaign));
+      if (!c || !c.budget) return null;
+      const committed = expenseReqs
+        .filter((x) => x !== r && x.status === "Approved" && sameCampaign(x, r))
+        .reduce((s, x) => s + (x.approved || 0), 0);
+      return { budget: c.budget, committed, left: c.budget - committed - r.requested, campaignId: c.id };
+    };
+  }, [campaigns, expenseReqs]);
   // Approve / reject inline — sync the row locally so the card updates at once.
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
@@ -336,7 +358,7 @@ export default function MyTasksPage() {
           )}
         </div>
       ) : (
-        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
+        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
@@ -351,8 +373,9 @@ export default function MyTasksPage() {
   );
 }
 
-function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, onOpenTask, onApprove, onReject }: {
+function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onApprove, onReject }: {
   graphics: Graphic[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
+  budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
   onOpenTask: (id: number) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
@@ -425,7 +448,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, onOpen
             <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>{expenses.length}</span>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {expenses.map((r) => <ExpenseApprovalCard key={r._id ?? r.ref ?? r.category} r={r} onApprove={onApprove} onReject={onReject} />)}
+            {expenses.map((r) => <ExpenseApprovalCard key={r._id ?? r.ref ?? r.category} r={r} budget={budgetOf(r)} onApprove={onApprove} onReject={onReject} />)}
           </div>
         </div>
       )}
@@ -481,29 +504,91 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, onOpen
   );
 }
 
+/** One label→value line inside the expense detail panel. */
+function DetailRow({ label, children, strong, danger }: { label: string; children: React.ReactNode; strong?: boolean; danger?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-[3px]">
+      <span className="text-[11px] text-faint flex-shrink-0">{label}</span>
+      <span className={`text-[11.5px] text-right ${strong ? "font-bold" : ""}`} style={danger ? { color: "#B33A2E" } : strong ? { color: "#211F1C" } : undefined}>{children}</span>
+    </div>
+  );
+}
+
 /** Inline expense-request approval card — approve or send back with a reason,
- *  right from My Tasks (the CMO's daily surface) instead of a separate queue. */
-function ExpenseApprovalCard({ r, onApprove, onReject }: {
-  r: ExpenseReq; onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
+ *  right from My Tasks (the CMO's daily surface) instead of a separate queue.
+ *  "ดูรายละเอียด" opens the full request (ref, tax breakdown, net payable and
+ *  the campaign's remaining budget) so the approver never has to leave the page
+ *  to know what they're signing off. */
+function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
+  r: ExpenseReq; budget: ExpenseBudgetInfo | null;
+  onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [open, setOpen] = useState(false);
   // Latches on the first Approve/Reject click so a rapid second click can't fire
   // a duplicate approval before the card is removed from the queue.
   const [acted, setActed] = useState(false);
   const wait = daysWaiting(r.createdAt);
+  const vat = r.vatAmt ?? 0;
+  const wht = r.whtAmt ?? 0;
+  const net = r.requested + vat - wht;
+  const overBudget = budget !== null && budget.left < 0;
   return (
     <div className="bg-surface border border-line rounded-card p-4">
       <div className="flex items-center justify-between gap-2 mb-1">
         <span className="text-[13.5px] font-bold text-ink truncate">฿ {r.category}</span>
         <span className="text-[15px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
       </div>
-      <div className="text-[11.5px] text-faint mb-3">
+      <div className="text-[11.5px] text-faint mb-2">
         {brandName(r.b)} · {r.campaign}
         {r.requester ? <> · โดย {r.requester}</> : null}
         {r.vendor ? <> · {r.vendor}</> : null}
         {wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
       </div>
+      {/* Over-budget is the one thing the approver must see without opening anything. */}
+      {overBudget && (
+        <div className="text-[11px] font-bold rounded-[8px] px-[9px] py-[6px] mb-2" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+          ⚠ เกินงบแคมเปญ {baht(Math.abs(budget!.left))}
+        </div>
+      )}
+      <button onClick={() => setOpen((o) => !o)} className="text-[11.5px] font-bold text-accent mb-2 hover:underline">
+        {open ? "ซ่อนรายละเอียด ▴" : "ดูรายละเอียด ▾"}
+      </button>
+      {open && (
+        <div className="rounded-[10px] px-[11px] py-[9px] mb-3" style={{ background: "#FAF8F4", border: "1px solid #ECE6DA" }}>
+          {r.ref && <DetailRow label="เลขที่คำขอ">{r.ref}</DetailRow>}
+          <DetailRow label="หมวดค่าใช้จ่าย">{r.category}</DetailRow>
+          <DetailRow label="แบรนด์ · แคมเปญ">{brandName(r.b)} · {r.campaign}</DetailRow>
+          {r.requester && <DetailRow label="ผู้ขอเบิก">{r.requester}</DetailRow>}
+          {r.vendor && <DetailRow label="ผู้รับเงิน / Vendor">{r.vendor}</DetailRow>}
+          {r.reimburseType && <DetailRow label="ประเภทการเบิก">{r.reimburseType}</DetailRow>}
+          {r.createdAt && <DetailRow label="ส่งคำขอเมื่อ">{fmtThaiDate(r.createdAt)}{wait !== null ? ` (รอมา ${wait} วัน)` : ""}</DetailRow>}
+          {r.due && r.due !== "—" && <DetailRow label="กำหนดจ่าย">{r.due}</DetailRow>}
+
+          <div className="h-px my-[7px]" style={{ background: "#ECE6DA" }} />
+          <DetailRow label="ยอดขอเบิก">{baht(r.requested)}</DetailRow>
+          {vat > 0 && <DetailRow label="VAT 7%">+{baht(vat)}</DetailRow>}
+          {wht > 0 && <DetailRow label="หัก ณ ที่จ่าย 3%">−{baht(wht)}</DetailRow>}
+          <DetailRow label="ยอดจ่ายสุทธิ" strong>{baht(net)}</DetailRow>
+
+          {budget && (
+            <>
+              <div className="h-px my-[7px]" style={{ background: "#ECE6DA" }} />
+              <DetailRow label="งบแคมเปญ">{baht(budget.budget)}</DetailRow>
+              <DetailRow label="อนุมัติไปแล้ว">{baht(budget.committed)}</DetailRow>
+              <DetailRow label="ถ้าอนุมัติจะเหลือ" strong danger={budget.left < 0}>
+                {baht(budget.left)}
+              </DetailRow>
+            </>
+          )}
+          {budget?.campaignId && (
+            <Link href={`/campaigns/${budget.campaignId}`} className="block text-[11.5px] font-bold text-accent mt-[7px] hover:underline">
+              เปิดแคมเปญ →
+            </Link>
+          )}
+        </div>
+      )}
       {rejecting ? (
         <div className="flex flex-col gap-2">
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น)" autoFocus
