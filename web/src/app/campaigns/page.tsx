@@ -1,6 +1,6 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -19,6 +19,7 @@ import {
 import { CampaignBrief, visitGoalOf } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
+import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter, parseRowDate } from "@/components/ui/DateFilterBar";
@@ -216,11 +217,16 @@ export default function CampaignsPage() {
   };
 
   const onDelete = async (campaign: CampaignRow) => {
-    if (!window.confirm(`Delete campaign "${campaign.name}"? This will remove linked planner rows and tasks too.`)) return;
+    if (!window.confirm(
+      `ย้ายแคมเปญ "${campaign.name}" ลงถังขยะ?\n\n`
+      + `โพสต์ ใบงาน Creative และทาสก์ที่แตกจากแคมเปญนี้จะถูกย้ายไปด้วย `
+      + `กู้คืนพร้อมกันได้ภายใน ${TRASH_RETENTION_DAYS} วันที่หน้า Trash`,
+    )) return;
     setBusyCampaignId(campaign.id);
     setCampaigns((rows) => rows.filter((row) => row.id !== campaign.id));
     try {
-      await deleteCampaign(campaign.id);
+      await deleteCampaign(campaign.id, member?.name ?? "");
+      toastSuccess(`ย้าย “${campaign.name}” ลงถังขยะแล้ว · กู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วัน`);
     } catch (error) {
       setCampaigns((rows) => [campaign, ...rows]);
       toastError(`ลบ Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
