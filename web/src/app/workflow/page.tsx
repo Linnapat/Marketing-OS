@@ -1,6 +1,6 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Check, Download, Printer } from "lucide-react";
 import {
@@ -10,21 +10,31 @@ import {
 } from "@/components/campaign/CampaignHeadController";
 import { useRole } from "@/lib/role";
 import {
-  WORK_SECTIONS, MONTH_NAMES, monthMeta, projectMarks,
+  MONTH_NAMES, monthMeta, projectMarks,
   applyOverrides, nextValue, valueCycleFor, TEMPLATE_YEAR, TEMPLATE_MONTH,
 } from "@/lib/data/workflow";
-import { fetchWorkflowState, saveWorkflowState } from "@/lib/db/workflowState";
+import { fetchWorkflowState, saveWorkflowState, workflowTasksReady } from "@/lib/db/workflowState";
+import { supabase } from "@/lib/supabase";
 import { downloadXlsx } from "@/lib/xlsx";
 import { resetDeadlineCache } from "@/lib/useDeadlines";
+import {
+  CalendarTaskEdit, resolveCalendarSections, nextCustomKey,
+  withTaskEdit, withTaskRemoved, withTaskRestored, hiddenTemplateTasks,
+} from "@/lib/data/calendarTasks";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
   link?: string; note?: string; qty?: string;
+  /** Stable identity — markers and done-marks are filed under it. */
+  key: string;
+  custom: boolean;
   taskKey: string; marks: Record<number, string>;
 }
 interface ResolvedSection {
   key: string; label: string; accent: string; bg: string; tasks: ResolvedTask[];
 }
+
+const usesDb = () => !!supabase();
 
 export default function WorkCalendarPage() {
   // Default to the real current month (falls back to the July 2026 template month).
@@ -32,6 +42,7 @@ export default function WorkCalendarPage() {
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [overrides, setOverridesRaw] = useState<Record<string, string>>({});
   const [done, setDoneRaw] = useState<Record<string, boolean>>({});
+  const [taskEdits, setTaskEditsRaw] = useState<CalendarTaskEdit[]>([]);
   const [view, setView] = useState<"grid" | "agenda">("grid");
   const [edit, setEdit] = useState(false);
 
@@ -42,12 +53,12 @@ export default function WorkCalendarPage() {
 
   // Load the shared calendar state once, then persist every change — the
   // overrides and checkmarks used to evaporate on refresh.
-  const stateRef = useRef({ overrides, done });
-  stateRef.current = { overrides, done };
+  const stateRef = useRef({ overrides, done, tasks: taskEdits });
+  stateRef.current = { overrides, done, tasks: taskEdits };
   useEffect(() => {
     let alive = true;
     fetchWorkflowState().then((s) => {
-      if (alive && s) { setOverridesRaw(s.overrides); setDoneRaw(s.done); }
+      if (alive && s) { setOverridesRaw(s.overrides); setDoneRaw(s.done); setTaskEditsRaw(s.tasks ?? []); }
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -58,7 +69,7 @@ export default function WorkCalendarPage() {
       // per session; without this, editing the calendar left Content Plan and
       // the Graphic drawer showing the old dates until a full reload.
       resetDeadlineCache();
-      saveWorkflowState({ overrides: next, done: stateRef.current.done })
+      saveWorkflowState({ overrides: next, done: stateRef.current.done, tasks: stateRef.current.tasks })
         .catch((error) => toastError(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;
     });
@@ -66,8 +77,29 @@ export default function WorkCalendarPage() {
   const setDone: typeof setDoneRaw = (action) => {
     setDoneRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
-      saveWorkflowState({ overrides: stateRef.current.overrides, done: next })
+      saveWorkflowState({ overrides: stateRef.current.overrides, done: next, tasks: stateRef.current.tasks })
         .catch((error) => toastError(`บันทึก Team Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      return next;
+    });
+  };
+
+  // Row edits need supabase/workflow_custom_tasks.sql. Without it they live for
+  // the session only, so the editor says so rather than pretending to save.
+  const [tasksPersist, setTasksPersist] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    void workflowTasksReady().then((ok) => { if (alive) setTasksPersist(ok || !usesDb()); });
+    return () => { alive = false; };
+  }, []);
+
+  const setTaskEdits = (updater: (prev: CalendarTaskEdit[]) => CalendarTaskEdit[]) => {
+    setTaskEditsRaw((prev) => {
+      const next = updater(prev);
+      // Rows decide which deadlines exist at all, so other modules must not go
+      // on resolving against a row that was just renamed or retired.
+      resetDeadlineCache();
+      saveWorkflowState({ overrides: stateRef.current.overrides, done: stateRef.current.done, tasks: next })
+        .catch((error) => toastError(`บันทึกรายการงานไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       return next;
     });
   };
@@ -80,14 +112,17 @@ export default function WorkCalendarPage() {
 
   // Resolve every task's markers for the selected month (generate → override).
   const sections: ResolvedSection[] = useMemo(() =>
-    WORK_SECTIONS.map((sec) => ({
+    // The row list is template + the team's edits, resolved in one place so the
+    // grid, the export and the deadline resolver never disagree about which
+    // rows exist. taskKey comes from the row's stable identity, not its name —
+    // renaming a row must not orphan its markers.
+    resolveCalendarSections(taskEdits).map((sec) => ({
       ...sec,
       tasks: sec.tasks.map((t) => {
-        const taskKey = `${sec.key}::${t.en}`;
         const base = projectMarks(t.marks, ym.y, ym.m);
-        return { ...t, taskKey, marks: applyOverrides(base, monthKey, taskKey, overrides) };
+        return { ...t, taskKey: t.key, marks: applyOverrides(base, monthKey, t.key, overrides) };
       }),
-    })), [ym, monthKey, overrides]);
+    })), [ym, monthKey, overrides, taskEdits]);
 
   const allTasks = useMemo(() => sections.flatMap((s) => s.tasks.map((t) => ({ ...t, section: s }))), [sections]);
   const monthOverrides = Object.keys(overrides).filter((k) => k.startsWith(`${monthKey}::`) && overrides[k] !== undefined);
@@ -263,9 +298,17 @@ export default function WorkCalendarPage() {
       </div>
 
       {edit && (
-        <div className="mt-3 rounded-card px-4 py-[10px] text-[12px] font-semibold flex items-center gap-2" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
-          ✏️ Admin edit mode — คลิกช่องวันเพื่อ เพิ่ม / เปลี่ยนค่า ({valueCycleFor(ym.m + 1).join(" → ")}) / ลบ marker · marker คือ “เดือนของงาน” วางแผนล่วงหน้าได้ 2 เดือน · การแก้ไขจะผูกกับเดือน {monthLabel}
-        </div>
+        <>
+          <div className="mt-3 rounded-card px-4 py-[10px] text-[12px] font-semibold flex items-center gap-2" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+            ✏️ Admin edit mode — คลิกช่องวันเพื่อ เพิ่ม / เปลี่ยนค่า ({valueCycleFor(ym.m + 1).join(" → ")}) / ลบ marker · marker คือ “เดือนของงาน” วางแผนล่วงหน้าได้ 2 เดือน · การแก้ไขจะผูกกับเดือน {monthLabel}
+          </div>
+          <TaskEditor
+            sections={sections}
+            edits={taskEdits}
+            setEdits={setTaskEdits}
+            tasksPersist={tasksPersist}
+          />
+        </>
       )}
 
       {(alertItems.pending.length > 0 || todayDay !== null) && (
@@ -355,6 +398,121 @@ export default function WorkCalendarPage() {
         )}
       </div>
     </>
+  );
+}
+
+/* ── Row editor ───────────────────────────────────────────────────────────
+ *
+ * The rows ship in code because they came from the team's own sheet, but the
+ * team has to be able to change them — and now that the calendar drives every
+ * module's deadlines, a row nobody can add is a deadline nobody can express.
+ *
+ * Template rows are hidden rather than deleted: the row itself lives in code
+ * and a "delete" would come back on the next deploy. Rows the team invented are
+ * removed outright.
+ */
+function TaskEditor({ sections, edits, setEdits, tasksPersist }: {
+  sections: ResolvedSection[];
+  edits: CalendarTaskEdit[];
+  setEdits: (fn: (prev: CalendarTaskEdit[]) => CalendarTaskEdit[]) => void;
+  tasksPersist: boolean;
+}) {
+  const [openSection, setOpenSection] = useState<string>("");
+  const [draft, setDraft] = useState({ en: "", jp: "", r: "", a: "" });
+  const hidden = hiddenTemplateTasks(edits);
+  const field = "text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-white outline-none";
+
+  const add = (sectionKey: string) => {
+    const en = draft.en.trim();
+    if (!en) return;
+    setEdits((prev) => withTaskEdit(prev, {
+      key: nextCustomKey(sectionKey, prev),
+      section: sectionKey,
+      custom: true,
+      en, jp: draft.jp.trim(), r: draft.r.trim(), a: draft.a.trim(),
+    }));
+    setDraft({ en: "", jp: "", r: "", a: "" });
+    toastSuccess(`เพิ่มงาน “${en}” แล้ว`);
+  };
+
+  const rename = (t: ResolvedTask, sectionKey: string, en: string) => {
+    if (!en.trim() || en === t.en) return;
+    setEdits((prev) => withTaskEdit(prev, { key: t.key, section: sectionKey, en: en.trim() }));
+  };
+
+  const remove = (t: ResolvedTask, sectionKey: string) => {
+    if (!window.confirm(`${t.custom ? "ลบ" : "ซ่อน"}งาน “${t.en}” ?\n\n${t.custom ? "งานที่ทีมเพิ่มเองจะถูกลบถาวร" : "งานจาก template จะถูกซ่อน กดคืนได้ด้านล่าง"}`)) return;
+    setEdits((prev) => withTaskRemoved(prev, t.key, sectionKey));
+    toastSuccess(`${t.custom ? "ลบ" : "ซ่อน"}งาน “${t.en}” แล้ว`);
+  };
+
+  return (
+    <div className="mt-3 rounded-cardLg border border-line2 bg-surface p-4">
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        <span className="text-[12.5px] font-extrabold text-ink">🧱 แก้รายการงานในปฏิทิน</span>
+        <span className="text-[11px] text-faint">เพิ่ม / เปลี่ยนชื่อ / ซ่อน — marker ของแต่ละงานยังผูกกับงานเดิมแม้เปลี่ยนชื่อ</span>
+      </div>
+      {!tasksPersist && (
+        <div className="mb-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FBF6EC", border: "1px solid #EADBC1", color: "#8A6D1E" }}>
+          ⚠ ยังไม่ได้รัน <code className="font-mono">supabase/workflow_custom_tasks.sql</code> — แก้ได้แต่จะไม่ถูกบันทึก
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {sections.map((sec) => {
+          const open = openSection === sec.key;
+          return (
+            <div key={sec.key} className="rounded-[10px] border border-line3">
+              <button onClick={() => setOpenSection(open ? "" : sec.key)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left">
+                <span className="text-faint text-[12px]">{open ? "▾" : "▸"}</span>
+                <span className="text-[12px] font-bold" style={{ color: sec.accent }}>{sec.label}</span>
+                <span className="text-[11px] text-faint">{sec.tasks.length} งาน</span>
+              </button>
+              {open && (
+                <div className="px-3 pb-3 flex flex-col gap-[6px]">
+                  {sec.tasks.map((t) => (
+                    <div key={t.key} className="flex items-center gap-2">
+                      <input
+                        defaultValue={t.en}
+                        onBlur={(e) => rename(t, sec.key, e.target.value)}
+                        className={`${field} flex-1`}
+                        aria-label={`ชื่องาน ${t.en}`}
+                      />
+                      {t.custom && <span className="text-[10px] font-bold rounded-pill px-2 py-[2px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>เพิ่มเอง</span>}
+                      <button onClick={() => remove(t, sec.key)} title={t.custom ? "ลบ" : "ซ่อน"}
+                        className="text-[12px] font-bold text-status-red px-2">✕</button>
+                    </div>
+                  ))}
+                  <div className="mt-1 grid gap-2" style={{ gridTemplateColumns: "2fr 1fr 1fr auto" }}>
+                    <input value={draft.en} onChange={(e) => setDraft((d) => ({ ...d, en: e.target.value }))} placeholder="ชื่องานใหม่" className={field} />
+                    <input value={draft.r} onChange={(e) => setDraft((d) => ({ ...d, r: e.target.value }))} placeholder="ผู้รับผิดชอบ (R)" className={field} />
+                    <input value={draft.a} onChange={(e) => setDraft((d) => ({ ...d, a: e.target.value }))} placeholder="Accountable (A)" className={field} />
+                    <button onClick={() => add(sec.key)} disabled={!draft.en.trim()}
+                      className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 disabled:opacity-40">+ เพิ่ม</button>
+                  </div>
+                  <div className="text-[11px] text-faint">งานที่เพิ่มใหม่ยังไม่มี marker — คลิกช่องวันในตารางเพื่อกำหนดเดือนของงาน</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {hidden.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-line3">
+          <div className="text-[11.5px] font-bold text-faint mb-[6px]">งานที่ซ่อนไว้ ({hidden.length})</div>
+          <div className="flex flex-wrap gap-2">
+            {hidden.map((h) => (
+              <button key={h.key} onClick={() => setEdits((prev) => withTaskRestored(prev, h.key))}
+                className="text-[11.5px] font-bold rounded-pill border border-line2 bg-ivory px-3 py-[5px] text-muted">
+                ↩ {h.en}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

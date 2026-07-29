@@ -24,6 +24,7 @@ import {
   isSidePosition,
   kpisFor,
   recentMonths,
+  monthKeyOf,
   scorePerson,
   summarize,
 } from "@/lib/data/teamKpi";
@@ -55,9 +56,14 @@ export default function TeamKpiPage() {
   // same rule (team_kpi.sql is admin-only); this only keeps the UI honest.
   const canEdit = role === "CMO";
 
-  const months = useMemo(() => recentMonths(new Date()), []);
-  const [month, setMonth] = useState(months[0]);
-  const [review, setReview] = useState<TeamKpiMonth>(() => emptyMonth(months[0]));
+  // The team plans two months ahead, so the picker has to reach forward — it
+  // only walked backwards, which meant the months actually being planned could
+  // not be opened at all. Default still lands on the CURRENT month: the list
+  // now starts in the future, and months[0] would open a month nobody asked for.
+  const months = useMemo(() => recentMonths(new Date(), 12, 2), []);
+  const thisMonth = useMemo(() => monthKeyOf(new Date()), []);
+  const [month, setMonth] = useState(thisMonth);
+  const [review, setReview] = useState<TeamKpiMonth>(() => emptyMonth(thisMonth));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");

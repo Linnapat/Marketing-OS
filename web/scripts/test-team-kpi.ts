@@ -18,6 +18,7 @@ import {
   multiplier,
   parseMonth,
   recentMonths,
+  monthKeyOf,
   scorePerson,
   summarize,
   weighted,
@@ -135,6 +136,12 @@ is("ค่าที่ไม่ใช่ตัวเลขกลายเป็�
 console.log("— recentMonths —");
 is("เดือนล่าสุดอยู่หัวลิสต์", recentMonths(new Date(2026, 6, 28), 3), ["2026-07", "2026-06", "2026-05"]);
 is("ข้ามปีถอยหลังได้ถูก", recentMonths(new Date(2026, 0, 15), 2), ["2026-01", "2025-12"]);
+// ทีมวางแผนล่วงหน้า 2 เดือน picker จึงต้องไปข้างหน้าได้ ไม่ใช่ย้อนหลังอย่างเดียว
+is("เลือกล่วงหน้าได้ 2 เดือน", recentMonths(new Date(2026, 6, 28), 2, 2), ["2026-09", "2026-08", "2026-07", "2026-06"]);
+is("ล่วงหน้าข้ามปีได้", recentMonths(new Date(2026, 11, 5), 1, 2), ["2027-02", "2027-01", "2026-12"]);
+is("ahead=0 = พฤติกรรมเดิม", recentMonths(new Date(2026, 6, 28), 3, 0), recentMonths(new Date(2026, 6, 28), 3));
+is("เดือนปัจจุบันยังอยู่ในลิสต์เสมอ", recentMonths(new Date(2026, 6, 28), 3, 2).includes("2026-07"), true);
+is("monthKeyOf ให้เดือนปัจจุบัน", monthKeyOf(new Date(2026, 6, 28)), "2026-07");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

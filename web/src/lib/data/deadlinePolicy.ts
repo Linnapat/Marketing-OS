@@ -20,8 +20,9 @@
 // rhythm), and find the days whose marker resolves to M.
 
 import {
-  WORK_SECTIONS, projectMarks, applyOverrides, monthMeta, TEMPLATE_YEAR, TEMPLATE_MONTH,
+  projectMarks, applyOverrides, monthMeta, TEMPLATE_YEAR, TEMPLATE_MONTH,
 } from "@/lib/data/workflow";
+import { CalendarTaskEdit, resolveCalendarSections, templateTaskKey } from "@/lib/data/calendarTasks";
 
 export type MilestoneKey = "campaignBrief" | "contentPlan" | "storyboard" | "finalAw";
 
@@ -142,16 +143,22 @@ export function resolveMilestone(
   key: MilestoneKey,
   forMonth: string,
   overrides: Record<string, string> = {},
+  /** The team's row edits — a milestone row they renamed still resolves (the
+   *  key is what identifies it), and one they retired stops resolving, which is
+   *  the honest answer: they removed the deadline. */
+  taskEdits: CalendarTaskEdit[] = [],
 ): MilestoneDeadline | null {
   const def = milestoneDef(key);
   const target = parseMonthKey(forMonth);
   if (!def || !target) return null;
 
-  const section = WORK_SECTIONS.find((s) => s.key === def.section);
-  const row = section?.tasks.find((t) => t.en === def.rowEn);
+  // Look the row up by its STABLE key, through the same resolver the grid uses.
+  // Matching on the display name would break the moment somebody renamed the
+  // row — the markers would still be there and the deadline would vanish.
+  const taskKey = templateTaskKey(def.section, def.rowEn);
+  const section = resolveCalendarSections(taskEdits).find((s) => s.key === def.section);
+  const row = section?.tasks.find((t) => t.key === taskKey);
   if (!section || !row) return null;
-
-  const taskKey = `${section.key}::${row.en}`;
   const templateKey = monthKeyOf(TEMPLATE_YEAR, TEMPLATE_MONTH + 1);
   const hits: { iso: string; day: number; fromMonth: string }[] = [];
 
@@ -193,7 +200,7 @@ export function resolveMilestone(
   // LAST of them — the window closes, it does not open.
   hits.sort((a, b) => a.iso.localeCompare(b.iso));
   const last = hits[hits.length - 1];
-  return { key, label: def.label, governs: def.governs, ...last, forMonth };
+  return { key, label: row.en || def.label, governs: def.governs, ...last, forMonth };
 }
 
 /** Whole months from one "YYYY-MM" to another. */
@@ -209,9 +216,10 @@ function monthsBetween(from: string, to: string): number {
 export function milestonesFor(
   forMonth: string,
   overrides: Record<string, string> = {},
+  taskEdits: CalendarTaskEdit[] = [],
 ): MilestoneDeadline[] {
   return MILESTONES
-    .map((m) => resolveMilestone(m.key, forMonth, overrides))
+    .map((m) => resolveMilestone(m.key, forMonth, overrides, taskEdits))
     .filter((d): d is MilestoneDeadline => !!d)
     .sort((a, b) => a.iso.localeCompare(b.iso));
 }
@@ -257,13 +265,14 @@ export const monthKeyOfIso = (iso?: string) => (iso ?? "").slice(0, 7);
 export function monthServedByFinalAw(
   dueIso?: string,
   overrides: Record<string, string> = {},
+  taskEdits: CalendarTaskEdit[] = [],
 ): string | null {
   const due = (dueIso ?? "").slice(0, 10);
   if (!due) return null;
   const dueMonth = monthKeyOfIso(due);
   for (const ahead of [2, 1, 3, 0]) {
     const candidate = shiftMonthKey(dueMonth, ahead);
-    if (resolveMilestone("finalAw", candidate, overrides)?.iso === due) return candidate;
+    if (resolveMilestone("finalAw", candidate, overrides, taskEdits)?.iso === due) return candidate;
   }
   return null;
 }

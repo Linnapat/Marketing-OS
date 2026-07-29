@@ -11,6 +11,10 @@ import {
   resolveMilestone, milestonesFor, markerMonths, shiftMonthKey, MILESTONES,
   outOfSequence, inProcessOrder, monthServedByFinalAw,
 } from "../src/lib/data/deadlinePolicy";
+import {
+  resolveCalendarSections, withTaskEdit, withTaskRemoved, withTaskRestored,
+  nextCustomKey, hiddenTemplateTasks, templateTaskKey, CalendarTaskEdit,
+} from "../src/lib/data/calendarTasks";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -269,6 +273,47 @@ console.log("\n— ลำดับขั้นตอน + ย้อนกลั�
   // เดือนอื่นก็ต้องย้อนได้ ไม่ใช่แค่เดือน template
   const oct = resolveMilestone("finalAw", "2026-10")!;
   is("ย้อนได้ทุกเดือน", monthServedByFinalAw(oct.iso), "2026-10");
+}
+
+console.log("\n— แก้รายการงานในปฏิทินเอง —");
+{
+  const FINAL_AW = templateTaskKey("creative", "Final AW");
+  const base = resolveCalendarSections([]);
+  const creative = () => base.find((s) => s.key === "creative")!;
+  is("ไม่มีการแก้ = ได้ template เดิม", creative().tasks.some((t) => t.en === "Final AW"), true);
+  is("ทุกแถวมี key ที่นิ่ง", creative().tasks.every((t) => t.key.startsWith("creative::")), true);
+
+  // เพิ่มงานใหม่
+  let edits: CalendarTaskEdit[] = [];
+  const newKey = nextCustomKey("creative", edits);
+  edits = withTaskEdit(edits, { key: newKey, section: "creative", custom: true, en: "ถ่าย TikTok รายสัปดาห์", r: "Creator" });
+  const withNew = resolveCalendarSections(edits).find((s) => s.key === "creative")!;
+  is("งานที่เพิ่มโผล่ในหมวด", withNew.tasks.some((t) => t.en === "ถ่าย TikTok รายสัปดาห์"), true);
+  is("งานที่เพิ่มถูกทำเครื่องหมายว่า custom", withNew.tasks.find((t) => t.en === "ถ่าย TikTok รายสัปดาห์")?.custom, true);
+  is("งานใหม่ยังไม่มี marker", Object.keys(withNew.tasks.find((t) => t.key === newKey)!.marks).length, 0);
+  is("key ถัดไปไม่ชนกัน", nextCustomKey("creative", edits) !== newKey, true);
+
+  // เปลี่ยนชื่อแถว template — key ต้องไม่เปลี่ยน ไม่งั้น marker กำพร้าและเดดไลน์หาย
+  const renamed = withTaskEdit([], { key: FINAL_AW, section: "creative", en: "Final Artwork (ส่งจริง)" });
+  const row = resolveCalendarSections(renamed).find((s) => s.key === "creative")!.tasks.find((t) => t.key === FINAL_AW);
+  is("เปลี่ยนชื่อแล้วชื่อเปลี่ยน", row?.en, "Final Artwork (ส่งจริง)");
+  is("แต่ key ยังเดิม", row?.key, FINAL_AW);
+  is("marker ยังติดมากับแถว", Object.keys(row?.marks ?? {}).length > 0, true);
+  // และเดดไลน์ต้องยังทำงาน (นี่คือจุดที่พังง่ายที่สุด)
+  is("เปลี่ยนชื่อแล้วเดดไลน์ยังอยู่", resolveMilestone("finalAw", "2026-09", {}, renamed)?.iso, "2026-07-23");
+  is("ป้ายเดดไลน์ใช้ชื่อใหม่", resolveMilestone("finalAw", "2026-09", {}, renamed)?.label, "Final Artwork (ส่งจริง)");
+
+  // ซ่อนแถว template = ทีมเอาเดดไลน์นั้นออก ระบบต้องตอบว่าไม่มี ไม่ใช่เดาต่อ
+  const hiddenEdits = withTaskRemoved([], FINAL_AW, "creative");
+  is("ซ่อนแล้วหายจากตาราง", resolveCalendarSections(hiddenEdits).find((s) => s.key === "creative")!.tasks.some((t) => t.key === FINAL_AW), false);
+  is("template row ถูกซ่อน ไม่ใช่ลบ", hiddenEdits.find((e) => e.key === FINAL_AW)?.hidden, true);
+  is("ซ่อนแล้วเดดไลน์หายไปด้วย", resolveMilestone("finalAw", "2026-09", {}, hiddenEdits), null);
+  is("ลิสต์งานที่ซ่อนไว้เรียกดูได้", hiddenTemplateTasks(hiddenEdits).length, 1);
+  is("คืนงานที่ซ่อนได้", resolveCalendarSections(withTaskRestored(hiddenEdits, FINAL_AW)).find((s) => s.key === "creative")!.tasks.some((t) => t.key === FINAL_AW), true);
+
+  // งานที่ทีมเพิ่มเอง ลบได้จริง ไม่ใช่แค่ซ่อน
+  const customGone = withTaskRemoved(edits, newKey, "creative");
+  is("งาน custom ถูกลบออกจริง", customGone.some((e) => e.key === newKey), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

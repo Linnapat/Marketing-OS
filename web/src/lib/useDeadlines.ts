@@ -12,24 +12,27 @@ import { fetchWorkflowState } from "@/lib/db/workflowState";
 import {
   MilestoneKey, MilestoneDeadline, resolveMilestone, milestonesFor, monthKeyOfIso,
 } from "@/lib/data/deadlinePolicy";
+import { CalendarTaskEdit } from "@/lib/data/calendarTasks";
 
-let _overrides: Record<string, string> | null = null;
-let _inflight: Promise<Record<string, string>> | null = null;
+interface CalendarState { overrides: Record<string, string>; tasks: CalendarTaskEdit[] }
 
-async function loadOverrides(): Promise<Record<string, string>> {
-  if (_overrides) return _overrides;
+let _state: CalendarState | null = null;
+let _inflight: Promise<CalendarState> | null = null;
+
+async function loadState(): Promise<CalendarState> {
+  if (_state) return _state;
   if (_inflight) return _inflight;
   _inflight = fetchWorkflowState()
-    .then((s) => { _overrides = s?.overrides ?? {}; return _overrides; })
+    .then((s) => { _state = { overrides: s?.overrides ?? {}, tasks: s?.tasks ?? [] }; return _state; })
     // A calendar we cannot read must not break the pages that show deadlines —
     // they fall back to the shipped template, which is still the right answer
     // for a team that has not re-timed anything.
-    .catch(() => { _overrides = {}; return _overrides; });
+    .catch(() => { _state = { overrides: {}, tasks: [] }; return _state; });
   return _inflight;
 }
 
 /** Forget the cached calendar — call after editing it so deadlines re-resolve. */
-export function resetDeadlineCache(): void { _overrides = null; _inflight = null; }
+export function resetDeadlineCache(): void { _state = null; _inflight = null; }
 
 export interface DeadlineApi {
   /** Ready = the saved calendar has been read (or has failed and fallen back). */
@@ -43,18 +46,19 @@ export interface DeadlineApi {
 }
 
 export function useDeadlines(): DeadlineApi {
-  const [overrides, setOverrides] = useState<Record<string, string> | null>(_overrides);
+  const [state, setState] = useState<CalendarState | null>(_state);
   useEffect(() => {
-    if (overrides) return;
+    if (state) return;
     let alive = true;
-    void loadOverrides().then((o) => { if (alive) setOverrides(o); });
+    void loadState().then((o) => { if (alive) setState(o); });
     return () => { alive = false; };
-  }, [overrides]);
-  const map = overrides ?? {};
+  }, [state]);
+  const marks = state?.overrides ?? {};
+  const rows = state?.tasks ?? [];
   return {
-    ready: !!overrides,
-    milestone: (key, forMonth) => resolveMilestone(key, forMonth, map),
-    forDate: (key, iso) => (iso ? resolveMilestone(key, monthKeyOfIso(iso), map) : null),
-    all: (forMonth) => milestonesFor(forMonth, map),
+    ready: !!state,
+    milestone: (key, forMonth) => resolveMilestone(key, forMonth, marks, rows),
+    forDate: (key, iso) => (iso ? resolveMilestone(key, monthKeyOfIso(iso), marks, rows) : null),
+    all: (forMonth) => milestonesFor(forMonth, marks, rows),
   };
 }
