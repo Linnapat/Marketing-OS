@@ -9,11 +9,12 @@ import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
 import { Task } from "@/lib/data/tasks";
 import { assertDbOk } from "@/lib/db/assert";
+import { liveOnly, trashReady, moveToTrash } from "@/lib/db/trash";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
   if (!db) return GRAPHICS.map((g) => withLiveGraphicOverdue({ ...g }));
-  const { data, error } = await db.from("graphic_requests").select("id, data, created_at").order("id");
+  const { data, error } = await liveOnly(db.from("graphic_requests").select("id, data, created_at"), await trashReady()).order("id");
   if (error || !data) return []; // query error = no live data, never demo rows
   return data
     .map((r) => (r.data ? { ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at } : null))

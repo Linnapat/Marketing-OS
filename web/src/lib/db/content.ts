@@ -4,6 +4,7 @@
 import { supabase } from "@/lib/supabase";
 import { CONTENT, ContentItem, contentApproveBlockers, canPublish } from "@/lib/data/content";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
+import { liveOnly, moveToTrash, trashReady } from "@/lib/db/trash";
 
 const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 
@@ -11,7 +12,7 @@ const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 export async function fetchContent(): Promise<ContentItem[]> {
   const db = supabase();
   if (!db) return CONTENT.map((c) => ({ ...c }));
-  const { data, error } = await db.from("content_posts").select("id, data").order("id");
+  const { data, error } = await liveOnly(db.from("content_posts").select("id, data"), await trashReady()).order("id");
   if (error || !data) return []; // query error = no live data, never demo rows
   return data
     .map((r) => (r.data ? { ...(r.data as ContentItem), id: (r.data as ContentItem).id ?? `c${r.id}` } : null))
@@ -85,11 +86,14 @@ export async function updateContent(post: ContentItem): Promise<void> {
   if (!data?.length) throw new Error(`ไม่พบโพสต์นี้ในฐานข้อมูล (id ${post.id}) — ลอง refresh หน้าแล้วบันทึกใหม่`);
 }
 
-/** Permanently delete a post. Matched on the stable id inside the data blob —
- *  the same key updateContent uses. */
-export async function deleteContent(post: ContentItem): Promise<void> {
+/** Move a post to Trash — recoverable for 7 days, then purged.
+ *
+ *  Falls back to a hard delete only when the trash migration has not been run
+ *  yet, so "ลบ" never silently does nothing on a database that predates it. */
+export async function deleteContent(post: ContentItem, by = ""): Promise<void> {
   const db = supabase();
   if (!db) return;
+  if (await moveToTrash("content", post.id, by)) return;
   const { data, error } = await db.from("content_posts").delete().eq("data->>id", post.id).select("id");
   if (error) throw new Error(error.message);
   if (!data?.length) throw new Error(`ไม่พบโพสต์นี้ในฐานข้อมูล (id ${post.id}) — ลอง refresh หน้าแล้วลบใหม่`);

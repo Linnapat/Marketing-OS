@@ -1,6 +1,6 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState } from "@/lib/data/content";
@@ -17,6 +17,7 @@ import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTem
 import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
+import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
 type DTab = (typeof TABS)[number][0];
@@ -167,14 +168,15 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
   };
   const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
 
-  // Permanently delete the post (asks for confirmation first).
+  // Move the post to Trash — recoverable for TRASH_RETENTION_DAYS days.
   const [deleting, setDeleting] = useState(false);
   const removePost = async () => {
-    if (!window.confirm(`ลบโพสต์ "${item.title}" ถาวร? การลบย้อนกลับไม่ได้`)) return;
+    if (!window.confirm(`ย้ายโพสต์ "${item.title}" ลงถังขยะ?\n\nกู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วันที่หน้า Trash หลังจากนั้นจะถูกลบถาวร`)) return;
     setDeleting(true);
     try {
-      await deleteContent(item);
+      await deleteContent(item, reviewer);
       onDelete?.(item);
+      toastSuccess(`ย้าย “${item.title}” ลงถังขยะแล้ว · กู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วัน`);
       onClose();
     } catch (error) {
       toastError(`ลบโพสต์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
