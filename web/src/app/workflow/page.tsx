@@ -307,6 +307,11 @@ export default function WorkCalendarPage() {
             edits={taskEdits}
             setEdits={setTaskEdits}
             tasksPersist={tasksPersist}
+            monthKey={monthKey}
+            monthLabel={monthLabel}
+            daysInMonth={meta.days.length}
+            markerCycle={valueCycleFor(ym.m + 1)}
+            setOverrides={setOverrides}
           />
         </>
       )}
@@ -411,28 +416,52 @@ export default function WorkCalendarPage() {
  * and a "delete" would come back on the next deploy. Rows the team invented are
  * removed outright.
  */
-function TaskEditor({ sections, edits, setEdits, tasksPersist }: {
+function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLabel, daysInMonth, markerCycle, setOverrides }: {
   sections: ResolvedSection[];
   edits: CalendarTaskEdit[];
   setEdits: (fn: (prev: CalendarTaskEdit[]) => CalendarTaskEdit[]) => void;
   tasksPersist: boolean;
+  monthKey: string;
+  monthLabel: string;
+  daysInMonth: number;
+  markerCycle: string[];
+  setOverrides: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   const [openSection, setOpenSection] = useState<string>("");
-  const [draft, setDraft] = useState({ en: "", jp: "", r: "", a: "" });
+  // A new row used to arrive with no marker, so the only way to date it was to
+  // hunt for its cell in a 31-column grid. The date is part of adding the work.
+  const [draft, setDraft] = useState({ en: "", r: "", a: "", day: "", marker: markerCycle[0] ?? "" });
+  const [dayDraft, setDayDraft] = useState<Record<string, string>>({});
+
+  /** Write (or clear) one day's marker for a row, in the month on screen. */
+  const setDay = (taskKey: string, day: number, marker: string) => {
+    if (!Number.isFinite(day) || day < 1 || day > daysInMonth) return;
+    setOverrides((o) => ({ ...o, [`${monthKey}::${taskKey}::${day}`]: marker }));
+  };
   const hidden = hiddenTemplateTasks(edits);
   const field = "text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-white outline-none";
 
   const add = (sectionKey: string) => {
     const en = draft.en.trim();
     if (!en) return;
-    setEdits((prev) => withTaskEdit(prev, {
-      key: nextCustomKey(sectionKey, prev),
-      section: sectionKey,
-      custom: true,
-      en, jp: draft.jp.trim(), r: draft.r.trim(), a: draft.a.trim(),
-    }));
-    setDraft({ en: "", jp: "", r: "", a: "" });
-    toastSuccess(`เพิ่มงาน “${en}” แล้ว`);
+    const day = Number(draft.day);
+    const dated = Number.isFinite(day) && day >= 1 && day <= daysInMonth;
+    let key = "";
+    setEdits((prev) => {
+      key = nextCustomKey(sectionKey, prev);
+      return withTaskEdit(prev, {
+        key, section: sectionKey, custom: true,
+        en, r: draft.r.trim(), a: draft.a.trim(),
+      });
+    });
+    // The marker is a separate write (it lives in `overrides`, keyed by month),
+    // but it belongs to the same action — a row added with a date must not need
+    // a second trip to the grid to actually carry one.
+    if (dated && key) setDay(key, day, draft.marker || markerCycle[0]);
+    setDraft({ en: "", r: "", a: "", day: "", marker: markerCycle[0] ?? "" });
+    toastSuccess(dated
+      ? `เพิ่มงาน “${en}” · วันที่ ${day} ${monthLabel} (งานของเดือน ${draft.marker || markerCycle[0]})`
+      : `เพิ่มงาน “${en}” แล้ว — ยังไม่ได้กำหนดวัน`);
   };
 
   const rename = (t: ResolvedTask, sectionKey: string, en: string) => {
@@ -471,27 +500,67 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist }: {
               </button>
               {open && (
                 <div className="px-3 pb-3 flex flex-col gap-[6px]">
-                  {sec.tasks.map((t) => (
-                    <div key={t.key} className="flex items-center gap-2">
-                      <input
-                        defaultValue={t.en}
-                        onBlur={(e) => rename(t, sec.key, e.target.value)}
-                        className={`${field} flex-1`}
-                        aria-label={`ชื่องาน ${t.en}`}
-                      />
-                      {t.custom && <span className="text-[10px] font-bold rounded-pill px-2 py-[2px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>เพิ่มเอง</span>}
-                      <button onClick={() => remove(t, sec.key)} title={t.custom ? "ลบ" : "ซ่อน"}
-                        className="text-[12px] font-bold text-status-red px-2">✕</button>
-                    </div>
-                  ))}
-                  <div className="mt-1 grid gap-2" style={{ gridTemplateColumns: "2fr 1fr 1fr auto" }}>
+                  {sec.tasks.map((t) => {
+                    const days = Object.keys(t.marks).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+                    return (
+                      <div key={t.key} className="flex items-start gap-2 flex-wrap">
+                        <input
+                          defaultValue={t.en}
+                          onBlur={(e) => rename(t, sec.key, e.target.value)}
+                          className={`${field} flex-1 min-w-[180px]`}
+                          aria-label={`ชื่องาน ${t.en}`}
+                        />
+                        {t.custom && <span className="text-[10px] font-bold rounded-pill px-2 py-[2px] mt-[6px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>เพิ่มเอง</span>}
+                        <button onClick={() => remove(t, sec.key)} title={t.custom ? "ลบ" : "ซ่อน"}
+                          className="text-[12px] font-bold text-status-red px-2 mt-[6px]">✕</button>
+                        {/* The days this row sits on IN THE MONTH ON SCREEN, editable
+                            here so a wrong date does not mean hunting for one cell
+                            in a 31-column grid. The number on the chip is the
+                            marker — which month the work is for. */}
+                        <div className="w-full flex items-center gap-[6px] flex-wrap pl-1">
+                          <span className="text-[10.5px] text-faint">วันที่ใน {monthLabel}:</span>
+                          {days.length === 0 && <span className="text-[10.5px] text-faint">— ยังไม่กำหนด</span>}
+                          {days.map((d) => (
+                            <span key={d} className="inline-flex items-center gap-[4px] rounded-pill px-[9px] py-[3px] text-[11px] font-bold"
+                              style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+                              {d} <span className="opacity-60">· {t.marks[d]}</span>
+                              <button onClick={() => setDay(t.key, d, "")} aria-label={`ลบวันที่ ${d}`} title="ลบวันนี้" className="opacity-50 hover:opacity-100">✕</button>
+                            </span>
+                          ))}
+                          <input
+                            value={dayDraft[t.key] ?? ""}
+                            onChange={(e) => setDayDraft((m) => ({ ...m, [t.key]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") return;
+                              e.preventDefault();
+                              setDay(t.key, Number(dayDraft[t.key]), markerCycle[0]);
+                              setDayDraft((m) => ({ ...m, [t.key]: "" }));
+                            }}
+                            inputMode="numeric"
+                            placeholder="+ วัน"
+                            aria-label={`เพิ่มวันให้ ${t.en}`}
+                            className="w-[58px] text-[11px] px-2 py-[3px] rounded-pill border border-line2 bg-white outline-none"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="mt-1 grid gap-2" style={{ gridTemplateColumns: "2fr 1fr 1fr 62px 96px auto" }}>
                     <input value={draft.en} onChange={(e) => setDraft((d) => ({ ...d, en: e.target.value }))} placeholder="ชื่องานใหม่" className={field} />
                     <input value={draft.r} onChange={(e) => setDraft((d) => ({ ...d, r: e.target.value }))} placeholder="ผู้รับผิดชอบ (R)" className={field} />
                     <input value={draft.a} onChange={(e) => setDraft((d) => ({ ...d, a: e.target.value }))} placeholder="Accountable (A)" className={field} />
+                    <input value={draft.day} onChange={(e) => setDraft((d) => ({ ...d, day: e.target.value }))}
+                      inputMode="numeric" placeholder="วันที่" aria-label="วันที่" className={field} />
+                    <select value={draft.marker} onChange={(e) => setDraft((d) => ({ ...d, marker: e.target.value }))}
+                      aria-label="เดือนของงาน" title="marker = เดือนที่งานนี้ทำให้" className={field}>
+                      {markerCycle.map((m) => <option key={m} value={m}>เดือน {m}</option>)}
+                    </select>
                     <button onClick={() => add(sec.key)} disabled={!draft.en.trim()}
                       className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 disabled:opacity-40">+ เพิ่ม</button>
                   </div>
-                  <div className="text-[11px] text-faint">งานที่เพิ่มใหม่ยังไม่มี marker — คลิกช่องวันในตารางเพื่อกำหนดเดือนของงาน</div>
+                  <div className="text-[11px] text-faint">
+                    ใส่วันที่ได้เลย — วันที่คือวันใน {monthLabel} ส่วน “เดือน” คือเดือนที่งานนั้นทำให้ (เว้นว่างได้ แล้วค่อยคลิกช่องในตารางทีหลัง)
+                  </div>
                 </div>
               )}
             </div>
