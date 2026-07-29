@@ -20,8 +20,10 @@ import {
   NO_OWNER,
   type Health,
   type WorkItem,
+  storyboardHealth, shootingHealth, storyboardItems, shootingItems, MODULE_LABEL,
 } from "../src/lib/data/statusBoard";
 import type { Task } from "../src/lib/data/tasks";
+import { GRAPHICS, type Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -248,6 +250,47 @@ console.log("\n— งานค้างอยู่ที่ใคร —");
   is("งานไม่มีเจ้าของรวมเป็นกองเดียว", noOwner?.total, 2);
   is("กองไม่มีเจ้าของอยู่ล่างสุด", loads[loads.length - 1].owner, NO_OWNER);
   is("ไม่มีใครหาย", loads.reduce((n, l) => n + l.total, 0), 7);
+}
+
+console.log("\n— Story board / Shooting บน Status Board —");
+{
+  const g = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), campaignId: "CAM-1", ...over });
+  const TODAY = "2026-08-10";
+
+  // storyboard: ยังไม่ส่ง → ส่งแล้วรออนุมัติ → ตีกลับ → ผ่าน
+  is("ยังไม่ส่ง = ยังไม่เริ่ม", storyboardHealth({ storyboardStatus: "" }), "notStarted");
+  is("Waiting = ยังไม่เริ่ม", storyboardHealth({ storyboardStatus: "Waiting" }), "notStarted");
+  is("ส่งแล้ว = รออนุมัติ", storyboardHealth({ storyboardStatus: "Submitted" }), "waiting");
+  is("ตีกลับ = ติดปัญหา", storyboardHealth({ storyboardStatus: "Revision" }), "blocked");
+  is("อนุมัติ = เสร็จ", storyboardHealth({ storyboardStatus: "Approved" }), "done");
+
+  // shooting — สัญญาณสำคัญคือเลยวันถ่ายแล้วยังไม่มี footage
+  is("ไม่มีอะไรเลย = ยังไม่เริ่ม", shootingHealth({ requiresShooting: true }, TODAY), "notStarted");
+  is("มีคนถ่ายแล้ว = กำลังทำ", shootingHealth({ requiresShooting: true, shooter: "Four" }, TODAY), "active");
+  is("นัดวันถ่ายในอนาคต = กำลังทำ", shootingHealth({ requiresShooting: true, shootDate: "2026-08-20" }, TODAY), "active");
+  is("เลยวันถ่ายแล้วไม่มี footage = ติดปัญหา", shootingHealth({ requiresShooting: true, shootDate: "2026-08-01" }, TODAY), "blocked");
+  is("มี footage แล้ว = เสร็จ แม้เลยวัน", shootingHealth({ requiresShooting: true, shootDate: "2026-08-01", footageLink: "http://x" }, TODAY), "done");
+
+  // เฉพาะใบงานที่ต้องมีขั้นนั้นจริงเท่านั้นที่ขึ้นบอร์ด
+  const rows = [
+    g({ id: 1, type: "Reel", requiredVideo: true, requiresShooting: true, shooter: "Four", shootDate: "2026-08-20" }),
+    g({ id: 2, type: "Poster", requiredVideo: false, requiresShooting: false }),
+  ];
+  is("Poster ไม่มีแถว storyboard", storyboardItems(rows).length, 1);
+  is("Poster ไม่มีแถว shooting", shootingItems(rows, TODAY).length, 1);
+  is("แถว storyboard ผูกแคมเปญเดิม", storyboardItems(rows)[0].campaignId, "CAM-1");
+  is("เจ้าของ storyboard default = Creative Content", storyboardItems(rows)[0].owner, "Creative Content");
+  is("เจ้าของ shooting = คนถ่าย", shootingItems(rows, TODAY)[0].owner, "Four");
+  // เดดไลน์ของ shooting ต้องเป็น "วันถ่าย" ไม่ใช่วันส่ง artwork
+  is("shooting ใช้วันถ่ายเป็นกำหนด", shootingItems(rows, TODAY)[0].dueIso, "2026-08-20");
+  // id ต้องไม่ชนกับแถว graphic ของใบเดียวกัน
+  is("id ไม่ชนกับ graphic", storyboardItems(rows)[0].id !== `graphic:1`, true);
+  is("id storyboard กับ shooting ต่างกัน", storyboardItems(rows)[0].id !== shootingItems(rows, TODAY)[0].id, true);
+  // ปฏิทินทีมเป็นคนกำหนดเดดไลน์ storyboard ถ้าผู้เรียกส่งมา
+  is("ใช้เดดไลน์จากปฏิทินเมื่อมี", storyboardItems(rows, () => "2026-07-16")[0].dueIso, "2026-07-16");
+  is("ไม่มีปฏิทินก็ถอยไปใช้ due เดิม", storyboardItems(rows, () => undefined)[0].dueIso, rows[0].dueIso);
+
+  is("มีป้ายชื่อโมดูลครบ", [MODULE_LABEL.storyboard, MODULE_LABEL.shooting], ["Story board", "Shooting"]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

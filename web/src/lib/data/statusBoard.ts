@@ -11,7 +11,7 @@
 
 import { BrandId } from "@/lib/brands";
 import { ContentItem, contentDateIso } from "@/lib/data/content";
-import { Graphic } from "@/lib/data/graphic";
+import { Graphic, needsStoryboard } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { Tone } from "@/lib/status";
 
@@ -37,11 +37,17 @@ export const HEALTH_META: Record<Health, { label: string; tone: Tone }> = {
  *  after a campaign is renamed. */
 export const UNASSIGNED = "__unassigned__";
 
-export type ModuleKey = "content" | "graphic" | "kol" | "task" | "expense";
+export type ModuleKey = "content" | "graphic" | "storyboard" | "shooting" | "kol" | "task" | "expense";
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
   content: "Content",
   graphic: "Graphic",
+  // Storyboard and Shooting are STEPS of a graphic request, not separate
+  // records — but they are separately owned (Creative Content draws, a shooter
+  // shoots) and separately late, and rolled into "Graphic" the board could not
+  // show either. They surface as their own rows off the same request.
+  storyboard: "Story board",
+  shooting: "Shooting",
   kol: "KOL",
   task: "Task",
   expense: "Expense",
@@ -261,7 +267,7 @@ export function groupByOwner(items: WorkItem[]): OwnerLoad[] {
     if (!load) {
       load = {
         owner: key, total: 0, overdue: 0, dueSoon: 0, blocked: 0, waiting: 0,
-        byModule: { content: 0, graphic: 0, kol: 0, task: 0, expense: 0 },
+        byModule: { content: 0, graphic: 0, storyboard: 0, shooting: 0, kol: 0, task: 0, expense: 0 },
         items: [],
       };
       byOwner.set(key, load);
@@ -370,6 +376,67 @@ export function graphicItems(rows: Graphic[]): WorkItem[] {
     id: `graphic:${g.id}`, module: "graphic" as const, title: g.title,
     campaignId: g.campaignId ?? "", brand: g.b, health: graphicHealth(g),
     rawStatus: g.stage, owner: g.designer, dueIso: g.dueIso, urgency: "none",
+  }));
+}
+
+/** Storyboard step: not started → submitted (waiting on the requester) →
+ *  approved. "Revision" is blocked, because the step cannot move until someone
+ *  redraws it. */
+export function storyboardHealth(g: Pick<Graphic, "storyboardStatus">): Health {
+  switch (g.storyboardStatus) {
+    case "Approved": return "done";
+    case "Submitted": return "waiting";
+    case "Revision": return "blocked";
+    default: return "notStarted";
+  }
+}
+
+/** Shooting step. The signal worth surfacing is a shoot day that has passed
+ *  with no footage handed over — everything downstream is stuck on it, and
+ *  nothing else on the board says so. */
+export function shootingHealth(
+  g: Pick<Graphic, "requiresShooting" | "shooter" | "shootDate" | "footageLink">,
+  todayIso: string,
+): Health {
+  if (g.footageLink?.trim()) return "done";
+  const day = (g.shootDate ?? "").slice(0, 10);
+  if (day && day < todayIso) return "blocked";
+  if (day || g.shooter?.trim()) return "active";
+  return "notStarted";
+}
+
+/** Rows for the storyboard step of every request that needs one.
+ *
+ *  `dueFor` lets the caller supply the Team Calendar's storyboard deadline for
+ *  the month the request serves; without it the request's own due date stands
+ *  in. Injected rather than imported so this file stays pure and testable. */
+export function storyboardItems(
+  rows: Graphic[],
+  dueFor?: (g: Graphic) => string | undefined,
+): WorkItem[] {
+  return rows.filter(needsStoryboard).map((g) => ({
+    id: `storyboard:${g.id}`, module: "storyboard" as const,
+    title: g.title, campaignId: g.campaignId ?? "", brand: g.b,
+    health: storyboardHealth(g),
+    rawStatus: g.storyboardStatus || "ยังไม่ส่ง",
+    owner: g.storyboardOwner?.trim() || "Creative Content",
+    dueIso: dueFor?.(g) ?? g.dueIso,
+    urgency: "none",
+  }));
+}
+
+/** Rows for the shooting step of every request that needs footage first. */
+export function shootingItems(rows: Graphic[], todayIso: string): WorkItem[] {
+  return rows.filter((g) => g.requiresShooting).map((g) => ({
+    id: `shooting:${g.id}`, module: "shooting" as const,
+    title: g.title, campaignId: g.campaignId ?? "", brand: g.b,
+    health: shootingHealth(g, todayIso),
+    rawStatus: g.footageLink?.trim() ? "ส่ง footage แล้ว" : g.shootDate ? `ถ่าย ${g.shootDate}` : "ยังไม่กำหนดวันถ่าย",
+    owner: g.shooter?.trim() || "ยังไม่ระบุคนถ่าย",
+    // The shoot day IS this step's deadline — the artwork due date belongs to
+    // the artwork, and using it here would call a missed shoot "on time".
+    dueIso: g.shootDate,
+    urgency: "none",
   }));
 }
 
