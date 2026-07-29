@@ -10,7 +10,7 @@ import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso,
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule,
 } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -296,6 +296,9 @@ export default function ContentPage() {
         <ContentDrawer
           key={open.id}
           item={open}
+          // Every post the drawer can compare against — used to flag another
+          // post of the same brand already planned for the same day.
+          allPosts={posts}
           onClose={() => setOpen(null)}
           onUpdate={(next) => {
             setOpen(next);
@@ -543,7 +546,13 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
   const groups = useMemo(() => {
     const m = new Map<string, ContentItem[]>();
     for (const c of items) { const k = c.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(c); }
-    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    // Campaigns run in calendar order, not alphabetical — the team reads this
+    // view as a schedule, and A-Z put next quarter above this week. Each
+    // campaign sorts by its earliest post; posts inside sort by schedule.
+    for (const list of m.values()) list.sort(bySchedule);
+    return Array.from(m.entries())
+      .sort((a, b) => (a[1][0] ? contentDateIso(a[1][0]) : "").localeCompare(b[1][0] ? contentDateIso(b[1][0]) : "")
+        || a[0].localeCompare(b[0]));
   }, [items]);
   if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} />;
   const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
@@ -618,7 +627,7 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
         style={{ gridTemplateColumns: "60px 2fr 1.2fr 0.7fr 1fr 1fr 1fr 1fr" }}>
         <div>Date</div><div>Content</div><div>Campaign</div><div>Brief</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
       </div>
-      {[...items].sort((a, b) => contentDateIso(a).localeCompare(contentDateIso(b))).map((c) => {
+      {[...items].sort(bySchedule).map((c) => {
         return (
           <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_0.7fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
@@ -667,7 +676,7 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
 }
 
 function QueueView({ items, onOpen }: { items: ContentItem[]; onOpen: (c: ContentItem) => void }) {
-  const queue = items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing", "Published", "Failed"].includes(c.publishStatus));
+  const queue = items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing", "Published", "Failed"].includes(c.publishStatus)).sort(bySchedule);
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-cardLg px-4 py-3 text-[12px]" style={{ background: "#EEF3FF", border: "1px solid #C5D4F8", color: "#1E3A8A" }}>

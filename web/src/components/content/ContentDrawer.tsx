@@ -3,7 +3,7 @@
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, sameDayWarning } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -16,7 +16,8 @@ import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, t
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
-import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
+import { GRAPHIC_BRIEF_FOR_PARAM, Graphic, WORK_KIND_LABEL, workKind } from "@/lib/data/graphic";
+import { fetchGraphicById } from "@/lib/db/graphic";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -47,8 +48,11 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
   );
 }
 
-export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
-  item: ContentItem; onClose: () => void;
+export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete }: {
+  item: ContentItem;
+  /** Everything else on the calendar — for the same-day clash warning. */
+  allPosts?: ContentItem[];
+  onClose: () => void;
   onUpdate?: (next: ContentItem) => void;
   onDelete?: (deleted: ContentItem) => void;
 }) {
@@ -73,6 +77,9 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
   const [scheduleDate, setScheduleDate] = useState<string | null>(null);
   const [scheduleTime, setScheduleTime] = useState(item.time || "10:00");
   const [metaAccount, setMetaAccount] = useState<MetaBrandAccount | undefined>();
+  // The graphic request this post is waiting on — fetched by id so the modal can
+  // say what kind of artwork it is, not just that one exists.
+  const [linkedGraphic, setLinkedGraphic] = useState<Graphic | null>(null);
   const metaChannels = useMemo(() => itemPlatforms(item).filter((p) => /facebook|instagram|reel/i.test(p)), [item]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>(metaChannels);
   const metaConnected = hasMetaAccount(metaAccount);
@@ -87,6 +94,14 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
     }).catch(() => {});
     return () => { alive = false; };
   }, [item.b]);
+  useEffect(() => {
+    if (!item.graphicRequestId) { setLinkedGraphic(null); return; }
+    let alive = true;
+    fetchGraphicById(item.graphicRequestId)
+      .then((g) => { if (alive) setLinkedGraphic(g); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [item.graphicRequestId]);
   useEffect(() => {
     let alive = true;
     fetchCaptionTemplates()
@@ -167,6 +182,12 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
     if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
   };
   const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
+  // Warn against the date being EDITED, not the saved one — the point is to
+  // catch the clash while the date can still be changed.
+  const clashWarning = useMemo(
+    () => sameDayWarning({ ...item, dateIso: editDate ?? item.dateIso, time: editTime }, allPosts),
+    [item, editDate, editTime, allPosts],
+  );
 
   // Move the post to Trash — recoverable for TRASH_RETENTION_DAYS days.
   const [deleting, setDeleting] = useState(false);
@@ -359,6 +380,14 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                       <input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} className={field} />
                     </div>
                   </div>
+                  {/* Same-day clash — a warning, never a block. Two posts on one
+                      day is sometimes exactly what a launch wants; the team just
+                      asked to be told before it happens rather than after. */}
+                  {clashWarning && (
+                    <div className="rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FBF6EC", border: "1px solid #EADBC1", color: "#8A6D1E" }}>
+                      ⚠ {clashWarning}
+                    </div>
+                  )}
                   <button onClick={saveBasics} disabled={busy || !basicsDirty || !editTitle.trim()}
                     className="text-[13px] font-bold py-[10px] rounded-[10px] bg-panel text-white disabled:opacity-40">
                     {busy ? "Saving…" : "Save changes"}
@@ -381,7 +410,32 @@ export function ContentDrawer({ item, onClose, onUpdate, onDelete }: {
                   </a>
                 )}
                 {item.graphicRequestId && (
-                  <div className="mb-3 text-[11px] text-faint">ผูกกับ Graphic Request #{item.graphicRequestId}</div>
+                  <div className="mb-3">
+                    {/* What KIND of artwork this post is waiting on. "ผูกกับ
+                        Graphic Request #12" alone never said whether that was a
+                        poster, a reel edit or a shoot — so planners opened the
+                        Graphic module just to find out what they had asked for.
+                        Kind comes from workKind(), the same rule the artwork
+                        report and the daily capacity guard count by. */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {linkedGraphic ? (
+                        <>
+                          <StatusBadge tone={linkedGraphic.requiredVideo || /vdo|video/i.test(WORK_KIND_LABEL[workKind(linkedGraphic.type, linkedGraphic.requiredVideo)]) ? "blue" : "orange"}>
+                            {WORK_KIND_LABEL[workKind(linkedGraphic.type, linkedGraphic.requiredVideo)]}
+                          </StatusBadge>
+                          {linkedGraphic.type && <span className="text-[11.5px] font-bold text-muted">{linkedGraphic.type}</span>}
+                          <StatusBadge tone={linkedGraphic.stage === "Approved" || linkedGraphic.stage === "Delivered" ? "green" : "gold"}>{linkedGraphic.stage}</StatusBadge>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-faint">กำลังโหลดรายละเอียดใบงาน…</span>
+                      )}
+                    </div>
+                    <a href="/graphic" className="mt-1 inline-block text-[11px] text-faint hover:text-ink">
+                      ผูกกับ Graphic Request #{item.graphicRequestId}
+                      {linkedGraphic?.size ? ` · ${linkedGraphic.size}` : ""}
+                      {linkedGraphic?.designer && linkedGraphic.designer !== "Unassigned" ? ` · ${linkedGraphic.designer}` : ""} ↗
+                    </a>
+                  </div>
                 )}
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className="text-[11.5px] font-bold text-muted">🖼 Approved assets {item.assets?.length ? `(${item.assets.length})` : ""}</div>

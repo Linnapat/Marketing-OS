@@ -21,7 +21,7 @@ import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/
 import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
-import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter, parseRowDate } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
@@ -152,18 +152,27 @@ export default function CampaignsPage() {
     const i = STATUS_ORDER.indexOf(s);
     return i === -1 ? STATUS_ORDER.length : i;
   };
+  // Campaigns read in date order — the team plans and reviews by calendar, so a
+  // brand's list should run the way the months do. Rows whose range cannot be
+  // parsed sink to the bottom rather than jumping to the front on NaN, and the
+  // name breaks ties so the order is stable between loads.
+  const byStartDate = (a: CampaignRow, z: CampaignRow) => {
+    const at = parseRowDate((a.dates || "").split(/[–—-]/)[0]?.trim())?.getTime() ?? Infinity;
+    const zt = parseRowDate((z.dates || "").split(/[–—-]/)[0]?.trim())?.getTime() ?? Infinity;
+    return at - zt || a.name.localeCompare(z.name);
+  };
   // Groups carry a key of their own so the collapsed map can hold both modes at
   // once; status keys stay bare to keep the defaults set above working.
   const groups = groupBy === "status"
     ? STATUS_ORDER
-      .map((s) => ({ key: s, status: s as string | null, brand: null as BrandId | null, rows: filtered.filter((c) => c.status === s) }))
+      .map((s) => ({ key: s, status: s as string | null, brand: null as BrandId | null, rows: filtered.filter((c) => c.status === s).sort(byStartDate) }))
       .filter((g) => g.rows.length > 0)
     : brandVisibility.visibleBrands
       .map((b) => ({
         key: `brand:${b}`,
         status: null,
         brand: b as BrandId | null,
-        rows: filtered.filter((c) => c.b === b).sort((a, z) => statusRank(a.status) - statusRank(z.status)),
+        rows: filtered.filter((c) => c.b === b).sort(byStartDate),
       }))
       .filter((g) => g.rows.length > 0);
 

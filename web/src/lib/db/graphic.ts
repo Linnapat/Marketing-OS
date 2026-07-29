@@ -22,6 +22,20 @@ export async function fetchGraphics(): Promise<Graphic[]> {
     .map((g) => withLiveGraphicOverdue(g as Graphic));
 }
 
+/** One request by its id — for surfaces that already know which request they
+ *  want (the Content drawer showing what kind of artwork a post is waiting on)
+ *  and should not pull the whole board to find it. */
+export async function fetchGraphicById(id: string | number): Promise<Graphic | null> {
+  const db = supabase();
+  if (!db) return GRAPHICS.find((g) => String(g.id) === String(id)) ?? null;
+  const { data, error } = await liveOnly(
+    db.from("graphic_requests").select("id, data, created_at").eq("data->>id", String(id)),
+    await trashReady(),
+  ).maybeSingle();
+  if (error || !data?.data) return null;
+  return withLiveGraphicOverdue({ ...(data.data as Graphic), createdAt: (data as { created_at?: string }).created_at });
+}
+
 export async function createGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (db) {

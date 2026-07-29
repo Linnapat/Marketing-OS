@@ -6,7 +6,8 @@ import { Kol, KOLS } from "../src/lib/data/kol";
 import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
-import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish } from "../src/lib/data/content";
+import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish, sameDayPosts, sameDayWarning, bySchedule } from "../src/lib/data/content";
+import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
@@ -285,6 +286,48 @@ console.log("Artwork counting — by pixels, platform collapsed");
   check("never returns 0 (min 1)", artworkUnits(g([])) >= 1 && artworkUnits({ ...(GRAPHICS[0] as Graphic), deliverables: [] }) >= 1);
   check("artworkUnitsOf: 2 same-size assets = 1", artworkUnitsOf([{ size: "1:1" }, { size: "1:1" }]) === 1);
   check("artworkUnitsOf: 2 different sizes = 2", artworkUnitsOf([{ size: "1:1" }, { size: "9:16" }]) === 2);
+}
+
+// ── Same-day clash warning (feedback: "แจ้งเตือนหากมีแผนลง Content วันเดียวกัน") ──
+{
+  const post = (id: string, b: string, iso: string, time = "10:00", title = id): ContentItem =>
+    ({ ...(CONTENT[0] as ContentItem), id, b: b as ContentItem["b"], dateIso: iso, day: Number(iso.slice(8, 10)), time, title });
+
+  const a = post("x1", "teppen", "2026-08-10", "09:00", "Morning");
+  const same = post("x2", "teppen", "2026-08-10", "18:00", "Evening");
+  const otherBrand = post("x3", "mainichi", "2026-08-10");
+  const otherDay = post("x4", "teppen", "2026-08-11");
+
+  check("same brand same day = clash", sameDayPosts(a, [a, same, otherBrand, otherDay]).length === 1);
+  check("ไม่นับตัวเอง", sameDayPosts(a, [a]).length === 0);
+  // คนละแบรนด์ลงวันเดียวกันเป็นเรื่องปกติ คนละกลุ่มผู้ชม
+  check("คนละแบรนด์ไม่ถือว่าชน", sameDayPosts(a, [a, otherBrand]).length === 0);
+  check("คนละวันไม่ถือว่าชน", sameDayPosts(a, [a, otherDay]).length === 0);
+  check("วันว่าง = ไม่มีข้อความเตือน", sameDayWarning(a, [a]) === null);
+  check("ชนแล้วมีข้อความ", (sameDayWarning(a, [a, same]) ?? "").includes("Evening"));
+  check("ข้อความบอกจำนวน", (sameDayWarning(a, [a, same]) ?? "").includes("1 รายการ"));
+  {
+    // เกิน 3 ต้องสรุปเป็น "และอีก N" ไม่ใช่ไล่ทั้งหมด
+    const many = [a, post("y1", "teppen", "2026-08-10"), post("y2", "teppen", "2026-08-10"),
+      post("y3", "teppen", "2026-08-10"), post("y4", "teppen", "2026-08-10")];
+    check("เกิน 3 ตัวย่อด้วย 'และอีก'", (sameDayWarning(a, many) ?? "").includes("และอีก 1"));
+  }
+
+  // ── เรียงตามวัน แล้วค่อยเวลา (feedback: "Content, Campaign เรียงตามลำดับวันที่") ──
+  const sorted = [same, a, otherDay].slice().sort(bySchedule).map((c) => c.id);
+  check("เรียงตามวันก่อน", sorted[2] === "x4");
+  check("วันเดียวกันเรียงตามเวลา", sorted[0] === "x1" && sorted[1] === "x2");
+}
+
+// ── materialised(): แคมเปญที่อนุมัติแล้วไม่ย้อนไปโชว์ "แผน" แทนโพสต์ที่ถูกลบ ──
+{
+  check("Draft ยังไม่ materialise", materialised({ status: "Draft" }) === false);
+  check("Waiting for Approval ยังไม่ materialise", materialised({ status: "Waiting for Approval" }) === false);
+  check("Need Revision ยังไม่ materialise", materialised({ status: "Need Revision" }) === false);
+  check("Approved = materialise แล้ว", materialised({ status: "Approved" }) === true);
+  check("In Progress = materialise แล้ว", materialised({ status: "In Progress" }) === true);
+  check("Completed = materialise แล้ว", materialised({ status: "Completed" }) === true);
+  check("ไม่มี brief = ยังไม่ materialise", materialised(null) === false && materialised(undefined) === false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
