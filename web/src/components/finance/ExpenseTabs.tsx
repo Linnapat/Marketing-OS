@@ -11,6 +11,7 @@ import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { baht } from "@/lib/format";
+import { taxBreakdown, normaliseRate, rateLabel, VAT_RATE, DEFAULT_WHT_RATE, WHT_PRESETS } from "@/lib/data/expenseTax";
 import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
 import { EXPENSES, REQUESTS, EXP_CATEGORIES, STATUS_TONE, ExpenseRow, RequestRow } from "@/lib/data/finance";
 import { fetchExpenseRequests, fetchExpenses, createExpenseRequest, markExpensePaid, submitExpenseDraft, ExpenseReq, ExpenseLogRow } from "@/lib/db/finance";
@@ -45,9 +46,13 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const [campaign, setCampaign] = useState("");
   const [vendor, setVendor] = useState("");
   const [reimburseType, setReimburseType] = useState(REIMBURSE_TYPES[0]);
-  // VAT 7% / WHT 3% are the requester's choice (some expenses have neither).
+  // VAT / withholding are the requester's choice (some expenses have neither).
+  // The withholding RATE is a choice too: 3% is the common service rate, but
+  // advertising is 2% and rent is 5%, and those were being filed as 3%.
   const [applyVat, setApplyVat] = useState(true);
   const [applyWht, setApplyWht] = useState(true);
+  const [whtRate, setWhtRate] = useState<number>(DEFAULT_WHT_RATE);
+  const [whtRateText, setWhtRateText] = useState<string>(String(DEFAULT_WHT_RATE));
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Draft rows currently being submitted — keyed so only the clicked row's
@@ -117,7 +122,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       campaign, requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
     try {
-      await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht });
+      await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht, whtRate: applyWht ? whtRate : 0 });
       // Also drop a card into the shared Approval Queue (same table My Tasks ›
       // My Approval + the Dashboard's Pending Approval read from), stage "Submitted".
       const queueRow: QueueRow = {
@@ -146,9 +151,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const [lineVat, setLineVat] = useState(0);
 
   const amt = parseFloat(amount) || 0;
-  const vat = applyVat ? Math.round(amt * 0.07) : 0;
-  const wht = applyWht ? Math.round(amt * 0.03) : 0;
-  const net = amt + vat - wht;
+  // One calculation, shared with the printed voucher — see lib/data/expenseTax.
+  const tax = taxBreakdown({
+    amount: amt,
+    vatRate: applyVat ? VAT_RATE : 0,
+    whtRate: applyWht ? whtRate : 0,
+  });
+  const vat = tax.vat;
+  const wht = tax.wht;
+  const net = tax.net;
   // catKey now holds the category NAME directly (so it matches the budget sheet).
   // Marketing expenses are approved by the CMO alone (no CFO tier).
   const route = DEFAULT_APPROVER;
@@ -283,7 +294,43 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             {/* Tax — requester chooses whether VAT / WHT apply. */}
             <div className="flex items-center gap-5">
               <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted cursor-pointer"><input type="checkbox" checked={applyVat} onChange={(e) => setApplyVat(e.target.checked)} /> VAT 7%</label>
-              <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted cursor-pointer"><input type="checkbox" checked={applyWht} onChange={(e) => setApplyWht(e.target.checked)} /> WHT 3% <span className="text-faint font-normal">· หัก ณ ที่จ่าย</span></label>
+              <label className="flex items-center gap-2 text-[12.5px] font-semibold text-muted cursor-pointer"><input type="checkbox" checked={applyWht} onChange={(e) => setApplyWht(e.target.checked)} /> หัก ณ ที่จ่าย</label>
+              {applyWht && (
+                <div className="flex items-center gap-2 flex-wrap w-full">
+                  {WHT_PRESETS.map((p) => (
+                    <button key={p.rate} type="button"
+                      onClick={() => { setWhtRate(p.rate); setWhtRateText(String(p.rate)); }}
+                      title={p.label}
+                      className="text-[11.5px] font-bold rounded-pill px-[11px] py-[5px] border"
+                      style={whtRate === p.rate
+                        ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" }
+                        : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                      {p.label}
+                    </button>
+                  ))}
+                  <span className="flex items-center gap-1 text-[11.5px] text-faint">
+                    หรือระบุเอง
+                    <input
+                      value={whtRateText}
+                      onChange={(e) => {
+                        // Keep what was typed so "2." and "" stay editable; the
+                        // number used for money is the normalised one.
+                        setWhtRateText(e.target.value);
+                        setWhtRate(normaliseRate(e.target.value));
+                      }}
+                      inputMode="decimal"
+                      aria-label="อัตราหัก ณ ที่จ่าย (%)"
+                      className="w-[62px] text-[12px] px-2 py-[5px] rounded-[8px] border border-line2 bg-white outline-none text-right"
+                    />
+                    %
+                  </span>
+                </div>
+              )}
+              {applyWht && whtRate <= 0 && (
+                <div className="text-[11px] font-semibold w-full" style={{ color: "#B33A2E" }}>
+                  ใส่อัตราหัก ณ ที่จ่ายก่อน (มากกว่า 0%) — ตอนนี้จะยังไม่หักอะไรเลย
+                </div>
+              )}
             </div>
 
             <div className="border border-line2 rounded-[14px] p-4 bg-[#FCFBF8]">
@@ -397,8 +444,8 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
         <div className="bg-surface border border-line rounded-cardLg p-5 max-w-sm">
           <div className="text-[13px] font-bold mb-3">Amount Breakdown</div>
           <div className="flex justify-between py-[6px] text-[12.5px] border-b border-line4"><span className="text-muted">Amount</span><span className="text-ink font-semibold">{baht(amt)}</span></div>
-          {applyVat && <div className="flex justify-between py-[6px] text-[12.5px] border-b border-line4"><span className="text-muted">VAT 7%</span><span className="text-ink font-semibold">+ {baht(vat)}</span></div>}
-          {applyWht && <div className="flex justify-between py-[6px] text-[12.5px] border-b border-line4"><span className="text-muted">WHT 3%</span><span className="text-ink font-semibold">− {baht(wht)}</span></div>}
+          {applyVat && <div className="flex justify-between py-[6px] text-[12.5px] border-b border-line4"><span className="text-muted">VAT {rateLabel(tax.vatRate)}</span><span className="text-ink font-semibold">+ {baht(vat)}</span></div>}
+          {applyWht && wht > 0 && <div className="flex justify-between py-[6px] text-[12.5px] border-b border-line4"><span className="text-muted">หัก ณ ที่จ่าย {rateLabel(tax.whtRate)}</span><span className="text-ink font-semibold">− {baht(wht)}</span></div>}
           <div className="flex justify-between pt-3 text-[13.5px] font-bold"><span>Net Payable</span><span className="text-accent">{baht(net)}</span></div>
         </div>
       </div>

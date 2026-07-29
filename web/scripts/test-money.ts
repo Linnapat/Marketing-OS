@@ -5,6 +5,7 @@
  * Same self-contained assert harness as test-flows — no runner needed. */
 
 import { DateFilter, rangeOverlapFraction, rangeInFilter, filterMonthKeys } from "../src/components/ui/DateFilterBar";
+import { taxBreakdown, normaliseRate, rateLabel, inferWhtRate, VAT_RATE, DEFAULT_WHT_RATE, WHT_PRESETS } from "../src/lib/data/expenseTax";
 import { financeFromDb } from "../src/lib/data/derive";
 import { kolRoas, Kol, KOLS, computeKolOverdue, kolMetrics } from "../src/lib/data/kol";
 import { Graphic, GRAPHICS, computeGraphicOverdue, graphicMetrics } from "../src/lib/data/graphic";
@@ -230,6 +231,50 @@ console.log("nextSeqFromItems — resuming after a delete must never reuse a liv
   // hand out "ci-3" again, colliding with the surviving third item.
   eq("middle item deleted → still resumes past the survivor", nextSeqFromItems([c("ci-1"), c("ci-3")], []), 4);
   eq("kol ids share the same counter", nextSeqFromItems([c("ci-1")], [c("kr-5")]), 6);
+}
+
+console.log("\n— ภาษี VAT / หัก ณ ที่จ่าย —");
+{
+  // เคสมาตรฐาน: 10,000 + VAT 7% − WHT 3%
+  const std = taxBreakdown({ amount: 10000, vatRate: VAT_RATE, whtRate: DEFAULT_WHT_RATE });
+  eq("VAT 7% ของ 10,000", std.vat, 700);
+  eq("WHT 3% ของ 10,000", std.wht, 300);
+  eq("ยอดจ่ายสุทธิ", std.net, 10400);
+
+  // อัตราที่ทีมขอเพิ่ม — ค่าโฆษณา 2%
+  eq("WHT 2% (ค่าโฆษณา)", taxBreakdown({ amount: 10000, whtRate: 2 }).wht, 200);
+  eq("WHT 5% (ค่าเช่า)", taxBreakdown({ amount: 10000, whtRate: 5 }).wht, 500);
+  // อัตราที่กรอกเอง รวมทศนิยม
+  eq("อัตราทศนิยมคิดได้", taxBreakdown({ amount: 10000, whtRate: 1.5 }).wht, 150);
+
+  // หัก ณ ที่จ่ายคิดจากฐานก่อน VAT ไม่ใช่ยอดรวม VAT — ทบกันจะหักเกินทุกใบ
+  eq("WHT ไม่ทบกับ VAT", taxBreakdown({ amount: 10000, vatRate: 7, whtRate: 3 }).wht, 300);
+
+  // ไม่ติ๊ก = 0 ไม่ใช่ NaN
+  eq("ไม่มีภาษีเลย", taxBreakdown({ amount: 10000 }).net, 10000);
+  eq("VAT อย่างเดียว", taxBreakdown({ amount: 10000, vatRate: 7 }).net, 10700);
+  eq("WHT อย่างเดียว", taxBreakdown({ amount: 10000, whtRate: 3 }).net, 9700);
+
+  // ค่าที่กรอกมั่ว ต้องไม่หลุดเป็น NaN ลงใบสำคัญจ่าย
+  eq("ยอดติดลบถือเป็น 0", taxBreakdown({ amount: -500, vatRate: 7 }).net, 0);
+  eq("อัตราติดลบถือเป็น 0", normaliseRate(-3), 0);
+  eq("อัตราที่อ่านไม่ออกถือเป็น 0", normaliseRate("abc"), 0);
+  eq("รับสตริงมี % ได้", normaliseRate("2.5%"), 2.5);
+  eq("อัตราเกิน 100 ถูกจำกัด", normaliseRate(999), 100);
+  eq("NaN ถือเป็น 0", taxBreakdown({ amount: Number.NaN, whtRate: 3 }).wht, 0);
+
+  eqStr("ป้ายอัตรา", rateLabel(2.5), "2.5%");
+  eqStr("ป้ายอัตราเมื่อไม่มี", rateLabel(0), "—");
+  eqStr("ป้ายไม่โชว์ทศนิยมเกินจำเป็น", rateLabel(3), "3%");
+
+  // แถวเก่าที่ยังไม่มีคอลัมน์อัตรา ต้องเดาอัตรากลับมาเพื่อพิมพ์ใบเก่าได้
+  eq("เดาอัตราจากยอดเก่า", inferWhtRate(300, 10000), 3);
+  eq("เดาอัตรา 2% ได้", inferWhtRate(200, 10000), 2);
+  eq("ไม่มียอดหัก = 0", inferWhtRate(0, 10000), 0);
+  eq("ไม่มีฐาน = 0 (ไม่หารด้วยศูนย์)", inferWhtRate(300, 0), 0);
+
+  eq("มีอัตราสำเร็จรูปครบ 4 แบบ", WHT_PRESETS.length, 4);
+  eq("3% ยังเป็นค่าเริ่มต้น", DEFAULT_WHT_RATE, 3);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

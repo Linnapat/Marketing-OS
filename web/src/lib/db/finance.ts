@@ -17,7 +17,7 @@ type Row = {
   id: number; category: string; brand: BrandId; campaign: string | null; campaign_id?: string | null;
   requested: number; approved: number; due: string; status: string;
   ref?: string | null; requester?: string | null; vendor?: string | null;
-  reimburse_type?: string | null; vat?: number | null; wht?: number | null;
+  reimburse_type?: string | null; vat?: number | null; wht?: number | null; wht_rate?: number | null;
   reject_reason?: string | null; created_at?: string | null; approved_at?: string | null;
 };
 
@@ -33,6 +33,9 @@ export type ExpenseReq = RequestRow & {
   reimburseType?: string;
   vatAmt?: number;
   whtAmt?: number;
+  /** The rate the withholding was taken at. 0 on rows saved before the
+   *  column existed — see inferWhtRate for how those are labelled. */
+  whtRate?: number;
   rejectReason?: string;
   createdAt?: string;
   approvedAt?: string;
@@ -43,6 +46,7 @@ const toReq = (r: Row): ExpenseReq => ({
   requested: Number(r.requested), approved: Number(r.approved), due: r.due, status: r.status,
   ref: r.ref ?? undefined, requester: r.requester ?? undefined, vendor: r.vendor ?? undefined,
   reimburseType: r.reimburse_type ?? undefined, vatAmt: Number(r.vat ?? 0), whtAmt: Number(r.wht ?? 0),
+  whtRate: Number(r.wht_rate ?? 0),
   rejectReason: r.reject_reason ?? undefined, createdAt: r.created_at ?? undefined, approvedAt: r.approved_at ?? undefined,
 });
 
@@ -55,7 +59,7 @@ export async function fetchExpenseRequests(): Promise<ExpenseReq[]> {
   return (data as Row[]).map(toReq);
 }
 
-type ExpRow = { id: number; vendor: string; category: string; brand: BrandId; amount: number; vat: number; date: string; status: string; reimburse_type?: string | null; wht?: number | null };
+type ExpRow = { id: number; vendor: string; category: string; brand: BrandId; amount: number; vat: number; date: string; status: string; reimburse_type?: string | null; wht?: number | null; wht_rate?: number | null };
 
 /** A spending-log row that also carries its DB id (for Mark Paid). */
 export type ExpenseLogRow = ExpenseRow & { _id?: number };
@@ -66,7 +70,7 @@ export async function fetchExpenses(): Promise<ExpenseLogRow[]> {
   if (!db) return EXPENSES.map((e) => ({ ...e }));
   const { data, error } = await db.from("expenses").select("*").order("id", { ascending: false });
   if (error || !data) return []; // query error = no live data, never demo rows
-  return (data as ExpRow[]).map((r) => ({ _id: r.id, vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status, reimburseType: r.reimburse_type ?? undefined, wht: Number(r.wht ?? 0) }));
+  return (data as ExpRow[]).map((r) => ({ _id: r.id, vendor: r.vendor, category: r.category, b: r.brand, amount: Number(r.amount), vat: Number(r.vat), date: r.date, status: r.status, reimburseType: r.reimburse_type ?? undefined, wht: Number(r.wht ?? 0), whtRate: Number(r.wht_rate ?? 0) }));
 }
 
 /** Approve a request: persist status + amount, stamp approved_at, drop the
@@ -178,6 +182,7 @@ export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
  *  base row survives on a DB that hasn't run expenses_p1.sql yet. */
 export async function createExpenseRequest(r: RequestRow, extra?: {
   ref?: string; requester?: string; vendor?: string; reimburseType?: string; vat?: number; wht?: number;
+  whtRate?: number;
 }): Promise<void> {
   const db = supabase();
   if (!db) return;
@@ -193,6 +198,15 @@ export async function createExpenseRequest(r: RequestRow, extra?: {
         reimburse_type: extra.reimburseType ?? null, vat: extra.vat ?? 0, wht: extra.wht ?? 0,
       }).eq("id", row.id),
       "Could not save expense request detail",
+    );
+    // wht_rate arrived in a LATER migration, so it gets its own write.
+    // softColumnUpdate forgives a missing column by skipping the whole
+    // statement — folding this into the update above would mean a database
+    // without expense_wht_rate.sql silently lost the ref, vendor, VAT and
+    // withholding amount too.
+    await softColumnUpdate(
+      db.from("expense_requests").update({ wht_rate: extra.whtRate ?? 0 }).eq("id", row.id),
+      "Could not save withholding rate",
     );
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import Image from "next/image";
 import { bahtText, thb } from "@/lib/bahtText";
 import { ExpenseRow } from "@/lib/data/finance";
@@ -39,6 +40,12 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
   const wht = Number(expense.wht ?? 0);
   const vat = Number(expense.vat ?? 0);
   const total = subtotal - wht + vat;
+  // The rate column used to print a flat "3 %" on every voucher that had any
+  // withholding at all, which is wrong the moment a request is withheld at 2%
+  // (advertising) or 5% (rent). Prefer the recorded rate; fall back to
+  // reconstructing it for rows saved before the column existed.
+  const whtRateShown = rateLabel(expense.whtRate || inferWhtRate(wht, amount));
+  const vatRateShown = rateLabel(vat > 0 && amount > 0 ? (vat / amount) * 100 : 0);
 
   const pvNo = `PV-2569-${String(Math.floor(1000 + (amount % 9000))).padStart(5, "0")}`;
   const voucherBg = isPV ? "#4472c4" : "#c0392b";
@@ -105,8 +112,8 @@ export function PrintableVoucher({ expense, onClose }: { expense: ExpenseRow; on
               <tr><td style={{ border: cell, padding: "2px 6px", fontWeight: 600, fontSize: 10 }}>Brand</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{brandName(expense.b)}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell }} /></tr>
               <tr><td style={{ border: cell, padding: "2px 6px", fontWeight: 600, fontSize: 10 }}>Branch</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>สำนักงานใหญ่</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell }} /></tr>
 
-              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี ณ ที่จ่าย</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{wht > 0 ? "3 %" : "—"}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{wht > 0 ? thb(wht) : ""}</td></tr>
-              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{vat > 0 ? "7 %" : "—"}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{vat > 0 ? thb(vat) : ""}</td></tr>
+              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี ณ ที่จ่าย</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{wht > 0 ? whtRateShown : "—"}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{wht > 0 ? thb(wht) : ""}</td></tr>
+              <tr><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>ภาษี</td><td style={{ border: cell, padding: "2px 6px", fontSize: 10 }}>{vat > 0 ? vatRateShown : "—"}</td><td style={{ border: cell }} /><td style={{ border: cell }} /><td style={{ border: cell, padding: "2px 6px", textAlign: "right", fontSize: 10 }}>{vat > 0 ? thb(vat) : ""}</td></tr>
 
               <tr>
                 <td style={{ border: cell, padding: "3px 6px", fontWeight: 700, fontSize: 10, background: "#eef4ea" }}>รวม (ตัวอักษร)</td>

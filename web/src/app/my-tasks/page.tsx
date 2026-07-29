@@ -17,6 +17,7 @@ import { RequestRow } from "@/lib/data/requests";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { baht } from "@/lib/format";
+import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
@@ -569,7 +570,9 @@ function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
           <div className="h-px my-[7px]" style={{ background: "#ECE6DA" }} />
           <DetailRow label="ยอดขอเบิก">{baht(r.requested)}</DetailRow>
           {vat > 0 && <DetailRow label="VAT 7%">+{baht(vat)}</DetailRow>}
-          {wht > 0 && <DetailRow label="หัก ณ ที่จ่าย 3%">−{baht(wht)}</DetailRow>}
+          {/* The rate the request was actually withheld at — the card said 3%
+              on every one of them, including the 2% advertising ones. */}
+          {wht > 0 && <DetailRow label={`หัก ณ ที่จ่าย ${rateLabel(r.whtRate || inferWhtRate(wht, r.requested))}`}>−{baht(wht)}</DetailRow>}
           <DetailRow label="ยอดจ่ายสุทธิ" strong>{baht(net)}</DetailRow>
 
           {budget && (
