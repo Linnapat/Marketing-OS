@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { fetchWorkflowState } from "@/lib/db/workflowState";
 import {
-  MilestoneKey, MilestoneDeadline, resolveMilestone, milestonesFor, monthKeyOfIso,
+  MilestoneKey, MilestoneDeadline, resolveMilestone, milestonesFor, monthKeyOfIso, monthServedByFinalAw,
 } from "@/lib/data/deadlinePolicy";
 import { CalendarTaskEdit } from "@/lib/data/calendarTasks";
 
@@ -43,6 +43,8 @@ export interface DeadlineApi {
   forDate: (key: MilestoneKey, iso?: string) => MilestoneDeadline | null;
   /** Every milestone that speaks about a month, earliest first. */
   all: (forMonth: string) => MilestoneDeadline[];
+  /** Which month's work a request with THIS final-artwork date serves. */
+  monthForFinalAw: (dueIso?: string) => string | null;
 }
 
 export function useDeadlines(): DeadlineApi {
@@ -60,5 +62,6 @@ export function useDeadlines(): DeadlineApi {
     milestone: (key, forMonth) => resolveMilestone(key, forMonth, marks, rows),
     forDate: (key, iso) => (iso ? resolveMilestone(key, monthKeyOfIso(iso), marks, rows) : null),
     all: (forMonth) => milestonesFor(forMonth, marks, rows),
+    monthForFinalAw: (dueIso) => monthServedByFinalAw(dueIso, marks, rows),
   };
 }

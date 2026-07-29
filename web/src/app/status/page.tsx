@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -10,11 +10,13 @@ import { Segmented } from "@/components/ui/Segmented";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useRole } from "@/lib/role";
+import { useDeadlines } from "@/lib/useDeadlines";
 import { clsx } from "@/lib/clsx";
 import {
   CampaignGroup, Health, HEALTH_META, HEALTH_ORDER, MODULE_LABEL, ModuleKey,
   UNASSIGNED, WorkItem,
   contentItems, expenseItems, graphicItems, groupByCampaign, kolItems, taskItems,
+  storyboardItems, shootingItems,
   withUrgency, summarise, groupByOwner, URGENCY_META, NO_OWNER, DUE_SOON_DAYS, type Urgency, type OwnerLoad,
 } from "@/lib/data/statusBoard";
 import { fetchCampaigns } from "@/lib/db/campaigns";
@@ -24,14 +26,17 @@ import { fetchKols } from "@/lib/db/kol";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchExpenseRequests } from "@/lib/db/finance";
 
-const ALL_MODULES: ModuleKey[] = ["content", "graphic", "kol", "task", "expense"];
+const ALL_MODULES: ModuleKey[] = ["content", "graphic", "storyboard", "shooting", "kol", "task", "expense"];
 
 /** Which Settings → Permissions module each lane belongs to. The route itself
  *  is ungated (it spans every module), so the gate is applied per lane instead:
  *  a role with no Finance access must not read expense rows here that it can't
  *  open in Expenses. Tasks are cross-cutting and ungated, same as /my-tasks. */
 const MODULE_MATRIX: Partial<Record<ModuleKey, string>> = {
-  content: "Content", graphic: "Graphic", kol: "KOL", expense: "Finance",
+  // Storyboard and Shooting are steps of a graphic request, so they follow
+  // the Graphic module's permission — seeing them IS seeing that request.
+  content: "Content", graphic: "Graphic", storyboard: "Graphic", shooting: "Graphic",
+  kol: "KOL", expense: "Finance",
 };
 
 export default function StatusDashboardPage() {
@@ -65,6 +70,14 @@ export default function StatusDashboardPage() {
   // there is. Keyed by name, not array identity — `can` is rebuilt on every
   // RoleProvider render and would otherwise refetch in a loop.
   const moduleKey = allowedModules.join(",");
+  // The calendar decides the storyboard deadline, and it loads asynchronously.
+  // Held in a ref and depended on only through `calendarReady`, so the fetch
+  // re-runs exactly once when the calendar lands — not on every render, which
+  // is what depending on the hook's object identity would cause.
+  const deadlines = useDeadlines();
+  const deadlinesRef = useRef(deadlines);
+  deadlinesRef.current = deadlines;
+  const calendarReady = deadlines.ready;
   useEffect(() => {
     let alive = true;
     const want = new Set(moduleKey.split(",") as ModuleKey[]);
@@ -72,22 +85,34 @@ export default function StatusDashboardPage() {
     Promise.all([
       fetchCampaigns(),
       want.has("content") ? fetchContent() : none([]),
-      want.has("graphic") ? fetchGraphics() : none([]),
+      // One fetch feeds three lanes — the two steps live on the same rows.
+      (want.has("graphic") || want.has("storyboard") || want.has("shooting")) ? fetchGraphics() : none([]),
       want.has("kol") ? fetchKols() : none([]),
       want.has("task") ? fetchTasks() : none({ tasks: [], doneIds: [] }),
       want.has("expense") ? fetchExpenseRequests() : none([]),
     ]).then(([campaigns, content, graphics, kols, taskData, expenses]) => {
       if (!alive) return;
+      const today = new Date().toISOString().slice(0, 10);
       const items: WorkItem[] = [
-        ...contentItems(content),
-        ...graphicItems(graphics),
-        ...kolItems(kols),
-        ...taskItems(taskData.tasks, new Set(taskData.doneIds)),
-        ...expenseItems(expenses),
+        ...(want.has("content") ? contentItems(content) : []),
+        ...(want.has("graphic") ? graphicItems(graphics) : []),
+        // The storyboard's deadline is the Team Calendar's, for the month this
+        // request serves — the same date the drawer shows. Falls back to the
+        // request's own due date when the calendar says nothing.
+        ...(want.has("storyboard")
+          ? storyboardItems(graphics, (g) => {
+            const month = deadlinesRef.current.monthForFinalAw(g.dueIso);
+            return month ? deadlinesRef.current.milestone("storyboard", month)?.iso : undefined;
+          })
+          : []),
+        ...(want.has("shooting") ? shootingItems(graphics, today) : []),
+        ...(want.has("kol") ? kolItems(kols) : []),
+        ...(want.has("task") ? taskItems(taskData.tasks, new Set(taskData.doneIds)) : []),
+        ...(want.has("expense") ? expenseItems(expenses) : []),
       ];
       // Urgency is stamped once here, at the edge, so "today" is read from one
       // clock rather than by each adapter.
-      const dated = withUrgency(items, new Date().toISOString().slice(0, 10));
+      const dated = withUrgency(items, today);
       setGroups(groupByCampaign(
         campaigns.map((c) => ({ id: c.id, name: c.name, b: c.b, status: c.status })),
         dated,
@@ -95,7 +120,7 @@ export default function StatusDashboardPage() {
       setLoading(false);
     }).catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [moduleKey]);
+  }, [moduleKey, calendarReady]);
 
   // Filters apply to the work items, then the group is re-counted — filtering
   // the groups alone would leave a campaign showing counts for hidden items.
@@ -141,7 +166,7 @@ export default function StatusDashboardPage() {
       <PageHeader
         eyebrow="QA"
         title="Status Dashboard"
-        subtitle="ทุกงานในระบบ จัดกลุ่มตามแคมเปญ — Content, Graphic, KOL, Task และ Expense อยู่ในหน้าเดียว"
+        subtitle="ทุกงานในระบบ จัดกลุ่มตามแคมเปญ — Content, Graphic, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว"
         right={loading ? "กำลังโหลด…" : `${totalItems} งาน · ${visible.length} แคมเปญ`}
       />
 
