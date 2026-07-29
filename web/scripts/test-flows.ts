@@ -573,6 +573,28 @@ console.log("Artwork counting — by pixels, platform collapsed");
   resetMockGuard();
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
+// ── ย้ายแคมเปญต้องไม่ลาก sourceContentItemId ของแคมเปญเดิมไปด้วย ──────────
+// เจอจากของจริง: unique index (campaign_id, sourceContentItemId) ปฏิเสธ เพราะ
+// ci-N เริ่มนับใหม่ทุกแคมเปญ — ปลายทางมี ci-2 ของตัวเองอยู่แล้ว
+{
+  const post: ContentItem = {
+    ...(CONTENT[0] as ContentItem),
+    campaign: "Old Camp", campaignId: "CAM-1", sourceContentItemId: "ci-2",
+  };
+  const moved = moveToCampaign(post, { id: "CAM-2", name: "New Camp" }, "Gik");
+  check("ย้ายแล้วตัดสายจากแผนเดิม", moved.sourceContentItemId === undefined);
+  check("ย้ายแล้ว campaignId เปลี่ยน", moved.campaignId === "CAM-2");
+  // ต้องไม่ชนกับโพสต์ของปลายทางที่ถือ ci-2 ของตัวเอง
+  const nativeOfTarget = { campaignId: "CAM-2", sourceContentItemId: "ci-2" };
+  check("ไม่ชน unique key ของปลายทาง",
+    !(moved.campaignId === nativeOfTarget.campaignId && moved.sourceContentItemId === nativeOfTarget.sourceContentItemId));
+  // ที่มาต้องยังตามรอยได้ ไม่ใช่หายเฉย ๆ
+  check("log บอกว่ามาจากแผนไหน", (moved.changeLog?.at(-1)?.detail ?? "").includes("ci-2"));
+  check("log บอกต้นทาง→ปลายทาง", (moved.changeLog?.at(-1)?.detail ?? "").includes("Old Camp"));
+  // โพสต์ที่ไม่ได้มาจากแผน (ตั้งเอง) ย้ายได้ปกติ ไม่พัง
+  const adhoc = moveToCampaign({ ...post, sourceContentItemId: undefined }, { id: "CAM-3", name: "C3" }, "Gik");
+  check("โพสต์ที่ไม่มีแผนต้นทางย้ายได้ปกติ", adhoc.campaignId === "CAM-3" && adhoc.sourceContentItemId === undefined);
+}
 
+console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
