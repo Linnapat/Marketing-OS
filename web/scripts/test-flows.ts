@@ -3,6 +3,7 @@
  * No test runner is configured; this is a self-contained assert harness. */
 
 import { Kol, KOLS } from "../src/lib/data/kol";
+import { assertMockUniqueId, releaseMockId, seedMockIds, resetMockGuard } from "../src/lib/db/mockGuard";
 import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
@@ -529,5 +530,49 @@ console.log("Artwork counting — by pixels, platform collapsed");
     (1785329824415 * 1000 + 9) !== (1785329824416 * 1000 + 0));
 }
 
+
+// ── mock mode must fail the way the database fails ────────────────────────
+// The two worst bugs here were invisible locally because every mock write
+// "succeeded". This is the guard that would have caught the id collision on a
+// developer's machine instead of in production.
+{
+  resetMockGuard();
+  seedMockIds("content_posts", ["c1", "c2"]);
+  let threw = false;
+  try { assertMockUniqueId("content_posts", "c3"); } catch { threw = true; }
+  check("id ใหม่ไม่ชน = ผ่าน", !threw);
+
+  threw = false;
+  try { assertMockUniqueId("content_posts", "c3"); } catch { threw = true; }
+  check("id ซ้ำรอบสอง = โยน error", threw);
+
+  threw = false;
+  try { assertMockUniqueId("content_posts", "c1"); } catch { threw = true; }
+  check("ชนกับ seed data = โยน error", threw);
+
+  // ข้อความต้องบอกว่าเป็น constraint เดียวกับของจริง ไม่ใช่ error ลอย ๆ
+  let msg = "";
+  try { assertMockUniqueId("content_posts", "c1"); } catch (e) { msg = (e as Error).message; }
+  check("ข้อความอ้าง constraint จริง", msg.includes("content_posts_blob_id_uniq"));
+
+  // ลบแล้วต้องใช้ id ซ้ำได้ เหมือน DB จริง
+  releaseMockId("content_posts", "c1");
+  threw = false;
+  try { assertMockUniqueId("content_posts", "c1"); } catch { threw = true; }
+  check("ลบแล้วใช้ id เดิมได้อีก", !threw);
+
+  // ตารางคนละตัวใช้ id เดียวกันได้ (คนละ unique index)
+  threw = false;
+  try { assertMockUniqueId("graphic_requests", "c1"); } catch { threw = true; }
+  check("คนละตารางไม่ชนกัน", !threw);
+
+  // id ว่าง/undefined ต้องไม่ทำให้พัง
+  threw = false;
+  try { assertMockUniqueId("content_posts", undefined); assertMockUniqueId("content_posts", ""); } catch { threw = true; }
+  check("id ว่างไม่โยน error", !threw);
+  resetMockGuard();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
+
 process.exit(fail ? 1 : 0);

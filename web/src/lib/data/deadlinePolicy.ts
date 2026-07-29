@@ -75,6 +75,49 @@ export const MILESTONES: MilestoneDef[] = [
 
 export const milestoneDef = (key: MilestoneKey) => MILESTONES.find((m) => m.key === key);
 
+/** Which calendar row each milestone reads, by stable task key.
+ *
+ *  The shipped defaults point at the template rows, but the binding is DATA:
+ *  a team that reorganises its calendar can re-point a milestone from Settings
+ *  instead of waiting for a code change. Without this, a row renamed outside
+ *  the app — or a template row retitled in a future release — silently stopped
+ *  driving its deadline, and nothing said so.
+ *
+ *  Stored under the `milestone_bindings` app setting; see useDeadlines. */
+export type MilestoneBindings = Partial<Record<MilestoneKey, string>>;
+
+export const MILESTONE_BINDINGS_KEY = "milestone_bindings";
+
+/** The default binding: each milestone → its template row's key. */
+export function defaultMilestoneBindings(): Required<MilestoneBindings> {
+  return Object.fromEntries(
+    MILESTONES.map((m) => [m.key, templateTaskKey(m.section, m.rowEn)]),
+  ) as Required<MilestoneBindings>;
+}
+
+/** The row key a milestone should read, honouring any override. */
+export function milestoneRowKey(key: MilestoneKey, bindings?: MilestoneBindings): string {
+  const override = bindings?.[key]?.trim();
+  if (override) return override;
+  const def = milestoneDef(key);
+  return def ? templateTaskKey(def.section, def.rowEn) : "";
+}
+
+export interface UnboundMilestone { key: MilestoneKey; label: string; wanted: string }
+
+/** Milestones whose row is missing or retired, so their deadline has gone
+ *  quiet. Surfaced in the calendar editor — a deadline that stops existing is
+ *  exactly the kind of thing that must not fail silently. */
+export function unboundMilestones(
+  taskEdits: CalendarTaskEdit[] = [],
+  bindings?: MilestoneBindings,
+): UnboundMilestone[] {
+  const live = new Set(resolveCalendarSections(taskEdits).flatMap((s) => s.tasks.map((t) => t.key)));
+  return MILESTONES
+    .map((m) => ({ key: m.key, label: m.label, wanted: milestoneRowKey(m.key, bindings) }))
+    .filter((m) => !live.has(m.wanted));
+}
+
 /** "YYYY-MM" → { y, m } with m 1-based. */
 function parseMonthKey(key: string): { y: number; m: number } | null {
   const hit = /^(\d{4})-(\d{2})$/.exec(key);
@@ -147,6 +190,8 @@ export function resolveMilestone(
    *  key is what identifies it), and one they retired stops resolving, which is
    *  the honest answer: they removed the deadline. */
   taskEdits: CalendarTaskEdit[] = [],
+  /** Re-points a milestone at a different row without a code change. */
+  bindings?: MilestoneBindings,
 ): MilestoneDeadline | null {
   const def = milestoneDef(key);
   const target = parseMonthKey(forMonth);
@@ -155,8 +200,11 @@ export function resolveMilestone(
   // Look the row up by its STABLE key, through the same resolver the grid uses.
   // Matching on the display name would break the moment somebody renamed the
   // row — the markers would still be there and the deadline would vanish.
-  const taskKey = templateTaskKey(def.section, def.rowEn);
-  const section = resolveCalendarSections(taskEdits).find((s) => s.key === def.section);
+  // The key itself is now configurable (see milestoneRowKey), so a calendar
+  // that has been reorganised can be pointed at the right row from Settings.
+  const taskKey = milestoneRowKey(key, bindings);
+  const sections = resolveCalendarSections(taskEdits);
+  const section = sections.find((s) => s.tasks.some((t) => t.key === taskKey));
   const row = section?.tasks.find((t) => t.key === taskKey);
   if (!section || !row) return null;
   const templateKey = monthKeyOf(TEMPLATE_YEAR, TEMPLATE_MONTH + 1);

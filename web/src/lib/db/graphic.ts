@@ -10,6 +10,7 @@ import { upsertGraphicTask } from "./tasks";
 import { Task } from "@/lib/data/tasks";
 import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
+import { assertMockUniqueId, seedMockIds } from "@/lib/db/mockGuard";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
@@ -38,6 +39,10 @@ export async function fetchGraphicById(id: string | number): Promise<Graphic | n
 
 export async function createGraphic(g: Graphic): Promise<void> {
   const db = supabase();
+  if (!db) {
+    seedMockIds("graphic_requests", GRAPHICS.map((x) => x.id));
+    assertMockUniqueId("graphic_requests", g.id);
+  }
   if (db) {
     const { error } = await db.from("graphic_requests").insert({
       title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,

@@ -20,7 +20,7 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { brandName } from "@/lib/brands";
-import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
+import { assertDbOk } from "@/lib/db/assert";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
 
@@ -310,16 +310,54 @@ function labelDate(iso: string): string {
   return m ? `${MON[m - 1]} ${d}` : "";
 }
 
-/** Store the full brief object in campaigns.data (needs the jsonb column). */
+/** The row version a brief was loaded at, so a save can tell whether anybody
+ *  else has written to it since. Kept out of CampaignBrief itself: it belongs
+ *  to the ROW, not to the plan, and putting it in the blob would mean the
+ *  version travels inside the thing it is versioning. */
+const briefVersions = new Map<string, string>();
+
+/** Remember the version a brief was read at. */
+export function noteBriefVersion(id: string, updatedAt?: string | null): void {
+  if (id && updatedAt) briefVersions.set(id, updatedAt);
+}
+
+/** Forget it — after a successful save, or when abandoning an edit. */
+export function forgetBriefVersion(id: string): void { briefVersions.delete(id); }
+
+export class StaleBriefError extends Error {
+  constructor() {
+    super("แคมเปญนี้ถูกคนอื่นแก้ไปแล้วหลังจากคุณเปิดหน้านี้ — refresh เพื่อดูของล่าสุดก่อนบันทึกซ้ำ (ระบบไม่บันทึกทับให้ เพื่อไม่ให้งานของอีกฝ่ายหาย)");
+    this.name = "StaleBriefError";
+  }
+}
+
+/** Store the full brief object in campaigns.data (needs the jsonb column).
+ *
+ *  The brief is written as ONE blob, so a save is all-or-nothing against
+ *  whatever the other person wrote: last-write-wins here means their entire
+ *  edit disappears silently. The update is therefore conditioned on the row
+ *  still carrying the updated_at we loaded — if it moved, we refuse rather than
+ *  overwrite. `updated_at` is maintained by a DB trigger, so this cannot be
+ *  defeated by a client that forgets to set it. */
 async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
   const db = supabase();
   if (!db) return;
-  // The brief IS the campaign's content — a write that lands on no row loses
-  // the whole plan while the builder reports a successful save.
-  await assertRowsTouched(
-    db.from("campaigns").update({ data: brief }).eq("id", brief.id).select("id"),
-    "บันทึกรายละเอียดแคมเปญไม่สำเร็จ",
-  );
+  const seenAt = briefVersions.get(brief.id);
+  let q = db.from("campaigns").update({ data: brief }).eq("id", brief.id);
+  if (seenAt) q = q.eq("updated_at", seenAt);
+  const { data, error } = await q.select("id, updated_at");
+  assertDbOk(error, "บันทึกรายละเอียดแคมเปญไม่สำเร็จ");
+  if (!data?.length) {
+    // Zero rows has two causes and they need different words. Ask whether the
+    // row is there at all: if it is, somebody else got there first; if it is
+    // not, the id is stale or RLS is hiding it.
+    const { data: exists } = await db.from("campaigns").select("id").eq("id", brief.id).maybeSingle();
+    if (exists && seenAt) throw new StaleBriefError();
+    throw new Error("บันทึกรายละเอียดแคมเปญไม่สำเร็จ — ไม่พบแคมเปญนี้ (อาจถูกลบ หรือคุณไม่มีสิทธิ์แก้) ลอง refresh แล้วบันทึกใหม่");
+  }
+  // Move our marker forward so a second save in the same session still works.
+  const next = (data[0] as { updated_at?: string }).updated_at;
+  if (next) briefVersions.set(brief.id, next);
 }
 
 /** All saved briefs keyed by campaign name — one query, for pages that show
@@ -338,8 +376,18 @@ export async function fetchAllBriefs(): Promise<Record<string, CampaignBrief>> {
 export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | null> {
   const db = supabase();
   if (!db) return null;
-  const { data, error } = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
-  if (error || !data?.data) return null;
+  // updated_at comes back with the brief so a later save can prove nobody else
+  // wrote to the row in between. Selected tolerantly: a database that has not
+  // run campaign_concurrency.sql simply has no version, and saves behave as
+  // they did before rather than failing.
+  const { data, error } = await db.from("campaigns").select("data, updated_at").eq("id", id).maybeSingle();
+  if (error || !data?.data) {
+    const fallback = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
+    if (fallback.error || !fallback.data?.data) return null;
+    forgetBriefVersion(id);
+    return fallback.data.data as CampaignBrief;
+  }
+  noteBriefVersion(id, (data as { updated_at?: string }).updated_at);
   return data.data as CampaignBrief;
 }
 

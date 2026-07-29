@@ -21,6 +21,7 @@ import {
   CalendarTaskEdit, resolveCalendarSections, nextCustomKey,
   withTaskEdit, withTaskRemoved, withTaskRestored, hiddenTemplateTasks,
 } from "@/lib/data/calendarTasks";
+import { unboundMilestones } from "@/lib/data/deadlinePolicy";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
@@ -439,6 +440,7 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLa
     setOverrides((o) => ({ ...o, [`${monthKey}::${taskKey}::${day}`]: marker }));
   };
   const hidden = hiddenTemplateTasks(edits);
+  const unbound = unboundMilestones(edits);
   const field = "text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-white outline-none";
 
   const add = (sectionKey: string) => {
@@ -484,6 +486,17 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLa
       {!tasksPersist && (
         <div className="mb-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FBF6EC", border: "1px solid #EADBC1", color: "#8A6D1E" }}>
           ⚠ ยังไม่ได้รัน <code className="font-mono">supabase/workflow_custom_tasks.sql</code> — แก้ได้แต่จะไม่ถูกบันทึก
+        </div>
+      )}
+
+      {/* A milestone whose row has been retired stops driving its deadline, and
+          every module quietly falls back to its own rule. That is the correct
+          behaviour but a terrible surprise, so it is stated here — this editor
+          is where the row was removed. */}
+      {unbound.length > 0 && (
+        <div className="mb-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+          ⚠ เดดไลน์ที่ไม่มีแถวรองรับแล้ว: {unbound.map((u) => u.label).join(", ")} —
+          โมดูลที่เคยใช้วันจากแถวนี้จะกลับไปใช้กติกาของตัวเอง กดคืนงานที่ซ่อนไว้ด้านล่าง หรือสร้างแถวใหม่แล้วผูกใหม่
         </div>
       )}
 
