@@ -10,6 +10,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
 import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic } from "./graphic";
+import { needsStoryboard } from "@/lib/data/graphic";
 import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
 import { Kol } from "@/lib/data/kol";
@@ -19,7 +20,7 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { brandName } from "@/lib/brands";
-import { assertDbOk } from "@/lib/db/assert";
+import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
 
@@ -170,6 +171,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         captionCopy: ci.captionDirection || "",
         extraDetails: ci.doDont || ci.mandatoryText || "",
         briefLink: ci.referenceBriefLink || "",
+        // Video items start at the storyboard, exactly as they do when raised
+        // by hand — otherwise a Reel materialised from an approved campaign
+        // would skip straight to artwork and lose the step.
+        storyboardStatus: needsStoryboard({ type: ci.type, requiredVideo: ci.requiredVideo }) ? "Waiting" as const : undefined,
         nextAction: `KV: ${normalizedBrief.kvDirection || "—"} · Msg: ${ci.mainMessage || normalizedBrief.mainMessage || "—"}`,
         contentItem: ci.title || "—",
       };
@@ -294,8 +299,12 @@ function labelDate(iso: string): string {
 async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", brief.id);
-  assertDbOk(error, "Could not save campaign brief details");
+  // The brief IS the campaign's content — a write that lands on no row loses
+  // the whole plan while the builder reports a successful save.
+  await assertRowsTouched(
+    db.from("campaigns").update({ data: brief }).eq("id", brief.id).select("id"),
+    "บันทึกรายละเอียดแคมเปญไม่สำเร็จ",
+  );
 }
 
 /** All saved briefs keyed by campaign name — one query, for pages that show

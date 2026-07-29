@@ -7,7 +7,7 @@ import { X } from "lucide-react";
 import {
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
-  isAccepted, unseenNotices,
+  isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -19,6 +19,7 @@ import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
@@ -145,6 +146,70 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     const next: Graphic = { ...g, acceptedBy: undefined, acceptedAt: undefined };
     saveGraphic(next, "ปล่อยงานคืนไม่สำเร็จ");
     toastSuccess(`ปล่อยงาน “${g.title}” คืนแล้ว`);
+  };
+
+  // ── Production pipeline: storyboard → ถ่าย → asset ────────────────────
+  const [sbLink, setSbLink] = useState(g.storyboardLink ?? "");
+  const [sbNote, setSbNote] = useState("");
+  const [footage, setFootage] = useState(g.footageLink ?? "");
+  useEffect(() => { setSbLink(g.storyboardLink ?? ""); setFootage(g.footageLink ?? ""); }, [g.storyboardLink, g.footageLink]);
+
+  /** Who may set up the shoot / storyboard assignment: the creative side runs
+   *  its own pipeline, and the CMO covers. */
+  const canRunPipeline = role === "CMO" || isCreativeSideRole(role);
+  /** The storyboard is accepted by the person who asked for the work — the same
+   *  rule the artwork itself follows. Never the person who drew it. */
+  const canDecideStoryboard = isRequester || role === "CMO";
+
+  const setShooting = (patch: Partial<Graphic>) => saveGraphic({ ...g, ...patch }, "บันทึกไม่สำเร็จ");
+
+  const submitStoryboard = () => {
+    if (!sbLink.trim()) return;
+    const at = new Date().toISOString();
+    saveGraphic({
+      ...g, storyboardLink: sbLink.trim(), storyboardStatus: "Submitted",
+      storyboardSubmittedBy: currentUser, storyboardSubmittedAt: at, storyboardNote: "",
+      nextAction: `รอ ${g.requester} อนุมัติ storyboard`,
+    }, "ส่ง storyboard ไม่สำเร็จ");
+    toastSuccess("ส่ง storyboard แล้ว — รอเจ้าของงานอนุมัติ");
+    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, "/graphic");
+  };
+
+  const decideStoryboard = (approved: boolean) => {
+    if (!approved && sbNote.trim().length < 5) { toastError("เขียนเหตุผลที่ส่งกลับแก้อย่างน้อย 5 ตัวอักษร"); return; }
+    const at = new Date().toISOString();
+    saveGraphic({
+      ...g,
+      storyboardStatus: approved ? "Approved" : "Revision",
+      storyboardDecidedBy: currentUser, storyboardDecidedAt: at,
+      storyboardNote: approved ? "" : sbNote.trim(),
+      nextAction: approved ? "storyboard ผ่านแล้ว — เริ่มถ่าย/ผลิตงานได้" : "Creative Content แก้ storyboard แล้วส่งใหม่",
+    }, "บันทึกผล storyboard ไม่สำเร็จ");
+    setSbNote("");
+    toastSuccess(approved ? "อนุมัติ storyboard แล้ว" : "ส่ง storyboard กลับไปแก้แล้ว");
+    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`, `โดย ${currentUser}`, "/graphic");
+  };
+
+  const submitFootage = () => {
+    if (!footage.trim()) return;
+    const at = new Date().toISOString();
+    saveGraphic({
+      ...g, footageLink: footage.trim(), footageSubmittedBy: currentUser, footageSubmittedAt: at,
+      nextAction: `${g.designer && g.designer !== "Unassigned" ? g.designer : "Designer"} ตัดต่อ/ทำ artwork ต่อ`,
+    }, "ส่ง footage ไม่สำเร็จ");
+    toastSuccess("ส่ง footage แล้ว — ส่งต่อให้ designer/editor ทำงานต่อได้");
+    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${g.designer || "Designer"} ทำต่อ`, "/graphic");
+  };
+
+  /** Moving a shoot is a normal event, not a failure — it just has to be
+   *  recorded, because the day the work lands on moves with it (workDayIso). */
+  const moveShoot = (next: string) => {
+    const from = g.shootDate || "—";
+    saveGraphic({
+      ...g, shootDate: next,
+      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: `เลื่อนวันถ่าย ${from} → ${next || "—"}` }],
+    }, "เลื่อนวันถ่ายไม่สำเร็จ");
+    if (next) toastSuccess(`เลื่อนวันถ่ายเป็น ${next} — งานจะไปนับในเดือน ${next.slice(0, 7)}`);
   };
 
   /** Creative has read the planner's change notices. Marked seen, not deleted —
@@ -422,6 +487,130 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                 )}
               </div>
 
+              {/* ── Production pipeline ────────────────────────────────
+                  A reel is not one job: someone storyboards it, someone shoots
+                  it, someone cuts it. Only the last step existed here, so the
+                  first two happened in chat and the designer looked late for
+                  footage nobody had sent. */}
+              <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[11.5px] font-bold text-muted">🧭 ขั้นตอนงาน</span>
+                  {workingMonth(g) && (
+                    <span className="ml-auto text-[11px] font-bold rounded-pill px-2.5 py-[3px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}
+                      title="เดือนที่งานนี้ลงจริง — ย้ายตามวันถ่ายเมื่อมีการเลื่อน (ไม่ใช่เดือนที่ออกบิล ซึ่งนับตอนอนุมัติงาน)">
+                      เดือนที่ทำงานจริง {workingMonth(g)}
+                    </span>
+                  )}
+                </div>
+
+                <ol className="flex flex-col gap-[6px] mb-3">
+                  {productionSteps(g).map((step) => {
+                    const mark = step.state === "done" ? "✓" : step.state === "active" ? "▶" : "•";
+                    const color = step.state === "done" ? "#4E7A4E" : step.state === "active" ? "#B3641E" : "#9A9387";
+                    return (
+                      <li key={step.key} className="flex items-start gap-2 text-[11.5px]">
+                        <span style={{ color }} className="font-bold w-[12px]">{mark}</span>
+                        <span className="font-bold" style={{ color }}>{step.label}</span>
+                        <span className="text-faint">· {step.owner}</span>
+                        <span className="text-faint ml-auto text-right">{step.detail}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+
+                {/* Storyboard — only for reel / video work */}
+                {needsStoryboard(g) && (
+                  <div className="rounded-[10px] border border-line3 bg-surface p-3 mb-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[11.5px] font-bold text-ink">🎬 Storyboard</span>
+                      <StatusBadge tone={g.storyboardStatus === "Approved" ? "green" : g.storyboardStatus === "Revision" ? "orange" : g.storyboardStatus === "Submitted" ? "gold" : "neutral"}>
+                        {g.storyboardStatus || "ยังไม่ส่ง"}
+                      </StatusBadge>
+                    </div>
+                    {canRunPipeline && (
+                      <div className="mb-2">
+                        <div className="text-[10.5px] font-bold text-faint mb-[4px]">คนทำ storyboard (Creative Content)</div>
+                        <OwnerSelect value={g.storyboardOwner ?? ""} onChange={(name) => setShooting({ storyboardOwner: name })} team="Creative" placeholder="ยังไม่ระบุ" />
+                      </div>
+                    )}
+                    {g.storyboardStatus === "Revision" && g.storyboardNote && (
+                      <div className="mb-2 rounded-[8px] px-2.5 py-[6px] text-[11px] font-semibold" style={{ background: "#FFF5F4", color: "#B33A2E" }}>
+                        ส่งกลับแก้: {g.storyboardNote}
+                      </div>
+                    )}
+                    {g.storyboardStatus !== "Approved" && canRunPipeline && (
+                      <div className="flex gap-2 mb-2">
+                        <input value={sbLink} onChange={(e) => setSbLink(e.target.value)} placeholder="ลิงก์ storyboard (Drive / Figma / Canva)"
+                          className="flex-1 text-[12px] px-[10px] py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+                        <button onClick={submitStoryboard} disabled={!sbLink.trim()}
+                          className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] bg-panel disabled:opacity-40 whitespace-nowrap">
+                          {g.storyboardStatus === "Revision" ? "ส่งใหม่" : "ส่ง storyboard"}
+                        </button>
+                      </div>
+                    )}
+                    {g.storyboardLink && (
+                      <a href={g.storyboardLink} target="_blank" rel="noreferrer" className="text-[11.5px] font-semibold text-accent">เปิด storyboard ↗</a>
+                    )}
+                    {/* Accepted by the person who asked for the work — same rule
+                        the artwork follows, never the person who drew it. */}
+                    {g.storyboardStatus === "Submitted" && canDecideStoryboard && (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <input value={sbNote} onChange={(e) => setSbNote(e.target.value)} placeholder="เหตุผลถ้าส่งกลับแก้…"
+                          className="text-[12px] px-[10px] py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+                        <div className="flex gap-2">
+                          <button onClick={() => decideStoryboard(true)} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px]" style={{ background: "#4E7A4E" }}>อนุมัติ storyboard</button>
+                          <button onClick={() => decideStoryboard(false)} className="text-[12px] font-bold rounded-[8px] px-3 py-[7px] border border-line2 bg-surface text-status-red">ส่งกลับแก้</button>
+                        </div>
+                      </div>
+                    )}
+                    {g.storyboardStatus === "Approved" && (
+                      <div className="mt-1 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
+                        ✓ อนุมัติโดย {g.storyboardDecidedBy || "—"}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Shooting */}
+                <div className="rounded-[10px] border border-line3 bg-surface p-3">
+                  <label className="flex items-center gap-2 text-[11.5px] font-bold text-ink mb-2">
+                    <input type="checkbox" checked={!!g.requiresShooting} disabled={!canRunPipeline}
+                      onChange={(e) => setShooting({ requiresShooting: e.target.checked })} />
+                    📷 งานนี้ต้องถ่ายก่อน (require shooting)
+                  </label>
+                  {g.requiresShooting && (
+                    <div className="flex flex-col gap-2">
+                      <div className="grid md:grid-cols-2 gap-2">
+                        <div>
+                          <div className="text-[10.5px] font-bold text-faint mb-[4px]">คนถ่าย</div>
+                          <OwnerSelect value={g.shooter ?? ""} onChange={(name) => setShooting({ shooter: name })} team="Creative" placeholder="ยังไม่ระบุ" disabled={!canRunPipeline} />
+                        </div>
+                        <div>
+                          <div className="text-[10.5px] font-bold text-faint mb-[4px]">วันถ่าย · เลื่อนได้</div>
+                          <DatePicker value={g.shootDate || null} onChange={(v) => canRunPipeline && moveShoot(v || "")} />
+                        </div>
+                      </div>
+                      {g.footageSubmittedAt ? (
+                        <div className="rounded-[8px] px-2.5 py-[7px] text-[11.5px] font-semibold flex items-center gap-2 flex-wrap" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+                          ✓ ส่ง footage แล้ว โดย {g.footageSubmittedBy || "—"}
+                          {g.footageLink && <a href={g.footageLink} target="_blank" rel="noreferrer" className="underline">เปิดไฟล์ ↗</a>}
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input value={footage} onChange={(e) => setFootage(e.target.value)} placeholder="ลิงก์ footage / ภาพถ่าย (Drive)"
+                            className="flex-1 text-[12px] px-[10px] py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+                          <button onClick={submitFootage} disabled={!footage.trim()}
+                            className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] bg-panel disabled:opacity-40 whitespace-nowrap">ส่ง footage</button>
+                        </div>
+                      )}
+                      <div className="text-[11px] text-faint">
+                        คนถ่ายส่ง footage ก่อน แล้ว designer / editor ถึงจะส่งงานในช่อง asset ได้
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
                 <OwnerSelect
@@ -687,6 +876,12 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
   const canReview = canReviewDeliverable(role, isRequester);
   // Production is on hold while an urgent brief is unresolved (or refused).
   const rushHold = rushBlocksProduction(g.rushStatus);
+  // …and while the steps IN FRONT of the artwork are outstanding: a reel with
+  // no signed-off storyboard, or a shoot whose footage has not arrived. The
+  // designer was previously the one who looked late for work that had never
+  // been handed to them.
+  const preSteps = productionBlockers(g);
+  const preHold = preSteps.length > 0;
   const sameName = (a: string, b: string) => !!a.trim() && a.trim().toLowerCase() === b.trim().toLowerCase();
   const [dels, setDels] = useState<GraphicDeliverable[]>(() =>
     g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
@@ -771,6 +966,15 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
         </div>
       )}
 
+      {preHold && (
+        <div className="rounded-[10px] border px-3 py-2" style={{ background: "#FFF7ED", borderColor: "#F0C89B" }}>
+          <div className="text-[11.5px] font-bold" style={{ color: "#B3641E" }}>⏳ ยังส่ง asset ไม่ได้ — งานขั้นก่อนหน้ายังไม่เสร็จ</div>
+          <ul className="mt-1 list-disc pl-5 text-[11.5px]" style={{ color: "#8A5418" }}>
+            {preSteps.map((r) => <li key={r}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+
       {dels.map((d, i) => {
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const inReview = d.status === "Waiting review";
@@ -802,7 +1006,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                 )}
                 <input value={d.assetLink} onChange={(e) => patch(i, { assetLink: e.target.value })} className={inp} placeholder="Artwork link (Drive / Figma / PNG) *" />
                 <input value={d.sourceLink} onChange={(e) => patch(i, { sourceLink: e.target.value })} className={inp} placeholder="Source file link" />
-                <button onClick={() => submit(i)} disabled={!d.assetLink.trim() || rushHold} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>{d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}</button>
+                <button onClick={() => submit(i)} disabled={!d.assetLink.trim() || rushHold || preHold} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>{d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}</button>
               </div>
             ) : (
               <div className="flex flex-col gap-2 mt-2">

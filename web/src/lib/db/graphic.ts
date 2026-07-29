@@ -8,7 +8,7 @@ import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
 import { Task } from "@/lib/data/tasks";
-import { assertDbOk } from "@/lib/db/assert";
+import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
@@ -80,13 +80,19 @@ export async function createGraphicIfNew(g: Graphic, existing?: Set<string>): Pr
 export async function updateGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (db) {
-    const { error } = await db.from("graphic_requests")
-      .update({
-        stage: g.stage, designer: g.designer, requester: g.requester, approver: g.approver,
-        blocker: g.blocker, next_action: g.nextAction, data: g,
-      })
-      .eq("data->>id", String(g.id));
-    assertDbOk(error, "Could not update graphic request");
+    // .select() so a filter matching nothing is caught: accepting a job,
+    // submitting a storyboard or handing over footage all write through here,
+    // and each one tells the user it worked.
+    await assertRowsTouched(
+      db.from("graphic_requests")
+        .update({
+          stage: g.stage, designer: g.designer, requester: g.requester, approver: g.approver,
+          blocker: g.blocker, next_action: g.nextAction, data: g,
+        })
+        .eq("data->>id", String(g.id))
+        .select("id"),
+      "บันทึกใบงาน Graphic ไม่สำเร็จ",
+    );
   }
   await syncGraphicAssignmentTask(g);
 }

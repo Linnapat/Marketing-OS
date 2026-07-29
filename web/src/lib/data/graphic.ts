@@ -92,6 +92,36 @@ export interface Graphic {
   rushDecidedBy?: string;
   rushDecidedAt?: string;
   rushDecisionNote?: string;
+  // ── Shooting step ────────────────────────────────────────────────────
+  /** This job needs footage before anyone can design it. Ticked at assign
+   *  time; it inserts a shooting step ahead of the artwork. */
+  requiresShooting?: boolean;
+  /** Who shoots. A person, not a work type — "Jeeno - shooting" used to be a
+   *  whole assignee entry, which made the shoot look like someone's job title
+   *  rather than a step this request happens to need. */
+  shooter?: string;
+  /** Shoot day (ISO). Movable: shoots get rained off and cast get sick, and
+   *  the old model had nowhere to say so. */
+  shootDate?: string;
+  /** Footage / photos handed over by the shooter. Until this exists the
+   *  designer has nothing to work from, so asset submission is blocked. */
+  footageLink?: string;
+  footageNote?: string;
+  footageSubmittedBy?: string;
+  footageSubmittedAt?: string;
+
+  // ── Storyboard step (reel / video work) ──────────────────────────────
+  /** Creative Content owner who draws the storyboard. */
+  storyboardOwner?: string;
+  storyboardLink?: string;
+  storyboardStatus?: StoryboardStatus;
+  storyboardSubmittedBy?: string;
+  storyboardSubmittedAt?: string;
+  storyboardDecidedBy?: string;
+  storyboardDecidedAt?: string;
+  /** Why the requester sent the storyboard back. */
+  storyboardNote?: string;
+
   /** Creative has taken the job on — set by "รับงาน" in the drawer.
    *
    *  This is the point of no return for the planning side: once a designer has
@@ -110,6 +140,130 @@ export interface Graphic {
    *  else to measure "waiting since" from. */
   createdAt?: string;
   history?: GraphicEvent[];
+}
+
+export type StoryboardStatus = "" | "Waiting" | "Submitted" | "Approved" | "Revision";
+
+/* ── Production pipeline: storyboard → shoot → artwork ─────────────────────
+ *
+ * A reel is not one job. Someone storyboards it, someone shoots it, and someone
+ * cuts it — and until now the request only modelled the last of those, so the
+ * first two happened in chat and the designer was "late" for footage that had
+ * never arrived. These rules put the earlier steps in front of the artwork and
+ * refuse the asset submission until they are done.
+ *
+ * All pure, so the gate the button uses and the gate the drawer explains are
+ * the same one.
+ */
+
+/** Does this request need a storyboard signed off before production?
+ *
+ *  Reel / Short / video work does. Matches workKind's own video test rather
+ *  than inventing a second definition of "is this a video". */
+export function needsStoryboard(g: Pick<Graphic, "type" | "requiredVideo">): boolean {
+  const kind = workKind(g.type, g.requiredVideo);
+  return kind === "vdo" || kind === "vdo_shoot";
+}
+
+/** Has the shooter handed the footage over? */
+export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink">): boolean {
+  return !g.requiresShooting || !!g.footageLink?.trim();
+}
+
+/** Has the requester accepted the storyboard? */
+export function storyboardCleared(g: Graphic): boolean {
+  return !needsStoryboard(g) || g.storyboardStatus === "Approved";
+}
+
+/** What still stops the designer/editor from submitting the finished asset.
+ *  Empty = clear to submit. Enforced on the button AND explained in the panel,
+ *  from this one list. */
+export function productionBlockers(g: Graphic): string[] {
+  const out: string[] = [];
+  if (!storyboardCleared(g)) {
+    out.push(g.storyboardStatus === "Submitted"
+      ? "รอเจ้าของงานอนุมัติ storyboard"
+      : g.storyboardStatus === "Revision"
+        ? "storyboard ถูกส่งกลับแก้ — แก้แล้วส่งใหม่"
+        : "ยังไม่มี storyboard — Creative Content ต้องส่งก่อน");
+  }
+  if (!footageReady(g)) {
+    out.push(g.shooter?.trim()
+      ? `รอ footage/ภาพจาก ${g.shooter}`
+      : "งานนี้ต้องถ่ายก่อน — ยังไม่ได้ระบุคนถ่าย");
+  }
+  return out;
+}
+
+export interface ProductionStep {
+  key: "storyboard" | "shoot" | "asset";
+  label: string;
+  /** Who this step is waiting on, when it is not done. */
+  owner: string;
+  state: "done" | "active" | "waiting" | "skipped";
+  detail: string;
+}
+
+/** The request's steps in order, for the drawer's checklist. Exactly one step
+ *  is "active" — the thing the request is actually waiting on right now. */
+export function productionSteps(g: Graphic): ProductionStep[] {
+  const steps: ProductionStep[] = [];
+  const sbNeeded = needsStoryboard(g);
+  const sbDone = g.storyboardStatus === "Approved";
+  if (sbNeeded) {
+    steps.push({
+      key: "storyboard",
+      label: "Storyboard",
+      owner: g.storyboardOwner?.trim() || "Creative Content",
+      state: sbDone ? "done" : "active",
+      detail: sbDone
+        ? `อนุมัติโดย ${g.storyboardDecidedBy || "—"}`
+        : g.storyboardStatus === "Submitted" ? "ส่งแล้ว รออนุมัติ"
+          : g.storyboardStatus === "Revision" ? `ส่งกลับแก้: ${g.storyboardNote || "—"}`
+            : "ยังไม่ได้ส่ง",
+    });
+  }
+  if (g.requiresShooting) {
+    const shotDone = !!g.footageLink?.trim();
+    steps.push({
+      key: "shoot",
+      label: "ถ่ายงาน",
+      owner: g.shooter?.trim() || "ยังไม่ระบุคนถ่าย",
+      // A shoot cannot start before the storyboard is signed off, so it is
+      // "waiting", not "active", while that is outstanding.
+      state: shotDone ? "done" : sbNeeded && !sbDone ? "waiting" : "active",
+      detail: shotDone
+        ? `ส่ง footage แล้วโดย ${g.footageSubmittedBy || "—"}`
+        : g.shootDate ? `กำหนดถ่าย ${g.shootDate}` : "ยังไม่กำหนดวันถ่าย",
+    });
+  }
+  const blocked = productionBlockers(g).length > 0;
+  steps.push({
+    key: "asset",
+    label: "ส่งงาน (asset)",
+    owner: g.designer && g.designer !== "Unassigned" ? g.designer : "ยังไม่มี designer",
+    state: deliverableProgress(g).ready ? "done" : blocked ? "waiting" : "active",
+    detail: blocked ? productionBlockers(g)[0] : `${deliverableProgress(g).approved}/${deliverableProgress(g).total} ชิ้นอนุมัติแล้ว`,
+  });
+  return steps;
+}
+
+/** The day this request's work actually lands on.
+ *
+ *  A shoot is done on the shoot day, not on the artwork's due date, so the
+ *  daily capacity guard has to count it there — otherwise moving a shoot into
+ *  next month leaves it weighing on the old month's quota. Falls back to the
+ *  due date, which is what every non-shoot request has. */
+export function workDayIso(g: Pick<Graphic, "shootDate" | "dueIso">): string {
+  return (g.shootDate || g.dueIso || "").slice(0, 10);
+}
+
+/** "เดือนที่ทำงานจริง" — YYYY-MM, for reading the load of a month that a moved
+ *  shoot has changed. Billing is NOT this: the artwork report files a piece by
+ *  the month it was APPROVED, deliberately, and moving a shoot must not move
+ *  someone's invoice. */
+export function workingMonth(g: Pick<Graphic, "shootDate" | "dueIso">): string {
+  return workDayIso(g).slice(0, 7);
 }
 
 export interface GraphicNotice {
@@ -344,7 +498,9 @@ export function artworkUnits(g: Pick<Graphic, "deliverables" | "platform" | "siz
 export function countWorkOnDay(graphics: Graphic[], kind: WorkKind, dueIso: string): number {
   if (!dueIso) return 0;
   return graphics
-    .filter((g) => (g.dueIso || "").slice(0, 10) === dueIso && workKind(g.type, g.requiredVideo) === kind)
+    // workDayIso, not dueIso: a shoot occupies the day it is shot on. Requests
+    // without a shoot date are unaffected — it falls back to the due date.
+    .filter((g) => workDayIso(g) === dueIso && workKind(g.type, g.requiredVideo) === kind)
     .reduce((sum, g) => sum + artworkUnits(g), 0);
 }
 
