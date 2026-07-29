@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { CONTENT, ContentItem, contentApproveBlockers, canPublish } from "@/lib/data/content";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
 import { liveOnly, moveToTrash, trashReady } from "@/lib/db/trash";
+import { assertMockUniqueId, releaseMockId, seedMockIds } from "@/lib/db/mockGuard";
 
 const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 
@@ -30,7 +31,13 @@ export async function fetchContent(): Promise<ContentItem[]> {
  *  no id at all, and write it back so the blob agrees. */
 export async function createContent(post: ContentItem): Promise<ContentItem> {
   const db = supabase();
-  if (!db) return post;
+  if (!db) {
+    // Mock mode has no unique index to hit, so assert it here — this is exactly
+    // the collision that shipped to production unnoticed.
+    seedMockIds("content_posts", CONTENT.map((c) => c.id));
+    assertMockUniqueId("content_posts", post.id);
+    return post;
+  }
   const { data, error } = await db.from("content_posts").insert({
     title: post.title, brand: post.b, campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
     platforms: post.platforms ?? [post.plat], status: post.status, day: post.day, time: post.time,
@@ -92,7 +99,7 @@ export async function updateContent(post: ContentItem): Promise<void> {
  *  yet, so "ลบ" never silently does nothing on a database that predates it. */
 export async function deleteContent(post: ContentItem, by = ""): Promise<void> {
   const db = supabase();
-  if (!db) return;
+  if (!db) { releaseMockId("content_posts", post.id); return; }
   if (await moveToTrash("content", post.id, by)) return;
   const { data, error } = await db.from("content_posts").delete().eq("data->>id", post.id).select("id");
   if (error) throw new Error(error.message);

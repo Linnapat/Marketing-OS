@@ -26,7 +26,7 @@ import {
   campaignMonthKeys, todayIso,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
-import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
+import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief, StaleBriefError } from "@/lib/db/brief";
 import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
 import { fetchContentSourceIds } from "@/lib/db/content";
 import { briefDiffSummary } from "@/lib/data/briefDiff";
@@ -334,7 +334,11 @@ export default function NewCampaignPage() {
       toastSuccess("บันทึก Draft เรียบร้อย");
       setTimeout(() => setDraftSaved(false), 2500);
     } catch (error) {
-      toastError(`บันทึก Draft ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      // A stale-write refusal is not a failure to report as one: nothing is
+      // wrong with what they typed, someone else simply saved first. Say that,
+      // and do not tell them to "try again" — retrying would overwrite.
+      if (error instanceof StaleBriefError) toastError(error.message);
+      else toastError(`บันทึก Draft ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setBusy(false);
     }
@@ -424,7 +428,8 @@ export default function NewCampaignPage() {
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch (error) {
-      toastError(`บันทึก Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      if (error instanceof StaleBriefError) toastError(error.message);
+      else toastError(`บันทึก Campaign ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
       setBusy(false);
     }
   };

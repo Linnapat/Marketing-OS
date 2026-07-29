@@ -1,7 +1,23 @@
 export type DbErrorLike = { message?: string; code?: string } | null | undefined;
 
+/** Postgres codes for "the row-level security policy said no".
+ *  42501 = insufficient_privilege; PostgREST also surfaces its own 42501-ish
+ *  message for a violated WITH CHECK. */
+const RLS_CODES = new Set(["42501"]);
+
+const looksLikeRls = (error: DbErrorLike) =>
+  !!error && (RLS_CODES.has(error.code ?? "") || /row-level security|violates row-level/i.test(error.message ?? ""));
+
+/** Permission refusals now come from the database, not just from a hidden
+ *  button, so they need words a person can act on. "new row violates row-level
+ *  security policy for table expense_requests" tells a marketer nothing except
+ *  that something is broken — and it is not broken, they simply may not do it. */
 export function assertDbOk(error: DbErrorLike, message: string): void {
-  if (error) throw new Error(error.message || message);
+  if (!error) return;
+  if (looksLikeRls(error)) {
+    throw new Error(`${message} — บัญชีของคุณไม่มีสิทธิ์ทำรายการนี้ (ตรวจสิทธิ์ได้ที่ Settings › Permissions หรือแจ้ง CMO)`);
+  }
+  throw new Error(error.message || message);
 }
 
 export function assertDbData<T>(data: T | null | undefined, error: DbErrorLike, message: string): T {
