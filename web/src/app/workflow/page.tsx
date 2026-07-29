@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Check, Download, Printer } from "lucide-react";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -11,9 +11,10 @@ import {
 import { useRole } from "@/lib/role";
 import {
   WORK_SECTIONS, MONTH_NAMES, monthMeta, projectMarks,
-  applyOverrides, nextValue, TEMPLATE_YEAR, TEMPLATE_MONTH,
+  applyOverrides, nextValue, valueCycleFor, TEMPLATE_YEAR, TEMPLATE_MONTH,
 } from "@/lib/data/workflow";
 import { fetchWorkflowState, saveWorkflowState } from "@/lib/db/workflowState";
+import { downloadXlsx } from "@/lib/xlsx";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
@@ -101,6 +102,60 @@ export default function WorkCalendarPage() {
     };
   }, [allTasks, done, monthKey, todayDay]);
 
+  // ── Export ───────────────────────────────────────────────────────────────
+  // The grid as a rectangle: Section / Task / Owner / Accountable / Qty / Note,
+  // then one column per day carrying that day's marker. Same shape as the sheet
+  // this calendar came from, so an exported month drops straight back into it.
+  const exportRows = (): (string | number | null)[][] => {
+    const header = [
+      "Section", "Task (EN)", "Task (JP)", "Responsible", "Accountable", "Qty", "Note", "Done",
+      ...meta.days.map((d) => `${d} ${meta.letters[d - 1]}`),
+    ];
+    const body = sections.flatMap((sec) =>
+      sec.tasks.map((t) => [
+        sec.label, t.en, t.jp, t.r, t.a, t.qty ?? "", t.note ?? "",
+        done[`${monthKey}::${t.taskKey}`] ? "✓" : "",
+        ...meta.days.map((d) => t.marks[d] ?? ""),
+      ]),
+    );
+    return [[`Work Calendar — ${monthLabel}`], [], header, ...body];
+  };
+
+  const exportXlsx = () => {
+    try {
+      downloadXlsx(exportRows(), `work-calendar-${ym.y}-${String(ym.m + 1).padStart(2, "0")}.xlsx`, monthLabel);
+    } catch (error) {
+      toastError(`Export ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+  // PDF via the browser's own print dialog ("Save as PDF"). A print stylesheet
+  // beats a bundled PDF engine here: the grid is 31 columns wide and the print
+  // layout is the one thing that has to adapt to the paper the user picks.
+  const exportPdf = () => {
+    setEdit(false);
+    setView("grid");
+    // @page cannot be scoped to a selector, and the global sheet pins A5
+    // landscape for the expense voucher. Inject the calendar's paper size last
+    // so it wins, and take it back out afterwards.
+    const style = document.createElement("style");
+    style.textContent = "@page { size: A3 landscape; margin: 8mm; }";
+    document.head.appendChild(style);
+    document.body.classList.add("printing-calendar");
+    const cleanup = () => {
+      document.body.classList.remove("printing-calendar");
+      style.remove();
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    // Let the grid re-render before the print dialog freezes the page.
+    setTimeout(() => {
+      window.print();
+      // Safari never fires afterprint for the "Save as PDF" path, so the class
+      // would stick and break the next voucher print. Belt and braces.
+      setTimeout(cleanup, 1000);
+    }, 80);
+  };
+
   const todaysCount = todayDay ? allTasks.filter((t) => t.marks[todayDay] !== undefined).length : 0;
   const weekRange = todayDay ? Array.from({ length: 7 }, (_, i) => todayDay + i).filter((d) => d <= meta.days.length) : [];
   const weekCount = allTasks.filter((t) => weekRange.some((d) => t.marks[d] !== undefined)).length;
@@ -117,7 +172,8 @@ export default function WorkCalendarPage() {
 
   const onCell = (taskKey: string, day: number, current: string | undefined) => {
     if (!edit || !canEdit) return;
-    setOverrides((o) => ({ ...o, [`${monthKey}::${taskKey}::${day}`]: nextValue(current) }));
+    // ym.m is 0-based; the marker cycle speaks calendar months.
+    setOverrides((o) => ({ ...o, [`${monthKey}::${taskKey}::${day}`]: nextValue(current, ym.m + 1) }));
   };
   const resetMonth = () => setOverrides((o) => {
     const next = { ...o };
@@ -170,8 +226,21 @@ export default function WorkCalendarPage() {
               </button>
             </div>
 
+            {/* Export is for everyone: reading the month out to a spreadsheet
+                or a PDF changes nothing, so it is not gated on canEdit. */}
+            <div className="flex items-center gap-2 flex-wrap no-print">
+              <button onClick={exportXlsx} title="ดาวน์โหลดเป็น Excel (.xlsx)"
+                className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[12px] px-3 py-[8px] bg-white hover:bg-ivory">
+                <Download size={13} /> Excel
+              </button>
+              <button onClick={exportPdf} title="พิมพ์ / บันทึกเป็น PDF"
+                className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[12px] px-3 py-[8px] bg-white hover:bg-ivory">
+                <Printer size={13} /> PDF
+              </button>
+            </div>
+
             {canEdit && view === "grid" && (
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap no-print">
                 {edit && monthOverrides.length > 0 && (
                   <button onClick={resetMonth} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[12px] px-3 py-[8px] bg-white">
                     <RotateCcw size={13} /> Reset month
@@ -190,7 +259,7 @@ export default function WorkCalendarPage() {
 
       {edit && (
         <div className="mt-3 rounded-card px-4 py-[10px] text-[12px] font-semibold flex items-center gap-2" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
-          ✏️ Admin edit mode — คลิกช่องวันเพื่อ เพิ่ม / เปลี่ยนค่า (7→8→9→6→8-9) / ลบ marker · การแก้ไขจะผูกกับเดือน {monthLabel}
+          ✏️ Admin edit mode — คลิกช่องวันเพื่อ เพิ่ม / เปลี่ยนค่า ({valueCycleFor(ym.m + 1).join(" → ")}) / ลบ marker · marker คือ “เดือนของงาน” วางแผนล่วงหน้าได้ 2 เดือน · การแก้ไขจะผูกกับเดือน {monthLabel}
         </div>
       )}
 
@@ -269,12 +338,17 @@ export default function WorkCalendarPage() {
         </ModuleSummaryCard>
       </div>
 
-      {view === "grid" ? (
-        <GridView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone}
-          monthKey={monthKey} edit={edit && canEdit} onCell={onCell} overrides={overrides} />
-      ) : (
-        <AgendaView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone} monthKey={monthKey} />
-      )}
+      {/* print-calendar-root marks what the PDF export prints; the heading is
+          re-stated inside it because the page header above is outside. */}
+      <div className="print-calendar-root">
+        <div className="hidden print:block text-[14px] font-extrabold mb-2">Work Calendar — {monthLabel}</div>
+        {view === "grid" ? (
+          <GridView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone}
+            monthKey={monthKey} edit={edit && canEdit} onCell={onCell} overrides={overrides} />
+        ) : (
+          <AgendaView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone} monthKey={monthKey} />
+        )}
+      </div>
     </>
   );
 }
@@ -293,8 +367,8 @@ function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell
 }) {
   const colW = 30;
   return (
-    <div className="mt-5 bg-surface border border-line rounded-cardLg overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="mt-5 bg-surface border border-line rounded-cardLg overflow-hidden print-expand">
+      <div className="overflow-x-auto print-expand">
         <table className="border-collapse text-[12px] w-full" style={{ minWidth: 420 + meta.days.length * colW }}>
           <thead>
             <tr>

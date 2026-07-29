@@ -430,7 +430,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
                   <span className="text-[13.5px] font-bold text-ink truncate">{t.title}</span>
                   <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#F0F7F0", color: "#4E7A4E" }}>Need Approval</span>
                 </div>
-                <div className="text-[11.5px] text-faint mb-3">{t.brand} · {t.campaign}</div>
+                <div className="text-[11.5px] text-faint mb-3">{brandCampaignLine(t.brand, t.campaign)}</div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11.5px] text-muted">Requested for {t.assignee}</span>
                   <span className="text-[11.5px] font-bold text-accent">Review →</span>
@@ -648,7 +648,7 @@ function TaskCard({ t, status, viewAs, onOpen, onDone, onStart }: { t: Task; sta
         <span className="ml-auto"><span style={badge(status, STATUS_MAP)}>{status}</span></span>
       </div>
       <div className="text-[14.5px] font-bold leading-[1.35] mb-[5px]">{t.title}</div>
-      <div className="text-[11.5px] text-faint mb-[10px]">{t.brand} · {t.campaign}</div>
+      <div className="text-[11.5px] text-faint mb-[10px]">{brandCampaignLine(t.brand, t.campaign)}</div>
       <div className="text-[12px] text-muted rounded-[9px] px-3 py-[9px] mb-3 italic leading-[1.5]" style={{ background: "#FAF8F4" }}>{t.nextAction}</div>
       <div className="flex items-center gap-[10px] mb-3 flex-wrap">
         <span className="text-[11px] font-semibold" style={{ color: dueColorOf(t) }}>📅 {t.due}</span>
@@ -685,7 +685,7 @@ function ListView({ tasks, getStatus, onOpen, colorOf }: { tasks: Task[]; getSta
             <div><div className="text-[13px] font-semibold truncate">{t.moduleIcon} {t.title}</div>{t.blocker && <div className="text-[10.5px] font-semibold mt-[1px]" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</div>}</div>
             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg, justifySelf: "start" }}>{t.type}</span>
             <div className="flex items-center gap-[6px] min-w-0"><span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0" style={{ background: colorOf(t.assignee) }}>{init(t.assignee)}</span><span className="text-[12px] font-semibold truncate">{t.assignee}</span></div>
-            <span className="text-[12px] text-muted truncate">{t.campaign}</span>
+            <span className="text-[12px] text-muted truncate">{t.campaign?.trim() || "—"}</span>
             <span className="text-[12px] font-semibold" style={{ color: dueColorOf(t) }}>{t.due}</span>
             <span style={{ ...badge(t.priority, PRIORITY_MAP), justifySelf: "start" }}>{t.priority}</span>
             <span style={{ ...badge(status, STATUS_MAP), justifySelf: "start" }}>{status}</span>
@@ -751,7 +751,7 @@ function TaskDrawer({ t, status, me, people, colorOf, onClose, onDone, onReassig
                 <span style={badge(status, STATUS_MAP)}>{status}</span>
               </div>
               <div className="text-[16px] font-extrabold leading-[1.3] mb-[5px]">{t.title}</div>
-              <div className="text-[12px] text-faint">{t.brand} · {t.campaign}</div>
+              <div className="text-[12px] text-faint">{brandCampaignLine(t.brand, t.campaign)}</div>
             </div>
             <span onClick={onClose} className="text-[18px] text-faint cursor-pointer p-1 leading-none flex-shrink-0">✕</span>
           </div>
@@ -863,11 +863,42 @@ function Detail({ label, value, valueColor }: { label: string; value: string; va
   return <div className="rounded-[10px] px-3 py-[10px]" style={{ background: "#FAF8F4" }}><div className="text-[10px] font-semibold text-faint mb-[3px]">{label}</div><div className="text-[13px] font-bold" style={{ color: valueColor ?? "#211F1C" }}>{value}</div></div>;
 }
 
+/** Work types offered when raising a task, in the order the team asked for.
+ *  The old short types (Graphic, Ads, Budget…) stay in TYPE_META below as
+ *  aliases so tasks already saved under them keep their icon and colour. */
+const WORK_TYPES = [
+  "Campaign", "Content", "Design / Artwork", "Photo / Video", "Paid Ads",
+  "KOL / Influencer", "CRM / LINE OA", "Website / Digital", "Event / Activation",
+  "Menu / Product", "Report / Analysis", "Admin / Other",
+] as const;
+
 const TYPE_META: Record<string, { module: string; icon: string; color: string }> = {
-  Content: { module: "Content", icon: "✍️", color: "#3E5C9A" }, KOL: { module: "KOL", icon: "🌟", color: "#B5577E" },
-  Graphic: { module: "Graphic", icon: "🎨", color: "#C2691E" }, Budget: { module: "Finance", icon: "฿", color: "#4E7A4E" },
-  Ads: { module: "Ads", icon: "📣", color: "#C68A1E" }, Report: { module: "Campaign", icon: "🎯", color: "#B33A2E" }, Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
+  // Current work types
+  Campaign: { module: "Campaign", icon: "🎯", color: "#B8945A" },
+  Content: { module: "Content", icon: "✍️", color: "#3E5C9A" },
+  "Design / Artwork": { module: "Graphic", icon: "🎨", color: "#C2691E" },
+  "Photo / Video": { module: "Graphic", icon: "🎬", color: "#9A5B33" },
+  "Paid Ads": { module: "Ads", icon: "📣", color: "#C68A1E" },
+  "KOL / Influencer": { module: "KOL", icon: "🌟", color: "#B5577E" },
+  "CRM / LINE OA": { module: "CRM", icon: "💬", color: "#4E7A4E" },
+  "Website / Digital": { module: "Content", icon: "🌐", color: "#3E7A8A" },
+  "Event / Activation": { module: "Campaign", icon: "🎪", color: "#B33A2E" },
+  "Menu / Product": { module: "Campaign", icon: "🍽️", color: "#8A6A3E" },
+  "Report / Analysis": { module: "Campaign", icon: "📊", color: "#6b6258" },
+  "Admin / Other": { module: "Campaign", icon: "🗂️", color: "#7A7268" },
+  // Legacy types — still held by saved tasks, so keep resolving them.
+  KOL: { module: "KOL", icon: "🌟", color: "#B5577E" },
+  Graphic: { module: "Graphic", icon: "🎨", color: "#C2691E" },
+  Budget: { module: "Finance", icon: "฿", color: "#4E7A4E" },
+  Ads: { module: "Ads", icon: "📣", color: "#C68A1E" },
+  Report: { module: "Campaign", icon: "📊", color: "#B33A2E" },
 };
+
+/** "Teppen · Summer Push", or just the brand when the task isn't tied to a
+ *  campaign — a task with no campaign must not render a dangling "· ". */
+function brandCampaignLine(brand: string, campaign: string): string {
+  return [brand, campaign?.trim()].filter(Boolean).join(" · ");
+}
 
 function NewTaskModal({ owner, people, campaigns, brandOptions, nextId, onClose, onCreate }: { owner: string; people: Person[]; campaigns: CampaignRow[]; brandOptions: BrandId[]; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
   const [title, setTitle] = useState("");
@@ -886,10 +917,13 @@ function NewTaskModal({ owner, people, campaigns, brandOptions, nextId, onClose,
   useEffect(() => {
     if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
   }, [brandCampaigns, campaign]);
-  const canCreate = title.trim() && campaign.trim();
+  // Campaign is optional: plenty of real work (a monthly report, a menu shoot,
+  // an admin errand) belongs to no campaign, and forcing one made people attach
+  // tasks to whatever campaign happened to be in the list.
+  const canCreate = !!title.trim();
   const create = () => {
     if (!canCreate) return;
-    const meta = TYPE_META[type];
+    const meta = TYPE_META[type] ?? TYPE_META["Admin / Other"];
     onCreate({ id: nextId, title: title.trim(), module: meta.module, moduleIcon: meta.icon, moduleColor: meta.color, type, assignee, brand: brandName(brand), campaign: campaign.trim(), status: "Todo", priority, group, due: fmtShort(dueIso) || "TBD", dueIso, blocker: null, pendingApprover: null, isQuickWin: group === "quickWins", nextAction: nextAction.trim() || "Start when you're ready.", checklist: [] });
   };
   return (
@@ -901,12 +935,12 @@ function NewTaskModal({ owner, people, campaigns, brandOptions, nextId, onClose,
         <div className="flex flex-col gap-4">
           <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Task Title <span style={{ color: "#B33A2E" }}>*</span></label><input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="e.g. Draft Wagyu launch caption" autoFocus /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label><select value={type} onChange={(e) => setType(e.target.value)} className={field}>{Object.keys(TYPE_META).map((t) => <option key={t} value={t}>{TYPE_META[t].icon} {t}</option>)}</select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Work Type</label><select value={type} onChange={(e) => setType(e.target.value)} className={field}>{WORK_TYPES.map((t) => <option key={t} value={t}>{TYPE_META[t].icon} {t}</option>)}</select></div>
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Assign to</label><select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field}>{people.map(({ name: p }) => <option key={p} value={p}>{p}{p === owner ? " (me)" : ""}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={brand} onChange={(e) => setBrand(e.target.value as BrandId)} className={field}>{brandOptions.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}</select></div>
-            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label><select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}><option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>{brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+            <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign / Project <span className="text-faint font-normal">· optional</span></label><select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}><option value="">{brandCampaigns.length ? "— ไม่ผูกกับแคมเปญ —" : "ยังไม่มีแคมเปญของแบรนด์นี้"}</option>{brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Due</label><DatePicker value={dueIso || null} onChange={setDueIso} /></div>
