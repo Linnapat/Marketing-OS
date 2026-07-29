@@ -89,6 +89,11 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // The graphic request this post is waiting on — fetched by id so the modal can
   // say what kind of artwork it is, not just that one exists.
   const [linkedGraphic, setLinkedGraphic] = useState<Graphic | null>(null);
+  // "still fetching" and "the request this post names does not exist" are
+  // different answers and must not look the same. Live data has posts pointing
+  // at graphic ids that were hard-deleted before Trash existed, and those sat
+  // on "กำลังโหลด…" forever — a spinner that never resolves reads as a hang.
+  const [graphicLookup, setGraphicLookup] = useState<"idle" | "loading" | "missing" | "found">("idle");
   // A planner stops once Creative has taken the job on — the brief they are
   // working to must not change under them.
   const lock = contentEditLock(linkedGraphic);
@@ -108,11 +113,12 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     return () => { alive = false; };
   }, [item.b]);
   useEffect(() => {
-    if (!item.graphicRequestId) { setLinkedGraphic(null); return; }
+    if (!item.graphicRequestId) { setLinkedGraphic(null); setGraphicLookup("idle"); return; }
     let alive = true;
+    setGraphicLookup("loading");
     fetchGraphicById(item.graphicRequestId)
-      .then((g) => { if (alive) setLinkedGraphic(g); })
-      .catch(() => {});
+      .then((g) => { if (!alive) return; setLinkedGraphic(g); setGraphicLookup(g ? "found" : "missing"); })
+      .catch(() => { if (alive) setGraphicLookup("missing"); })
     return () => { alive = false; };
   }, [item.graphicRequestId]);
   useEffect(() => {
@@ -543,6 +549,10 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                           {linkedGraphic.type && <span className="text-[11.5px] font-bold text-muted">{linkedGraphic.type}</span>}
                           <StatusBadge tone={linkedGraphic.stage === "Approved" || linkedGraphic.stage === "Delivered" ? "green" : "gold"}>{linkedGraphic.stage}</StatusBadge>
                         </>
+                      ) : graphicLookup === "missing" ? (
+                        <span className="text-[11.5px] font-semibold" style={{ color: "#B33A2E" }}>
+                          ⚠ ไม่พบใบงาน #{item.graphicRequestId} — อาจถูกลบถาวรไปแล้ว · asset จะไม่ไหลกลับมาที่โพสต์นี้
+                        </span>
                       ) : (
                         <span className="text-[11px] text-faint">กำลังโหลดรายละเอียดใบงาน…</span>
                       )}

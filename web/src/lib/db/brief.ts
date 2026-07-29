@@ -100,17 +100,32 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
   // Each row carries campaignId + sourceContentItemId; createXIfNew skips when
   // the pair already exists, so re-Submit is a no-op (no duplicates, no dupe tasks).
   let n = 0;
+  // Content items need their OWN index. `n` is the task sequence and only
+  // advances when a task is actually created — so on a re-submit, where the
+  // posts and graphics already exist and no tasks are made, it stayed put and
+  // the next content item reused the previous one's post id AND graphic id.
+  // Found live: two posts (from ci-1 and ci-6 of one campaign) sharing
+  // "c17853298244150" and graphic "1785329824915". Sharing a post id means
+  // updateContent/deleteContent match BOTH rows, so editing one edited the
+  // other and deleting one deleted the other.
+  let itemIndex = 0;
   for (const ci of normalizedBrief.content) {
+    const idx = itemIndex++;
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
     // Video work needs a Creative request just like graphic work — a content
     // item with only "Needs Video" used to become a bare task, so VDO pieces
     // never reached Graphic Request and were never counted in Artwork Count.
     const needsCreative = ci.requiredGraphic || ci.requiredVideo;
-    const gid = needsCreative ? stamp + 500 + n : undefined;
+    // stamp*1000 rather than stamp+500: two campaigns submitted a few
+    // milliseconds apart could otherwise land on the same number
+    // (stamp+500+i === stamp'+500+j whenever stamp-stamp' === j-i).
+    const gid = needsCreative ? stamp * 1000 + idx : undefined;
     const post: ContentItem = {
       // No publish date yet → fall back to the campaign Start Date (stays inside the
       // campaign window) rather than day 1 of the month.
-      id: `c${stamp}${n}`, day: dayOf(ci.publishDate) || dayOf(normalizedBrief.startDate) || 1,
+      // Separator so the stamp and the index can never run together into an id
+      // another (stamp, index) pair could also spell.
+      id: `c${stamp}-${idx}`, day: dayOf(ci.publishDate) || dayOf(normalizedBrief.startDate) || 1,
       dateIso: ci.publishDate || normalizedBrief.startDate || undefined, time: "10:00", title: ci.title || `${normalizedBrief.name} — Content ${n + 1}`,
       b: normalizedBrief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: normalizedBrief.name,
       campaignId: normalizedBrief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,

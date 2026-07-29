@@ -48,6 +48,11 @@ create index if not exists tasks_trash_idx            on tasks            (delet
 create or replace function purge_expired_trash(retain_days int default 7)
 returns int
 language plpgsql
+-- Pin the search_path. Without it the unqualified table names below resolve
+-- through whatever schemas the caller has in front of public, so anyone able to
+-- create a table in such a schema could have this delete theirs instead of ours
+-- (Supabase linter 0011).
+set search_path = public, pg_temp
 as $$
 declare
   cutoff timestamptz := now() - make_interval(days => retain_days);

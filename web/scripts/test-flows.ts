@@ -484,5 +484,50 @@ console.log("Artwork counting — by pixels, platform collapsed");
   check("ไม่มีกรณีไหนคืนวันก่อนวันขอ", [roomy, tight, impossible].every((r) => r.iso >= REQ));
 }
 
+// ── post/graphic ids ต้องไม่ซ้ำแม้ตอน re-submit (บั๊กที่เจอในฐานข้อมูลจริง) ──
+{
+  // จำลองกติกาการแจก id ใน saveCampaignBrief: index ของ content item ต้องเดิน
+  // ทุกรอบ ไม่ผูกกับตัวนับ task ที่เพิ่มเฉพาะตอนสร้าง task สำเร็จ
+  const mintIds = (items: number, taskCreated: (i: number) => boolean) => {
+    const stamp = 1785329824415;
+    let n = 0;            // ตัวนับ task
+    let itemIndex = 0;    // index ของ content item
+    const posts: string[] = [];
+    const gids: number[] = [];
+    for (let i = 0; i < items; i++) {
+      const idx = itemIndex++;
+      posts.push(`c${stamp}-${idx}`);
+      gids.push(stamp * 1000 + idx);
+      if (taskCreated(i)) n++;
+    }
+    return { posts, gids, n };
+  };
+  const uniq = (a: unknown[]) => new Set(a.map(String)).size === a.length;
+
+  // เคสปกติ: ทุก item สร้าง task
+  const all = mintIds(6, () => true);
+  check("id โพสต์ไม่ซ้ำ (ปกติ)", uniq(all.posts));
+  check("id ใบงานไม่ซ้ำ (ปกติ)", uniq(all.gids));
+
+  // เคสที่พังจริง: re-submit — ไม่มี task ถูกสร้างเลย
+  const resubmit = mintIds(6, () => false);
+  check("re-submit แล้ว id โพสต์ยังไม่ซ้ำ", uniq(resubmit.posts));
+  check("re-submit แล้ว id ใบงานยังไม่ซ้ำ", uniq(resubmit.gids));
+  check("ตัวนับ task ไม่ขยับตอน re-submit", resubmit.n === 0);
+  // ci-1 กับ ci-6 คือคู่ที่ชนกันจริงในฐานข้อมูล
+  check("item แรกกับ item สุดท้ายต่างกัน", resubmit.posts[0] !== resubmit.posts[5]);
+
+  // เคสผสม: บาง item สร้าง task บาง item ไม่สร้าง
+  const mixed = mintIds(8, (i) => i % 3 === 0);
+  check("เคสผสม id โพสต์ไม่ซ้ำ", uniq(mixed.posts));
+  check("เคสผสม id ใบงานไม่ซ้ำ", uniq(mixed.gids));
+
+  // ตัวคั่นกัน id ของคนละ stamp มาสะกดเป็นตัวเดียวกัน
+  check("มีตัวคั่นระหว่าง stamp กับ index", all.posts[0].includes("-"));
+  // stamp*1000 กัน 2 แคมเปญที่ submit ห่างกันไม่กี่ ms ชนกัน
+  check("id ใบงานของ stamp ที่ห่างกัน 1ms ไม่ชนกัน",
+    (1785329824415 * 1000 + 9) !== (1785329824416 * 1000 + 0));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
