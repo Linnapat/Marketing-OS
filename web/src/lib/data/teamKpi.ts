@@ -213,13 +213,22 @@ export function summarize(results: PersonResult[]): TeamSummary {
 }
 
 /** Month keys for the picker: the current month and the 11 before it. */
-export function recentMonths(today: Date, count = 12): string[] {
+export function recentMonths(today: Date, count = 12, ahead = 0): string[] {
   const out: string[] = [];
+  for (let i = ahead; i > 0; i -= 1) {
+    const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
   for (let i = 0; i < count; i += 1) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
     out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
   return out;
+}
+
+/** "YYYY-MM" for a date — the month a picker should land on by default. */
+export function monthKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 /** Defensive parse for whatever comes back from storage — a hand-edited row or

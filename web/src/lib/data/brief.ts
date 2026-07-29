@@ -389,8 +389,34 @@ export interface FinalArtworkDue {
  *  date: the date becomes the earliest Creative can actually deliver and the
  *  brief is flagged as a rush, so a person decides whether the month can take
  *  it (or moves the publish date, which is the real fix). */
-export function finalArtworkDue(publishIso?: string, requestIso?: string): FinalArtworkDue {
+export function finalArtworkDue(
+  publishIso?: string,
+  requestIso?: string,
+  /** What the Team Calendar says the Final AW deadline is for this month.
+   *  When it speaks, it wins — it IS the team's policy, and a constant in code
+   *  that disagrees with the calendar on the wall is just a second answer. */
+  calendarIso?: string,
+): FinalArtworkDue {
   const floor = minGraphicDueDate(requestIso);
+  if (calendarIso) {
+    // The calendar can name a date that has already gone — planning September
+    // in September means its 23-July deadline is long past. Say so, and still
+    // give a date somebody can actually hit rather than one nobody can.
+    if (calendarIso >= floor) {
+      return {
+        iso: calendarIso,
+        fixed: true,
+        rushed: false,
+        reason: `ตามปฏิทินทีม · Final AW ของงานเดือนนี้กำหนดไว้ ${calendarIso}`,
+      };
+    }
+    return {
+      iso: floor,
+      fixed: true,
+      rushed: true,
+      reason: `เลยเดดไลน์ปฏิทินทีมแล้ว (${calendarIso}) — เร็วสุดที่ทำได้คือ ${floor} จึงนับเป็นงานเร่ง`,
+    };
+  }
   if (!publishIso) {
     return {
       iso: "",
