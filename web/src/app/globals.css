@@ -208,4 +208,25 @@ html {
   .print-root { position: absolute !important; inset: 0 !important; background: #fff !important; }
   .no-print { display: none !important; }
   @page { size: A5 landscape; margin: 8mm; }
+
+  /* Work Calendar → PDF. The rules above hide everything but .print-root, so
+     without this the calendar prints a blank page. The page class is set by the
+     PDF button just before window.print() and removed on afterprint, so the
+     voucher's own print path is untouched. Paper size is injected at the same
+     moment (see printCalendar in app/workflow) — @page cannot be scoped to a
+     class, and a 31-column grid does not belong on A5. */
+  body.printing-calendar .print-calendar-root,
+  body.printing-calendar .print-calendar-root * { visibility: visible !important; }
+  body.printing-calendar .print-calendar-root {
+    position: absolute !important;
+    inset: 0 !important;
+    background: #fff !important;
+  }
+  /* The grid lives in a horizontal scroller on screen; on paper it must lay out
+     in full instead of being clipped at the viewport edge. */
+  body.printing-calendar .print-calendar-root .print-expand {
+    overflow: visible !important;
+    max-height: none !important;
+    width: auto !important;
+  }
 }

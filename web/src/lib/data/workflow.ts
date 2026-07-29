@@ -184,12 +184,35 @@ export function projectMarks(base: Record<number, string>, year: number, month: 
   return out;
 }
 
-// Marker values an admin can cycle a cell through while editing.
-export const VALUE_CYCLE = ["7", "8", "9", "6", "8-9"];
-export function nextValue(current: string | undefined): string {
-  if (!current) return VALUE_CYCLE[0];
-  const i = VALUE_CYCLE.indexOf(current);
-  return i === -1 || i === VALUE_CYCLE.length - 1 ? "" : VALUE_CYCLE[i + 1]; // "" = remove
+// A marker says which MONTH the work on that day is for — the team briefs two
+// months ahead, so a task sitting on 8 August is usually October's work.
+//
+// The cycle used to be the literal list ["7","8","9","6","8-9"], which is the
+// July-2026 template frozen into code: viewing August you could still only mark
+// 6/7/8/9, and October — the month you are actually planning — was unreachable.
+// The values are now derived from the month on screen, which reproduces that
+// same list for July and gives 8/9/10/7/"9-10" for August.
+const wrapMonth = (m: number) => ((m - 1) % 12 + 12) % 12 + 1; // 1..12, wrapping
+
+/** Marker values for a calendar month (`month` is 1-based). Current, +1, +2,
+ *  previous, then the two-month range the team plans across. */
+export function valueCycleFor(month: number): string[] {
+  const at = (delta: number) => String(wrapMonth(month + delta));
+  return [at(0), at(1), at(2), at(-1), `${at(1)}-${at(2)}`];
+}
+
+/** The July template's cycle, kept as the default for callers with no month. */
+export const VALUE_CYCLE = valueCycleFor(7);
+
+export function nextValue(current: string | undefined, month = 7): string {
+  const cycle = valueCycleFor(month);
+  if (!current) return cycle[0];
+  const i = cycle.indexOf(current);
+  // A value from another month's cycle (an override made in a different month,
+  // or a template marker) is not in this list. Start the cycle rather than
+  // clearing it, so one click never silently drops someone else's marker.
+  if (i === -1) return cycle[0];
+  return i === cycle.length - 1 ? "" : cycle[i + 1]; // "" = remove
 }
 
 /** Apply an admin's per-month overrides on top of the generated marks. */

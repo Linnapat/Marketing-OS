@@ -4,7 +4,7 @@
  * Run: node --import tsx scripts/test-work-calendar.ts */
 
 import {
-  monthMeta, isWeekendDate, isWeekend, projectMarks, nextValue, applyOverrides,
+  monthMeta, isWeekendDate, isWeekend, projectMarks, nextValue, valueCycleFor, applyOverrides,
   VALUE_CYCLE, MONTH_NAMES, TEMPLATE_YEAR, TEMPLATE_MONTH, WEEKDAYS, DAYS, ALL_WORK_TASKS, WORK_SECTIONS,
 } from "../src/lib/data/workflow";
 
@@ -103,13 +103,38 @@ is("ค่าว่าง '' → ค่าแรก", nextValue(""), VALUE_CYCLE
 is("7 → 8", nextValue("7"), "8");
 is("8 → 9", nextValue("9"), "6");
 is("ค่าสุดท้ายวนกลับเป็นว่าง (= ลบ marker)", nextValue(VALUE_CYCLE.at(-1)), "");
-is("ค่าที่ไม่อยู่ในชุด → ว่าง (ลบทิ้ง)", nextValue("99"), "");
+// ชุดค่าอิงเดือนที่เปิดอยู่ ค่าจากเดือนอื่นจึงเป็นเรื่องปกติ ไม่ใช่ข้อมูลเสีย —
+// กดครั้งเดียวแล้วหายไปเลยคือการลบ marker ของคนอื่นทิ้งโดยไม่ได้ตั้งใจ
+is("ค่าที่ไม่อยู่ในชุด → เริ่มวนที่ค่าแรก (ไม่ลบทิ้งทันที)", nextValue("99"), VALUE_CYCLE[0]);
 {
   // Cycling from empty must walk the whole list and land back on empty.
   let v = nextValue(undefined), seen = [v];
   for (let i = 0; i < VALUE_CYCLE.length; i++) { v = nextValue(v); seen.push(v); }
   is("กดวนครบรอบแล้วกลับมาว่าง", seen.at(-1), "");
   is("กดวนครบทุกค่าใน VALUE_CYCLE", seen.slice(0, VALUE_CYCLE.length), VALUE_CYCLE);
+}
+
+console.log("\n— valueCycleFor: marker วางแผนล่วงหน้า 2 เดือน —");
+// marker = เดือนของงาน ทีมวางแผนล่วงหน้า 2 เดือน ชุดค่าจึงต้องอิงเดือนที่เปิดอยู่
+is("กรกฎาคม = ชุดเดิมของ template", valueCycleFor(7), ["7", "8", "9", "6", "8-9"]);
+// เคสที่ผู้ใช้แจ้ง: อยู่เดือน 8 ต้องเลือก 10 และ 9-10 ได้
+is("สิงหาคม เลือกเดือน 10 และ 9-10 ได้", valueCycleFor(8), ["8", "9", "10", "7", "9-10"]);
+is("สิงหาคม: มี 10 อยู่ในชุด", valueCycleFor(8).includes("10"), true);
+is("สิงหาคม: มี 9-10 อยู่ในชุด", valueCycleFor(8).includes("9-10"), true);
+// ข้ามปี: เดือนต้องวนกลับเป็น 1..12 ไม่ใช่ 13/14
+is("พฤศจิกายน วนข้ามปี", valueCycleFor(11), ["11", "12", "1", "10", "12-1"]);
+is("ธันวาคม วนข้ามปี", valueCycleFor(12), ["12", "1", "2", "11", "1-2"]);
+is("มกราคม เดือนก่อนหน้าคือ 12", valueCycleFor(1), ["1", "2", "3", "12", "2-3"]);
+is("ทุกเดือนได้ 5 ค่าเสมอ", Array.from({ length: 12 }, (_, i) => valueCycleFor(i + 1).length), Array(12).fill(5));
+{
+  // nextValue ต้องเดินตามชุดของเดือนที่ส่งเข้าไป ไม่ใช่ชุดของกรกฎาคม
+  is("สิงหาคม: 9 → 10", nextValue("9", 8), "10");
+  is("สิงหาคม: 7 → 9-10 (ตัวสุดท้ายก่อนลบ)", nextValue("7", 8), "9-10");
+  is("สิงหาคม: 9-10 → ว่าง", nextValue("9-10", 8), "");
+  let v = nextValue(undefined, 8); const seen = [v];
+  for (let i = 0; i < 5; i++) { v = nextValue(v, 8); seen.push(v); }
+  is("สิงหาคม: กดวนครบรอบแล้วกลับมาว่าง", seen.at(-1), "");
+  is("สิงหาคม: กดวนครบทุกค่า", seen.slice(0, 5), valueCycleFor(8));
 }
 
 console.log("\n— applyOverrides: ค่าที่ admin แก้ทับของที่ generate มา —");
