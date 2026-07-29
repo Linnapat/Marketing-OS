@@ -69,6 +69,27 @@ export interface Asset {
   driveUrl: string;
   canvaUrl: string;
   updated: string;
+  /** Image shown on the card. Optional — assetPreviewSrc falls back to a
+   *  thumbnail derived from the Drive / Dropbox link when it is empty. */
+  previewUrl?: string;
+}
+
+/** Google Drive / Dropbox share links point at a viewer page, not an image.
+ *  Rewrite the ones that have a known direct form so pasting the same link the
+ *  team already keeps is enough to get a thumbnail. Returns "" when the link
+ *  cannot be turned into an image (a Drive *folder*, a Canva design, a private
+ *  `dropbox.com/home/…` path) — the card then falls back to its placeholder. */
+export function assetPreviewSrc(a: Pick<Asset, "previewUrl" | "driveUrl">): string {
+  const explicit = (a.previewUrl ?? "").trim();
+  if (explicit) return explicit;
+  const url = (a.driveUrl ?? "").trim();
+  if (!url || url === "#") return "";
+  if (/\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/i.test(url)) return url;
+  const drive = /drive\.google\.com\/(?:file\/d\/([\w-]{10,})|.*[?&]id=([\w-]{10,}))/.exec(url);
+  if (drive) return `https://drive.google.com/thumbnail?id=${drive[1] ?? drive[2]}&sz=w600`;
+  // Shared Dropbox links (/s/ or /scl/) render raw; /home/ paths are private.
+  if (/dropbox\.com\/(s|scl)\//.test(url)) return `${url.split("?")[0]}?raw=1`;
+  return "";
 }
 
 export const ASSETS: Asset[] = [

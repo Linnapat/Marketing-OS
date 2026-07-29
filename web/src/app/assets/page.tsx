@@ -1,13 +1,16 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
-import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
-import { fetchAssets, createAsset } from "@/lib/db/assets";
+import { ASSETS, ASSET_APPROVAL_TONE, Asset, assetPreviewSrc } from "@/lib/data/requests";
+import { fetchAssets, createAsset, updateAssetPreview } from "@/lib/db/assets";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
+import { Combobox } from "@/components/ui/Combobox";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -43,11 +46,59 @@ const emptyPortfolio = (brand: BrandId): PortfolioItem => ({
 
 interface AssetSavedView { tab: AssetTab; brand: BrandFilterValue; type: string; group: "list" | "campaign" }
 
-function AssetCard({ a }: { a: Asset }) {
+const STRIPES = "repeating-linear-gradient(45deg,#F4EFE5,#F4EFE5 10px,#EFE9DC 10px,#EFE9DC 20px)";
+
+/** The artwork itself when the link resolves to an image, else the striped
+ *  placeholder. A dead image URL (a private Drive file, a moved Dropbox link)
+ *  must not leave a broken-image icon in the middle of the library. */
+function AssetPreview({ a, height, showType = true }: { a: Asset; height: number; showType?: boolean }) {
+  const src = assetPreviewSrc(a);
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [src]);
+  if (src && !broken) {
+    return (
+      <div className="w-full overflow-hidden bg-[#F4EFE5]" style={{ height }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={a.name} loading="lazy" onError={() => setBroken(true)} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-full flex items-center justify-center" style={{ height, background: STRIPES }}>
+      {showType && <span className="text-[11px] font-mono text-faint">{a.type}</span>}
+    </div>
+  );
+}
+
+/** Paste-a-link editor for the thumbnail, shown on the card so assets that
+ *  predate previews (or live behind a link nothing can render) can still get
+ *  one without reuploading. */
+function PreviewEditor({ a, onSave, onClose }: { a: Asset; onSave: (url: string) => void; onClose: () => void }) {
+  const [url, setUrl] = useState(a.previewUrl ?? "");
+  return (
+    <div className="flex flex-col gap-[6px] mt-2">
+      <input
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        autoFocus
+        placeholder="วางลิงก์รูป (Drive / Dropbox / .jpg)"
+        className="w-full text-[11.5px] px-[9px] py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none"
+      />
+      <div className="flex gap-2">
+        <button onClick={() => { onSave(url.trim()); onClose(); }} className="flex-1 text-[11.5px] font-bold text-white bg-panel rounded-[8px] py-[6px]">บันทึกรูป</button>
+        <button onClick={onClose} className="text-[11.5px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[6px] bg-white">ยกเลิก</button>
+      </div>
+    </div>
+  );
+}
+
+function AssetCard({ a, onSetPreview }: { a: Asset; onSetPreview: (a: Asset, url: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const hasPreview = !!assetPreviewSrc(a);
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden shadow-soft">
-      <div className="h-32 flex items-center justify-center relative" style={{ background: "repeating-linear-gradient(45deg,#F4EFE5,#F4EFE5 10px,#EFE9DC 10px,#EFE9DC 20px)" }}>
-        <span className="text-[11px] font-mono text-faint">{a.type}</span>
+      <div className="relative">
+        <AssetPreview a={a} height={128} />
         <span className="absolute top-2 right-2"><StatusBadge tone="blue">{a.version}</StatusBadge></span>
       </div>
       <div className="p-3">
@@ -57,11 +108,83 @@ function AssetCard({ a }: { a: Asset }) {
           <StatusBadge tone={ASSET_APPROVAL_TONE[a.approval] ?? "neutral"}>{a.approval}</StatusBadge>
           <span className="text-[11px] text-faint">{a.updated}</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {a.driveUrl && <a href={a.driveUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Drive ↗</a>}
           {a.canvaUrl && <a href={a.canvaUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Canva ↗</a>}
+          {!editing && (
+            <button onClick={() => setEditing(true)} className="text-[11.5px] font-semibold text-muted ml-auto">
+              {hasPreview ? "เปลี่ยนรูป" : "＋ เพิ่มรูป Preview"}
+            </button>
+          )}
         </div>
+        {editing && <PreviewEditor a={a} onSave={(url) => onSetPreview(a, url)} onClose={() => setEditing(false)} />}
       </div>
+    </div>
+  );
+}
+
+/** Compact table row — the same assets when scanning names / campaigns beats
+ *  looking at thumbnails. */
+function AssetRow({ a, onSetPreview }: { a: Asset; onSetPreview: (a: Asset, url: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const hasPreview = !!assetPreviewSrc(a);
+  return (
+    <>
+      <tr className="border-t border-line hover:bg-ivory/60">
+        <td className="py-[9px] px-3">
+          <div className="w-[52px] rounded-[8px] overflow-hidden border border-line">
+            <AssetPreview a={a} height={40} showType={false} />
+          </div>
+        </td>
+        <td className="py-[9px] px-3">
+          <div className="text-[12.5px] font-bold text-ink">{a.name}</div>
+          <div className="text-[11px] text-faint flex items-center gap-[5px] mt-[2px]"><BrandDot brand={a.b} size={6} />{brandName(a.b)}</div>
+        </td>
+        <td className="py-[9px] px-3 text-[12px] text-muted">{a.campaign}</td>
+        <td className="py-[9px] px-3 text-[12px] text-muted">{a.type}</td>
+        <td className="py-[9px] px-3"><StatusBadge tone="blue">{a.version}</StatusBadge></td>
+        <td className="py-[9px] px-3"><StatusBadge tone={ASSET_APPROVAL_TONE[a.approval] ?? "neutral"}>{a.approval}</StatusBadge></td>
+        <td className="py-[9px] px-3 text-[11px] text-faint whitespace-nowrap">{a.updated}</td>
+        <td className="py-[9px] px-3">
+          <div className="flex items-center gap-3 justify-end whitespace-nowrap">
+            {a.driveUrl && <a href={a.driveUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Drive ↗</a>}
+            {a.canvaUrl && <a href={a.canvaUrl} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Canva ↗</a>}
+            <button onClick={() => setEditing((v) => !v)} className="text-[11.5px] font-semibold text-muted">{hasPreview ? "เปลี่ยนรูป" : "＋ รูป"}</button>
+          </div>
+        </td>
+      </tr>
+      {editing && (
+        <tr>
+          <td colSpan={8} className="px-3 pb-3 bg-ivory/40">
+            <div className="max-w-[420px]"><PreviewEditor a={a} onSave={(url) => onSetPreview(a, url)} onClose={() => setEditing(false)} /></div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function AssetTable({ rows, onSetPreview }: { rows: Asset[]; onSetPreview: (a: Asset, url: string) => void }) {
+  return (
+    <div className="bg-surface border border-line rounded-cardLg overflow-x-auto shadow-soft">
+      <table className="w-full min-w-[820px] border-collapse">
+        <thead>
+          <tr className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint text-left">
+            <th className="py-[10px] px-3 w-[70px]">Preview</th>
+            <th className="py-[10px] px-3">Asset</th>
+            <th className="py-[10px] px-3">Campaign</th>
+            <th className="py-[10px] px-3">Type</th>
+            <th className="py-[10px] px-3">Version</th>
+            <th className="py-[10px] px-3">Approval</th>
+            <th className="py-[10px] px-3">Updated</th>
+            <th className="py-[10px] px-3 text-right">Links</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => <AssetRow key={a.id} a={a} onSetPreview={onSetPreview} />)}
+        </tbody>
+      </table>
+      {rows.length === 0 && <div className="text-[12.5px] text-faint text-center py-10">No assets match this view.</div>}
     </div>
   );
 }
@@ -78,12 +201,16 @@ export default function AssetLibraryPage() {
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [portfolioDraft, setPortfolioDraft] = useState<PortfolioItem>(() => emptyPortfolio((brandOptions[0] ?? "teppen") as BrandId));
   const [uploadOpen, setUploadOpen] = useState(false);
-  const empty = { name: "", b: (brandOptions[0] ?? "teppen") as BrandId, campaign: "", type: "Key Visual", driveUrl: "", canvaUrl: "" };
+  // Cards or a scannable table — the library is browsed both ways.
+  const [display, setDisplay] = useState<"grid" | "list">("grid");
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const empty = { name: "", b: (brandOptions[0] ?? "teppen") as BrandId, campaign: "", type: "Key Visual", driveUrl: "", canvaUrl: "", previewUrl: "" };
   const [nu, setNu] = useState(empty);
 
   useEffect(() => {
     let alive = true;
     fetchAssets().then((a) => { if (alive) setAssets(a); }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     getAppSetting(PORTFOLIO_KEY).then((raw) => {
       if (!alive || !raw) return;
       try {
@@ -99,11 +226,33 @@ export default function AssetLibraryPage() {
     if (!brandOptions.includes(portfolioDraft.brand)) setPortfolioDraft((p) => ({ ...p, brand: (brandOptions[0] ?? "teppen") as BrandId }));
   }, [brandOptions, nu.b, portfolioDraft.brand]);
 
+  // The picker only offers this brand's campaigns — an asset filed under
+  // another brand's campaign is how spend and artwork drift apart.
+  const uploadCampaignNames = useMemo(
+    () => Array.from(new Set(campaigns.filter((c) => c.b === nu.b).map((c) => c.name))),
+    [campaigns, nu.b],
+  );
+  useEffect(() => {
+    if (nu.campaign && !uploadCampaignNames.includes(nu.campaign)) setNu((n) => ({ ...n, campaign: "" }));
+    // Only when the brand's campaign list changes — not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadCampaignNames]);
+
+  const setPreview = async (a: Asset, url: string) => {
+    setAssets((as) => as.map((x) => (x.id === a.id ? { ...x, previewUrl: url } : x)));
+    try {
+      await updateAssetPreview(a.id, url);
+    } catch (error) {
+      toastError(`บันทึกรูป Preview ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
   const upload = async () => {
     if (!nu.name.trim()) return;
     const draft: Asset = {
       id: "tmp", name: nu.name.trim(), b: nu.b, campaign: nu.campaign.trim() || "—", type: nu.type,
-      version: "v1", approval: "Draft", driveUrl: nu.driveUrl.trim(), canvaUrl: nu.canvaUrl.trim(), updated: "just now",
+      version: "v1", approval: "Draft", driveUrl: nu.driveUrl.trim(), canvaUrl: nu.canvaUrl.trim(),
+      previewUrl: nu.previewUrl.trim(), updated: "just now",
     };
     try {
       const created = await createAsset(draft);
@@ -157,10 +306,31 @@ export default function AssetLibraryPage() {
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brand</label><select value={nu.b} onChange={(e) => setNu({ ...nu, b: e.target.value as BrandId })} className={field}>{brandOptions.map((b) => <option key={b} value={b}>{brandVisibility.brandNames[b] ?? brandName(b)}</option>)}</select></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Type</label><select value={nu.type} onChange={(e) => setNu({ ...nu, type: e.target.value })} className={field}>{TYPES.filter((t) => t !== "all").map((t) => <option key={t}>{t}</option>)}</select></div>
               </div>
-              <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label><input value={nu.campaign} onChange={(e) => setNu({ ...nu, campaign: e.target.value })} placeholder="Campaign name" className={field} /></div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
+                {/* Picked from the campaigns that exist, not typed — a
+                    free-typed name never matches the campaign it belongs to. */}
+                <Combobox
+                  value={nu.campaign}
+                  onChange={(next) => setNu((n) => ({ ...n, campaign: next }))}
+                  options={uploadCampaignNames}
+                  disabled={uploadCampaignNames.length === 0}
+                  placeholder={uploadCampaignNames.length === 0 ? "ยังไม่มีแคมเปญของแบรนด์นี้" : "เลือกแคมเปญ (พิมพ์เพื่อค้นหา)"}
+                  emptyLabel="ไม่พบแคมเปญที่ตรงกับที่พิมพ์"
+                  inputClassName={field}
+                />
+                <div className="mt-[5px] text-[11px] text-faint">เว้นว่างได้ถ้า asset นี้ไม่ผูกกับแคมเปญ</div>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Drive link</label><input value={nu.driveUrl} onChange={(e) => setNu({ ...nu, driveUrl: e.target.value })} placeholder="https://drive…" className={field} /></div>
                 <div><label className="block text-[11.5px] font-bold text-faint mb-[6px]">Canva link</label><input value={nu.canvaUrl} onChange={(e) => setNu({ ...nu, canvaUrl: e.target.value })} placeholder="https://canva…" className={field} /></div>
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Preview image</label>
+                <input value={nu.previewUrl} onChange={(e) => setNu({ ...nu, previewUrl: e.target.value })} placeholder="ลิงก์รูปสำหรับโชว์บนการ์ด" className={field} />
+                <div className="mt-[5px] text-[11px] text-faint">
+                  เว้นว่างได้ — ระบบจะดึงรูปจาก Drive / Dropbox link ให้เอง (ต้องแชร์แบบ “anyone with the link”)
+                </div>
               </div>
             </div>
             <div className="flex gap-2 mt-6">
@@ -199,7 +369,10 @@ export default function AssetLibraryPage() {
                   current={{ tab, brand, type, group }}
                   onApply={(v) => { setTab(v.tab); setBrand(v.brand); setType(v.type); setGroup(v.group ?? "list"); }}
                 />
-                <Segmented value={group} onChange={setGroup} options={[{ value: "list", label: "List" }, { value: "campaign", label: "Group Campaign" }]} />
+                <Segmented value={display} onChange={setDisplay} options={[{ value: "grid", label: "▦ Grid" }, { value: "list", label: "☰ List" }]} />
+                {/* "list" here means ungrouped — the grid/table choice is the
+                    control above. Labelled "All" so the two stop reading alike. */}
+                <Segmented value={group} onChange={setGroup} options={[{ value: "list", label: "All" }, { value: "campaign", label: "Group Campaign" }]} />
               </span>
             </div>
             <div className="inline-flex w-fit rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px]">
@@ -252,16 +425,22 @@ export default function AssetLibraryPage() {
                     <span className="text-[13px] font-extrabold text-ink">🎯 {c}</span>
                     <span className="text-[12px] text-faint font-semibold">{list.length} asset{list.length > 1 ? "s" : ""}</span>
                   </div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
-                    {list.map((a) => <AssetCard key={a.id} a={a} />)}
-                  </div>
+                  {display === "list" ? (
+                    <AssetTable rows={list} onSetPreview={setPreview} />
+                  ) : (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+                      {list.map((a) => <AssetCard key={a.id} a={a} onSetPreview={setPreview} />)}
+                    </div>
+                  )}
                 </div>
               ))}
             {rows.length === 0 && <div className="text-[12.5px] text-faint text-center py-10">No assets match this view.</div>}
           </div>
+        ) : display === "list" ? (
+          <div className="mt-5"><AssetTable rows={rows} onSetPreview={setPreview} /></div>
         ) : (
           <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
-            {rows.map((a) => <AssetCard key={a.id} a={a} />)}
+            {rows.map((a) => <AssetCard key={a.id} a={a} onSetPreview={setPreview} />)}
             <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px] bg-white/70">
               <div className="text-[13px] font-bold text-muted">Drop asset</div>
               <div className="text-[11px] text-faint mt-1">Drive · Canva · final artwork</div>
