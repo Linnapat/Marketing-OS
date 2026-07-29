@@ -102,8 +102,22 @@ export function moveToCampaign(
   c: ContentItem, to: { id?: string; name: string }, by: string,
 ): ContentItem {
   const from = c.campaign?.trim() || "—";
-  const moved: ContentItem = { ...c, campaign: to.name, campaignId: to.id || undefined };
-  return withChange(moved, by, "ย้ายแคมเปญ", `${from} → ${to.name || "—"}`);
+  const moved: ContentItem = {
+    ...c,
+    campaign: to.name,
+    campaignId: to.id || undefined,
+    // sourceContentItemId names a row in the SOURCE campaign's brief ("ci-2"),
+    // and those numbers restart per campaign — every campaign has its own ci-2.
+    // Carried into the destination it means nothing, and it actively breaks
+    // things: it collides with that campaign's real ci-2 under the
+    // (campaign_id, sourceContentItemId) unique index, and a later re-Submit
+    // there would treat the destination's own plan item as already
+    // materialised. The post is no longer any plan row's output once it moves,
+    // so the link is dropped; where it came from lives in the change log.
+    sourceContentItemId: undefined,
+  };
+  return withChange(moved, by, "ย้ายแคมเปญ",
+    `${from} → ${to.name || "—"}${c.sourceContentItemId ? ` (เดิมมาจากแผน ${c.sourceContentItemId})` : ""}`);
 }
 
 export const CONTENT: ContentItem[] = [

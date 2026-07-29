@@ -20,6 +20,7 @@ import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
 import { GRAPHIC_BRIEF_FOR_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice } from "@/lib/data/graphic";
 import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { canEditContentPlan } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
@@ -226,9 +227,19 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     if (!target) return;
     setMoving(true);
     const next = moveToCampaign(item, { id: target.id, name: target.name }, reviewer);
+    // Where it is leaving, captured before the post is rewritten.
+    const fromCampaignId = item.campaignId;
+    const fromItemId = item.sourceContentItemId;
     void persist(next, `ย้ายไปแคมเปญ “${target.name}” เรียบร้อย`).then((ok) => {
       if (!ok) return;
       noticeCreative(`ย้ายโพสต์นี้ไปแคมเปญ “${target.name}” (เดิม “${item.campaign || "—"}”)`);
+      // The post has moved; the campaign it left must stop listing it in its
+      // plan, or the work reads as un-moved from the campaign side. Best-effort
+      // — the move itself has already succeeded and must not be undone by a
+      // failure to tidy up.
+      if (fromCampaignId && fromItemId) {
+        void detachBriefContentItem(fromCampaignId, fromItemId, reviewer, target.name).catch(() => {});
+      }
       setMoveTo("");
     }).finally(() => setMoving(false));
   };

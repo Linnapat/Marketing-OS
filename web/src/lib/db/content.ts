@@ -85,8 +85,20 @@ export async function updateContent(post: ContentItem): Promise<void> {
   // `.select()` so a filter that matches nothing is caught. Postgres reports no
   // error for an UPDATE that touches zero rows — whether the id is stale or RLS
   // hid the row — and without this the caller shows "saved" over a lost edit.
+  // Mirror EVERY column createContent writes, not just status and caption.
+  // The columns are a denormalised copy of the blob, and half of them were
+  // never refreshed on update — so moving a post to another campaign left
+  // `campaign_id` pointing at the old one. That is not cosmetic: deleteCampaign
+  // cascades on `campaign_id`, so deleting the campaign a post had been moved
+  // OUT of would have taken the post with it.
   const { data, error } = await db.from("content_posts")
-    .update({ status: post.status, caption: post.caption, data: post })
+    .update({
+      title: post.title, brand: post.b,
+      campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
+      platforms: post.platforms ?? [post.plat], status: post.status,
+      day: post.day, time: post.time, owner: post.owner, caption: post.caption,
+      data: post,
+    })
     .eq("data->>id", post.id)
     .select("id");
   if (error) throw new Error(error.message);

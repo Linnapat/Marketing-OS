@@ -391,6 +391,43 @@ export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | nu
   return data.data as CampaignBrief;
 }
 
+/** Take a content item out of a campaign's plan, because its post has been
+ *  moved to another campaign.
+ *
+ *  Moving a post rewrote the post row and nothing else, so the campaign it left
+ *  went on listing the item in Edit Campaign → Content Plan — the work looked
+ *  un-moved from the campaign side while Content Plan showed it gone. A plan
+ *  that still claims work being done elsewhere is worse than no plan.
+ *
+ *  Recorded in the approval log rather than removed quietly: a content item
+ *  disappearing from a brief is exactly the kind of change someone will later
+ *  ask about.
+ *
+ *  Best-effort by design — the post has already moved, and failing to tidy the
+ *  old plan must not undo that or block the person doing it. */
+export async function detachBriefContentItem(
+  campaignId: string, itemId: string, by: string, movedTo: string,
+): Promise<boolean> {
+  const db = supabase();
+  if (!db || !campaignId || !itemId) return false;
+  const brief = await fetchCampaignBrief(campaignId);
+  if (!brief) return false;
+  const item = brief.content?.find((c) => c.id === itemId);
+  if (!item) return false;                       // nothing to detach
+  const next: CampaignBrief = {
+    ...brief,
+    content: brief.content.filter((c) => c.id !== itemId),
+    approvalLog: [...(brief.approvalLog ?? []), {
+      action: "Content item moved to another campaign",
+      by,
+      at: new Date().toISOString(),
+      comment: `“${item.title || itemId}” ย้ายไปแคมเปญ “${movedTo}”`,
+    }],
+  };
+  await persistBriefBlob(next);
+  return true;
+}
+
 /** Reverse two-way sync (KOL row → Campaign Builder KOL Plan): when a KOL that
  *  came from a brief requirement is edited, recompute that requirement item from
  *  its live sibling rows (count, budget, platform, and the specialist's proposed
