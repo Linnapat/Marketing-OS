@@ -8,6 +8,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { PrintableVoucher } from "@/components/finance/PrintableVoucher";
 import { ExpenseRequestTab, SpendingLogTab } from "@/components/finance/ExpenseTabs";
+import { useCanSeeAllSpending } from "@/lib/usePermGates";
 import { BrandFilterValue, brandName } from "@/lib/brands";
 import { buildCsv, ExpenseRow } from "@/lib/data/finance";
 import { baht } from "@/lib/format";
@@ -30,6 +31,16 @@ function download(filename: string, content: string) {
 
 export default function ExpensesPage() {
   const [tab, setTab] = useState<"request" | "log">("request");
+  // The page itself is open to everyone — submitting an expense request is
+  // everyone's job (CMO, 2026-07-30), and gating the route on the Finance
+  // module used to lock out the five roles with Finance="—". The Spending Log
+  // is different: it is company-wide money, so it keeps the Finance gate.
+  const canSeeSpending = useCanSeeAllSpending();
+  // A saved view can carry tab:"log"; without this a submitter restoring one
+  // would sit on a tab that renders nothing.
+  useEffect(() => {
+    if (tab === "log" && !canSeeSpending) setTab("request");
+  }, [tab, canSeeSpending]);
   const [date, setDate] = useState<DateFilter>(DEFAULT_DATE_FILTER);
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [pvExpense, setPvExpense] = useState<ExpenseRow | null>(null);
@@ -100,7 +111,13 @@ export default function ExpensesPage() {
                   current={{ tab, brand, date }}
                   onApply={(v) => { setTab(v.tab); setBrand(v.brand); setDate(v.date); }}
                 />
-                <Segmented value={tab} onChange={setTab} options={[{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]} />
+                <Segmented
+                  value={tab}
+                  onChange={setTab}
+                  options={canSeeSpending
+                    ? [{ value: "request", label: "Expense Request" }, { value: "log", label: "Spending Log" }]
+                    : [{ value: "request", label: "Expense Request" }]}
+                />
               </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
@@ -134,7 +151,7 @@ export default function ExpensesPage() {
 
       <div className="mt-5">
         {tab === "request" && <ExpenseRequestTab brand={brand} date={date} />}
-        {tab === "log" && <SpendingLogTab brand={brand} date={date} onVoucher={setPvExpense} />}
+        {tab === "log" && canSeeSpending && <SpendingLogTab brand={brand} date={date} onVoucher={setPvExpense} />}
       </div>
 
       {pvExpense && <PrintableVoucher expense={pvExpense} onClose={() => setPvExpense(null)} />}

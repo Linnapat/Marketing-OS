@@ -319,7 +319,7 @@ export function mergeBudgetAllocationRows(
         : (kol.name || kol.kolType || "Creator");
       const reachActualPer = Math.round(actualReachTotal / platforms.length);
       const budgetActualPer = Math.round(actualCostTotal / platforms.length);
-      platforms.forEach((platform, index) => {
+      platforms.forEach((platform) => {
         pushIfMissing({
           ...planRow({
             id: `plan-${campaign.id}-kol-${slug(kol.id)}-${slug(platform)}`,

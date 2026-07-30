@@ -78,7 +78,7 @@ console.log("financeFromDb — Plan / Committed / Actual must never mix");
   eq("pending request is NOT actual spend", fin.actualSpend, 0);
   eq("campaign expense = 0 before approval", fin.pnl[0].expense, 0);
   eq("GP = 0, not −budget", fin.pnl[0].revenue - fin.pnl[0].expense, 0);
-  eq("available = plan − committed", fin.available, 0);
+  eq("available = plan − committed (nothing approved yet)", fin.available, 0);
 }
 {
   // Approved/paid requests ARE the expense.
@@ -93,6 +93,26 @@ console.log("financeFromDb — Plan / Committed / Actual must never mix");
   );
   eq("actualSpend = approved + paid only", fin.actualSpend, 25000);
   eq("campaign expense matches", fin.pnl[0].expense, 25000);
+}
+{
+  // Available must feel approved spend. Production showed Plan ฿1 · Actual ฿31K
+  // · Available ฿1 because the formula subtracted `committed` alone — a budget
+  // reporting itself untouched while the money had already gone out.
+  const fin = financeFromDb(
+    [camp({ name: "Kani festival", budget: 100000, spend: 30000 })],
+    [req({ campaign: "Kani festival", requested: 25000, approved: 25000, status: "Approved" })],
+    july,
+  );
+  eq("available = plan − committed − actual", fin.available, 45000);
+}
+{
+  // Overspend reads negative rather than clamping to a comfortable number.
+  const fin = financeFromDb(
+    [camp({ name: "Kani festival", budget: 1, spend: 0 })],
+    [req({ campaign: "Kani festival", requested: 31000, approved: 31000, status: "Approved" })],
+    july,
+  );
+  eq("overspend goes negative", fin.available, -30999);
 }
 {
   // Cross-month campaign pro-rates plan + committed by day overlap.

@@ -7,6 +7,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -46,4 +47,53 @@ export async function requireApiUser(req: NextRequest): Promise<Guard> {
 /** Narrowing helper: true when the guard produced an error response. */
 export function isApiAuthError(g: Guard): g is { error: NextResponse } {
   return "error" in g;
+}
+
+const LEVEL_RANK: Record<string, number> = { "—": 0, View: 1, Edit: 2, Approve: 3, Admin: 4 };
+
+/** Server-side module-permission check, resolved against the database the same
+ *  way Postgres' has_module() does — never from anything the client sent.
+ *
+ *  requireApiUser() only proves *who* is calling. Routes that fire an
+ *  irreversible outward action (publishing to Meta) also need to know *what
+ *  they may do*, and until now they didn't ask: any signed-in account could
+ *  post to the brand's Facebook/Instagram. Mirrors the pattern
+ *  /api/members/invite already uses for its Admin check.
+ *
+ *  Returns null when allowed, or a ready-to-return error response. */
+export async function requireModuleLevel(
+  email: string | null,
+  module: string,
+  min: "View" | "Edit" | "Approve" | "Admin",
+): Promise<NextResponse | null> {
+  if (!API_AUTH_REQUIRED) return null; // demo mode — no identities to check
+
+  const admin = supabaseAdmin();
+  if (!admin) {
+    return NextResponse.json(
+      { ok: false, error: "ตรวจสิทธิ์ไม่ได้: ยังไม่ได้ตั้ง SUPABASE_SERVICE_ROLE_KEY" },
+      { status: 501 },
+    );
+  }
+  const who = (email ?? "").toLowerCase();
+  if (!who) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const { data: member } = await admin
+    .from("members").select("role, access").ilike("email", who).maybeSingle();
+  // No members row = no access at all, matching the auth hook's fail-closed default.
+  if (!member) return NextResponse.json({ ok: false, error: "ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+  if (member.access === "Admin") return null; // CMO is never gated by the matrix
+
+  const { data: perm } = await admin
+    .from("permissions").select("perms").eq("role", member.role).maybeSingle();
+  const entry = (perm?.perms as { module: string; level: string }[] | undefined)
+    ?.find((p) => p.module === module);
+  const rank = LEVEL_RANK[entry?.level ?? "—"] ?? 0;
+  if (rank < LEVEL_RANK[min]) {
+    return NextResponse.json(
+      { ok: false, error: `ต้องมีสิทธิ์ ${module} ระดับ ${min} ขึ้นไป` },
+      { status: 403 },
+    );
+  }
+  return null;
 }

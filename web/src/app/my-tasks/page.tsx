@@ -4,7 +4,7 @@ import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState, CSSProperties } from "react";
 import Link from "next/link";
-import { TASKS, Task, PEOPLE, CELEBRATIONS, PERSON_ROLE, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
+import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
@@ -19,7 +19,8 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
-import { useRole } from "@/lib/role";
+import { useCanApproveExpense } from "@/lib/usePermGates";
+import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
@@ -35,13 +36,12 @@ const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
 const PENDING_CAMPAIGN = new Set(["Waiting for Approval", "Ready for Review"]);
 
 // ── Team = real members from Settings → Users & Roles ──────────────
-// (bundled mock names/colors remain the offline fallback)
+// The bundled demo names ("Aran P.", "Ken S."…) used to seed this page's state,
+// so before fetchMembers() resolved the header read "Viewing as Aran P." and
+// the task list was filtered by a person who does not work here. Start empty
+// and let the real member land instead — a blank moment is honest, a fake
+// colleague is not.
 interface Person { name: string; role: string; color: string }
-const FALLBACK_COLORS: Record<string, string> = {
-  "Aran P.": "#B8945A", "Ken S.": "#3E5C9A", Boss: "#4E7A4E",
-  "Nok W.": "#6b6258", "Ploy R.": "#B5577E", "Mei T.": "#C2691E",
-};
-const MOCK_PEOPLE: Person[] = PEOPLE.map((name) => ({ name, role: PERSON_ROLE[name] ?? "", color: FALLBACK_COLORS[name] ?? "#9A9387" }));
 const STATUS_MAP: Record<string, [string, string]> = {
   Done: ["#4E7A4E", "#EEF4EE"], "In Progress": ["#3E5C9A", "#EEF1F8"], Waiting: ["#C68A1E", "#FBF8EE"],
   "Need Approval": ["#4E7A4E", "#F0F7F0"], Stuck: ["#B33A2E", "#FFF5F4"], Revision: ["#C2691E", "#FBF1E9"], Todo: ["#9A9387", "#F2F0EB"],
@@ -87,17 +87,19 @@ export default function MyTasksPage() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [activeTab, setActiveTab] = useState<"myDay" | "approval">("myDay");
-  const [people, setPeople] = useState<Person[]>(MOCK_PEOPLE);
+  const [people, setPeople] = useState<Person[]>([]);
   // Personal view only — always the signed-in member (Team view lives in Team mood board).
-  const [viewAs, setViewAs] = useState(MOCK_PEOPLE[0].name);
+  const [viewAs, setViewAs] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
   const [graphics, setGraphics] = useState<Graphic[]>([]);
-  const { role } = useRole();
-  // Expense approvals are a role gate (CMO), not a person filter — Marketing
-  // expenses route to the CMO tier only (no CFO).
-  const canApproveExpense = role === "CMO";
+  // Expense approvals are a role gate, not a person filter. Read it from the
+  // same permissions matrix the database checks (Finance >= Approve) rather
+  // than string-matching "CMO" here, so this queue and
+  // supabase/security_p12_expense_approval.sql can never disagree about who
+  // may decide a request.
+  const canApproveExpense = useCanApproveExpense();
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
@@ -182,7 +184,7 @@ export default function MyTasksPage() {
   // Approve / reject inline — sync the row locally so the card updates at once.
   const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
-  const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? FALLBACK_COLORS[n] ?? "#9A9387";
+  const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? "#9A9387";
 
   // Lock the view to the signed-in member; keep viewAs valid when the member list loads.
   useEffect(() => {
@@ -194,18 +196,32 @@ export default function MyTasksPage() {
     if (!people.some((p) => p.name === viewAs)) setViewAs(people[0]?.name ?? viewAs);
   }, [member, people, viewAs, user]);
 
-  // Optimistic local patch + persist — powers every action button.
+  // Optimistic local patch + persist, with the undo the old version was
+  // missing: a rejected write used to leave the card showing the new state.
   const patchTask = (id: number, p: Partial<Task>) => {
-    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t)));
-    updateTaskDb(id, p).catch((error) => toastError(`บันทึก Task ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    const before = tasks.find((t) => t.id === id);
+    void optimistic(
+      () => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t))),
+      () => { if (before) setTasks((ts) => ts.map((t) => (t.id === id ? before : t))); },
+      () => updateTaskDb(id, p),
+      "บันทึก Task ไม่สำเร็จ",
+    );
   };
   const approveExpense = (r: ExpenseReq) => {
-    setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Approved", approved: x.requested } : x)));
-    approveExpenseRequest(r, r.requested).catch((error) => toastError(`อนุมัติ Expense ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    void optimistic(
+      () => setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Approved", approved: x.requested } : x))),
+      () => setExpenseReqs((xs) => xs.map((x) => (x.ref === r.ref && x._id === r._id ? r : x))),
+      () => approveExpenseRequest(r, r.requested),
+      "อนุมัติ Expense ไม่สำเร็จ",
+    );
   };
   const rejectExpense = (r: ExpenseReq, reason: string) => {
-    setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Rejected", rejectReason: reason } : x)));
-    rejectExpenseRequest(r, reason, approverName).catch((error) => toastError(`Reject Expense ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    void optimistic(
+      () => setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Rejected", rejectReason: reason } : x))),
+      () => setExpenseReqs((xs) => xs.map((x) => (x.ref === r.ref && x._id === r._id ? r : x))),
+      () => rejectExpenseRequest(r, reason, approverName),
+      "Reject Expense ไม่สำเร็จ",
+    );
   };
 
   const markDone = (id: number) => {

@@ -33,7 +33,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
       { href: "/platforms", label: "Platform Performance", icon: BarChart3, ready: true },
-      { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: false },
+      { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: true },
       // Lives under Performance Center as a route, but it is the monthly people
       // review — surfaced here per CMO so it isn't two clicks deep behind a tab.
       { href: "/performance-center/team-kpi", label: "Team KPI", icon: Gauge, ready: true },

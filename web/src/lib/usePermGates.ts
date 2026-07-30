@@ -1,6 +1,6 @@
 "use client";
 
-// Client hook pairing the pure gates in lib/roleGates with the LIVE
+// Client hooks pairing the pure gates in lib/roleGates with the LIVE
 // permissions matrix an admin saved in Settings → Permissions. Until the
 // fetch resolves the seed matrix answers, so the gate is never open just
 // because the network is slow.
@@ -8,12 +8,18 @@
 import { useEffect, useState } from "react";
 import { useRole } from "@/lib/role";
 import { fetchPermissions } from "@/lib/db/settings";
-import { canCreateCampaign, PermMatrix } from "@/lib/roleGates";
+import {
+  canCreateCampaign,
+  canApproveExpense,
+  canSeeAllSpending,
+  PermMatrix,
+} from "@/lib/roleGates";
 
 let _matrixCache: PermMatrix | null | undefined;
 
-export function useCanCreateCampaign(): boolean {
-  const { role } = useRole();
+/** The saved permissions matrix, fetched once per page load and shared by
+ *  every gate below (one request, not one per hook). */
+function usePermMatrix(): PermMatrix | null {
   const [matrix, setMatrix] = useState<PermMatrix | null>(_matrixCache ?? null);
   useEffect(() => {
     if (_matrixCache !== undefined) return;
@@ -24,5 +30,25 @@ export function useCanCreateCampaign(): boolean {
     }).catch(() => { _matrixCache = null; });
     return () => { alive = false; };
   }, []);
-  return canCreateCampaign(role, matrix);
+  return matrix;
+}
+
+export function useCanCreateCampaign(): boolean {
+  const { role } = useRole();
+  return canCreateCampaign(role, usePermMatrix());
+}
+
+/** May the current user decide an expense request? Mirrors the database rule
+ *  (has_module('Finance','Approve') + the CMO check inside the RPC) so the
+ *  button and the row policy cannot drift apart. */
+export function useCanApproveExpense(): boolean {
+  const { role } = useRole();
+  return canApproveExpense(role, usePermMatrix());
+}
+
+/** May the current user see company-wide spending? Submitting your OWN expense
+ *  request does not require this — everyone may do that. */
+export function useCanSeeAllSpending(): boolean {
+  const { role } = useRole();
+  return canSeeAllSpending(role, usePermMatrix());
 }

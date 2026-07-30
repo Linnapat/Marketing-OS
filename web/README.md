@@ -25,18 +25,27 @@ npm run dev      # http://localhost:3000
 npm run build    # production build (all routes prerender)
 ```
 
-## What's built (first pass)
+## What's built
 
-Foundation + the three flagship modules, per the agreed scope:
+Everything below runs against Supabase — this table was a "first pass" list long after
+the pages stopped being placeholders, so it is now kept honest. Last checked 2026-07-30.
 
 | Area | Status |
 | --- | --- |
 | Design system (tokens, KPI card, badges, filters, progress) | ✅ |
-| App shell — charcoal sidebar, mobile drawer, role switcher | ✅ |
-| **Dashboard** — Team Result Dashboard (KPIs, team results, health, alerts, approvals, pulse) | ✅ |
+| App shell — charcoal sidebar, mobile drawer | ✅ |
 | **Campaigns** — list (monthly summary, status groups, filters) + 10-tab detail | ✅ |
-| **Finance** — Budget Plan · Expense Request · Spending Log · ROI/P&L · Approval (signature) | ✅ |
-| Content Calendar · Graphic · KOL · Requests · Approvals · Assets · My Tasks · Team · Settings | ⏳ placeholder pages, designs ready |
+| **Finance** — Budget Plan · ROI/P&L · Approval (signature) | ✅ |
+| **Expenses** — Expense Request (open to everyone) · Spending Log (Finance-gated) | ✅ |
+| Content Plan · Graphic Request · KOL · Assets | ✅ |
+| Status Board · Platform Performance · Performance Center · Team KPI · Creative KPI | ✅ |
+| My Tasks · Team · Team Calendar · Trash · Settings · Agency Portal | ✅ |
+| Requests | ⏳ `ComingSoon` placeholder — the Status Board's Expense lane covers it |
+| Dashboard (Mood & Metrics) | ⛔ closed per CMO 18 Jul 2026; `/` redirects to `/campaigns` |
+
+The role switcher exists only in demo mode (`NEXT_PUBLIC_REQUIRE_AUTH` unset). With auth
+on, your role comes from your `members` row via the access-token hook and cannot be
+changed from the UI.
 
 ## Structure
 

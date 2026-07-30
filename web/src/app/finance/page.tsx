@@ -1,6 +1,5 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import Link from "next/link";
@@ -15,6 +14,8 @@ import { Progress } from "@/components/ui/Progress";
 import { SignaturePad } from "@/components/finance/SignaturePad";
 import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
 import { useRole } from "@/lib/role";
+import { useCanApproveExpense } from "@/lib/usePermGates";
+import { optimistic } from "@/lib/optimistic";
 import { baht } from "@/lib/format";
 import { buildCsv, PnlRow, EXP_CATEGORIES, STATUS_TONE } from "@/lib/data/finance";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, updateExpenseRequest, ExpenseReq } from "@/lib/db/finance";
@@ -110,6 +111,19 @@ export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("plan");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const { can } = useRole();
+  // Deciding an expense request is the CMO's call. The tab used to render for
+  // anyone who could open Finance at all, which put a live Approve button in
+  // front of Marketing Manager / BGL and Co-ordinator.
+  const canApprove = useCanApproveExpense();
+  const visibleTabs = useMemo(
+    () => TABS.filter(([id]) => id !== "approval" || canApprove),
+    [canApprove],
+  );
+  // A role that loses the tab must not stay parked on it (or land there from a
+  // stale saved view) and keep seeing the rows.
+  useEffect(() => {
+    if (tab === "approval" && !canApprove) setTab("plan");
+  }, [tab, canApprove]);
   // Budget + P&L derive from real campaigns / expense requests (empty on a fresh DB).
   const [loaded, setLoaded] = useState(false);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -200,7 +214,7 @@ export default function FinancePage() {
 
       {/* Tabs */}
       <div className="mt-5 flex gap-1 overflow-x-auto border-b border-line pb-[2px]">
-        {TABS.map(([id, label]) => {
+        {visibleTabs.map(([id, label]) => {
           const active = id === tab;
           return (
             <button key={id} onClick={() => setTab(id)}
@@ -221,7 +235,7 @@ export default function FinancePage() {
             sheetUrl={sheetUrl} onSaveUrl={saveSheetUrl} onReload={() => loadSheet(sheetUrl)} status={sheetStatus}
           />
         )}
-        {tab === "approval" && <ApprovalTab brand={brand} />}
+        {tab === "approval" && canApprove && <ApprovalTab brand={brand} />}
       </div>
     </>
   );
@@ -261,7 +275,10 @@ function BudgetPlanTab({ brand, campaigns, loaded, reqs, briefs, period, setPeri
   const actualSpend = filteredReqs
     .filter((r) => (brand === "all" || r.b === brand) && /approved|paid/i.test(r.status))
     .reduce((s, r) => s + (r.approved || r.requested || 0), 0);
-  const available = totalPlan - committed;
+  // Same formula as financeFromDb() — plan minus what is allocated and what has
+  // actually been approved out. Recomputed here because the cards are scoped to
+  // the brand filter, which financeFromDb does not know about.
+  const available = totalPlan - committed - actualSpend;
   const cats = budgetPlanCategories(filteredReqs, brand);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
   const periodLabel = period.mode === "year"
@@ -289,12 +306,15 @@ function BudgetPlanTab({ brand, campaigns, loaded, reqs, briefs, period, setPeri
         {([
           ["Committed", committed, "จัดสรรให้แคมเปญ · ยังไม่จ่ายจริง"],
           ["Actual Spend", actualSpend, "เบิกที่อนุมัติ/จ่ายแล้ว"],
-          ["Available", available, periodLabel],
+          ["Available", available, available < 0 ? `${periodLabel} · เกินงบ` : periodLabel],
         ] as const).map(([l, v, sub]) => (
           <div key={l} className="bg-surface border border-line rounded-card px-[14px] py-[11px]">
             <div className="text-[10px] tracking-[0.07em] uppercase font-bold text-faint">{l}</div>
-            <div className="text-[19px] font-bold mt-[3px] text-ink">{baht(v, { compact: true })}</div>
-            <div className="text-[10.5px] text-faint mt-[2px]">{sub}</div>
+            {/* Overspend is the one number on this row that needs to shout. */}
+            <div className="text-[19px] font-bold mt-[3px]" style={{ color: v < 0 ? "#B33A2E" : "#211F1C" }}>
+              {baht(v, { compact: true })}
+            </div>
+            <div className="text-[10.5px] mt-[2px]" style={{ color: v < 0 ? "#B33A2E" : "#9A9387" }}>{sub}</div>
           </div>
         ))}
       </div>
@@ -731,19 +751,29 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
       : inDateFilter(period, r.createdAt)));
   const waitingCount = rows.filter(({ r, i }) => !approved[i] && !rejected[i] && r.status === "Waiting Approval").length;
 
+  // Every decision below goes through optimistic(): the row paints instantly,
+  // and if the database refuses (RLS, or the CMO check inside the RPC) the row
+  // goes back to where it was instead of sitting there claiming "Approved".
   const approve = (i: number, r: ExpenseReq) => {
-    setApproved((a) => ({ ...a, [i]: true }));
     setSigning(null);
-    approveExpenseRequest(r, r.requested)
-      .catch((error) => toastError(`อนุมัติคำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    void optimistic(
+      () => setApproved((a) => ({ ...a, [i]: true })),
+      () => setApproved((a) => { const n = { ...a }; delete n[i]; return n; }),
+      () => approveExpenseRequest(r, r.requested),
+      "อนุมัติคำขอเบิกไม่สำเร็จ",
+    );
   };
   const reject = (i: number, r: ExpenseReq) => {
-    if (!reason.trim()) return;
-    setRejected((a) => ({ ...a, [i]: true }));
+    const why = reason.trim();
+    if (!why) return;
     setRejecting(null);
-    rejectExpenseRequest(r, reason.trim(), approverName)
-      .catch((error) => toastError(`Reject คำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     setReason("");
+    void optimistic(
+      () => setRejected((a) => ({ ...a, [i]: true })),
+      () => setRejected((a) => { const n = { ...a }; delete n[i]; return n; }),
+      () => rejectExpenseRequest(r, why, approverName),
+      "Reject คำขอเบิกไม่สำเร็จ",
+    );
   };
   const startEdit = (i: number, r: ExpenseReq) => {
     setEditing(i); setSigning(null); setRejecting(null);
@@ -755,10 +785,14 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
       vendor: eVendor.trim() || undefined,
       requested: Number(eAmt) > 0 ? Number(eAmt) : r.requested,
     };
-    setAllReqs((rs) => rs.map((x, xi) => (xi === i ? { ...x, ...patch } : x)));
+    const before = allReqs[i];
     setEditing(null);
-    updateExpenseRequest(r, patch, approverName)
-      .catch((error) => toastError(`แก้ไขคำขอเบิกไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    void optimistic(
+      () => setAllReqs((rs) => rs.map((x, xi) => (xi === i ? { ...x, ...patch } : x))),
+      () => setAllReqs((rs) => rs.map((x, xi) => (xi === i ? before : x))),
+      () => updateExpenseRequest(r, patch, approverName),
+      "แก้ไขคำขอเบิกไม่สำเร็จ",
+    );
   };
 
   const cell = "px-[10px] py-[8px] border-b border-line4";

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ContentItem, itemPlatforms } from "@/lib/data/content";
 import { MetaBrandAccount } from "@/lib/db/metaPublishing";
-import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
+import { requireApiUser, isApiAuthError, requireModuleLevel } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,11 @@ async function postForm(path: string, form: Record<string, string>): Promise<{ i
 export async function POST(req: NextRequest) {
   const guard = await requireApiUser(req);
   if (isApiAuthError(guard)) return guard.error;
+  // Publishing is public and effectively irreversible — being signed in is not
+  // enough. Content >= Approve, checked server-side against the members and
+  // permissions tables.
+  const denied = await requireModuleLevel(guard.user.email, "Content", "Approve");
+  if (denied) return denied;
 
   const token = process.env.META_PAGE_ACCESS_TOKEN;
   if (!token) return NextResponse.json({ ok: false, error: "Meta token missing in Vercel env: META_PAGE_ACCESS_TOKEN" }, { status: 412 });

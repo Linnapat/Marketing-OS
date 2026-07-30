@@ -92,7 +92,7 @@ export function seedPermMatrix(): PermMatrix {
 
 /** The role's Campaign-module level per the live matrix (seed as fallback). */
 export function campaignPermLevel(role: string, matrix?: PermMatrix | null): string | null {
-  return matrix?.[role]?.["Campaign"] ?? seedPermMatrix()[role]?.["Campaign"] ?? null;
+  return modulePermLevel(role, "Campaign", matrix);
 }
 
 /** Opening campaigns follows the Permissions table: Campaign ≥ Edit. An empty
@@ -103,6 +103,36 @@ export function canCreateCampaign(role: string, matrix?: PermMatrix | null): boo
   const level = campaignPermLevel(role, matrix);
   if (level !== null) return CAMPAIGN_CREATE_LEVELS.includes(level);
   return !isCreativeSideRole(role);
+}
+
+// ── Expense approval: the same line the database now draws ────────────────
+// The Approval tab used to render for anyone who could open Finance at all,
+// so a Marketing Manager / BGL (Finance=View) and a Co-ordinator (Finance=Edit)
+// both saw live Approve buttons — and the database let the Co-ordinator's click
+// through, because the RPC had no role check and the row policy asked only for
+// Finance >= View. supabase/security_p12_expense_approval.sql moved the rule
+// into Postgres (has_module('Finance','Approve') + a CMO check inside the RPC);
+// this is the matching UI gate, expressed against the same matrix level so the
+// two cannot drift apart again.
+
+const APPROVE_LEVELS = ["Approve", "Admin"];
+
+/** The role's level for any module per the live matrix (seed as fallback). */
+export function modulePermLevel(role: string, module: string, matrix?: PermMatrix | null): string | null {
+  return matrix?.[role]?.[module] ?? seedPermMatrix()[role]?.[module] ?? null;
+}
+
+/** May this role decide an expense request (approve or send back)? */
+export function canApproveExpense(role: string, matrix?: PermMatrix | null): boolean {
+  if (!role) return false; // unknown identity never approves money
+  return APPROVE_LEVELS.includes(modulePermLevel(role, "Finance", matrix) ?? "—");
+}
+
+/** May this role see company-wide spending (the Spending Log / Finance module)?
+ *  Submitting your own request does not require this — everyone may do that. */
+export function canSeeAllSpending(role: string, matrix?: PermMatrix | null): boolean {
+  if (!role) return false;
+  return (modulePermLevel(role, "Finance", matrix) ?? "—") !== "—";
 }
 
 /** Platform Performance shows company-wide budgets and actual spend with a
