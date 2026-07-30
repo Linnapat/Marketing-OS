@@ -52,6 +52,40 @@ export const READINESS_META: Record<Readiness, { label: string; tone: Tone }> = 
   blocked: { label: "⛔ Blocked", tone: "red" },
 };
 
+/** Campaign states that mean "the CMO has not cleared this yet", or that it is
+ *  no longer live work.
+ *
+ *  The team's flow (confirmed 2026-07-30) is: Marketing briefs → CMO approves →
+ *  only then does work reach Creative. Nothing enforced the middle step, and it
+ *  had already leaked: 12 graphic requests and 11 posts existed under campaigns
+ *  still sitting in Draft or Waiting for Approval, so Creative could start —
+ *  and bill time to — work that had not been signed off, and that a rejection
+ *  or a budget change would throw away.
+ *
+ *  Named as a BLOCK list rather than an allow list on purpose. Planning states
+ *  are a closed, known set; the running states are not (Active, In Progress,
+ *  Paused, Completed…, and whatever gets added next). Blocking by default would
+ *  mean a new status silently freezing the whole Creative queue, which is a
+ *  worse failure here than the status quo it replaces. */
+const PRE_APPROVAL_STATUSES = new Set([
+  "Draft", "Planning", "Ready for Review",
+  "Waiting for Approval", "Waiting Approval", "Need Revision",
+  "Cancelled",
+]);
+
+/** May Creative start producing for this campaign — i.e. press "รับงาน"?
+ *
+ *  Deliberately gates STARTING, not planning. Marketing may still raise briefs
+ *  and plan posts against an unapproved campaign (that is how a campaign gets
+ *  ready to be approved); what waits is the moment someone commits hours to it.
+ *  Missing status is treated as not-released: a request whose campaign cannot be
+ *  found should not quietly behave as approved. */
+export function campaignReleasedForWork(status: string | null | undefined): boolean {
+  const s = (status ?? "").trim();
+  if (!s) return false;
+  return !PRE_APPROVAL_STATUSES.has(s);
+}
+
 export const STATUS_ORDER = [
   "Active", "In Progress",
   "Paused", "Inactive",
