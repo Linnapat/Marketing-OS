@@ -8,7 +8,7 @@ import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
-  contentEditLock, withNotice, pickBriefPatch, RequesterBriefField,
+  contentEditLock, withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -615,11 +615,64 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
 
                 {/* Shooting */}
                 <div className="rounded-[10px] border border-line3 bg-surface p-3">
-                  <label className="flex items-center gap-2 text-[11.5px] font-bold text-ink mb-2">
-                    <input type="checkbox" checked={!!g.requiresShooting} disabled={!canRunPipeline}
-                      onChange={(e) => setShooting({ requiresShooting: e.target.checked })} />
-                    📷 งานนี้ต้องถ่ายก่อน (require shooting)
-                  </label>
+                  {/* Three buttons, not a checkbox. Unticked used to mean both
+                      "nobody has decided" and "decided: no shoot", so a designer
+                      could not tell whether photos were still coming or whether
+                      it was already on them to start. */}
+                  <div className="text-[11.5px] font-bold text-ink mb-2">📷 งานนี้ต้องถ่ายก่อนไหม</div>
+                  <div className="flex items-center gap-[6px] flex-wrap mb-2">
+                    {([
+                      { v: true as const, label: "ต้องถ่าย", on: { background: "#F5EEE2", color: "#8A5A1E", borderColor: "#E4C79B" } },
+                      { v: false as const, label: "ไม่ต้องถ่าย", on: { background: "#EEF4EE", color: "#4E7A4E", borderColor: "#CFE4C2" } },
+                    ]).map((opt) => {
+                      const active = g.requiresShooting === opt.v;
+                      return (
+                        <button key={String(opt.v)} disabled={!canRunPipeline}
+                          onClick={() => setShooting({ requiresShooting: active ? undefined : opt.v })}
+                          className="text-[11.5px] font-bold rounded-pill px-3 py-[5px] border disabled:opacity-40"
+                          style={active ? opt.on : { background: "#fff", color: "#7D7789", borderColor: "#E5DECF" }}>
+                          {active ? "✓ " : ""}{opt.label}
+                        </button>
+                      );
+                    })}
+                    {shootingDecision(g) === "undecided" && (
+                      <span className="text-[11px] font-semibold" style={{ color: "#C68A1E" }}>
+                        ยังไม่ระบุ — Designer ไม่รู้ว่าต้องรอรูปหรือเริ่มได้เลย
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Photos the designer works from when there is no shoot. Also
+                      useful alongside one: reference shots, product cuts, logos. */}
+                  {shootingDecision(g) !== "required" && (
+                    <div className="mb-2">
+                      <div className="text-[10.5px] font-bold text-faint mb-[4px]">
+                        ลิงก์รูป / ไฟล์ให้ Designer{shootingDecision(g) === "not_required" ? " · ใช้แทนการถ่าย" : ""}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          defaultValue={g.designerPhotosLink ?? ""}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            if (v !== (g.designerPhotosLink ?? "").trim()) setShooting({ designerPhotosLink: v });
+                          }}
+                          disabled={!canRunPipeline}
+                          placeholder="https://… Drive / Canva / โฟลเดอร์รูปที่มีอยู่แล้ว"
+                          aria-label="ลิงก์รูปให้ Designer"
+                          className="flex-1 min-w-0 text-[12px] px-[10px] py-[6px] rounded-[9px] border border-line2 bg-white outline-none disabled:opacity-40"
+                        />
+                        {g.designerPhotosLink?.trim() && (
+                          <a href={g.designerPhotosLink} target="_blank" rel="noreferrer"
+                            className="text-[11.5px] font-bold text-accent whitespace-nowrap">เปิด ↗</a>
+                        )}
+                      </div>
+                      {shootingDecision(g) === "not_required" && !g.designerPhotosLink?.trim() && (
+                        <div className="text-[10.5px] mt-[4px]" style={{ color: "#C68A1E" }}>
+                          ไม่ต้องถ่าย แต่ยังไม่มีลิงก์รูป — ถ้างานนี้ต้องใช้ภาพ ใส่ลิงก์ให้ Designer ด้วย
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {g.requiresShooting && (
                     <div className="flex flex-col gap-2">
                       <div className="grid md:grid-cols-2 gap-2">

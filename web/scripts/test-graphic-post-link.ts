@@ -8,7 +8,7 @@
  * has "ci-1" in 13 campaigns at once and 488 cross-campaign id collisions.
  * Run: node --import tsx scripts/test-graphic-post-link.ts */
 
-import { findLinkedPost, findLinkedGraphics, resolveOpenTarget, pickBriefPatch, REQUESTER_EDITABLE_BRIEF_FIELDS, LinkablePost, Graphic } from "../src/lib/data/graphic";
+import { findLinkedPost, findLinkedGraphics, resolveOpenTarget, pickBriefPatch, REQUESTER_EDITABLE_BRIEF_FIELDS, shootingDecision, footageReady, LinkablePost, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -189,6 +189,27 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
   is("platform/size ไม่อยู่ใน whitelist",
     whitelist.includes("platform") || whitelist.includes("size"), false);
   is("whitelist มี 8 ช่องตามที่ตกลง", REQUESTER_EDITABLE_BRIEF_FIELDS.length, 8);
+}
+
+{
+  // ── ต้องถ่าย / ไม่ต้องถ่าย / ยังไม่ระบุ ────────────────────────────────
+  // checkbox เดิมทำให้ "ยังไม่ตัดสินใจ" กับ "ตัดสินใจแล้วว่าไม่ต้องถ่าย"
+  // หน้าตาเหมือนกัน — designer เลยไม่รู้ว่าต้องรอรูปหรือเริ่มได้เลย
+  console.log("\n— สถานะการถ่าย 3 แบบ —");
+  is("ไม่เคยตั้งค่า → undecided", shootingDecision({}), "undecided");
+  is("true → required", shootingDecision({ requiresShooting: true }), "required");
+  is("false → not_required (ต่างจากยังไม่ระบุ)", shootingDecision({ requiresShooting: false }), "not_required");
+  is("undefined กับ false ต้องไม่เท่ากัน",
+    shootingDecision({}) === shootingDecision({ requiresShooting: false }), false);
+
+  // pipeline ต้องไม่เปลี่ยนพฤติกรรม: ทั้ง undefined และ false = ไม่มีขั้นถ่าย
+  is("ยังไม่ระบุ → ไม่บล็อกการส่งงาน", footageReady({ footageLink: "" }), true);
+  is("ไม่ต้องถ่าย → ไม่บล็อกการส่งงาน",
+    footageReady({ requiresShooting: false, footageLink: "" }), true);
+  is("ต้องถ่ายแต่ยังไม่มี footage → บล็อก",
+    footageReady({ requiresShooting: true, footageLink: "" }), false);
+  is("ต้องถ่ายและมี footage แล้ว → ผ่าน",
+    footageReady({ requiresShooting: true, footageLink: "https://x" }), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
