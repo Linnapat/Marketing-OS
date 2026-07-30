@@ -8,11 +8,12 @@ import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
+  contentEditLock, withNotice, pickBriefPatch, RequesterBriefField,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
-import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
+import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { isCreativeSideRole, canApproveDeliverable, canReviewDeliverable, canApproveRushBrief } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
@@ -114,6 +115,31 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   const updateCurrentGraphic = (next: Graphic) => {
     setGraphic(next);
     onUpdate?.(next);
+  };
+
+  // Filling in your own brief. Allowed until Creative accepts — the rule
+  // contentEditLock already stated and the UI never offered anywhere to act on,
+  // which is how a request reaches 38% complete with the app itself printing
+  // "รอ requester เติม key message" at someone with no field to type in.
+  // Completing a brief is not signing it off: canSignOffBrief still refuses the
+  // requester, so the Content/Creative side still decides it is good enough.
+  const [briefEditing, setBriefEditing] = useState(false);
+  const [askingUnlock, setAskingUnlock] = useState(false);
+  const canEditBrief = !isAccepted(g) && (isRequester || role === "CMO");
+
+  const requestBriefUnlock = async () => {
+    setAskingUnlock(true);
+    try {
+      const next = withNotice(g, currentUser, `${currentUser} ขอแก้บรีฟเพิ่มเติม — กด “ปล่อยงานคืน” ถ้าให้แก้ได้`);
+      await updateGraphic(next);
+      updateCurrentGraphic(next);
+      notify("feedback", `✋ ขอแก้บรีฟ: ${g.title}`,
+        `โดย ${currentUser} → ${g.acceptedBy || g.designer || "Creative"}`,
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+      toastSuccess("ส่งคำขอแก้บรีฟให้ Creative แล้ว");
+    } catch (error) {
+      toastError(`ส่งคำขอไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setAskingUnlock(false); }
   };
 
   // ── รับงาน / ปล่อยงานคืน ────────────────────────────────────────────
@@ -692,22 +718,50 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                     <div className="text-[13px] font-extrabold text-ink">Creative Brief Pack</div>
                     <div className="text-[11.5px] text-faint mt-1">รายละเอียดที่ Creative ใช้เช็คก่อนเริ่มงาน</div>
                   </div>
-                  <StatusBadge tone={g.briefComplete ? "green" : "gold"}>{g.briefComplete ? "Ready" : "Needs detail"}</StatusBadge>
+                  <div className="flex items-center gap-2">
+                    {canEditBrief && !briefEditing && (
+                      <button onClick={() => setBriefEditing(true)}
+                        className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px] bg-surface">
+                        ✏️ เติมบรีฟ
+                      </button>
+                    )}
+                    <StatusBadge tone={g.briefComplete ? "green" : "gold"}>{g.briefComplete ? "Ready" : "Needs detail"}</StatusBadge>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {briefDetails.map((item) => (
-                    <div key={item.label} className="rounded-[12px] border border-line3 bg-ivory px-3 py-[10px]">
-                      <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{item.label}</div>
-                      {item.href ? (
-                        <a href={item.href} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-accent leading-[1.45] break-words">
-                          {item.value} ↗
-                        </a>
-                      ) : (
-                        <div className="text-[12.5px] text-muted leading-[1.45] break-words">{item.value}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+
+                {briefEditing ? (
+                  <BriefEditor g={g} onCancel={() => setBriefEditing(false)}
+                    onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); }} />
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {briefDetails.map((item) => (
+                      <div key={item.label} className="rounded-[12px] border border-line3 bg-ivory px-3 py-[10px]">
+                        <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]">{item.label}</div>
+                        {item.href ? (
+                          <a href={item.href} target="_blank" rel="noreferrer" className="text-[12.5px] font-bold text-accent leading-[1.45] break-words">
+                            {item.value} ↗
+                          </a>
+                        ) : (
+                          <div className="text-[12.5px] text-muted leading-[1.45] break-words">{item.value}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Accepted: the brief is frozen under whoever is working to it.
+                    Rather than a dead end, the requester can ask — the notice
+                    lands in Creative's drawer, and they decide whether to press
+                    "ปล่อยงานคืน". */}
+                {isAccepted(g) && isRequester && !briefEditing && (
+                  <div className="mt-3 rounded-[12px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
+                    <div className="text-[11.5px] text-muted leading-[1.5]">{contentEditLock(g).reason}</div>
+                    <button onClick={requestBriefUnlock} disabled={askingUnlock}
+                      className="mt-2 text-[11.5px] font-bold rounded-[8px] px-3 py-[5px] border border-line2 bg-surface text-ink disabled:opacity-40">
+                      {askingUnlock ? "กำลังส่ง…" : "✋ ขอแก้บรีฟ"}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="rounded-card p-4" style={{ background: "#F7F4EE" }}>
                 <div className="flex items-center justify-between mb-2">
@@ -884,6 +938,80 @@ const DEL_TONE: Record<string, "neutral" | "gold" | "green" | "red"> = {
 // Deliverable-level board: one row per Platform × Asset Size from the content
 // brief. The graphic team pastes a link + source per row and submits it; the
 // requester approves or sends it back — each row moves independently.
+/** The brief fields a requester may fill in, before Creative accepts.
+ *
+ *  Only the eight in REQUESTER_EDITABLE_BRIEF_FIELDS. platform/size are absent
+ *  on purpose: the deliverable rows Creative submits against are built from
+ *  them, so changing one later reshapes work already under way.
+ *
+ *  Saving sends only what actually changed, through the graphic_brief_patch
+ *  RPC. The whole-blob write that updateGraphic does would let whoever saves
+ *  second wipe the other's edits with no error at all — fine when one person
+ *  edited a request at a time, not fine now that two sides can. */
+const BRIEF_FIELDS: { key: RequesterBriefField; label: string; placeholder: string; area?: boolean }[] = [
+  { key: "briefLink", label: "Brief link", placeholder: "https://… (Google Doc / Slide ที่เป็นบรีฟหลัก)" },
+  { key: "referenceLink", label: "Reference link", placeholder: "https://… ตัวอย่างงานที่อยากได้" },
+  { key: "driveLink", label: "Google Drive link", placeholder: "https://drive.google.com/… โฟลเดอร์ไฟล์ดิบ" },
+  { key: "objective", label: "Objective", placeholder: "งานนี้ทำไปเพื่ออะไร", area: true },
+  { key: "keyMessage", label: "Key message", placeholder: "สารหลักที่ต้องสื่อ", area: true },
+  { key: "moodDirection", label: "CI / mood direction", placeholder: "โทน อารมณ์ ทิศทางภาพ", area: true },
+  { key: "captionCopy", label: "Caption / copy", placeholder: "แคปชั่นหรือข้อความที่ต้องใส่", area: true },
+  { key: "extraDetails", label: "Additional details", placeholder: "อย่างอื่นที่ Creative ควรรู้", area: true },
+];
+
+function BriefEditor({ g, onSaved, onCancel }: {
+  g: Graphic; onSaved: (g: Graphic) => void; onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(BRIEF_FIELDS.map((f) => [f.key, g[f.key] ?? ""])));
+  const [saving, setSaving] = useState(false);
+
+  const patch = pickBriefPatch(draft as Partial<Record<RequesterBriefField, string>>, g);
+  const changed = Object.keys(patch).length;
+
+  const save = async () => {
+    if (!changed) { onCancel(); return; }
+    setSaving(true);
+    try {
+      const next = await patchGraphicBrief(g, patch);
+      toastSuccess(`บันทึกบรีฟแล้ว · แก้ ${changed} ช่อง`);
+      onSaved(next);
+    } catch (error) {
+      // Includes the two server-side refusals worth reading in full: Creative
+      // accepted while this form was open, and the migration is not applied.
+      toastError(`บันทึกบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setSaving(false); }
+  };
+
+  const field = "w-full text-[12.5px] px-[10px] py-[7px] rounded-[9px] border border-line2 bg-white outline-none";
+  return (
+    <div className="flex flex-col gap-[10px]">
+      {BRIEF_FIELDS.map((f) => (
+        <div key={f.key}>
+          <label className="block text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[4px]" htmlFor={`brief-${f.key}`}>
+            {f.label}
+          </label>
+          {f.area ? (
+            <textarea id={`brief-${f.key}`} rows={2} value={draft[f.key] ?? ""} placeholder={f.placeholder}
+              onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} className={`${field} resize-y`} />
+          ) : (
+            <input id={`brief-${f.key}`} type="url" value={draft[f.key] ?? ""} placeholder={f.placeholder}
+              onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} className={field} />
+          )}
+        </div>
+      ))}
+      <div className="flex items-center gap-2 pt-1">
+        <button onClick={save} disabled={saving || !changed}
+          className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-4 py-[7px] disabled:opacity-40">
+          {saving ? "กำลังบันทึก…" : changed ? `บันทึก (${changed})` : "ยังไม่มีการแก้"}
+        </button>
+        <button onClick={onCancel} disabled={saving} className="text-[12px] font-bold text-muted px-3 py-[7px]">ยกเลิก</button>
+        <span className="text-[10.5px] text-faint ml-auto">บันทึกเฉพาะช่องที่แก้ · ไม่ทับงานคนอื่น</span>
+      </div>
+    </div>
+  );
+}
+
 function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
   g: Graphic; me: string; role: string; isRequester: boolean; onUpdate?: (g: Graphic) => void;
 }) {

@@ -861,6 +861,55 @@ export function creativeBriefLink(g: Graphic): string {
   return g.briefLink || g.referenceLink || g.deliverables?.find((d) => d.refLink)?.refLink || "";
 }
 
+/** The brief fields the requester may fill in themselves, before Creative has
+ *  accepted the job.
+ *
+ *  The system already said this was allowed — contentEditLock's rule is
+ *  "planners edit freely until Creative accepts" — but the Brief tab rendered
+ *  values only, so a request could sit at 38% complete with the app printing
+ *  "รอ requester เติม key message" at someone who had nowhere to type it. The
+ *  only route left was LINE, which is how the real brief ends up outside the
+ *  request that is supposed to hold it.
+ *
+ *  What is NOT here matters as much:
+ *   - platform / size — the deliverable rows Creative submits against are built
+ *     from these. Changing them later rewrites the shape of work in progress.
+ *   - contentItem / campaign — moving a request between campaigns is its own
+ *     guarded action, not a brief edit.
+ *   - anything the Creative side authors (feedback, deliverables, approvals).
+ *
+ *  Filling these in is deliberately NOT the same as certifying the brief:
+ *  canSignOffBrief still refuses the requester, so somebody on the Content or
+ *  Creative side has to agree the brief is now good enough to start. */
+export const REQUESTER_EDITABLE_BRIEF_FIELDS = [
+  "briefLink", "driveLink", "referenceLink",
+  "objective", "keyMessage", "moodDirection", "captionCopy", "extraDetails",
+] as const;
+
+export type RequesterBriefField = (typeof REQUESTER_EDITABLE_BRIEF_FIELDS)[number];
+
+/** Keep only the fields a requester is allowed to write, dropping everything
+ *  else — so a patch built from a form can never carry `stage`, `designer` or
+ *  an approval along with it. Values are trimmed; unchanged ones are dropped so
+ *  an untouched form writes nothing at all. */
+export function pickBriefPatch(
+  draft: Partial<Record<RequesterBriefField, string>>,
+  current: Graphic,
+): Partial<Record<RequesterBriefField, string>> {
+  const out: Partial<Record<RequesterBriefField, string>> = {};
+  for (const key of REQUESTER_EDITABLE_BRIEF_FIELDS) {
+    // Absent ≠ cleared. Reading a missing key as "" made a partial draft look
+    // like a request to blank every field it did not mention, so patching one
+    // link would have wiped the key message next to it. The form happens to
+    // send all eight, which is exactly the kind of luck that stops holding.
+    if (!Object.prototype.hasOwnProperty.call(draft, key)) continue;
+    const next = (draft[key] ?? "").trim();
+    if (next === (current[key] ?? "").trim()) continue;
+    out[key] = next;
+  }
+  return out;
+}
+
 export function creativeBriefDetails(g: Graphic): { label: string; value: string; href?: string }[] {
   const briefLink = creativeBriefLink(g);
   return [

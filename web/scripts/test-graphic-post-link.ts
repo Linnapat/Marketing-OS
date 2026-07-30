@@ -8,7 +8,7 @@
  * has "ci-1" in 13 campaigns at once and 488 cross-campaign id collisions.
  * Run: node --import tsx scripts/test-graphic-post-link.ts */
 
-import { findLinkedPost, findLinkedGraphics, resolveOpenTarget, LinkablePost, Graphic } from "../src/lib/data/graphic";
+import { findLinkedPost, findLinkedGraphics, resolveOpenTarget, pickBriefPatch, REQUESTER_EDITABLE_BRIEF_FIELDS, LinkablePost, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -161,6 +161,34 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
   is("โหลดเสร็จ ลิสต์ว่าง → missing", resolveOpenTarget(OPEN, [], true, false).action, "missing");
   // id มาจาก URL เป็น string ส่วน g.id เป็น number
   is("เทียบ string กับ number ได้", resolveOpenTarget("1784302143875", REAL, true, false).action, "open");
+}
+
+{
+  // ── requester เติมบรีฟเอง: patch ต้องแคบและตรง ──────────────────────────
+  console.log("\n— pickBriefPatch: ส่งเฉพาะช่องที่แก้จริง —");
+  const base = g({ keyMessage: "เดิม", briefLink: "", objective: "obj" });
+
+  is("ไม่แก้อะไรเลย → patch ว่าง",
+    Object.keys(pickBriefPatch({ keyMessage: "เดิม", objective: "obj" }, base)).length, 0);
+  is("เว้นวรรคหน้าหลังไม่นับว่าแก้",
+    Object.keys(pickBriefPatch({ keyMessage: "  เดิม  " }, base)).length, 0);
+  is("แก้ช่องเดียว → ส่งช่องเดียว",
+    JSON.stringify(pickBriefPatch({ keyMessage: "ใหม่", objective: "obj" }, base)), '{"keyMessage":"ใหม่"}');
+  is("เติมช่องที่ว่างอยู่ → ส่ง",
+    JSON.stringify(pickBriefPatch({ briefLink: "https://x" }, base)), '{"briefLink":"https://x"}');
+  is("ลบค่าทิ้ง (เป็นค่าว่าง) → ส่งค่าว่าง ไม่ใช่ข้าม",
+    JSON.stringify(pickBriefPatch({ objective: "" }, base)), '{"objective":""}');
+
+  // สำคัญที่สุด: ห้ามให้ฟิลด์นอกรายการหลุดเข้า patch ได้
+  const sneaky = pickBriefPatch(
+    { keyMessage: "ใหม่", stage: "Approved", designer: "someone", acceptedAt: "2026-01-01" } as never, base);
+  is("ฟิลด์นอก whitelist ถูกตัดทิ้ง", JSON.stringify(sneaky), '{"keyMessage":"ใหม่"}');
+  // cast: TS รู้อยู่แล้วว่าไม่มีทางตรง — แต่เราอยากให้ "รู้ตอนรันจริง" ด้วย
+  // เผื่อวันหลังมีคนเผลอเติม platform/size เข้า whitelist
+  const whitelist = REQUESTER_EDITABLE_BRIEF_FIELDS as readonly string[];
+  is("platform/size ไม่อยู่ใน whitelist",
+    whitelist.includes("platform") || whitelist.includes("size"), false);
+  is("whitelist มี 8 ช่องตามที่ตกลง", REQUESTER_EDITABLE_BRIEF_FIELDS.length, 8);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -2,7 +2,7 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField } from "@/lib/data/graphic";
 import { BrandId, brandName } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
@@ -82,6 +82,36 @@ export async function createGraphicIfNew(g: Graphic, existing?: Set<string>): Pr
 
 /** Persist edits to a graphic (submitted work, stage moves, approvals). The full
  *  object round-trips through `data`; stage is mirrored. Matched on the blob id. */
+/** Save just the brief fields the requester changed.
+ *
+ *  Deliberately not updateGraphic(): that sends the whole `data` blob, so two
+ *  people editing the same request before Creative accepts means whoever saves
+ *  second wipes the other's changes without any error. The RPC merges the patch
+ *  into the row server-side in one statement, so only the fields actually
+ *  touched move — and it re-checks both the field whitelist and the "Creative
+ *  has accepted" lock, neither of which a client can be trusted to enforce.
+ *
+ *  Returns the merged request so the drawer shows what the database now holds
+ *  rather than what the form hoped it would. */
+export async function patchGraphicBrief(
+  g: Graphic,
+  patch: Partial<Record<RequesterBriefField, string>>,
+): Promise<Graphic> {
+  if (!Object.keys(patch).length) return g;
+  const db = supabase();
+  if (!db) return { ...g, ...patch };            // demo mode — local only
+  const { data, error } = await db.rpc("graphic_brief_patch", { p_id: String(g.id), p_patch: patch });
+  if (error) {
+    // The migration is applied by hand, so say which failure this is instead of
+    // showing a raw "function does not exist" to whoever is trying to type a link.
+    if (/function .*graphic_brief_patch.* does not exist/i.test(error.message)) {
+      throw new Error("ยังไม่ได้รัน supabase/graphic_brief_patch.sql — แก้บรีฟยังไม่ได้จนกว่าจะรัน");
+    }
+    throw new Error(error.message);
+  }
+  return (data as Graphic | null) ?? { ...g, ...patch };
+}
+
 export async function updateGraphic(g: Graphic): Promise<void> {
   const db = supabase();
   if (db) {
