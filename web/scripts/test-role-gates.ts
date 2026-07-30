@@ -5,6 +5,7 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
+import { campaignReleasedForWork } from "../src/lib/data/campaigns";
 import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
@@ -140,6 +141,26 @@ is("Agency (External) กดไม่ได้", canMarkPaid("Agency (External)"
 is("role ว่างกดไม่ได้", canMarkPaid(""), false);
 is("role ที่ไม่รู้จักกดไม่ได้", canMarkPaid("Intern"), false);
 is("เว้นวรรคหน้า-หลังยังจับได้", canMarkPaid("  Co-ordinator  "), true);
+
+console.log("\n— CMO อนุมัติแคมเปญก่อน Creative จึงรับงานได้ —");
+// ก่อนแก้: มีใบงาน 12 ใบ + โพสต์ 11 ใบ เดินอยู่ใต้แคมเปญที่ยังไม่อนุมัติ
+is("Draft → รับงานไม่ได้", campaignReleasedForWork("Draft"), false);
+is("Waiting for Approval → รับงานไม่ได้", campaignReleasedForWork("Waiting for Approval"), false);
+is("Waiting Approval (ชื่อเก่า) → รับงานไม่ได้", campaignReleasedForWork("Waiting Approval"), false);
+is("Need Revision → รับงานไม่ได้", campaignReleasedForWork("Need Revision"), false);
+is("Ready for Review → รับงานไม่ได้", campaignReleasedForWork("Ready for Review"), false);
+is("Planning → รับงานไม่ได้", campaignReleasedForWork("Planning"), false);
+is("Cancelled → รับงานไม่ได้", campaignReleasedForWork("Cancelled"), false);
+is("Approved → รับงานได้", campaignReleasedForWork("Approved"), true);
+is("Active → รับงานได้", campaignReleasedForWork("Active"), true);
+is("In Progress → รับงานได้", campaignReleasedForWork("In Progress"), true);
+// สถานะหาย = ไม่ปล่อย ห้ามเดาว่าอนุมัติแล้ว
+is("สถานะว่าง → ไม่ปล่อย", campaignReleasedForWork(""), false);
+is("null → ไม่ปล่อย", campaignReleasedForWork(null), false);
+is("undefined → ไม่ปล่อย", campaignReleasedForWork(undefined), false);
+is("เว้นวรรคหน้าหลังยังจับได้", campaignReleasedForWork("  Draft  "), false);
+// สถานะที่ยังไม่รู้จักต้องไม่ freeze คิว (ตั้งใจ fail-open เฉพาะกรณีนี้)
+is("สถานะใหม่ที่ไม่รู้จัก → ปล่อย (กันคิวค้างทั้งทีม)", campaignReleasedForWork("Some New Status"), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
