@@ -11,6 +11,11 @@ export interface ContentItem {
   /** Full publish date (YYYY-MM-DD). Legacy rows only carry `day` — they were
    *  authored against the July 2026 wall calendar (see contentDateIso). */
   dateIso?: string;
+  /** When the post row was created — read from content_posts.created_at, which
+   *  the app stored from day one and never surfaced. Needed so "how long has
+   *  this caption been waiting?" is a real number rather than a guess off the
+   *  publish date, which is a future deadline and says nothing about age. */
+  createdAt?: string;
   time: string;
   title: string;
   b: BrandId;

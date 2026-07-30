@@ -21,6 +21,8 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { appendBriefItem } from "@/lib/db/brief";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
+import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
+import { canAssignCaption } from "@/lib/roleGates";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -136,6 +138,25 @@ export default function ContentPage() {
     () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
     [posts, brand, date, brandVisibility],
   );
+  // Captions with nobody's name on them. Deliberately computed from `posts`,
+  // not `items`: the month filter is exactly what hid this work. Opening the
+  // app in July showed "0 posts in view" while 25 captions waited in September,
+  // so a queue that also filtered by month would repeat the bug it exists to
+  // fix. It is a separate banner rather than a fifth summary card for the same
+  // reason — the cards all count "in view", and mixing denominators in one row
+  // is how a screen ends up lying quietly.
+  const captionQueue = useMemo(
+    () => assignmentQueue(
+      posts.filter((p) => p.captionStatus !== "Approved" && p.publishStatus !== "Published"),
+      (p) => p.owner,
+      todayIso,
+    ),
+    [posts, todayIso],
+  );
+  const captionStats = useMemo(() => queueSummary(captionQueue), [captionQueue]);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const canAssign = canAssignCaption(role);
+
   const summary = useMemo(() => ({
     posts: items.length,
     waitingApproval: items.filter((c) => c.approvalStatus === "Waiting Approval").length,
@@ -278,6 +299,49 @@ export default function ContentPage() {
         </ModuleSummaryCard>
 
       </div>
+
+      {/* Unassigned captions. Same shape as the Graphic page's 🙋 banner so the
+          team reads one pattern for "work nobody has picked up", and equally
+          NOT month-filtered — see captionQueue. */}
+      {captionQueue.length > 0 && (
+        <div className="mt-4 rounded-cardLg border overflow-hidden"
+          style={captionStats.stuck > 0
+            ? { background: AGE_META.stuck.bg, borderColor: "#F5C8C4" }
+            : { background: AGE_META.slow.bg, borderColor: "#F0C89B" }}>
+          <button onClick={() => setQueueOpen((o) => !o)} className="w-full px-4 py-3 flex items-center gap-3 text-left">
+            <span className="text-[11px] w-3" style={{ color: captionStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>{queueOpen ? "▾" : "▸"}</span>
+            <span className="text-[13px] font-extrabold" style={{ color: captionStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
+              ✍️ แคปชั่นรอมอบหมาย {captionStats.total} งาน
+            </span>
+            <span className="text-[11.5px] font-semibold" style={{ color: captionStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
+              {captionStats.stuck > 0
+                ? `· ${captionStats.stuck} งานรอเกิน ${ASSIGN_STUCK_DAYS} วัน (นานสุด ${captionStats.oldest} วัน)`
+                : captionStats.oldest !== null ? `· รอนานสุด ${captionStats.oldest} วัน` : ""}
+            </span>
+            <span className="ml-auto text-[11px] font-semibold text-muted">
+              {canAssign ? "Creative Leader มอบหมาย" : "ทุกเดือน ไม่ใช่แค่เดือนที่เลือก"}
+            </span>
+          </button>
+          {queueOpen && (
+            <div className="bg-surface border-t" style={{ borderColor: "#EFE7DA" }}>
+              {captionQueue.slice(0, 30).map(({ item, days, level }) => (
+                <button key={item.id} onClick={() => setOpen(item)}
+                  className="w-full px-4 py-2 border-b border-line4 last:border-0 flex items-center gap-3 text-left hover:bg-ivory/60">
+                  <span className="text-[11px] font-bold rounded-pill px-2 py-[2px] whitespace-nowrap"
+                    style={{ background: AGE_META[level].bg, color: AGE_META[level].fg }}>
+                    {days === null ? "ไม่ทราบ" : `รอ ${days} วัน`}
+                  </span>
+                  <span className="text-[12.5px] font-semibold truncate min-w-0">{item.title}</span>
+                  <span className="ml-auto text-[11px] text-faint whitespace-nowrap">{item.campaign} · {item.captionStatus}</span>
+                </button>
+              ))}
+              {captionQueue.length > 30 && (
+                <div className="px-4 py-2 text-[11px] text-faint">แสดง 30 จาก {captionQueue.length} — เปิดโพสต์เพื่อมอบหมายทีละใบ</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* What the Team Calendar says is due for the month on screen. */}
       <div className="mt-4">

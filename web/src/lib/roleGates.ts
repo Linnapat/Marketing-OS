@@ -55,6 +55,25 @@ export function canApproveDeliverable(
   return canReviewDeliverable(role, isRequester) && !isSubmitter;
 }
 
+/** May this person hand a Content Plan post to a writer?
+ *
+ *  Creative Leader, per the team's flow confirmed on 2026-07-30 — the same
+ *  person who hands graphic requests to designers, so one person is answerable
+ *  for who is carrying what across both queues. The CMO can act when they are
+ *  away, as everywhere else.
+ *
+ *  Deliberately not the requester: a Marketer who could pick the writer for
+ *  their own post would route around whoever is balancing the queue, which is
+ *  the same reason canAcceptWork excludes them on the graphic side.
+ *
+ *  This is what makes caption work findable at all. Until now every post kept
+ *  owner "Unassigned" (45 of 50 live posts) with no control anywhere to change
+ *  it, so "งานเขียนแคปชั่นไหลเข้า Content creator" had nothing behind it. */
+export function canAssignCaption(role: string): boolean {
+  const r = (role || "").trim();
+  return r === "Creative Leader" || r === "CMO";
+}
+
 /** May this person clear a rush brief — the one that jumped the monthly
  *  deadline, the lead time or the daily cap?
  *

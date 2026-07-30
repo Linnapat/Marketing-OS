@@ -6,7 +6,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { campaignReleasedForWork } from "../src/lib/data/campaigns";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -161,6 +161,19 @@ is("undefined → ไม่ปล่อย", campaignReleasedForWork(undefined),
 is("เว้นวรรคหน้าหลังยังจับได้", campaignReleasedForWork("  Draft  "), false);
 // สถานะที่ยังไม่รู้จักต้องไม่ freeze คิว (ตั้งใจ fail-open เฉพาะกรณีนี้)
 is("สถานะใหม่ที่ไม่รู้จัก → ปล่อย (กันคิวค้างทั้งทีม)", campaignReleasedForWork("Some New Status"), true);
+
+console.log("\n— ใครมอบหมายคนเขียนแคปชั่นได้ (ต้องตรงกับ content_owner_guard) —");
+// ตาม flow ทีม: Creative Leader คือคนคุมคิวทั้งฝั่งกราฟฟิกและแคปชั่น
+is("Creative Leader มอบหมายได้", canAssignCaption("Creative Leader"), true);
+is("CMO มอบหมายได้ (สำรองตอน Leader ไม่อยู่)", canAssignCaption("CMO"), true);
+// คนขอห้ามเลือกคนเขียนเอง — ไม่งั้นข้ามคนคุมคิว
+is("Marketing Manager / BGL มอบหมายไม่ได้", canAssignCaption("Marketing Manager / BGL"), false);
+is("Marketing Executive มอบหมายไม่ได้", canAssignCaption("Marketing Executive"), false);
+is("Content Creator มอบหมายให้ตัวเองไม่ได้", canAssignCaption("Content Creator"), false);
+is("Co-ordinator มอบหมายไม่ได้", canAssignCaption("Co-ordinator"), false);
+is("Senior Graphic Designer มอบหมายไม่ได้", canAssignCaption("Senior Graphic Designer"), false);
+is("role ว่าง → ไม่ได้", canAssignCaption(""), false);
+is("เว้นวรรคหน้าหลังยังจับได้", canAssignCaption("  Creative Leader  "), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
