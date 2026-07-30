@@ -25,7 +25,7 @@ import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, Expe
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { Graphic } from "@/lib/data/graphic";
+import { GRAPHIC_OPEN_PARAM, Graphic } from "@/lib/data/graphic";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -418,7 +418,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
             {graphics.map((g) => (
-              <Link key={g.id} href="/graphic" className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+              <Link key={g.id} href={`/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
                   <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>Waiting review</span>

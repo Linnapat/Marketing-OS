@@ -382,6 +382,13 @@ export interface LinkablePost {
  *  for this post" a link anyone can send. */
 export const GRAPHIC_BRIEF_FOR_PARAM = "briefFor";
 
+/** Query param that opens one request's drawer straight away:
+ *  /graphic?open=<graphic request id>. The other direction of briefFor — that
+ *  one goes post → new brief, this one goes post → the brief it already has.
+ *  Content Plan's "ผูกกับ Graphic Request #N ↗" used to link at bare /graphic
+ *  and leave you to find #N yourself in a list of forty-odd rows. */
+export const GRAPHIC_OPEN_PARAM = "open";
+
 const linkKey = (s?: string) => (s ?? "").trim().toLowerCase();
 
 /** Same campaign? Prefer ids; fall back to the name for rows predating them. */
