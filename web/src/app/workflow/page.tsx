@@ -22,6 +22,7 @@ import {
   withTaskEdit, withTaskRemoved, withTaskRestored, hiddenTemplateTasks,
 } from "@/lib/data/calendarTasks";
 import { unboundMilestones } from "@/lib/data/deadlinePolicy";
+import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
@@ -216,6 +217,22 @@ export default function WorkCalendarPage() {
     // ym.m is 0-based; the marker cycle speaks calendar months.
     setOverrides((o) => ({ ...o, [`${monthKey}::${taskKey}::${day}`]: nextValue(current, ym.m + 1) }));
   };
+
+  /** Set (or clear) one day for a row from the Period column's date picker.
+   *  Picking a date is not the same gesture as clicking a cell: the cell cycles
+   *  through markers, while this says "this row happens on this day" and leaves
+   *  the marker at the default. Clearing passes day = null. */
+  const onPickDay = (taskKey: string, day: number | null, replacing?: number) => {
+    if (!edit || !canEdit) return;
+    setOverrides((o) => {
+      const next = { ...o };
+      // Moving an existing date clears the old one, so a row does not quietly
+      // end up on two days when someone meant to correct one.
+      if (replacing !== undefined) next[`${monthKey}::${taskKey}::${replacing}`] = "";
+      if (day !== null) next[`${monthKey}::${taskKey}::${day}`] = String(ym.m + 1);
+      return next;
+    });
+  };
   const resetMonth = () => setOverrides((o) => {
     const next = { ...o };
     Object.keys(next).forEach((k) => { if (k.startsWith(`${monthKey}::`)) delete next[k]; });
@@ -397,7 +414,7 @@ export default function WorkCalendarPage() {
       <div className="print-calendar-root">
         <div className="hidden print:block text-[14px] font-extrabold mb-2">Work Calendar — {monthLabel}</div>
         {view === "grid" ? (
-          <GridView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone}
+          <GridView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone} onPickDay={onPickDay}
             monthKey={monthKey} edit={edit && canEdit} onCell={onCell} overrides={overrides} />
         ) : (
           <AgendaView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone} monthKey={monthKey} />
@@ -432,7 +449,14 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLa
   // A new row used to arrive with no marker, so the only way to date it was to
   // hunt for its cell in a 31-column grid. The date is part of adding the work.
   const [draft, setDraft] = useState({ en: "", r: "", a: "", day: "", marker: markerCycle[0] ?? "" });
-  const [dayDraft, setDayDraft] = useState<Record<string, string>>({});
+  // Bounds for every picker in this editor: marks are stored per month, so a
+  // date outside the month on screen has nowhere to go. monthKey is "YYYY-M"
+  // with a 0-based month.
+  const [monthYear, monthIdx] = monthKey.split("-").map(Number);
+  const monthNum = monthIdx + 1;
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const monthMin = `${monthYear}-${pad2(monthNum)}-01`;
+  const monthMax = `${monthYear}-${pad2(monthNum)}-${pad2(daysInMonth)}`;
 
   /** Write (or clear) one day's marker for a row, in the month on screen. */
   const setDay = (taskKey: string, day: number, marker: string) => {
@@ -540,30 +564,34 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLa
                               <button onClick={() => setDay(t.key, d, "")} aria-label={`ลบวันที่ ${d}`} title="ลบวันนี้" className="opacity-50 hover:opacity-100">✕</button>
                             </span>
                           ))}
-                          <input
-                            value={dayDraft[t.key] ?? ""}
-                            onChange={(e) => setDayDraft((m) => ({ ...m, [t.key]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key !== "Enter") return;
-                              e.preventDefault();
-                              setDay(t.key, Number(dayDraft[t.key]), markerCycle[0]);
-                              setDayDraft((m) => ({ ...m, [t.key]: "" }));
-                            }}
-                            inputMode="numeric"
-                            placeholder="+ วัน"
-                            aria-label={`เพิ่มวันให้ ${t.en}`}
-                            className="w-[58px] text-[11px] px-2 py-[3px] rounded-pill border border-line2 bg-white outline-none"
+                          {/* Was a bare number box. A typed "8" carries no
+                              weekday and no month, so a slip put the work on a
+                              day nobody was looking at; the shared picker takes
+                              no typed input at all. */}
+                          <DatePicker
+                            value={null}
+                            min={monthMin}
+                            max={monthMax}
+                            placeholder="+ เลือกวัน"
+                            onChange={(nextIso) => setDay(t.key, Number(nextIso.split("-")[2]), markerCycle[0])}
+                            className="text-[11px]"
                           />
                         </div>
                       </div>
                     );
                   })}
-                  <div className="mt-1 grid gap-2" style={{ gridTemplateColumns: "2fr 1fr 1fr 62px 96px auto" }}>
+                  <div className="mt-1 grid gap-2" style={{ gridTemplateColumns: "2fr 1fr 1fr 132px 96px auto" }}>
                     <input value={draft.en} onChange={(e) => setDraft((d) => ({ ...d, en: e.target.value }))} placeholder="ชื่องานใหม่" className={field} />
                     <input value={draft.r} onChange={(e) => setDraft((d) => ({ ...d, r: e.target.value }))} placeholder="ผู้รับผิดชอบ (R)" className={field} />
                     <input value={draft.a} onChange={(e) => setDraft((d) => ({ ...d, a: e.target.value }))} placeholder="Accountable (A)" className={field} />
-                    <input value={draft.day} onChange={(e) => setDraft((d) => ({ ...d, day: e.target.value }))}
-                      inputMode="numeric" placeholder="วันที่" aria-label="วันที่" className={field} />
+                    <DatePicker
+                      value={draft.day ? `${monthYear}-${String(monthNum).padStart(2, "0")}-${String(draft.day).padStart(2, "0")}` : null}
+                      min={monthMin}
+                      max={monthMax}
+                      placeholder="วันที่"
+                      onChange={(nextIso) => setDraft((d) => ({ ...d, day: nextIso.split("-")[2] }))}
+                      className={field}
+                    />
                     <select value={draft.marker} onChange={(e) => setDraft((d) => ({ ...d, marker: e.target.value }))}
                       aria-label="เดือนของงาน" title="marker = เดือนที่งานนี้ทำให้" className={field}>
                       {markerCycle.map((m) => <option key={m} value={m}>เดือน {m}</option>)}
@@ -572,7 +600,7 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLa
                       className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 disabled:opacity-40">+ เพิ่ม</button>
                   </div>
                   <div className="text-[11px] text-faint">
-                    ใส่วันที่ได้เลย — วันที่คือวันใน {monthLabel} ส่วน “เดือน” คือเดือนที่งานนั้นทำให้ (เว้นว่างได้ แล้วค่อยคลิกช่องในตารางทีหลัง)
+                    เลือกวันที่จากปฏิทิน — วันที่คือวันใน {monthLabel} ส่วน “เดือน” คือเดือนที่งานนั้นทำให้ (เว้นว่างได้ แล้วค่อยเลือกในคอลัมน์ Period ทีหลัง)
                   </div>
                 </div>
               )}
@@ -599,7 +627,7 @@ function TaskEditor({ sections, edits, setEdits, tasksPersist, monthKey, monthLa
 }
 
 /* ── Grid: the month timeline ──────────────────────────────────────── */
-function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell, overrides }: {
+function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell, onPickDay, overrides }: {
   sections: ResolvedSection[];
   meta: ReturnType<typeof monthMeta>;
   today: number | null;
@@ -608,6 +636,7 @@ function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell
   monthKey: string;
   edit: boolean;
   onCell: (taskKey: string, day: number, current: string | undefined) => void;
+  onPickDay: (taskKey: string, day: number | null, replacing?: number) => void;
   overrides: Record<string, string>;
 }) {
   const colW = 30;
@@ -620,6 +649,10 @@ function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell
               <th className="sticky left-0 z-20 bg-panel text-white text-left font-bold px-3 py-2 text-[11px]" style={{ minWidth: 300 }}>Task</th>
               <th className="bg-panel text-white/80 text-left font-semibold px-2 py-2 text-[10px]" style={{ minWidth: 96 }}>R</th>
               <th className="bg-panel text-white/80 text-left font-semibold px-2 py-2 text-[10px]" style={{ minWidth: 60 }}>A</th>
+              {/* Period — the row's date in words, and the only place to change
+                  it by hand. Before this the date could only be set by finding
+                  one cell in a 31-column grid or typing a bare day number. */}
+              <th className="bg-panel text-white/80 text-left font-semibold px-2 py-2 text-[10px]" style={{ minWidth: 132 }}>Period</th>
               {meta.days.map((d) => {
                 const weekend = meta.letters[d - 1] === "S";
                 return (
@@ -639,7 +672,7 @@ function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell
           <tbody>
             {sections.map((sec) => (
               <SectionRows key={sec.key} sec={sec} meta={meta} today={today} done={done} setDone={setDone}
-                monthKey={monthKey} edit={edit} onCell={onCell} overrides={overrides} colW={colW} />
+                monthKey={monthKey} edit={edit} onCell={onCell} onPickDay={onPickDay} overrides={overrides} colW={colW} />
             ))}
           </tbody>
         </table>
@@ -648,7 +681,76 @@ function GridView({ sections, meta, today, done, setDone, monthKey, edit, onCell
   );
 }
 
-function SectionRows({ sec, meta, today, done, setDone, monthKey, edit, onCell, overrides, colW }: {
+/** The Period cell: the row's date(s) in this month, as words, plus a
+ *  calendar-only way to change them.
+ *
+ *  The date used to be reachable two ways, both bad: click the right cell in a
+ *  31-column grid, or type a bare day number into a box ("+ วัน"). Typing a
+ *  number is the part that actually hurt — "8" means nothing on its own, it
+ *  cannot show you that the 8th is a Saturday, and a typo lands the work on a
+ *  day nobody looks at. The shared DatePicker takes no typed input at all, so
+ *  the day, its weekday and the month are always chosen from a real calendar.
+ *
+ *  Bounded to the month on screen: marks are stored per month, so a date from
+ *  another month cannot be written from this view. Switch months to move work
+ *  there — that keeps the stored shape honest instead of silently guessing. */
+function PeriodCell({ task, meta, edit, onPickDay, accent }: {
+  task: ResolvedSection["tasks"][number];
+  meta: ReturnType<typeof monthMeta>;
+  edit: boolean;
+  onPickDay: (taskKey: string, day: number | null, replacing?: number) => void;
+  accent: string;
+}) {
+  const days = Object.keys(task.marks).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const iso = (d: number) => `${meta.year}-${pad(meta.month + 1)}-${pad(d)}`;
+  const monthMin = iso(1);
+  const monthMax = iso(meta.days.length);
+
+  if (!edit) {
+    return days.length === 0
+      ? <span className="text-[10.5px] text-faint">—</span>
+      : (
+        <span className="text-[10.5px] font-semibold" style={{ color: accent }}>
+          {days.map((d) => fmtShort(iso(d))).join(", ")}
+        </span>
+      );
+  }
+
+  return (
+    <div className="flex flex-col gap-[4px]">
+      {days.map((d) => (
+        <div key={d} className="flex items-center gap-[3px]">
+          <DatePicker
+            value={iso(d)}
+            min={monthMin}
+            max={monthMax}
+            onChange={(next) => {
+              const nd = Number(next.split("-")[2]);
+              if (Number.isFinite(nd) && nd !== d) onPickDay(task.taskKey, nd, d);
+            }}
+            className="text-[10.5px]"
+          />
+          <button onClick={() => onPickDay(task.taskKey, null, d)} title="ลบวันนี้"
+            aria-label={`ลบวันที่ ${d}`} className="text-[11px] text-status-red px-[3px] opacity-60 hover:opacity-100">✕</button>
+        </div>
+      ))}
+      <DatePicker
+        value={null}
+        min={monthMin}
+        max={monthMax}
+        placeholder={days.length ? "+ อีกวัน" : "เลือกวันที่"}
+        onChange={(next) => {
+          const nd = Number(next.split("-")[2]);
+          if (Number.isFinite(nd)) onPickDay(task.taskKey, nd);
+        }}
+        className="text-[10.5px]"
+      />
+    </div>
+  );
+}
+
+function SectionRows({ sec, meta, today, done, setDone, monthKey, edit, onCell, onPickDay, overrides, colW }: {
   sec: ResolvedSection;
   meta: ReturnType<typeof monthMeta>;
   today: number | null;
@@ -657,13 +759,14 @@ function SectionRows({ sec, meta, today, done, setDone, monthKey, edit, onCell, 
   monthKey: string;
   edit: boolean;
   onCell: (taskKey: string, day: number, current: string | undefined) => void;
+  onPickDay: (taskKey: string, day: number | null, replacing?: number) => void;
   overrides: Record<string, string>;
   colW: number;
 }) {
   return (
     <>
       <tr>
-        <td colSpan={3 + meta.days.length} className="px-3 py-[6px] font-extrabold text-[11.5px] tracking-[0.04em] uppercase border-y border-line4"
+        <td colSpan={4 + meta.days.length} className="px-3 py-[6px] font-extrabold text-[11.5px] tracking-[0.04em] uppercase border-y border-line4"
           style={{ background: sec.bg, color: sec.accent }}>
           {sec.label}
         </td>
@@ -693,6 +796,9 @@ function SectionRows({ sec, meta, today, done, setDone, monthKey, edit, onCell, 
             </td>
             <td className="px-2 py-[7px] text-[10.5px] text-muted align-top">{t.r}</td>
             <td className="px-2 py-[7px] text-[10.5px] font-bold text-ink align-top">{t.a}</td>
+            <td className="px-2 py-[7px] align-top" style={{ minWidth: 132 }}>
+              <PeriodCell task={t} meta={meta} edit={edit} onPickDay={onPickDay} accent={sec.accent} />
+            </td>
             {meta.days.map((d) => {
               const v = t.marks[d];
               const weekend = meta.letters[d - 1] === "S";
