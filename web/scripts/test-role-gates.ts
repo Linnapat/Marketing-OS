@@ -5,7 +5,7 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -124,6 +124,22 @@ is("Co-ordinator (live Finance=Edit) เห็น Spending Log", canSeeAllSpendi
 is("Co-ordinator (live Finance=Edit) ยังอนุมัติไม่ได้", canApproveExpense("Co-ordinator", live), false);
 const promoted = { ...seedPermMatrix(), "Co-ordinator": { ...seedPermMatrix()["Co-ordinator"], Finance: "Approve" } };
 is("ถ้าตั้งเป็น Finance=Approve ถึงจะอนุมัติได้", canApproveExpense("Co-ordinator", promoted), true);
+
+console.log("\n— ใครกด Mark Paid ได้ (ต้องตรงกับ trigger expenses_paid_guard) —");
+// คนจ่ายเงินจริงคือคนที่บอกได้ว่าจ่ายแล้ว
+is("Co-ordinator กดได้", canMarkPaid("Co-ordinator"), true);
+is("CMO กดได้ (override เมื่อ Co-ordinator ไม่อยู่)", canMarkPaid("CMO"), true);
+// Finance=Edit ไม่ได้แปลว่าเป็นคนจ่าย
+is("Marketing Manager / BGL กดไม่ได้", canMarkPaid("Marketing Manager / BGL"), false);
+is("Marketing Executive กดไม่ได้", canMarkPaid("Marketing Executive"), false);
+is("Creative Leader กดไม่ได้", canMarkPaid("Creative Leader"), false);
+is("Senior Graphic Designer กดไม่ได้", canMarkPaid("Senior Graphic Designer"), false);
+is("VDO Editor กดไม่ได้", canMarkPaid("VDO Editor"), false);
+is("KOL Specialist กดไม่ได้", canMarkPaid("KOL Specialist"), false);
+is("Agency (External) กดไม่ได้", canMarkPaid("Agency (External)"), false);
+is("role ว่างกดไม่ได้", canMarkPaid(""), false);
+is("role ที่ไม่รู้จักกดไม่ได้", canMarkPaid("Intern"), false);
+is("เว้นวรรคหน้า-หลังยังจับได้", canMarkPaid("  Co-ordinator  "), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
