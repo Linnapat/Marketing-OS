@@ -389,6 +389,34 @@ export const GRAPHIC_BRIEF_FOR_PARAM = "briefFor";
  *  and leave you to find #N yourself in a list of forty-odd rows. */
 export const GRAPHIC_OPEN_PARAM = "open";
 
+/** What /graphic should do about a ?open=<id> on this render.
+ *
+ *  Extracted from the page because the first version got the timing wrong in a
+ *  way no type or lint catches, and it failed silently: the page seeds its list
+ *  with the demo rows, so `graphics.length` is already non-zero on the very
+ *  first render. The effect ran then, searched the mock data, found nothing,
+ *  marked itself done and dropped the param — and when the real requests
+ *  arrived a moment later nothing looked at them. The jump just did nothing.
+ *
+ *  So the gate is `loaded`, never "the list looks non-empty", and the decision
+ *  lives here where it can be replayed in order:
+ *    wait → the fetch has not come back; do nothing, stay eligible
+ *    open → found it
+ *    missing → the fetch is in and the id is not there (deleted, or a brand
+ *              this member cannot see). Say so rather than silently landing
+ *              on the full list, which is what the old bare link did. */
+export function resolveOpenTarget<T extends Pick<Graphic, "id">>(
+  openId: string | null,
+  graphics: T[],
+  loaded: boolean,
+  alreadyOpened: boolean,
+): { action: "idle" | "wait" | "open" | "missing"; graphic?: T } {
+  if (!openId || alreadyOpened) return { action: "idle" };
+  if (!loaded) return { action: "wait" };
+  const found = graphics.find((g) => String(g.id) === String(openId));
+  return found ? { action: "open", graphic: found } : { action: "missing" };
+}
+
 const linkKey = (s?: string) => (s ?? "").trim().toLowerCase();
 
 /** Same campaign? Prefer ids; fall back to the name for rows predating them. */

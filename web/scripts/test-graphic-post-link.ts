@@ -8,7 +8,7 @@
  * has "ci-1" in 13 campaigns at once and 488 cross-campaign id collisions.
  * Run: node --import tsx scripts/test-graphic-post-link.ts */
 
-import { findLinkedPost, findLinkedGraphics, LinkablePost, Graphic } from "../src/lib/data/graphic";
+import { findLinkedPost, findLinkedGraphics, resolveOpenTarget, LinkablePost, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -128,6 +128,39 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
   is("โพสต์ไม่มี id และไม่มี graphicRequestId → ไม่ลบอะไรเลย",
     findLinkedGraphics({ id: "" }, [a, b, plain]).length, 0);
   is("ไม่มีคำขอในระบบ → 0", findLinkedGraphics({ id: "c-1" }, []).length, 0);
+}
+
+{
+  // ── /graphic?open=<id> — จังหวะเวลาเป็นหัวใจ ────────────────────────────
+  // บั๊กจริงที่หลุดขึ้น production: หน้า /graphic ตั้ง state เริ่มต้นเป็น mock seed
+  // (ไม่ว่าง) เช็ค graphics.length เลยผ่านตั้งแต่เรนเดอร์แรก → หาในข้อมูลปลอม
+  // ไม่เจอ → ปิดตัวเอง ทิ้ง param → พอข้อมูลจริงมาก็ไม่ดูอีกแล้ว = กดลิงก์แล้วเงียบ
+  console.log("\n— เปิด drawer จาก ?open= (ลำดับเวลา) —");
+  const MOCK = [{ id: 999001 }, { id: 999002 }];          // seed ที่ติดมากับหน้า
+  const REAL = [{ id: 1784302143872 }, { id: 1784302143875 }];
+  const OPEN = "1784302143875";
+
+  // เรนเดอร์แรก: mock อยู่ในมือแล้วแต่ของจริงยังไม่มา — ห้ามตัดสินใจ
+  is("ยังโหลดไม่เสร็จ (มี mock อยู่) → wait ไม่ใช่ missing",
+    resolveOpenTarget(OPEN, MOCK, false, false).action, "wait");
+  // เรนเดอร์ถัดมา: ของจริงมาแล้ว
+  const done = resolveOpenTarget(OPEN, REAL, true, false);
+  is("โหลดเสร็จแล้ว → open", done.action, "open");
+  is("เปิดใบที่ถูกต้อง", String(done.graphic?.id), OPEN);
+
+  // ถ้าเช็คแบบเดิม (length) จะได้ missing ตั้งแต่ยังไม่โหลด — นี่คือบั๊ก
+  is("ป้องกันการถอยกลับ: ยังไม่โหลด ห้ามคืน missing เด็ดขาด",
+    resolveOpenTarget(OPEN, MOCK, false, false).action === "missing", false);
+
+  // id ที่ไม่มีจริง ต้องบอก ไม่ใช่เงียบ
+  is("โหลดเสร็จแล้วแต่ไม่มี id นี้ → missing",
+    resolveOpenTarget("404404", REAL, true, false).action, "missing");
+  is("ไม่มี param → idle", resolveOpenTarget(null, REAL, true, false).action, "idle");
+  is("เปิดไปแล้ว ห้ามเปิดซ้ำ", resolveOpenTarget(OPEN, REAL, true, true).action, "idle");
+  // โหลดเสร็จแต่ไม่มีใบงานเลยสักใบ ก็ยังต้องบอกว่าไม่เจอ
+  is("โหลดเสร็จ ลิสต์ว่าง → missing", resolveOpenTarget(OPEN, [], true, false).action, "missing");
+  // id มาจาก URL เป็น string ส่วน g.id เป็น number
+  is("เทียบ string กับ number ได้", resolveOpenTarget("1784302143875", REAL, true, false).action, "open");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
