@@ -13,10 +13,13 @@ const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 export async function fetchContent(): Promise<ContentItem[]> {
   const db = supabase();
   if (!db) return CONTENT.map((c) => ({ ...c }));
-  const { data, error } = await liveOnly(db.from("content_posts").select("id, data"), await trashReady()).order("id");
+  const { data, error } = await liveOnly(db.from("content_posts").select("id, data, created_at"), await trashReady()).order("id");
   if (error || !data) return []; // query error = no live data, never demo rows
   return data
-    .map((r) => (r.data ? { ...(r.data as ContentItem), id: (r.data as ContentItem).id ?? `c${r.id}` } : null))
+    .map((r) => (r.data
+      ? { ...(r.data as ContentItem), id: (r.data as ContentItem).id ?? `c${r.id}`,
+          createdAt: (r.data as ContentItem).createdAt ?? (r.created_at as string | undefined) }
+      : null))
     .filter(Boolean) as ContentItem[];
 }
 

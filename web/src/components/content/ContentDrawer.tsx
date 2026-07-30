@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
@@ -22,7 +23,7 @@ import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan } from "@/lib/roleGates";
+import { canEditContentPlan, canAssignCaption } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -277,6 +278,18 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
 
   // Move the post to Trash — recoverable for TRASH_RETENTION_DAYS days.
   const [deleting, setDeleting] = useState(false);
+  // Hand this post to a writer. Creative Leader's call (canAssignCaption) —
+  // the same person who assigns designers, so one queue-balancer sees both.
+  const canAssign = canAssignCaption(role);
+  const assignOwner = (name: string) => {
+    const next = (name || "").trim() || "Unassigned";
+    if (next === item.owner) return;
+    void persist(
+      { ...item, owner: next },
+      next === "Unassigned" ? "ยกเลิกการมอบหมายแล้ว" : `มอบหมายให้ ${next} เขียนแคปชั่นแล้ว`,
+    );
+  };
+
   const removePost = async () => {
     // The confirm names the Graphic Request too. Deleting a post used to leave
     // its request behind on /graphic forever; now it goes as well, and that is
@@ -438,7 +451,22 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               )}
               <div className="grid grid-cols-2 gap-[10px]">
                 {[["Status", <StatusBadge key="s" tone={contentTone(item.status)}>{item.status}</StatusBadge>],
-                  ["Owner", <span key="o" className="text-[13.5px] font-semibold">{item.owner}</span>],
+                  ["Owner (คนเขียนแคปชั่น)", canAssign
+                    ? (
+                      // The one control that turns "งานเขียนแคปชั่นไหลเข้า Content
+                      // creator" into something the app actually does. Scoped to
+                      // the Planner team, which is where memberTeam() puts
+                      // Content Creator.
+                      <OwnerSelect
+                        key="o"
+                        value={item.owner === "Unassigned" ? "" : item.owner}
+                        onChange={assignOwner}
+                        team="Planner"
+                        placeholder="ยังไม่มอบหมาย"
+                        className="text-[13px]"
+                      />
+                    )
+                    : <span key="o" className="text-[13.5px] font-semibold">{item.owner}</span>],
                   ["Asset", <StatusBadge key="a" tone={contentTone(item.assetStatus)}>{item.assetStatus}</StatusBadge>],
                   ["Caption", <StatusBadge key="c" tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>]].map(([label, node], i) => (
                   <div key={i} className="rounded-[12px] px-[14px] py-3" style={{ background: "#F7F4EE" }}>
