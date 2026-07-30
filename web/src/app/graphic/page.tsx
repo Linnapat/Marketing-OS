@@ -17,6 +17,7 @@ import {
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
+  resolveOpenTarget,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -131,6 +132,10 @@ function GraphicPageInner() {
   const openedRef = useRef(false);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
+  // Whether fetchGraphics has come back. Needed because the state above starts
+  // as the mock seed, so "graphics is non-empty" says nothing about whether the
+  // real list has arrived — see the ?open= effect below.
+  const [graphicsLoaded, setGraphicsLoaded] = useState(false);
   // Work with nobody's name on it. Not a status — an owner problem: somebody
   // has to hand it out, and until they do it ages silently. 43 of 46 live
   // requests sat here, 28 of them a week or more.
@@ -155,7 +160,9 @@ function GraphicPageInner() {
 
   useEffect(() => {
     let alive = true;
-    fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
+    fetchGraphics()
+      .then((g) => { if (alive) { setGraphics(g); setGraphicsLoaded(true); } })
+      .catch(() => { if (alive) setGraphicsLoaded(true); });
     fetchMembers().then((ms) => {
       if (!alive) return;
       setDesignerOpts(
@@ -167,21 +174,17 @@ function GraphicPageInner() {
     return () => { alive = false; };
   }, []);
 
-  // Open the requested drawer once the list is in. Matching is on the id as a
-  // string: request ids are numbers here but arrive from the URL (and from the
-  // post's graphicRequestId, which is stored as text) as strings.
+  // Open the requested drawer once the real list is in. The decision itself is
+  // resolveOpenTarget (pure, unit-tested) — the timing is the whole bug here,
+  // so it lives somewhere it can be replayed in order rather than inline.
   useEffect(() => {
-    if (!openId || openedRef.current || !graphics.length) return;
+    const { action, graphic } = resolveOpenTarget(openId, graphics, graphicsLoaded, openedRef.current);
+    if (action === "idle" || action === "wait") return;
     openedRef.current = true;
-    const found = graphics.find((g) => String(g.id) === String(openId));
-    if (found) setDrawer({ g: found, tab: "overview" });
-    // A link that resolves to nothing is worth saying out loud — the request
-    // was deleted, or belongs to a brand this member cannot see. Silently
-    // landing on the full list is how the old bare /graphic link behaved, and
-    // it reads as "the jump is broken".
+    if (action === "open" && graphic) setDrawer({ g: graphic, tab: "overview" });
     else toastError(`ไม่พบใบงาน #${openId} — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
     router.replace("/graphic");
-  }, [openId, graphics, router]);
+  }, [openId, graphics, graphicsLoaded, router]);
 
   useEffect(() => {
     const next = brandVisibility.normalize(brand);
