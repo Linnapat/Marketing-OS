@@ -6,7 +6,7 @@
  * Run with:  npm test   (chained after test-artwork-report.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { teamFromDb, PIECES_PER_DAY, PIECES_PER_POST, isPostOpenWork } from "../src/lib/data/derive";
+import { teamFromDb, PIECES_PER_DAY, PIECES_PER_POST, POSTS_PER_DAY, isPostOpenWork } from "../src/lib/data/derive";
 import { ContentItem } from "../src/lib/data/content";
 import { Task } from "../src/lib/data/tasks";
 import { Graphic, GraphicDeliverable } from "../src/lib/data/graphic";
@@ -172,7 +172,25 @@ console.log("\n— everyone's own work counts as their own —");
   const buried = teamFromDb([writer], [], [], [], Array.from({ length: 25 }, () => post("Nan")));
   const brow = buried.members.find((m) => m.name === "Nan");
   is("25 โพสต์ → ไม่ใช่ healthy", brow?.load === "healthy", false);
-  is("แปลงเป็นวันงานด้วยอัตราเดียวกัน", brow?.days, Math.round((25 / PIECES_PER_DAY) * 10) / 10);
+  // อัตราของโพสต์แยกจากอาร์ตเวิร์ก: 10/วัน ไม่ใช่ 3.5/วัน
+  is("อัตราโพสต์ = 10/วัน (ทีมยืนยัน)", POSTS_PER_DAY, 10);
+  is("25 โพสต์ = 2.5 วัน ไม่ใช่ 7.1 วัน", brow?.days, Math.round((25 / POSTS_PER_DAY) * 10) / 10);
+  is("ถ้าใช้อัตราอาร์ตเวิร์กจะเว่อร์ ~3 เท่า",
+    Math.round((25 / PIECES_PER_DAY) * 10) / 10 > (brow?.days ?? 0) * 2.5, true);
+
+  // งานสองชนิดรวมกัน: ต้องบวก "วัน" ของแต่ละชนิด ไม่ใช่บวกชิ้นแล้วหารครั้งเดียว
+  const three = (id: string): GraphicDeliverable[] =>
+    [{ size: "1:1" }, { size: "4:5" }, { size: "9:16" }].map((d) => ({ ...d, platform: "IG", refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 1 } as GraphicDeliverable));
+  const gfx: Graphic = { id: 900, title: "g", b: "teppen", campaign: "c", designer: "Nan", requester: "x", approver: "x",
+    type: "Photo", priority: "Med", stage: "New Request", due: "", platform: "IG", size: "1:1",
+    deliverables: three("900") } as Graphic;
+  const gtask: Task = { id: 9001, title: "art", assignee: "Nan", status: "In Progress", module: "Graphic",
+    relatedGraphicId: "900" } as Task;
+  const mix = teamFromDb([writer], [gtask], [], [gfx], [post("Nan"), post("Nan"), post("Nan"), post("Nan"), post("Nan")]);
+  const mrow = mix.members.find((m) => m.name === "Nan");
+  is("ชิ้นค้างรวม = 3 อาร์ตเวิร์ก + 5 โพสต์", mrow?.pieces, 8);
+  is("แต่วันงานคิดคนละอัตราแล้วบวกกัน",
+    mrow?.days, Math.round((3 / PIECES_PER_DAY + 5 / POSTS_PER_DAY) * 10) / 10);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

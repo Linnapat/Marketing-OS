@@ -186,7 +186,7 @@ export interface TeamMemberView {
   /** Open Content Plan posts owned by this person, and what they contribute to
    *  `pieces`. Kept separate so a row can say WHICH work makes up the load —
    *  "8 pieces" that turns out to be all posts is a different problem from
-   *  eight artwork files. */
+   *  eight artwork files, and the two are paced differently in `days`. */
   openPosts: number;
   postPieces: number;
   /** `pieces` expressed in working days at PIECES_PER_DAY — the readable form.
@@ -218,11 +218,20 @@ export const PIECES_PER_DAY = 3.5;
  *  are single fields shared across a post's platforms; that is the honest
  *  difference from artwork, where three sizes really are three files.
  *
- *  ⚠ It shares PIECES_PER_DAY with artwork, so one post currently reads as the
- *  same day's work as one 1080×1350 piece. That is almost certainly not true.
- *  When the team has its own posts-per-day figure, give this its own rate —
- *  this constant and PIECES_PER_DAY are the only two places to touch. */
+ *  A post weighs one PIECE but is paced at its own rate — see POSTS_PER_DAY.
+ *  Sharing artwork's 3.5/day would have said a caption costs the same day's
+ *  work as a 1080×1350 piece, which the team's own figures say is off by ~3×. */
 export const PIECES_PER_POST = 1;
+
+/** Posts one writer clears in a working day — the team's own figure (10/day,
+ *  2026-07-30, from the CMO).
+ *
+ *  Kept separate from PIECES_PER_DAY (3.5 artwork pieces/day) because the two
+ *  are different work at different speeds, and `days` is the number a lead acts
+ *  on. Each kind converts to days at its own pace and the DAYS are summed —
+ *  totalling pieces first and dividing once would price a caption like an
+ *  artwork file and overstate every writer by roughly 3×. */
+export const POSTS_PER_DAY = 10;
 
 /** Is this post still work for its owner? Anything not actually out the door,
  *  including Failed — a failed publish is work, not history. */
@@ -282,8 +291,14 @@ export function teamFromDb(
     // `tasks` were ever counted and caption work creates none.
     const openPosts = minePosts.filter(isPostOpenWork);
     const postPieces = openPosts.length * PIECES_PER_POST;
-    const pieces = openTasks.reduce((sum, t) => sum + piecesOf(t), 0) + postPieces;
-    const days = Math.round((pieces / PIECES_PER_DAY) * 10) / 10;
+    const artworkPieces = openTasks.reduce((sum, t) => sum + piecesOf(t), 0);
+    // `pieces` stays a headcount of things still open — that is what the row
+    // shows. `days` is the workload figure, so each kind is converted at its
+    // OWN pace and the days added, never the pieces.
+    const pieces = artworkPieces + postPieces;
+    const days = Math.round(
+      (artworkPieces / PIECES_PER_DAY + postPieces / POSTS_PER_DAY) * 10,
+    ) / 10;
     const stuck = mine.filter(isStuck).length;
     const overdue = mine.filter(isOverdue).length;
 
