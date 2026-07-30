@@ -93,9 +93,24 @@ export interface Graphic {
   rushDecidedAt?: string;
   rushDecisionNote?: string;
   // ── Shooting step ────────────────────────────────────────────────────
-  /** This job needs footage before anyone can design it. Ticked at assign
-   *  time; it inserts a shooting step ahead of the artwork. */
+  /** This job needs footage before anyone can design it. It inserts a shooting
+   *  step ahead of the artwork.
+   *
+   *  Genuinely three-valued, and the UI used to hide that behind one checkbox:
+   *    undefined — nobody has decided yet
+   *    true      — must be shot
+   *    false     — decided: no shoot needed
+   *  An empty checkbox meant both "not decided" and "decided no", so a designer
+   *  looking at a request could not tell whether photos were coming or whether
+   *  it was on them to start. Every consumer here already treats undefined and
+   *  false alike for pipeline purposes, which stays correct — the difference
+   *  matters to the people reading the request, not to the step list. */
   requiresShooting?: boolean;
+  /** Existing photos / files for the designer to work from — the answer to
+   *  "no shoot, so what do I use?". Kept separate from footageLink, which is
+   *  specifically what a shooter handed over, and from the brief's reference
+   *  link, which is inspiration rather than source material. */
+  designerPhotosLink?: string;
   /** Who shoots. A person, not a work type — "Jeeno - shooting" used to be a
    *  whole assignee entry, which made the shoot look like someone's job title
    *  rather than a step this request happens to need. */
@@ -168,6 +183,20 @@ export function needsStoryboard(g: Pick<Graphic, "type" | "requiredVideo">): boo
 /** Has the shooter handed the footage over? */
 export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink">): boolean {
   return !g.requiresShooting || !!g.footageLink?.trim();
+}
+
+export type ShootingDecision = "undecided" | "required" | "not_required";
+
+/** Which of the three states the shoot question is actually in.
+ *
+ *  Exists so "nobody has said yet" stops looking identical to "we decided not
+ *  to shoot". The pipeline does not branch on this — productionSteps only cares
+ *  whether a shoot step exists — but a person deciding whether to start work
+ *  needs the difference, and so does anyone chasing the request. */
+export function shootingDecision(g: Pick<Graphic, "requiresShooting">): ShootingDecision {
+  if (g.requiresShooting === true) return "required";
+  if (g.requiresShooting === false) return "not_required";
+  return "undecided";
 }
 
 /** Has the requester accepted the storyboard? */
