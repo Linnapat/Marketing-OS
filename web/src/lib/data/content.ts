@@ -254,6 +254,23 @@ export const contentReadyForApproval = (c: ContentItem): boolean => contentAppro
 
 /** When a Draft post becomes ready, move it into "Waiting Approval" so it shows
  *  up in My Approval automatically. Idempotent; never downgrades an approved post. */
+/** What captionStatus should become when a post is sent back BECAUSE OF the
+ *  caption.
+ *
+ *  requestRevision already existed and works: it records the reason, counts the
+ *  round, raises a task for the writer and notifies them. What it never did was
+ *  move captionStatus — so a reviewer could send a post back saying the caption
+ *  was wrong while the post went on displaying "Caption: Ready", and
+ *  contentApproveBlockers still considered the caption fine. The writer had a
+ *  task telling them to fix something the app insisted was already done.
+ *
+ *  Missing is preserved rather than promoted to Draft: no caption text at all
+ *  is a different state from "written, not good enough", and overwriting it
+ *  would lose that. */
+export function captionStatusAfterRevision(c: Pick<ContentItem, "caption">): string {
+  return (c.caption ?? "").trim() ? "Draft" : "Missing";
+}
+
 export function advanceApprovalState(c: ContentItem): ContentItem {
   if (c.approvalStatus === "Approved") return c;
   const ready = contentReadyForApproval(c);
