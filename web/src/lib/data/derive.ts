@@ -180,9 +180,15 @@ export interface TeamMemberView {
   waiting: number;
   stuck: number;
   overdue: number;
-  /** Open work in PIECES: a graphic request for three sizes weighs three, other
-   *  work weighs one each. */
+  /** Open work in PIECES: a graphic request for three sizes weighs three, a
+   *  Content Plan post weighs PIECES_PER_POST, other work weighs one each. */
   pieces: number;
+  /** Open Content Plan posts owned by this person, and what they contribute to
+   *  `pieces`. Kept separate so a row can say WHICH work makes up the load —
+   *  "8 pieces" that turns out to be all posts is a different problem from
+   *  eight artwork files. */
+  openPosts: number;
+  postPieces: number;
   /** `pieces` expressed in working days at PIECES_PER_DAY — the readable form.
    *  "12 pieces open" says little; "3½ days of work" says whether to step in. */
   days: number;
@@ -201,6 +207,29 @@ export interface TeamView {
  *  own figure (3–4/day, 2026-07). Everything below is measured against it, so
  *  when the pace changes this is the single number to change. */
 export const PIECES_PER_DAY = 3.5;
+/** What one Content Plan post weighs, as agreed with the CMO on 2026-07-30:
+ *  one unit per post, not one per stage.
+ *
+ *  Per POST rather than per act, because planning it, writing the caption and
+ *  publishing it deliver one thing between them — counting three would make the
+ *  content side read three times busier than Creative for the same output, and
+ *  the stages are already visible as status (Missing → Ready → Approved →
+ *  Published). Per post rather than per platform, because caption/hashtags/cta
+ *  are single fields shared across a post's platforms; that is the honest
+ *  difference from artwork, where three sizes really are three files.
+ *
+ *  ⚠ It shares PIECES_PER_DAY with artwork, so one post currently reads as the
+ *  same day's work as one 1080×1350 piece. That is almost certainly not true.
+ *  When the team has its own posts-per-day figure, give this its own rate —
+ *  this constant and PIECES_PER_DAY are the only two places to touch. */
+export const PIECES_PER_POST = 1;
+
+/** Is this post still work for its owner? Anything not actually out the door,
+ *  including Failed — a failed publish is work, not history. */
+export function isPostOpenWork(p: Pick<ContentItem, "publishStatus">): boolean {
+  return (p.publishStatus ?? "").trim() !== "Published";
+}
+
 /** Backlog past this many days of work is more than a week's runway: that is
  *  overload, not a busy stretch. */
 const OVERLOADED_DAYS = 4;
@@ -224,7 +253,10 @@ const BUSY_DAYS = 2;
  *  `graphics` is optional: without it every task weighs one and the view still
  *  works, just less precisely.
  */
-export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[], graphics: Graphic[] = []): TeamView {
+export function teamFromDb(
+  members: Member[], tasks: Task[], doneIds: number[],
+  graphics: Graphic[] = [], posts: ContentItem[] = [],
+): TeamView {
   // Per-person rows count each person's OWN tasks, uncollapsed. Collapsing is
   // for the team totals, where one brief item spawning a Content task and a
   // Graphic task must not be counted twice — but those are two people's work,
@@ -243,9 +275,14 @@ export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[], 
     return g ? artworkUnits(g) : 1;
   };
 
-  const bucket = (mine: Task[]) => {
+  const bucket = (mine: Task[], minePosts: ContentItem[] = []) => {
     const openTasks = mine.filter((t) => !done(t));
-    const pieces = openTasks.reduce((sum, t) => sum + piecesOf(t), 0);
+    // Content Plan posts are load too. Before this a writer carrying 25 posts
+    // with no caption showed as "ไหลอยู่ — ยังรับเพิ่มได้", because only rows in
+    // `tasks` were ever counted and caption work creates none.
+    const openPosts = minePosts.filter(isPostOpenWork);
+    const postPieces = openPosts.length * PIECES_PER_POST;
+    const pieces = openTasks.reduce((sum, t) => sum + piecesOf(t), 0) + postPieces;
     const days = Math.round((pieces / PIECES_PER_DAY) * 10) / 10;
     const stuck = mine.filter(isStuck).length;
     const overdue = mine.filter(isOverdue).length;
@@ -261,7 +298,9 @@ export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[], 
       : "ไหลอยู่ — ยังรับเพิ่มได้";
 
     return {
-      open: openTasks.length,
+      open: openTasks.length + openPosts.length,
+      openPosts: openPosts.length,
+      postPieces,
       done: mine.filter(done).length,
       inProgress: mine.filter((t) => t.status === "In Progress").length,
       waiting: mine.filter((t) => t.status === "Waiting" || t.status === "Need Approval").length,
@@ -276,7 +315,7 @@ export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[], 
 
   const view: TeamMemberView[] = members.map((m) => ({
     name: m.name, role: m.role, color: m.color, avatarUrl: m.avatarUrl, presence: m.presence, statusNote: m.statusNote,
-    ...bucket(tasks.filter((t) => t.assignee === m.name)),
+    ...bucket(tasks.filter((t) => t.assignee === m.name), posts.filter((p) => p.owner === m.name)),
   }));
 
   // Work assigned to nobody — or to a name that isn't a real member — is still
@@ -284,10 +323,11 @@ export function teamFromDb(members: Member[], tasks: Task[], doneIds: number[], 
   // vanish from the summary.
   const known = new Set(members.map((m) => m.name));
   const orphans = tasks.filter((t) => !known.has(t.assignee));
-  if (orphans.length) {
+  const orphanPosts = posts.filter((p) => !known.has(p.owner)).filter(isPostOpenWork);
+  if (orphans.length || orphanPosts.length) {
     view.push({
       name: "Unassigned", role: "งานที่ยังไม่มีเจ้าของจริงในระบบ — ต้องมีคนรับ", color: "#9A9387",
-      ...bucket(orphans),
+      ...bucket(orphans, orphanPosts),
     });
   }
 
