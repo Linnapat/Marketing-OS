@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { fetchMembers } from "@/lib/db/settings";
 import { X } from "lucide-react";
-import {
+import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
@@ -85,7 +85,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
       updateCurrentGraphic(next);
       notify(decision === "Approved" ? "approved" : "rejected",
         decision === "Approved" ? `⚡ อนุมัติงานเร่งด่วน: ${g.title}` : `⚡ ไม่อนุมัติงานเร่งด่วน: ${g.title}`,
-        `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, "/graphic");
+        `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
     } catch (error) {
       toastError(`บันทึกผลอนุมัติงานเร่งด่วนไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setRushBusy(false); }
@@ -180,7 +180,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
       nextAction: `รอ ${g.requester} อนุมัติ storyboard`,
     }, "ส่ง storyboard ไม่สำเร็จ");
     toastSuccess("ส่ง storyboard แล้ว — รอเจ้าของงานอนุมัติ");
-    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, "/graphic");
+    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
   };
 
   const decideStoryboard = (approved: boolean) => {
@@ -195,7 +195,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     }, "บันทึกผล storyboard ไม่สำเร็จ");
     setSbNote("");
     toastSuccess(approved ? "อนุมัติ storyboard แล้ว" : "ส่ง storyboard กลับไปแก้แล้ว");
-    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`, `โดย ${currentUser}`, "/graphic");
+    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`, `โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
   };
 
   const submitFootage = () => {
@@ -206,7 +206,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
       nextAction: `${g.designer && g.designer !== "Unassigned" ? g.designer : "Designer"} ตัดต่อ/ทำ artwork ต่อ`,
     }, "ส่ง footage ไม่สำเร็จ");
     toastSuccess("ส่ง footage แล้ว — ส่งต่อให้ designer/editor ทำงานต่อได้");
-    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${g.designer || "Designer"} ทำต่อ`, "/graphic");
+    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${g.designer || "Designer"} ทำต่อ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
   };
 
   /** Moving a shoot is a normal event, not a failure — it just has to be
@@ -261,7 +261,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     try {
       await updateGraphic(next);
       updateCurrentGraphic(next);
-      notify("approved", `✅ Brief อนุมัติแล้ว: ${g.title}`, `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, "/graphic");
+      notify("approved", `✅ Brief อนุมัติแล้ว: ${g.title}`, `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
     } catch (error) {
       toastError(`อนุมัติ Brief ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBriefBusy(false); }
@@ -930,7 +930,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: at } : x),
       { type: "submitted", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
     );
-    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, "/graphic");
+    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
   };
   const approve = (i: number) => {
     const at = new Date().toISOString();

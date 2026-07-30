@@ -17,7 +17,7 @@ import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, t
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
-import { GRAPHIC_BRIEF_FOR_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice } from "@/lib/data/graphic";
+import { GRAPHIC_BRIEF_FOR_PARAM, GRAPHIC_OPEN_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice } from "@/lib/data/graphic";
 import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
@@ -568,7 +568,13 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                         <span className="text-[11px] text-faint">กำลังโหลดรายละเอียดใบงาน…</span>
                       )}
                     </div>
-                    <a href="/graphic" className="mt-1 inline-block text-[11px] text-faint hover:text-ink">
+                    {/* Jump straight to the request this post is linked to.
+                        This used to be a bare /graphic link, which dropped you
+                        on the whole list to go hunting for #N by eye. */}
+                    <a
+                      href={`/graphic?${GRAPHIC_OPEN_PARAM}=${encodeURIComponent(String(item.graphicRequestId))}`}
+                      className="mt-1 inline-block text-[11px] text-faint hover:text-ink"
+                    >
                       ผูกกับ Graphic Request #{item.graphicRequestId}
                       {linkedGraphic?.size ? ` · ${linkedGraphic.size}` : ""}
                       {linkedGraphic?.designer && linkedGraphic.designer !== "Unassigned" ? ` · ${linkedGraphic.designer}` : ""} ↗

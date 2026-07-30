@@ -16,6 +16,7 @@ import {
   graphicKpis, emptyDeliverable, approveAllWaiting,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
+  GRAPHIC_OPEN_PARAM,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -123,6 +124,11 @@ function GraphicPageInner() {
     setBriefForPost(null);
     if (briefForId) router.replace("/graphic");
   };
+  // /graphic?open=<request id> — arriving from Content Plan's "ผูกกับ Graphic
+  // Request #N ↗". Opened once, after the requests have loaded, then the param
+  // is dropped so closing the drawer does not reopen it on the next render.
+  const openId = searchParams.get(GRAPHIC_OPEN_PARAM);
+  const openedRef = useRef(false);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
   // Work with nobody's name on it. Not a status — an owner problem: somebody
@@ -160,6 +166,22 @@ function GraphicPageInner() {
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Open the requested drawer once the list is in. Matching is on the id as a
+  // string: request ids are numbers here but arrive from the URL (and from the
+  // post's graphicRequestId, which is stored as text) as strings.
+  useEffect(() => {
+    if (!openId || openedRef.current || !graphics.length) return;
+    openedRef.current = true;
+    const found = graphics.find((g) => String(g.id) === String(openId));
+    if (found) setDrawer({ g: found, tab: "overview" });
+    // A link that resolves to nothing is worth saying out loud — the request
+    // was deleted, or belongs to a brand this member cannot see. Silently
+    // landing on the full list is how the old bare /graphic link behaved, and
+    // it reads as "the jump is broken".
+    else toastError(`ไม่พบใบงาน #${openId} — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
+    router.replace("/graphic");
+  }, [openId, graphics, router]);
 
   useEffect(() => {
     const next = brandVisibility.normalize(brand);

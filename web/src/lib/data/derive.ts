@@ -9,7 +9,7 @@ import { collapseTaskWorkItems, Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
 import type { Member } from "@/lib/db/settings";
 import { ContentItem } from "@/lib/data/content";
-import { Graphic, artworkUnits } from "@/lib/data/graphic";
+import { GRAPHIC_OPEN_PARAM, Graphic, artworkUnits } from "@/lib/data/graphic";
 import { BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import { DateFilter, rangeOverlapFraction } from "@/components/ui/DateFilterBar";
@@ -155,8 +155,8 @@ export function dashboardFeed(campaigns: CampaignRow[], content: ContentItem[], 
     else if (c.assetStatus === "Waiting Design") needsAttention.push({ id: `ct-${c.id}`, title: c.title, meta: `${brandName(c.b)} · Waiting Design`, module: "Content", href: "/content" });
   }
   for (const g of graphics) {
-    if (g.stage === "Waiting Approval") pendingApproval.push({ id: `gr-${g.id}`, title: g.title, meta: `${brandName(g.b)} · Graphic`, module: "Graphic", href: "/graphic" });
-    else if (["Revision Requested", "Brief Incomplete", "Waiting Feedback"].includes(g.stage)) needsAttention.push({ id: `gr-${g.id}`, title: g.title, meta: `${brandName(g.b)} · ${g.stage}`, module: "Graphic", href: "/graphic" });
+    if (g.stage === "Waiting Approval") pendingApproval.push({ id: `gr-${g.id}`, title: g.title, meta: `${brandName(g.b)} · Graphic`, module: "Graphic", href: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}` });
+    else if (["Revision Requested", "Brief Incomplete", "Waiting Feedback"].includes(g.stage)) needsAttention.push({ id: `gr-${g.id}`, title: g.title, meta: `${brandName(g.b)} · ${g.stage}`, module: "Graphic", href: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}` });
   }
   for (const t of tasks) {
     if (t.status === "Stuck" || t.blocker) needsAttention.push({ id: `tk-${t.id}`, title: t.title, meta: `${t.brand} · ${t.blocker || "Stuck"}`, module: "Task", href: "/my-tasks" });
