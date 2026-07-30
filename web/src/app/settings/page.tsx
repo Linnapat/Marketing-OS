@@ -902,10 +902,21 @@ export default function SettingsPage() {
                   <div><Pill text={u.status} fg={invited ? "#C68A1E" : "#4E7A4E"} bg={invited ? "#FBF8EE" : "#EEF4EE"} /></div>
                   {canEdit && (
                     <div className="flex items-center gap-2 justify-end">
-                      {invited && (
-                        <button onClick={() => sendLoginInvite(u.email)} title="ส่งอีเมลให้ตั้งรหัสผ่าน — จำเป็นสำหรับคนที่ยังไม่เคย login"
-                          className="text-[11.5px] font-bold" style={{ color: "#C68A1E" }}>ส่งคำเชิญ</button>
-                      )}
+                      {/* Shown for everyone, not just status="Invited".
+                          Status is a field somebody types; it says nothing
+                          about whether the person can actually log in. Four of
+                          the team read "Active" while their invite links had
+                          expired twelve days earlier, and the one button that
+                          would have fixed it was hidden precisely from them.
+                          The server decides what happens: a genuinely active
+                          account gets no mail and says so. */}
+                      <button onClick={() => sendLoginInvite(u.email)}
+                        title={invited
+                          ? "ส่งอีเมลให้ตั้งรหัสผ่าน — จำเป็นสำหรับคนที่ยังไม่เคย login"
+                          : "ส่งลิงก์เข้าระบบใหม่ — ใช้ได้กับคนที่คำเชิญหมดอายุ (ถ้าเขาใช้งานอยู่แล้วจะไม่มีอีเมลถูกส่ง)"}
+                        className="text-[11.5px] font-bold" style={{ color: "#C68A1E" }}>
+                        {invited ? "ส่งคำเชิญ" : "ส่งลิงก์ใหม่"}
+                      </button>
                       <button onClick={() => setEditUser({ orig: u.email, m: { ...u } })} className="text-[11.5px] font-bold text-accent">Edit</button>
                       <button onClick={() => {
                         if (!confirm(`ลบ ${u.name} ออกจากทีม?`)) return;

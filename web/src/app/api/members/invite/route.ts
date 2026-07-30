@@ -52,14 +52,78 @@ export async function POST(req: NextRequest) {
   }
 
   const redirectTo = process.env.NEXT_PUBLIC_APP_URL || undefined;
-  const { error } = await admin.auth.admin.inviteUserByEmail(email, redirectTo ? { redirectTo } : undefined);
-  if (error) {
-    // Already has an account = nothing to do; everything else is a real failure.
-    if (/already.*(registered|exists)/i.test(error.message)) {
-      return NextResponse.json({ ok: true, already: true, message: "อีเมลนี้มีบัญชีอยู่แล้ว — login ได้เลย" });
-    }
+  const invite = () => admin.auth.admin.inviteUserByEmail(email, redirectTo ? { redirectTo } : undefined);
+
+  const { error } = await invite();
+  if (!error) {
+    return NextResponse.json({ ok: true, message: `ส่งอีเมลคำเชิญไปที่ ${email} แล้ว — ให้เปิดลิงก์ในเมลเพื่อตั้งรหัสผ่าน` });
+  }
+  if (!/already.*(registered|exists)/i.test(error.message)) {
     return NextResponse.json({ error: `ส่งคำเชิญไม่สำเร็จ: ${error.message}` }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true, message: `ส่งอีเมลคำเชิญไปที่ ${email} แล้ว — ให้เปิดลิงก์ในเมลเพื่อตั้งรหัสผ่าน` });
+  // "Already registered" is two different situations and the old code treated
+  // them as one, answering "login ได้เลย" to both.
+  //
+  // Supabase invite links expire after 24 hours. Someone invited on a Friday
+  // who opens the mail on Monday has an auth row and no way to use it: the link
+  // is dead, they never set a password, and pressing Invite again just repeated
+  // "you already have an account — go log in". Four of the team sat like that
+  // for twelve days. The button that exists to fix this was the button telling
+  // them nothing was wrong.
+  //
+  // So: find the account and look at whether it was ever actually used.
+  const stale = await findUnusedAccount(admin, email);
+  if (!stale) {
+    return NextResponse.json({ ok: true, already: true, message: "อีเมลนี้มีบัญชีอยู่แล้วและเคยเข้าใช้งาน — login ได้เลย" });
+  }
+
+  // Never confirmed and never signed in: nothing is attached to this auth row
+  // (the app keys everything off the members table and the email), so replacing
+  // it is safe and gives a genuine, freshly-dated invite mail rather than a
+  // password-reset notice to someone who never had a password.
+  const { error: delErr } = await admin.auth.admin.deleteUser(stale.id);
+  if (delErr) {
+    return NextResponse.json({ error: `ล้างบัญชีเดิมที่ยังไม่ได้ใช้ไม่สำเร็จ: ${delErr.message}` }, { status: 502 });
+  }
+  const { error: reErr } = await invite();
+  if (reErr) {
+    // The old row is gone and the new mail did not go out — say so plainly,
+    // because the fix is simply to press Invite again, and a vague error would
+    // leave an admin wondering whether they had just deleted someone.
+    return NextResponse.json({
+      error: `ล้างคำเชิญเดิมแล้วแต่ส่งใหม่ไม่สำเร็จ: ${reErr.message} — กด Invite อีกครั้งได้เลย ` +
+             `(ถ้าเพิ่งส่งไปหลายฉบับ อาจติดลิมิตอีเมลของ Supabase ~3-4 ฉบับ/ชม.)`,
+    }, { status: 502 });
+  }
+
+  return NextResponse.json({
+    ok: true, resent: true,
+    message: `คำเชิญเดิมหมดอายุแล้ว — ส่งคำเชิญใหม่ไปที่ ${email} เรียบร้อย`,
+  });
+}
+
+/** The auth account for this email, but only when it has never been used —
+ *  never confirmed and never signed in. Returns null when the person is a real
+ *  active user, so the caller can never delete a working account.
+ *
+ *  listUsers is paged and has no exact-email lookup in supabase-js v2, so page
+ *  through and match. Bounded rather than while(true): a runaway loop against
+ *  the auth API is a worse failure than not finding a stale invite. */
+async function findUnusedAccount(
+  admin: NonNullable<ReturnType<typeof supabaseAdmin>>,
+  email: string,
+): Promise<{ id: string } | null> {
+  const perPage = 200;
+  for (let page = 1; page <= 25; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users?.length) return null;
+    const hit = data.users.find((u) => (u.email ?? "").toLowerCase() === email);
+    if (hit) {
+      const unused = !hit.email_confirmed_at && !hit.last_sign_in_at;
+      return unused ? { id: hit.id } : null;
+    }
+    if (data.users.length < perPage) return null;
+  }
+  return null;
 }
