@@ -6,7 +6,8 @@
  * Run with:  npm test   (chained after test-artwork-report.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { teamFromDb, PIECES_PER_DAY } from "../src/lib/data/derive";
+import { teamFromDb, PIECES_PER_DAY, PIECES_PER_POST, POSTS_PER_DAY, isPostOpenWork } from "../src/lib/data/derive";
+import { ContentItem } from "../src/lib/data/content";
 import { Task } from "../src/lib/data/tasks";
 import { Graphic, GraphicDeliverable } from "../src/lib/data/graphic";
 import type { Member } from "../src/lib/db/settings";
@@ -133,6 +134,63 @@ console.log("\n— everyone's own work counts as their own —");
   const orphan = team.members.find((m) => m.name === "Unassigned");
   is("work with no real owner gets its own row", orphan?.open, 1);
   is("…and isn't dumped on a real person", team.members.find((m) => m.name === "Ann")?.open, 1);
+}
+
+{
+  // ── โพสต์ Content Plan นับเป็นภาระงาน 1 หน่วย/โพสต์ (CMO ยืนยัน 30 ก.ค. 2026) ──
+  // ก่อนนี้คนเขียน caption ค้าง 25 ใบขึ้นว่า "ไหลอยู่ — ยังรับเพิ่มได้" เพราะ
+  // นับจากตาราง tasks เท่านั้น และงาน caption ไม่สร้าง task เลย
+  console.log("\n— โพสต์นับเป็นภาระงาน —");
+  const mem = (name: string): Member => ({ name, email: `${name}@x.co`, role: "Content Creator", access: "Editor", status: "Active" } as Member);
+  const post = (owner: string, publishStatus = "Draft", id = Math.random().toString(36).slice(2)): ContentItem =>
+    ({ id, owner, publishStatus, title: "p", b: "teppen", status: "Planned", day: 1, time: "10:00",
+       caption: "", hashtags: "", cta: "", captionStatus: "Missing", assetStatus: "No Asset",
+       approvalStatus: "Draft", campaign: "c", plat: "Facebook" } as ContentItem);
+
+  is("หน่วยต่อโพสต์ = 1 ตามที่ตกลง", PIECES_PER_POST, 1);
+  is("โพสต์ที่ยัง Draft = ยังเป็นงาน", isPostOpenWork({ publishStatus: "Draft" }), true);
+  is("โพสต์ที่ Published แล้ว = ไม่ใช่งานค้าง", isPostOpenWork({ publishStatus: "Published" }), false);
+  is("โพสต์ที่ Failed = ยังเป็นงาน (ไม่ใช่ประวัติ)", isPostOpenWork({ publishStatus: "Failed" }), true);
+
+  const writer = mem("Nan");
+  const t3 = teamFromDb([writer], [], [], [], [post("Nan"), post("Nan"), post("Nan")]);
+  const row = t3.members.find((m) => m.name === "Nan");
+  is("3 โพสต์ → 3 ชิ้น", row?.pieces, 3);
+  is("แยกให้เห็นว่ามาจากโพสต์", row?.openPosts, 3);
+  is("open นับโพสต์ด้วย ไม่ใช่ 0", row?.open, 3);
+
+  // ของที่เผยแพร่แล้วต้องไม่ค้างอยู่ในภาระงาน
+  const mixed = teamFromDb([writer], [], [], [], [post("Nan"), post("Nan", "Published")]);
+  is("โพสต์ที่ปล่อยแล้วไม่นับ", mixed.members.find((m) => m.name === "Nan")?.pieces, 1);
+
+  // โพสต์ที่ไม่มีเจ้าของต้องไม่หายไปจากภาพรวม และต้องไม่ไปโผล่ที่คนจริง
+  const un = teamFromDb([writer], [], [], [], [post("Unassigned"), post("Nan")]);
+  is("โพสต์ไร้เจ้าของไปอยู่แถว Unassigned", un.members.find((m) => m.name === "Unassigned")?.openPosts, 1);
+  is("…และไม่ถูกยัดให้คนจริง", un.members.find((m) => m.name === "Nan")?.openPosts, 1);
+
+  // 25 โพสต์ = เกิน runway หนึ่งสัปดาห์ ต้องไม่ขึ้นว่า healthy
+  const buried = teamFromDb([writer], [], [], [], Array.from({ length: 25 }, () => post("Nan")));
+  const brow = buried.members.find((m) => m.name === "Nan");
+  is("25 โพสต์ → ไม่ใช่ healthy", brow?.load === "healthy", false);
+  // อัตราของโพสต์แยกจากอาร์ตเวิร์ก: 10/วัน ไม่ใช่ 3.5/วัน
+  is("อัตราโพสต์ = 10/วัน (ทีมยืนยัน)", POSTS_PER_DAY, 10);
+  is("25 โพสต์ = 2.5 วัน ไม่ใช่ 7.1 วัน", brow?.days, Math.round((25 / POSTS_PER_DAY) * 10) / 10);
+  is("ถ้าใช้อัตราอาร์ตเวิร์กจะเว่อร์ ~3 เท่า",
+    Math.round((25 / PIECES_PER_DAY) * 10) / 10 > (brow?.days ?? 0) * 2.5, true);
+
+  // งานสองชนิดรวมกัน: ต้องบวก "วัน" ของแต่ละชนิด ไม่ใช่บวกชิ้นแล้วหารครั้งเดียว
+  const three = (id: string): GraphicDeliverable[] =>
+    [{ size: "1:1" }, { size: "4:5" }, { size: "9:16" }].map((d) => ({ ...d, platform: "IG", refLink: "", assetLink: "", sourceLink: "", status: "Not submitted", version: 1 } as GraphicDeliverable));
+  const gfx: Graphic = { id: 900, title: "g", b: "teppen", campaign: "c", designer: "Nan", requester: "x", approver: "x",
+    type: "Photo", priority: "Med", stage: "New Request", due: "", platform: "IG", size: "1:1",
+    deliverables: three("900") } as Graphic;
+  const gtask: Task = { id: 9001, title: "art", assignee: "Nan", status: "In Progress", module: "Graphic",
+    relatedGraphicId: "900" } as Task;
+  const mix = teamFromDb([writer], [gtask], [], [gfx], [post("Nan"), post("Nan"), post("Nan"), post("Nan"), post("Nan")]);
+  const mrow = mix.members.find((m) => m.name === "Nan");
+  is("ชิ้นค้างรวม = 3 อาร์ตเวิร์ก + 5 โพสต์", mrow?.pieces, 8);
+  is("แต่วันงานคิดคนละอัตราแล้วบวกกัน",
+    mrow?.days, Math.round((3 / PIECES_PER_DAY + 5 / POSTS_PER_DAY) * 10) / 10);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

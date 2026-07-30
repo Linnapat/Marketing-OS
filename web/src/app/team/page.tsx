@@ -14,6 +14,8 @@ import { teamFromDb, TeamView, TeamMemberView } from "@/lib/data/derive";
 import { fetchMembers, Member } from "@/lib/db/settings";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchGraphics } from "@/lib/db/graphic";
+import { fetchContent } from "@/lib/db/content";
+import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
@@ -26,21 +28,29 @@ function Avatar({ name, color, avatarUrl, size = 40 }: { name: string; color: st
 export default function TeamWorkloadPage() {
   const [drawer, setDrawer] = useState<TeamMemberView | null>(null);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
-  const [raw, setRaw] = useState<{ m: Member[]; t: { tasks: Task[]; doneIds: number[] }; g: Graphic[] } | null>(null);
+  const [raw, setRaw] = useState<{ m: Member[]; t: { tasks: Task[]; doneIds: number[] }; g: Graphic[]; c: ContentItem[] } | null>(null);
 
   useEffect(() => {
     let alive = true;
     // Graphics come along so a request's real size count can weigh the load:
     // three sizes in one request is three pieces of work, not one row.
-    Promise.all([fetchMembers(), fetchTasks(), fetchGraphics()])
-      .then(([m, t, g]) => { if (alive) setRaw({ m, t, g }); })
+    // Posts come along because writing captions and publishing is load too:
+    // one unit per post (PIECES_PER_POST), and it creates no task rows.
+    Promise.all([fetchMembers(), fetchTasks(), fetchGraphics(), fetchContent()])
+      .then(([m, t, g, c]) => { if (alive) setRaw({ m, t, g, c }); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
 
   // Workload for the selected period only (by task due date; undated stay in).
   const team: TeamView | null = useMemo(
-    () => (raw ? teamFromDb(raw.m, raw.t.tasks.filter((t) => inDateFilter(date, t.dueIso || t.due)), raw.t.doneIds, raw.g) : null),
+    () => (raw ? teamFromDb(
+          raw.m,
+          raw.t.tasks.filter((t) => inDateFilter(date, t.dueIso || t.due)),
+          raw.t.doneIds,
+          raw.g,
+          raw.c.filter((p) => inDateFilter(date, p.dateIso || "")),
+        ) : null),
     [raw, date],
   );
 
@@ -124,7 +134,13 @@ export default function TeamWorkloadPage() {
                   <span className="ml-auto text-[11px] font-bold text-status-red">{m.days} วันงาน</span>
                 </div>
                 <div className="text-[12px] font-semibold text-status-red mt-1">{m.reason}</div>
-                <div className="text-[11.5px] text-muted mt-[2px]">🧱 {m.stuck} stuck · ⏰ {m.overdue} overdue · {m.pieces} ชิ้นค้าง</div>
+                {/* Says which work the load is made of. "8 ชิ้นค้าง" that turns
+                    out to be eight captions is a different problem from eight
+                    artwork files, and a lead cannot act on the total alone. */}
+                <div className="text-[11.5px] text-muted mt-[2px]">
+                  🧱 {m.stuck} stuck · ⏰ {m.overdue} overdue · {m.pieces} ชิ้นค้าง
+                  {m.postPieces > 0 && ` (โพสต์ ${m.openPosts} · อื่น ${m.pieces - m.postPieces})`}
+                </div>
               </button>
             ))}
           </div>
