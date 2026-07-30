@@ -4,6 +4,8 @@
 // own "Expenses" page so day-to-day spending is reachable without Finance access.
 
 import { toastError } from "@/lib/toast";
+import { optimistic } from "@/lib/optimistic";
+import { useCanMarkPaid } from "@/lib/usePermGates";
 import { authHeaders } from "@/lib/supabase";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useMemo, useState } from "react";
@@ -508,10 +510,18 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
     fetchExpenses().then((e) => { if (alive) setAll(e); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  // Declaring money paid is the Co-ordinator's call (mirrored by the
+  // expenses_paid_guard trigger). The button used to render for anyone who
+  // could open this tab.
+  const canPay = useCanMarkPaid();
   const rows = all.filter((e) => visibility.isVisible(e.b) && (brand === "all" || e.b === brand) && (!date || inDateFilter(date, e.date)));
   const markPaid = (row: ExpenseLogRow) => {
-    setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x)));
-    markExpensePaid(row._id).catch((error) => toastError(`บันทึก Paid ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    void optimistic(
+      () => setAll((xs) => xs.map((x) => (x === row ? { ...x, status: "Paid" } : x))),
+      () => setAll((xs) => xs.map((x) => (x._id === row._id ? row : x))),
+      () => markExpensePaid(row._id),
+      "บันทึก Paid ไม่สำเร็จ",
+    );
   };
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -537,7 +547,7 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
           <div><StatusBadge tone={STATUS_TONE[e.status] ?? "neutral"}>{e.status}</StatusBadge></div>
           <div className="flex items-center gap-[6px]">
             <button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Open voucher ↗</button>
-            {e.status === "Unpaid" && (
+            {e.status === "Unpaid" && canPay && (
               <button onClick={() => markPaid(e)} className="text-[11.5px] font-bold text-white rounded-[8px] px-3 py-[5px]" style={{ background: "#4E7A4E" }}>Mark Paid ✓</button>
             )}
           </div>

@@ -12,6 +12,7 @@ import {
   canCreateCampaign,
   canApproveExpense,
   canSeeAllSpending,
+  canMarkPaid,
   PermMatrix,
 } from "@/lib/roleGates";
 
@@ -51,4 +52,11 @@ export function useCanApproveExpense(): boolean {
 export function useCanSeeAllSpending(): boolean {
   const { role } = useRole();
   return canSeeAllSpending(role, usePermMatrix());
+}
+
+/** May the current user mark a Spending Log row Paid? Named-role rule (see
+ *  canMarkPaid), mirrored by the expenses_paid_guard trigger. */
+export function useCanMarkPaid(): boolean {
+  const { role } = useRole();
+  return canMarkPaid(role);
 }

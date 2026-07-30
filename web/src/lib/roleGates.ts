@@ -135,6 +135,22 @@ export function canSeeAllSpending(role: string, matrix?: PermMatrix | null): boo
   return (modulePermLevel(role, "Finance", matrix) ?? "—") !== "—";
 }
 
+/** May this role move a Spending Log row Unpaid → Paid?
+ *
+ *  Paying the vendor is the Co-ordinator's job, so declaring it paid is theirs
+ *  too — the button used to render for everyone who could open the Spending
+ *  Log. This is a named-role rule rather than a matrix level because the matrix
+ *  has no level that means "handles payments"; Finance=Edit is held by people
+ *  who prepare spending, not people who settle it. Mirrored in the database by
+ *  supabase/security_p13_mark_paid.sql.
+ *
+ *  The CMO keeps an override: with one Co-ordinator on the team, no fallback
+ *  would strand every unpaid row while they are away. */
+export function canMarkPaid(role: string): boolean {
+  const r = (role || "").trim();
+  return r === "Co-ordinator" || r === "CMO";
+}
+
 /** Platform Performance shows company-wide budgets and actual spend with a
  *  "Request revise budget" action — money data, so it follows the same line as
  *  the Finance module: production-side roles (creative + KOL) don't see it.
