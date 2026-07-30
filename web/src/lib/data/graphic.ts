@@ -426,6 +426,34 @@ export function findLinkedPost(g: Graphic, posts: LinkablePost[]): LinkablePost 
   return only(posts.filter((p) => sameCampaign(p, g) && linkKey(p.title) === titled));
 }
 
+/** Every request that belongs to a post — the inverse of findLinkedPost, used
+ *  when the post is deleted so its requests do not outlive it.
+ *
+ *  Deliberately narrower than findLinkedPost. That function has to resolve a
+ *  link for DISPLAY, so it falls back to sourceContentItemId and then to
+ *  campaign + title; guesses are acceptable when the cost of being wrong is a
+ *  mislabelled row. Here the cost is deleting someone's work, so only the two
+ *  links that were written down on purpose count:
+ *
+ *    1. the request names the post   (graphic.contentPostId)
+ *    2. the post names the request   (post.graphicRequestId)
+ *
+ *  A request that merely shares a campaign and a title with the deleted post is
+ *  left alone. It will surface as an orphan in the UI, which is recoverable —
+ *  unlike a request the app threw away on a title match. */
+export function findLinkedGraphics<T extends Pick<Graphic, "id" | "contentPostId">>(
+  post: Pick<LinkablePost, "id" | "graphicRequestId">,
+  graphics: T[],
+): T[] {
+  const postId = linkKey(post.id);
+  const named = linkKey(post.graphicRequestId);
+  if (!postId && !named) return [];
+  return graphics.filter((g) =>
+    (!!postId && linkKey(g.contentPostId) === postId) ||
+    (!!named && linkKey(String(g.id)) === named),
+  );
+}
+
 /** Progress rollup for a request's deliverables. */
 export function deliverableProgress(g: Graphic) {
   const d = g.deliverables ?? [];

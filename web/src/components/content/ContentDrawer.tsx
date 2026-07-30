@@ -278,12 +278,20 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // Move the post to Trash — recoverable for TRASH_RETENTION_DAYS days.
   const [deleting, setDeleting] = useState(false);
   const removePost = async () => {
-    if (!window.confirm(`ย้ายโพสต์ "${item.title}" ลงถังขยะ?\n\nกู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วันที่หน้า Trash หลังจากนั้นจะถูกลบถาวร`)) return;
+    // The confirm names the Graphic Request too. Deleting a post used to leave
+    // its request behind on /graphic forever; now it goes as well, and that is
+    // not something to discover afterwards.
+    const alsoGraphic = item.graphicRequestId ? "\n\nคำขอกราฟิกที่ผูกกับโพสต์นี้จะถูกย้ายลงถังขยะด้วย" : "";
+    if (!window.confirm(`ย้ายโพสต์ "${item.title}" ลงถังขยะ?${alsoGraphic}\n\nกู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วันที่หน้า Trash หลังจากนั้นจะถูกลบถาวร`)) return;
     setDeleting(true);
     try {
-      await deleteContent(item, reviewer);
+      const { graphics } = await deleteContent(item, reviewer);
       onDelete?.(item);
-      toastSuccess(`ย้าย “${item.title}” ลงถังขยะแล้ว · กู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วัน`);
+      toastSuccess(
+        graphics > 0
+          ? `ย้าย “${item.title}” และคำขอกราฟิกที่ผูกไว้ ${graphics} รายการลงถังขยะแล้ว · กู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วัน`
+          : `ย้าย “${item.title}” ลงถังขยะแล้ว · กู้คืนได้ภายใน ${TRASH_RETENTION_DAYS} วัน`,
+      );
       onClose();
     } catch (error) {
       toastError(`ลบโพสต์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);

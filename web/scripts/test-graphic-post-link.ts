@@ -8,7 +8,7 @@
  * has "ci-1" in 13 campaigns at once and 488 cross-campaign id collisions.
  * Run: node --import tsx scripts/test-graphic-post-link.ts */
 
-import { findLinkedPost, LinkablePost, Graphic } from "../src/lib/data/graphic";
+import { findLinkedPost, findLinkedGraphics, LinkablePost, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -89,6 +89,45 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
   const posm = g({ contentPostId: undefined, sourceContentItemId: undefined, contentItem: "—", title: "POSM ขาตั้งหน้าร้าน", campaign: "Wagyu Festival" });
   is("ไม่มีตัวเชื่อมใดๆ → null", findLinkedPost(posm, [p(), p({ id: "c-2", title: "อีกโพสต์" })]), null);
   is("ไม่มีโพสต์ในระบบเลย → null", findLinkedPost(g(), []), null);
+}
+
+{
+  // ── ลบโพสต์แล้วคำขอกราฟิกต้องไปด้วย (findLinkedGraphics) ──────────────
+  // เจอจริงบน production: OMD-20260901-MASTER มีคำขอค้าง 6 รายการ เพราะลบโพสต์
+  // แล้วคำขอไม่ถูกลบตาม
+  console.log("\n— หาคำขอกราฟิกของโพสต์ที่กำลังจะลบ —");
+  const gr = (id: number, over: Partial<Graphic> = {}) => ({ ...g(over), id });
+
+  const a = gr(1, { contentPostId: "c-1" });
+  const b = gr(2, { contentPostId: "c-2" });
+  is("คำขอที่ระบุ contentPostId ตรง → เจอ",
+    findLinkedGraphics({ id: "c-1" }, [a, b]).map((x) => x.id).join(","), "1");
+  is("คำขอของโพสต์อื่น → ไม่โดน",
+    findLinkedGraphics({ id: "c-9" }, [a, b]).length, 0);
+
+  // ทิศกลับ: โพสต์ชี้มาที่คำขอ
+  const plain = gr(3, { contentPostId: undefined });
+  is("โพสต์ระบุ graphicRequestId → เจอ",
+    findLinkedGraphics({ id: "c-5", graphicRequestId: "3" }, [plain]).map((x) => x.id).join(","), "3");
+
+  // ผูกกันสองทาง ต้องไม่นับซ้ำเป็นสองแถว
+  const both = gr(4, { contentPostId: "c-7" });
+  is("ผูกสองทางกับแถวเดียว → คืนแถวเดียว",
+    findLinkedGraphics({ id: "c-7", graphicRequestId: "4" }, [both]).length, 1);
+
+  // หนึ่งโพสต์มีได้หลายคำขอ
+  const m1 = gr(5, { contentPostId: "c-8" });
+  const m2 = gr(6, { contentPostId: "c-8" });
+  is("โพสต์เดียวมีหลายคำขอ → ไปทั้งหมด",
+    findLinkedGraphics({ id: "c-8" }, [m1, m2]).map((x) => x.id).join(","), "5,6");
+
+  // ที่สำคัญที่สุด: ห้ามเดาจากชื่อ/แคมเปญ เพราะพลาดแล้วคือลบงานคนอื่นทิ้ง
+  const sameTitle = gr(7, { contentPostId: undefined, sourceContentItemId: "ci-1", title: "Hero Don + Comfort Set" });
+  is("ชื่อ/แคมเปญตรงแต่ไม่มีลิงก์ชัดเจน → ไม่ลบ",
+    findLinkedGraphics({ id: "c-hero" }, [sameTitle]).length, 0);
+  is("โพสต์ไม่มี id และไม่มี graphicRequestId → ไม่ลบอะไรเลย",
+    findLinkedGraphics({ id: "" }, [a, b, plain]).length, 0);
+  is("ไม่มีคำขอในระบบ → 0", findLinkedGraphics({ id: "c-1" }, []).length, 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

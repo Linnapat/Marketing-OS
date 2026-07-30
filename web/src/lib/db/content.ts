@@ -108,14 +108,65 @@ export async function updateContent(post: ContentItem): Promise<void> {
 /** Move a post to Trash — recoverable for 7 days, then purged.
  *
  *  Falls back to a hard delete only when the trash migration has not been run
- *  yet, so "ลบ" never silently does nothing on a database that predates it. */
-export async function deleteContent(post: ContentItem, by = ""): Promise<void> {
+ *  yet, so "ลบ" never silently does nothing on a database that predates it.
+ *
+ *  Returns how many linked Graphic Requests went with it, so the caller can say
+ *  so — deleting three things when the user asked to delete one must not be
+ *  silent. */
+export async function deleteContent(post: ContentItem, by = ""): Promise<{ graphics: number }> {
   const db = supabase();
-  if (!db) { releaseMockId("content_posts", post.id); return; }
-  if (await moveToTrash("content", post.id, by)) return;
+  if (!db) { releaseMockId("content_posts", post.id); return { graphics: 0 }; }
+  if (await moveToTrash("content", post.id, by)) {
+    return { graphics: await trashGraphicsForPost(post, by) };
+  }
   const { data, error } = await db.from("content_posts").delete().eq("data->>id", post.id).select("id");
   if (error) throw new Error(error.message);
   if (!data?.length) throw new Error(`ไม่พบโพสต์นี้ในฐานข้อมูล (id ${post.id}) — ลอง refresh หน้าแล้วลบใหม่`);
+  return { graphics: 0 };
+}
+
+/** Send a deleted post's Graphic Requests to Trash with it.
+ *
+ *  Without this the request outlives the post that justified it and shows up on
+ *  /graphic under a campaign whose plan no longer contains it — six such rows
+ *  had built up on OMD-20260901-MASTER by the time anyone noticed, because
+ *  nothing in the app ever pointed at the leftovers.
+ *
+ *  Matching is the explicit-links-only rule in findLinkedGraphics: the request
+ *  names the post, or the post names the request. Both go to Trash, not a hard
+ *  delete, so an unwanted cascade is undone from /trash within 7 days.
+ *
+ *  A failure here throws even though the post is already gone. The alternative
+ *  — swallow it and carry on — recreates the exact orphan this function exists
+ *  to prevent, and does it quietly. Better a visible error naming the post. */
+async function trashGraphicsForPost(post: ContentItem, by: string): Promise<number> {
+  const db = supabase();
+  if (!db || !(await trashReady())) return 0;
+
+  const named = String(post.graphicRequestId ?? "").trim();
+  // Two writes rather than one .or() filter: PostgREST's `or` needs the JSON
+  // arrow operators inlined into the filter string, where an id containing a
+  // comma or a dot would silently change the predicate.
+  const targets = [
+    db.from("graphic_requests").update({ deleted_at: new Date().toISOString(), deleted_by: by })
+      .eq("data->>contentPostId", post.id).is("deleted_at", null).select("id"),
+    ...(named
+      ? [db.from("graphic_requests").update({ deleted_at: new Date().toISOString(), deleted_by: by })
+          .eq("data->>id", named).is("deleted_at", null).select("id")]
+      : []),
+  ];
+
+  const results = await Promise.all(targets);
+  const failed = results.find((r) => r.error);
+  if (failed?.error) {
+    throw new Error(
+      `ลบโพสต์ “${post.title}” แล้ว แต่ลบคำขอกราฟิกที่ผูกไว้ไม่สำเร็จ: ${failed.error.message} — ` +
+      `คำขอนั้นจะค้างอยู่ในหน้า Graphic Request ต้องลบเอง`,
+    );
+  }
+  // A post can name a request that also names the post; count rows once.
+  const ids = new Set(results.flatMap((r) => (r.data ?? []).map((row) => (row as { id: number }).id)));
+  return ids.size;
 }
 
 /** Backend-enforced Approve: re-checks the prerequisites (never trusts the
