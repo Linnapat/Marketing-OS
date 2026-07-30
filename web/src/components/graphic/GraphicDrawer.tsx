@@ -3,6 +3,8 @@
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { fetchMembers } from "@/lib/db/settings";
+import { fetchCampaigns } from "@/lib/db/campaigns";
+import { campaignReleasedForWork } from "@/lib/data/campaigns";
 import { X } from "lucide-react";
 import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
@@ -41,6 +43,27 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
     fetchGraphicFeedback(g.id).then((rows) => { if (alive) setFeedback(rows); }).catch(() => {});
     return () => { alive = false; };
   }, [g.id]);
+  // The campaign's own status decides whether Creative may start. Fetched here
+  // rather than passed in, so every entry point into the drawer (board, list,
+  // ?open= deep link, My Tasks) gets the gate rather than only the ones that
+  // remembered to thread a prop through.
+  const [campaignStatus, setCampaignStatus] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchCampaigns()
+      .then((rows) => {
+        if (!alive) return;
+        const hit = g.campaignId
+          ? rows.find((c) => c.id === g.campaignId)
+          : rows.find((c) => c.name.trim().toLowerCase() === (g.campaign ?? "").trim().toLowerCase());
+        setCampaignStatus(hit?.status ?? "");
+      })
+      .catch(() => { if (alive) setCampaignStatus(null); });
+    return () => { alive = false; };
+  }, [g.campaignId, g.campaign]);
+  // null = still loading; don't claim "not approved" before we know.
+  const campaignReleased = campaignStatus === null ? true : campaignReleasedForWork(campaignStatus);
+
   const resolveFeedback = async (id: number) => {
     const prev = feedback;
     setFeedback((fs) => fs.map((x) => (x.id === id ? { ...x, status: "Resolved" } : x)));
@@ -146,7 +169,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   // The producing side owns this: creative-team roles (or the CMO covering for
   // them). Deliberately NOT the requester — a planner who could accept on
   // Creative's behalf could lock their own post against everyone else.
-  const canAcceptWork = !isRequester && (role === "CMO" || isCreativeSideRole(role));
+  // Producing side owns this, AND the campaign must be cleared first — the CMO
+  // approval step in the team's flow, which until now existed only as a
+  // convention.
+  const canAcceptWork = !isRequester && (role === "CMO" || isCreativeSideRole(role)) && campaignReleased;
 
   const saveGraphic = (next: Graphic, failMessage: string) => {
     updateGraphic(next)
@@ -510,7 +536,17 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="min-w-0">
                       <div className="text-[12.5px] font-bold text-ink">ยังไม่มีใครรับงานนี้</div>
-                      <div className="text-[11px] text-faint">กด &ldquo;รับงาน&rdquo; เมื่อเริ่มทำ — หลังจากนั้น Marketing จะแก้ไข/ย้ายโพสต์นี้ไม่ได้</div>
+                      {/* Say WHY the button is unavailable. A control that just
+                          isn't there is the failure that kept four people locked
+                          out of their own logins for twelve days. */}
+                      {!campaignReleased ? (
+                        <div className="text-[11px] font-semibold" style={{ color: "#B33A2E" }}>
+                          ⛔ แคมเปญนี้สถานะ &ldquo;{campaignStatus || "ไม่ทราบ"}&rdquo; — CMO ยังไม่อนุมัติ
+                          จึงยังรับงานไม่ได้ · วางแผน/แก้บรีฟล่วงหน้าได้ตามปกติ
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-faint">กด &ldquo;รับงาน&rdquo; เมื่อเริ่มทำ — หลังจากนั้น Marketing จะแก้ไข/ย้ายโพสต์นี้ไม่ได้</div>
+                      )}
                     </div>
                     {canAcceptWork && (
                       <button onClick={acceptWork} className="ml-auto text-[12px] font-bold rounded-[10px] px-4 py-[8px] text-white bg-panel">

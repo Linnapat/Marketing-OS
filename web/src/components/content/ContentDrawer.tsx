@@ -3,7 +3,7 @@
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, sameDayWarning, moveToCampaign, withChange } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -84,6 +84,10 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   const canEditPlan = canEditContentPlan(role);
   const [revising, setRevising] = useState(false);
   const [reason, setReason] = useState("");
+  // Which part is being sent back. Off by default, so pressing Request
+  // Revision behaves exactly as it did unless the reviewer says the
+  // caption is the problem.
+  const [captionNeedsWork, setCaptionNeedsWork] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<string | null>(null);
   const [scheduleTime, setScheduleTime] = useState(item.time || "10:00");
@@ -335,6 +339,11 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     const round = (item.feedbackRounds ?? 0) + 1;
     persist({
       ...item, approvalStatus: "Revision Requested", feedbackRounds: round,
+      // Sending a post back for its caption has to move the caption too,
+      // otherwise the row keeps reading "Ready" and contentApproveBlockers goes
+      // on treating it as done — the writer gets a task to fix something the
+      // app says is already finished.
+      ...(captionNeedsWork ? { captionStatus: captionStatusAfterRevision(item) } : {}),
       feedback: [...(item.feedback ?? []), { round, reason: r, by: reviewer, at: new Date().toISOString() }],
     });
     // Bounce it back into the fixer's My Tasks (creator, else requester).
@@ -346,7 +355,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, "/my-tasks");
-    setReason(""); setRevising(false);
+    setReason(""); setRevising(false); setCaptionNeedsWork(false);
   };
 
   const gate = canPublish(item);
@@ -791,12 +800,23 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                   <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} autoFocus
                     placeholder="What needs to change before this can be approved?"
                     className="w-full text-[13px] px-[13px] py-[10px] rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none resize-none" />
+                  <label className="flex items-start gap-2 text-[12px] text-ink cursor-pointer">
+                    <input type="checkbox" checked={captionNeedsWork} className="mt-[3px]"
+                      onChange={(e) => setCaptionNeedsWork(e.target.checked)} />
+                    <span>
+                      ✍️ แคปชั่นต้องแก้ด้วย
+                      <span className="block text-[11px] text-faint">
+                        จะดึงสถานะแคปชั่นกลับเป็น &ldquo;{captionStatusAfterRevision(item)}&rdquo; — คนเขียนจะเห็นว่ายังไม่ผ่าน
+                        และ Approve ไม่ได้จนกว่าจะกด Mark Ready ใหม่
+                      </span>
+                    </span>
+                  </label>
                   <div className="flex gap-2">
                     <button onClick={requestRevision} disabled={!reason.trim() || busy}
                       className="flex-1 text-[13px] font-bold py-[10px] rounded-[10px] text-white disabled:opacity-40" style={{ background: "#C67A28" }}>
                       {busy ? "Sending…" : "Send Revision Request"}
                     </button>
-                    <button onClick={() => { setRevising(false); setReason(""); }} className="text-[13px] font-semibold py-[10px] px-4 rounded-[10px] border border-line2 text-muted">Cancel</button>
+                    <button onClick={() => { setRevising(false); setReason(""); setCaptionNeedsWork(false); }} className="text-[13px] font-semibold py-[10px] px-4 rounded-[10px] border border-line2 text-muted">Cancel</button>
                   </div>
                 </div>
               ) : (

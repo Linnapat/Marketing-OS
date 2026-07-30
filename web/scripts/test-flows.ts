@@ -7,7 +7,7 @@ import { assertMockUniqueId, releaseMockId, seedMockIds, resetMockGuard } from "
 import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
-import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange } from "../src/lib/data/content";
+import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange } from "../src/lib/data/content";
 import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
@@ -594,6 +594,37 @@ console.log("Artwork counting — by pixels, platform collapsed");
   // โพสต์ที่ไม่ได้มาจากแผน (ตั้งเอง) ย้ายได้ปกติ ไม่พัง
   const adhoc = moveToCampaign({ ...post, sourceContentItemId: undefined }, { id: "CAM-3", name: "C3" }, "Gik");
   check("โพสต์ที่ไม่มีแผนต้นทางย้ายได้ปกติ", adhoc.campaignId === "CAM-3" && adhoc.sourceContentItemId === undefined);
+}
+
+{
+  // ── ส่งกลับแก้ "เพราะแคปชั่น" ต้องดึงสถานะแคปชั่นกลับด้วย ──────────────
+  // เดิม requestRevision ตั้งแค่ approvalStatus → โพสต์ยังโชว์ "Caption: Ready"
+  // ทั้งที่เพิ่งถูกตีกลับเพราะแคปชั่น และ approve ซ้ำได้ทันที
+  console.log("\n— วงจร Revise ของแคปชั่น —");
+  const c = (over: Partial<ContentItem>): ContentItem => ({
+    ...(CONTENT[0] as ContentItem), title: "T", campaign: "Wagyu Festival", platforms: ["Instagram"],
+    captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft", ...over,
+  });
+  check("มีข้อความแล้ว → Draft", captionStatusAfterRevision({ caption: "ข้อความ" }) === "Draft");
+  check("ยังไม่มีข้อความ → คง Missing ไม่ดันเป็น Draft", captionStatusAfterRevision({ caption: "" }) === "Missing");
+  check("ช่องว่างล้วน → Missing", captionStatusAfterRevision({ caption: "   " }) === "Missing");
+
+  // วงจรครบรอบ
+  const ready = c({ caption: "v1", captionStatus: "Ready", assetStatus: "Approved", approvalStatus: "Waiting Approval" });
+  check("เริ่มต้น: approve ได้", contentApproveBlockers(ready).length === 0);
+
+  const bounced = { ...ready, approvalStatus: "Revision Requested",
+                    captionStatus: captionStatusAfterRevision(ready) };
+  check("ตีกลับแล้วแคปชั่นกลับเป็น Draft", bounced.captionStatus === "Draft");
+  check("ตีกลับแล้ว approve ไม่ได้ และเหตุผลชี้ที่แคปชั่น",
+    contentApproveBlockers(bounced).some((b) => /Caption/.test(b)));
+
+  const fixed = advanceApprovalState({ ...bounced, caption: "v2", captionStatus: "Ready" });
+  check("แก้แล้ว Mark Ready → กลับเข้า Waiting Approval", fixed.approvalStatus === "Waiting Approval");
+  check("และ approve ได้อีกครั้ง", contentApproveBlockers(fixed).length === 0);
+
+  const bouncedOther = { ...ready, approvalStatus: "Revision Requested" };
+  check("ตีกลับเรื่องอื่น → แคปชั่นยัง Ready", bouncedOther.captionStatus === "Ready");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
