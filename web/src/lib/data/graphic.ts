@@ -146,6 +146,9 @@ export interface Graphic {
    *  be pointed at — "the stage changed" is not an answer to "who locked this?" */
   acceptedBy?: string;
   acceptedAt?: string;
+  /** Permission to top up the brief AFTER Creative has taken the job on.
+   *  See briefUnlockState / canEditBriefNow below for the rule. */
+  briefUnlock?: BriefUnlock;
   /** Notices raised when the planner edited or moved the post this request
    *  serves. Shown as a banner on the request so Creative sees the change
    *  where the work is, not in a channel they may have muted. */
@@ -306,6 +309,114 @@ export interface GraphicNotice {
 /** Has Creative taken this job on? The single question the edit lock asks. */
 export function isAccepted(g: Pick<Graphic, "acceptedAt"> | null | undefined): boolean {
   return !!g?.acceptedAt;
+}
+
+/* ── Topping up the brief after Creative has started ───────────────────────
+ *
+ * Before anyone accepts, the requester fills the brief freely — that is how a
+ * request gets complete enough to work on, and gating it would put briefs back
+ * where they were, stuck at 38% with the app printing "รอ requester เติม key
+ * message" at someone who had nowhere to type.
+ *
+ * Once Creative accepts, the brief is what somebody is working to, and a
+ * silent edit changes the job under them. So a top-up becomes a request:
+ * the requester asks, the Creative Leader releases, and only then does the
+ * editor open. The grant is spent on save — the next top-up asks again, which
+ * is the point of asking at all.
+ *
+ * Modelled as its own field rather than reusing acceptedAt: "ปล่อยงานคืน"
+ * hands the whole job back to Marketing (they may move or rewrite the post),
+ * and "you may add a line to the brief" is a much smaller thing to grant.
+ * Collapsing the two would mean every typo fix un-accepted the job. */
+
+export interface BriefUnlock {
+  status: "Pending" | "Granted" | "Rejected";
+  requestedBy: string;
+  requestedAt: string;
+  /** Why the requester needs to add to the brief — their own words. */
+  reason?: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionNote?: string;
+}
+
+export type BriefUnlockState = "none" | "pending" | "granted" | "rejected";
+
+export function briefUnlockState(g: Pick<Graphic, "briefUnlock"> | null | undefined): BriefUnlockState {
+  const u = g?.briefUnlock;
+  if (!u) return "none";
+  if (u.status === "Pending") return "pending";
+  if (u.status === "Granted") return "granted";
+  return "rejected";
+}
+
+/** Only the Creative Leader releases a brief for a top-up.
+ *
+ *  Deliberately narrower than canAcceptWork (which is any creative-side role,
+ *  or the CMO): the queue's capacity is the Creative Leader's to protect, and
+ *  a designer agreeing to a brief change on their own is how scope creep gets
+ *  in without anyone deciding it. Named role rather than the permissions
+ *  matrix, matching the other creative-queue gates in lib/roleGates. */
+export function canReleaseBriefEdit(role: string): boolean {
+  return (role || "").trim().toLowerCase() === "creative leader";
+}
+
+/** May this person open the brief editor right now?
+ *
+ *  `isRequester` covers the person who raised the request; the CMO is kept
+ *  alongside them as the standing override the rest of the app gives them.
+ *  Neither bypasses the release once the job is accepted. */
+export function canEditBriefNow(
+  g: Pick<Graphic, "acceptedAt" | "briefUnlock">,
+  opts: { isRequester: boolean; isCmo: boolean },
+): boolean {
+  if (!opts.isRequester && !opts.isCmo) return false;
+  if (!isAccepted(g)) return true;
+  return briefUnlockState(g) === "granted";
+}
+
+/** Why the editor is closed, in the words the person needs. Empty = it's open. */
+export function briefEditBlockedReason(
+  g: Pick<Graphic, "acceptedAt" | "briefUnlock" | "acceptedBy">,
+  opts: { isRequester: boolean; isCmo: boolean },
+): string {
+  if (canEditBriefNow(g, opts)) return "";
+  if (!opts.isRequester && !opts.isCmo) return "แก้บรีฟได้เฉพาะผู้ขอเปิดงาน (หรือ CMO)";
+  const who = g.acceptedBy?.trim() || "Creative";
+  switch (briefUnlockState(g)) {
+    case "pending": return `ส่งคำขอเติมบรีฟแล้ว — รอ Creative Leader ปล่อยงานให้แก้`;
+    case "rejected": return `Creative Leader ยังไม่ปล่อยให้แก้บรีฟรอบนี้ — คุยกับ ${who} ก่อนขอใหม่`;
+    default: return `${who} รับงานนี้ไปแล้ว — ต้องขอเติมบรีฟกับ Creative Leader และรอปล่อยงานก่อน`;
+  }
+}
+
+/** Raise the top-up request. */
+export function requestBriefEdit(g: Graphic, by: string, reason: string): Graphic {
+  return { ...g, briefUnlock: { status: "Pending", requestedBy: by, requestedAt: new Date().toISOString(), reason: reason.trim() || undefined } };
+}
+
+/** Creative Leader's answer. */
+export function decideBriefEdit(g: Graphic, by: string, grant: boolean, note?: string): Graphic {
+  const prev = g.briefUnlock;
+  if (!prev) return g;
+  return {
+    ...g,
+    briefUnlock: {
+      ...prev,
+      status: grant ? "Granted" : "Rejected",
+      decidedBy: by,
+      decidedAt: new Date().toISOString(),
+      decisionNote: note?.trim() || undefined,
+    },
+  };
+}
+
+/** Spend the grant once the edit is saved, so the next top-up asks again.
+ *  A no-op when the job was never accepted (nothing was granted to spend). */
+export function consumeBriefUnlock(g: Graphic): Graphic {
+  if (briefUnlockState(g) !== "granted") return g;
+  const { briefUnlock: _spent, ...rest } = g;
+  return rest as Graphic;
 }
 
 /** May the planning side still change the post this request serves?

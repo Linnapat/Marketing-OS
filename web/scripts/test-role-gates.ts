@@ -6,6 +6,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
+import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, type Graphic } from "../src/lib/data/graphic";
 import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
@@ -201,6 +202,32 @@ is("me ว่าง + owner ว่าง → ไม่เข้าคิวใ�
 // สถานะอื่นไม่ใช่เรื่องของคิวอนุมัติ
 is("Active → ไม่เข้าคิว", campaignAwaitsMe({ status: "Active", owner: "Ken S." }, { canApprove: true, me: "Ken S." }), false);
 is("Draft → ไม่เข้าคิว", campaignAwaitsMe({ status: "Draft", owner: "Ken S." }, { canApprove: true, me: "Ken S." }), false);
+
+console.log("\n— เติมบรีฟหลัง Creative รับงาน: ต้องขอ Creative Leader แล้วรอปล่อย —");
+const free = { acceptedAt: undefined } as Pick<Graphic, "acceptedAt" | "briefUnlock" | "acceptedBy">;
+const taken = { acceptedAt: "2026-07-20T03:00:00Z", acceptedBy: "Boss" } as Pick<Graphic, "acceptedAt" | "briefUnlock" | "acceptedBy">;
+const asked = { ...taken, briefUnlock: { status: "Pending" as const, requestedBy: "Ken S.", requestedAt: "2026-07-21T03:00:00Z" } };
+const freed = { ...taken, briefUnlock: { status: "Granted" as const, requestedBy: "Ken S.", requestedAt: "2026-07-21T03:00:00Z", decidedBy: "Boss" } };
+const refused = { ...taken, briefUnlock: { status: "Rejected" as const, requestedBy: "Ken S.", requestedAt: "2026-07-21T03:00:00Z", decidedBy: "Boss" } };
+const asRequester = { isRequester: true, isCmo: false };
+// ยังไม่มีใครรับงาน = เติมได้เลย (ไม่งั้นบรีฟจะค้างที่ 38% เหมือนก่อนมีฟอร์ม)
+is("ยังไม่มีใครรับงาน → requester เติมได้เลย", canEditBriefNow(free, asRequester), true);
+is("รับงานแล้ว + ยังไม่ได้ขอ → เติมไม่ได้", canEditBriefNow(taken, asRequester), false);
+is("ขอแล้วแต่ยังไม่ปล่อย → ยังเติมไม่ได้", canEditBriefNow(asked, asRequester), false);
+is("ปล่อยแล้ว → เติมได้", canEditBriefNow(freed, asRequester), true);
+is("ไม่ปล่อย → เติมไม่ได้", canEditBriefNow(refused, asRequester), false);
+// CMO มีสิทธิ์ override ทั่วแอป แต่ไม่ข้ามการปล่อยงาน
+is("CMO ก็ต้องรอปล่อยเหมือนกัน", canEditBriefNow(taken, { isRequester: false, isCmo: true }), false);
+is("คนอื่นที่ไม่ใช่ requester/CMO → เติมไม่ได้แม้ปล่อยแล้ว", canEditBriefNow(freed, { isRequester: false, isCmo: false }), false);
+// ใครปล่อยได้ — Creative Leader เท่านั้น (แคบกว่า canAcceptWork โดยตั้งใจ)
+is("Creative Leader ปล่อยได้", canReleaseBriefEdit("Creative Leader"), true);
+is("CMO ปล่อยไม่ได้", canReleaseBriefEdit("CMO"), false);
+is("Senior Graphic Designer ปล่อยไม่ได้", canReleaseBriefEdit("Senior Graphic Designer"), false);
+is("role ว่าง ปล่อยไม่ได้", canReleaseBriefEdit(""), false);
+is("เว้นวรรค/ตัวพิมพ์ยังจับได้", canReleaseBriefEdit("  creative leader "), true);
+// สิทธิ์ใช้ได้ครั้งเดียว — เติมเสร็จแล้วต้องขอใหม่
+is("เติมเสร็จ → สิทธิ์ถูกใช้ไป เติมซ้ำไม่ได้", canEditBriefNow(consumeBriefUnlock(freed as Graphic), asRequester), false);
+is("ยังไม่ได้ปล่อย → consume ไม่ทำอะไร", briefUnlockState(consumeBriefUnlock(asked as Graphic)), "pending");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

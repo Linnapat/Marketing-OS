@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { useEffect, useMemo, useState, CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
@@ -28,7 +28,11 @@ import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
-import { TaskGraphicBrief, graphicBriefTeaser } from "@/components/graphic/TaskGraphicBrief";
+import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
+import {
+  WorkItem, WorkCard, WorkListView, WorkAction, WorkGroupHeader, StatMini,
+  STATUS_MAP, PRIORITY_MAP, TYPE_COLORS, badge, init, chip, dueColorOf, brandCampaignLine,
+} from "@/components/work/WorkViews";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import {
   CampaignCommandBar,
@@ -48,17 +52,6 @@ const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
 // and let the real member land instead — a blank moment is honest, a fake
 // colleague is not.
 interface Person { name: string; role: string; color: string }
-const STATUS_MAP: Record<string, [string, string]> = {
-  Done: ["#4E7A4E", "#EEF4EE"], "In Progress": ["#3E5C9A", "#EEF1F8"], Waiting: ["#C68A1E", "#FBF8EE"],
-  "Need Approval": ["#4E7A4E", "#F0F7F0"], Stuck: ["#B33A2E", "#FFF5F4"], Revision: ["#C2691E", "#FBF1E9"], Todo: ["#9A9387", "#F2F0EB"],
-};
-const PRIORITY_MAP: Record<string, [string, string]> = {
-  High: ["#B33A2E", "#FFF5F4"], Med: ["#C68A1E", "#FBF8EE"], Low: ["#9A9387", "#F2F0EB"],
-};
-const TYPE_COLORS: Record<string, [string, string]> = {
-  Content: ["#3E5C9A", "#EEF1F8"], KOL: ["#B5577E", "#FBF0F5"], Graphic: ["#C2691E", "#FBF1E9"],
-  Budget: ["#4E7A4E", "#EEF4EE"], Ads: ["#C68A1E", "#FBF8EE"], Report: ["#6b6258", "#F0EDE6"], Campaign: ["#B8945A", "#FBF6ED"],
-};
 const BENTO_MESSAGES = ["You're almost there", "Small wins count ✓", "One task at a time", "Let's clear this gently", "Nearly done — just a few more"];
 
 // created_at is a full timestamp — fmtShort only reads a plain YYYY-MM-DD.
@@ -67,14 +60,6 @@ const fmtThaiDate = (iso: string) => fmtShort(iso.slice(0, 10)) || iso.slice(0, 
 /** Campaign budget context shown to the approver on an expense request. */
 type ExpenseBudgetInfo = { budget: number; committed: number; left: number; campaignId: string };
 
-const badge = (s: string, map: Record<string, [string, string]>): CSSProperties => {
-  const [fg, bg] = map[s] ?? ["#6b6258", "#F0EDE6"];
-  return { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: bg, color: fg, display: "inline-block", whiteSpace: "nowrap" };
-};
-const init = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
-const chip = (active: boolean): CSSProperties => active
-  ? { fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 999, background: "#211F1C", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }
-  : { fontSize: 12, fontWeight: 500, padding: "6px 14px", borderRadius: 999, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff", whiteSpace: "nowrap" };
 
 const GROUP_DEFS = [
   { id: "doFirst", label: "Do First", icon: "🎯", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "" },
@@ -392,12 +377,7 @@ export default function MyTasksPage() {
                 if (groupTasks.length === 0) return null;
                 return (
                   <div key={g.id}>
-                    <div className="flex items-center gap-[10px] mb-[13px]">
-                      <span className="text-[17px]">{g.icon}</span>
-                      <span className="text-[13.5px] font-bold tracking-[-0.01em]">{g.label}</span>
-                      <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: g.countBg, color: g.countColor }}>{groupTasks.length}</span>
-                      {g.warnMsg && <span className="text-[11.5px] italic" style={{ color: "#B33A2E" }}>{g.warnMsg}</span>}
-                    </div>
+                    <WorkGroupHeader g={g} count={groupTasks.length} />
                     <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))" }}>
                       {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={setGraphicOpenId} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
@@ -683,107 +663,62 @@ function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
   );
 }
 
-function StatMini({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
-  return (
-    <div className="rounded-[13px] px-[14px] py-[13px]" style={{ background: bg }}>
-      <div className="text-[9.5px] font-bold tracking-[0.05em] uppercase" style={{ color: fg }}>{label}</div>
-      <div className="text-[26px] font-bold mt-[3px]" style={{ color: fg }}>{val}</div>
-    </div>
-  );
+
+
+/** A Task as the shared card renders it. The mapping is the only Task-shaped
+ *  code left in the card path — everything visual comes from WorkViews, so a
+ *  change to the card shows up on the Agency Portal too. */
+function taskToWorkItem(t: Task, status: string, graphic: Graphic | null): WorkItem {
+  return {
+    key: String(t.id),
+    title: t.title,
+    moduleIcon: t.moduleIcon,
+    moduleColor: t.moduleColor,
+    type: t.type,
+    brand: t.brand,
+    campaign: t.campaign,
+    status,
+    priority: t.priority,
+    group: t.group,
+    due: t.due,
+    dueIso: t.dueIso,
+    nextAction: t.nextAction,
+    blocker: t.blocker,
+    pendingApprover: t.pendingApprover,
+    assignee: t.assignee,
+    isQuickWin: t.isQuickWin,
+    graphic,
+  };
 }
 
-// Due-date urgency against the real calendar: overdue/today red, within 2 days gold.
-const dueColorOf = (t: Task) => {
-  const n = daysUntilDue(t);
-  return n === null ? "#6b6258" : n <= 0 ? "#B33A2E" : n <= 2 ? "#C68A1E" : "#6b6258";
-};
-
 function TaskCard({ t, status, viewAs, graphic, onOpen, onOpenGraphic, onDone, onStart }: { t: Task; status: string; viewAs: string; graphic: Graphic | null; onOpen: () => void; onOpenGraphic: (id: number) => void; onDone: () => void; onStart: () => void }) {
-  const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
-  const cardBorder = status === "Stuck" ? "#F5C8C4" : status === "Need Approval" ? "#B8E0B8" : "#ECE6DA";
-  const hasApprover = !!t.pendingApprover && t.pendingApprover !== viewAs;
-  const blockerShort = t.blocker ? t.blocker.split("—")[0].trim() : "";
-  const teaser = graphic ? graphicBriefTeaser(graphic) : null;
-  const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
-    <div onClick={onOpen} className="relative overflow-hidden cursor-pointer" style={{ background: "#fff", border: `1px solid ${cardBorder}`, borderRadius: 16, padding: "18px 18px 14px 22px" }}>
-      <div className="absolute left-0 top-0 bottom-0" style={{ width: 4, background: t.moduleColor }} />
-      <div className="flex items-center gap-[7px] mb-[10px] flex-wrap">
-        <span className="text-[13px]">{t.moduleIcon}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg }}>{t.type}</span>
-        <span style={badge(t.priority, PRIORITY_MAP)}>{t.priority}</span>
-        {t.isQuickWin && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: "#FBF6ED", color: "#B8945A" }}>✨ Quick win</span>}
-        <span className="ml-auto"><span style={badge(status, STATUS_MAP)}>{status}</span></span>
-      </div>
-      <div className="text-[14.5px] font-bold leading-[1.35] mb-[5px]">{t.title}</div>
-      <div className="text-[11.5px] text-faint mb-[10px]">{brandCampaignLine(t.brand, t.campaign)}</div>
-      <div className="text-[12px] text-muted rounded-[9px] px-3 py-[9px] mb-3 italic leading-[1.5]" style={{ background: "#FAF8F4" }}>{t.nextAction}</div>
-      {/* The brief, on the card. A designer picking up the next job should not
-          have to open anything to know what it says or that it is short. */}
-      {graphic && teaser && (
-        <div onClick={(e) => { stop(e); onOpenGraphic(graphic.id); }} className="rounded-[9px] px-3 py-[9px] mb-3" style={{ background: "#FBF1E9", border: "1px solid #F0D5BC" }}>
-          <div className="flex items-center gap-[6px] mb-[3px]">
-            <span className="text-[10px] font-bold tracking-[0.05em] uppercase" style={{ color: "#C2691E" }}>🎨 Brief</span>
-            {!teaser.complete && <span className="text-[9.5px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#FFF5F4", color: "#B33A2E" }}>ยังไม่ครบ</span>}
-            <span className="ml-auto text-[10px] font-bold" style={{ color: "#C2691E" }}>เปิดงาน →</span>
-          </div>
-          <div className="text-[11.5px] text-muted leading-[1.45] line-clamp-2">{teaser.text}</div>
-          <div className="text-[10.5px] text-faint mt-[4px] truncate">{[graphic.platform, graphic.size].filter(Boolean).join(" · ") || "—"}</div>
-        </div>
-      )}
-      <div className="flex items-center gap-[10px] mb-3 flex-wrap">
-        <span className="text-[11px] font-semibold" style={{ color: dueColorOf(t) }}>📅 {t.due}</span>
-        {hasApprover && <span className="text-[11px] font-semibold" style={{ color: "#C68A1E" }}>⏳ {t.pendingApprover}</span>}
-        {t.blocker && <span className="text-[11px] font-semibold" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</span>}
-      </div>
-      <div className="flex gap-[7px] flex-wrap">
-        {graphic && <span onClick={(e) => { stop(e); onOpenGraphic(graphic.id); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#C2691E", color: "#fff", cursor: "pointer" }}>🎨 เปิดบรีฟ / ส่งงาน</span>}
-        {(status === "In Progress" || status === "Revision") && <span onClick={(e) => { stop(e); onDone(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Mark Done ✓</span>}
-        {status === "Need Approval" && <span onClick={(e) => { stop(e); onDone(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Approve ✓</span>}
-        {status === "Stuck" && <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4", cursor: "pointer" }}>Ask for Help</span>}
-        {status === "Todo" && <span onClick={(e) => { stop(e); onStart(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#3E5C9A", color: "#fff", cursor: "pointer" }}>Start</span>}
-        {status === "Waiting" && <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#FBF8EE", color: "#C68A1E", border: "1px solid #EDCC7A", cursor: "pointer" }}>Check in</span>}
-        <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 500, padding: "6px 13px", borderRadius: 9, border: "1px solid #E5DECF", color: "#6b6258", cursor: "pointer", background: "#fff" }}>Details</span>
-      </div>
-    </div>
+    <WorkCard
+      item={taskToWorkItem(t, status, graphic)}
+      viewer={viewAs}
+      onOpen={onOpen}
+      onOpenGraphic={onOpenGraphic}
+      actions={<>
+        {graphic && <WorkAction label="🎨 เปิดบรีฟ / ส่งงาน" bg="#C2691E" onClick={() => onOpenGraphic(graphic.id)} />}
+        {(status === "In Progress" || status === "Revision") && <WorkAction label="Mark Done ✓" bg="#4E7A4E" onClick={onDone} />}
+        {status === "Need Approval" && <WorkAction label="Approve ✓" bg="#4E7A4E" onClick={onDone} />}
+        {status === "Stuck" && <WorkAction label="Ask for Help" bg="#FFF5F4" fg="#B33A2E" border="#F5C8C4" onClick={onOpen} />}
+        {status === "Todo" && <WorkAction label="Start" bg="#3E5C9A" onClick={onStart} />}
+        {status === "Waiting" && <WorkAction label="Check in" bg="#FBF8EE" fg="#C68A1E" border="#EDCC7A" onClick={onOpen} />}
+        <WorkAction label="Details" bg="#fff" fg="#6b6258" border="#E5DECF" onClick={onOpen} />
+      </>}
+    />
   );
 }
 
 function ListView({ tasks, getStatus, onOpen, onOpenGraphic, colorOf, graphicOf }: { tasks: Task[]; getStatus: (t: Task) => string; onOpen: (id: number) => void; onOpenGraphic: (id: number) => void; colorOf: (n: string) => string; graphicOf: (t: Task) => Graphic | null }) {
-  const cols = "2.5fr 0.7fr 1fr 1.3fr 0.65fr 0.8fr 0.85fr";
   return (
-    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-      <div className="grid gap-2 px-5 py-[11px] text-[10px] font-bold tracking-[0.06em] uppercase text-faint" style={{ gridTemplateColumns: cols, background: "#FBF9F4", borderBottom: "1px solid #ECE6DA" }}>
-        <span>Task</span><span>Module</span><span>Assignee</span><span>Campaign</span><span>Due</span><span>Priority</span><span>Status</span>
-      </div>
-      {tasks.length === 0 && <div className="py-12 text-center text-faint text-[13.5px]">No tasks match — try a wider filter.</div>}
-      {tasks.map((t) => {
-        const status = getStatus(t);
-        const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
-        const rowBg = status === "Stuck" ? "#FFFAF9" : status === "Need Approval" ? "#FAFFF9" : "#fff";
-        const blockerShort = t.blocker ? t.blocker.split("—")[0].trim() : "";
-        const g = graphicOf(t);
-        return (
-          <div key={t.id} onClick={() => onOpen(t.id)} className="grid gap-2 px-5 py-[13px] items-center cursor-pointer" style={{ gridTemplateColumns: cols, borderBottom: "1px solid #F4EFE5", background: rowBg }}>
-            <div>
-              <div className="text-[13px] font-semibold truncate">{t.moduleIcon} {t.title}</div>
-              {g && (
-                <div onClick={(e) => { e.stopPropagation(); onOpenGraphic(g.id); }} className="text-[10.5px] mt-[1px] truncate font-semibold" style={{ color: g.briefComplete ? "#C2691E" : "#B33A2E" }}>
-                  🎨 Brief {g.briefComplete ? "" : "ยังไม่ครบ "}· {[g.platform, g.size].filter(Boolean).join(" · ") || "—"} · เปิดงาน →
-                </div>
-              )}
-              {t.blocker && <div className="text-[10.5px] font-semibold mt-[1px]" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</div>}
-            </div>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg, justifySelf: "start" }}>{t.type}</span>
-            <div className="flex items-center gap-[6px] min-w-0"><span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0" style={{ background: colorOf(t.assignee) }}>{init(t.assignee)}</span><span className="text-[12px] font-semibold truncate">{t.assignee}</span></div>
-            <span className="text-[12px] text-muted truncate">{t.campaign?.trim() || "—"}</span>
-            <span className="text-[12px] font-semibold" style={{ color: dueColorOf(t) }}>{t.due}</span>
-            <span style={{ ...badge(t.priority, PRIORITY_MAP), justifySelf: "start" }}>{t.priority}</span>
-            <span style={{ ...badge(status, STATUS_MAP), justifySelf: "start" }}>{status}</span>
-          </div>
-        );
-      })}
-    </div>
+    <WorkListView
+      items={tasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
+      viewerColorOf={colorOf}
+      onOpen={(item) => onOpen(Number(item.key))}
+      onOpenGraphic={onOpenGraphic}
+    />
   );
 }
 
@@ -989,11 +924,6 @@ const TYPE_META: Record<string, { module: string; icon: string; color: string }>
   Report: { module: "Campaign", icon: "📊", color: "#B33A2E" },
 };
 
-/** "Teppen · Summer Push", or just the brand when the task isn't tied to a
- *  campaign — a task with no campaign must not render a dangling "· ". */
-function brandCampaignLine(brand: string, campaign: string): string {
-  return [brand, campaign?.trim()].filter(Boolean).join(" · ");
-}
 
 function NewTaskModal({ owner, people, campaigns, brandOptions, nextId, onClose, onCreate }: { owner: string; people: Person[]; campaigns: CampaignRow[]; brandOptions: BrandId[]; nextId: number; onClose: () => void; onCreate: (t: Task) => void }) {
   const [title, setTitle] = useState("");
