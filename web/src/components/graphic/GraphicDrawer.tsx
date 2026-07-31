@@ -29,6 +29,7 @@ import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
+import { fileApprovedAsset } from "@/lib/db/assets";
 import { useAuth } from "@/lib/auth";
 import { isCreativeSideRole, canApproveRushBrief } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
@@ -1258,6 +1259,10 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     // Fully approved → push approved asset links onto the linked content post.
     if (ready) {
       syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      // …and into the Asset Library. Separate from the Content sync on purpose:
+      // POSM, posters and menu artwork serve no post, so that sync returns
+      // early for them and they used to finish nowhere.
+      void fileApprovedAsset(ng);
       notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content", { team: graphicTeam(g) });
     }
   };

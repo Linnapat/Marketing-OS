@@ -8,7 +8,7 @@ import { optimistic } from "@/lib/optimistic";
 import { useCanMarkPaid } from "@/lib/usePermGates";
 import { authHeaders } from "@/lib/supabase";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { useEffect, useMemo, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useState } from "react";
 import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -505,6 +505,12 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
 }
 
 /* ── Spending Log: table + Voucher button ──────────────────────────── */
+/** Header and rows off one literal, every track minmax(0, …). A bare `1.6fr`
+ *  is minmax(auto, 1.6fr): a long vendor name, or the second "Mark Paid" button
+ *  that only unpaid rows carry, sets a min-content floor and pushes that row's
+ *  columns out of line with the header and with the rows around it. */
+const SPEND_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.9fr) minmax(0,1fr)";
+
 export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterValue; date?: DateFilter; onVoucher: (e: ExpenseRow) => void }) {
   // Real spending from the DB (empty on a fresh database), mock in demo mode.
   const [all, setAll] = useState<ExpenseLogRow[]>(EXPENSES);
@@ -532,7 +538,7 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "1.6fr 1.2fr 1.2fr 1fr 1fr 0.9fr 1fr" }}>
+        style={{ gridTemplateColumns: SPEND_COLS }}>
         <div>Vendor</div><div>Category</div><div>Brand</div><div>Amount</div><div>VAT</div><div>Status</div><div></div>
       </div>
       {rows.length === 0 && (
@@ -544,14 +550,15 @@ export function SpendingLogTab({ brand, date, onVoucher }: { brand: BrandFilterV
         </div>
       )}
       {rows.map((e, i) => (
-        <div key={i} className="grid grid-cols-1 md:grid-cols-[1.6fr_1.2fr_1.2fr_1fr_1fr_0.9fr_1fr] gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0">
-          <div className="text-[13px] font-semibold text-ink">{e.vendor}<div className="text-[11px] text-faint md:hidden">{e.date}</div></div>
-          <div className="text-[12.5px] text-muted">{e.category}</div>
-          <div className="flex items-center gap-[6px] text-[12px] text-muted"><BrandDot brand={e.b} size={7} />{brandName(e.b)}</div>
+        <div key={i} className="grid grid-cols-1 md:[grid-template-columns:var(--spend-cols)] gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0"
+          style={{ "--spend-cols": SPEND_COLS } as CSSProperties}>
+          <div className="text-[13px] font-semibold text-ink min-w-0"><div className="truncate">{e.vendor}</div><div className="text-[11px] text-faint md:hidden">{e.date}</div></div>
+          <div className="text-[12.5px] text-muted truncate min-w-0">{e.category}</div>
+          <div className="flex items-center gap-[6px] text-[12px] text-muted min-w-0"><BrandDot brand={e.b} size={7} /><span className="truncate">{brandName(e.b)}</span></div>
           <div className="text-[13px] font-semibold text-ink">{baht(e.amount, { compact: true })}</div>
           <div className="text-[12.5px] text-muted">{e.vat ? baht(e.vat) : "—"}</div>
           <div><StatusBadge tone={STATUS_TONE[e.status] ?? "neutral"}>{e.status}</StatusBadge></div>
-          <div className="flex items-center gap-[6px]">
+          <div className="flex items-center gap-[6px] flex-wrap min-w-0">
             <button onClick={() => onVoucher(e)} className="text-[11.5px] font-bold text-accent border border-line2 rounded-[8px] px-3 py-[5px]">Open voucher ↗</button>
             {e.status === "Unpaid" && canPay && (
               <button onClick={() => markPaid(e)} className="text-[11.5px] font-bold text-white rounded-[8px] px-3 py-[5px]" style={{ background: "#4E7A4E" }}>Mark Paid ✓</button>

@@ -356,7 +356,13 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
   onOpenGraphic?: (id: number) => void;
   assigneeHeader?: string;
 }) {
-  const cols = "2.5fr 0.7fr 1fr 1.3fr 0.65fr 0.8fr 0.85fr";
+  /* The header and every row are separate grids, so the tracks only line up if
+   * they resolve to the same widths independently of what is in the row. A bare
+   * `2.5fr` means `minmax(auto, 2.5fr)`: a long brief line (nowrap, for the
+   * ellipsis) sets a min-content floor, that row's Task column grows, and the
+   * rest of the row slides right and starts wrapping. minmax(0, …) drops the
+   * floor, so the split is purely proportional and identical on every row. */
+  const cols = "minmax(0,2.4fr) minmax(0,0.8fr) minmax(0,1fr) minmax(0,1.2fr) minmax(0,0.7fr) minmax(0,0.7fr) minmax(0,1fr)";
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="grid gap-2 px-5 py-[11px] text-[10px] font-bold tracking-[0.06em] uppercase text-faint" style={{ gridTemplateColumns: cols, background: "#FBF9F4", borderBottom: "1px solid #ECE6DA" }}>
@@ -371,7 +377,7 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
         const who = item.assignee ?? "";
         return (
           <div key={item.key} onClick={() => onOpen?.(item)} className="grid gap-2 px-5 py-[13px] items-center" style={{ gridTemplateColumns: cols, borderBottom: "1px solid #F4EFE5", background: rowBg, cursor: onOpen ? "pointer" : "default" }}>
-            <div>
+            <div className="min-w-0">
               <div className="text-[13px] font-semibold truncate">{item.moduleIcon} {item.title}</div>
               {g && (
                 <div onClick={(e) => { e.stopPropagation(); onOpenGraphic?.(g.id); }} className="text-[10.5px] mt-[1px] truncate font-semibold" style={{ color: g.briefComplete ? "#C2691E" : "#B33A2E" }}>
@@ -389,8 +395,8 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
                 </>
               ) : <span className="text-[12px] text-faint">—</span>}
             </div>
-            <span className="text-[12px] text-muted truncate">{item.campaign?.trim() || "—"}</span>
-            <span className="text-[12px] font-semibold" style={{ color: dueColorOf(item) }}>{item.due}</span>
+            <span className="text-[12px] text-muted truncate min-w-0">{item.campaign?.trim() || "—"}</span>
+            <span className="text-[12px] font-semibold truncate" style={{ color: dueColorOf(item) }}>{item.due}</span>
             <span style={{ ...badge(item.priority, PRIORITY_MAP), justifySelf: "start" }}>{item.priority}</span>
             <span style={{ ...badge(item.status, STATUS_MAP), justifySelf: "start" }}>{item.status}</span>
           </div>

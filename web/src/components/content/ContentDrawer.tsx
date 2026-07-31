@@ -13,9 +13,8 @@ import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
-import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
+import { WorkCode } from "@/components/ui/CampaignCode";
 import { issueContentCode } from "@/lib/db/workCode";
-import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
@@ -66,7 +65,6 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   onDelete?: (deleted: ContentItem) => void;
 }) {
   const [tab, setTab] = useState<DTab>("overview");
-  const codeOf = useCampaignCodes();
   const [caption, setCaption] = useState(item.caption);
   // Editable post basics (title / date / time) — saved from the Overview tab.
   const [editTitle, setEditTitle] = useState(item.title);
@@ -431,7 +429,12 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
             <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted">
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full" style={{ background: brandColor(item.b) }} />{brandName(item.b)}</span>
               <span className="text-faint">·</span><span>{item.campaign}</span>
-              <CampaignCode code={codeOf(item.campaignId, item.campaign)} />
+              {/* No campaign pill here on purpose. The job number above already
+                  opens with the campaign's code, so a pill beside it printed the
+                  same number twice — read as two different numbers, which is the
+                  exact confusion this whole scheme exists to remove. It stays on
+                  the list rows, where the job number is shown short ("C04") and
+                  the two are complementary rather than overlapping. */}
               {/* Real publish date from dateIso — falls back to day-of-month only when undated. */}
               <span className="text-faint">·</span><span>{item.dateIso ? `${MONTHS[Number(item.dateIso.slice(5, 7)) - 1]} ${Number(item.dateIso.slice(8, 10))}` : `Day ${item.day}`}, {item.time}</span>
             </div>

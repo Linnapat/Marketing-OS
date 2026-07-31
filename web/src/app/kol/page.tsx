@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
-import { useEffect, useMemo, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -316,13 +316,20 @@ export default function KolPage() {
   );
 }
 
+/** Header and row share one literal, and every track is minmax(0, …) — a bare
+ *  `2fr` is minmax(auto, 2fr), so a long creator handle or campaign name sets a
+ *  min-content floor that widens that one row and knocks it out of step with
+ *  the header (each row is its own grid). */
+const CREATOR_COLS = "minmax(0,2fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.9fr) minmax(0,1.4fr)";
+
 function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
   const pi = platformIcon(kol.plat);
   const { idx } = stageProgress(kol.status);
   const url = channelUrl(kol.plat, kol.h);
   return (
     <div className="border-b border-line4 last:border-0">
-      <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.4fr_1fr_0.9fr_0.9fr_1.4fr] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition">
+      <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--creator-cols)] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition"
+        style={{ "--creator-cols": CREATOR_COLS } as CSSProperties}>
         <div className="flex items-center gap-3">
           <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: brandColor(kol.b) }}>{initials(kol.name)}</span>
           <div className="min-w-0">
@@ -412,7 +419,7 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "2fr 1.4fr 1fr 0.9fr 0.9fr 1.4fr" }}>
+        style={{ gridTemplateColumns: CREATOR_COLS }}>
         <div>Creator</div><div>Campaign</div><div>Followers</div><div>Actual Post</div><div>Fee</div><div>Stage</div>
       </div>
       {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}

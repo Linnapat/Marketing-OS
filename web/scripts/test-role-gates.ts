@@ -237,5 +237,14 @@ console.log("\n— กติกาเติมบรีฟต้องตรง�
   is("client: ปล่อยแล้ว → แก้ได้ (ตรงกับ SQL)", canEditBriefNow(granted, { isRequester: true, isCmo: false }), true);
 }
 
+console.log("\n— assets: หนึ่งใบงานหนึ่งแถว (ต้อง upsert ได้จริง) —");
+{
+  const sql = readFileSync(new URL("../supabase/assets_from_graphic.sql", import.meta.url), "utf8");
+  check("มีคอลัมน์ผูกกับใบงาน", /add column if not exists graphic_request_id/.test(sql));
+  check("มี unique index สำหรับ upsert", /create unique index[\s\S]{0,120}assets \(graphic_request_id\)/.test(sql));
+  // partial index ใช้เป็น ON CONFLICT target ไม่ได้ — เคยพลาดตรงนี้แล้ว insert เงียบ
+  check("ต้องไม่เป็น partial index", !/assets_graphic_request_uniq[\s\S]{0,200}where graphic_request_id is not null/.test(sql));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
