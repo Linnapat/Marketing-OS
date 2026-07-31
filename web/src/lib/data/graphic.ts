@@ -850,6 +850,53 @@ export function findLinkedGraphics<T extends Pick<Graphic, "id" | "contentPostId
   );
 }
 
+/* ── Finished artwork → the Asset Library ──────────────────────────────────
+ *
+ * One request = one asset. A request can hold several files (three sizes, two
+ * platforms), but the library is a place to FIND the finished thing, not an
+ * inventory of exports — and the team asked for one row.
+ *
+ * Re-approval after a revision overwrites that row rather than adding a
+ * second: the previous version is not something anyone goes back to, and two
+ * near-identical entries is how a library stops being trusted.
+ *
+ * Pure so the mapping is testable; the write lives in lib/db/assets. */
+
+export interface ApprovedAssetRow {
+  graphicRequestId: string;
+  name: string;
+  type: string;
+  b: BrandId;
+  campaign: string;
+  version: string;
+  driveUrl: string;
+  canvaUrl: string;
+}
+
+/** The library row for a fully-approved request, or null when it is not
+ *  finished (or has no file to point at — an approved request with no link is
+ *  a data problem, not a library entry). */
+export function approvedAssetRow(g: Graphic): ApprovedAssetRow | null {
+  if (!deliverableProgress(g).ready) return null;
+  const dels = (g.deliverables ?? []).filter((d) => d.status === "Approved");
+  const primary = dels.find((d) => d.assetLink?.trim());
+  if (!primary) return null;
+  // Version tracks the most-revised piece in the request: if one size went to
+  // v3 the request as a whole has been round three times, and stamping v1
+  // because another size passed first would understate it.
+  const version = Math.max(1, ...dels.map((d) => d.version || 1));
+  return {
+    graphicRequestId: String(g.id),
+    name: g.title,
+    type: g.type || "Artwork",
+    b: g.b,
+    campaign: g.campaign || "—",
+    version: `v${version}`,
+    driveUrl: primary.assetLink.trim(),
+    canvaUrl: (dels.find((d) => d.sourceLink?.trim())?.sourceLink ?? "").trim(),
+  };
+}
+
 /** Progress rollup for a request's deliverables. */
 export function deliverableProgress(g: Graphic) {
   const d = g.deliverables ?? [];

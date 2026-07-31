@@ -11,7 +11,7 @@
 import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
   applyLensVerdict, rejectionsByLens, emptyDeliverable,
-  creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS,
+  creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS, approvedAssetRow,
   type Graphic, type GraphicDeliverable,
 } from "../src/lib/data/graphic";
 
@@ -126,6 +126,31 @@ console.log("\n— ลิงก์บรีฟเหลือช่องเด�
   const noLink = briefFields({ ...base, briefComplete: true });
   is("checklist อ่านลิงก์จริง ไม่ใช่ธง briefComplete", noLink.find((f) => f.label === "ลิงก์บรีฟ")?.ok, false);
   is("มีลิงก์แล้วติ๊กถูก", briefFields({ ...base, briefLink: "A" }).find((f) => f.label === "ลิงก์บรีฟ")?.ok, true);
+}
+
+console.log("\n— งานที่อนุมัติครบ → 1 แถวใน Asset Library —");
+{
+  const three = [
+    submitted({ platform: "Instagram", size: "4:5 (1080×1350)", assetLink: "https://drive/ig.png", sourceLink: "https://canva/src", version: 3 }),
+    submitted({ platform: "Facebook",  size: "4:5 (1080×1350)", assetLink: "https://drive/fb.png", version: 1 }),
+    submitted({ platform: "Instagram", size: "9:16 (1080×1920)", assetLink: "https://drive/story.png", version: 1 }),
+  ];
+  const pending = req(three);
+  is("ยังอนุมัติไม่ครบ → ยังไม่เข้า library", approvedAssetRow(pending), null);
+
+  const done = req(three.map((d) => ({ ...d, status: "Approved" })));
+  const row = approvedAssetRow(done)!;
+  // 1 ใบงาน = 1 asset ตามที่ทีมเลือก แม้ใบนี้จะมี 3 ไฟล์
+  is("ได้แถวเดียวต่อใบงาน", row.graphicRequestId, "1");
+  is("ชื่อจากใบงาน", row.name, "Wagyu KV");
+  is("ลิงก์ไฟล์แรกที่อนุมัติ", row.driveUrl, "https://drive/ig.png");
+  is("เก็บไฟล์ต้นฉบับด้วยถ้ามี", row.canvaUrl, "https://canva/src");
+  // เวอร์ชันตามชิ้นที่แก้เยอะสุด ไม่ใช่ชิ้นที่ผ่านก่อน
+  is("version = ชิ้นที่ผ่านรอบมากสุด", row.version, "v3");
+
+  // อนุมัติครบแต่ไม่มีลิงก์เลย = ข้อมูลผิด ไม่ใช่ของที่ควรเข้า library
+  const linkless = req([submitted({ status: "Approved", assetLink: "" })]);
+  is("ไม่มีไฟล์ → ไม่สร้างแถว", approvedAssetRow(linkless), null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

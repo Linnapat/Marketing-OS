@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { ASSETS, Asset } from "@/lib/data/requests";
 import { BrandId } from "@/lib/brands";
+import { Graphic, approvedAssetRow } from "@/lib/data/graphic";
 import { assertDbData } from "@/lib/db/assert";
 
 type Row = {
@@ -33,4 +34,28 @@ export async function createAsset(a: Asset): Promise<Asset> {
   }).select("id").single();
   const row = assertDbData(data, error, "Could not save asset");
   return { ...a, id: String(row.id) };
+}
+
+/** File a fully-approved request in the Asset Library.
+ *
+ *  Keyed on the request id, so a piece that went back for revision and was
+ *  approved again lands on the SAME row — the team's call, and the reason the
+ *  unique index is on graphic_request_id.
+ *
+ *  Best-effort: approval already happened and the artwork is already on its
+ *  Content Plan post. Failing to file a library copy must not undo that or
+ *  surface as an approval error. */
+export async function fileApprovedAsset(g: Graphic): Promise<void> {
+  const row = approvedAssetRow(g);
+  if (!row) return;
+  const db = supabase();
+  if (!db) return;
+  const { error } = await db.from("assets").upsert({
+    graphic_request_id: row.graphicRequestId,
+    name: row.name, type: row.type, brand: row.b, campaign: row.campaign,
+    version: row.version, approval: "Approved",
+    updated: new Date().toISOString().slice(0, 10),
+    drive_url: row.driveUrl, canva_url: row.canvaUrl || null,
+  }, { onConflict: "graphic_request_id" });
+  if (error) console.warn("fileApprovedAsset skipped", g.id, error.message);
 }
