@@ -177,7 +177,7 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
           brand: brandName(kol.b), campaign: kol.campaign, reason: r, by: kol.pendingApprover || "Approver",
         });
       }
-      notify("rejected", `↩ งาน KOL ถูกส่งกลับแก้: ${kol.name}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r}`, "/my-tasks");
+      notify("rejected", `↩ งาน KOL ถูกส่งกลับแก้: ${kol.name}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r}`, "/my-tasks", { team: "creative", to: [fixer] });
       onUpdate?.(next);
       setRevising(false); setReason("");
     } catch (error) {

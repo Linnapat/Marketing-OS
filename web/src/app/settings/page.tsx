@@ -14,6 +14,7 @@ import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRow
 import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
 import { fetchAuditLog, AuditEntry } from "@/lib/db/audit";
+import { NOTIFY_TEAMS, TEAM_LABELS, TEAM_ENV, NotifyTeam } from "@/lib/notifyRouting";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
@@ -22,6 +23,25 @@ import {
 } from "@/lib/data/settings";
 
 const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0, 1)).toUpperCase();
+
+/** The `slack` block of GET /api/notify — which per-team webhooks are set. */
+interface SlackWiring {
+  configured: boolean;
+  teams: Record<string, { own: boolean; routed: boolean; env: string }>;
+  dm: boolean;              // bot token present → per-person DMs are on
+  unmapped: string[];       // people the app tried to DM and couldn't find
+}
+
+/** One line saying where each team's alerts actually land. */
+function slackWiringNote(w: SlackWiring): string {
+  if (!w.configured) return `ยังไม่ได้ตั้ง ${TEAM_ENV.general}`;
+  const own = NOTIFY_TEAMS.filter((t) => w.teams[t]?.own).map((t) => TEAM_LABELS[t]);
+  const shared = NOTIFY_TEAMS.filter((t) => !w.teams[t]?.own && w.teams[t]?.routed).map((t) => TEAM_LABELS[t]);
+  const parts = [`แชนแนลแยก · ${own.join(" · ")}`];
+  if (shared.length) parts.push(`${shared.join(" / ")} ใช้แชนแนล General`);
+  parts.push(w.dm ? "assign/revise ส่งเป็น DM + สรุปเข้าแชนแนลวันละครั้ง" : "ยังไม่ได้ตั้ง SLACK_BOT_TOKEN — ยังส่ง DM รายคนไม่ได้");
+  return parts.join(" — ");
+}
 
 const BRAND_SCOPE_LABELS = ["All brands", "External only", "Selected brands"];
 const BRAND_SCOPE_TEXT = "Teppen · Omakase Don";
@@ -471,6 +491,57 @@ export default function SettingsPage() {
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  // Slack wiring, read from the server (env vars only live there). Shown on the
+  // Integrations card so "Connected" reflects reality instead of being hardcoded.
+  const [slackWiring, setSlackWiring] = useState<SlackWiring | null>(null);
+  useEffect(() => {
+    if (section !== "integrations" || slackWiring) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/notify", { headers: await authHeaders() });
+        const json = (await res.json()) as { ok?: boolean; slack?: SlackWiring };
+        if (alive && json?.ok && json.slack) setSlackWiring(json.slack);
+      } catch { /* leave the card in its "unknown" state */ }
+    })();
+    return () => { alive = false; };
+  }, [section, slackWiring]);
+  // Posts one real message per wired channel, so "Connected" can be verified
+  // from the UI instead of by triggering an approval just to see if it lands.
+  const [slackTesting, setSlackTesting] = useState(false);
+  const sendSlackTest = async () => {
+    if (!slackWiring) return;
+    // The API honours this toggle, so a muted channel would look like a broken
+    // webhook. Say which it is instead.
+    if (channels.slack === false) { toastError("ช่องทาง Slack ถูกปิดอยู่ใน Notifications — เปิดก่อนแล้วค่อยทดสอบ"); return; }
+    setSlackTesting(true);
+    // Teams sharing the general webhook would post the same message twice.
+    const targets = NOTIFY_TEAMS.filter((t) => slackWiring.teams[t]?.own);
+    try {
+      const headers = { "Content-Type": "application/json", ...(await authHeaders()) };
+      const results = await Promise.all(targets.map(async (team: NotifyTeam) => {
+        const res = await fetch("/api/notify", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            event: "generic", team,
+            title: `🔔 ทดสอบการแจ้งเตือน — ช่อง ${TEAM_LABELS[team]}`,
+            detail: "ส่งจาก Settings → Integrations · เห็นข้อความนี้แปลว่าต่อ Slack เรียบร้อยแล้ว",
+            link: "/settings",
+          }),
+        });
+        const json = (await res.json()) as { slack?: boolean };
+        return { team, ok: res.ok && json.slack === true };
+      }));
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length === 0) toast(`ส่งข้อความทดสอบแล้ว ${results.length} ช่อง — ไปดูใน Slack ได้เลย`);
+      else toastError(`ส่งไม่สำเร็จ: ${failed.map((f) => TEAM_LABELS[f.team]).join(", ")} — ตรวจ webhook URL อีกครั้ง`);
+    } catch (e) {
+      toastError(`ส่งข้อความทดสอบไม่สำเร็จ: ${e instanceof Error ? e.message : "Unknown error"}`);
+    } finally {
+      setSlackTesting(false);
+    }
+  };
   // Editable permission matrix (role × module) as level indices.
   const [perm, setPerm] = useState<number[][]>(() => PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l))));
   const [permDirty, setPermDirty] = useState(false);
@@ -1177,7 +1248,14 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {INTEGRATIONS.map((it) => (
+              {INTEGRATIONS.map((base) => {
+                // Slack is the one card backed by a real check: its status and
+                // footnote come from GET /api/notify rather than the static list.
+                const live = base.name === "Slack" && slackWiring;
+                const it = live
+                  ? { ...base, status: slackWiring!.configured ? "Connected" : "Not connected", note: slackWiringNote(slackWiring!), actions: slackWiring!.configured ? ["Test"] : base.actions }
+                  : { ...base, note: undefined as string | undefined };
+                return (
                 <div key={it.name} className="bg-surface border border-line rounded-cardLg p-5">
                   <div className="flex items-center gap-3 mb-2">
                     <span className="w-9 h-9 rounded-[10px] flex items-center justify-center text-[16px]" style={{ background: it.iconBg }}>{it.icon}</span>
@@ -1185,15 +1263,30 @@ export default function SettingsPage() {
                     <Pill text={it.status} fg={it.status === "Connected" ? "#4E7A4E" : it.status === "Coming soon" ? "#C68A1E" : "#9A9387"} bg={it.status === "Connected" ? "#EEF4EE" : it.status === "Coming soon" ? "#FBF8EE" : "#F2F0EB"} />
                   </div>
                   <div className="text-[12px] text-muted mb-3">{it.desc}</div>
+                  {/* Unmapped people fail silently by design — this is the one
+                      place that says so, otherwise someone stops hearing about
+                      their own work and nobody finds out. */}
+                  {live && slackWiring!.unmapped.length > 0 && (
+                    <div className="text-[12px] rounded-[10px] px-3 py-2 mb-3" style={{ background: "#FBF8EE", color: "#8a6d1e", border: "1px solid #EFE2C2" }}>
+                      ⚠️ หา Slack ของ {slackWiring!.unmapped.length} คนไม่เจอ — <b>{slackWiring!.unmapped.join(", ")}</b> ยังไม่ได้รับ DM
+                      <div className="text-[11px] mt-1 opacity-80">แก้ได้โดยให้อีเมลใน Users &amp; Roles ตรงกับอีเมลที่ใช้ใน Slack</div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-faint">Last sync · {it.lastSync}</span>
+                    <span className="text-[11px] text-faint">{it.note ?? `Last sync · ${it.lastSync}`}</span>
                     {/* These integrations aren't wired to a backend yet, so the
                         controls are rendered disabled with a tooltip instead of
-                        looking clickable but doing nothing (audit P2-2). */}
-                    <div className="flex gap-2">{it.actions.map((a) => <button key={a} type="button" disabled title="ยังไม่เปิดใช้งาน — อยู่ระหว่างพัฒนา" className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] opacity-50 cursor-not-allowed" style={(a === "Connect" || a === "Sync now") ? { background: "#211F1C", color: "#fff" } : { border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{a}</button>)}</div>
+                        looking clickable but doing nothing (audit P2-2). Slack's
+                        Test button is the exception — it posts for real. */}
+                    <div className="flex gap-2">{it.actions.map((a) => (
+                      live && a === "Test"
+                        ? <button key={a} type="button" onClick={sendSlackTest} disabled={slackTesting} className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] disabled:opacity-50" style={{ border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{slackTesting ? "กำลังส่ง…" : "ส่งข้อความทดสอบ"}</button>
+                        : <button key={a} type="button" disabled title="ยังไม่เปิดใช้งาน — อยู่ระหว่างพัฒนา" className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] opacity-50 cursor-not-allowed" style={(a === "Connect" || a === "Sync now") ? { background: "#211F1C", color: "#fff" } : { border: "1px solid #E5DECF", color: "#6b6258", background: "#fff" }}>{a}</button>
+                    ))}</div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

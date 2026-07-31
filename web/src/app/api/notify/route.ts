@@ -1,13 +1,26 @@
 // Real notifications — closes the "แจ้งในกลุ่ม LINE เอง" gap in the user guide.
 //
-// POST { event, title, detail?, link? }
-//   → Slack via an incoming webhook          (SLACK_WEBHOOK_URL)
+// POST { event, title, detail?, link?, team?, to? }
+//   → Slack via a per-team incoming webhook   (SLACK_WEBHOOK_URL[_FINANCE|_CREATIVE])
 //   → LINE group push via the Messaging API  (LINE_CHANNEL_ACCESS_TOKEN + LINE_TO)
 //   → email via Resend                       (RESEND_API_KEY + NOTIFY_EMAIL_FROM/TO)
+//
+// `to` names the people the event is actually FOR (assigned, asked to revise).
+// Those get a Slack DM and the team channel is spared the interruption — the
+// event is queued instead and goes out in one daily summary
+// (/api/notify/digest). Without `to` nothing changes: it posts to the channel
+// straight away, as approvals and launches should.
+//
+// GET → which channels are configured (no secrets), for Settings → Integrations.
 //
 // Each channel is independent and skipped when its env vars are absent, so
 // moving from LINE to Slack is done by setting SLACK_WEBHOOK_URL and dropping
 // the LINE ones — no code change, and no window where notifications stop.
+//
+// Slack is routed per team (see lib/notifyRouting): finance work goes to the
+// finance webhook, creative work to the creative one, everything else to the
+// general one. A team without its own webhook falls back to the general one, so
+// setting SLACK_WEBHOOK_URL alone behaves exactly as it did before.
 //
 // Channels/triggers can be switched off in Settings → Notifications (persisted
 // to org_settings). Unconfigured channels are skipped silently so the app works
@@ -16,15 +29,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
+import { NotifyTeam, TEAM_ENV, NOTIFY_TEAMS, resolveTeam } from "@/lib/notifyRouting";
+import { hasBotToken, postDM } from "@/lib/slackBot";
+import { resolveSlackIds, fetchUnmapped } from "@/lib/slackDirectory";
 
-const SLACK_WEBHOOK = process.env.SLACK_WEBHOOK_URL;
 const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const LINE_TO = process.env.LINE_TO; // group id (C…) or user id (U…)
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const MAIL_FROM = process.env.NOTIFY_EMAIL_FROM; // e.g. "Marketing OS <os@teppenthailand.co.th>"
 const MAIL_TO = process.env.NOTIFY_EMAIL_TO;     // comma-separated recipients
 
-interface NotifyBody { event?: string; title?: string; detail?: string; link?: string }
+/** The webhook a team posts to, falling back to the general one when that team
+ *  has no channel of its own. Read per call rather than cached at module load
+ *  so a redeploy isn't needed to pick up a newly added env var. */
+function slackWebhookFor(team: NotifyTeam): string | undefined {
+  return process.env[TEAM_ENV[team]] || process.env[TEAM_ENV.general] || undefined;
+}
+
+const anySlackConfigured = () => NOTIFY_TEAMS.some((t) => Boolean(process.env[TEAM_ENV[t]]));
+
+interface NotifyBody { event?: string; title?: string; detail?: string; link?: string; team?: string; to?: string[] }
+
+/** DM everyone the event is for. Returns who was reached and who could not be
+ *  found — an unfound person is skipped quietly here and surfaced in Settings
+ *  instead, so one unmapped account never blocks the rest. */
+async function sendDMs(names: string[], title: string, detail: string, link: string): Promise<{ sent: string[]; unresolved: string[] }> {
+  if (!hasBotToken() || names.length === 0) return { sent: [], unresolved: [] };
+  const lines = [`*${title}*`];
+  if (detail) lines.push(detail);
+  if (link) lines.push(`<${link}|เปิดใน Marketing OS>`);
+  const text = lines.join("\n");
+
+  const resolved = await resolveSlackIds(names);
+  const results = await Promise.all(resolved.map(async (r) =>
+    ({ ...r, ok: r.slackId ? await postDM(r.slackId, text).catch(() => false) : false })));
+  return {
+    sent: results.filter((r) => r.ok).map((r) => r.name),
+    unresolved: results.filter((r) => !r.ok).map((r) => r.name),
+  };
+}
+
+/** Park a DM'd event for the daily channel summary. Best-effort: losing a
+ *  digest line must not fail the notification that was already delivered. */
+async function queueForDigest(team: NotifyTeam, event: string, title: string, detail: string, link: string, recipients: string[], delivered: boolean): Promise<void> {
+  try {
+    const db = supabaseAdmin();
+    if (!db) return;
+    await db.from("slack_digest_queue").insert({
+      team, event, title, detail: detail || null, link: link || null, recipients, delivered,
+    });
+  } catch { /* the DM already went out; the summary line is the lesser loss */ }
+}
 
 /** Settings → Notifications toggles (org_settings kv). Missing = everything on. */
 async function loadPrefs(): Promise<{ channels: Record<string, boolean>; triggers: Record<string, boolean> }> {
@@ -43,14 +98,15 @@ async function loadPrefs(): Promise<{ channels: Record<string, boolean>; trigger
   }
 }
 
-/** Slack incoming webhook. mrkdwn, so the link becomes a real one rather than
- *  a bare URL taking up a line of its own. */
-async function sendSlack(title: string, detail: string, link: string): Promise<boolean> {
-  if (!SLACK_WEBHOOK) return false;
+/** Slack incoming webhook for one team. mrkdwn, so the link becomes a real one
+ *  rather than a bare URL taking up a line of its own. */
+async function sendSlack(team: NotifyTeam, title: string, detail: string, link: string): Promise<boolean> {
+  const webhook = slackWebhookFor(team);
+  if (!webhook) return false;
   const lines = [`*${title}*`];
   if (detail) lines.push(detail);
   if (link) lines.push(`<${link}|เปิดใน Marketing OS>`);
-  const res = await fetch(SLACK_WEBHOOK, {
+  const res = await fetch(webhook, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text: lines.join("\n").slice(0, 3900) }),
@@ -88,7 +144,8 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid body" }, { status: 400 });
   }
-  const { event = "generic", title, detail = "", link = "" } = body;
+  const { event = "generic", title, detail = "", link = "", team: teamHint, to = [] } = body;
+  const recipients = Array.isArray(to) ? to.filter((n): n is string => typeof n === "string") : [];
   if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
 
   const prefs = await loadPrefs();
@@ -114,18 +171,51 @@ export async function POST(req: NextRequest) {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const html = `<p><b>${esc(title)}</b></p>${detail ? `<p>${esc(detail)}</p>` : ""}${fullLink ? `<p><a href="${esc(fullLink)}">เปิดใน Marketing OS →</a></p>` : ""}`;
 
-  const [slack, line, email] = await Promise.all([
-    slackOn ? sendSlack(title, detail, fullLink).catch(() => false) : Promise.resolve(false),
+  // Routed on the link the notification carries unless the caller named a team.
+  const team = resolveTeam(teamHint, link);
+  // Addressed to specific people → DM them and let the channel hear about it in
+  // the daily digest instead of interrupting it now.
+  const directed = slackOn && recipients.length > 0 && hasBotToken();
+
+  const [dm, slack, line, email] = await Promise.all([
+    directed ? sendDMs(recipients, title, detail, fullLink).catch(() => ({ sent: [], unresolved: recipients })) : Promise.resolve({ sent: [] as string[], unresolved: [] as string[] }),
+    slackOn && !directed ? sendSlack(team, title, detail, fullLink).catch(() => false) : Promise.resolve(false),
     lineOn ? sendLine(text).catch(() => false) : Promise.resolve(false),
     emailOn ? sendEmail(`[Marketing OS] ${title}`, html).catch(() => false) : Promise.resolve(false),
   ]);
+  if (directed) await queueForDigest(team, event, title, detail, fullLink, recipients, dm.sent.length > 0);
 
   return NextResponse.json({
-    ok: true, slack, line, email,
+    ok: true, slack, line, email, team, dm,
     configured: {
-      slack: Boolean(SLACK_WEBHOOK),
+      slack: anySlackConfigured(),
       line: Boolean(LINE_TOKEN && LINE_TO),
       email: Boolean(RESEND_KEY && MAIL_FROM && MAIL_TO),
     },
+  });
+}
+
+/** Read-only wiring status for Settings → Integrations. Never returns a webhook
+ *  URL — only whether each one is set, and which team falls back to general. */
+export async function GET(req: NextRequest) {
+  const guard = await requireApiUser(req);
+  if (isApiAuthError(guard)) return guard.error;
+
+  const teams = Object.fromEntries(
+    NOTIFY_TEAMS.map((t) => [t, {
+      own: Boolean(process.env[TEAM_ENV[t]]),
+      routed: Boolean(slackWebhookFor(t)),
+      env: TEAM_ENV[t],
+    }]),
+  );
+  // Who the app tried to DM and couldn't — shown as a warning rather than left
+  // to be discovered by someone wondering why they never hear about their work.
+  const unmapped = hasBotToken() ? await fetchUnmapped().catch(() => []) : [];
+
+  return NextResponse.json({
+    ok: true,
+    slack: { configured: anySlackConfigured(), teams, dm: hasBotToken(), unmapped },
+    line: Boolean(LINE_TOKEN && LINE_TO),
+    email: Boolean(RESEND_KEY && MAIL_FROM && MAIL_TO),
   });
 }
