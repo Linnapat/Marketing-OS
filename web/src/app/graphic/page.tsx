@@ -24,6 +24,7 @@ import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { Combobox } from "@/components/ui/Combobox";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
+import { fileApprovedAsset } from "@/lib/db/assets";
 import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -236,6 +237,7 @@ function GraphicPageInner() {
       .then(() => {
         if (ng.stage === "Approved") {
           syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติแล้ว แต่ sync asset เข้า Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+          void fileApprovedAsset(ng);
           notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${ng.title}`, `โดย ${me} — แนบ asset เข้า Content Calendar ให้แล้ว`, "/content");
         }
       })
