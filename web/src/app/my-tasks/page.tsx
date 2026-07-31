@@ -22,7 +22,8 @@ import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { personKeys, isSamePerson } from "@/lib/identity";
-import { fetchNotifications, markNotificationsRead, notifMeta, pushNotifications, Notif } from "@/lib/db/notifications";
+import { notifMeta, pushNotifications } from "@/lib/db/notifications";
+import { useNotifications } from "@/lib/useNotifications";
 import { useCanApproveExpense } from "@/lib/usePermGates";
 import { canApproveCampaign } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
@@ -139,19 +140,9 @@ export default function MyTasksPage() {
   // edit made inside the drawer updates the card behind it in the same tick
   // instead of leaving a stale copy pinned in state.
   const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
-  const [notifs, setNotifs] = useState<Notif[]>([]);
-  useEffect(() => {
-    let alive = true;
-    fetchNotifications(member, user).then((n) => { if (alive) setNotifs(n); }).catch(() => {});
-    return () => { alive = false; };
-  }, [member, user]);
-  const unread = notifs.filter((n) => !n.readAt);
-  const markRead = (ids: number[]) => {
-    if (!ids.length) return;
-    const at = new Date().toISOString();
-    setNotifs((ns) => ns.map((n) => (ids.includes(n.id) ? { ...n, readAt: at } : n)));
-    void markNotificationsRead(ids);
-  };
+  // Same rows the sidebar bell reads — one shared inbox, or the two drift and
+  // a bell saying 3 sits above a list showing 1.
+  const { unread, markRead } = useNotifications();
 
 
   const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
