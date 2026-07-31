@@ -8,6 +8,8 @@
 // UI-layer gating like the rest of the app — RLS enforcement is the separate
 // post-go-live track.
 
+import { DEFAULT_APPROVER } from "@/lib/approval";
+
 /** Roles that PRODUCE work inside campaigns (graphic, video, content, external
  *  studios) — as opposed to planning/managing them. */
 export function isCreativeSideRole(role: string): boolean {
@@ -107,6 +109,18 @@ export function seedPermMatrix(): PermMatrix {
     r.perms.forEach((p, i) => { out[r.role][PERM_MODULES[i]] = p.l; });
   }
   return out;
+}
+
+/** May this role decide a campaign brief sitting at "Waiting for Approval"?
+ *
+ *  Named-role rule, deliberately NOT read from the permissions matrix: the
+ *  button that actually approves (CampaignDetailView's `canApprove`) asks
+ *  `role === "CMO"` and nothing else, and an inbox that offers work the page
+ *  behind it will refuse is worse than an inbox that stays empty. Routed
+ *  through DEFAULT_APPROVER so "who approves by default" still lives in one
+ *  file. */
+export function canApproveCampaign(role: string): boolean {
+  return role === DEFAULT_APPROVER;
 }
 
 /** The role's Campaign-module level per the live matrix (seed as fallback). */

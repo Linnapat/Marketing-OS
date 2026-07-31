@@ -11,7 +11,7 @@ import { notify } from "@/lib/notify";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
-import { CampaignRow } from "@/lib/data/campaigns";
+import { CampaignRow, campaignAwaitsMe } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
@@ -20,12 +20,16 @@ import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useCanApproveExpense } from "@/lib/usePermGates";
+import { useRole } from "@/lib/role";
+import { canApproveCampaign } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { GRAPHIC_OPEN_PARAM, Graphic } from "@/lib/data/graphic";
+import { Graphic } from "@/lib/data/graphic";
+import { TaskGraphicBrief, graphicBriefTeaser } from "@/components/graphic/TaskGraphicBrief";
+import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -33,7 +37,9 @@ import {
 
 // Stages / statuses that still need someone in the approval tier to act.
 const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
-const PENDING_CAMPAIGN = new Set(["Waiting for Approval", "Ready for Review"]);
+// (PENDING_CAMPAIGN lived here — a flat set of both pending statuses. It is
+// gone because the two are not interchangeable: they wait on different people,
+// and approvalCampaigns now asks that question per status.)
 
 // ── Team = real members from Settings → Users & Roles ──────────────
 // The bundled demo names ("Aran P.", "Ken S."…) used to seed this page's state,
@@ -100,6 +106,10 @@ export default function MyTasksPage() {
   // supabase/security_p12_expense_approval.sql can never disagree about who
   // may decide a request.
   const canApproveExpense = useCanApproveExpense();
+  // Same idea for campaign briefs — one gate, shared with the page that holds
+  // the Approve button, so this inbox can never offer what that page refuses.
+  const { role } = useRole();
+  const canApproveCampaignBrief = canApproveCampaign(role);
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
@@ -107,10 +117,24 @@ export default function MyTasksPage() {
   const [drawerId, setDrawerId] = useState<number | null>(null);
   const [celebration, setCelebration] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  // The Graphic request drawer, opened over this page rather than at /graphic.
+  // Held by id, not by value: the row it renders comes from `graphics`, so an
+  // edit made inside the drawer updates the card behind it in the same tick
+  // instead of leaving a stale copy pinned in state.
+  const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
 
   const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
   const getGroup = (t: Task) => (doneIds.has(t.id) ? "done" : t.group);
   const drawerTask = drawerId !== null ? tasks.find((t) => t.id === drawerId) ?? null : null;
+  // A Graphic task's brief lives on the request, never on the task row — the
+  // designer's checklist says "Review brief" and the brief was one page away.
+  // Index the requests so the card and the drawer can show it in place.
+  const graphicOf = useMemo(() => {
+    const byId = new Map(graphics.map((g) => [String(g.id), g]));
+    return (t: Task): Graphic | null => (t.relatedGraphicId ? byId.get(String(t.relatedGraphicId)) ?? null : null);
+  }, [graphics]);
+  const openGraphic = graphicOpenId === null ? null : graphics.find((g) => g.id === graphicOpenId) ?? null;
+  const patchGraphic = (next: Graphic) => setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
 
   useEffect(() => {
     let alive = true;
@@ -141,9 +165,20 @@ export default function MyTasksPage() {
     return brandOptions.some((id) => raw.includes(id) || raw.includes(BRANDS[id].name.toLowerCase().replace(/[^a-z0-9]+/g, "")));
   };
 
+  // Campaigns waiting on ME, not every campaign in flight. This queue used to
+  // filter on status + brand alone, so a Designer with all-brand access opened
+  // "My approvals" onto a dozen campaign briefs they cannot act on — the
+  // approve button is CMO-only (CampaignDetailView's canApprove), and a
+  // Waiting-for-Approval card offered to anyone else is a dead end that also
+  // inflates the badge everyone is meant to work down to zero.
+  //
+  // The two pending statuses are waiting on different people:
+  //   Waiting for Approval → the CMO decides
+  //   Ready for Review     → nobody approves it; its owner still has to submit
   const approvalCampaigns = useMemo(
-    () => campaigns.filter((c) => PENDING_CAMPAIGN.has(c.status) && brandVisibility.isVisible(c.b)),
-    [campaigns, brandVisibility],
+    () => campaigns.filter((c) =>
+      brandVisibility.isVisible(c.b) && campaignAwaitsMe(c, { canApprove: canApproveCampaignBrief, me: viewAs })),
+    [campaigns, brandVisibility, canApproveCampaignBrief, viewAs],
   );
   const approvalRequests = useMemo(
     // Budget cards are excluded — they're shown as actionable expense requests below.
@@ -364,21 +399,29 @@ export default function MyTasksPage() {
                       {g.warnMsg && <span className="text-[11.5px] italic" style={{ color: "#B33A2E" }}>{g.warnMsg}</span>}
                     </div>
                     <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))" }}>
-                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} onOpen={() => setDrawerId(t.id)} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
+                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={setGraphicOpenId} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} colorOf={colorOf} />
+            <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
           )}
         </div>
       ) : (
-        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onApprove={approveExpense} onReject={rejectExpense} />
+        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={setGraphicOpenId} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
-      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
+      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={setGraphicOpenId} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
+      {/* The real request drawer, over My Tasks. Wrapped in its own stacking
+          context so it sits above the task drawer (z-[200]) — GraphicDrawer is
+          z-50 inside, which is correct on /graphic and too low here. */}
+      {openGraphic && (
+        <div className="relative z-[260]">
+          <GraphicDrawer g={openGraphic} onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
+        </div>
+      )}
       {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
@@ -390,10 +433,10 @@ export default function MyTasksPage() {
   );
 }
 
-function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onApprove, onReject }: {
+function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
   graphics: Graphic[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
   budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
-  onOpenTask: (id: number) => void;
+  onOpenTask: (id: number) => void; onOpenGraphic: (id: number) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
   const total = graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
@@ -418,7 +461,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
             {graphics.map((g) => (
-              <Link key={g.id} href={`/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+              <button key={g.id} onClick={() => onOpenGraphic(g.id)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
                   <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>Waiting review</span>
@@ -428,7 +471,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
                   <span className="text-[11.5px] text-muted">Designer {g.designer}</span>
                   <span className="text-[11.5px] font-bold text-accent">Review artwork →</span>
                 </div>
-              </Link>
+              </button>
             ))}
           </div>
         </div>
@@ -473,7 +516,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
         <div>
           <div className="flex items-center gap-[10px] mb-3">
             <span className="text-[17px]">🎯</span>
-            <span className="text-[13.5px] font-bold">Campaigns waiting for approval</span>
+            <span className="text-[13.5px] font-bold">Campaigns waiting on you</span>
             <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{campaigns.length}</span>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
@@ -486,7 +529,12 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
                 <div className="text-[11.5px] text-faint mb-3">{brandName(c.b)} · {c.branch || "—"} · {c.campType}</div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11.5px] text-muted">Owner {c.owner}</span>
-                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                  {/* Name the actual ask. "Review →" on a Ready-for-Review card
+                      sent its owner looking for an approve button that is not
+                      theirs to press — the campaign is waiting to be SUBMITTED. */}
+                  <span className="text-[11.5px] font-bold text-accent">
+                    {c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"}
+                  </span>
                 </div>
               </Link>
             ))}
@@ -650,11 +698,12 @@ const dueColorOf = (t: Task) => {
   return n === null ? "#6b6258" : n <= 0 ? "#B33A2E" : n <= 2 ? "#C68A1E" : "#6b6258";
 };
 
-function TaskCard({ t, status, viewAs, onOpen, onDone, onStart }: { t: Task; status: string; viewAs: string; onOpen: () => void; onDone: () => void; onStart: () => void }) {
+function TaskCard({ t, status, viewAs, graphic, onOpen, onOpenGraphic, onDone, onStart }: { t: Task; status: string; viewAs: string; graphic: Graphic | null; onOpen: () => void; onOpenGraphic: (id: number) => void; onDone: () => void; onStart: () => void }) {
   const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
   const cardBorder = status === "Stuck" ? "#F5C8C4" : status === "Need Approval" ? "#B8E0B8" : "#ECE6DA";
   const hasApprover = !!t.pendingApprover && t.pendingApprover !== viewAs;
   const blockerShort = t.blocker ? t.blocker.split("—")[0].trim() : "";
+  const teaser = graphic ? graphicBriefTeaser(graphic) : null;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <div onClick={onOpen} className="relative overflow-hidden cursor-pointer" style={{ background: "#fff", border: `1px solid ${cardBorder}`, borderRadius: 16, padding: "18px 18px 14px 22px" }}>
@@ -669,12 +718,26 @@ function TaskCard({ t, status, viewAs, onOpen, onDone, onStart }: { t: Task; sta
       <div className="text-[14.5px] font-bold leading-[1.35] mb-[5px]">{t.title}</div>
       <div className="text-[11.5px] text-faint mb-[10px]">{brandCampaignLine(t.brand, t.campaign)}</div>
       <div className="text-[12px] text-muted rounded-[9px] px-3 py-[9px] mb-3 italic leading-[1.5]" style={{ background: "#FAF8F4" }}>{t.nextAction}</div>
+      {/* The brief, on the card. A designer picking up the next job should not
+          have to open anything to know what it says or that it is short. */}
+      {graphic && teaser && (
+        <div onClick={(e) => { stop(e); onOpenGraphic(graphic.id); }} className="rounded-[9px] px-3 py-[9px] mb-3" style={{ background: "#FBF1E9", border: "1px solid #F0D5BC" }}>
+          <div className="flex items-center gap-[6px] mb-[3px]">
+            <span className="text-[10px] font-bold tracking-[0.05em] uppercase" style={{ color: "#C2691E" }}>🎨 Brief</span>
+            {!teaser.complete && <span className="text-[9.5px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#FFF5F4", color: "#B33A2E" }}>ยังไม่ครบ</span>}
+            <span className="ml-auto text-[10px] font-bold" style={{ color: "#C2691E" }}>เปิดงาน →</span>
+          </div>
+          <div className="text-[11.5px] text-muted leading-[1.45] line-clamp-2">{teaser.text}</div>
+          <div className="text-[10.5px] text-faint mt-[4px] truncate">{[graphic.platform, graphic.size].filter(Boolean).join(" · ") || "—"}</div>
+        </div>
+      )}
       <div className="flex items-center gap-[10px] mb-3 flex-wrap">
         <span className="text-[11px] font-semibold" style={{ color: dueColorOf(t) }}>📅 {t.due}</span>
         {hasApprover && <span className="text-[11px] font-semibold" style={{ color: "#C68A1E" }}>⏳ {t.pendingApprover}</span>}
         {t.blocker && <span className="text-[11px] font-semibold" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</span>}
       </div>
       <div className="flex gap-[7px] flex-wrap">
+        {graphic && <span onClick={(e) => { stop(e); onOpenGraphic(graphic.id); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#C2691E", color: "#fff", cursor: "pointer" }}>🎨 เปิดบรีฟ / ส่งงาน</span>}
         {(status === "In Progress" || status === "Revision") && <span onClick={(e) => { stop(e); onDone(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Mark Done ✓</span>}
         {status === "Need Approval" && <span onClick={(e) => { stop(e); onDone(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Approve ✓</span>}
         {status === "Stuck" && <span onClick={(e) => { stop(e); onOpen(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 9, background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4", cursor: "pointer" }}>Ask for Help</span>}
@@ -686,7 +749,7 @@ function TaskCard({ t, status, viewAs, onOpen, onDone, onStart }: { t: Task; sta
   );
 }
 
-function ListView({ tasks, getStatus, onOpen, colorOf }: { tasks: Task[]; getStatus: (t: Task) => string; onOpen: (id: number) => void; colorOf: (n: string) => string }) {
+function ListView({ tasks, getStatus, onOpen, onOpenGraphic, colorOf, graphicOf }: { tasks: Task[]; getStatus: (t: Task) => string; onOpen: (id: number) => void; onOpenGraphic: (id: number) => void; colorOf: (n: string) => string; graphicOf: (t: Task) => Graphic | null }) {
   const cols = "2.5fr 0.7fr 1fr 1.3fr 0.65fr 0.8fr 0.85fr";
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -699,9 +762,18 @@ function ListView({ tasks, getStatus, onOpen, colorOf }: { tasks: Task[]; getSta
         const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
         const rowBg = status === "Stuck" ? "#FFFAF9" : status === "Need Approval" ? "#FAFFF9" : "#fff";
         const blockerShort = t.blocker ? t.blocker.split("—")[0].trim() : "";
+        const g = graphicOf(t);
         return (
           <div key={t.id} onClick={() => onOpen(t.id)} className="grid gap-2 px-5 py-[13px] items-center cursor-pointer" style={{ gridTemplateColumns: cols, borderBottom: "1px solid #F4EFE5", background: rowBg }}>
-            <div><div className="text-[13px] font-semibold truncate">{t.moduleIcon} {t.title}</div>{t.blocker && <div className="text-[10.5px] font-semibold mt-[1px]" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</div>}</div>
+            <div>
+              <div className="text-[13px] font-semibold truncate">{t.moduleIcon} {t.title}</div>
+              {g && (
+                <div onClick={(e) => { e.stopPropagation(); onOpenGraphic(g.id); }} className="text-[10.5px] mt-[1px] truncate font-semibold" style={{ color: g.briefComplete ? "#C2691E" : "#B33A2E" }}>
+                  🎨 Brief {g.briefComplete ? "" : "ยังไม่ครบ "}· {[g.platform, g.size].filter(Boolean).join(" · ") || "—"} · เปิดงาน →
+                </div>
+              )}
+              {t.blocker && <div className="text-[10.5px] font-semibold mt-[1px]" style={{ color: "#B33A2E" }}>⚠ {blockerShort}</div>}
+            </div>
             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: typeBg, color: typeFg, justifySelf: "start" }}>{t.type}</span>
             <div className="flex items-center gap-[6px] min-w-0"><span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0" style={{ background: colorOf(t.assignee) }}>{init(t.assignee)}</span><span className="text-[12px] font-semibold truncate">{t.assignee}</span></div>
             <span className="text-[12px] text-muted truncate">{t.campaign?.trim() || "—"}</span>
@@ -716,8 +788,9 @@ function ListView({ tasks, getStatus, onOpen, colorOf }: { tasks: Task[]; getSta
 }
 
 
-function TaskDrawer({ t, status, me, people, colorOf, onClose, onDone, onReassign, onPatch }: {
-  t: Task; status: string; me: string; people: Person[]; colorOf: (n: string) => string;
+function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, onClose, onDone, onReassign, onPatch }: {
+  t: Task; status: string; me: string; people: Person[]; colorOf: (n: string) => string; graphic: Graphic | null;
+  onOpenGraphic: (id: number) => void;
   onClose: () => void; onDone: () => void; onReassign: (to: string) => void; onPatch: (p: Partial<Task>) => void;
 }) {
   const [typeFg, typeBg] = TYPE_COLORS[t.type] ?? ["#6b6258", "#F0EDE6"];
@@ -782,6 +855,9 @@ function TaskDrawer({ t, status, me, people, colorOf, onClose, onDone, onReassig
           </div>
         </div>
         <div style={{ padding: "18px 24px" }}>
+          {/* The graphic brief, above the task's own fields: on a design job it
+              IS the task, and reading it used to mean leaving this page. */}
+          {graphic && <TaskGraphicBrief g={graphic} onOpenFull={() => onOpenGraphic(graphic.id)} />}
           <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[11px]">Task Details</div>
           <div className="grid grid-cols-2 gap-[9px] mb-[14px]">
             <Detail label="Due date" value={t.due} valueColor={dueColorOf(t)} />
