@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { NotifyTeam, NOTIFY_TEAMS, TEAM_ENV, TEAM_LABELS } from "@/lib/notifyRouting";
+import { NotifyTeam, CHANNEL_TEAMS, TEAM_ENV, TEAM_CHANNEL } from "@/lib/notifyRouting";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const MAX_LINES = 40; // a Slack message is capped; past this we say "and N more"
@@ -22,7 +22,8 @@ interface QueueRow {
 }
 
 function webhookFor(team: NotifyTeam): string | undefined {
-  return process.env[TEAM_ENV[team]] || process.env[TEAM_ENV.general] || undefined;
+  const key = TEAM_ENV[team];
+  return key ? process.env[key] || undefined : undefined;
 }
 
 async function postWebhook(url: string, text: string): Promise<boolean> {
@@ -36,7 +37,7 @@ async function postWebhook(url: string, text: string): Promise<boolean> {
 
 /** One digest message for a team. */
 function render(team: NotifyTeam, rows: QueueRow[]): string {
-  const lines = [`*📋 สรุปงานวันนี้ · ${TEAM_LABELS[team]}* — ${rows.length} รายการ`];
+  const lines = [`*📋 สรุปงานวันนี้ · ${TEAM_CHANNEL[team] ?? team}* — ${rows.length} รายการ`];
   for (const r of rows.slice(0, MAX_LINES)) {
     const who = (r.recipients ?? []).filter(Boolean).join(", ");
     const title = r.link ? `<${r.link}|${r.title}>` : r.title;
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
 
   const posted: Record<string, number> = {};
   const done: number[] = [];
-  for (const team of NOTIFY_TEAMS) {
+  for (const team of CHANNEL_TEAMS) {
     const mine = rows.filter((r) => r.team === team);
     if (mine.length === 0) continue;
     const url = webhookFor(team);

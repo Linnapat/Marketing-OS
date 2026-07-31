@@ -14,7 +14,7 @@ import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRow
 import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
 import { fetchAuditLog, AuditEntry } from "@/lib/db/audit";
-import { NOTIFY_TEAMS, TEAM_LABELS, TEAM_ENV, NotifyTeam } from "@/lib/notifyRouting";
+import { CHANNEL_TEAMS, TEAM_LABELS, TEAM_CHANNEL, TEAM_ENV, NotifyTeam } from "@/lib/notifyRouting";
 import {
   NAV_DEF, SECTION_META, ORG_FIELDS, BRANDS_DATA, TEAMS_DATA, USERS_DATA,
   PERM_MODULES, PERM_ROLES, PERM_SCOPE_META, BUDGET_THRESHOLDS, APPROVAL_RULES,
@@ -27,19 +27,22 @@ const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0
 /** The `slack` block of GET /api/notify — which per-team webhooks are set. */
 interface SlackWiring {
   configured: boolean;
-  teams: Record<string, { own: boolean; routed: boolean; env: string }>;
+  teams: Record<string, { own: boolean; env?: string }>;
   dm: boolean;              // bot token present → per-person DMs are on
+  financeDm: boolean;       // SLACK_FINANCE_DM set → money has somewhere to go
   unmapped: string[];       // people the app tried to DM and couldn't find
 }
 
-/** One line saying where each team's alerts actually land. */
+/** One line saying where alerts actually land — the rooms that are wired, and
+ *  the two audiences that are DM-only by design. */
 function slackWiringNote(w: SlackWiring): string {
-  if (!w.configured) return `ยังไม่ได้ตั้ง ${TEAM_ENV.general}`;
-  const own = NOTIFY_TEAMS.filter((t) => w.teams[t]?.own).map((t) => TEAM_LABELS[t]);
-  const shared = NOTIFY_TEAMS.filter((t) => !w.teams[t]?.own && w.teams[t]?.routed).map((t) => TEAM_LABELS[t]);
-  const parts = [`แชนแนลแยก · ${own.join(" · ")}`];
-  if (shared.length) parts.push(`${shared.join(" / ")} ใช้แชนแนล General`);
-  parts.push(w.dm ? "assign/revise ส่งเป็น DM + สรุปเข้าแชนแนลวันละครั้ง" : "ยังไม่ได้ตั้ง SLACK_BOT_TOKEN — ยังส่ง DM รายคนไม่ได้");
+  if (!w.configured) return `ยังไม่ได้ตั้ง webhook สักห้อง (${CHANNEL_TEAMS.map((t) => TEAM_ENV[t]).join(" / ")})`;
+  const wired = CHANNEL_TEAMS.filter((t) => w.teams[t]?.own).map((t) => TEAM_CHANNEL[t]);
+  const missing = CHANNEL_TEAMS.filter((t) => !w.teams[t]?.own).map((t) => TEAM_CHANNEL[t]);
+  const parts = [`ห้องที่ต่อแล้ว · ${wired.join(" · ")}`];
+  if (missing.length) parts.push(`⚠️ ยังไม่ได้ต่อ ${missing.join(" / ")}`);
+  parts.push(w.dm ? "assign/revise + งานทั่วไป ส่งเป็น DM · สรุปเข้าห้องวันละครั้ง" : "ยังไม่ได้ตั้ง SLACK_BOT_TOKEN — ยังส่ง DM รายคนไม่ได้");
+  if (w.dm && !w.financeDm) parts.push("⚠️ ยังไม่ได้ตั้ง SLACK_FINANCE_DM — เรื่องเงินยังไม่ถึงใคร");
   return parts.join(" — ");
 }
 
@@ -516,7 +519,7 @@ export default function SettingsPage() {
     if (channels.slack === false) { toastError("ช่องทาง Slack ถูกปิดอยู่ใน Notifications — เปิดก่อนแล้วค่อยทดสอบ"); return; }
     setSlackTesting(true);
     // Teams sharing the general webhook would post the same message twice.
-    const targets = NOTIFY_TEAMS.filter((t) => slackWiring.teams[t]?.own);
+    const targets = CHANNEL_TEAMS.filter((t) => slackWiring.teams[t]?.own);
     try {
       const headers = { "Content-Type": "application/json", ...(await authHeaders()) };
       const results = await Promise.all(targets.map(async (team: NotifyTeam) => {

@@ -1,91 +1,73 @@
 # Notifications — Slack + Email (ของจริง)
 
-> **ช่องทางหลักคือ Slack** ตั้งแต่ 28 ก.ค. 2026 · ส่วน LINE ยังใช้ได้อยู่ถ้าตั้ง env ของมันไว้
+> **ช่องทางหลักคือ Slack** ตั้งแต่ 28 ก.ค. 2026 · แผนที่ห้องปัจจุบันตั้งเมื่อ 1 ส.ค. 2026 · ส่วน LINE ยังใช้ได้อยู่ถ้าตั้ง env ของมันไว้
 > แต่ค่าเริ่มต้นปิดแล้ว ทุกช่องทางเป็นอิสระต่อกัน ไม่ตั้ง env = ข้ามเงียบๆ
 
-## 0) Slack (ผ่าน Incoming Webhook)
+## 0) Slack — ห้องไหนได้อะไร
 
-1. ไปที่ https://api.slack.com/apps → **Create New App** → From scratch → เลือก workspace
-2. เมนู **Incoming Webhooks** → เปิด **Activate Incoming Webhooks**
-3. **Add New Webhook to Workspace** → เลือกแชนแนลที่จะให้แจ้งเตือนเข้า → Allow
-   · ทำซ้ำข้อนี้ทีละแชนแนลถ้าจะแยกทีม (ดูตารางข้างล่าง) — แอปเดียวมีได้หลาย webhook
-4. คัดลอก Webhook URL (`https://hooks.slack.com/services/…`) ไปใส่เป็น env บน Vercel:
+แผนที่นี้ยึดตามห้องที่ทีมใช้อยู่จริง ไม่ได้ตั้งใหม่:
 
-```
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz            # ทีมทั่วไป + fallback
-SLACK_WEBHOOK_URL_FINANCE=https://hooks.slack.com/services/aaa/bbb/ccc    # (ไม่บังคับ) #finance
-SLACK_WEBHOOK_URL_CREATIVE=https://hooks.slack.com/services/ddd/eee/fff   # (ไม่บังคับ) #creative
-```
-
-5. **Redeploy** แล้วเช็คที่ **Settings → Integrations → Slack** — การ์ดจะขึ้น `Connected` พร้อมบอกว่าตอนนี้แยกแชนแนลอะไรบ้าง และมีปุ่ม **ส่งข้อความทดสอบ** ที่ยิงเข้าทุกแชนแนลที่ตั้งไว้จริง ๆ
-
-### แจ้งเตือนไหนเข้าแชนแนลไหน
-
-| แชนแนล | env | เรื่องที่เข้า |
+| งาน | เข้าห้อง | env |
 |---|---|---|
-| **Finance** | `SLACK_WEBHOOK_URL_FINANCE` | คำขอเบิกงบ · อนุมัติ/ตีกลับเบิกงบ · งบเกินเพดาน · Draft เบิกจากงบแคมเปญ |
-| **Creative** | `SLACK_WEBHOOK_URL_CREATIVE` | งานกราฟฟิก · storyboard/footage · บรีฟ · Content · KOL · โพสต์ publish |
-| **General** | `SLACK_WEBHOOK_URL` | แคมเปญรออนุมัติ/อนุมัติ/ตีกลับ · งานใหม่ใน My Tasks · ขอความช่วยเหลือ |
+| งานกราฟฟิก + Content (โพสต์/แคปชั่น) | `#05_marketing_graphic` | `SLACK_WEBHOOK_URL_GRAPHIC` |
+| งาน KOL | `#04_marketing_kol` | `SLACK_WEBHOOK_URL_KOL` |
+| งาน VDO (งานตัด + งานถ่าย) | `#06_marketing_vdo` | `SLACK_WEBHOOK_URL_VDO` |
+| งานทั่วไป — แคมเปญ, task, ขอความช่วยเหลือ | **ไม่เข้าห้อง** DM หาคนที่เกี่ยวข้อง | — |
+| **เรื่องเงินทั้งหมด** | **ไม่เข้าห้อง** DM หาคนเดียว | `SLACK_FINANCE_DM` |
 
-ตั้งแค่ `SLACK_WEBHOOK_URL` ตัวเดียว = ทุกอย่างเข้าแชนแนลเดียวเหมือนเดิม (ทีมที่ไม่มี webhook ของตัวเองจะ fallback มาที่นี่) เพิ่มทีละแชนแนลทีหลังได้ ไม่ต้องแก้โค้ด
+> เรื่องเงินไม่โผล่ในห้องไหนเลยโดยตั้งใจ — ตั้ง `SLACK_FINANCE_DM` เป็นอีเมล (หรือชื่อที่มีในตาราง members) ของคนที่จะรับ ถ้าไม่ตั้ง = เงียบสนิท และ Settings จะขึ้นเตือนให้
 
-การจัดกลุ่มดูจากหน้าที่ noti ลิงก์ไป (`/expenses` → Finance, `/graphic` → Creative ฯลฯ) ส่วนงานที่ลิงก์ไป `/my-tasks` แต่เป็นงาน Creative จะระบุทีมตรง ๆ ที่จุดเรียก — กติกาทั้งหมดอยู่ที่ `src/lib/notifyRouting.ts` ไฟล์เดียว
+**Graphic Request เป็นฟอร์มเดียวกันทั้งงานภาพและงานวิดีโอ** ระบบเลยไม่ได้ดูจากโมดูล แต่เรียก `workKind()` (ตัวเดียวกับที่บอร์ดคุมคิวใช้นับ) มาอ่านว่า type ที่คนขอเลือกเป็น VDO ไหม แล้วค่อยตัดสินใจว่าเข้า `#06` หรือ `#05`
+
+### วิธีเอา webhook มา
+
+1. https://api.slack.com/apps → แอป **Marketing OS**
+2. เมนู **Incoming Webhooks** → เปิดสวิตช์ **On**
+3. **Add New Webhook to Workspace** → เลือกห้อง → Allow · ทำซ้ำให้ครบ 3 ห้อง
+4. กด **Copy** ท้ายแต่ละแถว เอาไปใส่ env ตามตารางข้างบน
+
+ห้องไหนยังไม่ได้ตั้ง webhook = งานประเภทนั้นเงียบ (ไม่ fallback ไปห้องอื่น เพราะส่งผิดห้องแย่กว่าไม่ส่ง) — Settings → Integrations จะบอกว่าห้องไหนยังขาด
 
 ---
 
-## 0.1) DM รายคน เมื่อ assign / revise งาน
+## 0.1) DM รายคน + สรุปเข้าห้องวันละครั้ง
 
-งานที่ "ถึงตัวใครคนหนึ่ง" (มอบหมายงาน, ส่งงานกลับไปแก้) จะ **DM หาคนนั้นโดยตรง** ไม่รบกวนแชนแนลทีม แล้วสรุปรวมเข้าแชนแนล**วันละครั้ง**แทน
-
-Webhook ทำ DM ไม่ได้ ต้องใช้ bot token เพิ่ม:
-
-1. ที่ Slack app เดิม → **OAuth & Permissions** → Bot Token Scopes เพิ่ม `chat:write`, `im:write`, `users:read`, `users:read.email` → **Reinstall to Workspace**
-2. คัดลอก **Bot User OAuth Token** (`xoxb-…`) ใส่เป็น env:
-
-```
-SLACK_BOT_TOKEN=xoxb-...
-CRON_SECRET=<สุ่มมาสักชุด>        # ป้องกัน endpoint สรุปรายวัน
-```
-
-3. รัน `supabase/slack_digest.sql` (สร้างคิวสรุป + key สำหรับ mapping)
-4. Deploy — Vercel cron ใน `vercel.json` จะยิง `/api/notify/digest` ทุกวัน **11:00 UTC = 18:00 น. บ้านเรา**
-
-### จับคู่คนยังไง
-
-ในระบบเก็บ assignee เป็น**ชื่อ** เลยไล่เป็นทอด ๆ: ชื่อ → แถวใน `members` → อีเมล → Slack user (`users.lookupByEmail`) · ชื่อที่เขียนไม่ตรงกันก็ยังเจอ เพราะใช้ `lib/identity` ตัวเดียวกับที่ My Tasks ใช้ (ชื่อ / อีเมล / ชื่อหน้า `@` ถือเป็นคนเดียวกัน) · id ที่หาเจอแล้วถูก cache ไว้ใน `org_settings` จะได้ไม่ยิง Slack ซ้ำ
-
-**คนที่หาไม่เจอ** (อีเมลใน Marketing OS ไม่ตรงกับที่ใช้ใน Slack) จะ **ไม่ error และไม่ขวางคนอื่น** — ข้ามเงียบ ๆ แล้วขึ้นเตือนใน **Settings → Integrations** ว่าใครยังไม่ได้รับ DM บ้าง แก้โดยแก้อีเมลใน Users & Roles ให้ตรงกัน · ในสรุปรายวันรายการนั้นจะมีป้าย ⚠️ กำกับ ว่าไม่มีใครได้ DM
+งานที่ "ถึงตัวใครคนหนึ่ง" จะ **DM หาคนนั้นตรง ๆ** ไม่รบกวนห้อง แล้วสรุปรวมเข้าห้องวันละครั้งแทน
 
 | เหตุการณ์ | ใครได้ DM |
 |---|---|
 | งานใหม่ / โอนงาน / มอบงานกราฟฟิก | คนที่ถูก assign |
-| งานกราฟฟิกถูกส่งกลับแก้ | designer |
+| งานกราฟฟิก / VDO ถูกส่งกลับแก้ | designer |
 | บรีฟถูกส่งกลับแก้ | คนขอบรีฟ |
 | Content / KOL ถูกส่งกลับแก้ | คนที่ต้องแก้ |
+| แคมเปญรออนุมัติ | **คนที่ต้องอนุมัติ** |
+| แคมเปญอนุมัติแล้ว / ตีกลับ / แตกงาน | planner เจ้าของแคมเปญ |
+| ขอความช่วยเหลือใน My Tasks | เจ้าของงาน + คนอนุมัติ |
+| เรื่องเงินทุกอย่าง | คนที่ตั้งไว้ใน `SLACK_FINANCE_DM` |
 
-> ยังไม่ตั้ง `SLACK_BOT_TOKEN` = ทุกอย่างกลับไปเข้าแชนแนลทันทีเหมือนเดิม ไม่มีอะไรพัง
+> "แคมเปญรออนุมัติ" ส่งหา**คนอนุมัติ** ไม่ใช่คนส่ง — บอกคนส่งว่าเพิ่งส่งไปเป็นข้อความที่ไม่มีใครต้องทำอะไรต่อ
 
-**ถ้าจะเลิกใช้ LINE:** ลบ `LINE_CHANNEL_ACCESS_TOKEN` กับ `LINE_TO` ออกจาก Vercel — ไม่ต้องแก้โค้ด และไม่มีช่วงที่แจ้งเตือนขาด
+DM ต้องใช้ bot token (webhook ทำไม่ได้):
 
+1. แอปเดิม → **OAuth & Permissions** → Bot Token Scopes ต้องมี `chat:write`, `im:write`, `users:read`, `users:read.email` → **Reinstall to Workspace**
+2. คัดลอก **Bot User OAuth Token** (`xoxb-…`)
 
-ปิดช่องว่างจากคู่มือที่เคยต้อง "submit แล้วแจ้งกลุ่ม LINE เอง" — ตอนนี้ระบบส่งแจ้งเตือนให้อัตโนมัติผ่าน `/api/notify` เมื่อ:
+```
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_FINANCE_DM=someone@teppenthailand.co.th
+CRON_SECRET=<สุ่มมาสักชุด>        # ป้องกัน endpoint สรุปรายวัน
+```
 
-| เหตุการณ์ | trigger key | ตัวอย่างข้อความ |
-|---|---|---|
-| คำขอเบิกงบใหม่ | `approval` | 📥 คำขอเบิกงบใหม่ REQ-2026-XXX · Meta Ads · ฿12,000 → รอ CMO |
-| อนุมัติ / ตีกลับคำขอเบิก | `approved` / `rejected` | ✅ อนุมัติเบิกงบ… / ↩️ ตีกลับ… พร้อมเหตุผล |
-| แคมเปญ submit / approve / ตีกลับ | `approval` / `approved` / `rejected` | 🎯 แคมเปญรออนุมัติ: … |
-| งานใหม่ / โอนงานใน My Tasks | `newTask` | 🗒️ งานใหม่: … มอบหมายให้ … |
-| ขอความช่วยเหลือ (Ask for Help) | `mention` | 🆘 Ken ขอความช่วยเหลือ: … |
-| งานกราฟฟิก submit / ส่งกลับแก้ | `feedback` / `rejected` | 🎨 ส่งงานกราฟฟิกรอรีวิว: … |
-| กราฟฟิกอนุมัติครบทุกชิ้น | `approved` | ✅ อนุมัติครบ — แนบเข้า Content Calendar แล้ว |
-| โพสต์ถูก publish | `launch` | 🚀 โพสต์ถูก publish: … |
+3. รัน `supabase/slack_digest.sql`
+4. Deploy — Vercel cron ใน `vercel.json` ยิง `/api/notify/digest` ทุกวัน **11:00 UTC = 18:00 น. บ้านเรา** สรุปเข้า 3 ห้องนั้น (งานทั่วไปกับเรื่องเงินไม่มีสรุป เพราะไม่มีห้องให้สรุปเข้า)
 
-เปิด/ปิดรายเหตุการณ์และรายช่องทางได้ที่ **Settings → Notifications** (บันทึกลงฐานข้อมูล และ API เคารพค่าที่ตั้งไว้)
+### จับคู่คนยังไง
 
-ยังไม่ตั้ง env vars? ทุกอย่างเงียบ ๆ เหมือนเดิม — ไม่มีอะไรพัง
+ในระบบเก็บ assignee เป็น**ชื่อ** เลยไล่เป็นทอด ๆ: ชื่อ → แถวใน `members` → อีเมล → Slack user (`users.lookupByEmail`) · ชื่อที่เขียนไม่ตรงกันก็ยังเจอ เพราะใช้ `lib/identity` ตัวเดียวกับที่ My Tasks ใช้ · id ที่หาเจอแล้ว cache ไว้ใน `org_settings` จะได้ไม่ยิง Slack ซ้ำ
 
----
+**คนที่หาไม่เจอ** (อีเมลใน Marketing OS ไม่ตรงกับที่ใช้ใน Slack) จะ **ไม่ error และไม่ขวางคนอื่น** — ข้ามเงียบ ๆ แล้วขึ้นเตือนใน **Settings → Integrations** ว่าใครยังไม่ได้รับ DM · ในสรุปรายวันรายการนั้นจะมีป้าย ⚠️ กำกับ
+
+> ยังไม่ตั้ง `SLACK_BOT_TOKEN` = DM ทำไม่ได้ งานที่มีห้องจะกลับไปโพสต์เข้าห้องทันทีเหมือนเดิม ส่วนงานทั่วไปกับเรื่องเงินจะเงียบจนกว่าจะตั้ง
 
 ## 1) LINE (ผ่าน LINE Messaging API)
 
@@ -129,8 +111,8 @@ CRON_SECRET=<สุ่มมาสักชุด>        # ป้องกั�
 ```bash
 curl -X POST https://<your-app>/api/notify \
   -H "Content-Type: application/json" \
-  -d '{"event":"approval","title":"🔔 ทดสอบระบบแจ้งเตือน","detail":"ถ้าเห็นข้อความนี้ = ใช้งานได้","team":"finance"}'
+  -d '{"event":"approval","title":"🔔 ทดสอบระบบแจ้งเตือน","detail":"ถ้าเห็นข้อความนี้ = ใช้งานได้","team":"kol"}'
 ```
 
-ผลลัพธ์บอกสถานะราย channel + แชนแนลที่ใช้: `{"ok":true,"slack":true,"line":false,"email":false,"team":"finance","configured":{...}}`
-ใส่ `"team"` เพื่อบังคับแชนแนล ถ้าไม่ใส่ระบบจะเลือกจาก `link` ให้เอง · `GET /api/notify` ดูได้ว่าตอนนี้ตั้ง webhook ไว้ครบไหม (ไม่คืนค่า URL ออกมา)
+ผลลัพธ์บอกว่าเข้าห้องหรือเป็น DM: `{"ok":true,"slack":true,"team":"kol","dm":{"sent":[],"unresolved":[]},...}`
+ใส่ `"team"` (`graphic` / `kol` / `vdo` / `general` / `finance`) เพื่อบังคับปลายทาง ถ้าไม่ใส่ระบบจะเลือกจาก `link` ให้เอง · ใส่ `"to":["ชื่อ"]` เพื่อทดสอบ DM · `GET /api/notify` ดูได้ว่าห้องไหนตั้ง webhook แล้วบ้าง (ไม่คืนค่า URL ออกมา)
