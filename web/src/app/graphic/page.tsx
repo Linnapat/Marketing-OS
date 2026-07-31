@@ -30,6 +30,7 @@ import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
+import { parseWorkCode } from "@/lib/data/workCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
@@ -1032,6 +1033,14 @@ function IdCell({ value, title }: { value?: string | null; title: string }) {
   );
 }
 
+/** The post a request is for, as the post's own job number ("C04").
+ *  Empty for POSM/menu work that serves no post — IdCell renders that as "—",
+ *  which is the honest answer rather than a number invented for the column. */
+function contentIdOf(g: Graphic): string {
+  const n = parseWorkCode(g.code ?? "")?.content;
+  return n ? `C${n}` : "";
+}
+
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
   return (
@@ -1059,15 +1068,24 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
               the team actually says out loud. Both, because the columns answer
               different questions — which row this joins to, and which campaign a
               person means. */}
-          <span className="text-[12px] text-muted truncate min-w-0">
-            {g.campaign}
-            <CampaignCode code={codeOf(g.campaignId, g.campaign)} className="ml-[5px] align-middle" />
+          {/* The pill has to sit OUTSIDE the truncating element. Inside it, a long
+              campaign name pushed the code past the clip and it vanished from the
+              column entirely — silently, and only for the rows whose names run
+              long, which is why it looked like the code was missing rather than
+              cut off. */}
+          <span className="flex items-center gap-[5px] min-w-0 text-[12px] text-muted">
+            <span className="truncate">{g.campaign}</span>
+            <CampaignCode code={codeOf(g.campaignId, g.campaign)} className="flex-shrink-0" />
           </span>
-          {/* Content ID: the brief row this artwork serves (ci-N), else the
-              Content Plan post it was raised for. ci-N restarts per campaign, so
-              it only identifies anything alongside the Campaign ID beside it —
-              which is why the two columns arrived together. */}
-          <IdCell value={g.sourceContentItemId || g.contentPostId} title="Content ID" />
+          {/* Content ID: the POST this artwork is for, by its job number.
+              It used to print the brief row (ci-N), which restarts inside every
+              campaign — six ci-N values are in use across more than one — so it
+              only meant anything read together with the Campaign ID beside it.
+              The job number is unique on its own, and it is the same number the
+              Content Plan shows, so the two pages can be read side by side.
+              Taken from this request's own code rather than fetched: the code
+              already contains its post's number. */}
+          <IdCell value={contentIdOf(g)} title="Content" />
           <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
           <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
           <span className="flex items-center gap-1.5 flex-wrap min-w-0">

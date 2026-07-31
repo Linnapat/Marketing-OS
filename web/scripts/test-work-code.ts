@@ -75,5 +75,19 @@ console.log("\nparsing");
   is("junk", parseWorkCode(""), null);
 }
 
+console.log("\nContent ID column derives from the request's own code");
+{
+  // The Graphic list shows which POST a request is for, read off the request's
+  // own job number rather than fetched — the number already contains it.
+  const contentIdOf = (code?: string) => {
+    const n = parseWorkCode(code ?? "")?.content;
+    return n ? `C${n}` : "";
+  };
+  is("artwork attached to a post", contentIdOf(`${CAM}-C04-A01`), "C04");
+  is("standalone artwork has no post", contentIdOf(`${CAM}-A01`), "");
+  is("uncoded request says nothing rather than guessing", contentIdOf(undefined), "");
+  is("a ci-N left over from before is not mistaken for a post", contentIdOf("ci-3"), "");
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
