@@ -28,3 +28,27 @@ export function CampaignCode({ code, className }: { code?: string; className?: s
 export function campaignLabel(code: string | undefined, name: string): string {
   return code ? `#${code} · ${name}` : name;
 }
+
+/** The job number of one post or artwork (TPN_2609_003-C02-A01).
+ *
+ *  Deliberately a different colour from the campaign pill. The two sit side by
+ *  side on the same row and the work code CONTAINS the campaign code, so in one
+ *  colour a row would read as the same number printed twice.
+ *
+ *  Shows only the part below the campaign by default ("C02-A01"), because the
+ *  campaign is almost always already named on the row; `full` prints the whole
+ *  thing for the surfaces where it stands alone. The title attribute always
+ *  carries the full code, so it can be copied from anywhere. */
+export function WorkCode({ code, full, className }: { code?: string; full?: boolean; className?: string }) {
+  if (!code) return null;
+  const short = code.includes("-") ? code.slice(code.indexOf("-") + 1) : code;
+  return (
+    <span
+      className={`text-[11px] font-extrabold rounded-pill px-[7px] py-[2px] whitespace-nowrap ${className ?? ""}`}
+      style={{ background: "#EAF2EC", color: "#3F7A52" }}
+      title={`เลขงาน: ${code}`}
+    >
+      {full ? code : short}
+    </span>
+  );
+}

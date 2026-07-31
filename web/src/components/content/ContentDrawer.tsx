@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
-import { CampaignCode } from "@/components/ui/CampaignCode";
+import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
@@ -418,6 +418,9 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 })}
               </span>
               <span className="text-[15px] font-extrabold leading-tight">{item.title}</span>
+              {/* Full code here: the drawer is where someone copies a number to
+                  paste into a chat, and the short form means nothing on its own. */}
+              <WorkCode code={item.code} full />
             </div>
             <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted">
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full" style={{ background: brandColor(item.b) }} />{brandName(item.b)}</span>

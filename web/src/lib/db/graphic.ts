@@ -11,6 +11,7 @@ import { Task } from "@/lib/data/tasks";
 import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, seedMockIds } from "@/lib/db/mockGuard";
+import { issueArtworkCode } from "@/lib/db/workCode";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
@@ -37,12 +38,17 @@ export async function fetchGraphicById(id: string | number): Promise<Graphic | n
   return withLiveGraphicOverdue({ ...(data.data as Graphic), createdAt: (data as { created_at?: string }).created_at });
 }
 
-export async function createGraphic(g: Graphic): Promise<void> {
+export async function createGraphic(input: Graphic): Promise<void> {
   const db = supabase();
   if (!db) {
     seedMockIds("graphic_requests", GRAPHICS.map((x) => x.id));
-    assertMockUniqueId("graphic_requests", g.id);
+    assertMockUniqueId("graphic_requests", input.id);
   }
+  // Numbered under the post this serves, so the artwork's number says which post
+  // it is for without opening it. Every creation path goes through here.
+  const g: Graphic = input.code || !db
+    ? input
+    : { ...input, code: await issueArtworkCode(input.campaignId, input.contentPostId) };
   if (db) {
     const { error } = await db.from("graphic_requests").insert({
       title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,

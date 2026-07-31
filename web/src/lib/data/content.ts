@@ -71,6 +71,10 @@ export interface ContentItem {
   /** Manual-publish trail — set when someone clicks Publish in the Content Calendar. */
   publishedBy?: string;
   publishedAt?: string;
+  /** Job number — `CAMPAIGN-Cnn`, e.g. TPN_2609_003-C02. Unique across the
+   *  system, unlike sourceContentItemId ("ci-2"), which restarts inside every
+   *  campaign and so identifies nothing on its own. Assigned on create. */
+  code?: string;
   /** Real relational links (no name matching). campaignId ties to the campaign
    *  row; sourceContentItemId is the brief content item — the pair is the
    *  idempotency key. graphicRequestId links the auto-created Graphic Request. */

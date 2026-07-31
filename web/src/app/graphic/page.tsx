@@ -28,7 +28,7 @@ import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { CampaignCode } from "@/components/ui/CampaignCode";
+import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
@@ -1036,7 +1036,13 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
       {items.map((g) => (
         <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
           style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
-          <div><div className="text-[13px] font-bold text-ink">{g.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div></div>
+          <div>
+            <div className="text-[13px] font-bold text-ink flex items-center gap-[6px]">
+              <span className="truncate">{g.title}</span>
+              <WorkCode code={g.code} />
+            </div>
+            <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div>
+          </div>
           <IdCell value={g.campaignId} title="Campaign ID" />
           {/* Campaign ID beside the name is the system id; the pill is the number
               the team actually says out loud. Both, because the columns answer
