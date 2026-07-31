@@ -26,7 +26,7 @@
 
 begin;
 
-create or replace function public.graphic_brief_patch(p_id text, p_patch jsonb)
+create or replace function public.graphic_brief_patch(p_id text, p_patch jsonb, p_only_if_empty boolean default false)
 returns jsonb
 language plpgsql
 security invoker
@@ -91,6 +91,23 @@ begin
   -- granted top-up looked exactly like an edit that silently did not stick.
   unlocked := coalesce(cur.data->'briefUnlock'->>'status', '') = 'Granted';
 
+  -- Propagation mode: the campaign brief pushing detail down into a request
+  -- that already exists. Fill blanks only, and walk away quietly from anything
+  -- already answered — this runs on every campaign save, so it must never
+  -- overwrite what Creative or the requester typed on the request itself, and
+  -- must never fail the save it is riding along with.
+  if p_only_if_empty then
+    if coalesce(cur.data->>'acceptedAt', '') <> '' then
+      return cur.data;                     -- accepted: not ours to touch
+    end if;
+    select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb) into p_patch
+    from jsonb_each(p_patch) e
+    where coalesce(cur.data->>e.key, '') = '' and coalesce(e.value #>> '{}', '') <> '';
+    if p_patch = '{}'::jsonb then
+      return cur.data;                     -- nothing blank left to fill
+    end if;
+  end if;
+
   if coalesce(cur.data->>'acceptedAt', '') <> '' and not unlocked then
     raise exception 'Creative รับงานนี้แล้ว (%) — ต้องขอเติมบรีฟกับ Creative Leader และรอปล่อยงานก่อน',
       coalesce(nullif(cur.data->>'acceptedBy', ''), 'ไม่ระบุผู้รับ')
@@ -104,7 +121,9 @@ begin
   -- write-over hole this function exists to close and left the grant standing
   -- if that write failed — a one-shot permission that survives its own use is
   -- not one-shot.
-  if unlocked then
+  -- ...but only for a real requester edit. Propagation must never spend a
+  -- grant the requester has not used yet.
+  if unlocked and not p_only_if_empty then
     merged := merged - 'briefUnlock';
   end if;
 

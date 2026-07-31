@@ -188,7 +188,10 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
   const whitelist = REQUESTER_EDITABLE_BRIEF_FIELDS as readonly string[];
   is("platform/size ไม่อยู่ใน whitelist",
     whitelist.includes("platform") || whitelist.includes("size"), false);
-  is("whitelist มี 8 ช่องตามที่ตกลง", REQUESTER_EDITABLE_BRIEF_FIELDS.length, 8);
+  // 6 ไม่ใช่ 8: ยุบช่องลิงก์ 3 ช่อง (briefLink / driveLink / referenceLink)
+  // เหลือ briefLink ช่องเดียว เพราะสามช่องเรียงกันทำให้คนกรอกคนละช่องกับที่ระบบอ่าน
+  is("whitelist เหลือ 6 ช่อง (ลิงก์ช่องเดียว)", REQUESTER_EDITABLE_BRIEF_FIELDS.length, 6);
+  is("มีช่องลิงก์เดียว", whitelist.filter((f) => /link/i.test(f)).join(","), "briefLink");
 }
 
 {

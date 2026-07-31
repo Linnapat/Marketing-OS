@@ -54,7 +54,9 @@ export interface Graphic {
   keyMessage?: string;
   moodDirection?: string;
   referenceLink?: string;
-  /** Google Drive link carried over from the content brief. */
+  /** Legacy link fields, merged into briefLink. Still READ (creativeBriefLink
+   *  falls back to them) so rows written before the merge keep showing their
+   *  link, but no longer writable from the brief form. */
   driveLink?: string;
   captionCopy?: string;
   extraDetails?: string;
@@ -1214,14 +1216,27 @@ export function briefFields(g: Graphic): { label: string; ok: boolean }[] {
     { label: "Platform / usage", ok: !!g.platform },
     { label: "Size / format", ok: !!g.size },
     { label: "CI / mood direction", ok: g.briefComplete },
-    { label: "Reference link", ok: g.briefComplete },
+    // Reads the real field now, not the briefComplete flag — the checklist said
+    // "Reference link ✓" on requests carrying no link at all.
+    { label: "ลิงก์บรีฟ", ok: !!creativeBriefLink(g) },
     { label: "Linked content item", ok: g.contentItem !== "—" },
     { label: "Caption / copy", ok: g.briefComplete },
   ];
 }
 
+/** THE brief link. One field, because three of them (briefLink / driveLink /
+ *  referenceLink) sat side by side in the form and nobody could say which one
+ *  the designer would actually open — the team filled driveLink 13 times,
+ *  briefLink 3, referenceLink once, and a request could carry a link in one box
+ *  while the Brief tab showed "ยังไม่มี link" from another.
+ *
+ *  The old two are still READ here: rows written before the merge keep their
+ *  value, and a fallback costs nothing next to re-displaying a link someone
+ *  already saved. Only `briefLink` is writable — see
+ *  REQUESTER_EDITABLE_BRIEF_FIELDS and the SQL whitelist. */
 export function creativeBriefLink(g: Graphic): string {
-  return g.briefLink || g.referenceLink || g.deliverables?.find((d) => d.refLink)?.refLink || "";
+  return g.briefLink || g.driveLink || g.referenceLink
+    || g.deliverables?.find((d) => d.refLink)?.refLink || "";
 }
 
 /** The brief fields the requester may fill in themselves, before Creative has
@@ -1245,7 +1260,7 @@ export function creativeBriefLink(g: Graphic): string {
  *  canSignOffBrief still refuses the requester, so somebody on the Content or
  *  Creative side has to agree the brief is now good enough to start. */
 export const REQUESTER_EDITABLE_BRIEF_FIELDS = [
-  "briefLink", "driveLink", "referenceLink",
+  "briefLink",
   "objective", "keyMessage", "moodDirection", "captionCopy", "extraDetails",
 ] as const;
 
@@ -1276,7 +1291,7 @@ export function pickBriefPatch(
 export function creativeBriefDetails(g: Graphic): { label: string; value: string; href?: string }[] {
   const briefLink = creativeBriefLink(g);
   return [
-    { label: "Brief link", value: briefLink ? "Open creative brief" : "ยังไม่มี link brief", href: briefLink || undefined },
+    { label: "ลิงก์บรีฟ (Drive / Slides)", value: briefLink ? "เปิดบรีฟ" : "ยังไม่มีลิงก์บรีฟ", href: briefLink || undefined },
     { label: "Objective", value: g.objective || `${g.campaign} · ${g.type} for ${brandName(g.b)}` },
     // Key message must NOT fall back to nextAction — that's a workflow status
     // (e.g. "Design in progress"), not the creative message.
@@ -1284,8 +1299,6 @@ export function creativeBriefDetails(g: Graphic): { label: string; value: string
     { label: "Platform / usage", value: g.platform || "—" },
     { label: "Size / format", value: g.size || "—" },
     { label: "CI / mood direction", value: g.moodDirection || `${brandName(g.b)} brand direction · keep CI, tone, logo and visual hierarchy consistent.` },
-    { label: "Google Drive link", value: g.driveLink ? "เปิด Google Drive" : "ยังไม่มี Drive link", href: g.driveLink || undefined },
-    { label: "Reference", value: (g.referenceLink || briefLink) ? "Open reference" : "ยังไม่มี reference link", href: g.referenceLink || briefLink || undefined },
     { label: "Linked content item", value: g.contentItem && g.contentItem !== "—" ? g.contentItem : "ยังไม่ link กับ Content Plan" },
     { label: "Caption / copy", value: g.captionCopy || "ยังไม่มี caption/copy เพิ่มเติม" },
     { label: "Additional details", value: g.extraDetails || g.blocker || "ไม่มีรายละเอียดเพิ่มเติม" },

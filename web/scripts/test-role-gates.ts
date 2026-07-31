@@ -220,6 +220,10 @@ console.log("\n— กติกาเติมบรีฟต้องตรง�
   check("SQL รู้จัก briefUnlock", sql.includes("briefUnlock"));
   check("SQL ยอมให้แก้เมื่อสถานะเป็น Granted", /Granted/.test(sql));
   check("SQL ใช้สิทธิ์แล้วลบทิ้ง (one-shot)", /merged - 'briefUnlock'/.test(sql));
+  // โหมดผลักบรีฟจากแคมเปญลงใบงานเดิม — เติมเฉพาะช่องว่าง และไม่แตะใบที่ถูกรับงานแล้ว
+  check("SQL มีโหมด p_only_if_empty", sql.includes("p_only_if_empty"));
+  check("โหมดนี้ไม่แตะใบที่ถูกรับงานแล้ว", /p_only_if_empty then[\s\S]{0,200}acceptedAt[\s\S]{0,80}return cur\.data/.test(sql));
+  check("โหมดนี้ไม่ใช้สิทธิ์เติมบรีฟของ requester", /unlocked and not p_only_if_empty/.test(sql));
   // ฝั่ง client ต้องคิดแบบเดียวกัน
   const accepted = { acceptedAt: "2026-07-20T00:00:00Z", acceptedBy: "Boss" };
   const granted = { ...accepted, briefUnlock: { status: "Granted" as const, requestedBy: "Ken S.", requestedAt: "x" } };

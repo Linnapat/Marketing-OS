@@ -1138,9 +1138,10 @@ const DEL_TONE: Record<string, "neutral" | "gold" | "green" | "red"> = {
  *  second wipe the other's edits with no error at all — fine when one person
  *  edited a request at a time, not fine now that two sides can. */
 const BRIEF_FIELDS: { key: RequesterBriefField; label: string; placeholder: string; area?: boolean }[] = [
-  { key: "briefLink", label: "Brief link", placeholder: "https://… (Google Doc / Slide ที่เป็นบรีฟหลัก)" },
-  { key: "referenceLink", label: "Reference link", placeholder: "https://… ตัวอย่างงานที่อยากได้" },
-  { key: "driveLink", label: "Google Drive link", placeholder: "https://drive.google.com/… โฟลเดอร์ไฟล์ดิบ" },
+  // ONE link box. Three of them sat here (brief / reference / Drive) and nobody
+  // could say which one the designer would open, so a link went in one and the
+  // Brief tab reported "ยังไม่มี link" from another.
+  { key: "briefLink", label: "ลิงก์บรีฟ (Drive / Slides)", placeholder: "https://… บรีฟหลัก ไฟล์ดิบ หรือ reference — ใส่ที่เดียวพอ" },
   { key: "objective", label: "Objective", placeholder: "งานนี้ทำไปเพื่ออะไร", area: true },
   { key: "keyMessage", label: "Key message", placeholder: "สารหลักที่ต้องสื่อ", area: true },
   { key: "moodDirection", label: "CI / mood direction", placeholder: "โทน อารมณ์ ทิศทางภาพ", area: true },

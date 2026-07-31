@@ -108,7 +108,7 @@ export async function patchGraphicBrief(
   // demo mode — local only. consumeBriefUnlock mirrors what the RPC does with
   // a granted release so the one-shot behaves the same without a database.
   if (!db) return consumeBriefUnlock({ ...g, ...patch });
-  const { data, error } = await db.rpc("graphic_brief_patch", { p_id: String(g.id), p_patch: patch });
+  const { data, error } = await db.rpc("graphic_brief_patch", { p_id: String(g.id), p_patch: patch, p_only_if_empty: false });
   if (error) {
     // The migration is applied by hand, so say which failure this is instead of
     // showing a raw "function does not exist" to whoever is trying to type a link.
@@ -118,6 +118,33 @@ export async function patchGraphicBrief(
     throw new Error(error.message);
   }
   return (data as Graphic | null) ?? { ...g, ...patch };
+}
+
+/** Push campaign brief detail down into a Graphic Request that already exists.
+ *
+ *  The fan-out only ever CREATED: a request made in July never saw the Drive
+ *  link added to its campaign in August, so the planner filled the brief, the
+ *  designer opened the request, and it was blank. Re-approving did not help —
+ *  the fan-out skips anything already materialised.
+ *
+ *  Blanks only, and never on an accepted request; both enforced in SQL
+ *  (p_only_if_empty) rather than here, because this runs on every campaign
+ *  save and must not overwrite what the request's own people typed.
+ *
+ *  Best-effort: a campaign save must not fail because one request would not
+ *  take a top-up. */
+export async function topUpGraphicBrief(
+  id: string | number,
+  patch: Partial<Record<RequesterBriefField, string>>,
+): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const clean = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => (v ?? "").trim() !== ""),
+  );
+  if (!Object.keys(clean).length) return;
+  const { error } = await db.rpc("graphic_brief_patch", { p_id: String(id), p_patch: clean, p_only_if_empty: true });
+  if (error) console.warn("topUpGraphicBrief skipped", id, error.message);
 }
 
 export async function updateGraphic(g: Graphic): Promise<void> {

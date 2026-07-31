@@ -11,6 +11,7 @@
 import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
   applyLensVerdict, rejectionsByLens, emptyDeliverable,
+  creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS,
   type Graphic, type GraphicDeliverable,
 } from "../src/lib/data/graphic";
 
@@ -108,6 +109,24 @@ const counts = rejectionsByLens([sentBack, req([submitted({ feedback: [{ reason:
 is("นับด้าน CI ตามแถวที่โดนตีกลับ", counts.ci, 2);
 is("นับด้านข้อมูล", counts.info, 1);
 is("แถวเก่าที่ไม่มีป้าย ไม่ยัดเข้าด้านใดด้านหนึ่ง", counts.unlabelled, 1);
+
+console.log("\n— ลิงก์บรีฟเหลือช่องเดียว —");
+{
+  // เดิมมี 3 ช่อง (briefLink / driveLink / referenceLink) วางเรียงกันในฟอร์ม
+  // คนกรอกช่องหนึ่ง แต่แท็บ Brief ไปอ่านอีกช่อง เลยขึ้นว่า "ยังไม่มี link"
+  const base = req([submitted()]);
+  is("เขียนได้ช่องเดียว", REQUESTER_EDITABLE_BRIEF_FIELDS.filter((f) => /link/i.test(f)).join(","), "briefLink");
+  is("อ่าน briefLink", creativeBriefLink({ ...base, briefLink: "A" }), "A");
+  // แถวเก่ายังอ่านออก — ไม่ต้องรอ migrate ก่อนถึงจะเห็นลิงก์ที่คนใส่ไว้แล้ว
+  is("แถวเก่าที่มีแต่ driveLink ยังอ่านออก", creativeBriefLink({ ...base, driveLink: "B" }), "B");
+  is("แถวเก่าที่มีแต่ referenceLink ยังอ่านออก", creativeBriefLink({ ...base, referenceLink: "C" }), "C");
+  is("briefLink ชนะของเก่า", creativeBriefLink({ ...base, briefLink: "A", driveLink: "B" }), "A");
+  is("ไม่มีเลย → ว่าง", creativeBriefLink(base), "");
+  // checklist เคยติ๊ก "Reference link ✓" จาก briefComplete ทั้งที่ไม่มีลิงก์สักอัน
+  const noLink = briefFields({ ...base, briefComplete: true });
+  is("checklist อ่านลิงก์จริง ไม่ใช่ธง briefComplete", noLink.find((f) => f.label === "ลิงก์บรีฟ")?.ok, false);
+  is("มีลิงก์แล้วติ๊กถูก", briefFields({ ...base, briefLink: "A" }).find((f) => f.label === "ลิงก์บรีฟ")?.ok, true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

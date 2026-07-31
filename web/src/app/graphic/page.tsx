@@ -13,7 +13,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, type ReviewLens,
+  graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, creativeBriefLink, type ReviewLens,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
@@ -1033,7 +1033,7 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           on. A column that looks live but isn't is worse than no column. */}
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: LIST_COLS }}>
-        <div>Request</div><div>Campaign ID</div><div>Campaign</div><div>Content ID</div><div>Designer</div><div>Due</div><div>Stage</div><div>Drive</div><div>Fb</div>
+        <div>Request</div><div>Campaign ID</div><div>Campaign</div><div>Content ID</div><div>Designer</div><div>Due</div><div>Stage</div><div>บรีฟ</div><div>Fb</div>
       </div>
       {items.map((g) => (
         <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
@@ -1070,11 +1070,14 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
               open every row to find the one they wanted. stopPropagation, or the
               row's own onOpen swallows the click and the drawer opens instead. */}
           <span className="text-[12px]">
-            {g.driveLink ? (
-              <a href={g.driveLink} target="_blank" rel="noreferrer"
+            {/* creativeBriefLink, not g.driveLink: there is one brief link now,
+                and this column used to show "—" on requests that carried a link
+                in one of the other two boxes. */}
+            {creativeBriefLink(g) ? (
+              <a href={creativeBriefLink(g)} target="_blank" rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                title={g.driveLink}
-                className="font-bold text-accent hover:underline">📁 เปิด ↗</a>
+                title={creativeBriefLink(g)}
+                className="font-bold text-accent hover:underline">📎 เปิด ↗</a>
             ) : <span className="text-faint">—</span>}
           </span>
           <span className="text-[12px] font-semibold" style={{ color: g.openFb > 0 ? "#B33A2E" : "#9A9387" }}>{g.openFb || "—"}</span>
