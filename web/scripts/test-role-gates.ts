@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -45,33 +45,8 @@ for (const role of ["KOL Specialist", "VDO Editor", "Content Creator", "Creative
   is(`${role} ไม่เห็น Platform Performance`, canSeePlatformPerformance(role), false);
 }
 
-console.log("\n— artwork sign-off: ผู้ขอ / Creative Leader / CMO เท่านั้น —");
-{
-  const approve = (role: string, isRequester = false, isSubmitter = false) =>
-    canApproveDeliverable({ role, isRequester, isSubmitter });
-
-  is("Creative Leader อนุมัติได้ (final review ตาม matrix)", approve("Creative Leader"), true);
-  is("CMO อนุมัติได้", approve("CMO"), true);
-  is("ผู้ขอของงานนั้นอนุมัติได้ แม้ role จะเป็นสายผลิต", approve("Senior Graphic Designer", true), true);
-
-  // ก่อนแก้: ทุก role ที่เปิดแท็บ Assets ได้ กดอนุมัติได้หมด
-  for (const role of ["Senior Graphic Designer", "VDO Editor", "Content Creator", "Co-ordinator", "KOL Specialist", "Agency (External)", "Marketing Executive"]) {
-    is(`${role} อนุมัติ artwork ไม่ได้`, approve(role), false);
-  }
-  // Marketing Manager / BGL อยู่ขั้นถัดไปของ chain (อนุมัติทั้ง request) ไม่ใช่ขั้นรีวิวรายชิ้น
-  is("Marketing Manager / BGL ไม่ใช่ผู้รีวิวรายชิ้น", approve("Marketing Manager / BGL"), false);
-
-  console.log("\n— ห้ามอนุมัติงานที่ตัวเองส่ง —");
-  is("Creative Leader ที่ส่งงานชิ้นนั้นเอง อนุมัติไม่ได้", approve("Creative Leader", false, true), false);
-  is("CMO ที่ส่งงานชิ้นนั้นเอง อนุมัติไม่ได้", approve("CMO", false, true), false);
-  is("ผู้ขอที่ส่งงานเอง อนุมัติไม่ได้", approve("Creative Leader", true, true), false);
-  // แต่ยังส่งกลับแก้ได้ — แถวถูกล็อกตอน Waiting review ถ้าปิดหมดจะไม่มีทางแก้เอง
-  is("…แต่ยัง Request Revision ได้", canReviewDeliverable("Creative Leader", true), true);
-
-  console.log("\n— edges —");
-  is("role ว่าง + ไม่ใช่ผู้ขอ → อนุมัติไม่ได้ (fail closed)", approve(""), false);
-  is("role ที่ matrix ไม่รู้จัก อนุมัติไม่ได้", approve("Junior Motion Graphic"), false);
-}
+// artwork sign-off ย้ายไปที่ scripts/test-deliverable-review.ts แล้ว —
+// กติกาเปลี่ยนเป็นตรวจ 2 ด้านโดยคนละคน ซึ่งต้องดูตัว deliverable ไม่ใช่แค่ role string
 
 console.log("\n— edges —");
 is("role ว่างไม่ถือเป็น creative", isCreativeSideRole(""), false);

@@ -458,11 +458,226 @@ export interface GraphicDeliverable {
   version: number;
   submittedBy: string;
   submittedAt: string;
-  feedback: { reason: string; by: string; at: string }[];
+  /** Revision notes. `lens` says which check sent it back, so the designer
+   *  knows whether they are fixing a number or a font — and so the rejection
+   *  rate can be split by cause later. Absent on rows written before the two
+   *  checks existed. */
+  feedback: { reason: string; by: string; at: string; lens?: ReviewLens }[];
   /** Manual artwork grouping (option 2): deliverables sharing the same number
    *  are ONE artwork (e.g. one master exported to several ratios). Blank = auto:
    *  counted by distinct size, platform collapsed (option 1). */
   artworkNo?: number;
+  /** The two sign-offs. See the block below. */
+  review?: DeliverableReview;
+}
+
+/* ── Two checks on one piece ───────────────────────────────────────────────
+ *
+ * There used to be one gate: requester OR Creative Leader OR CMO could approve,
+ * and whoever clicked first ended it. So a piece could ship having been checked
+ * for price and never for CI — or the reverse — and nothing recorded which had
+ * actually happened.
+ *
+ * They are now two independent verdicts on the same piece, taken in parallel:
+ *
+ *   info — is the CONTENT right? price, dates, terms, menu names, branches,
+ *          CTA, spelling. Owned by the person who wrote the brief.
+ *   ci   — is it ON BRAND? logo, type, colour, hierarchy, safe area, export.
+ *          Owned by the Creative Leader.
+ *
+ * Parallel rather than sequential on purpose: the two fail for unrelated
+ * reasons and are fixed in one re-export, so running them in series would cost
+ * a second round trip to produce one revision list.
+ *
+ * A piece is Approved only when BOTH pass, and the `approved` history event —
+ * which the Artwork Count report bills an outsourced studio from — fires once,
+ * at that moment. Each verdict keeps its own timestamp so "the designer was
+ * late" and "the reviewer was late" stay separable afterwards.
+ */
+
+export type ReviewLens = "info" | "ci";
+
+export const REVIEW_LENSES: ReviewLens[] = ["info", "ci"];
+
+export const LENS_META: Record<ReviewLens, { label: string; short: string; owner: string; checks: string }> = {
+  info: {
+    label: "ข้อมูลถูกต้อง",
+    short: "ข้อมูล",
+    owner: "ผู้ขอเปิดงาน (สาย Marketing)",
+    checks: "ราคา · วันที่ · เงื่อนไข · ชื่อเมนู · สาขา · CTA · ตัวสะกด",
+  },
+  ci: {
+    label: "Visual CI",
+    short: "CI",
+    owner: "Creative Leader",
+    checks: "โลโก้ · ฟอนต์ · สี · ลำดับสายตา · safe area · ความคมของไฟล์",
+  },
+};
+
+export interface LensVerdict {
+  verdict: "pass" | "revise";
+  by: string;
+  at: string;
+  /** Required when sending back — a bare "revise" is not actionable. */
+  note?: string;
+}
+
+export type DeliverableReview = Partial<Record<ReviewLens, LensVerdict>>;
+
+const samePerson = (a?: string, b?: string) =>
+  !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** May this person give the verdict for `lens` on this piece?
+ *
+ *  info → the requester, the Marketing Manager / BGL, or the CMO
+ *  ci   → the Creative Leader, or the CMO covering for them
+ *
+ *  Two rules apply to both, and they are what keep this a two-person check
+ *  rather than two boxes one person ticks:
+ *
+ *   - never the person who submitted the piece (the existing self-approval
+ *     rule, now asked per lens)
+ *   - never the person who already gave the OTHER verdict. The CMO can cover
+ *     either lane, so without this a single CMO could clear both and the
+ *     separation would exist only on paper.
+ *
+ *  Sending your own work BACK stays allowed, as it always has: a designer who
+ *  spots their own mistake needs a way to reopen a row that is otherwise
+ *  locked while it waits. Only `pass` is restricted — see canPassLens. */
+export function canGiveLensVerdict(
+  lens: ReviewLens,
+  ctx: { role: string; isRequester: boolean; me: string; deliverable: Pick<GraphicDeliverable, "review" | "submittedBy"> },
+): boolean {
+  const role = (ctx.role || "").trim();
+  const allowed = lens === "info"
+    ? ctx.isRequester || role === "Marketing Manager / BGL" || role === "CMO"
+    : role === "Creative Leader" || role === "CMO";
+  if (!allowed) return false;
+  const other = ctx.deliverable.review?.[lens === "info" ? "ci" : "info"];
+  return !samePerson(other?.by, ctx.me);
+}
+
+/** May they PASS it? Everything canGiveLensVerdict asks, plus: not their own
+ *  submission. */
+export function canPassLens(
+  lens: ReviewLens,
+  ctx: { role: string; isRequester: boolean; me: string; deliverable: Pick<GraphicDeliverable, "review" | "submittedBy"> },
+): boolean {
+  return canGiveLensVerdict(lens, ctx) && !samePerson(ctx.deliverable.submittedBy, ctx.me);
+}
+
+export interface ReviewProgress {
+  given: number;
+  total: number;
+  pending: ReviewLens[];
+  /** Both in and both passed. */
+  passed: boolean;
+  /** Both in and at least one sent it back. */
+  sentBack: boolean;
+  /** Every lens has answered. */
+  settled: boolean;
+}
+
+export function reviewProgress(d: Pick<GraphicDeliverable, "review">): ReviewProgress {
+  const r = d.review ?? {};
+  const pending = REVIEW_LENSES.filter((l) => !r[l]);
+  const given = REVIEW_LENSES.length - pending.length;
+  const settled = pending.length === 0;
+  const sentBack = settled && REVIEW_LENSES.some((l) => r[l]?.verdict === "revise");
+  return { given, total: REVIEW_LENSES.length, pending, passed: settled && !sentBack, sentBack, settled };
+}
+
+/** The row's status once the verdicts are in.
+ *
+ *  Deliberately keeps the piece in "Waiting review" while one lens is still
+ *  out, rather than moving it on the first answer: a designer who starts
+ *  fixing after one verdict re-exports again when the second arrives, which is
+ *  the round trip the parallel design exists to avoid. */
+export function statusFromReview(d: Pick<GraphicDeliverable, "review" | "status">): string {
+  if (d.status === "Not submitted") return d.status;
+  const p = reviewProgress(d);
+  if (!p.settled) return "Waiting review";
+  return p.passed ? "Approved" : "Revision";
+}
+
+/** Indexes of every deliverable that is the SAME artwork as `index` — the same
+ *  file exported for different platforms. Reviewers act on the artwork, not on
+ *  each row: one master under three platform labels is one thing to check, and
+ *  asking twice per lens turns a 5-size request into 10 clicks per reviewer. */
+export function artworkGroup(dels: GraphicDeliverable[], index: number): number[] {
+  const target = dels[index];
+  if (!target) return [];
+  const key = normSize(target.size);
+  return dels.map((d, i) => (normSize(d.size) === key ? i : -1)).filter((i) => i >= 0);
+}
+
+/** Record one lens's verdict across the whole artwork group, settling the rows
+ *  (and the request's stage) when both lenses are in.
+ *
+ *  Returns null when there is nothing to do — no such row, or a piece that has
+ *  not been submitted yet. Pure: the caller persists. */
+export function applyLensVerdict(
+  g: Graphic,
+  index: number,
+  lens: ReviewLens,
+  verdict: "pass" | "revise",
+  by: string,
+  note?: string,
+): Graphic | null {
+  const dels = (g.deliverables?.length ? g.deliverables : deriveDeliverables(g)).map((d) => ({ ...d }));
+  const target = dels[index];
+  if (!target || target.status === "Not submitted") return null;
+  if (verdict === "revise" && !note?.trim()) return null; // "fix it" is not a brief
+
+  const at = new Date().toISOString();
+  const group = artworkGroup(dels, index);
+  const settledNow: number[] = [];
+
+  for (const i of group) {
+    const d = dels[i];
+    if (d.status === "Not submitted") continue;
+    const review: DeliverableReview = { ...(d.review ?? {}), [lens]: { verdict, by, at, note: note?.trim() || undefined } };
+    const next: GraphicDeliverable = { ...d, review };
+    next.status = statusFromReview(next);
+    if (verdict === "revise") {
+      next.feedback = [...d.feedback, { reason: note!.trim(), by, at, lens }];
+    }
+    // A settled row starts its next round clean, or the previous verdicts
+    // would still be sitting there when the designer resubmits.
+    if (next.status === "Revision") { settledNow.push(i); next.review = undefined; }
+    else if (next.status === "Approved") settledNow.push(i);
+    dels[i] = next;
+  }
+
+  const history = [...(g.history ?? [])];
+  for (const i of settledNow) {
+    const d = dels[i];
+    const key = `${d.platform}::${d.size}`;
+    // One `approved` event, at the moment BOTH checks are in — the Artwork
+    // Count report bills a studio from these, so a piece must not be counted
+    // when only half of it has been checked.
+    if (d.status === "Approved") history.push({ type: "approved", at, by, deliverableKey: key });
+    else history.push({ type: "revision_requested", at, by, deliverableKey: key, note: note?.trim() });
+  }
+
+  return { ...g, deliverables: dels, stage: stageFromDeliverables({ ...g, deliverables: dels }), history };
+}
+
+/** Rejections split by cause, for "is this a design problem or a brief
+ *  problem?". Rows written before the lenses existed count as unknown rather
+ *  than being attributed to either. */
+export function rejectionsByLens(list: Graphic[]): { info: number; ci: number; unlabelled: number } {
+  const out = { info: 0, ci: 0, unlabelled: 0 };
+  for (const g of list) {
+    for (const d of g.deliverables ?? []) {
+      for (const f of d.feedback) {
+        if (f.lens === "info") out.info++;
+        else if (f.lens === "ci") out.ci++;
+        else out.unlabelled++;
+      }
+    }
+  }
+  return out;
 }
 
 export function emptyDeliverable(platform: string, size: string, refLink = ""): GraphicDeliverable {
@@ -726,39 +941,43 @@ export function stageFromDeliverables(g: Graphic): string {
   return "New Request";
 }
 
-/** One-click approve from the board/list: approves every deliverable still
- *  "Waiting review" (with history entries) so the approver doesn't have to
- *  dig into the drawer. Returns null when nothing is left to approve.
+/** One-click from the board/list: give YOUR lens's pass to every artwork still
+ *  waiting, so a reviewer clearing a batch does not have to open each request.
+ *  Returns null when there is nothing you may pass.
  *
- *  Deliverables `by` submitted themselves are skipped: a bulk action must not
- *  do what the per-row Approve button refuses to do, or the self-approval rule
- *  is one click away from being bypassed. */
-export function approveAllWaiting(g: Graphic, by: string): Graphic | null {
+ *  It gives ONE lens — the caller's — and never both. The old version set
+ *  status straight to "Approved", which after the two-check split would have
+ *  been a single click that skipped the other reviewer entirely: the whole
+ *  rule, bypassable from the list view. A bulk action must not do what the
+ *  per-row buttons refuse to do.
+ *
+ *  Pieces `by` submitted themselves are skipped, same as the per-row pass. */
+export function passAllWaiting(
+  g: Graphic,
+  by: string,
+  lens: ReviewLens,
+  ctx: { role: string; isRequester: boolean },
+): Graphic | null {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
-  const submittedByActor = (d: GraphicDeliverable) => {
-    const who = (d.submittedBy ?? "").trim().toLowerCase();
-    return !!who && who === (by ?? "").trim().toLowerCase();
-  };
-  let targets = dels.filter((d) => d.status === "Waiting review");
-  // Requests parked in "Waiting Feedback" without per-deliverable review
-  // states (legacy rows): approving means everything not yet approved.
-  if (!targets.length && g.stage === "Waiting Feedback") {
-    targets = dels.filter((d) => d.status !== "Approved");
+  // One artwork per pass, not one row: applyLensVerdict already fans a verdict
+  // across the group, so hitting every row would re-apply the same verdict N
+  // times and stamp N history events for one file.
+  const seen = new Set<string>();
+  let next: Graphic = g;
+  let touched = 0;
+  for (let i = 0; i < dels.length; i++) {
+    const d = (next.deliverables ?? dels)[i];
+    if (d.status !== "Waiting review") continue;
+    const key = normSize(d.size);
+    if (seen.has(key)) continue;
+    if (!canPassLens(lens, { role: ctx.role, isRequester: ctx.isRequester, me: by, deliverable: d })) continue;
+    seen.add(key);
+    const applied = applyLensVerdict(next, i, lens, "pass", by);
+    if (!applied) continue;
+    next = applied;
+    touched++;
   }
-  targets = targets.filter((d) => !submittedByActor(d));
-  if (!targets.length) return null;
-  const at = new Date().toISOString();
-  const next = dels.map((d) => (targets.includes(d) ? { ...d, status: "Approved" as const } : d));
-  return {
-    ...g,
-    deliverables: next,
-    stage: stageFromDeliverables({ ...g, deliverables: next }),
-    openFb: 0,
-    history: [
-      ...(g.history ?? []),
-      ...targets.map((d) => ({ type: "approved" as const, at, by, deliverableKey: `${d.platform}::${d.size}` })),
-    ],
-  };
+  return touched ? next : null;
 }
 
 /** Submit ONE deliverable for review — the per-piece counterpart of

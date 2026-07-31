@@ -37,25 +37,16 @@ export function canEditContentPlan(role: string): boolean {
 // Requester → Creative Leader → Marketing Manager / BGL → CMO, but none of that
 // reached the button.
 //
-// The review step belongs to the person who asked for the work (they accept
-// it), the Creative Leader (final creative review), or the CMO. Marketing
-// Manager / BGL sits at a later step — approving the whole request — not at the
-// per-artwork review, so they are deliberately not here.
-
-/** May this person act on a submitted deliverable at all (approve or send back)? */
-export function canReviewDeliverable(role: string, isRequester: boolean): boolean {
-  return isRequester || role === "CMO" || role === "Creative Leader";
-}
-
-/** May they approve THIS row? Same reviewers, minus self-approval: signing off
- *  your own submission is the check approving itself. Sending your own work
- *  back stays allowed — a designer who spots their own mistake needs a way to
- *  reopen the row, which is otherwise locked while it waits for review. */
-export function canApproveDeliverable(
-  { role, isRequester, isSubmitter }: { role: string; isRequester: boolean; isSubmitter: boolean },
-): boolean {
-  return canReviewDeliverable(role, isRequester) && !isSubmitter;
-}
+// Per-artwork sign-off no longer lives here. It became TWO checks — content
+// accuracy and Visual CI — asked separately, by two different people, and the
+// rule needs the deliverable itself (who submitted it, who already signed the
+// other lens) which a role string cannot carry. See canGiveLensVerdict /
+// canPassLens in lib/data/graphic.
+//
+// canReviewDeliverable / canApproveDeliverable were deleted rather than left
+// exported: they answer "may this person approve this piece?" with the old
+// one-signature rule, and anything that picked them up again would walk
+// straight around the second check.
 
 /** May this person hand a Content Plan post to a writer?
  *

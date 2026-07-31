@@ -6,7 +6,7 @@
  * Run with:  npm test   (chained after test-brief-sheet.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { submitDeliverable, approveAllWaiting, deliverableProgress, artworkUnits, Graphic, GraphicDeliverable } from "../src/lib/data/graphic";
+import { submitDeliverable, passAllWaiting, deliverableProgress, artworkUnits, Graphic, GraphicDeliverable } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -78,8 +78,14 @@ console.log("\n— the full path: three pieces submitted, approved, counted —"
   is("all three are waiting review", deliverableProgress(g).submitted, 3);
   is("nothing approved yet", deliverableProgress(g).approved, 0);
 
-  const approved = approveAllWaiting(g, "Ken S.")!;
-  is("the requester approves all three", deliverableProgress(approved).approved, 3);
+  // Two checks now, so one person clearing their lens is NOT an approval.
+  const half = passAllWaiting(g, "Ken S.", "info", { role: "Marketing Executive", isRequester: true })!;
+  is("the requester passes the information check on all three", deliverableProgress(half).approved, 0);
+  is("…and the request is not ready on one lens", deliverableProgress(half).ready, false);
+  is("…no approval is recorded yet — the studio cannot bill this", (half.history ?? []).filter((e) => e.type === "approved").length, 0);
+
+  const approved = passAllWaiting(half, "Boss L.", "ci", { role: "Creative Leader", isRequester: false })!;
+  is("Creative Leader's CI pass completes all three", deliverableProgress(approved).approved, 3);
   is("…so the request is ready", deliverableProgress(approved).ready, true);
   is("…and the stage says Approved", approved.stage, "Approved");
   const approvedEvents = approved.history!.filter((e) => e.type === "approved");
@@ -103,18 +109,20 @@ console.log("\n— bulk approve ข้ามชิ้นที่คนกดส
   g = submitDeliverable(g, 0, "Agency Studio", { assetLink: "https://drive/a.png" })!;
   g = submitDeliverable(g, 1, "Ken S.", { assetLink: "https://drive/b.png" })!;
 
-  const byKen = approveAllWaiting(g, "Ken S.")!;
-  is("Ken อนุมัติได้เฉพาะชิ้นที่ Agency ส่ง", deliverableProgress(byKen).approved, 1);
-  is("…ชิ้นที่ Ken ส่งเองยังรอรีวิว", byKen.deliverables![1].status, "Waiting review");
-  is("…และ history บันทึกครั้งเดียว", byKen.history!.filter((e) => e.type === "approved").length, 1);
+  const ctxKen = { role: "Marketing Executive", isRequester: true };
+  const byKen = passAllWaiting(g, "Ken S.", "info", ctxKen)!;
+  is("Ken ผ่านด้านข้อมูลได้เฉพาะชิ้นที่ Agency ส่ง", byKen.deliverables![0].review?.info?.verdict, "pass");
+  is("…ชิ้นที่ Ken ส่งเอง ไม่โดนเซ็นให้", byKen.deliverables![1].review?.info, undefined);
+  is("…ทั้งสองชิ้นยังรอรีวิว เพราะ CI ยังไม่มีใครตรวจ", byKen.deliverables![0].status, "Waiting review");
+  is("…และยังไม่มี event approved", (byKen.history ?? []).filter((e) => e.type === "approved").length, 0);
   // ชื่อเทียบแบบไม่สนตัวพิมพ์/ช่องว่างหน้าหลัง
-  is("เทียบชื่อไม่สนตัวพิมพ์", deliverableProgress(approveAllWaiting(g, " ken s. ")!).approved, 1);
+  is("เทียบชื่อไม่สนตัวพิมพ์", passAllWaiting(g, " ken s. ", "info", ctxKen)!.deliverables![1].review?.info, undefined);
 
   // ไม่เหลืออะไรให้อนุมัติ → null (ปุ่มจะขึ้น toast แทนที่จะเงียบ)
   let mine: Graphic = threeSizes();
   mine = submitDeliverable(mine, 0, "Ken S.", { assetLink: "https://drive/only.png" })!;
-  is("ทุกชิ้นที่รอเป็นของตัวเอง → null", approveAllWaiting(mine, "Ken S."), null);
-  is("…แต่คนอื่นอนุมัติได้", deliverableProgress(approveAllWaiting(mine, "Boss")!).approved, 1);
+  is("ทุกชิ้นที่รอเป็นของตัวเอง → null", passAllWaiting(mine, "Ken S.", "info", ctxKen), null);
+  is("…แต่คนอื่นเซ็นด้านนั้นได้", passAllWaiting(mine, "Mei T.", "info", { role: "Marketing Manager / BGL", isRequester: false })!.deliverables![0].review?.info?.verdict, "pass");
 }
 
 console.log("\n— the regression this replaces —");
@@ -127,11 +135,13 @@ console.log("\n— the regression this replaces —");
     deliverables: g.deliverables!.map((d, i) => (i === 0 ? { ...d, assetLink: "https://drive/only.png", status: "Waiting review" as const } : d)),
   };
   is("one link = only one piece reviewable", deliverableProgress(oldWay).submitted, 1);
-  is("…so approving gives 1 of 3", deliverableProgress(approveAllWaiting(oldWay, "Ken S.")!).approved, 1);
+  const oldBoth = passAllWaiting(passAllWaiting(oldWay, "Ken S.", "info", { role: "Marketing Executive", isRequester: true })!, "Boss L.", "ci", { role: "Creative Leader", isRequester: false })!;
+  is("…so approving gives 1 of 3", deliverableProgress(oldBoth).approved, 1);
 
   let newWay: Graphic = threeSizes();
   for (let i = 0; i < 3; i++) newWay = submitDeliverable(newWay, i, "Agency Studio", { assetLink: `https://drive/p${i}.png` })!;
-  is("per-deliverable submit gives 3 of 3", deliverableProgress(approveAllWaiting(newWay, "Ken S.")!).approved, 3);
+  const newBoth = passAllWaiting(passAllWaiting(newWay, "Ken S.", "info", { role: "Marketing Executive", isRequester: true })!, "Boss L.", "ci", { role: "Creative Leader", isRequester: false })!;
+  is("per-deliverable submit gives 3 of 3", deliverableProgress(newBoth).approved, 3);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

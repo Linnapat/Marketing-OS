@@ -12,6 +12,8 @@ import { GRAPHIC_OPEN_PARAM,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
+  ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
+  canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, consumeBriefUnlock,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
@@ -19,7 +21,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveDeliverable, canReviewDeliverable, canApproveRushBrief } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveRushBrief } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -1207,9 +1209,8 @@ function BriefEditor({ g, onSaved, onCancel }: {
 function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
   g: Graphic; me: string; role: string; isRequester: boolean; onUpdate?: (g: Graphic) => void;
 }) {
-  // Sign-off is the requester's, the Creative Leader's or the CMO's — see
-  // canReviewDeliverable. Everyone else sees the artwork but not the buttons.
-  const canReview = canReviewDeliverable(role, isRequester);
+  // Sign-off is now two checks, asked per lens inside each row — see
+  // canGiveLensVerdict. Everyone else sees the artwork and who it waits on.
   // Production is on hold while an urgent brief is unresolved (or refused).
   const rushHold = rushBlocksProduction(g.rushStatus);
   // …and while the steps IN FRONT of the artwork are outstanding: a reel with
@@ -1218,16 +1219,18 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
   // been handed to them.
   const preSteps = productionBlockers(g);
   const preHold = preSteps.length > 0;
-  const sameName = (a: string, b: string) => !!a.trim() && a.trim().toLowerCase() === b.trim().toLowerCase();
   const [dels, setDels] = useState<GraphicDeliverable[]>(() =>
     g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
-  const [revising, setRevising] = useState<number | null>(null);
+  const [revising, setRevising] = useState<{ i: number; lens: ReviewLens } | null>(null);
   const [reason, setReason] = useState("");
   const prog = deliverableProgress({ ...g, deliverables: dels });
 
   const persist = (next: GraphicDeliverable[], event?: NonNullable<Graphic["history"]>[number]) => {
     setDels(next);
-    const ng: Graphic = { ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history };
+    persistGraphic({ ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history });
+  };
+  const persistGraphic = (base: Graphic) => {
+    const ng: Graphic = { ...base };
     const ready = deliverableProgress(ng).ready;
     ng.stage = stageFromDeliverables(ng);
     ng.blocker = ready ? null : g.blocker;
@@ -1252,30 +1255,34 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     );
     notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
   };
-  const approve = (i: number) => {
-    const at = new Date().toISOString();
-    const d = dels[i];
-    persist(
-      dels.map((x, j) => j === i ? { ...x, status: "Approved" } : x),
-      { type: "approved", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
-    );
-  };
-  const sendBack = (i: number) => {
-    const r = reason.trim(); if (!r) return;
-    const at = new Date().toISOString();
-    const d = dels[i];
-    persist(
-      dels.map((x, j) => j === i ? { ...x, status: "Revision", feedback: [...x.feedback, { reason: r, by: me, at }] } : x),
-      { type: "revision_requested", at, by: me, deliverableKey: `${d.platform}::${d.size}`, note: r },
-    );
-    if (g.designer && g.designer !== "Unassigned") {
-      createRevisionTask({
-        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: g.designer,
-        brand: brandName(g.b), campaign: g.campaign, reason: r, by: me, relatedGraphicId: String(g.id),
-      }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-    }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${dels[i]?.platform ?? ""} — ${r} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks");
+  /** One lens's verdict. The rule — both checks in, by two different people,
+   *  before anything is Approved — lives in applyLensVerdict so this drawer and
+   *  the Agency Portal cannot answer it differently. */
+  const giveVerdict = (i: number, lens: ReviewLens, verdict: "pass" | "revise", note?: string) => {
+    const before = dels[i];
+    const ng = applyLensVerdict({ ...g, deliverables: dels }, i, lens, verdict, me, note);
+    if (!ng) return;
+    const after = ng.deliverables![i];
+    setDels(ng.deliverables!);
+    persistGraphic(ng);
     setReason(""); setRevising(null);
+
+    // Told only when the round actually ends, not on each verdict: half a
+    // review is not news the designer can act on, and pinging them twice per
+    // piece is how people start ignoring the channel.
+    if (after.status === "Revision" && before.status !== "Revision") {
+      // review is cleared once the round settles, so the notes are read back
+      // out of feedback — every entry stamped in this round, both lenses.
+      const lastAt = after.feedback.at(-1)?.at;
+      const said = after.feedback.filter((f) => f.at === lastAt).map((f) => `[${LENS_META[f.lens ?? "info"].short}] ${f.reason}`).join(" · ");
+      if (g.designer && g.designer !== "Unassigned") {
+        createRevisionTask({
+          module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: g.designer,
+          brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
+        }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      }
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks");
+    }
   };
 
   const inp = "w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none";
@@ -1314,8 +1321,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       {dels.map((d, i) => {
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const inReview = d.status === "Waiting review";
-        const isSubmitter = sameName(d.submittedBy ?? "", me);
-        const canApproveRow = canApproveDeliverable({ role, isRequester, isSubmitter });
+        const prog2 = reviewProgress(d);
         return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -1351,40 +1357,83 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                   {d.sourceLink && <a href={d.sourceLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Source ↗</a>}
                   <span className="text-faint">by {d.submittedBy}</span>
                 </div>
-                {inReview && !canReview && (
-                  <div className="text-[11.5px] rounded-[8px] px-3 py-2" style={{ background: "#F7F4EE", color: "#8A8175" }}>
-                    รออนุมัติ — คนที่อนุมัติได้คือ <b>{g.requester || "requester"}</b> (ผู้ขอ), Creative Leader หรือ CMO
-                  </div>
-                )}
-                {inReview && canReview && (
-                  revising === i ? (
+                {inReview && (
+                  <div className="rounded-[10px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[11px] font-bold tracking-[0.05em] uppercase text-faint">ตรวจ 2 ด้าน</span>
+                      <span className="text-[11px] font-bold" style={{ color: prog2.given === 2 ? "#4E7A4E" : "#C68A1E" }}>
+                        {prog2.given}/2 ตรวจแล้ว
+                      </span>
+                    </div>
                     <div className="flex flex-col gap-2">
-                      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} autoFocus placeholder="เหตุผลที่ต้องแก้…" className="w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none resize-none" />
-                      <div className="flex gap-2">
-                        <button onClick={() => sendBack(i)} disabled={!reason.trim()} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#C67A28" }}>Send Back</button>
-                        <button onClick={() => { setRevising(null); setReason(""); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px]">Cancel</button>
+                      {REVIEW_LENSES.map((lens) => {
+                        const v = d.review?.[lens];
+                        const meta = LENS_META[lens];
+                        const ctx = { role, isRequester, me, deliverable: d };
+                        const mayAct = canGiveLensVerdict(lens, ctx);
+                        const mayPass = canPassLens(lens, ctx);
+                        const open = revising?.i === i && revising.lens === lens;
+                        return (
+                          <div key={lens} className="rounded-[8px] px-[10px] py-[8px]" style={{ background: "#fff", border: "1px solid #ECE6DA" }}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="min-w-0">
+                                <span className="text-[12px] font-bold text-ink">{meta.label}</span>
+                                <span className="text-[10.5px] text-faint"> · {meta.owner}</span>
+                                <div className="text-[10.5px] text-faint">{meta.checks}</div>
+                              </div>
+                              {v ? (
+                                <span className="text-[11px] font-bold flex-shrink-0" style={{ color: v.verdict === "pass" ? "#4E7A4E" : "#C2691E" }}>
+                                  {v.verdict === "pass" ? "✓ ผ่าน" : "↩ ให้แก้"} · {v.by}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-semibold flex-shrink-0" style={{ color: "#C68A1E" }}>รอตรวจ</span>
+                              )}
+                            </div>
+                            {v?.note && <div className="text-[11.5px] mt-1" style={{ color: "#B33A2E" }}>“{v.note}”</div>}
+
+                            {!v && mayAct && (open ? (
+                              <div className="flex flex-col gap-2 mt-2">
+                                <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} autoFocus
+                                  placeholder={lens === "info" ? "ข้อมูลไหนไม่ถูก… (จำเป็น)" : "CI ตรงไหนต้องแก้… (จำเป็น)"}
+                                  className="w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none resize-none" />
+                                <div className="flex gap-2">
+                                  <button onClick={() => giveVerdict(i, lens, "revise", reason)} disabled={!reason.trim()}
+                                    className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#C67A28" }}>ส่งกลับแก้</button>
+                                  <button onClick={() => { setRevising(null); setReason(""); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px]">Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2 flex-wrap mt-2">
+                                {mayPass && (
+                                  <button onClick={() => giveVerdict(i, lens, "pass")}
+                                    className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px]" style={{ background: "#4E7A4E" }}>✓ ผ่าน</button>
+                                )}
+                                <button onClick={() => { setRevising({ i, lens }); setReason(""); }}
+                                  className="text-[12px] font-bold text-status-orange border-[1.5px] border-line2 rounded-[8px] px-3 py-[7px]">↩ ให้แก้</button>
+                                {!mayPass && (
+                                  <span className="self-center text-[11px] text-faint">
+                                    งานที่คุณส่งเอง — กดผ่านไม่ได้ แต่ตีกลับได้
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                            {!v && !mayAct && (
+                              <div className="text-[11px] text-faint mt-1">
+                                {/* Naming who it is on beats a bare "no permission" — the
+                                    point of the row is to show who to chase. */}
+                                รอ {lens === "info" ? `${g.requester || "ผู้ขอเปิดงาน"} / Marketing Manager` : "Creative Leader"} ตรวจ
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {prog2.given === 1 && (
+                      <div className="text-[10.5px] text-faint mt-2">
+                        ชิ้นนี้ยังไม่ขยับจนกว่าจะครบทั้งสองด้าน — ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2 flex-wrap">
-                      {/* Approving your own submission is the check approving
-                          itself — Send Back stays open so the submitter can
-                          still reopen a row they know is wrong. */}
-                      {canApproveRow && (
-                        <button onClick={() => approve(i)} className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px]" style={{ background: "#4E7A4E" }}>✓ Approve</button>
-                      )}
-                      <button onClick={() => setRevising(i)} className="text-[12px] font-bold text-status-orange border-[1.5px] border-line2 rounded-[8px] px-3 py-[7px]">↩ Request Revision</button>
-                      {canApproveRow
-                        ? <span className="self-center text-[11px] text-faint">requester: {g.requester}</span>
-                        : <span className="self-center text-[11px] text-faint">
-                            {/* Naming the requester is only useful when it is
-                                someone else — when you raised the brief AND
-                                submitted the work, the old copy read "you need
-                                <your own name> to approve". */}
-                            งานที่คุณส่งเอง — ต้องให้{isRequester ? "" : ` ${g.requester || "ผู้ขอ"},`} Creative Leader หรือ CMO {isRequester ? "คนอื่น" : ""}อนุมัติ
-                          </span>}
-                    </div>
-                  )
+                    )}
+                  </div>
                 )}
               </div>
             )}
