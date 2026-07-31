@@ -13,7 +13,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, creativeBriefLink, type ReviewLens,
+  graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, type ReviewLens,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
@@ -30,7 +30,6 @@ import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
-import { parseWorkCode } from "@/lib/data/workCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
@@ -1018,28 +1017,7 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
  *  grid, that floor widens one row's column and leaves it out of step with the
  *  header and with every other row. minmax(0, …) makes the split purely
  *  proportional, so all rows resolve to the same widths whatever is in them. */
-const LIST_COLS = "minmax(0,2fr) minmax(0,0.9fr) minmax(0,1.05fr) minmax(0,0.8fr) minmax(0,0.8fr) minmax(0,0.5fr) minmax(0,1.15fr) minmax(0,0.5fr) minmax(0,0.35fr)";
-
-/** A relational id, shown as an id: monospaced so digits line up down the
- *  column, and "—" rather than blank when a row predates the link (older
- *  requests match on campaign NAME and carry no campaignId at all). */
-function IdCell({ value, title }: { value?: string | null; title: string }) {
-  const v = (value ?? "").trim();
-  if (!v) return <span className="text-[11.5px] text-faint">—</span>;
-  return (
-    <span title={`${title}: ${v}`} className="text-[11px] font-semibold text-muted truncate min-w-0" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-      {v}
-    </span>
-  );
-}
-
-/** The post a request is for, as the post's own job number ("C04").
- *  Empty for POSM/menu work that serves no post — IdCell renders that as "—",
- *  which is the honest answer rather than a number invented for the column. */
-function contentIdOf(g: Graphic): string {
-  const n = parseWorkCode(g.code ?? "")?.content;
-  return n ? `C${n}` : "";
-}
+const LIST_COLS = "minmax(0,1.9fr) minmax(0,1.25fr) minmax(0,0.95fr) minmax(0,0.7fr) minmax(0,0.8fr) minmax(0,0.5fr) minmax(0,1.15fr)";
 
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
@@ -1051,7 +1029,7 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           on. A column that looks live but isn't is worse than no column. */}
       <div className="hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: LIST_COLS }}>
-        <div>Request</div><div>Campaign ID</div><div>Campaign</div><div>Content ID</div><div>Designer</div><div>Due</div><div>Stage</div><div>บรีฟ</div><div>Fb</div>
+        <div>Request</div><div>Campaign</div><div>รหัสแคมเปญ</div><div>Type task</div><div>Designer</div><div>Due</div><div>Stage</div>
       </div>
       {items.map((g) => (
         <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
@@ -1061,53 +1039,19 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
               <span className="truncate">{g.title}</span>
               <WorkCode code={g.code} />
             </div>
-            <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div>
+            {/* The type used to sit here; it has a column now, so this names the
+                brand instead of printing the same word twice on one row. */}
+            <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{brandName(g.b)}</div>
           </div>
-          <IdCell value={g.campaignId} title="Campaign ID" />
-          {/* Campaign ID beside the name is the system id; the pill is the number
-              the team actually says out loud. Both, because the columns answer
-              different questions — which row this joins to, and which campaign a
-              person means. */}
-          {/* The pill has to sit OUTSIDE the truncating element. Inside it, a long
-              campaign name pushed the code past the clip and it vanished from the
-              column entirely — silently, and only for the rows whose names run
-              long, which is why it looked like the code was missing rather than
-              cut off. */}
-          <span className="flex items-center gap-[5px] min-w-0 text-[12px] text-muted">
-            <span className="truncate">{g.campaign}</span>
-            <CampaignCode code={codeOf(g.campaignId, g.campaign)} className="flex-shrink-0" />
-          </span>
-          {/* Content ID: the POST this artwork is for, by its job number.
-              It used to print the brief row (ci-N), which restarts inside every
-              campaign — six ci-N values are in use across more than one — so it
-              only meant anything read together with the Campaign ID beside it.
-              The job number is unique on its own, and it is the same number the
-              Content Plan shows, so the two pages can be read side by side.
-              Taken from this request's own code rather than fetched: the code
-              already contains its post's number. */}
-          <IdCell value={contentIdOf(g)} title="Content" />
+          <span className="text-[12px] text-muted truncate min-w-0">{g.campaign}</span>
+          <span className="min-w-0"><CampaignCode code={codeOf(g.campaignId, g.campaign)} /></span>
+          <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
           <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
           <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
           <span className="flex items-center gap-1.5 flex-wrap min-w-0">
             <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
             <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
           </span>
-          {/* The working-files folder, one click from the list. It was only ever
-              visible after opening the request, so anyone fetching files had to
-              open every row to find the one they wanted. stopPropagation, or the
-              row's own onOpen swallows the click and the drawer opens instead. */}
-          <span className="text-[12px]">
-            {/* creativeBriefLink, not g.driveLink: there is one brief link now,
-                and this column used to show "—" on requests that carried a link
-                in one of the other two boxes. */}
-            {creativeBriefLink(g) ? (
-              <a href={creativeBriefLink(g)} target="_blank" rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                title={creativeBriefLink(g)}
-                className="font-bold text-accent hover:underline">📎 เปิด ↗</a>
-            ) : <span className="text-faint">—</span>}
-          </span>
-          <span className="text-[12px] font-semibold" style={{ color: g.openFb > 0 ? "#B33A2E" : "#9A9387" }}>{g.openFb || "—"}</span>
         </button>
       ))}
       {items.length === 0 && (
