@@ -674,7 +674,6 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
   );
 }
 
-const APPROVAL_OPTS = ["Draft", "Waiting Approval", "Approved", "Revision Requested"];
 const PUBLISH_OPTS = ["Draft", "Scheduled in OS", "Queued", "Published"];
 
 /** Inline status cell: an editable dropdown for the creative team, a read-only
@@ -706,21 +705,20 @@ function assetDownload(c: ContentItem): string | null {
  *  `2fr`: a bare fr is minmax(auto, 2fr), so a long post title or a work-code
  *  pill sets a min-content floor that widens that row's column only — and since
  *  every row is its own grid, the row then sits out of step with the header. */
-const CONTENT_LIST_COLS = "60px minmax(0,2fr) minmax(0,1.2fr) minmax(0,0.7fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
+const CONTENT_LIST_COLS = "70px minmax(0,2fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
 
 function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
-  const codeOf = useCampaignCodes();
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
-        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Approval/Publish ในแถวได้</span>}</span>
+        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Publish ในแถวได้</span>}</span>
         <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
       {/* The same 5px left border the rows carry, transparent here: without it
           the header sits 5px left of every cell it labels. */}
       <div className="hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 border-l-[5px] border-l-transparent"
         style={{ gridTemplateColumns: CONTENT_LIST_COLS }}>
-        <div>Date</div><div>Content</div><div>Campaign</div><div>Brief</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
+        <div>Post date</div><div>Content</div><div>Content ID</div><div>Caption status</div><div>Asset</div><div>Publish</div>
       </div>
       {[...items].sort(bySchedule).map((c) => {
         return (
@@ -733,24 +731,14 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
               <AssetThumb assets={c.assets} mediaLink={c.mediaLink} />
               <PlatBadges item={c} size={18} />
               <div className="min-w-0">
-                <div className="text-[13px] font-semibold truncate flex items-center gap-[6px]">
-                  <span className="truncate">{c.title}</span>
-                  <WorkCode code={c.code} />
-                </div>
+                <div className="text-[13px] font-semibold truncate">{c.title}</div>
                 <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div>
               </div>
             </div>
-            <span className="text-[12px] text-muted truncate min-w-0">
-              {c.campaign}
-              <CampaignCode code={codeOf(c.campaignId, c.campaign)} className="ml-[5px] align-middle" />
-            </span>
-            {/* Brief — the campaign's Drive folder, opened without leaving the plan. */}
-            {c.driveLink ? (
-              <a href={c.driveLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                className="text-[11.5px] font-bold text-accent" title={c.driveLink}>Drive ↗</a>
-            ) : (
-              <span className="text-[11.5px] text-faint">—</span>
-            )}
+            {/* Content ID: the post's job number, in FULL. The campaign column is
+                gone from this view, so a bare "C01" would name nothing — the full
+                code carries its campaign inside it and stays unique on its own. */}
+            <span className="min-w-0"><WorkCode code={c.code} full /></span>
             <StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge>
             <div className="flex items-center gap-[6px] min-w-0">
               <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
@@ -762,7 +750,6 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
                   title="ดาวน์โหลด asset" className="text-[11.5px] font-bold text-status-green flex-shrink-0">⬇</a>
               )}
             </div>
-            <StatusCell value={c.approvalStatus} opts={APPROVAL_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { approvalStatus: v })} />
             <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
           </div>
         );
