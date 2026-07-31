@@ -15,7 +15,7 @@ import { GRAPHIC_OPEN_PARAM,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
-  requestBriefEdit, decideBriefEdit, consumeBriefUnlock,
+  requestBriefEdit, decideBriefEdit,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -203,19 +203,6 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     } catch (error) {
       toastError(`ส่งคำขอไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setAskingUnlock(false); }
-  };
-
-  /** One release, one top-up. Spent AFTER the brief save lands so a failed
-   *  write can't burn the grant the requester is still waiting to use. */
-  const spendUnlock = async (saved: Graphic) => {
-    const next = consumeBriefUnlock(saved);
-    if (next === saved) return;
-    try {
-      await updateGraphic(next);
-      updateCurrentGraphic(next);
-    } catch (error) {
-      toastError(`ปิดสิทธิ์เติมบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
-    }
   };
 
   const decideUnlock = async (grant: boolean) => {
@@ -894,7 +881,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
                 {briefEditing ? (
                   <BriefEditor g={g} onCancel={() => setBriefEditing(false)}
-                    onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); void spendUnlock(next); }} />
+                    onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); }} />
                 ) : (
                   <div className="flex flex-col gap-2">
                     {briefDetails.map((item) => (
