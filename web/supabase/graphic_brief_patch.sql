@@ -26,6 +26,15 @@
 
 begin;
 
+-- Drop the 2-arg signature before recreating. `create or replace` matches on
+-- the ARGUMENT LIST, so adding p_only_if_empty created a second function
+-- instead of replacing the first — and a call passing only (p_id, p_patch)
+-- then matched both (the old one exactly, the new one via its default), which
+-- Postgres refuses with "function is not unique". That is every brief save
+-- from a build that has not deployed the third argument yet, so the overload
+-- broke saving outright until the old one was dropped.
+drop function if exists public.graphic_brief_patch(text, jsonb);
+
 create or replace function public.graphic_brief_patch(p_id text, p_patch jsonb, p_only_if_empty boolean default false)
 returns jsonb
 language plpgsql

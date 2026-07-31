@@ -222,6 +222,12 @@ console.log("\n— กติกาเติมบรีฟต้องตรง�
   check("SQL ใช้สิทธิ์แล้วลบทิ้ง (one-shot)", /merged - 'briefUnlock'/.test(sql));
   // โหมดผลักบรีฟจากแคมเปญลงใบงานเดิม — เติมเฉพาะช่องว่าง และไม่แตะใบที่ถูกรับงานแล้ว
   check("SQL มีโหมด p_only_if_empty", sql.includes("p_only_if_empty"));
+  // ต้อง drop signature เก่าก่อน create or replace ไม่งั้นได้ฟังก์ชัน 2 ตัวซ้อนกัน
+  // แล้วการเรียกแบบ 2 args จะ "not unique" — คือทุกการเซฟบรีฟจาก build ที่ยัง
+  // ไม่ได้ deploy พารามิเตอร์ที่สาม
+  check("SQL drop signature 2 args ก่อนสร้างใหม่",
+    /drop function if exists public\.graphic_brief_patch\(text, jsonb\)/.test(sql)
+    && sql.indexOf("drop function if exists") < sql.indexOf("create or replace function"));
   check("โหมดนี้ไม่แตะใบที่ถูกรับงานแล้ว", /p_only_if_empty then[\s\S]{0,200}acceptedAt[\s\S]{0,80}return cur\.data/.test(sql));
   check("โหมดนี้ไม่ใช้สิทธิ์เติมบรีฟของ requester", /unlocked and not p_only_if_empty/.test(sql));
   // ฝั่ง client ต้องคิดแบบเดียวกัน
