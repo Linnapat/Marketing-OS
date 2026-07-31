@@ -20,7 +20,6 @@ import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useCanApproveExpense } from "@/lib/usePermGates";
-import { useRole } from "@/lib/role";
 import { canApproveCampaign } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
@@ -93,8 +92,14 @@ export default function MyTasksPage() {
   const canApproveExpense = useCanApproveExpense();
   // Same idea for campaign briefs — one gate, shared with the page that holds
   // the Approve button, so this inbox can never offer what that page refuses.
-  const { role } = useRole();
-  const canApproveCampaignBrief = canApproveCampaign(role);
+  //
+  // From useAuth, NOT useRole: useRole is the sidebar's "Viewing as" switcher,
+  // which anyone can set to CMO. The Approve button on the campaign page reads
+  // useAuth().role, so trusting the switcher here put Waiting-for-Approval
+  // cards back in a designer's inbox — the exact dead end this queue was
+  // narrowed to remove, just reachable by a dropdown instead of by default.
+  const { member, user, role: authRole } = useAuth();
+  const canApproveCampaignBrief = canApproveCampaign(authRole);
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
@@ -202,7 +207,6 @@ export default function MyTasksPage() {
     };
   }, [campaigns, expenseReqs]);
   // Approve / reject inline — sync the row locally so the card updates at once.
-  const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
   const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? "#9A9387";
 
