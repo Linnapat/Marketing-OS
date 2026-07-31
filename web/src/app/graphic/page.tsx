@@ -985,6 +985,24 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
   );
 }
 
+/** Column widths, named once because the header row and the data rows have to
+ *  agree — they were two literals, and a column added to one drifts from the
+ *  other in a way nothing type-checks. */
+const LIST_COLS = "1.7fr 0.85fr 1fr 0.8fr 0.85fr 0.6fr 0.95fr 0.5fr 0.45fr";
+
+/** A relational id, shown as an id: monospaced so digits line up down the
+ *  column, and "—" rather than blank when a row predates the link (older
+ *  requests match on campaign NAME and carry no campaignId at all). */
+function IdCell({ value, title }: { value?: string | null; title: string }) {
+  const v = (value ?? "").trim();
+  if (!v) return <span className="text-[11.5px] text-faint">—</span>;
+  return (
+    <span title={`${title}: ${v}`} className="text-[11px] font-semibold text-muted truncate" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+      {v}
+    </span>
+  );
+}
+
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -993,13 +1011,20 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           approver's name — it never tracked who the request was actually waiting
           on. A column that looks live but isn't is worse than no column. */}
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "2fr 1.2fr 1fr 0.8fr 1fr 0.6fr 0.7fr" }}>
-        <div>Request</div><div>Campaign</div><div>Designer</div><div>Due</div><div>Stage</div><div>Drive</div><div>Fb</div>
+        style={{ gridTemplateColumns: LIST_COLS }}>
+        <div>Request</div><div>Campaign ID</div><div>Campaign</div><div>Content ID</div><div>Designer</div><div>Due</div><div>Stage</div><div>Drive</div><div>Fb</div>
       </div>
       {items.map((g) => (
-        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 md:grid-cols-[2fr_1.2fr_1fr_0.8fr_1fr_0.6fr_0.7fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
+        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
+          style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
           <div><div className="text-[13px] font-bold text-ink">{g.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div></div>
+          <IdCell value={g.campaignId} title="Campaign ID" />
           <span className="text-[12px] text-muted truncate">{g.campaign}</span>
+          {/* Content ID: the brief row this artwork serves (ci-N), else the
+              Content Plan post it was raised for. ci-N restarts per campaign, so
+              it only identifies anything alongside the Campaign ID beside it —
+              which is why the two columns arrived together. */}
+          <IdCell value={g.sourceContentItemId || g.contentPostId} title="Content ID" />
           <span className="text-[12px] text-muted">{g.designer}</span>
           <span className="text-[12px]" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
           <span className="flex items-center gap-1.5 flex-wrap">

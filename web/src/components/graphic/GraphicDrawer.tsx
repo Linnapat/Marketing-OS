@@ -32,11 +32,27 @@ import { Task } from "@/lib/data/tasks";
 import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
-type GTab = (typeof TABS)[number][0];
+export type GTab = (typeof TABS)[number][0];
 
-export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onClose, onUpdate }: { g: Graphic; initialTab?: GTab; onClose: () => void; onUpdate?: (g: Graphic) => void }) {
+export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hideTabs, onClose, onUpdate }: {
+  g: Graphic;
+  initialTab?: GTab;
+  /** Tabs to leave out for this caller. Opened from My Tasks the Overview tab
+   *  is noise — the task card already carries the brand, campaign, due date and
+   *  designer, and the person who opened it came for the brief or the files.
+   *  An opt-OUT list rather than an allow-list so a tab added later shows up
+   *  everywhere by default instead of silently missing from callers that never
+   *  heard of it. */
+  hideTabs?: readonly GTab[];
+  onClose: () => void;
+  onUpdate?: (g: Graphic) => void;
+}) {
   const [g, setGraphic] = useState(initialGraphic);
-  const [tab, setTab] = useState<GTab>(initialTab);
+  const visibleTabs = TABS.filter(([id]) => !hideTabs?.includes(id));
+  // Never open on a tab this caller hid — landing on an empty panel would look
+  // like the drawer failed to load.
+  const [tab, setTab] = useState<GTab>(() =>
+    hideTabs?.includes(initialTab) ? (visibleTabs[0]?.[0] ?? initialTab) : initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
   // Load persisted feedback (audit P2-5) — resolves survive a refresh now. The
   // mock filter above is the demo-mode fallback and the initial paint.
@@ -473,7 +489,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
         </div>
 
         <div className="flex border-b border-line flex-shrink-0 overflow-x-auto bg-surface">
-          {TABS.map(([id, label]) => {
+          {visibleTabs.map(([id, label]) => {
             const active = id === tab;
             return (
               <button key={id} onClick={() => setTab(id)} className="text-[12.5px] font-semibold px-[13px] py-[11px] whitespace-nowrap border-b-2 -mb-[1px] flex items-center gap-[6px]"

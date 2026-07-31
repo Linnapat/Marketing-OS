@@ -32,7 +32,7 @@ import {
   WorkItem, WorkCard, WorkListView, WorkCalendarView, WorkAction, WorkGroupHeader, StatMini,
   STATUS_MAP, PRIORITY_MAP, TYPE_COLORS, badge, init, chip, dueColorOf, brandCampaignLine,
 } from "@/components/work/WorkViews";
-import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
+import { GraphicDrawer, GTab } from "@/components/graphic/GraphicDrawer";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -68,6 +68,12 @@ const GROUP_DEFS = [
   { id: "stuck", label: "Stuck — Needs support", icon: "⚠️", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "Let your team know if you need help" },
   { id: "done", label: "Done", icon: "✓", countBg: "#EEF4EE", countColor: "#4E7A4E", warnMsg: "" },
 ];
+/* Overview repeats what the task card and drawer already say — brand,
+ * campaign, due, designer, next action — and it is not why anyone opens a
+ * request from here. Module-level so the array identity is stable across
+ * renders. */
+const HIDDEN_GRAPHIC_TABS: readonly GTab[] = ["overview"];
+
 const SCOPE_FILTERS = [
   { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
   { id: "approvals", label: "My approvals" }, { id: "stuck", label: "Stuck" },
@@ -426,7 +432,8 @@ export default function MyTasksPage() {
           z-50 inside, which is correct on /graphic and too low here. */}
       {openGraphic && (
         <div className="relative z-[260]">
-          <GraphicDrawer g={openGraphic} onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
+          <GraphicDrawer g={openGraphic} initialTab="brief" hideTabs={HIDDEN_GRAPHIC_TABS}
+            onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
         </div>
       )}
       {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
