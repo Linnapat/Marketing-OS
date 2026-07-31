@@ -36,9 +36,20 @@ highest before this).
 | CAM-2026-7028 | `CPN011_Lunch  Sathorn ` | Lunch Sathorn | CPN011 |
 | CAM-2026-4770 | `CPN010_Seasonal menu` | Seasonal menu | CPN010 |
 | CAM-2026-3134 | `CPN013_Ads Branding (Eat/Drink/celebrate life)` | Ads Branding (Eat/Drink/celebrate life) | CPN013 |
+| CAM-2026-4610 | `OMD-20260901-MASTER — RESET YOUR DAY with OMD` | RESET YOUR DAY with OMD | OMD-20260901-MASTER |
+| CAM-2026-6747 | `OMD-20260901-002 — Central Pinklao Local Growth` | Central Pinklao Local Growth | OMD-20260901-002 |
+| CAM-2026-4856 | `OMD-20260901-003 — Kani Seasonal` | Kani Seasonal | OMD-20260901-003 |
+| CAM-2026-4064 | `OMD-20260901-005 — Unlimited Side Dish` | Unlimited Side Dish | OMD-20260901-005 |
+| CAM-2026-9374 | `OMD-20260901-006 — Delivery and Takeaway` | Delivery and Takeaway | OMD-20260901-006 |
+| CAM-2026-3897 | `OMD-20260901-007 — CRM Repeat Visit` | CRM Repeat Visit | OMD-20260901-007 |
 
 `CAM-2026-7516` has no CPN prefix — `MS_` is part of the name and stays. Only its
 trailing space is trimmed.
+
+The Omakase Don rows were a second pass on the same day. `OMD-20260901-003` is
+the same kind of hand-written code as CPN, and its resemblance to the app's own
+`OMD-2026-004` on the very same campaign was the strongest case for splitting it
+out of the name at all.
 
 ## 3. Denormalised name copies updated alongside
 
@@ -73,6 +84,8 @@ change, so all foreign keys survive either direction.
   the next number in the browser when the form opens, so two people creating a
   campaign for the same brand at the same time can still land on the same code,
   and deleting a campaign frees its number for reuse.
-- **The `OMD-20260901-xxx` prefix in six Omakase Don names is untouched** — it is
-  the same kind of hand-written code as CPN and reads even closer to the app's
-  own `OMD-2026-xxx`, but it was out of scope for this pass.
+
+## After
+
+All 21 campaigns carry a code, no campaign name begins with a hand-written one,
+and no module row holds a name its campaign disagrees with.

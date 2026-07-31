@@ -17,7 +17,13 @@ select * from (values
   ('CAM-2026-5818', 'CPN017_Mother''s Day'),
   ('CAM-2026-7028', 'CPN011_Lunch  Sathorn '),
   ('CAM-2026-4770', 'CPN010_Seasonal menu'),
-  ('CAM-2026-3134', 'CPN013_Ads Branding (Eat/Drink/celebrate life)')
+  ('CAM-2026-3134', 'CPN013_Ads Branding (Eat/Drink/celebrate life)'),
+  ('CAM-2026-4610', 'OMD-20260901-MASTER — RESET YOUR DAY with OMD'),
+  ('CAM-2026-6747', 'OMD-20260901-002 — Central Pinklao Local Growth'),
+  ('CAM-2026-4856', 'OMD-20260901-003 — Kani Seasonal'),
+  ('CAM-2026-4064', 'OMD-20260901-005 — Unlimited Side Dish'),
+  ('CAM-2026-9374', 'OMD-20260901-006 — Delivery and Takeaway'),
+  ('CAM-2026-3897', 'OMD-20260901-007 — CRM Repeat Visit')
 ) as v(id, old_name);
 
 -- Current name is needed to find the child rows written by the migration.
@@ -44,5 +50,12 @@ update assets s           set campaign = m.old_name from campaign_restore_map m 
 -- The three codes this migration invented (the campaigns predate the feature).
 update campaigns set data = data - 'code'
  where id in ('CAM-2026-5945', 'CAM-2026-5818', 'CAM-2026-5702');
+
+-- Step 4's hand-typed rows go back to unlinked. Their `campaign` text is
+-- restored to what was typed, since no campaign of that name exists to derive it
+-- from once the link is gone.
+update tasks    set campaign_id = null, campaign = 'CPN01_KCC' where id in (234, 249);
+update requests set campaign_id = null, campaign = 'CPN01_KCC' where id = 'REQ-2026-YETL2';
+update tasks    set campaign = 'Must Eat_Kani festival' where id = 115;
 
 commit;

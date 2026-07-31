@@ -31,13 +31,21 @@ update campaigns c
 -- 2 ── Split the hand-written prefix off the name. The map is a temp table
 -- because every child table below needs both the old name (to match rows that
 -- never got a campaign_id) and the new one.
+-- Two prefixes, one rule. `CPN010_` came from the Ads sheet; Omakase Don's
+-- `OMD-20260901-003 — ` is the same idea one team over, and reads even closer to
+-- the app's own code (OMD-2026-004) than CPN ever did.
 create temp table campaign_rename on commit drop as
 select id,
        name as old_name,
-       (regexp_match(name, '^(CPN[0-9]+)[_ ]\s*'))[1] as legacy_code,
-       btrim(regexp_replace(regexp_replace(name, '^CPN[0-9]+[_ ]\s*', ''), '\s+', ' ', 'g')) as new_name
+       coalesce(
+         (regexp_match(name, '^(CPN[0-9]+)[_ ]\s*'))[1],
+         (regexp_match(name, '^(OMD-[0-9]{8}-[A-Za-z0-9]+)\s*[—–-]\s*'))[1]
+       ) as legacy_code,
+       btrim(regexp_replace(regexp_replace(regexp_replace(
+         name, '^CPN[0-9]+[_ ]\s*', ''), '^OMD-[0-9]{8}-[A-Za-z0-9]+\s*[—–-]\s*', ''), '\s+', ' ', 'g')) as new_name
   from campaigns
  where name ~ '^CPN[0-9]+[_ ]'
+    or name ~ '^OMD-[0-9]{8}-[A-Za-z0-9]+\s*[—–-]\s*'
     or name <> btrim(regexp_replace(name, '\s+', ' ', 'g'));  -- stray whitespace
 
 -- The brief blob carries its own copy of the name; the detail page reads that
@@ -86,5 +94,16 @@ update agency_tasks a set campaign = m.new_name from campaign_rename m
 -- to match on.
 update assets s set campaign = m.new_name from campaign_rename m
  where s.campaign = m.old_name;
+
+-- 4 ── Rows typed by hand after the 26 Jul campaign_id backfill, so they carry a
+-- CPN name and no link at all. CPN01_KCC is the campaign the CMO mapped it to
+-- then; without this they keep a name no campaign answers to.
+update tasks set campaign_id = 'CAM-2026-5945' where campaign = 'CPN01_KCC' and campaign_id is null;
+update requests set campaign_id = 'CAM-2026-5945' where campaign = 'CPN01_KCC' and campaign_id is null;
+
+-- Anything still disagreeing with its campaign — including task 115, whose text
+-- was left behind by that backfill — takes the campaign's name.
+update tasks t     set campaign = c.name from campaigns c where t.campaign_id = c.id and t.campaign is distinct from c.name;
+update requests r  set campaign = c.name from campaigns c where r.campaign_id = c.id and r.campaign is distinct from c.name;
 
 commit;
