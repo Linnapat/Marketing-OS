@@ -40,6 +40,7 @@ declare
   bad text[];
   cur record;
   merged jsonb;
+  unlocked boolean;
 begin
   if p_patch is null or jsonb_typeof(p_patch) <> 'object' then
     raise exception 'patch ต้องเป็น JSON object' using errcode = '22023';
@@ -82,13 +83,30 @@ begin
 
   -- The lock, now enforced where it cannot be skipped by calling the API
   -- directly. The message names the way out, because there is one.
-  if coalesce(cur.data->>'acceptedAt', '') <> '' then
-    raise exception 'Creative รับงานนี้แล้ว (%) — แก้บรีฟไม่ได้ ต้องให้ปล่อยงานคืนก่อน',
+  --
+  -- The way out is briefUnlock: the requester asks, the Creative Leader
+  -- releases, and the release is good for ONE top-up. Before this existed the
+  -- check was simply "accepted = never", which is why the release shipped
+  -- broken — the UI opened the editor and this function refused the save, so a
+  -- granted top-up looked exactly like an edit that silently did not stick.
+  unlocked := coalesce(cur.data->'briefUnlock'->>'status', '') = 'Granted';
+
+  if coalesce(cur.data->>'acceptedAt', '') <> '' and not unlocked then
+    raise exception 'Creative รับงานนี้แล้ว (%) — ต้องขอเติมบรีฟกับ Creative Leader และรอปล่อยงานก่อน',
       coalesce(nullif(cur.data->>'acceptedBy', ''), 'ไม่ระบุผู้รับ')
       using errcode = '42501';
   end if;
 
   merged := cur.data || p_patch;
+
+  -- Spend the release in the SAME statement that uses it. The client used to
+  -- do this as a second whole-blob write, which both re-opened the
+  -- write-over hole this function exists to close and left the grant standing
+  -- if that write failed — a one-shot permission that survives its own use is
+  -- not one-shot.
+  if unlocked then
+    merged := merged - 'briefUnlock';
+  end if;
 
   update public.graphic_requests
      set data = merged

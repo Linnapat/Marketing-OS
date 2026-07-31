@@ -2,7 +2,7 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField, consumeBriefUnlock } from "@/lib/data/graphic";
 import { BrandId, brandName } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
@@ -105,7 +105,9 @@ export async function patchGraphicBrief(
 ): Promise<Graphic> {
   if (!Object.keys(patch).length) return g;
   const db = supabase();
-  if (!db) return { ...g, ...patch };            // demo mode — local only
+  // demo mode — local only. consumeBriefUnlock mirrors what the RPC does with
+  // a granted release so the one-shot behaves the same without a database.
+  if (!db) return consumeBriefUnlock({ ...g, ...patch });
   const { data, error } = await db.rpc("graphic_brief_patch", { p_id: String(g.id), p_patch: patch });
   if (error) {
     // The migration is applied by hand, so say which failure this is instead of

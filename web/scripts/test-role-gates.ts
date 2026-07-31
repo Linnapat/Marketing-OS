@@ -9,7 +9,13 @@ import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campa
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, type Graphic } from "../src/lib/data/graphic";
 import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
 
+import { readFileSync } from "node:fs";
+
 let pass = 0, fail = 0;
+function check(name: string, cond: boolean) {
+  if (cond) { pass++; console.log(`  ✓ ${name}`); }
+  else { fail++; console.error(`  ✗ FAIL: ${name}`); }
+}
 function is(name: string, actual: unknown, expected: unknown) {
   if (actual !== expected) console.error(`    expected ${String(expected)}, got ${String(actual)}`);
   if (actual === expected) { pass++; console.log(`  ✓ ${name}`); }
@@ -203,6 +209,23 @@ is("เว้นวรรค/ตัวพิมพ์ยังจับได้
 // สิทธิ์ใช้ได้ครั้งเดียว — เติมเสร็จแล้วต้องขอใหม่
 is("เติมเสร็จ → สิทธิ์ถูกใช้ไป เติมซ้ำไม่ได้", canEditBriefNow(consumeBriefUnlock(freed as Graphic), asRequester), false);
 is("ยังไม่ได้ปล่อย → consume ไม่ทำอะไร", briefUnlockState(consumeBriefUnlock(asked as Graphic)), "pending");
+
+console.log("\n— กติกาเติมบรีฟต้องตรงกันทั้งฝั่ง client และ SQL —");
+{
+  // บั๊กจริงที่เคยหลุด: UI ปล่อยให้แก้บรีฟหลัง Creative รับงาน (เมื่อ Creative
+  // Leader ปล่อยแล้ว) แต่ RPC ยังปฏิเสธทุกกรณีที่มี acceptedAt — ผู้ใช้กด Save
+  // แล้วงานหายเงียบ ๆ · migration รันด้วยมือ เทสต์นี้จึงเช็คว่าไฟล์ SQL รู้จัก
+  // briefUnlock จริง ไม่ได้เช็คว่า DB รันไปแล้ว (เช็คจากที่นี่ไม่ได้)
+  const sql = readFileSync(new URL("../supabase/graphic_brief_patch.sql", import.meta.url), "utf8");
+  check("SQL รู้จัก briefUnlock", sql.includes("briefUnlock"));
+  check("SQL ยอมให้แก้เมื่อสถานะเป็น Granted", /Granted/.test(sql));
+  check("SQL ใช้สิทธิ์แล้วลบทิ้ง (one-shot)", /merged - 'briefUnlock'/.test(sql));
+  // ฝั่ง client ต้องคิดแบบเดียวกัน
+  const accepted = { acceptedAt: "2026-07-20T00:00:00Z", acceptedBy: "Boss" };
+  const granted = { ...accepted, briefUnlock: { status: "Granted" as const, requestedBy: "Ken S.", requestedAt: "x" } };
+  is("client: รับงานแล้ว + ไม่ปล่อย → แก้ไม่ได้ (ตรงกับ SQL)", canEditBriefNow(accepted, { isRequester: true, isCmo: false }), false);
+  is("client: ปล่อยแล้ว → แก้ได้ (ตรงกับ SQL)", canEditBriefNow(granted, { isRequester: true, isCmo: false }), true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
