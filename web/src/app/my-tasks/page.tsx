@@ -11,6 +11,8 @@ import { notify } from "@/lib/notify";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
+import { CampaignCode, campaignLabel } from "@/components/ui/CampaignCode";
+import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { CampaignRow, campaignAwaitsMe } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
@@ -453,6 +455,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
   onOpenTask: (id: number) => void; onOpenGraphic: (id: number) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
+  const codeOf = useCampaignCodes();
   const total = graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
   if (total === 0) {
     return (
@@ -480,7 +483,10 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
                   <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
                   <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>Waiting review</span>
                 </div>
-                <div className="text-[11.5px] text-faint mb-3">{brandName(g.b)} · {g.campaign} · {g.type}</div>
+                <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+                  <span>{brandName(g.b)} · {g.campaign} · {g.type}</span>
+                  <CampaignCode code={codeOf(g.campaignId, g.campaign)} />
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11.5px] text-muted">Designer {g.designer}</span>
                   <span className="text-[11.5px] font-bold text-accent">Review artwork →</span>
@@ -569,7 +575,12 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
                   <span className="text-[13.5px] font-bold text-ink truncate">{r.typeIcon} {r.title}</span>
                   <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>{r.stage}</span>
                 </div>
-                <div className="text-[11.5px] text-faint mb-3">{brandName(r.b)} · {r.campaign} · {r.type}</div>
+                <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+                  <span>{brandName(r.b)} · {r.campaign} · {r.type}</span>
+                  {/* Requests carry only the campaign name, so this resolves by
+                      name and stays blank when two campaigns share one. */}
+                  <CampaignCode code={codeOf(undefined, r.campaign)} />
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11.5px] text-muted">{r.requester} → {r.approver}</span>
                   <span className="text-[11.5px] font-bold text-accent">Review →</span>
@@ -602,6 +613,7 @@ function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
   r: ExpenseReq; budget: ExpenseBudgetInfo | null;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
+  const codeOf = useCampaignCodes();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [open, setOpen] = useState(false);
@@ -621,6 +633,7 @@ function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
       </div>
       <div className="text-[11.5px] text-faint mb-2">
         {brandName(r.b)} · {r.campaign}
+        <CampaignCode code={codeOf(r.campaignId, r.campaign)} className="ml-[5px] align-middle" />
         {r.requester ? <> · โดย {r.requester}</> : null}
         {r.vendor ? <> · {r.vendor}</> : null}
         {wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
@@ -638,7 +651,7 @@ function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
         <div className="rounded-[10px] px-[11px] py-[9px] mb-3" style={{ background: "#FAF8F4", border: "1px solid #ECE6DA" }}>
           {r.ref && <DetailRow label="เลขที่คำขอ">{r.ref}</DetailRow>}
           <DetailRow label="หมวดค่าใช้จ่าย">{r.category}</DetailRow>
-          <DetailRow label="แบรนด์ · แคมเปญ">{brandName(r.b)} · {r.campaign}</DetailRow>
+          <DetailRow label="แบรนด์ · แคมเปญ">{campaignLabel(codeOf(r.campaignId, r.campaign), `${brandName(r.b)} · ${r.campaign}`)}</DetailRow>
           {r.requester && <DetailRow label="ผู้ขอเบิก">{r.requester}</DetailRow>}
           {r.vendor && <DetailRow label="ผู้รับเงิน / Vendor">{r.vendor}</DetailRow>}
           {r.reimburseType && <DetailRow label="ประเภทการเบิก">{r.reimburseType}</DetailRow>}

@@ -4,6 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { fetchMembers } from "@/lib/db/settings";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { campaignLabel } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
 import { X } from "lucide-react";
 import { GRAPHIC_OPEN_PARAM,
@@ -68,6 +69,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // ?open= deep link, My Tasks) gets the gate rather than only the ones that
   // remembered to thread a prop through.
   const [campaignStatus, setCampaignStatus] = useState<string | null>(null);
+  // Same lookup also yields the campaign's running code for the Linked Modules
+  // row — one fetch, since the drawer already needed the row anyway.
+  const [campaignCode, setCampaignCode] = useState<string | undefined>();
   useEffect(() => {
     let alive = true;
     fetchCampaigns()
@@ -77,6 +81,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           ? rows.find((c) => c.id === g.campaignId)
           : rows.find((c) => c.name.trim().toLowerCase() === (g.campaign ?? "").trim().toLowerCase());
         setCampaignStatus(hit?.status ?? "");
+        setCampaignCode(hit?.code);
       })
       .catch(() => { if (alive) setCampaignStatus(null); });
     return () => { alive = false; };
@@ -851,7 +856,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               <div>
                 <div className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold mb-2">Linked Modules</div>
                 <div className="flex flex-col gap-2">
-                  {[{ icon: "📣", label: "Campaign", sub: g.campaign, tone: "green" as const, status: "Active" },
+                  {[{ icon: "📣", label: "Campaign", sub: campaignLabel(campaignCode, g.campaign), tone: "green" as const, status: "Active" },
                     { icon: "📝", label: "Content Calendar", sub: g.contentItem !== "—" ? g.contentItem : "Not linked", tone: g.contentItem !== "—" ? "green" as const : "neutral" as const, status: g.contentItem !== "—" ? "Linked" : "—" },
                     { icon: "💰", label: "Finance / Budget", sub: "Budget request linked", tone: "green" as const, status: "Approved" }].map((m) => (
                     <div key={m.label} className="flex items-center gap-3 p-3 rounded-card bg-ivory border border-line3">

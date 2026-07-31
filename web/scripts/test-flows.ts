@@ -224,13 +224,25 @@ console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-mess
     guidelineChecklist(b).find((i) => i.key === "budget")?.must === false);
 }
 
-console.log("Campaign code — per-brand running number");
+console.log("Campaign code — BRAND_YYMM_NNN, numbered per brand per month");
 {
   const mk = (b: CampaignBrief["b"], code?: string): CampaignBrief => ({ ...emptyBrief("x"), b, code });
-  const existing = [mk("teppen", "TPN-2026-001"), mk("teppen", "TPN-2026-002"), mk("omakase", "OMD-2026-005")];
-  check("teppen next = 003", nextCampaignCode("teppen", existing, 2026) === "TPN-2026-003");
-  check("omakase next = 006 (independent of teppen)", nextCampaignCode("omakase", existing, 2026) === "OMD-2026-006");
-  check("mainichi first = 001", nextCampaignCode("mainichi", existing, 2026) === "MNC-2026-001");
+  const existing = [mk("teppen", "TPN_2609_001"), mk("teppen", "TPN_2609_002"), mk("omakase", "OMD_2609_005")];
+  const sep = "2026-09-01";
+  check("teppen next = 003", nextCampaignCode("teppen", existing, sep) === "TPN_2609_003");
+  check("omakase next = 006 (independent of teppen)", nextCampaignCode("omakase", existing, sep) === "OMD_2609_006");
+  check("mainichi first = 001", nextCampaignCode("mainichi", existing, sep) === "MNC_2609_001");
+  // The month comes from when the campaign RUNS, so the same brand restarts at
+  // 001 in October even though September already has two.
+  check("new month restarts the count", nextCampaignCode("teppen", existing, "2026-10-15") === "TPN_2610_001");
+  check("start date mid-month still uses that month", nextCampaignCode("omakase", existing, "2026-09-30") === "OMD_2609_006");
+  // A brief with no start date yet must still get a code; it re-derives when the
+  // date is filled in.
+  check("undated falls back to the current month", /^TPN_\d{4}_001$/.test(nextCampaignCode("teppen", [])));
+  check("malformed date does not produce NaN", /^TPN_\d{4}_001$/.test(nextCampaignCode("teppen", [], "not-a-date")));
+  // The old year-scoped codes must not be counted as this month's numbering.
+  check("pre-31-Jul codes are ignored",
+    nextCampaignCode("teppen", [mk("teppen", "TPN-2026-008")], sep) === "TPN_2609_001");
 }
 
 console.log("memberTeam — any \"creative\"-titled role reaches the Creative bucket");

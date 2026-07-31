@@ -239,12 +239,13 @@ export default function NewCampaignPage() {
     return () => { alive = false; };
   }, []);
 
-  // Auto-assign a per-brand running campaign code to NEW campaigns; recompute
-  // when the brand changes. Editing keeps whatever code the brief already has.
+  // Auto-assign the campaign code to NEW campaigns; recompute when the brand or
+  // the start date changes, since the code is BRAND_YYMM_NNN and both halves
+  // move. Editing keeps whatever code the brief already has.
   useEffect(() => {
     if (editingId) return;
-    setBrief((b) => ({ ...b, code: nextCampaignCode(b.b, savedBriefs) }));
-  }, [brief.b, savedBriefs, editingId]);
+    setBrief((b) => ({ ...b, code: nextCampaignCode(b.b, savedBriefs, b.startDate) }));
+  }, [brief.b, brief.startDate, savedBriefs, editingId]);
 
   const branches = useMemo(() => brandConfigs.find((d) => d.key === brief.b)?.branchList ?? [], [brandConfigs, brief.b]);
   useEffect(() => {

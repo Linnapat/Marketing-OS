@@ -16,10 +16,12 @@ type Row = {
   task_blocked: number; task_waiting: number; task_overdue: number;
   task_total: number; task_done: number; task_in_progress: number;
   bottleneck_team: string; next_approval: string;
+  data: { code?: string; legacyCode?: string; previousCode?: string } | null;
 };
 
 const toCampaign = (r: Row): CampaignRow => ({
-  id: r.id, name: r.name, b: r.brand, branch: r.branch, owner: r.owner,
+  id: r.id, code: r.data?.code, legacyCode: r.data?.legacyCode, previousCode: r.data?.previousCode,
+  name: r.name, b: r.brand, branch: r.branch, owner: r.owner,
   budget: Number(r.budget), spend: Number(r.spend), roi: Number(r.roi), dates: r.dates,
   status: r.status, campType: r.camp_type, readiness: (r.readiness as Readiness) ?? "ready",
   taskBlocked: r.task_blocked, taskWaiting: r.task_waiting, taskOverdue: r.task_overdue,
