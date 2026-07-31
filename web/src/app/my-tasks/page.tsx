@@ -856,7 +856,9 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
       status: "Stuck", group: "stuck", blocker: `${me} — ${helpMsg.trim()}`,
       comments: [...(t.comments ?? []), { by: me, text: `🆘 ${helpMsg.trim()}`, at: new Date().toISOString() }],
     });
-    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), "/my-tasks");
+    // Asking for help has no room to shout into — it reaches the people the
+    // task already belongs to, the same pair the in-app inbox notifies.
+    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), "/my-tasks", { to: [t.assignee, t.pendingApprover] });
     setAsking(false); setHelpMsg("");
   };
   const requestRevision = () => {

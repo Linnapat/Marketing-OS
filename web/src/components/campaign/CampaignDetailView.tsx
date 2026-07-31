@@ -668,9 +668,9 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
     const next: CampaignBrief = { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] };
     try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
     // Approval-flow steps ping the team on LINE/email.
-    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || DEFAULT_APPROVER}`, "/my-tasks");
+    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || DEFAULT_APPROVER}`, "/my-tasks", { to: [brief.approver || DEFAULT_APPROVER] });
     else if (nextStatus === "Approved") {
-      notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns");
+      notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns", { to: [brief.plannerOwner || detail.row.owner] });
       // CMO approval is the gate: only now do content posts, graphic requests,
       // KOL rows and tasks materialise into their modules (idempotent).
       const made = await saveCampaignBrief(next).catch((error) => {
@@ -679,7 +679,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
       });
       if (made) {
         const c = made.created;
-        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, "/campaigns");
+        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, "/campaigns", { to: [brief.plannerOwner || detail.row.owner] });
       }
       // Approved budget flows straight into Finance as Draft expense requests —
       // one per funded bucket — so the finance team never re-keys the plan.
@@ -700,7 +700,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
           by: reviewer, relatedBrief: brief.id, dueDays: 2,
         }).catch((error) => toastError(`สร้าง task แก้แคมเปญไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — ถึง ${planner} · โดย ${reviewer}`, "/my-tasks");
+      notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — ถึง ${planner} · โดย ${reviewer}`, "/my-tasks", { to: [planner] });
     }
   };
   const doRevision = () => {

@@ -1,35 +1,31 @@
 // Real notifications — closes the "แจ้งในกลุ่ม LINE เอง" gap in the user guide.
 //
 // POST { event, title, detail?, link?, team?, to? }
-//   → Slack via a per-team incoming webhook   (SLACK_WEBHOOK_URL[_FINANCE|_CREATIVE])
+//   → Slack — a channel webhook, a DM, or both (see below)
 //   → LINE group push via the Messaging API  (LINE_CHANNEL_ACCESS_TOKEN + LINE_TO)
 //   → email via Resend                       (RESEND_API_KEY + NOTIFY_EMAIL_FROM/TO)
 //
-// `to` names the people the event is actually FOR (assigned, asked to revise).
-// Those get a Slack DM and the team channel is spared the interruption — the
-// event is queued instead and goes out in one daily summary
-// (/api/notify/digest). Without `to` nothing changes: it posts to the channel
-// straight away, as approvals and launches should.
-//
 // GET → which channels are configured (no secrets), for Settings → Integrations.
 //
-// Each channel is independent and skipped when its env vars are absent, so
-// moving from LINE to Slack is done by setting SLACK_WEBHOOK_URL and dropping
-// the LINE ones — no code change, and no window where notifications stop.
+// Slack routing follows the team's rooms, not our idea of them (lib/notifyRouting):
 //
-// Slack is routed per team (see lib/notifyRouting): finance work goes to the
-// finance webhook, creative work to the creative one, everything else to the
-// general one. A team without its own webhook falls back to the general one, so
-// setting SLACK_WEBHOOK_URL alone behaves exactly as it did before.
+//   KOL / VDO / Graphic work  → that room's webhook
+//   campaigns, tasks, help    → DM only, no room
+//   anything about money      → DM to one person (SLACK_FINANCE_DM), no room
 //
-// Channels/triggers can be switched off in Settings → Notifications (persisted
-// to org_settings). Unconfigured channels are skipped silently so the app works
-// exactly as before until the env vars are added. See web/NOTIFICATIONS.md.
+// `to` names the people an event is FOR (assigned, asked to revise). They get a
+// DM and the room is spared the interruption — the event is queued instead and
+// goes out in one daily summary (/api/notify/digest). Without `to`, a room
+// event posts immediately.
+//
+// Every channel is independent and skipped when its env vars are absent, so the
+// app behaves exactly as before until they are set. Channels/triggers can also
+// be switched off in Settings → Notifications. See web/NOTIFICATIONS.md.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
-import { NotifyTeam, TEAM_ENV, NOTIFY_TEAMS, resolveTeam } from "@/lib/notifyRouting";
+import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam } from "@/lib/notifyRouting";
 import { hasBotToken, postDM } from "@/lib/slackBot";
 import { resolveSlackIds, fetchUnmapped } from "@/lib/slackDirectory";
 
@@ -39,14 +35,19 @@ const RESEND_KEY = process.env.RESEND_API_KEY;
 const MAIL_FROM = process.env.NOTIFY_EMAIL_FROM; // e.g. "Marketing OS <os@teppenthailand.co.th>"
 const MAIL_TO = process.env.NOTIFY_EMAIL_TO;     // comma-separated recipients
 
-/** The webhook a team posts to, falling back to the general one when that team
- *  has no channel of its own. Read per call rather than cached at module load
- *  so a redeploy isn't needed to pick up a newly added env var. */
+/** The one person told about money. Everything financial is DM'd here and
+ *  reaches no channel — an email, or any name the members table knows. */
+const FINANCE_DM = () => process.env.SLACK_FINANCE_DM || "";
+
+/** A team's webhook. Read per call rather than cached at module load so a newly
+ *  added env var takes effect without a redeploy. Teams with no room (general,
+ *  finance) have no env var and deliberately return nothing. */
 function slackWebhookFor(team: NotifyTeam): string | undefined {
-  return process.env[TEAM_ENV[team]] || process.env[TEAM_ENV.general] || undefined;
+  const key = TEAM_ENV[team];
+  return key ? process.env[key] || undefined : undefined;
 }
 
-const anySlackConfigured = () => NOTIFY_TEAMS.some((t) => Boolean(process.env[TEAM_ENV[t]]));
+const anySlackConfigured = () => CHANNEL_TEAMS.some((t) => Boolean(slackWebhookFor(t)));
 
 interface NotifyBody { event?: string; title?: string; detail?: string; link?: string; team?: string; to?: string[] }
 
@@ -173,17 +174,26 @@ export async function POST(req: NextRequest) {
 
   // Routed on the link the notification carries unless the caller named a team.
   const team = resolveTeam(teamHint, link);
-  // Addressed to specific people → DM them and let the channel hear about it in
-  // the daily digest instead of interrupting it now.
-  const directed = slackOn && recipients.length > 0 && hasBotToken();
+  // Money goes to one person and never to a room, whoever the event is about.
+  const dmTargets = team === "finance"
+    ? [FINANCE_DM()].filter(Boolean)
+    : recipients;
+  // A room only hears about it when the event isn't addressed to anyone —
+  // otherwise the people concerned get a DM and the room gets the daily digest.
+  // Teams with no room (general, finance) are DM-only either way.
+  const canDM = slackOn && dmTargets.length > 0 && hasBotToken();
+  const toChannel = slackOn && hasChannel(team) && !canDM;
 
   const [dm, slack, line, email] = await Promise.all([
-    directed ? sendDMs(recipients, title, detail, fullLink).catch(() => ({ sent: [], unresolved: recipients })) : Promise.resolve({ sent: [] as string[], unresolved: [] as string[] }),
-    slackOn && !directed ? sendSlack(team, title, detail, fullLink).catch(() => false) : Promise.resolve(false),
+    canDM ? sendDMs(dmTargets, title, detail, fullLink).catch(() => ({ sent: [], unresolved: dmTargets })) : Promise.resolve({ sent: [] as string[], unresolved: [] as string[] }),
+    toChannel ? sendSlack(team, title, detail, fullLink).catch(() => false) : Promise.resolve(false),
     lineOn ? sendLine(text).catch(() => false) : Promise.resolve(false),
     emailOn ? sendEmail(`[Marketing OS] ${title}`, html).catch(() => false) : Promise.resolve(false),
   ]);
-  if (directed) await queueForDigest(team, event, title, detail, fullLink, recipients, dm.sent.length > 0);
+  // Only rooms get a digest — there is nowhere to summarise general/finance to.
+  if (canDM && hasChannel(team)) {
+    await queueForDigest(team, event, title, detail, fullLink, dmTargets, dm.sent.length > 0);
+  }
 
   return NextResponse.json({
     ok: true, slack, line, email, team, dm,
@@ -202,11 +212,7 @@ export async function GET(req: NextRequest) {
   if (isApiAuthError(guard)) return guard.error;
 
   const teams = Object.fromEntries(
-    NOTIFY_TEAMS.map((t) => [t, {
-      own: Boolean(process.env[TEAM_ENV[t]]),
-      routed: Boolean(slackWebhookFor(t)),
-      env: TEAM_ENV[t],
-    }]),
+    CHANNEL_TEAMS.map((t) => [t, { own: Boolean(slackWebhookFor(t)), env: TEAM_ENV[t] }]),
   );
   // Who the app tried to DM and couldn't — shown as a warning rather than left
   // to be discovered by someone wondering why they never hear about their work.
@@ -214,7 +220,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    slack: { configured: anySlackConfigured(), teams, dm: hasBotToken(), unmapped },
+    slack: { configured: anySlackConfigured(), teams, dm: hasBotToken(), financeDm: Boolean(FINANCE_DM()), unmapped },
     line: Boolean(LINE_TOKEN && LINE_TO),
     email: Boolean(RESEND_KEY && MAIL_FROM && MAIL_TO),
   });

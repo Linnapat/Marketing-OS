@@ -15,8 +15,16 @@ import { GRAPHIC_OPEN_PARAM,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
-  requestBriefEdit, decideBriefEdit,
+  requestBriefEdit, decideBriefEdit, workKind,
 } from "@/lib/data/graphic";
+import type { NotifyTeam } from "@/lib/notifyRouting";
+
+/** Which room a graphic request belongs to. A "Graphic Request" is the form for
+ *  video work too, so the module can't decide this — workKind() reads the type
+ *  the requester picked, the same classifier the capacity board counts by. */
+function graphicTeam(g: Pick<Graphic, "type" | "requiredVideo">): NotifyTeam {
+  return workKind(g.type, g.requiredVideo).startsWith("vdo") ? "vdo" : "graphic";
+}
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -135,7 +143,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       updateCurrentGraphic(next);
       notify(decision === "Approved" ? "approved" : "rejected",
         decision === "Approved" ? `⚡ อนุมัติงานเร่งด่วน: ${g.title}` : `⚡ ไม่อนุมัติงานเร่งด่วน: ${g.title}`,
-        `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+        `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
     } catch (error) {
       toastError(`บันทึกผลอนุมัติงานเร่งด่วนไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setRushBusy(false); }
@@ -198,7 +206,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       updateCurrentGraphic(next);
       notify("approval", `✋ ขอเติมบรีฟ: ${g.title}`,
         `โดย ${currentUser} → Creative Leader · ${unlockReason.trim()}`,
-        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
       void pushNotifications([g.acceptedBy, g.designer], {
         event: "brief", actor: currentUser,
         title: `ขอเติมบรีฟ: ${g.title}`,
@@ -223,7 +231,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       notify(grant ? "approved" : "rejected",
         grant ? `✅ ปล่อยให้เติมบรีฟ: ${g.title}` : `⛔ ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
         `โดย ${currentUser} → ${g.briefUnlock?.requestedBy || g.requester}`,
-        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
       void pushNotifications([g.briefUnlock?.requestedBy, g.requester], {
         event: "brief", actor: currentUser,
         title: grant ? `ปล่อยให้เติมบรีฟแล้ว: ${g.title}` : `ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
@@ -303,7 +311,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       nextAction: `รอ ${g.requester} อนุมัติ storyboard`,
     }, "ส่ง storyboard ไม่สำเร็จ");
     toastSuccess("ส่ง storyboard แล้ว — รอเจ้าของงานอนุมัติ");
-    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
   };
 
   const decideStoryboard = (approved: boolean) => {
@@ -318,7 +326,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     }, "บันทึกผล storyboard ไม่สำเร็จ");
     setSbNote("");
     toastSuccess(approved ? "อนุมัติ storyboard แล้ว" : "ส่ง storyboard กลับไปแก้แล้ว");
-    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`, `โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`, `โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
   };
 
   const submitFootage = () => {
@@ -329,7 +337,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       nextAction: `${g.designer && g.designer !== "Unassigned" ? g.designer : "Designer"} ตัดต่อ/ทำ artwork ต่อ`,
     }, "ส่ง footage ไม่สำเร็จ");
     toastSuccess("ส่ง footage แล้ว — ส่งต่อให้ designer/editor ทำงานต่อได้");
-    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${g.designer || "Designer"} ทำต่อ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${g.designer || "Designer"} ทำต่อ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
   };
 
   /** Moving a shoot is a normal event, not a failure — it just has to be
@@ -384,7 +392,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     try {
       await updateGraphic(next);
       updateCurrentGraphic(next);
-      notify("approved", `✅ Brief อนุมัติแล้ว: ${g.title}`, `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+      notify("approved", `✅ Brief อนุมัติแล้ว: ${g.title}`, `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
     } catch (error) {
       toastError(`อนุมัติ Brief ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBriefBusy(false); }
@@ -422,7 +430,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       await updateGraphic(next);
       await createTaskDb(task);
       updateCurrentGraphic(next);
-      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks", { team: "creative", to: [g.requester] });
+      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks", { team: graphicTeam(g), to: [g.requester] });
       setBriefComment("");
     } catch (error) {
       toastError(`ส่ง Brief กลับแก้ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -471,7 +479,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks", { team: "creative", to: [g.designer] });
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks", { team: graphicTeam(g), to: [g.designer] });
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -1250,7 +1258,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     // Fully approved → push approved asset links onto the linked content post.
     if (ready) {
       syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content");
+      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content", { team: graphicTeam(g) });
     }
   };
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
@@ -1262,7 +1270,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: at } : x),
       { type: "submitted", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
     );
-    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
   };
   /** One lens's verdict. The rule — both checks in, by two different people,
    *  before anything is Approved — lives in applyLensVerdict so this drawer and
@@ -1290,7 +1298,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
           brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks", { team: "creative", to: [g.designer] });
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks", { team: graphicTeam(g), to: [g.designer] });
       // In-app, to BOTH sides. Only the designer used to hear about this, and
       // only through a LINE group — the person who raised the request learned
       // their artwork had gone back by opening the drawer and noticing.

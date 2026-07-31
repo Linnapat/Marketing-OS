@@ -7,7 +7,8 @@
 -- enough that it stopped being read.
 --
 -- The channel still needs to see the day, just not one message at a time — so
--- every DM'd event is queued here and one summary per team is posted daily by
+-- every DM'd event that belongs to a room is queued here and one summary per
+-- room is posted daily by
 -- /api/notify/digest (Vercel cron). Rows are written by the API with the
 -- service role, which bypasses RLS; the policy below is only for reads from a
 -- signed-in session.
@@ -18,7 +19,7 @@
 create table if not exists slack_digest_queue (
   id          bigint generated always as identity primary key,
   at          timestamptz not null default now(),
-  team        text not null,             -- 'general' | 'finance' | 'creative'
+  team        text not null,             -- 'graphic' | 'kol' | 'vdo' (rooms only)
   event       text,                      -- notify() event key
   title       text not null,
   detail      text,
