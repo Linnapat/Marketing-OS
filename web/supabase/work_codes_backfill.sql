@@ -63,3 +63,53 @@ commit;
 
 -- Expected after: 51 posts and 47 requests, every one coded, all codes distinct,
 -- none malformed, and every attached artwork's code prefixed by its post's.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Corrections found by the post-backfill audit
+-- ─────────────────────────────────────────────────────────────────────────────
+--
+-- Two defects the first pass left, both re-runnable:
+--
+-- 1. A request in campaign A pointed at a post that had moved to campaign B.
+--    The join above nested the artwork under that post, so its code named a
+--    campaign it is not in. Artwork is nested only when the post is in the SAME
+--    campaign; otherwise it numbers under its own campaign.
+-- 2. One request lost its code entirely: a browser that had loaded the row
+--    before the backfill saved the whole blob back, overwriting the key. This
+--    re-issues anything missing or wrong, so it can be run again after a save.
+
+begin;
+
+with ga as (
+  select g.id, p.data->>'code' || '-A' || lpad(row_number() over (
+           partition by p.id order by g.id)::text, 2, '0') as code
+    from graphic_requests g
+    join content_posts p on p.data->>'id' = g.data->>'contentPostId'
+   where coalesce(g.data->>'contentPostId','') <> ''
+     and p.campaign_id = g.campaign_id)
+update graphic_requests g set data = g.data || jsonb_build_object('code', ga.code)
+  from ga where g.id = ga.id and g.data->>'code' is distinct from ga.code;
+
+with gs as (
+  select g.id, c.data->>'code' || '-A' || lpad(row_number() over (
+           partition by g.campaign_id order by g.id)::text, 2, '0') as code
+    from graphic_requests g
+    join campaigns c on c.id = g.campaign_id
+    left join content_posts p
+      on p.data->>'id' = g.data->>'contentPostId' and p.campaign_id = g.campaign_id
+   where p.id is null)
+update graphic_requests g set data = g.data || jsonb_build_object('code', gs.code)
+  from gs where g.id = gs.id and g.data->>'code' is distinct from gs.code;
+
+-- Expense requests and approval-queue rows created after the 26 Jul campaign_id
+-- backfill by forms that only ever wrote the campaign NAME. Linked only where
+-- the name matches exactly one campaign.
+update expense_requests x set campaign_id = c.id from campaigns c
+ where x.campaign_id is null and x.campaign = c.name
+   and (select count(*) from campaigns c2 where c2.name = x.campaign) = 1;
+
+update requests r set campaign_id = c.id from campaigns c
+ where r.campaign_id is null and r.campaign = c.name
+   and (select count(*) from campaigns c2 where c2.name = r.campaign) = 1;
+
+commit;

@@ -119,9 +119,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     setBusy(true);
     // Unique reference — time-based so equal amounts never collide.
     const ref = `REQ-${new Date().getFullYear()}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
-    const row: RequestRow = {
+    // The picker stores the campaign NAME; the row needs the link too, or the
+    // request lands unlinked and Finance cannot roll it up to a campaign. Taken
+    // from the same brand-scoped list the picker was filled from, and left unset
+    // when the name is ambiguous rather than guessing between two campaigns.
+    const hits = brandCampaigns.filter((c) => c.name === campaign);
+    const campaignId = hits.length === 1 ? hits[0].id : undefined;
+    const row: RequestRow & { campaignId?: string } = {
       category: catKey || "Expense", b: formBrandId,
-      campaign, requested: amt, approved: 0, due: "—", status: "Waiting Approval",
+      campaign, campaignId, requested: amt, approved: 0, due: "—", status: "Waiting Approval",
     };
     try {
       await createExpenseRequest(row, { ref, requester: requesterName, vendor, reimburseType, vat, wht, whtRate: applyWht ? whtRate : 0 });
@@ -130,7 +136,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       const queueRow: QueueRow = {
         id: ref, type: "Budget", typeIcon: "฿",
         title: `${catKey || "Expense"} · ${baht(amt)} · ${reimburseType}${vendor ? ` · ${vendor}` : ""}`, b: formBrandId,
-        campaign, requester: requesterName, approver: route,
+        campaign, campaignId, requester: requesterName, approver: route,
         due: "—", stage: "Submitted", priority: amt >= 10000 ? "High" : "Med",
       };
       await createRequest(queueRow);

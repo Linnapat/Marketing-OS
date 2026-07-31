@@ -14,6 +14,7 @@ import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
+import { issueContentCode } from "@/lib/db/workCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
@@ -229,12 +230,17 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     () => campaigns.filter((c) => c.b === item.b && c.name !== item.campaign),
     [campaigns, item.b, item.campaign],
   );
-  const doMove = () => {
+  const doMove = async () => {
     if (!canChangePost || !moveTo) return;
     const target = campaigns.find((c) => c.id === moveTo);
     if (!target) return;
     setMoving(true);
-    const next = moveToCampaign(item, { id: target.id, name: target.name }, reviewer);
+    // The job number names the campaign it belongs to, so carrying the old one
+    // across would leave the post filed under a campaign it just left. Reissued
+    // from the destination; if that cannot be read, drop it rather than lie —
+    // an absent number is fixable, a wrong one gets written down.
+    const code = await issueContentCode(target.id).catch(() => undefined);
+    const next = { ...moveToCampaign(item, { id: target.id, name: target.name }, reviewer), code };
     // Where it is leaving, captured before the post is rewritten.
     const fromCampaignId = item.campaignId;
     const fromItemId = item.sourceContentItemId;
@@ -554,7 +560,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                         <option value="">{moveOptions.length ? "เลือกแคมเปญปลายทาง…" : "ไม่มีแคมเปญอื่นของแบรนด์นี้"}</option>
                         {moveOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
-                      <button onClick={doMove} disabled={!moveTo || moving}
+                      <button onClick={() => { void doMove(); }} disabled={!moveTo || moving}
                         className="text-[12.5px] font-bold px-4 rounded-[10px] border border-line2 bg-surface text-ink disabled:opacity-40 whitespace-nowrap">
                         {moving ? "กำลังย้าย…" : "ย้าย"}
                       </button>

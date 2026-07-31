@@ -37,22 +37,44 @@ export async function issueContentCode(campaignId?: string): Promise<string | un
   return nextWorkCode(campaignCode, "C", used);
 }
 
+/** The post this artwork serves, by the post's blob id or — when the request was
+ *  built from a brief and has no post id yet — by the (campaign, brief row) pair
+ *  that identifies the post the Submit just created. Returns the post only when
+ *  it is in the SAME campaign: a request pointing at a post that has since moved
+ *  campaigns must not be numbered under the campaign it moved to. */
+async function servedPost(campaignId: string, contentPostId?: string, sourceContentItemId?: string) {
+  const db = supabase();
+  if (!db) return null;
+  if (contentPostId) {
+    const { data } = await db.from("content_posts").select("data, campaign_id").eq("data->>id", contentPostId).maybeSingle();
+    return data ?? null;
+  }
+  if (sourceContentItemId) {
+    const { data } = await db.from("content_posts").select("data, campaign_id")
+      .eq("campaign_id", campaignId).eq("data->>sourceContentItemId", sourceContentItemId).maybeSingle();
+    return data ?? null;
+  }
+  return null;
+}
+
 /** The next artwork code — under its post when it has one, else under the
- *  campaign. `contentPostId` is the post's blob id, the same value the request
- *  stores. */
-export async function issueArtworkCode(campaignId?: string, contentPostId?: string): Promise<string | undefined> {
+ *  campaign. `contentPostId` is the post's blob id; `sourceContentItemId` is the
+ *  fallback the brief-Submit path has, since it creates the request without ever
+ *  learning the post id. */
+export async function issueArtworkCode(
+  campaignId?: string, contentPostId?: string, sourceContentItemId?: string,
+): Promise<string | undefined> {
   const db = supabase();
   if (!db || !campaignId) return undefined;
 
-  let postCode: string | undefined;
-  if (contentPostId) {
-    const { data } = await db.from("content_posts").select("data").eq("data->>id", contentPostId).maybeSingle();
-    postCode = (data?.data as { code?: string } | null)?.code;
-  }
-  // A post that exists but has no code of its own would otherwise silently push
-  // this artwork up to the campaign, where it would collide with the standalone
-  // numbering. Falling back is right only when there is genuinely no post.
-  const parent = artworkParent(postCode, contentPostId && !postCode ? undefined : await campaignCodeOf(campaignId));
+  const post = await servedPost(campaignId, contentPostId, sourceContentItemId);
+  // Only nest under a post of this campaign. A cross-campaign link is real in
+  // live data (a post moved and its request stayed behind), and nesting there
+  // would give the artwork a code naming a campaign it is not in.
+  const sameCampaign = post && post.campaign_id === campaignId;
+  const postCode = sameCampaign ? (post.data as { code?: string } | null)?.code : undefined;
+
+  const parent = artworkParent(postCode, await campaignCodeOf(campaignId));
   if (!parent) return undefined;
 
   const { data } = await db.from("graphic_requests").select("data").eq("campaign_id", campaignId);

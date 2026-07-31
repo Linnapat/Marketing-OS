@@ -198,8 +198,10 @@ function GraphicPageInner() {
   // writes the item back into the campaign's Content Plan — one source of truth.
   const addGraphic = async (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string, linkedPost: ContentItem | null) => {
     try {
-      await createGraphic(g);
+      // Post first: the artwork's job number nests under its post's, so the post
+      // has to exist (and be numbered) before the request asks for a number.
       if (post) await createContent(post);
+      await createGraphic(g);
       // Linking to a post that already exists: stamp the back-reference and
       // flip it off "No Asset", so the Content Plan shows work is on the way.
       if (linkedPost) {

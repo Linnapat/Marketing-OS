@@ -55,6 +55,15 @@ console.log("\nnumbers are not reused");
     nextWorkCode(CAM, "C", [`${CAM}-C01`, `${CAM}-C03`]), `${CAM}-C04`);
 }
 
+console.log("\ncross-campaign links are not nested");
+{
+  // Live data has a request in campaign A pointing at a post that has since
+  // moved to campaign B. Nesting there would give the artwork a code naming a
+  // campaign it is not in — the caller passes no post code in that case.
+  is("no post code means the campaign is the parent", artworkParent(undefined, CAM), CAM);
+  is("a post code from the same campaign wins", artworkParent(`${CAM}-C01`, CAM), `${CAM}-C01`);
+}
+
 console.log("\nparsing");
 {
   is("campaign only", parseWorkCode(CAM), { campaign: CAM });

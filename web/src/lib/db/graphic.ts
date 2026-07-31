@@ -48,7 +48,7 @@ export async function createGraphic(input: Graphic): Promise<void> {
   // it is for without opening it. Every creation path goes through here.
   const g: Graphic = input.code || !db
     ? input
-    : { ...input, code: await issueArtworkCode(input.campaignId, input.contentPostId) };
+    : { ...input, code: await issueArtworkCode(input.campaignId, input.contentPostId, input.sourceContentItemId) };
   if (db) {
     const { error } = await db.from("graphic_requests").insert({
       title: g.title, brand: g.b, campaign: g.campaign, campaign_id: g.campaignId ?? null,
