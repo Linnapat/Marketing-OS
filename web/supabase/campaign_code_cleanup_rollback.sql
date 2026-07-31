@@ -59,3 +59,19 @@ update requests set campaign_id = null, campaign = 'CPN01_KCC' where id = 'REQ-2
 update tasks    set campaign = 'Must Eat_Kani festival' where id = 115;
 
 commit;
+
+-- Undo the second pass (steps 5-6).
+begin;
+
+-- Codes back to the year-scoped form they were remapped from.
+update campaigns set data = (data - 'previousCode') || jsonb_build_object('code', data->>'previousCode')
+ where data ? 'previousCode';
+
+-- The blob copy of the name follows campaigns.name, which the first rollback
+-- section has already restored — so re-deriving it is enough.
+update tasks t            set data = t.data || jsonb_build_object('campaign', c.name) from campaigns c where t.campaign_id = c.id and t.data ? 'campaign' and t.data->>'campaign' is distinct from c.name;
+update content_posts p    set data = p.data || jsonb_build_object('campaign', c.name) from campaigns c where p.campaign_id = c.id and p.data ? 'campaign' and p.data->>'campaign' is distinct from c.name;
+update graphic_requests g set data = g.data || jsonb_build_object('campaign', c.name) from campaigns c where g.campaign_id = c.id and g.data ? 'campaign' and g.data->>'campaign' is distinct from c.name;
+update kols k             set data = k.data || jsonb_build_object('campaign', c.name) from campaigns c where k.campaign_id = c.id and k.data ? 'campaign' and k.data->>'campaign' is distinct from c.name;
+
+commit;

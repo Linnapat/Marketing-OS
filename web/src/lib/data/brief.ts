@@ -189,8 +189,12 @@ export interface ApprovalLogEntry {
 
 export interface CampaignBrief {
   id: string;
-  /** Human-friendly running number, per brand — e.g. "TPN-2026-003". */
+  /** Human-friendly campaign number — `BRAND_YYMM_NNN`, e.g. "OMD_2609_001". */
   code?: string;
+  /** The year-scoped code this campaign carried before 31 Jul 2026
+   *  ("OMD-2026-002"). Kept so a number quoted from before the change still
+   *  finds its campaign. Never assigned to new campaigns. */
+  previousCode?: string;
   /** The hand-written code the campaign name used to carry ("CPN010"), split
    *  out on 31 Jul 2026 so only one number shows. Kept so anything still filed
    *  under the old code — sheets, chat, printed briefs — can be traced back.
@@ -467,11 +471,31 @@ export function emptyBrief(id: string): CampaignBrief {
   };
 }
 
-/** Next per-brand campaign code (e.g. TPN-2026-003). Counts existing briefs of
- *  the same brand + year and takes the highest running number + 1, so numbers
- *  stay unique and sequential within each brand without a central counter. */
-export function nextCampaignCode(brand: BrandId, existing: CampaignBrief[], year = new Date().getFullYear()): string {
-  const prefix = `${brandCode(brand)}-${year}-`;
+/** The YYMM half of a campaign code, taken from the month the campaign RUNS in
+ *  — not the month someone happened to open the form. September work planned in
+ *  July is a September campaign, and that is how the team files it.
+ *  Falls back to the current month while the brief has no start date yet. */
+function codeMonth(startDate?: string): string {
+  const iso = /^\d{4}-\d{2}/.test(startDate ?? "") ? startDate! : "";
+  if (iso) return iso.slice(2, 4) + iso.slice(5, 7);
+  const now = new Date();
+  return String(now.getFullYear() % 100).padStart(2, "0") + String(now.getMonth() + 1).padStart(2, "0");
+}
+
+/** Next campaign code, `BRAND_YYMM_NNN` — e.g. OMD_2609_001 (agreed 31 Jul 2026,
+ *  replacing the year-scoped TPN-2026-003 form).
+ *
+ *  The running number restarts each month within a brand, so the code says which
+ *  brand, which month, and how many that month — three things the team was
+ *  reading off the campaign name before. Takes the highest existing number for
+ *  that brand+month and adds one, so numbers stay unique without a central
+ *  counter.
+ *
+ *  Caveat that predates this change: `existing` is whatever the browser loaded
+ *  when the form opened, so two people creating a campaign for the same brand
+ *  and month at the same time still land on the same number. */
+export function nextCampaignCode(brand: BrandId, existing: CampaignBrief[], startDate?: string): string {
+  const prefix = `${brandCode(brand)}_${codeMonth(startDate)}_`;
   const maxN = existing.reduce((max, b) => {
     if (b.b !== brand || !b.code?.startsWith(prefix)) return max;
     const n = parseInt(b.code.slice(prefix.length), 10);

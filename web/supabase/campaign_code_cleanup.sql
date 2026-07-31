@@ -107,3 +107,61 @@ update tasks t     set campaign = c.name from campaigns c where t.campaign_id = 
 update requests r  set campaign = c.name from campaigns c where r.campaign_id = c.id and r.campaign is distinct from c.name;
 
 commit;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Second pass, same day: the copy the app actually reads, and a new code format
+-- ─────────────────────────────────────────────────────────────────────────────
+--
+-- Steps 3-4 updated the `campaign` COLUMN. For tasks, content_posts,
+-- graphic_requests and kols that column is only a queryable mirror — fetchGraphics
+-- and friends build their rows from the `data` jsonb blob, so the app went on
+-- rendering "CPN010_Seasonal menu" from a copy of the name nested inside it.
+
+begin;
+
+-- 5 ── The blob copy, for the four modules that read it.
+update tasks t            set data = t.data || jsonb_build_object('campaign', c.name) from campaigns c where t.campaign_id = c.id and t.data ? 'campaign' and t.data->>'campaign' is distinct from c.name;
+update content_posts p    set data = p.data || jsonb_build_object('campaign', c.name) from campaigns c where p.campaign_id = c.id and p.data ? 'campaign' and p.data->>'campaign' is distinct from c.name;
+update graphic_requests g set data = g.data || jsonb_build_object('campaign', c.name) from campaigns c where g.campaign_id = c.id and g.data ? 'campaign' and g.data->>'campaign' is distinct from c.name;
+update kols k             set data = k.data || jsonb_build_object('campaign', c.name) from campaigns c where k.campaign_id = c.id and k.data ? 'campaign' and k.data->>'campaign' is distinct from c.name;
+
+-- 22 tasks held an old campaign name in the blob and no campaign_id at all, so
+-- step 5 could not reach them. Each old name belongs to exactly one campaign.
+with old_names(id, old_name) as (values
+  ('CAM-2026-9148','CPN05_Fuji Don (USP)'),('CAM-2026-2981','CPN06_CRM Loop'),
+  ('CAM-2026-2751','CPN01 Branding Sit and done'),('CAM-2026-4008','CPN02 Branding Delivery'),
+  ('CAM-2026-9285','CPN07 CTK Grand Opening Central Pinklao'),
+  ('CAM-2026-5702','CPN016_WHAT ARE YOU CELEBRATING TODAY?'),('CAM-2026-5945','CPN018_KCC (KEEP CLIMBING CLUB)'),
+  ('CAM-2026-5818','CPN017_Mother''s Day'),('CAM-2026-7028','CPN011_Lunch  Sathorn '),
+  ('CAM-2026-4770','CPN010_Seasonal menu'),('CAM-2026-3134','CPN013_Ads Branding (Eat/Drink/celebrate life)'),
+  ('CAM-2026-4610','OMD-20260901-MASTER — RESET YOUR DAY with OMD'),
+  ('CAM-2026-6747','OMD-20260901-002 — Central Pinklao Local Growth'),
+  ('CAM-2026-4856','OMD-20260901-003 — Kani Seasonal'),('CAM-2026-4064','OMD-20260901-005 — Unlimited Side Dish'),
+  ('CAM-2026-9374','OMD-20260901-006 — Delivery and Takeaway'),('CAM-2026-3897','OMD-20260901-007 — CRM Repeat Visit'))
+update tasks t
+   set campaign_id = c.id, campaign = c.name, data = t.data || jsonb_build_object('campaign', c.name)
+  from old_names o join campaigns c on c.id = o.id
+ where t.campaign_id is null and t.data->>'campaign' = o.old_name;
+
+-- 6 ── New code format, BRAND_YYMM_NNN (OMD_2609_001). YYMM is the month the
+-- campaign RUNS, not the month it was created; the running number restarts each
+-- month within a brand. Ordering inside a month follows creation, then the old
+-- code, so the sequence the team already knows is preserved. The retired
+-- year-scoped code is kept as previousCode — it is on printed briefs by now.
+create temp table code_remap on commit drop as
+with b as (
+  select id, data->>'code' old_code, created_at,
+    case brand when 'teppen' then 'TPN' when 'omakase' then 'OMD'
+               when 'mainichi' then 'MNC' when 'touka' then 'TOU' else upper(left(brand,3)) end bc,
+    to_char((data->>'startDate')::date, 'YYMM') ym
+  from campaigns
+)
+select id, old_code,
+       bc||'_'||ym||'_'||lpad((row_number() over (partition by bc, ym order by created_at, old_code))::text, 3, '0') as new_code
+  from b;
+
+update campaigns c
+   set data = c.data || jsonb_build_object('code', m.new_code, 'previousCode', m.old_code)
+  from code_remap m where c.id = m.id;
+
+commit;

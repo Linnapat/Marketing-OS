@@ -147,9 +147,10 @@ export default function CampaignsPage() {
     // Brand-scope first: a member only ever sees campaigns of brands they manage.
     brandVisibility.visibleBrands.includes(c.b) &&
     (brand === "all" || c.b === brand) &&
-    // Searchable by code as well as name — the code is what the team now quotes
-    // to each other, and the legacy CPN number is what older sheets still use.
-    (!search.trim() || [c.name, c.code, c.legacyCode].some((s) => s?.toLowerCase().includes(search.trim().toLowerCase()))) &&
+    // Searchable by code as well as name — the current code is what the team now
+    // quotes to each other, and both retired numbers (the CPN one from the Ads
+    // sheet, the year-scoped one from before 31 Jul) still circulate.
+    (!search.trim() || [c.name, c.code, c.legacyCode, c.previousCode].some((s) => s?.toLowerCase().includes(search.trim().toLowerCase()))) &&
     rangeInFilter(date, c.dates),
   );
   // Campaigns read in date order — the team plans and reviews by calendar, so a
