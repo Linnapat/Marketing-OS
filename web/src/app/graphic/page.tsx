@@ -1003,7 +1003,6 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
   );
 }
 
-<<<<<<< HEAD
 /** Column widths, named once because the header row and the data rows have to
  *  agree — they were two literals, and a column added to one drifts from the
  *  other in a way nothing type-checks. */
