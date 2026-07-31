@@ -13,7 +13,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  graphicKpis, emptyDeliverable, approveAllWaiting,
+  graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, type ReviewLens,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
@@ -40,7 +40,7 @@ import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, g
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
-import { canReviewDeliverable, canApproveRushBrief } from "@/lib/roleGates";
+import { canApproveRushBrief } from "@/lib/roleGates";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -214,14 +214,17 @@ function GraphicPageInner() {
 
   // One-click approve from any view — same effects as approving each
   // deliverable in the drawer (history, stage, asset sync, notify).
-  const { member, user } = useAuth();
+  const { member, user, role } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "Approver";
-  const quickApprove = (g: Graphic) => {
-    const ng = approveAllWaiting(g, me);
+  const quickApprove = (g: Graphic, lens: ReviewLens) => {
+    const requesterKey = (g.requester || "").trim().toLowerCase();
+    const isRequester = !!requesterKey &&
+      [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
+    const ng = passAllWaiting(g, me, lens, { role, isRequester });
     // Null here also covers "every waiting piece is one you submitted yourself",
     // which would otherwise look like a dead button.
     if (!ng) {
-      if (hasWaitingReview(g)) toastError("อนุมัติงานที่คุณส่งเองไม่ได้ — ต้องให้ผู้ขอ, Creative Leader หรือ CMO อนุมัติ");
+      if (hasWaitingReview(g)) toastError("กดผ่านงานที่คุณส่งเองไม่ได้ — ต้องให้คนอื่นตรวจ");
       return;
     }
     setGraphics((gs) => gs.map((x) => (x.id === ng.id ? ng : x)));
@@ -875,26 +878,39 @@ const hasWaitingReview = (g: Graphic) =>
 /** Reads the gate itself rather than taking it as a prop: this is the one place
  *  the bulk-approve button is rendered, and three views pass through here — a
  *  prop any of them could forget is a hole in the same rule the drawer enforces. */
-function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (g: Graphic) => void }) {
+function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const { member, user, role } = useAuth();
   const requesterKey = (g.requester || "").trim().toLowerCase();
   const isRequester = !!requesterKey &&
     [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
-  if (!canReviewDeliverable(role, isRequester)) return null;
+  const me = member?.name || user?.email?.split("@")[0] || "";
   if (!onQuickApprove || !hasWaitingReview(g)) return null;
+  // One button per lens the viewer owns, labelled with the lens. A single
+  // "✓ Approve" would have to mean "both", which is exactly the shortcut the
+  // two-check split exists to remove — and it would silently do the other
+  // reviewer's job from a list row.
+  const waiting = (g.deliverables ?? []).filter((d) => d.status === "Waiting review");
+  const mine = REVIEW_LENSES.filter((lens) =>
+    waiting.some((d) => !d.review?.[lens] && canPassLens(lens, { role, isRequester, me, deliverable: d })));
+  if (!mine.length) return null;
   return (
-    <span
-      role="button" tabIndex={0}
-      onClick={(e) => { e.stopPropagation(); onQuickApprove(g); }}
-      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onQuickApprove(g); } }}
-      title="อนุมัติทุกชิ้นที่รอรีวิวของงานนี้"
-      className="inline-flex items-center text-[11px] font-bold text-white rounded-[8px] px-2.5 py-[4px] cursor-pointer whitespace-nowrap"
-      style={{ background: "#4E7A4E" }}
-    >✓ Approve</span>
+    <>
+      {mine.map((lens) => (
+        <span
+          key={lens}
+          role="button" tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onQuickApprove(g, lens); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onQuickApprove(g, lens); } }}
+          title={`ผ่านด้าน${LENS_META[lens].short}ให้ทุกชิ้นที่รอรีวิวของงานนี้ — อีกด้านยังต้องมีคนตรวจ`}
+          className="inline-flex items-center text-[11px] font-bold text-white rounded-[8px] px-2.5 py-[4px] cursor-pointer whitespace-nowrap"
+          style={{ background: lens === "ci" ? "#6C5CE7" : "#4E7A4E" }}
+        >✓ {LENS_META[lens].short}</span>
+      ))}
+    </>
   );
 }
 
-function BoardView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
+function BoardView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
       {STAGE_ORDER.map((stage) => {
@@ -944,7 +960,7 @@ function BoardView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen
 
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats, expandable to the request list inside. */
-function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
+function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
     const m = new Map<string, Graphic[]>();
@@ -1003,7 +1019,7 @@ function IdCell({ value, title }: { value?: string | null; title: string }) {
   );
 }
 
-function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic) => void }) {
+function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       {/* No "Pending" column: it printed `pendingApprover`, which is set once when
