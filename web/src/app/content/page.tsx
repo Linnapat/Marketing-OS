@@ -18,6 +18,8 @@ import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
 import { useStickyView } from "@/lib/useStickyView";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignCode } from "@/components/ui/CampaignCode";
+import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { appendBriefItem } from "@/lib/db/brief";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -593,6 +595,7 @@ function WeekView({ items, monthName, onOpen }: { items: ContentItem[]; monthNam
 }
 
 function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }) {
+  const codeOf = useCampaignCodes();
   return (
     <button onClick={() => onOpen(c)} className="w-full grid grid-cols-[52px_1fr_auto] gap-3 items-center px-5 py-[11px] text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
       <span className="text-[11px] font-bold text-faint">{c.time}</span>
@@ -600,7 +603,10 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
         <PlatBadges item={c} size={18} />
         <div className="min-w-0">
           <div className="text-[13px] font-semibold truncate">{c.title}</div>
-          <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{brandName(c.b)} · {c.campaign}</div>
+          <div className="text-[11px] text-faint flex items-center gap-[5px]">
+            <BrandDot brand={c.b} size={6} />{brandName(c.b)} · {c.campaign}
+            <CampaignCode code={codeOf(c.campaignId, c.campaign)} />
+          </div>
         </div>
       </div>
       <StatusBadge tone={contentTone(c.status)}>{c.status}</StatusBadge>
@@ -613,6 +619,7 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
  *  campaign with summary stats, expandable to the post list inside. */
 function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const codeOf = useCampaignCodes();
   const groups = useMemo(() => {
     const m = new Map<string, ContentItem[]>();
     for (const c of items) { const k = c.campaign || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(c); }
@@ -642,6 +649,9 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
               className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-ivory/60">
               {isOpen ? <span className="text-faint text-[13px]">▾</span> : <span className="text-faint text-[13px]">▸</span>}
               <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
+              {/* Grouping is by name, but the posts inside carry the campaign id —
+                  so the code comes from the row, not from matching the name. */}
+              <CampaignCode code={codeOf(list[0]?.campaignId, campaign)} />
               <span className="text-[11.5px] text-faint font-semibold">{list.length} post{list.length > 1 ? "s" : ""}</span>
               <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
                 {chip("waiting approval", waitingApproval, "#C68A1E", "#FBF8EE")}
@@ -687,6 +697,7 @@ function assetDownload(c: ContentItem): string | null {
 }
 
 function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+  const codeOf = useCampaignCodes();
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
@@ -709,7 +720,10 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
               <PlatBadges item={c} size={18} />
               <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{c.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div></div>
             </div>
-            <span className="text-[12px] text-muted truncate">{c.campaign}</span>
+            <span className="text-[12px] text-muted truncate min-w-0">
+              {c.campaign}
+              <CampaignCode code={codeOf(c.campaignId, c.campaign)} className="ml-[5px] align-middle" />
+            </span>
             {/* Brief — the campaign's Drive folder, opened without leaving the plan. */}
             {c.driveLink ? (
               <a href={c.driveLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}

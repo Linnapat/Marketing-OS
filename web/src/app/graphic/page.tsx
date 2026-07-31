@@ -28,6 +28,8 @@ import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
+import { CampaignCode } from "@/components/ui/CampaignCode";
+import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
@@ -1001,6 +1003,7 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
   );
 }
 
+<<<<<<< HEAD
 /** Column widths, named once because the header row and the data rows have to
  *  agree — they were two literals, and a column added to one drifts from the
  *  other in a way nothing type-checks. */
@@ -1020,6 +1023,7 @@ function IdCell({ value, title }: { value?: string | null; title: string }) {
 }
 
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
+  const codeOf = useCampaignCodes();
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       {/* No "Pending" column: it printed `pendingApprover`, which is set once when
@@ -1035,7 +1039,14 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
           <div><div className="text-[13px] font-bold text-ink">{g.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{g.type}</div></div>
           <IdCell value={g.campaignId} title="Campaign ID" />
-          <span className="text-[12px] text-muted truncate">{g.campaign}</span>
+          {/* Campaign ID beside the name is the system id; the pill is the number
+              the team actually says out loud. Both, because the columns answer
+              different questions — which row this joins to, and which campaign a
+              person means. */}
+          <span className="text-[12px] text-muted truncate min-w-0">
+            {g.campaign}
+            <CampaignCode code={codeOf(g.campaignId, g.campaign)} className="ml-[5px] align-middle" />
+          </span>
           {/* Content ID: the brief row this artwork serves (ci-N), else the
               Content Plan post it was raised for. ci-N restarts per campaign, so
               it only identifies anything alongside the Campaign ID beside it —

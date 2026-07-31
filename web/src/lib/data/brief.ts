@@ -191,6 +191,12 @@ export interface CampaignBrief {
   id: string;
   /** Human-friendly running number, per brand — e.g. "TPN-2026-003". */
   code?: string;
+  /** The hand-written code the campaign name used to carry ("CPN010"), split
+   *  out on 31 Jul 2026 so only one number shows. Kept so anything still filed
+   *  under the old code — sheets, chat, printed briefs — can be traced back.
+   *  Never assigned to new campaigns, and declared here so editing a brief
+   *  doesn't drop it from the blob. */
+  legacyCode?: string;
   name: string;
   b: BrandId;
   branch: string;           // derived: branches joined (kept for module compatibility)

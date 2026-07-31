@@ -14,6 +14,13 @@ export type Readiness = "ready" | "needs_attention" | "blocked";
 
 export interface CampaignRow {
   id: string; // campaign_id, e.g. CAM-2026-0001
+  /** Per-brand running number the team says out loud — TPN-2026-006. Lives in
+   *  the brief blob; carried on the row so every module can label a campaign
+   *  without loading its brief. Absent only for campaigns that predate it. */
+  code?: string;
+  /** The hand-written code the name used to carry ("CPN010"). Kept searchable so
+   *  a number quoted from an older sheet still finds its campaign. */
+  legacyCode?: string;
   name: string;
   b: BrandId;
   branch: string;

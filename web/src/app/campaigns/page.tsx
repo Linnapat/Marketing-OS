@@ -24,6 +24,7 @@ import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter, parseRowDate } from "@/components/ui/DateFilterBar";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
+import { CampaignCode } from "@/components/ui/CampaignCode";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -146,7 +147,9 @@ export default function CampaignsPage() {
     // Brand-scope first: a member only ever sees campaigns of brands they manage.
     brandVisibility.visibleBrands.includes(c.b) &&
     (brand === "all" || c.b === brand) &&
-    (!search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())) &&
+    // Searchable by code as well as name — the code is what the team now quotes
+    // to each other, and the legacy CPN number is what older sheets still use.
+    (!search.trim() || [c.name, c.code, c.legacyCode].some((s) => s?.toLowerCase().includes(search.trim().toLowerCase()))) &&
     rangeInFilter(date, c.dates),
   );
   // Campaigns read in date order — the team plans and reviews by calendar, so a
@@ -362,7 +365,10 @@ export default function CampaignsPage() {
                         <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
                           {c.name}
                         </Link>
-                        <div className="text-[11px] text-faint mt-[1px]">{c.campType} · {c.dates}</div>
+                        <div className="text-[11px] text-faint mt-[1px] flex items-center gap-[6px] flex-wrap">
+                          <CampaignCode code={c.code} />
+                          <span>{c.campType} · {c.dates}</span>
+                        </div>
                         {c.taskTotal > 0 && (
                           <div className="flex items-center gap-2 mt-[5px] max-w-[200px]">
                             <div className="flex-1 h-[5px] rounded-full bg-line overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.round((c.taskDone / c.taskTotal) * 100)}%`, background: "#4E7A4E" }} /></div>
