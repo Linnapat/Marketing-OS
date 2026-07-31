@@ -5,8 +5,8 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { campaignReleasedForWork } from "../src/lib/data/campaigns";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption } from "../src/lib/roleGates";
+import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canApproveDeliverable, canReviewDeliverable, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -174,6 +174,33 @@ is("Co-ordinator มอบหมายไม่ได้", canAssignCaption("Co-
 is("Senior Graphic Designer มอบหมายไม่ได้", canAssignCaption("Senior Graphic Designer"), false);
 is("role ว่าง → ไม่ได้", canAssignCaption(""), false);
 is("เว้นวรรคหน้าหลังยังจับได้", canAssignCaption("  Creative Leader  "), true);
+
+console.log("\n— ใครอนุมัติแคมเปญได้ (ต้องตรงกับปุ่ม Approve ใน CampaignDetailView) —");
+// คิว My approvals เคยโชว์แคมเปญที่รออนุมัติให้ทุกคนที่เห็นแบรนด์นั้น ทั้งที่กดอนุมัติไม่ได้
+is("CMO อนุมัติได้", canApproveCampaign("CMO"), true);
+is("Marketing Manager / BGL อนุมัติไม่ได้", canApproveCampaign("Marketing Manager / BGL"), false);
+is("Creative Leader อนุมัติไม่ได้ (คุมคิวงาน ไม่ใช่อนุมัติแคมเปญ)", canApproveCampaign("Creative Leader"), false);
+is("Marketing Executive อนุมัติไม่ได้", canApproveCampaign("Marketing Executive"), false);
+is("Senior Graphic Designer อนุมัติไม่ได้", canApproveCampaign("Senior Graphic Designer"), false);
+is("Agency (External) อนุมัติไม่ได้", canApproveCampaign("Agency (External)"), false);
+// ต่างจาก canCreateCampaign ที่ role ว่างแล้วปล่อยผ่าน — คิวอนุมัติต้อง fail-closed
+is("role ว่าง (member ยังโหลดไม่เสร็จ) → ไม่ได้", canApproveCampaign(""), false);
+
+console.log("\n— แคมเปญไหนควรอยู่ในคิว My approvals ของเรา —");
+const wfa = { status: "Waiting for Approval", owner: "Ken S." };
+const rfr = { status: "Ready for Review", owner: "Ken S." };
+// รออนุมัติ = เรื่องของ CMO เท่านั้น เจ้าของงานไม่ได้เป็นคนกด
+is("รออนุมัติ + เราอนุมัติได้ → เข้าคิว", campaignAwaitsMe(wfa, { canApprove: true, me: "Aran P." }), true);
+is("รออนุมัติ + เราอนุมัติไม่ได้ → ไม่เข้า แม้เป็นเจ้าของ", campaignAwaitsMe(wfa, { canApprove: false, me: "Ken S." }), false);
+// Ready for Review ไม่มีใคร "อนุมัติ" — เจ้าของต้องกดส่งขออนุมัติเอง
+is("Ready for Review + เราเป็นเจ้าของ → เข้าคิว", campaignAwaitsMe(rfr, { canApprove: false, me: "Ken S." }), true);
+is("Ready for Review + ไม่ใช่เจ้าของ → ไม่เข้า แม้เป็น CMO", campaignAwaitsMe(rfr, { canApprove: true, me: "Aran P." }), false);
+is("เว้นวรรคหน้าหลังชื่อเจ้าของยังจับได้", campaignAwaitsMe({ status: "Ready for Review", owner: "  Ken S. " }, { canApprove: false, me: "Ken S." }), true);
+// fail-closed: ระหว่างที่ member ยังโหลดไม่เสร็จ viewAs เป็น "" ต้องไม่ไปแมตช์งานที่ไม่มีเจ้าของ
+is("me ว่าง + owner ว่าง → ไม่เข้าคิวใคร", campaignAwaitsMe({ status: "Ready for Review", owner: "" }, { canApprove: false, me: "" }), false);
+// สถานะอื่นไม่ใช่เรื่องของคิวอนุมัติ
+is("Active → ไม่เข้าคิว", campaignAwaitsMe({ status: "Active", owner: "Ken S." }, { canApprove: true, me: "Ken S." }), false);
+is("Draft → ไม่เข้าคิว", campaignAwaitsMe({ status: "Draft", owner: "Ken S." }, { canApprove: true, me: "Ken S." }), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

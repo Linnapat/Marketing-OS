@@ -11,7 +11,7 @@ import { notify } from "@/lib/notify";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
-import { CampaignRow } from "@/lib/data/campaigns";
+import { CampaignRow, campaignAwaitsMe } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
@@ -20,6 +20,8 @@ import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useCanApproveExpense } from "@/lib/usePermGates";
+import { useRole } from "@/lib/role";
+import { canApproveCampaign } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
@@ -35,7 +37,9 @@ import {
 
 // Stages / statuses that still need someone in the approval tier to act.
 const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
-const PENDING_CAMPAIGN = new Set(["Waiting for Approval", "Ready for Review"]);
+// (PENDING_CAMPAIGN lived here — a flat set of both pending statuses. It is
+// gone because the two are not interchangeable: they wait on different people,
+// and approvalCampaigns now asks that question per status.)
 
 // ── Team = real members from Settings → Users & Roles ──────────────
 // The bundled demo names ("Aran P.", "Ken S."…) used to seed this page's state,
@@ -102,6 +106,10 @@ export default function MyTasksPage() {
   // supabase/security_p12_expense_approval.sql can never disagree about who
   // may decide a request.
   const canApproveExpense = useCanApproveExpense();
+  // Same idea for campaign briefs — one gate, shared with the page that holds
+  // the Approve button, so this inbox can never offer what that page refuses.
+  const { role } = useRole();
+  const canApproveCampaignBrief = canApproveCampaign(role);
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
@@ -157,9 +165,20 @@ export default function MyTasksPage() {
     return brandOptions.some((id) => raw.includes(id) || raw.includes(BRANDS[id].name.toLowerCase().replace(/[^a-z0-9]+/g, "")));
   };
 
+  // Campaigns waiting on ME, not every campaign in flight. This queue used to
+  // filter on status + brand alone, so a Designer with all-brand access opened
+  // "My approvals" onto a dozen campaign briefs they cannot act on — the
+  // approve button is CMO-only (CampaignDetailView's canApprove), and a
+  // Waiting-for-Approval card offered to anyone else is a dead end that also
+  // inflates the badge everyone is meant to work down to zero.
+  //
+  // The two pending statuses are waiting on different people:
+  //   Waiting for Approval → the CMO decides
+  //   Ready for Review     → nobody approves it; its owner still has to submit
   const approvalCampaigns = useMemo(
-    () => campaigns.filter((c) => PENDING_CAMPAIGN.has(c.status) && brandVisibility.isVisible(c.b)),
-    [campaigns, brandVisibility],
+    () => campaigns.filter((c) =>
+      brandVisibility.isVisible(c.b) && campaignAwaitsMe(c, { canApprove: canApproveCampaignBrief, me: viewAs })),
+    [campaigns, brandVisibility, canApproveCampaignBrief, viewAs],
   );
   const approvalRequests = useMemo(
     // Budget cards are excluded — they're shown as actionable expense requests below.
@@ -497,7 +516,7 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
         <div>
           <div className="flex items-center gap-[10px] mb-3">
             <span className="text-[17px]">🎯</span>
-            <span className="text-[13.5px] font-bold">Campaigns waiting for approval</span>
+            <span className="text-[13.5px] font-bold">Campaigns waiting on you</span>
             <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{campaigns.length}</span>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
@@ -510,7 +529,12 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
                 <div className="text-[11.5px] text-faint mb-3">{brandName(c.b)} · {c.branch || "—"} · {c.campType}</div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11.5px] text-muted">Owner {c.owner}</span>
-                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                  {/* Name the actual ask. "Review →" on a Ready-for-Review card
+                      sent its owner looking for an approve button that is not
+                      theirs to press — the campaign is waiting to be SUBMITTED. */}
+                  <span className="text-[11.5px] font-bold text-accent">
+                    {c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"}
+                  </span>
                 </div>
               </Link>
             ))}

@@ -86,6 +86,32 @@ export function campaignReleasedForWork(status: string | null | undefined): bool
   return !PRE_APPROVAL_STATUSES.has(s);
 }
 
+/** Does this campaign belong in MY approvals queue?
+ *
+ *  The queue used to ask "is the status pending?" and nothing else, so every
+ *  brand-visible campaign in flight landed in everyone's inbox — including
+ *  designers, who cannot approve one. The two pending statuses wait on
+ *  different people, and neither waits on the whole company:
+ *
+ *    Waiting for Approval → the CMO decides (canApprove, from roleGates'
+ *                           canApproveCampaign — the same gate the Approve
+ *                           button on the campaign page asks)
+ *    Ready for Review     → nobody approves it; it is the OWNER's to submit
+ *
+ *  Fail-closed on a blank `me`: while the member row is still loading, viewAs
+ *  is "" and an owner-less campaign would otherwise match it and show up in a
+ *  queue belonging to nobody. */
+export function campaignAwaitsMe(
+  c: Pick<CampaignRow, "status" | "owner">,
+  opts: { canApprove: boolean; me: string },
+): boolean {
+  const status = (c.status ?? "").trim();
+  if (status === "Waiting for Approval") return opts.canApprove;
+  if (status !== "Ready for Review") return false;
+  const me = (opts.me ?? "").trim();
+  return !!me && (c.owner ?? "").trim() === me;
+}
+
 export const STATUS_ORDER = [
   "Active", "In Progress",
   "Paused", "Inactive",
