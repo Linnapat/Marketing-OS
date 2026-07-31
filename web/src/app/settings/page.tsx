@@ -28,6 +28,8 @@ const initials = (n: string) => (n.slice(0, 1) + (n.split(" ")[1] || "").slice(0
 interface SlackWiring {
   configured: boolean;
   teams: Record<string, { own: boolean; routed: boolean; env: string }>;
+  dm: boolean;              // bot token present → per-person DMs are on
+  unmapped: string[];       // people the app tried to DM and couldn't find
 }
 
 /** One line saying where each team's alerts actually land. */
@@ -37,6 +39,7 @@ function slackWiringNote(w: SlackWiring): string {
   const shared = NOTIFY_TEAMS.filter((t) => !w.teams[t]?.own && w.teams[t]?.routed).map((t) => TEAM_LABELS[t]);
   const parts = [`แชนแนลแยก · ${own.join(" · ")}`];
   if (shared.length) parts.push(`${shared.join(" / ")} ใช้แชนแนล General`);
+  parts.push(w.dm ? "assign/revise ส่งเป็น DM + สรุปเข้าแชนแนลวันละครั้ง" : "ยังไม่ได้ตั้ง SLACK_BOT_TOKEN — ยังส่ง DM รายคนไม่ได้");
   return parts.join(" — ");
 }
 
@@ -1260,6 +1263,15 @@ export default function SettingsPage() {
                     <Pill text={it.status} fg={it.status === "Connected" ? "#4E7A4E" : it.status === "Coming soon" ? "#C68A1E" : "#9A9387"} bg={it.status === "Connected" ? "#EEF4EE" : it.status === "Coming soon" ? "#FBF8EE" : "#F2F0EB"} />
                   </div>
                   <div className="text-[12px] text-muted mb-3">{it.desc}</div>
+                  {/* Unmapped people fail silently by design — this is the one
+                      place that says so, otherwise someone stops hearing about
+                      their own work and nobody finds out. */}
+                  {live && slackWiring!.unmapped.length > 0 && (
+                    <div className="text-[12px] rounded-[10px] px-3 py-2 mb-3" style={{ background: "#FBF8EE", color: "#8a6d1e", border: "1px solid #EFE2C2" }}>
+                      ⚠️ หา Slack ของ {slackWiring!.unmapped.length} คนไม่เจอ — <b>{slackWiring!.unmapped.join(", ")}</b> ยังไม่ได้รับ DM
+                      <div className="text-[11px] mt-1 opacity-80">แก้ได้โดยให้อีเมลใน Users &amp; Roles ตรงกับอีเมลที่ใช้ใน Slack</div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-faint">{it.note ?? `Last sync · ${it.lastSync}`}</span>
                     {/* These integrations aren't wired to a backend yet, so the

@@ -22,14 +22,25 @@ export type NotifyEvent =
   | "rejected"   // request sent back
   | "launch";    // campaign submitted / published
 
-export function notify(event: NotifyEvent, title: string, detail?: string, link?: string, team?: NotifyTeam): void {
+/** Extra routing for one notification. `to` names the people the event is FOR
+ *  (assigned, asked to revise) — they get a Slack DM and the team channel sees
+ *  it in the daily digest instead of one interruption per event. Leave it out
+ *  for anything the channel should see immediately. */
+export interface NotifyTarget {
+  team?: NotifyTeam;
+  to?: (string | null | undefined)[];
+}
+
+export function notify(event: NotifyEvent, title: string, detail?: string, link?: string, target?: NotifyTeam | NotifyTarget): void {
+  const { team, to } = typeof target === "string" ? { team: target, to: undefined } : (target ?? {});
+  const recipients = (to ?? []).map((n) => (n ?? "").trim()).filter((n) => n && n !== "Unassigned");
   void (async () => {
     try {
       const { authHeaders } = await import("@/lib/supabase");
       const res = await fetch("/api/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ event, title, detail, link, team }),
+        body: JSON.stringify({ event, title, detail, link, team, to: recipients }),
         keepalive: true,
       });
       void res;

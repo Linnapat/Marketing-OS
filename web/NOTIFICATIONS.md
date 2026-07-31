@@ -31,6 +31,40 @@ SLACK_WEBHOOK_URL_CREATIVE=https://hooks.slack.com/services/ddd/eee/fff   # (ไ
 
 การจัดกลุ่มดูจากหน้าที่ noti ลิงก์ไป (`/expenses` → Finance, `/graphic` → Creative ฯลฯ) ส่วนงานที่ลิงก์ไป `/my-tasks` แต่เป็นงาน Creative จะระบุทีมตรง ๆ ที่จุดเรียก — กติกาทั้งหมดอยู่ที่ `src/lib/notifyRouting.ts` ไฟล์เดียว
 
+---
+
+## 0.1) DM รายคน เมื่อ assign / revise งาน
+
+งานที่ "ถึงตัวใครคนหนึ่ง" (มอบหมายงาน, ส่งงานกลับไปแก้) จะ **DM หาคนนั้นโดยตรง** ไม่รบกวนแชนแนลทีม แล้วสรุปรวมเข้าแชนแนล**วันละครั้ง**แทน
+
+Webhook ทำ DM ไม่ได้ ต้องใช้ bot token เพิ่ม:
+
+1. ที่ Slack app เดิม → **OAuth & Permissions** → Bot Token Scopes เพิ่ม `chat:write`, `im:write`, `users:read`, `users:read.email` → **Reinstall to Workspace**
+2. คัดลอก **Bot User OAuth Token** (`xoxb-…`) ใส่เป็น env:
+
+```
+SLACK_BOT_TOKEN=xoxb-...
+CRON_SECRET=<สุ่มมาสักชุด>        # ป้องกัน endpoint สรุปรายวัน
+```
+
+3. รัน `supabase/slack_digest.sql` (สร้างคิวสรุป + key สำหรับ mapping)
+4. Deploy — Vercel cron ใน `vercel.json` จะยิง `/api/notify/digest` ทุกวัน **11:00 UTC = 18:00 น. บ้านเรา**
+
+### จับคู่คนยังไง
+
+ในระบบเก็บ assignee เป็น**ชื่อ** เลยไล่เป็นทอด ๆ: ชื่อ → แถวใน `members` → อีเมล → Slack user (`users.lookupByEmail`) · ชื่อที่เขียนไม่ตรงกันก็ยังเจอ เพราะใช้ `lib/identity` ตัวเดียวกับที่ My Tasks ใช้ (ชื่อ / อีเมล / ชื่อหน้า `@` ถือเป็นคนเดียวกัน) · id ที่หาเจอแล้วถูก cache ไว้ใน `org_settings` จะได้ไม่ยิง Slack ซ้ำ
+
+**คนที่หาไม่เจอ** (อีเมลใน Marketing OS ไม่ตรงกับที่ใช้ใน Slack) จะ **ไม่ error และไม่ขวางคนอื่น** — ข้ามเงียบ ๆ แล้วขึ้นเตือนใน **Settings → Integrations** ว่าใครยังไม่ได้รับ DM บ้าง แก้โดยแก้อีเมลใน Users & Roles ให้ตรงกัน · ในสรุปรายวันรายการนั้นจะมีป้าย ⚠️ กำกับ ว่าไม่มีใครได้ DM
+
+| เหตุการณ์ | ใครได้ DM |
+|---|---|
+| งานใหม่ / โอนงาน / มอบงานกราฟฟิก | คนที่ถูก assign |
+| งานกราฟฟิกถูกส่งกลับแก้ | designer |
+| บรีฟถูกส่งกลับแก้ | คนขอบรีฟ |
+| Content / KOL ถูกส่งกลับแก้ | คนที่ต้องแก้ |
+
+> ยังไม่ตั้ง `SLACK_BOT_TOKEN` = ทุกอย่างกลับไปเข้าแชนแนลทันทีเหมือนเดิม ไม่มีอะไรพัง
+
 **ถ้าจะเลิกใช้ LINE:** ลบ `LINE_CHANNEL_ACCESS_TOKEN` กับ `LINE_TO` ออกจาก Vercel — ไม่ต้องแก้โค้ด และไม่มีช่วงที่แจ้งเตือนขาด
 
 

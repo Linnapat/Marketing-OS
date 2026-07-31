@@ -81,7 +81,7 @@ export async function createRevisionTask(opts: {
 }
 
 export async function createTaskDb(t: Task): Promise<void> {
-  notify("newTask", `🗒️ งานใหม่: ${t.title}`, `มอบหมายให้ ${t.assignee} · ${t.brand} · due ${t.due}`, "/my-tasks");
+  notify("newTask", `🗒️ งานใหม่: ${t.title}`, `มอบหมายให้ ${t.assignee} · ${t.brand} · due ${t.due}`, "/my-tasks", { to: [t.assignee] });
   const db = supabase();
   if (!db) return;
   const { error } = await db.from("tasks").insert({
@@ -149,7 +149,7 @@ export async function updateTaskDb(id: number, patch: Partial<Task>): Promise<vo
 
 export const markDoneDb = (id: number) => updateTaskDb(id, { status: "Done" });
 export const reassignDb = (id: number, to: string) => {
-  notify("newTask", `🔁 งาน #${id} ถูกส่งต่อให้ ${to}`, undefined, "/my-tasks");
+  notify("newTask", `🔁 งาน #${id} ถูกส่งต่อให้ ${to}`, undefined, "/my-tasks", { to: [to] });
   return updateTaskDb(id, { assignee: to });
 };
 
@@ -189,7 +189,7 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
   };
 
   if (current.assignee !== task.assignee && task.assignee !== "Unassigned") {
-    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, "/my-tasks", "creative");
+    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, "/my-tasks", { team: "creative", to: [task.assignee] });
   }
 
   await updateTaskDb(current.id, patch);
