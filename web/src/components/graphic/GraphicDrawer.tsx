@@ -26,6 +26,7 @@ import { isCreativeSideRole, canApproveRushBrief } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
+import { pushNotifications } from "@/lib/db/notifications";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { useDeadlines } from "@/lib/useDeadlines";
@@ -198,6 +199,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       notify("approval", `✋ ขอเติมบรีฟ: ${g.title}`,
         `โดย ${currentUser} → Creative Leader · ${unlockReason.trim()}`,
         `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+      void pushNotifications([g.acceptedBy, g.designer], {
+        event: "brief", actor: currentUser,
+        title: `ขอเติมบรีฟ: ${g.title}`,
+        detail: unlockReason.trim(),
+        link: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
+      });
       toastSuccess("ส่งคำขอให้ Creative Leader แล้ว — รอปล่อยงานก่อนถึงจะเติมบรีฟได้");
       setUnlockReason("");
     } catch (error) {
@@ -217,6 +224,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         grant ? `✅ ปล่อยให้เติมบรีฟ: ${g.title}` : `⛔ ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
         `โดย ${currentUser} → ${g.briefUnlock?.requestedBy || g.requester}`,
         `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+      void pushNotifications([g.briefUnlock?.requestedBy, g.requester], {
+        event: "brief", actor: currentUser,
+        title: grant ? `ปล่อยให้เติมบรีฟแล้ว: ${g.title}` : `ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
+        detail: grant ? "แก้ได้ 1 ครั้ง — ถ้าจะแก้อีกต้องขอใหม่" : undefined,
+        link: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
+      });
       toastSuccess(grant ? "ปล่อยให้เติมบรีฟแล้ว" : "ไม่ปล่อยให้เติมบรีฟรอบนี้");
     } catch (error) {
       toastError(`บันทึกผลไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -1278,6 +1291,15 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
       notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks");
+      // In-app, to BOTH sides. Only the designer used to hear about this, and
+      // only through a LINE group — the person who raised the request learned
+      // their artwork had gone back by opening the drawer and noticing.
+      void pushNotifications([g.designer, g.requester], {
+        event: "revision", actor: me,
+        title: `งานถูกตีกลับ: ${g.title}`,
+        detail: `${before.platform} · ${said}`,
+        link: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
+      });
     }
   };
 

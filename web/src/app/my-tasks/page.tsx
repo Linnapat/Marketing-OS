@@ -21,6 +21,8 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
+import { personKeys, isSamePerson } from "@/lib/identity";
+import { fetchNotifications, markNotificationsRead, notifMeta, pushNotifications, Notif } from "@/lib/db/notifications";
 import { useCanApproveExpense } from "@/lib/usePermGates";
 import { canApproveCampaign } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
@@ -107,6 +109,18 @@ export default function MyTasksPage() {
   // cards back in a designer's inbox — the exact dead end this queue was
   // narrowed to remove, just reachable by a dropdown instead of by default.
   const { member, user, role: authRole } = useAuth();
+  // Who counts as me. One string was never enough: the same person is filed
+  // under a display name, a nickname and an email across these tables, and an
+  // exact match on the member name silently hid two thirds of one manager's
+  // work. See lib/identity.
+  // Falls back to viewAs when there is no member row to read (demo mode, or a
+  // member still loading): without it the identity set is empty and every
+  // filter below returns nothing, which reads as "you have no work" rather
+  // than "we do not know who you are yet".
+  const myKeys = useMemo(() => {
+    const keys = personKeys(member, user);
+    return keys.size ? keys : personKeys({ name: viewAs });
+  }, [member, user, viewAs]);
   const canApproveCampaignBrief = canApproveCampaign(authRole);
   const [viewMode, setViewMode] = useState<"cards" | "list" | "calendar">("cards");
   // Which month the calendar grid is showing. Seeded from the period filter and
@@ -125,6 +139,20 @@ export default function MyTasksPage() {
   // edit made inside the drawer updates the card behind it in the same tick
   // instead of leaving a stale copy pinned in state.
   const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
+  const [notifs, setNotifs] = useState<Notif[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchNotifications(member, user).then((n) => { if (alive) setNotifs(n); }).catch(() => {});
+    return () => { alive = false; };
+  }, [member, user]);
+  const unread = notifs.filter((n) => !n.readAt);
+  const markRead = (ids: number[]) => {
+    if (!ids.length) return;
+    const at = new Date().toISOString();
+    setNotifs((ns) => ns.map((n) => (ids.includes(n.id) ? { ...n, readAt: at } : n)));
+    void markNotificationsRead(ids);
+  };
+
 
   const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
   const getGroup = (t: Task) => (doneIds.has(t.id) ? "done" : t.group);
@@ -185,22 +213,22 @@ export default function MyTasksPage() {
   );
   const approvalRequests = useMemo(
     // Budget cards are excluded — they're shown as actionable expense requests below.
-    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && r.approver === viewAs && r.type !== "Budget" && brandVisibility.isVisible(r.b)),
-    [requests, viewAs, brandVisibility],
+    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && isSamePerson(r.approver, myKeys) && r.type !== "Budget" && brandVisibility.isVisible(r.b)),
+    [requests, myKeys, brandVisibility],
   );
   const approvalExpenses = useMemo(
     () => (canApproveExpense ? expenseReqs.filter((r) => r.status === "Waiting Approval" && brandVisibility.isVisible(r.b)) : []),
     [expenseReqs, canApproveExpense, brandVisibility],
   );
   const approvalTasks = useMemo(
-    () => tasks.filter((t) => t.assignee === viewAs && !doneIds.has(t.id) && t.status === "Need Approval" && canSeeBrandLabel(t.brand)),
+    () => tasks.filter((t) => isSamePerson(t.assignee, myKeys) && !doneIds.has(t.id) && t.status === "Need Approval" && canSeeBrandLabel(t.brand)),
     // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, viewAs, doneIds, brandOptions, brandVisibility],
+    [tasks, myKeys, doneIds, brandOptions, brandVisibility],
   );
   const approvalGraphics = useMemo(
-    () => graphics.filter((g) => g.requester === viewAs && brandVisibility.isVisible(g.b) && (g.deliverables ?? []).some((d) => d.status === "Waiting review")),
-    [graphics, viewAs, brandVisibility],
+    () => graphics.filter((g) => isSamePerson(g.requester, myKeys) && brandVisibility.isVisible(g.b) && (g.deliverables ?? []).some((d) => d.status === "Waiting review")),
+    [graphics, myKeys, brandVisibility],
   );
   const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
   // Budget context for an expense request: the campaign's budget, what's already
@@ -295,7 +323,7 @@ export default function MyTasksPage() {
   }, [date.mode, date.month, date.year]);
   // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date, brandOptions, brandVisibility]);
+  const myTasks = useMemo(() => tasks.filter((t) => isSamePerson(t.assignee, myKeys) && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, myKeys, date, brandOptions, brandVisibility]);
   // Today's focus = due today or overdue (real calendar) or stuck.
   const todayTasks = myTasks.filter((t) => (daysUntilDue(t) ?? 1) <= 0 || getStatus(t) === "Stuck");
   const todayDone = todayTasks.filter((t) => getStatus(t) === "Done").length;
@@ -357,6 +385,53 @@ export default function MyTasksPage() {
 
       {activeTab === "myDay" ? (
         <div className="flex flex-col gap-[18px]">
+          {/* The inbox. Comments and sent-back work used to go only to a LINE
+              group and an inbox nobody opened, so the person they were for had
+              nothing on their own screen — which is exactly how it was
+              reported: "My Tasks ไม่ขึ้นเตือนเมื่อมีคอมเมนต์หรือตีกลับงาน". */}
+          {unread.length > 0 && (
+            <div className="rounded-[18px] overflow-hidden" style={{ border: "1px solid #F0D5BC" }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: "#FBF1E9" }}>
+                <span className="text-[15px]">🔔</span>
+                <span className="text-[13px] font-bold text-ink">ยังไม่ได้อ่าน</span>
+                <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{unread.length}</span>
+                <button onClick={() => markRead(unread.map((n) => n.id))}
+                  className="ml-auto text-[11.5px] font-bold text-muted border border-line2 rounded-[8px] px-3 py-[5px] bg-white">
+                  อ่านทั้งหมดแล้ว
+                </button>
+              </div>
+              <div className="bg-white">
+                {unread.slice(0, 8).map((n) => {
+                  const meta = notifMeta(n.event);
+                  return (
+                    <div key={n.id} className="flex items-start gap-3 px-5 py-[11px]" style={{ borderTop: "1px solid #F4EFE5" }}>
+                      <span className="text-[14px] mt-[1px]">{meta.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] font-bold text-ink">{n.title}</div>
+                        {n.detail && <div className="text-[11.5px] text-muted leading-[1.45]">{n.detail}</div>}
+                        <div className="text-[10.5px] text-faint mt-[2px]">
+                          {meta.label}{n.actor ? ` · โดย ${n.actor}` : ""} · {new Date(n.createdAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {n.link && (
+                          <Link href={n.link} onClick={() => markRead([n.id])}
+                            className="text-[11.5px] font-bold text-accent whitespace-nowrap">เปิดดู →</Link>
+                        )}
+                        <button onClick={() => markRead([n.id])} className="text-[11px] text-faint whitespace-nowrap">อ่านแล้ว</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {unread.length > 8 && (
+                  <div className="px-5 py-2 text-[11px] text-faint" style={{ borderTop: "1px solid #F4EFE5" }}>
+                    และอีก {unread.length - 8} รายการ
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* BENTO (greeting card removed per request) */}
           <div className="flex gap-[14px] flex-wrap">
             <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
@@ -802,8 +877,18 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     setRevising(false); setReviseMsg("");
   };
   const addComment = () => {
-    if (!comment.trim()) return;
-    onPatch({ comments: [...(t.comments ?? []), { by: me, text: comment.trim(), at: new Date().toISOString() }] });
+    const text = comment.trim();
+    if (!text) return;
+    onPatch({ comments: [...(t.comments ?? []), { by: me, text, at: new Date().toISOString() }] });
+    // The comment reaches the people the task belongs to. Before this it went
+    // into the task blob and nowhere else: you saw it only if you happened to
+    // open that drawer.
+    void pushNotifications([t.assignee, t.pendingApprover], {
+      event: "comment", actor: me,
+      title: `คอมเมนต์ใหม่: ${t.title}`,
+      detail: text,
+      link: "/my-tasks",
+    });
     setComment("");
   };
   const toggleCheck = (i: number) => {
