@@ -73,6 +73,10 @@ export interface Graphic {
    *  sourceContentItemId is NOT unique on its own — it is the brief's row
    *  number ("ci-1", "ci-2", …) and restarts per campaign, so live data has
    *  "ci-1" in 13 different campaigns. Only the pair identifies anything. */
+  /** Job number — `POST-Ann` when this artwork serves a post
+   *  (TPN_2609_003-C02-A01), else `CAMPAIGN-Ann` for the POSM/menu work that
+   *  never becomes a post. Assigned on create. */
+  code?: string;
   campaignId?: string;
   sourceContentItemId?: string;
   /** The Content Plan post this request produces artwork for, by post id.

@@ -6,6 +6,7 @@ import { CONTENT, ContentItem, contentApproveBlockers, canPublish } from "@/lib/
 import { CAMPAIGNS } from "@/lib/data/campaigns";
 import { liveOnly, moveToTrash, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, releaseMockId, seedMockIds } from "@/lib/db/mockGuard";
+import { issueContentCode } from "@/lib/db/workCode";
 
 const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 
@@ -32,15 +33,18 @@ export async function fetchContent(): Promise<ContentItem[]> {
  *  matched zero rows — Save Caption reported success and saved nothing until
  *  the page was reloaded. Only fall back to the serial when the caller supplied
  *  no id at all, and write it back so the blob agrees. */
-export async function createContent(post: ContentItem): Promise<ContentItem> {
+export async function createContent(input: ContentItem): Promise<ContentItem> {
   const db = supabase();
   if (!db) {
     // Mock mode has no unique index to hit, so assert it here — this is exactly
     // the collision that shipped to production unnoticed.
     seedMockIds("content_posts", CONTENT.map((c) => c.id));
-    assertMockUniqueId("content_posts", post.id);
-    return post;
+    assertMockUniqueId("content_posts", input.id);
+    return input;
   }
+  // Numbered here rather than in each form, so a post gets the same job number
+  // whether it came from Submit, the plan modal or a graphic link.
+  const post: ContentItem = input.code ? input : { ...input, code: await issueContentCode(input.campaignId) };
   const { data, error } = await db.from("content_posts").insert({
     title: post.title, brand: post.b, campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
     platforms: post.platforms ?? [post.plat], status: post.status, day: post.day, time: post.time,

@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { fetchMembers } from "@/lib/db/settings";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { campaignLabel } from "@/components/ui/CampaignCode";
+import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
 import { X } from "lucide-react";
 import { GRAPHIC_OPEN_PARAM,
@@ -484,6 +484,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-[5px] flex-wrap">
               <span className="text-[15px] font-extrabold">{g.title}</span>
+              {/* Full code: the artwork number carries its post's number inside
+                  it, so this one line answers "which post is this for". */}
+              <WorkCode code={g.code} full />
               <StatusBadge tone={PRIORITY_TONE[g.priority]}>{g.priority}</StatusBadge>
             </div>
             <div className="flex items-center gap-2 flex-wrap text-[12px] text-muted">

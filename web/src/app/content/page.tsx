@@ -18,7 +18,7 @@ import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
 import { useStickyView } from "@/lib/useStickyView";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { CampaignCode } from "@/components/ui/CampaignCode";
+import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { appendBriefItem } from "@/lib/db/brief";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
@@ -602,7 +602,10 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
       <div className="flex items-center gap-2 min-w-0">
         <PlatBadges item={c} size={18} />
         <div className="min-w-0">
-          <div className="text-[13px] font-semibold truncate">{c.title}</div>
+          <div className="text-[13px] font-semibold truncate flex items-center gap-[6px]">
+            <span className="truncate">{c.title}</span>
+            <WorkCode code={c.code} />
+          </div>
           <div className="text-[11px] text-faint flex items-center gap-[5px]">
             <BrandDot brand={c.b} size={6} />{brandName(c.b)} · {c.campaign}
             <CampaignCode code={codeOf(c.campaignId, c.campaign)} />
@@ -718,7 +721,13 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
                   to check which asset is attached. */}
               <AssetThumb assets={c.assets} mediaLink={c.mediaLink} />
               <PlatBadges item={c} size={18} />
-              <div className="min-w-0"><div className="text-[13px] font-semibold truncate">{c.title}</div><div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div></div>
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold truncate flex items-center gap-[6px]">
+                  <span className="truncate">{c.title}</span>
+                  <WorkCode code={c.code} />
+                </div>
+                <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div>
+              </div>
             </div>
             <span className="text-[12px] text-muted truncate min-w-0">
               {c.campaign}

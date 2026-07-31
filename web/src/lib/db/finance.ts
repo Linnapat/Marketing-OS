@@ -180,7 +180,7 @@ export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
 
 /** Insert a new expense request; extended columns go in a second update so the
  *  base row survives on a DB that hasn't run expenses_p1.sql yet. */
-export async function createExpenseRequest(r: RequestRow, extra?: {
+export async function createExpenseRequest(r: RequestRow & { campaignId?: string }, extra?: {
   ref?: string; requester?: string; vendor?: string; reimburseType?: string; vat?: number; wht?: number;
   whtRate?: number;
 }): Promise<void> {
@@ -188,6 +188,11 @@ export async function createExpenseRequest(r: RequestRow, extra?: {
   if (!db) return;
   const { data, error } = await db.from("expense_requests").insert({
     category: r.category, brand: r.b, campaign: r.campaign === "—" ? null : r.campaign,
+    // The link, not just the name. Without it every new request landed unlinked
+    // and only the 26 Jul backfill's rows were joinable — Finance could not roll
+    // spend up to a campaign, and a campaign rename left the row pointing at a
+    // name nothing answers to.
+    campaign_id: r.campaignId ?? null,
     requested: r.requested, approved: r.approved, due: r.due, status: r.status,
   }).select("id").single();
   const row = assertDbData(data, error, "Could not save expense request");

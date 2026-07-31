@@ -23,6 +23,9 @@ export interface RequestRow {
   title: string;
   b: BrandId;
   campaign: string;
+  /** Link to the campaign row. The `campaign` name beside it is for reading;
+   *  this is what joins, and what survives a rename. */
+  campaignId?: string;
   requester: string;
   approver: string;
   due: string;
