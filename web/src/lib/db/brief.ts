@@ -9,7 +9,7 @@ import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budget
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
-import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic } from "./graphic";
+import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic, topUpGraphicBrief } from "./graphic";
 import { needsStoryboard } from "@/lib/data/graphic";
 import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
@@ -181,11 +181,13 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         // Graphic drawer shows the actual message/mood/links — not workflow text.
         keyMessage: ci.mainMessage || normalizedBrief.mainMessage || "",
         moodDirection: normalizedBrief.kvDirection || ci.captionDirection || "",
-        driveLink: ci.driveLink || "",
-        referenceLink: ci.referenceImageLink || ci.competitorLink || "",
         captionCopy: ci.captionDirection || "",
         extraDetails: ci.doDont || ci.mandatoryText || "",
-        briefLink: ci.referenceBriefLink || "",
+        // One link on the request, fed from whichever campaign box was used.
+        // The campaign form still has four (Drive / brief / reference image /
+        // competitor) and the team fills Drive most, so first-non-empty wins
+        // rather than picking one and dropping the rest on the floor.
+        briefLink: ci.driveLink || ci.referenceBriefLink || ci.referenceImageLink || ci.competitorLink || "",
         // Video items start at the storyboard, exactly as they do when raised
         // by hand — otherwise a Reel materialised from an approved campaign
         // would skip straight to artwork and lose the step.
@@ -194,6 +196,15 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         contentItem: ci.title || "—",
       };
       const madeGraphic = await createGraphicIfNew(g, graphicSeen);
+      // Already there: push the brief detail down instead of skipping the row
+      // entirely, which is how a request ended up blank while its campaign
+      // carried the link. Blanks only, never on an accepted request.
+      if (!madeGraphic.created) {
+        await topUpGraphicBrief(gid, {
+          briefLink: g.briefLink, objective: g.objective, keyMessage: g.keyMessage,
+          moodDirection: g.moodDirection, captionCopy: g.captionCopy, extraDetails: g.extraDetails,
+        });
+      }
       if (madeGraphic.created) {
         graphics++;
         const madeTask = await upsertBriefTask(mkTask(++n, {
