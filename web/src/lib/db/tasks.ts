@@ -189,7 +189,7 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
   };
 
   if (current.assignee !== task.assignee && task.assignee !== "Unassigned") {
-    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, "/my-tasks");
+    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, "/my-tasks", "creative");
   }
 
   await updateTaskDb(current.id, patch);

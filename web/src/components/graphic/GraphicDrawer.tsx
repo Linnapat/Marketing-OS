@@ -422,7 +422,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       await updateGraphic(next);
       await createTaskDb(task);
       updateCurrentGraphic(next);
-      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks");
+      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks", "creative");
       setBriefComment("");
     } catch (error) {
       toastError(`ส่ง Brief กลับแก้ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -471,7 +471,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks");
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks", "creative");
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -1290,7 +1290,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
           brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks");
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks", "creative");
       // In-app, to BOTH sides. Only the designer used to hear about this, and
       // only through a LINE group — the person who raised the request learned
       // their artwork had gone back by opening the drawer and noticing.

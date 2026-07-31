@@ -8,14 +8,28 @@
 1. ไปที่ https://api.slack.com/apps → **Create New App** → From scratch → เลือก workspace
 2. เมนู **Incoming Webhooks** → เปิด **Activate Incoming Webhooks**
 3. **Add New Webhook to Workspace** → เลือกแชนแนลที่จะให้แจ้งเตือนเข้า → Allow
+   · ทำซ้ำข้อนี้ทีละแชนแนลถ้าจะแยกทีม (ดูตารางข้างล่าง) — แอปเดียวมีได้หลาย webhook
 4. คัดลอก Webhook URL (`https://hooks.slack.com/services/…`) ไปใส่เป็น env บน Vercel:
 
 ```
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz            # ทีมทั่วไป + fallback
+SLACK_WEBHOOK_URL_FINANCE=https://hooks.slack.com/services/aaa/bbb/ccc    # (ไม่บังคับ) #finance
+SLACK_WEBHOOK_URL_CREATIVE=https://hooks.slack.com/services/ddd/eee/fff   # (ไม่บังคับ) #creative
 ```
 
-5. เช็คว่าทำงาน: ทำอะไรก็ได้ที่ยิง noti (เช่นอนุมัติงาน) แล้วดูว่าข้อความเข้าแชนแนลไหม
-   · `/api/notify` ตอบกลับมาพร้อม `configured.slack: true` เมื่อตั้งค่าถูก
+5. **Redeploy** แล้วเช็คที่ **Settings → Integrations → Slack** — การ์ดจะขึ้น `Connected` พร้อมบอกว่าตอนนี้แยกแชนแนลอะไรบ้าง และมีปุ่ม **ส่งข้อความทดสอบ** ที่ยิงเข้าทุกแชนแนลที่ตั้งไว้จริง ๆ
+
+### แจ้งเตือนไหนเข้าแชนแนลไหน
+
+| แชนแนล | env | เรื่องที่เข้า |
+|---|---|---|
+| **Finance** | `SLACK_WEBHOOK_URL_FINANCE` | คำขอเบิกงบ · อนุมัติ/ตีกลับเบิกงบ · งบเกินเพดาน · Draft เบิกจากงบแคมเปญ |
+| **Creative** | `SLACK_WEBHOOK_URL_CREATIVE` | งานกราฟฟิก · storyboard/footage · บรีฟ · Content · KOL · โพสต์ publish |
+| **General** | `SLACK_WEBHOOK_URL` | แคมเปญรออนุมัติ/อนุมัติ/ตีกลับ · งานใหม่ใน My Tasks · ขอความช่วยเหลือ |
+
+ตั้งแค่ `SLACK_WEBHOOK_URL` ตัวเดียว = ทุกอย่างเข้าแชนแนลเดียวเหมือนเดิม (ทีมที่ไม่มี webhook ของตัวเองจะ fallback มาที่นี่) เพิ่มทีละแชนแนลทีหลังได้ ไม่ต้องแก้โค้ด
+
+การจัดกลุ่มดูจากหน้าที่ noti ลิงก์ไป (`/expenses` → Finance, `/graphic` → Creative ฯลฯ) ส่วนงานที่ลิงก์ไป `/my-tasks` แต่เป็นงาน Creative จะระบุทีมตรง ๆ ที่จุดเรียก — กติกาทั้งหมดอยู่ที่ `src/lib/notifyRouting.ts` ไฟล์เดียว
 
 **ถ้าจะเลิกใช้ LINE:** ลบ `LINE_CHANNEL_ACCESS_TOKEN` กับ `LINE_TO` ออกจาก Vercel — ไม่ต้องแก้โค้ด และไม่มีช่วงที่แจ้งเตือนขาด
 
@@ -76,10 +90,13 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz
 
 ## ทดสอบ
 
+วิธีที่ง่ายที่สุดคือปุ่ม **ส่งข้อความทดสอบ** ใน Settings → Integrations · หรือยิงเองก็ได้:
+
 ```bash
 curl -X POST https://<your-app>/api/notify \
   -H "Content-Type: application/json" \
-  -d '{"event":"approval","title":"🔔 ทดสอบระบบแจ้งเตือน","detail":"ถ้าเห็นข้อความนี้ใน LINE/อีเมล = ใช้งานได้"}'
+  -d '{"event":"approval","title":"🔔 ทดสอบระบบแจ้งเตือน","detail":"ถ้าเห็นข้อความนี้ = ใช้งานได้","team":"finance"}'
 ```
 
-ผลลัพธ์บอกสถานะราย channel: `{"ok":true,"line":true,"email":false,"configured":{...}}`
+ผลลัพธ์บอกสถานะราย channel + แชนแนลที่ใช้: `{"ok":true,"slack":true,"line":false,"email":false,"team":"finance","configured":{...}}`
+ใส่ `"team"` เพื่อบังคับแชนแนล ถ้าไม่ใส่ระบบจะเลือกจาก `link` ให้เอง · `GET /api/notify` ดูได้ว่าตอนนี้ตั้ง webhook ไว้ครบไหม (ไม่คืนค่า URL ออกมา)

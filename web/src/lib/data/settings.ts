@@ -155,7 +155,7 @@ export const STATUS_SETS: Record<WfModule, WfStatus[]> = {
 export const NOTIF_CHANNELS = [
   { icon: "💬", label: "LINE Notify", desc: "Push to LINE group", key: "line", def: false },
   { icon: "📧", label: "Email", desc: "Daily digest + alerts", key: "email", def: true },
-  { icon: "💼", label: "Slack", desc: "Push to a Slack channel (SLACK_WEBHOOK_URL)", key: "slack", def: true },
+  { icon: "💼", label: "Slack", desc: "Push to the team's Slack channel (General / Finance / Creative)", key: "slack", def: true },
   { icon: "💬", label: "Google Chat", desc: "Future state", key: "gchat", def: false },
 ];
 export const NOTIF_TRIGGERS = [
@@ -172,7 +172,7 @@ export const NOTIF_TRIGGERS = [
 export const INTEGRATIONS = [
   { icon: "📁", iconBg: "#EEF1F8", name: "Google Drive", category: "Storage", desc: "Link brief, asset, and result files directly from Drive.", status: "Connected", lastSync: "2 hours ago", actions: ["Reconnect", "Disconnect"] },
   { icon: "📊", iconBg: "#EEF4EE", name: "Google Sheets", category: "Data", desc: "Sync campaign result data and budget tracking.", status: "Connected", lastSync: "1 day ago", actions: ["Sync now", "Disconnect"] },
-  { icon: "💼", iconBg: "#EEF1F8", name: "Slack", category: "Messaging", desc: "Send task and approval alerts to your team channels.", status: "Not connected", lastSync: "—", actions: ["Connect"] },
+  { icon: "💼", iconBg: "#EEF1F8", name: "Slack", category: "Messaging", desc: "Send task and approval alerts to your team channels — Finance, Creative, and General are routed separately.", status: "Not connected", lastSync: "—", actions: ["Connect"] },
   { icon: "💬", iconBg: "#EEF4EE", name: "LINE OA", category: "CRM / OA", desc: "Connected to LINE Official Account for CRM campaigns.", status: "Connected", lastSync: "30 min ago", actions: ["Test", "Disconnect"] },
   { icon: "⚙️", iconBg: "#FBF6ED", name: "Make.com", category: "Automation", desc: "Trigger workflows from campaign and approval events.", status: "Not connected", lastSync: "—", actions: ["Connect"] },
   { icon: "📘", iconBg: "#EEF1F8", name: "Meta / Instagram", category: "Publishing", desc: "Future: auto-publish posts via Meta API.", status: "Coming soon", lastSync: "—", actions: ["Learn more"] },
