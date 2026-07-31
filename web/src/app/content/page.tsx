@@ -1,7 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { useEffect, useMemo, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -596,8 +596,11 @@ function WeekView({ items, monthName, onOpen }: { items: ContentItem[]; monthNam
 
 function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }) {
   const codeOf = useCampaignCodes();
+  // last:border-b-0, not last:border-0: border-0 would also drop the 5px
+  // campaign colour bar on the left, shifting the last row's columns 5px out of
+  // line with the rows above it.
   return (
-    <button onClick={() => onOpen(c)} className="w-full grid grid-cols-[52px_1fr_auto] gap-3 items-center px-5 py-[11px] text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
+    <button onClick={() => onOpen(c)} className="w-full grid grid-cols-[52px_1fr_auto] gap-3 items-center px-5 py-[11px] text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px]" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
       <span className="text-[11px] font-bold text-faint">{c.time}</span>
       <div className="flex items-center gap-2 min-w-0">
         <PlatBadges item={c} size={18} />
@@ -699,6 +702,12 @@ function assetDownload(c: ContentItem): string | null {
   return unique.length === 1 ? unique[0] : null;
 }
 
+/** One literal for the header and the rows. minmax(0, …) rather than a bare
+ *  `2fr`: a bare fr is minmax(auto, 2fr), so a long post title or a work-code
+ *  pill sets a min-content floor that widens that row's column only — and since
+ *  every row is its own grid, the row then sits out of step with the header. */
+const CONTENT_LIST_COLS = "60px minmax(0,2fr) minmax(0,1.2fr) minmax(0,0.7fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
+
 function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
   const codeOf = useCampaignCodes();
   return (
@@ -707,13 +716,15 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
         <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Approval/Publish ในแถวได้</span>}</span>
         <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
-      <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
-        style={{ gridTemplateColumns: "60px 2fr 1.2fr 0.7fr 1fr 1fr 1fr 1fr" }}>
+      {/* The same 5px left border the rows carry, transparent here: without it
+          the header sits 5px left of every cell it labels. */}
+      <div className="hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 border-l-[5px] border-l-transparent"
+        style={{ gridTemplateColumns: CONTENT_LIST_COLS }}>
         <div>Date</div><div>Content</div><div>Campaign</div><div>Brief</div><div>Caption</div><div>Asset</div><div>Approval</div><div>Publish</div>
       </div>
       {[...items].sort(bySchedule).map((c) => {
         return (
-          <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:grid-cols-[60px_2fr_1.2fr_0.7fr_1fr_1fr_1fr_1fr] gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign) }}>
+          <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
             <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
             <div className="flex items-center gap-2 min-w-0">
