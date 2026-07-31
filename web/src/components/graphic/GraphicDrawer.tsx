@@ -10,7 +10,9 @@ import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
-  contentEditLock, withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
+  withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
+  canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
+  requestBriefEdit, decideBriefEdit, consumeBriefUnlock,
 } from "@/lib/data/graphic";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -146,22 +148,68 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
   // "รอ requester เติม key message" at someone with no field to type in.
   // Completing a brief is not signing it off: canSignOffBrief still refuses the
   // requester, so the Content/Creative side still decides it is good enough.
+  //
+  // Once Creative HAS accepted, a top-up is a request: ask the Creative
+  // Leader, wait to be released, then edit. See lib/data/graphic's
+  // canEditBriefNow — the rule lives there so this drawer and the Agency
+  // Portal ask it the same way.
   const [briefEditing, setBriefEditing] = useState(false);
   const [askingUnlock, setAskingUnlock] = useState(false);
-  const canEditBrief = !isAccepted(g) && (isRequester || role === "CMO");
+  const [unlockReason, setUnlockReason] = useState("");
+  const isCmo = role === "CMO";
+  const canEditBrief = canEditBriefNow(g, { isRequester, isCmo });
+  const briefBlockedReason = briefEditBlockedReason(g, { isRequester, isCmo });
+  const unlockState = briefUnlockState(g);
+  // Creative Leader only — narrower than accepting work on purpose (see
+  // canReleaseBriefEdit). Nobody else sees the decision buttons.
+  const canReleaseBrief = canReleaseBriefEdit(role);
 
   const requestBriefUnlock = async () => {
+    if (!unlockReason.trim()) return;
     setAskingUnlock(true);
     try {
-      const next = withNotice(g, currentUser, `${currentUser} ขอแก้บรีฟเพิ่มเติม — กด “ปล่อยงานคืน” ถ้าให้แก้ได้`);
+      const asked = requestBriefEdit(g, currentUser, unlockReason);
+      const next = withNotice(asked, currentUser, `${currentUser} ขอเติมบรีฟเพิ่มเติม: ${unlockReason.trim()} — รอ Creative Leader ปล่อยงานให้แก้`);
       await updateGraphic(next);
       updateCurrentGraphic(next);
-      notify("feedback", `✋ ขอแก้บรีฟ: ${g.title}`,
-        `โดย ${currentUser} → ${g.acceptedBy || g.designer || "Creative"}`,
+      notify("approval", `✋ ขอเติมบรีฟ: ${g.title}`,
+        `โดย ${currentUser} → Creative Leader · ${unlockReason.trim()}`,
         `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
-      toastSuccess("ส่งคำขอแก้บรีฟให้ Creative แล้ว");
+      toastSuccess("ส่งคำขอให้ Creative Leader แล้ว — รอปล่อยงานก่อนถึงจะเติมบรีฟได้");
+      setUnlockReason("");
     } catch (error) {
       toastError(`ส่งคำขอไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setAskingUnlock(false); }
+  };
+
+  /** One release, one top-up. Spent AFTER the brief save lands so a failed
+   *  write can't burn the grant the requester is still waiting to use. */
+  const spendUnlock = async (saved: Graphic) => {
+    const next = consumeBriefUnlock(saved);
+    if (next === saved) return;
+    try {
+      await updateGraphic(next);
+      updateCurrentGraphic(next);
+    } catch (error) {
+      toastError(`ปิดสิทธิ์เติมบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  const decideUnlock = async (grant: boolean) => {
+    setAskingUnlock(true);
+    try {
+      const decided = decideBriefEdit(g, currentUser, grant);
+      const next = withNotice(decided, currentUser,
+        grant ? `${currentUser} ปล่อยให้เติมบรีฟได้ 1 ครั้ง` : `${currentUser} ยังไม่ปล่อยให้เติมบรีฟรอบนี้`);
+      await updateGraphic(next);
+      updateCurrentGraphic(next);
+      notify(grant ? "approved" : "rejected",
+        grant ? `✅ ปล่อยให้เติมบรีฟ: ${g.title}` : `⛔ ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
+        `โดย ${currentUser} → ${g.briefUnlock?.requestedBy || g.requester}`,
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`);
+      toastSuccess(grant ? "ปล่อยให้เติมบรีฟแล้ว" : "ไม่ปล่อยให้เติมบรีฟรอบนี้");
+    } catch (error) {
+      toastError(`บันทึกผลไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setAskingUnlock(false); }
   };
 
@@ -820,7 +868,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
 
                 {briefEditing ? (
                   <BriefEditor g={g} onCancel={() => setBriefEditing(false)}
-                    onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); }} />
+                    onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); void spendUnlock(next); }} />
                 ) : (
                   <div className="flex flex-col gap-2">
                     {briefDetails.map((item) => (
@@ -838,17 +886,56 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", onCl
                   </div>
                 )}
 
-                {/* Accepted: the brief is frozen under whoever is working to it.
-                    Rather than a dead end, the requester can ask — the notice
-                    lands in Creative's drawer, and they decide whether to press
-                    "ปล่อยงานคืน". */}
-                {isAccepted(g) && isRequester && !briefEditing && (
+                {/* Accepted: the brief is what somebody is working to. A top-up
+                    goes through the Creative Leader — ask, wait, then edit. */}
+                {isAccepted(g) && !briefEditing && (isRequester || isCmo) && unlockState !== "granted" && (
                   <div className="mt-3 rounded-[12px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
-                    <div className="text-[11.5px] text-muted leading-[1.5]">{contentEditLock(g).reason}</div>
-                    <button onClick={requestBriefUnlock} disabled={askingUnlock}
-                      className="mt-2 text-[11.5px] font-bold rounded-[8px] px-3 py-[5px] border border-line2 bg-surface text-ink disabled:opacity-40">
-                      {askingUnlock ? "กำลังส่ง…" : "✋ ขอแก้บรีฟ"}
-                    </button>
+                    <div className="text-[11.5px] text-muted leading-[1.5]">{briefBlockedReason}</div>
+                    {unlockState === "pending" ? (
+                      <div className="mt-2 text-[11.5px] font-bold" style={{ color: "#8A6D1E" }}>
+                        ⏳ ขอไว้เมื่อ {new Date(g.briefUnlock!.requestedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
+                        {g.briefUnlock?.reason ? ` · “${g.briefUnlock.reason}”` : ""}
+                      </div>
+                    ) : (
+                      <>
+                        <input value={unlockReason} onChange={(e) => setUnlockReason(e.target.value)}
+                          placeholder="อยากเติมอะไรในบรีฟ… (จำเป็น)"
+                          className="mt-2 w-full text-[12px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none" />
+                        <button onClick={requestBriefUnlock} disabled={askingUnlock || !unlockReason.trim()}
+                          className="mt-2 text-[11.5px] font-bold rounded-[8px] px-3 py-[5px] border border-line2 bg-surface text-ink disabled:opacity-40">
+                          {askingUnlock ? "กำลังส่ง…" : "✋ ขอเติมบรีฟกับ Creative Leader"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Creative Leader's decision — only they see these buttons. */}
+                {unlockState === "pending" && canReleaseBrief && (
+                  <div className="mt-3 rounded-[12px] px-3 py-[10px]" style={{ background: "#FFF7ED", border: "1px solid #F0C89B" }}>
+                    <div className="text-[12px] font-extrabold" style={{ color: "#B3641E" }}>✋ คำขอเติมบรีฟ</div>
+                    <div className="text-[11.5px] mt-1" style={{ color: "#8A5418" }}>
+                      {g.briefUnlock?.requestedBy} ขอเติมบรีฟ{g.briefUnlock?.reason ? `: “${g.briefUnlock.reason}”` : ""}
+                    </div>
+                    <div className="mt-2 flex gap-2 flex-wrap">
+                      <button onClick={() => decideUnlock(true)} disabled={askingUnlock}
+                        className="text-[12px] font-bold text-white rounded-[9px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                        ✓ ปล่อยให้เติมบรีฟ
+                      </button>
+                      <button onClick={() => decideUnlock(false)} disabled={askingUnlock}
+                        className="text-[12px] font-bold rounded-[9px] px-3 py-[7px] border disabled:opacity-40" style={{ borderColor: "#F0C89B", color: "#B3641E", background: "#fff" }}>
+                        ✕ ยังไม่ปล่อย
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Granted: one top-up, then it asks again. */}
+                {unlockState === "granted" && !briefEditing && (
+                  <div className="mt-3 rounded-[12px] px-3 py-[10px]" style={{ background: "#EEF4EE", border: "1px solid #CFE4C2" }}>
+                    <div className="text-[11.5px] font-bold" style={{ color: "#4E7A4E" }}>
+                      ✓ {g.briefUnlock?.decidedBy || "Creative Leader"} ปล่อยให้เติมบรีฟได้แล้ว — แก้ได้ 1 ครั้ง ถ้าจะแก้อีกต้องขอใหม่
+                    </div>
                   </div>
                 )}
               </div>

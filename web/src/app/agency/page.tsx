@@ -4,27 +4,40 @@ import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
-import { BrandDot } from "@/components/ui/BrandDot";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
-  ModuleSummaryCard,
 } from "@/components/campaign/CampaignHeadController";
 import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
-  AGENCY_TASKS, AGENCY_STATUSES, AGENCY_EDITABLE_STATUSES, AGENCY_STATUS_TONE,
+  AGENCY_TASKS, AGENCY_EDITABLE_STATUSES,
   AGENCY_TYPES, AgencyStatus, AgencyTask,
 } from "@/lib/data/agency";
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 import { fetchGraphics, updateGraphic } from "@/lib/db/graphic";
-import { creativeBriefDetails, Graphic } from "@/lib/data/graphic";
+import { Graphic } from "@/lib/data/graphic";
+import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { AgencyDeliverables } from "@/components/agency/AgencyDeliverables";
 import { fetchMembers, Member } from "@/lib/db/settings";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
+import {
+  WorkItem, WorkCard, WorkListView, WorkAction, WorkGroupHeader, StatMini,
+  GroupDef, chip, workDaysUntilDue,
+} from "@/components/work/WorkViews";
+
+/* Agency Portal — the My Tasks surface, filtered to this agency's own work.
+ *
+ * It used to be its own design over the same Graphic Requests: gold summary
+ * tiles, a status dropdown per row, a collapsible brief pack. So an external
+ * designer and an internal one read the same request through two different
+ * lenses, and every improvement to My Tasks (the brief on the card, opening
+ * the full request in place) had to be built twice or not at all. The views
+ * now come from components/work/WorkViews — what stays different here is only
+ * what genuinely differs: an agency submits per deliverable, cannot mark its
+ * own work Approved, and sees nothing but its own rows. */
 
 type PortalTask = AgencyTask & { source: "manual" | "graphic"; graphic?: Graphic };
 
@@ -91,6 +104,58 @@ function graphicToTask(g: Graphic): PortalTask {
   };
 }
 
+/** Which My-Tasks-style group a portal row belongs in. Same idea as the
+ *  internal board — what needs you now, what is out of your hands, what is
+ *  finished — read off the agency status rather than a stored group. */
+function agencyGroup(t: PortalTask): string {
+  if (t.status === "Approved") return "done";
+  if (t.status === "Submitted") return "waitingThem";
+  if (t.status === "Revision") return "revision";
+  return "doFirst";
+}
+
+const AGENCY_GROUPS: GroupDef[] = [
+  { id: "revision", label: "ต้องแก้ตาม feedback", icon: "↩", countBg: "#FBF1E9", countColor: "#C2691E" },
+  { id: "doFirst", label: "Do First", icon: "🎯", countBg: "#FFF5F4", countColor: "#B33A2E" },
+  { id: "waitingThem", label: "ส่งแล้ว — รอทีมภายในรีวิว", icon: "📤", countBg: "#FBF8EE", countColor: "#C68A1E" },
+  { id: "done", label: "Approved", icon: "✓", countBg: "#EEF4EE", countColor: "#4E7A4E" },
+];
+
+const SCOPE_FILTERS = [
+  { id: "all", label: "All work" },
+  { id: "today", label: "Today" },
+  { id: "week", label: "This week" },
+  { id: "revision", label: "Revision" },
+  { id: "open", label: "Not submitted" },
+];
+
+/** The row as the shared card renders it. Priority is not part of the agency
+ *  model, so it is derived from the due date rather than invented: an overdue
+ *  external deliverable IS the high-priority one. */
+function toWorkItem(t: PortalTask): WorkItem {
+  const item = { due: t.due, dueIso: t.graphic?.dueIso };
+  const days = workDaysUntilDue(item);
+  return {
+    key: `${t.source}-${t.id}`,
+    title: t.title,
+    moduleIcon: t.source === "graphic" ? "🎨" : "🤝",
+    moduleColor: t.source === "graphic" ? "#C2691E" : "#7A6BA8",
+    type: t.type,
+    brand: brandName(t.b),
+    campaign: t.campaign,
+    status: t.status,
+    priority: days === null ? "Med" : days <= 0 ? "High" : days <= 2 ? "Med" : "Low",
+    group: agencyGroup(t),
+    due: t.due,
+    dueIso: t.graphic?.dueIso,
+    nextAction: t.graphic?.nextAction || t.brief || "รอรายละเอียดจากทีมภายใน",
+    blocker: t.status === "Revision" ? (t.graphic?.blocker || "มี feedback ให้แก้") : null,
+    pendingApprover: t.status === "Submitted" ? (t.graphic?.requester || "ทีมภายใน") : null,
+    assignee: t.graphic?.designer || "",
+    graphic: t.graphic ?? null,
+  };
+}
+
 /** Apply a portal edit (status / note) to the linked request.
  *
  *  Artwork links are deliberately NOT handled here: they belong to a single
@@ -130,11 +195,14 @@ export default function AgencyPortalPage() {
   const [manualTasks, setManualTasks] = useState<AgencyTask[]>(() => AGENCY_TASKS.map((t) => ({ ...t, source: "manual" as const })));
   const [graphics, setGraphics] = useState<Graphic[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [filter, setFilter] = useState<"all" | AgencyStatus>("all");
+  const [scope, setScope] = useState("all");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [type, setType] = useState("all");
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [newOpen, setNewOpen] = useState(false);
+  const [detailKey, setDetailKey] = useState<string | null>(null);
+  const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
   const empty = { title: "", b: "teppen" as BrandId, campaign: "", type: "Graphic", due: "", agencyEmail: "" };
   const [nt, setNt] = useState(empty);
   const { member, user } = useAuth();
@@ -162,28 +230,48 @@ export default function AgencyPortalPage() {
     ...manualTasks.map((t) => ({ ...t, source: "manual" as const })),
   ], [graphicTasks, manualTasks]);
 
+  const matchScope = (t: PortalTask) => {
+    const days = workDaysUntilDue({ due: t.due, dueIso: t.graphic?.dueIso });
+    if (scope === "today") return (days ?? 1) <= 0 || t.status === "Revision";
+    if (scope === "week") return days !== null && days >= 0 && days <= 6;
+    if (scope === "revision") return t.status === "Revision";
+    if (scope === "open") return t.status !== "Submitted" && t.status !== "Approved";
+    return true;
+  };
+
   const rows = allTasks.filter((t) =>
-    (filter === "all" || t.status === filter) &&
+    matchScope(t) &&
     (brand === "all" || t.b === brand) &&
     (type === "all" || t.type === type) &&
     visibility.isVisible(t.b) &&
     inDateFilter(date, t.due),
   );
 
-  const counts = useMemo(() => ({
-    total: rows.length,
-    linked: rows.filter((t) => t.source === "graphic").length,
-    open: rows.filter((t) => t.status !== "Approved").length,
+  const byKey = useMemo(() => new Map(rows.map((t) => [`${t.source}-${t.id}`, t])), [rows]);
+  const detailTask = detailKey ? byKey.get(detailKey) ?? null : null;
+  const openGraphic = graphicOpenId === null ? null : graphics.find((g) => g.id === graphicOpenId) ?? null;
+
+  // Counters mirror My Tasks' bento: what's on you today, and the state of the
+  // rest. Computed from the filtered rows so the numbers match what's below.
+  const overdue = rows.filter((t) => t.status !== "Approved" && (workDaysUntilDue({ due: t.due, dueIso: t.graphic?.dueIso }) ?? 1) <= 0);
+  const counts = {
+    focus: rows.filter((t) => t.status !== "Approved" && t.status !== "Submitted").length,
+    overdue: overdue.length,
+    revision: rows.filter((t) => t.status === "Revision").length,
     submitted: rows.filter((t) => t.status === "Submitted").length,
     approved: rows.filter((t) => t.status === "Approved").length,
-  }), [rows]);
+  };
+  const doneToday = counts.approved;
+  const totalToday = rows.length;
 
-  /** Persist a linked request and reflect it locally — used by both the
-   *  status/note patches and the per-deliverable submits. */
+  /** Persist a linked request and reflect it locally — used by the status/note
+   *  patches, the per-deliverable submits, and edits made in the full drawer. */
   const saveGraphic = (next: Graphic) => {
     setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
     updateGraphic(next).catch((error) => toastError(`บันทึกงาน Agency ที่ link กับ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
+  /** The drawer persists its own writes — only mirror them here. */
+  const patchGraphic = (next: Graphic) => setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
 
   const update = (task: PortalTask, patch: Partial<AgencyTask>) => {
     if (task.source === "graphic" && task.graphic) {
@@ -212,12 +300,28 @@ export default function AgencyPortalPage() {
     }
   };
 
+  /** The card's action row. Agency work is submitted, never self-approved —
+   *  "Approved" is not in AGENCY_EDITABLE_STATUSES and does not appear here. */
+  const actionsFor = (t: PortalTask) => {
+    if (t.status === "Approved") return null;
+    return (
+      <>
+        {t.graphic && <WorkAction label="🎨 เปิดบรีฟ / ส่งไฟล์" bg="#C2691E" onClick={() => setGraphicOpenId(t.graphic!.id)} />}
+        {t.status === "To Do" && <WorkAction label="Start" bg="#3E5C9A" onClick={() => update(t, { status: "In Progress" })} />}
+        {!t.graphic && t.status !== "Submitted" && (
+          <WorkAction label="Submit for review" bg="#4E7A4E" onClick={() => update(t, { status: "Submitted" })} />
+        )}
+        <WorkAction label="Details" bg="#fff" fg="#6b6258" border="#E5DECF" onClick={() => setDetailKey(`${t.source}-${t.id}`)} />
+      </>
+    );
+  };
+
   return (
     <>
       <CampaignPageHeaderSection
         eyebrow="AGENCY PORTAL"
         title="Agency Portal"
-        description="External creative workspace linked directly to Graphic Request assignments."
+        description="งานของคุณจาก Graphic Request — บรีฟ ไฟล์ และ feedback ในที่เดียว"
       />
 
       <div className="mt-5 flex flex-col gap-5">
@@ -226,15 +330,11 @@ export default function AgencyPortalPage() {
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[13px] font-semibold text-faint">
+                Viewing as {currentUser} · เฉพาะงานที่มอบหมายให้คุณ
+              </div>
               <div className="flex items-center gap-4 flex-wrap">
                 <BrandFilter value={brand} onChange={setBrand} />
-                <label className="flex items-center gap-[7px]">
-                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Status</span>
-                  <select value={filter} onChange={(e) => setFilter(e.target.value as "all" | AgencyStatus)} className={field}>
-                    <option value="all">All Statuses</option>
-                    {AGENCY_STATUSES.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </label>
                 <label className="flex items-center gap-[7px]">
                   <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Type</span>
                   <select value={type} onChange={(e) => setType(e.target.value)} className={field}>
@@ -242,61 +342,103 @@ export default function AgencyPortalPage() {
                     {Array.from(new Set([...AGENCY_TYPES, ...allTasks.map((t) => t.type)])).map((ty) => <option key={ty}>{ty}</option>)}
                   </select>
                 </label>
-                <span className="text-[12px] font-semibold text-faint">
-                  {counts.linked} linked · {counts.open} open external deliverables
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                <span className="rounded-pill bg-[#F2EEFF] px-3 py-[7px] font-bold text-[#6C5CE7]">Auto-sync from assigned designer</span>
-                <span className="rounded-pill bg-[#FFF6E8] px-3 py-[7px] font-bold text-[#C68A1E]">External-only workspace</span>
               </div>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
         </CampaignCommandBar>
-
-        <ModuleSummaryCard
-          title="Agency Portal Summary ✨"
-          titleClassName="text-[#7A5710]"
-          style={{
-            background: "linear-gradient(180deg, #F4D48D 0%, #E7BE67 100%)",
-            border: "1px solid #D5A94D",
-            boxShadow: "0 18px 44px rgba(180, 132, 33, 0.20)",
-          }}
-        >
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {[
-              { label: "Assigned", value: counts.total, emoji: "🤝", note: "External deliverables in view" },
-              { label: "Linked", value: counts.linked, emoji: "🎨", note: "Pulled from Graphic Request" },
-              { label: "Open", value: counts.open, emoji: "🛠️", note: "Still being worked on" },
-              { label: "Submitted", value: counts.submitted, emoji: "📤", note: "Waiting internal review" },
-              { label: "Approved", value: counts.approved, emoji: "✅", note: "Signed off by internal team" },
-            ].map((k) => (
-              <div key={k.label} className="rounded-[20px] border px-4 py-4 bg-white/55" style={{ borderColor: "#D9B86A" }}>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-[#8A6930] font-extrabold">{k.emoji} {k.label}</div>
-                <div className="mt-3 text-[28px] leading-none font-extrabold text-[#2F2413]">{k.value}</div>
-                <div className="mt-2 text-[11px] font-semibold text-[#70552B]">{k.note}</div>
-              </div>
-            ))}
-          </div>
-        </ModuleSummaryCard>
-
-
       </div>
 
-      <div className="mt-5 flex flex-col gap-3">
-        {rows.map((t) => (
-          <AgencyCard key={`${t.source}-${t.id}`} t={t} onUpdate={update} onGraphicChange={saveGraphic} me={currentUser} />
-        ))}
-        {rows.length === 0 && (
-          <div className="px-5 py-10 text-center bg-surface border border-line rounded-cardLg">
-            <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#D9B86A] bg-[#FFF8EA] px-6 py-5">
-              <div className="text-[13px] font-bold text-[#8A6930]">No agency deliverables in this view</div>
-              <div className="text-[11.5px] text-[#9A7A47]">Assign a Graphic Request request to an Agency / External member and it will appear here automatically.</div>
+      <div className="mt-[18px] flex flex-col gap-[18px]">
+        {/* BENTO — the same shape as My Tasks' Today's Focus. */}
+        <div className="flex gap-[14px] flex-wrap">
+          <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
+            <div className="rounded-[18px] px-5 py-[18px] text-white" style={{ background: "#211F1C" }}>
+              <div className="text-[10px] tracking-[0.08em] uppercase font-bold mb-2" style={{ color: "#B8945A" }}>Today&apos;s Focus 🍱</div>
+              <div className="text-[40px] font-extrabold leading-none mb-1">{counts.focus}</div>
+              <div className="text-[12px] italic mb-3" style={{ color: "#C0B8AD" }}>
+                {counts.overdue > 0 ? `เลยกำหนด ${counts.overdue} ชิ้น — เริ่มจากตรงนี้` : "งานที่ยังอยู่ในมือคุณ"}
+              </div>
+              <div className="h-[5px] rounded-[3px] overflow-hidden" style={{ background: "#3A3630" }}>
+                <div className="h-[5px] rounded-[3px]" style={{ background: "#B8945A", width: `${totalToday ? Math.round((doneToday / totalToday) * 100) : 0}%` }} />
+              </div>
+              <div className="text-[11px] mt-[5px]" style={{ color: "#9A9387" }}>{doneToday} / {totalToday} approved</div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <StatMini label="Revision ↩" val={counts.revision} fg="#C2691E" bg="#FBF1E9" />
+              <StatMini label="เลยกำหนด ⚠" val={counts.overdue} fg="#B33A2E" bg="#FFF5F4" />
+              <StatMini label="ส่งแล้ว 📤" val={counts.submitted} fg="#C68A1E" bg="#FBF8EE" />
+              <StatMini label="Approved ✓" val={counts.approved} fg="#4E7A4E" bg="#EEF4EE" />
             </div>
           </div>
+        </div>
+
+        {/* FILTER + VIEW */}
+        <div className="flex items-center justify-between flex-wrap gap-[10px]">
+          <div className="flex gap-[7px] flex-wrap">
+            {SCOPE_FILTERS.map((f) => (
+              <span key={f.id} onClick={() => setScope(f.id)} style={chip(scope === f.id)}>{f.label}</span>
+            ))}
+          </div>
+          <div className="flex gap-[6px]">
+            <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>
+            <span onClick={() => setViewMode("list")} style={chip(viewMode === "list")}>≡ List</span>
+          </div>
+        </div>
+
+        {viewMode === "cards" ? (
+          <div className="flex flex-col gap-[26px]">
+            {AGENCY_GROUPS.map((grp) => {
+              const groupRows = rows.filter((t) => agencyGroup(t) === grp.id);
+              if (groupRows.length === 0) return null;
+              return (
+                <div key={grp.id}>
+                  <WorkGroupHeader g={grp} count={groupRows.length} />
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))" }}>
+                    {groupRows.map((t) => (
+                      <WorkCard
+                        key={`${t.source}-${t.id}`}
+                        item={toWorkItem(t)}
+                        viewer={currentUser}
+                        onOpen={() => setDetailKey(`${t.source}-${t.id}`)}
+                        onOpenGraphic={setGraphicOpenId}
+                        actions={actionsFor(t)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {rows.length === 0 && <EmptyState />}
+          </div>
+        ) : (
+          <WorkListView
+            items={rows.map(toWorkItem)}
+            assigneeHeader="Designer"
+            onOpen={(item) => setDetailKey(item.key)}
+            onOpenGraphic={setGraphicOpenId}
+          />
         )}
       </div>
+
+      {detailTask && (
+        <AgencyDetailDrawer
+          t={detailTask}
+          me={currentUser}
+          onClose={() => setDetailKey(null)}
+          onUpdate={update}
+          onGraphicChange={saveGraphic}
+          onOpenGraphic={setGraphicOpenId}
+        />
+      )}
+
+      {/* The full Graphic Request, over the portal — same as My Tasks. Its own
+          stacking context so it clears the detail drawer (z-[200]). */}
+      {openGraphic && (
+        <div className="relative z-[260]">
+          <GraphicDrawer g={openGraphic} onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
+        </div>
+      )}
 
       {newOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -328,139 +470,82 @@ export default function AgencyPortalPage() {
   );
 }
 
-function AgencyCard({ t, onUpdate, onGraphicChange, me }: {
-  t: PortalTask;
+function EmptyState() {
+  return (
+    <div className="px-5 py-10 text-center bg-surface border border-line rounded-cardLg">
+      <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#D9B86A] bg-[#FFF8EA] px-6 py-5">
+        <div className="text-[13px] font-bold text-[#8A6930]">ไม่มีงานในมุมมองนี้</div>
+        <div className="text-[11.5px] text-[#9A7A47]">งานจะขึ้นที่นี่อัตโนมัติเมื่อ Graphic Request ถูกมอบหมายให้คุณ</div>
+      </div>
+    </div>
+  );
+}
+
+/** The row's own drawer — the portal counterpart of My Tasks' TaskDrawer:
+ *  status, the per-size deliverables, and a note back to the team. The brief
+ *  itself is read in the Graphic Request drawer, one button away, so there is
+ *  exactly one place it is rendered and edited. */
+function AgencyDetailDrawer({ t, me, onClose, onUpdate, onGraphicChange, onOpenGraphic }: {
+  t: PortalTask; me: string;
+  onClose: () => void;
   onUpdate: (task: PortalTask, patch: Partial<AgencyTask>) => void;
   onGraphicChange: (next: Graphic) => void;
-  me: string;
+  onOpenGraphic: (id: number) => void;
 }) {
-  const tone = AGENCY_STATUS_TONE[t.status];
   const locked = t.status === "Approved";
-  const [briefOpen, setBriefOpen] = useState(false);
-  const briefPack = t.graphic ? creativeBriefDetails(t.graphic) : [
-    { label: "Brief link", value: "ยังไม่มี link brief" },
-    { label: "Objective", value: `${t.campaign} · ${t.type} for ${brandName(t.b)}` },
-    { label: "Key message", value: t.brief || "ยังไม่มี key message เพิ่มเติม" },
-    { label: "Platform / usage", value: t.type || "—" },
-    { label: "Size / format", value: "ดูจาก brief / deliverable spec" },
-    { label: "CI / mood direction", value: `${brandName(t.b)} brand direction · keep CI, tone, logo and visual hierarchy consistent.` },
-    { label: "Reference", value: "ยังไม่มี reference link" },
-    { label: "Linked content item", value: "Manual agency task" },
-    { label: "Caption / copy", value: "ยังไม่มี caption/copy เพิ่มเติม" },
-    { label: "Additional details", value: t.note || t.brief || "ไม่มีรายละเอียดเพิ่มเติม" },
-  ];
-  const keyMessage = briefPack.find((item) => item.label === "Key message")?.value || t.brief || "No brief detail yet";
-  const briefLink = briefPack.find((item) => item.label === "Brief link");
+  const [note, setNote] = useState(t.note);
   return (
-    <div className="bg-surface border border-line rounded-cardLg p-5" style={locked ? { opacity: 0.88 } : undefined}>
-      <div className="flex items-start gap-3 flex-wrap">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[14.5px] font-bold text-ink">{t.title}</span>
-            <span className="text-[10.5px] font-bold px-[7px] py-[2px] rounded-[6px]" style={{ background: "#F2F0EB", color: "#6b6258" }}>{t.type}</span>
-            {t.source === "graphic" && <span className="text-[10.5px] font-bold px-[7px] py-[2px] rounded-[6px]" style={{ background: "#FFF6E8", color: "#C68A1E" }}>Linked Creative</span>}
-          </div>
-          <div className="text-[12px] text-faint flex items-center gap-[6px] mt-[3px] flex-wrap">
-            <BrandDot brand={t.b} size={7} />{brandName(t.b)} · {t.campaign} · due <b className="text-muted">{t.due}</b>
+    <div onClick={onClose} className="fixed inset-0 z-[200] flex justify-end" style={{ background: "rgba(33,31,28,.42)" }}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white h-full overflow-y-auto" style={{ width: 460, maxWidth: "100vw", boxShadow: "-8px 0 40px rgba(0,0,0,.14)" }}>
+        <div className="sticky top-0 bg-white z-[1]" style={{ padding: "22px 24px 18px", borderBottom: "1px solid #ECE6DA" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-[16px] font-extrabold leading-[1.3] mb-[5px]">{t.title}</div>
+              <div className="text-[12px] text-faint">{brandName(t.b)} · {t.campaign} · due {t.due}</div>
+            </div>
+            <span onClick={onClose} className="text-[18px] text-faint cursor-pointer p-1 leading-none flex-shrink-0">✕</span>
           </div>
         </div>
-        {locked ? (
-          <StatusBadge tone="green">✓ Approved</StatusBadge>
-        ) : (
-          <select value={t.status} onChange={(e) => onUpdate(t, { status: e.target.value as AgencyStatus })}
-            className="text-[12px] font-bold px-[10px] py-[6px] rounded-[8px] outline-none border" style={{ color: tone[0], background: tone[1], borderColor: `${tone[0]}44` }}>
-            {AGENCY_EDITABLE_STATUSES.map((s) => <option key={s} value={s} style={{ color: "#211F1C", background: "#fff" }}>{s}</option>)}
-          </select>
-        )}
-      </div>
 
-      <div className="mt-3 rounded-card border border-[#E8D6A8] bg-[#FFF8EA] px-3 py-2">
-        <button type="button" onClick={() => setBriefOpen((v) => !v)} className="w-full text-left flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#8A6930]">Creative Brief Pack</span>
-              <span className="text-[10.5px] font-bold text-[#8A6930]">{t.graphic ? "linked from Graphic Request" : "manual agency task"}</span>
-            </div>
-            <div className="mt-[4px] text-[11.5px] text-[#5B4630] truncate">
-              {keyMessage}
-            </div>
-          </div>
-          <span className="flex-shrink-0 rounded-pill border border-[#D9B86A] bg-white/60 px-3 py-[6px] text-[11px] font-bold text-[#8A6930]">
-            {briefOpen ? "Hide brief ↑" : "Show brief ↓"}
-          </span>
-        </button>
-        {"href" in (briefLink ?? {}) && briefLink?.href && !briefOpen && (
-          <a href={briefLink.href} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-[11.5px] font-bold text-accent">
-            Open brief link ↗
-          </a>
-        )}
-        {briefOpen && (
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-            {briefPack.map((item) => (
-              <div key={item.label} className="rounded-[10px] border border-[#EADBB6] bg-white/70 px-3 py-[8px]">
-                <div className="text-[9.5px] uppercase tracking-[0.06em] text-[#9A7A47] font-bold mb-[3px]">{item.label}</div>
-                {"href" in item && item.href ? (
-                  <a href={item.href} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent leading-[1.4] break-words">
-                    {item.value} ↗
-                  </a>
-                ) : (
-                  <div className="text-[11.5px] text-[#5B4630] leading-[1.4] break-words">{item.value}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Graphic-linked work is submitted PER SIZE — each size is its own piece
-          of artwork, so it needs its own link, its own review and its own
-          count. Manual tasks have no size breakdown and keep the single box. */}
-      {t.graphic ? (
-        <>
-          <AgencyDeliverables g={t.graphic} by={me} onChange={onGraphicChange} />
-          {!locked && (
-            <div className="mt-3">
-              <label className="block text-[11px] font-bold text-faint mb-[5px]">Message to team</label>
-              <input value={t.note} onChange={(e) => onUpdate(t, { note: e.target.value })} placeholder="Add a note…" className={field} />
-            </div>
+        <div style={{ padding: "18px 24px" }}>
+          {t.graphic && (
+            <button onClick={() => onOpenGraphic(t.graphic!.id)}
+              className="block w-full text-center text-[12.5px] font-bold text-white rounded-[10px] py-[10px] mb-4" style={{ background: "#C2691E" }}>
+              🎨 เปิด Graphic Request เต็ม · บรีฟ / ส่งไฟล์ / feedback
+            </button>
           )}
-          {locked && t.note && <div className="mt-3 text-[12px] text-faint">{t.note}</div>}
-        </>
-      ) : (
-        <>
+
           {!locked && (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
+            <>
+              <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[10px]">Status</div>
+              <select value={t.status} onChange={(e) => onUpdate(t, { status: e.target.value as AgencyStatus })}
+                className="w-full text-[13px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none mb-4">
+                {AGENCY_EDITABLE_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </>
+          )}
+
+          {t.graphic ? (
+            <AgencyDeliverables g={t.graphic} by={me} onChange={onGraphicChange} />
+          ) : (
+            !locked && (
+              <div className="mb-4">
                 <label className="block text-[11px] font-bold text-faint mb-[5px]">Deliverable link</label>
-                <div className="flex items-center gap-2">
-                  <input value={t.link} onChange={(e) => onUpdate(t, { link: e.target.value })} placeholder="Paste Drive / Canva link…" className={field} />
-                  {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent whitespace-nowrap">Open ↗</a>}
-                </div>
+                <input value={t.link} onChange={(e) => onUpdate(t, { link: e.target.value })} placeholder="Paste Drive / Canva link…" className={field} />
               </div>
-              <div>
-                <label className="block text-[11px] font-bold text-faint mb-[5px]">Message to team</label>
-                <input value={t.note} onChange={(e) => onUpdate(t, { note: e.target.value })} placeholder="Add a note…" className={field} />
-              </div>
-            </div>
+            )
           )}
 
-          {locked && (t.link || t.note) && (
-            <div className="mt-3 flex items-center gap-3 text-[12px]">
-              {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="font-bold text-accent">Deliverable ↗</a>}
-              {t.note && <span className="text-faint">{t.note}</span>}
+          <div className="mt-4">
+            <label className="block text-[11px] font-bold text-faint mb-[5px]">Message to team</label>
+            <div className="flex gap-2">
+              <input value={note} onChange={(e) => setNote(e.target.value)} disabled={locked}
+                onBlur={() => { if (note !== t.note) onUpdate(t, { note }); }}
+                placeholder="Add a note…" className={field} />
             </div>
-          )}
-
-          {!locked && (
-            <div className="mt-3 flex justify-end">
-              <button onClick={() => onUpdate(t, { status: "Submitted" })} disabled={t.status === "Submitted"}
-                className="text-[12px] font-bold text-white bg-status-blue rounded-[8px] px-4 py-[7px] disabled:opacity-40 disabled:cursor-default">
-                {t.status === "Submitted" ? "Submitted ✓" : "Submit for review"}
-              </button>
-            </div>
-          )}
-        </>
-      )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
