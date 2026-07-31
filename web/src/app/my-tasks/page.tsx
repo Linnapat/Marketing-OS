@@ -20,7 +20,6 @@ import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useCanApproveExpense } from "@/lib/usePermGates";
-import { useRole } from "@/lib/role";
 import { canApproveCampaign } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
@@ -30,10 +29,10 @@ import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
 import {
-  WorkItem, WorkCard, WorkListView, WorkAction, WorkGroupHeader, StatMini,
+  WorkItem, WorkCard, WorkListView, WorkCalendarView, WorkAction, WorkGroupHeader, StatMini,
   STATUS_MAP, PRIORITY_MAP, TYPE_COLORS, badge, init, chip, dueColorOf, brandCampaignLine,
 } from "@/components/work/WorkViews";
-import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
+import { GraphicDrawer, GTab } from "@/components/graphic/GraphicDrawer";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -69,6 +68,12 @@ const GROUP_DEFS = [
   { id: "stuck", label: "Stuck — Needs support", icon: "⚠️", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "Let your team know if you need help" },
   { id: "done", label: "Done", icon: "✓", countBg: "#EEF4EE", countColor: "#4E7A4E", warnMsg: "" },
 ];
+/* Overview repeats what the task card and drawer already say — brand,
+ * campaign, due, designer, next action — and it is not why anyone opens a
+ * request from here. Module-level so the array identity is stable across
+ * renders. */
+const HIDDEN_GRAPHIC_TABS: readonly GTab[] = ["overview"];
+
 const SCOPE_FILTERS = [
   { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
   { id: "approvals", label: "My approvals" }, { id: "stuck", label: "Stuck" },
@@ -93,9 +98,20 @@ export default function MyTasksPage() {
   const canApproveExpense = useCanApproveExpense();
   // Same idea for campaign briefs — one gate, shared with the page that holds
   // the Approve button, so this inbox can never offer what that page refuses.
-  const { role } = useRole();
-  const canApproveCampaignBrief = canApproveCampaign(role);
-  const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
+  //
+  // From useAuth, NOT useRole: useRole is the sidebar's "Viewing as" switcher,
+  // which anyone can set to CMO. The Approve button on the campaign page reads
+  // useAuth().role, so trusting the switcher here put Waiting-for-Approval
+  // cards back in a designer's inbox — the exact dead end this queue was
+  // narrowed to remove, just reachable by a dropdown instead of by default.
+  const { member, user, role: authRole } = useAuth();
+  const canApproveCampaignBrief = canApproveCampaign(authRole);
+  const [viewMode, setViewMode] = useState<"cards" | "list" | "calendar">("cards");
+  // Which month the calendar grid is showing. Seeded from the period filter and
+  // re-synced whenever that moves, so switching to Calendar lands on the month
+  // you were already looking at — but it stays navigable on its own, because
+  // the filter can be set to a whole year and one grid only draws one month.
+  const [calMonth, setCalMonth] = useState(() => ({ month: DEFAULT_DATE_FILTER.month, year: DEFAULT_DATE_FILTER.year }));
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set([1, 4, 7, 8, 12, 14, 18, 20]));
@@ -202,7 +218,6 @@ export default function MyTasksPage() {
     };
   }, [campaigns, expenseReqs]);
   // Approve / reject inline — sync the row locally so the card updates at once.
-  const { member, user } = useAuth();
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
   const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? "#9A9387";
 
@@ -268,6 +283,14 @@ export default function MyTasksPage() {
   const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  // Follow the period filter while it is on a single month. Year/Range select a
+  // span no single grid can draw, so the calendar keeps whatever month it is on
+  // and reports the rest as "อยู่นอกเดือนนี้" rather than jumping somewhere the
+  // filter never named.
+  useEffect(() => {
+    if (date.mode !== "month") return;
+    setCalMonth((c) => (c.month === date.month && c.year === date.year ? c : { month: date.month, year: date.year }));
+  }, [date.mode, date.month, date.year]);
   // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date, brandOptions, brandVisibility]);
@@ -367,6 +390,7 @@ export default function MyTasksPage() {
             <div className="flex gap-[6px]">
               <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>
               <span onClick={() => setViewMode("list")} style={chip(viewMode === "list")}>≡ List</span>
+              <span onClick={() => setViewMode("calendar")} style={chip(viewMode === "calendar")}>🗓 Calendar</span>
             </div>
           </div>
 
@@ -385,6 +409,15 @@ export default function MyTasksPage() {
                 );
               })}
             </div>
+          ) : viewMode === "calendar" ? (
+            <WorkCalendarView
+              items={scopedTasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
+              month={calMonth.month}
+              year={calMonth.year}
+              onNavigate={(month, year) => setCalMonth({ month, year })}
+              onOpen={(item) => setDrawerId(Number(item.key))}
+              onOpenGraphic={setGraphicOpenId}
+            />
           ) : (
             <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
           )}
@@ -399,7 +432,8 @@ export default function MyTasksPage() {
           z-50 inside, which is correct on /graphic and too low here. */}
       {openGraphic && (
         <div className="relative z-[260]">
-          <GraphicDrawer g={openGraphic} onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
+          <GraphicDrawer g={openGraphic} initialTab="brief" hideTabs={HIDDEN_GRAPHIC_TABS}
+            onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
         </div>
       )}
       {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
