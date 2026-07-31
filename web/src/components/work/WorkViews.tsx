@@ -203,6 +203,152 @@ export function WorkAction({ label, bg, fg = "#fff", border, onClick, disabled }
   );
 }
 
+/* ── Calendar ──────────────────────────────────────────────────────────────
+ *
+ * The card and list views answer "what is on me"; neither answers "what is
+ * this week going to look like", which is the question anyone with five due
+ * dates in one afternoon is actually asking.
+ *
+ * Days are laid out Sunday-first, matching Thai calendars.
+ *
+ * Two things are deliberately never dropped, because a planning view that
+ * hides work is worse than no planning view: rows with no due date get their
+ * own strip under the grid, and rows dated outside the visible month are
+ * counted in a hint rather than silently vanishing (the caller's date filter
+ * may span a year, and one grid can only show one month). */
+
+const WEEKDAY_TH = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+const MONTH_TH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** Statuses that stop the overdue clock — a done thing is not late. */
+const FINISHED = new Set(["Done", "Approved"]);
+
+export function WorkCalendarView({ items, month, year, onNavigate, onOpen, onOpenGraphic }: {
+  items: WorkItem[];
+  month: number;
+  year: number;
+  onNavigate?: (month: number, year: number) => void;
+  onOpen?: (item: WorkItem) => void;
+  onOpenGraphic?: (id: number) => void;
+}) {
+  const today = new Date();
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leading = first.getDay();
+  // Whole weeks only, so every row has seven cells.
+  const cellCount = Math.ceil((leading + daysInMonth) / 7) * 7;
+
+  const undated: WorkItem[] = [];
+  const outside: WorkItem[] = [];
+  const byDay = new Map<number, WorkItem[]>();
+  for (const item of items) {
+    const d = workDueDate(item);
+    if (!d) { undated.push(item); continue; }
+    if (d.getFullYear() !== year || d.getMonth() !== month) { outside.push(item); continue; }
+    const list = byDay.get(d.getDate());
+    if (list) list.push(item); else byDay.set(d.getDate(), [item]);
+  }
+
+  const step = (delta: number) => {
+    if (!onNavigate) return;
+    const d = new Date(year, month + delta, 1);
+    onNavigate(d.getMonth(), d.getFullYear());
+  };
+
+  const arrow = "w-[28px] h-[28px] rounded-[8px] border border-line2 bg-white flex items-center justify-center cursor-pointer text-[14px] text-ink flex-shrink-0 select-none";
+
+  return (
+    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-3 flex-wrap" style={{ background: "#FBF9F4", borderBottom: "1px solid #ECE6DA" }}>
+        {onNavigate && <span className={arrow} onClick={() => step(-1)}>‹</span>}
+        <span className="text-[13.5px] font-bold">{MONTH_TH[month]} {year}</span>
+        {onNavigate && <span className={arrow} onClick={() => step(1)}>›</span>}
+        {outside.length > 0 && (
+          <span className="text-[11px] font-semibold ml-auto" style={{ color: "#C68A1E" }}>
+            อีก {outside.length} งานอยู่นอกเดือนนี้ — เลื่อนเดือนเพื่อดู
+          </span>
+        )}
+      </div>
+
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7,minmax(0,1fr))" }}>
+        {WEEKDAY_TH.map((w, i) => (
+          <div key={w} className="text-[10px] font-bold tracking-[0.06em] uppercase text-center py-[7px]"
+            style={{ color: i === 0 || i === 6 ? "#B33A2E" : "#9A9387", borderBottom: "1px solid #ECE6DA" }}>{w}</div>
+        ))}
+        {Array.from({ length: cellCount }, (_, i) => {
+          const dayNum = i - leading + 1;
+          const inMonth = dayNum >= 1 && dayNum <= daysInMonth;
+          const cellDate = inMonth ? new Date(year, month, dayNum) : null;
+          const isToday = !!cellDate && sameDay(cellDate, today);
+          const dayItems = inMonth ? (byDay.get(dayNum) ?? []) : [];
+          return (
+            <div key={i} className="p-[6px] flex flex-col gap-[4px]"
+              style={{
+                minHeight: 108,
+                borderBottom: "1px solid #F4EFE5",
+                borderRight: (i + 1) % 7 === 0 ? undefined : "1px solid #F4EFE5",
+                background: !inMonth ? "#FBF9F4" : isToday ? "#FFFBF0" : "#fff",
+              }}>
+              {inMonth && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] font-bold" style={isToday
+                    ? { background: "#211F1C", color: "#fff", borderRadius: 999, padding: "1px 7px" }
+                    : { color: "#6b6258" }}>{dayNum}</span>
+                  {dayItems.length > 3 && <span className="text-[9.5px] text-faint">{dayItems.length} งาน</span>}
+                </div>
+              )}
+              {dayItems.slice(0, 3).map((item) => {
+                const late = !!cellDate && cellDate < new Date(today.getFullYear(), today.getMonth(), today.getDate()) && !FINISHED.has(item.status);
+                const [fg, bg] = STATUS_MAP[item.status] ?? ["#6b6258", "#F0EDE6"];
+                return (
+                  <button key={item.key} onClick={() => onOpen?.(item)}
+                    className="text-left rounded-[7px] px-[6px] py-[4px] w-full"
+                    style={{ background: bg, borderLeft: `3px solid ${late ? "#B33A2E" : item.moduleColor}` }}>
+                    <div className="text-[10.5px] font-bold leading-[1.3] truncate" style={{ color: "#211F1C" }}>
+                      {item.moduleIcon} {item.title}
+                    </div>
+                    <div className="text-[9.5px] font-semibold truncate" style={{ color: late ? "#B33A2E" : fg }}>
+                      {late ? "เลยกำหนด · " : ""}{item.status}
+                      {item.graphic ? " · 🎨" : ""}
+                    </div>
+                  </button>
+                );
+              })}
+              {dayItems.length > 3 && (
+                <button onClick={() => onOpen?.(dayItems[3])} className="text-[10px] font-bold text-left" style={{ color: "#6b6258" }}>
+                  +{dayItems.length - 3} เพิ่มเติม
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {undated.length > 0 && (
+        <div className="px-5 py-3" style={{ borderTop: "1px solid #ECE6DA", background: "#FBF9F4" }}>
+          <div className="text-[10px] tracking-[0.06em] uppercase font-bold text-faint mb-2">
+            ยังไม่ระบุวันครบกำหนด · {undated.length}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {undated.map((item) => (
+              <button key={item.key} onClick={() => onOpen?.(item)}
+                className="rounded-[8px] px-[9px] py-[5px] text-[11px] font-semibold"
+                style={{ background: "#fff", border: "1px solid #E5DECF", color: "#211F1C" }}>
+                {item.moduleIcon} {item.title}
+                {item.graphic && onOpenGraphic ? " 🎨" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assigneeHeader = "Assignee" }: {
   items: WorkItem[];
   viewerColorOf?: (n: string) => string;

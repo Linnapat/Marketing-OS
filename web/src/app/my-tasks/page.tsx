@@ -29,7 +29,7 @@ import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
 import {
-  WorkItem, WorkCard, WorkListView, WorkAction, WorkGroupHeader, StatMini,
+  WorkItem, WorkCard, WorkListView, WorkCalendarView, WorkAction, WorkGroupHeader, StatMini,
   STATUS_MAP, PRIORITY_MAP, TYPE_COLORS, badge, init, chip, dueColorOf, brandCampaignLine,
 } from "@/components/work/WorkViews";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
@@ -100,7 +100,12 @@ export default function MyTasksPage() {
   // narrowed to remove, just reachable by a dropdown instead of by default.
   const { member, user, role: authRole } = useAuth();
   const canApproveCampaignBrief = canApproveCampaign(authRole);
-  const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
+  const [viewMode, setViewMode] = useState<"cards" | "list" | "calendar">("cards");
+  // Which month the calendar grid is showing. Seeded from the period filter and
+  // re-synced whenever that moves, so switching to Calendar lands on the month
+  // you were already looking at — but it stays navigable on its own, because
+  // the filter can be set to a whole year and one grid only draws one month.
+  const [calMonth, setCalMonth] = useState(() => ({ month: DEFAULT_DATE_FILTER.month, year: DEFAULT_DATE_FILTER.year }));
   const [scopeFilter, setScopeFilter] = useState("all");
   const [tasks, setTasks] = useState<Task[]>(TASKS);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set([1, 4, 7, 8, 12, 14, 18, 20]));
@@ -272,6 +277,14 @@ export default function MyTasksPage() {
   const reassign = (id: number, to: string) => { setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, assignee: to } : t))); reassignDb(id, to); };
 
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
+  // Follow the period filter while it is on a single month. Year/Range select a
+  // span no single grid can draw, so the calendar keeps whatever month it is on
+  // and reports the rest as "อยู่นอกเดือนนี้" rather than jumping somewhere the
+  // filter never named.
+  useEffect(() => {
+    if (date.mode !== "month") return;
+    setCalMonth((c) => (c.month === date.month && c.year === date.year ? c : { month: date.month, year: date.year }));
+  }, [date.mode, date.month, date.year]);
   // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const myTasks = useMemo(() => tasks.filter((t) => t.assignee === viewAs && canSeeBrandLabel(t.brand) && inDateFilter(date, t.dueIso || t.due)), [tasks, viewAs, date, brandOptions, brandVisibility]);
@@ -371,6 +384,7 @@ export default function MyTasksPage() {
             <div className="flex gap-[6px]">
               <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>
               <span onClick={() => setViewMode("list")} style={chip(viewMode === "list")}>≡ List</span>
+              <span onClick={() => setViewMode("calendar")} style={chip(viewMode === "calendar")}>🗓 Calendar</span>
             </div>
           </div>
 
@@ -389,6 +403,15 @@ export default function MyTasksPage() {
                 );
               })}
             </div>
+          ) : viewMode === "calendar" ? (
+            <WorkCalendarView
+              items={scopedTasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
+              month={calMonth.month}
+              year={calMonth.year}
+              onNavigate={(month, year) => setCalMonth({ month, year })}
+              onOpen={(item) => setDrawerId(Number(item.key))}
+              onOpenGraphic={setGraphicOpenId}
+            />
           ) : (
             <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
           )}
