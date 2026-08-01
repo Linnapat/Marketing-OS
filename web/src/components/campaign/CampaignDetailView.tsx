@@ -16,6 +16,8 @@ import { fetchResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchKols } from "@/lib/db/kol";
 import { fetchCampaignKolEngagements, CampaignKolRow } from "@/lib/db/kolScorecard";
+import { LineOaConfig, lineConfigFor, notionalCost, effectiveCost } from "@/lib/data/lineQuota";
+import { fetchJsonSetting } from "@/lib/db/settings";
 import { fmtFollow } from "@/lib/data/kol";
 import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary, materialised } from "@/lib/data/brief";
@@ -627,6 +629,22 @@ function AdsTab({ detail, hub }: { detail: CampaignDetail; hub: CampaignHub | nu
 function BudgetTab({ detail, s, brief }: { detail: CampaignDetail; s: HubStats | null; brief?: CampaignBrief | null }) {
   const c = detail.row;
   const requested = s?.expenseTotal ?? 0;
+  const [lineOaConfigs, setLineOaConfigs] = useState<LineOaConfig[]>([]);
+  const [reachTotal, setReachTotal] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    fetchJsonSetting<LineOaConfig[]>("line_oa_config")
+      .then((cfg) => { if (alive) setLineOaConfigs(cfg ?? []); }).catch(() => {});
+    fetchResults(c.id)
+      .then((rows) => { if (alive) setReachTotal(rows.reduce((n, r) => n + (r.reachActual || 0), 0)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [c.id]);
+  const lineMessages = brief?.budget.lineMessages ?? 0;
+  const lineCfg = lineConfigFor(c.b, lineOaConfigs);
+  const lineNotional = notionalCost(lineMessages, lineCfg.ratePerMessage);
+  const cashCost = s?.approvedTotal ?? 0;
+  const effective = effectiveCost(cashCost, lineMessages, lineCfg);
   // Breakdown from the campaign's actual brief allocation; campaigns without a
   // brief only have a total — never a fabricated split.
   const bs = brief ? budgetSummary(brief) : null;
@@ -654,6 +672,43 @@ function BudgetTab({ detail, s, brief }: { detail: CampaignDetail; s: HubStats |
           </div>
         ))}
       </div>
+      {/* A LINE broadcast inside the monthly allowance leaves the bank almost
+          untouched while still consuming a finite, shared resource. Showing the
+          two side by side rather than replacing the cash figure: people are
+          already quoting the cash number, and silently redefining it would make
+          old reports disagree with new ones for no visible reason. */}
+      {lineMessages > 0 && (
+        <div className="rounded-cardLg border px-5 py-4" style={{ background: "#F4F6FA", border: "1px solid #D5DEEF" }}>
+          <div className="text-[12.5px] font-bold text-ink mb-2">
+            LINE broadcast · {num(lineMessages)} ข้อความ
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold">จ่ายจริง</div>
+              <div className="text-[17px] font-extrabold text-ink">{baht(cashCost)}</div>
+              <div className="text-[10.5px] text-faint">เงินที่ออกจากบัญชี</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold">ต้นทุนเสมือน</div>
+              <div className="text-[17px] font-extrabold" style={{ color: "#3E5C9A" }}>{baht(lineNotional)}</div>
+              <div className="text-[10.5px] text-faint">{num(lineMessages)} × ฿{lineCfg.ratePerMessage}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold">ต้นทุนสำหรับวัดผล</div>
+              <div className="text-[17px] font-extrabold" style={{ color: "#3E5C9A" }}>{baht(effective)}</div>
+              <div className="text-[10.5px] text-faint">ใช้เทียบกับแคมเปญอื่น</div>
+            </div>
+            {reachTotal > 0 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.06em] text-faint font-bold">Cost / reach</div>
+                <div className="text-[17px] font-extrabold" style={{ color: "#3E5C9A" }}>{cpr(effective / reachTotal)}</div>
+                <div className="text-[10.5px] text-faint">จ่ายจริงคิดได้ {cpr(cashCost / reachTotal)} — เทียบกับใครไม่ได้</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <Panel title="Planning Budget Breakdown">
         {lines.map((b) => (
           <div key={b.label} className="flex items-center justify-between py-[10px] border-b border-line4 last:border-0">
