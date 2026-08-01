@@ -318,8 +318,13 @@ export default function KolPage() {
       <div className="mt-5">
         {tab === "list" && overBudgetCampaigns.length > 0 && (
           <div className="mb-3 rounded-[12px] px-4 py-3 text-[12px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
-            ⚠ KOL expense เกินงบจาก KOL Plan: {overBudgetCampaigns.map((x) =>
-              `${x.c} (ใช้ ${baht(x.spent, { compact: true })} / งบ ${baht(x.budget, { compact: true })} — เกิน ${baht(x.spent - x.budget, { compact: true })})`,
+            {/* "expense" was the wrong word: this sums the deal rows on this
+                page — ค่าตัว + ค่าอาหาร of every request, approved or not — and
+                none of it has necessarily been spent. On Fuji Don it read
+                "ใช้ ฿40K" while the campaign's only KOL expense request was
+                ฿20K still sitting in Draft. Same warning, said accurately. */}
+            ⚠ ยอดที่ผูกไว้กับ KOL เกินงบใน KOL Plan (นับทุกรายการในหน้านี้ ยังไม่ใช่เงินที่จ่ายออกไป): {overBudgetCampaigns.map((x) =>
+              `${x.c} (ผูกไว้ ${baht(x.spent, { compact: true })} / งบ ${baht(x.budget, { compact: true })} — เกิน ${baht(x.spent - x.budget, { compact: true })})`,
             ).join(" · ")}
           </div>
         )}
