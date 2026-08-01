@@ -7,7 +7,6 @@ import { ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, LogOut, Pencil,
 import { NAV } from "@/lib/nav";
 import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
-import { NotificationBell } from "./NotificationBell";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { moduleForPath } from "@/lib/permissions";
@@ -224,7 +223,6 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
         {!AUTH_REQUIRED && !collapsed && <RoleSwitcher />}
         {collapsed ? (
           <div className="flex flex-col items-center gap-2 pt-1" title={`${displayName} · ${displayRole}`}>
-            <NotificationBell collapsed />
             <Avatar name={displayName} avatarUrl={member?.avatarUrl} />
             {AUTH_REQUIRED && user && (
               <button onClick={() => signOut()} aria-label="Sign out" className="text-white/40 hover:text-white p-1" title="Sign out">
@@ -240,7 +238,6 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
               <div className="text-[10.5px] text-white/40 truncate">{displayRole}</div>
               {member?.presence && <div className="text-[10.5px] text-white/55 truncate">{member.presence}{member.statusNote ? ` · ${member.statusNote}` : ""}</div>}
             </div>
-            <NotificationBell />
             {member && (
               <button onClick={() => setProfileOpen(true)} aria-label="Edit profile" className="text-white/40 hover:text-white p-1" title="Edit profile">
                 <Pencil size={15} />

@@ -30,6 +30,7 @@ import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
+import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -352,6 +353,7 @@ export default function MyTasksPage() {
         eyebrow="MY TASKS"
         title="My Tasks"
         description="Personal workspace, approvals, and team workload in one calm command center."
+        right={<NotificationBell tone="light" />}
       />
 
       <div className="mt-5 flex flex-col gap-5">
@@ -832,6 +834,7 @@ function ListView({ tasks, getStatus, onOpen, onOpenGraphic, colorOf, graphicOf 
       viewerColorOf={colorOf}
       onOpen={(item) => onOpen(Number(item.key))}
       onOpenGraphic={onOpenGraphic}
+      groupByStatus
     />
   );
 }
