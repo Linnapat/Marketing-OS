@@ -371,6 +371,54 @@ export async function createKolWithChannels(input: {
   return kolId;
 }
 
+export interface CampaignKolRow extends KolEngagementRow {
+  kol_id: string;
+  display_name: string;
+  tier: string | null;
+  /** True when we matched on the campaign's name because no id link exists. */
+  matched_by_name: boolean;
+}
+
+/**
+ * What this campaign actually did with creators. The campaign page has only ever
+ * shown rows from the campaign-scoped `kols` table — the plan — so a finished
+ * campaign displayed no reach, no cost and no posts even when all of it was
+ * recorded. Engagements carry that, and 100 of the 169 predate the campaigns
+ * table, hence the name fallback for the ones with no id to join on.
+ */
+export async function fetchCampaignKolEngagements(
+  campaignId: string, campaignName?: string,
+): Promise<CampaignKolRow[]> {
+  const db = supabase();
+  if (!db) return [];
+  const cols = "collab_id, kol_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, expense_request_id, performance_tag, next_action, needs_review, kol_profiles(display_name, tier)";
+
+  const byId = await db.from("kol_collaboration_history").select(cols).eq("campaign_id", campaignId);
+  const rows = [...((byId.data ?? []) as Record<string, unknown>[])];
+  const seen = new Set(rows.map((r) => r.collab_id as string));
+
+  if (campaignName?.trim()) {
+    const byName = await db.from("kol_collaboration_history").select(cols)
+      .is("campaign_id", null).ilike("campaign_name", campaignName.trim());
+    for (const r of (byName.data ?? []) as Record<string, unknown>[]) {
+      if (!seen.has(r.collab_id as string)) { rows.push(r); seen.add(r.collab_id as string); }
+    }
+  }
+
+  return rows.map((r) => {
+    const profile = r.kol_profiles as { display_name?: string; tier?: string } | null;
+    return {
+      ...(r as unknown as KolEngagementRow),
+      display_name: profile?.display_name ?? "—",
+      tier: profile?.tier ?? null,
+      matched_by_name: r.campaign_id == null,
+      actual_reach: num(r.actual_reach),
+      actual_engagement: num(r.actual_engagement),
+      total_cost: num(r.total_cost),
+    } as CampaignKolRow;
+  }).sort((a, b) => (b.actual_reach ?? 0) - (a.actual_reach ?? 0));
+}
+
 /** Record the date agreed with the creator — what "late" is measured against. */
 export async function setAgreedPostDate(collabId: string, date: string | null): Promise<boolean> {
   const db = supabase();
