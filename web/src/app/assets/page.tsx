@@ -76,8 +76,10 @@ export default function AssetLibraryPage() {
   const [tab, setTab] = useState<AssetTab>("library");
   // Library grid can render flat or grouped by campaign.
   const [group, setGroup] = useState<"list" | "campaign">("list");
-  // Search is on the campaign name — the library is browsed by campaign, and
-  // "which campaign was that again" is the question people actually arrive with.
+  // One box over both the campaign and the asset name. Splitting them into two
+  // fields would make the user decide which one they are remembering before
+  // they can type, and people arrive with either — "that Wagyu campaign" or
+  // "the key visual".
   const [q, setQ] = useState("");
   // Campaigns the user rolled up. Collapsed rather than filtered, so the header
   // and its asset count stay on screen. Remembered between visits.
@@ -136,7 +138,7 @@ export default function AssetLibraryPage() {
   const needle = q.trim().toLowerCase();
   const rows = assets
     .filter((a) => (brand === "all" || a.b === brand) && (type === "all" || a.type === type)
-      && (!needle || (a.campaign || "").toLowerCase().includes(needle)))
+      && (!needle || `${a.campaign ?? ""} ${a.name}`.toLowerCase().includes(needle)))
     // Newest first everywhere — see assetSeq for why this is id order, not a date.
     .sort((x, y) => assetSeq(y) - assetSeq(x));
   const campaignGroups = assetsByCampaign(rows);
@@ -227,8 +229,8 @@ export default function AssetLibraryPage() {
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="ค้นหาชื่อแคมเปญ…"
-                    aria-label="ค้นหาชื่อแคมเปญ"
+                    placeholder="ค้นหาแคมเปญ / ชื่อ asset…"
+                    aria-label="ค้นหาแคมเปญหรือชื่อ asset"
                     className="text-[13px] pl-[30px] pr-[28px] py-[8px] rounded-[10px] border border-line2 bg-ivory outline-none w-[200px]"
                   />
                   <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-[12px] text-faint" aria-hidden>🔍</span>
@@ -302,7 +304,7 @@ export default function AssetLibraryPage() {
             })}
             {rows.length === 0 && (
               <div className="text-[12.5px] text-faint text-center py-10">
-                {needle ? `ไม่พบแคมเปญที่ชื่อมี “${q.trim()}”` : "No assets match this view."}
+                {needle ? `ไม่พบแคมเปญหรือ asset ที่ชื่อมี “${q.trim()}”` : "No assets match this view."}
               </div>
             )}
           </div>
@@ -311,7 +313,7 @@ export default function AssetLibraryPage() {
             {/* A search that finds nothing has to say so. Without this the grid
                 shows only the drop zone, which reads as "the library is empty". */}
             {rows.length === 0 && needle && (
-              <div className="col-span-full text-[12.5px] text-faint text-center py-8">ไม่พบแคมเปญที่ชื่อมี “{q.trim()}”</div>
+              <div className="col-span-full text-[12.5px] text-faint text-center py-8">ไม่พบแคมเปญหรือ asset ที่ชื่อมี “{q.trim()}”</div>
             )}
             {rows.map((a) => <AssetCard key={a.id} a={a} />)}
             <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px] bg-white/70">
