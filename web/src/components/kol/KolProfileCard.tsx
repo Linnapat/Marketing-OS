@@ -197,7 +197,7 @@ function ExpenseRow({ engagement, kolName, requester }: {
   const create = async () => {
     setBusy(true);
     try {
-      const id = await createKolExpenseRequest({
+      const res = await createKolExpenseRequest({
         collabId: engagement.collab_id,
         brand: engagement.brand,
         campaign: engagement.campaign_name,
@@ -206,7 +206,9 @@ function ExpenseRow({ engagement, kolName, requester }: {
         kolName,
         requester,
       });
-      if (id) setLinked(id); else toastError("สร้างใบเบิกไม่สำเร็จ — ลองใหม่อีกครั้ง");
+      // "ลองใหม่อีกครั้ง" was the wrong advice for every way this fails —
+      // a permission or a missing name does not fix itself on a second click.
+      if ("id" in res) setLinked(res.id); else toastError(res.error);
     } finally { setBusy(false); }
   };
 
