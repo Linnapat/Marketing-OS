@@ -31,7 +31,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveRushBrief } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -123,6 +123,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
   // Rush sign-off: Creative Leader owns the queue's capacity, CMO covers.
   const canApproveRush = canApproveRushBrief(role);
+  // Handing the job to someone else is the Creative Leader's call; taking it
+  // yourself (canAcceptWork, below) is not gated by this.
+  const canAssign = canAssignDesigner(role);
   const stageAge = stageAgeDays(g, new Date().toISOString().slice(0, 10));
   const stageLevel = ageLevel(stageAge);
   const [rushBusy, setRushBusy] = useState(false);
@@ -827,6 +830,14 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
               <div>
                 <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
+                {!canAssign ? (
+                  <div className="text-[13px] text-ink">
+                    {g.designer && g.designer !== "Unassigned" ? g.designer : "Unassigned"}
+                    <span className="block text-[10.5px] text-faint mt-[1px]">
+                      Creative Leader เป็นคนมอบหมาย — กด “รับงาน” ถ้าจะรับเอง
+                    </span>
+                  </div>
+                ) : (
                 <OwnerSelect
                   value={g.designer === "Unassigned" ? "" : g.designer}
                   onChange={(name) => {
@@ -844,6 +855,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   team="Creative"
                   placeholder="Unassigned"
                 />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {[["Stage", <StatusBadge key="s" tone={stageTone(g.stage)}>{g.stage}</StatusBadge>],
