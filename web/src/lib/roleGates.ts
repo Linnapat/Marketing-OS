@@ -72,19 +72,28 @@ export function canAssignCaption(role: string): boolean {
  * storyboard, submit it, decide whether the job needs a shoot, name the
  * shooter and the shoot date?
  *
- * The creative side runs its own pipeline and the CMO covers, with one
- * exception: the VDO Editor (CMO, 2026-08-02). The edit happens after the
- * footage exists, so they read this block and wait on it rather than arrange
- * it. They still claim the job and deliver the asset — those are theirs.
+ * Content Creator and Creative Leader (CMO, 2026-08-02: "คนทำ storyboard,
+ * จัดคิวถ่าย = Content creator / Content Leader" — read as Creative Leader,
+ * the only Leader role the system has).
+ *
+ * This was "the whole creative side", which handed shoot scheduling to the
+ * Senior Graphic Designer, the VDO Editor and the outside studio as well —
+ * an external agency arranging our shoot days being the clearest sign the
+ * rule was too wide. Everyone downstream of the plan now reads it instead:
+ * they still claim the job and deliver the asset, which are theirs.
  *
  * Read-only, not hidden. "Who is drawing the storyboard" and "is there a shoot
- * first" are the two facts an editor most needs before their own work can
+ * first" are the two facts a producer most needs before their own work can
  * start; taking the controls away must not take the answers with them.
+ *
+ * Same membership as canMarkMediaReleased today, deliberately not the same
+ * function: they are two different decisions that happen to sit with the same
+ * two people, and folding them together would move both the next time one
+ * changes.
  */
 export function canRunProductionPipeline(role: string): boolean {
   const r = (role || "").trim();
-  if (r === "VDO Editor") return false;
-  return r === "CMO" || isCreativeSideRole(r);
+  return r === "Content Creator" || r === "Creative Leader" || r === "CMO";
 }
 
 /**
@@ -147,7 +156,13 @@ export function canSendGraphicBrief(role: string): boolean {
  *
  * The Permissions table has said "Own" for the production roles since it was
  * written, and nothing ever read the column; a VDO Editor saw all 22 requests
- * across every brand. Switched on for VDO Editor per the CMO on 2026-08-02.
+ * across every brand. Switched on for VDO Editor and Agency (External) per the
+ * CMO on 2026-08-02.
+ *
+ * Agency needs it most and had it least: the sidebar shows them only the
+ * portal, but /graphic is not blocked for them (Graphic = Edit in the matrix),
+ * so an outside studio typing the URL reached the whole board — every brand,
+ * every campaign, every other supplier's jobs.
  *
  * Senior Graphic Designer, Content Creator and KOL Specialist carry the same
  * "Own" in that table and are deliberately NOT switched on here — narrowing
@@ -159,7 +174,8 @@ export function canSendGraphicBrief(role: string): boolean {
  * had already handed them.
  */
 export function worksOwnQueueOnly(role: string): boolean {
-  return (role || "").trim() === "VDO Editor";
+  const r = (role || "").trim();
+  return r === "VDO Editor" || r === "Agency (External)";
 }
 
 /** May this person hand a graphic request to a designer?

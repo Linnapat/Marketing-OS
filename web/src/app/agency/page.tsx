@@ -54,10 +54,18 @@ function isAssignedToAgency(g: Graphic, members: Member[]) {
   return members.some((m) => isAgencyMember(m) && m.name === g.designer);
 }
 
+/** What THIS agency user may see, once we already know the row belongs to some
+ *  agency. Their own name only.
+ *
+ *  It used to return true for any designer string containing "agency",
+ *  "external", "studio" and so on, and true again when the viewer could not be
+ *  identified. With one supplier on the system neither showed, but both are
+ *  the same bug: one outside studio reading another's queue. Matching is on
+ *  the person, and an unidentified viewer now sees nothing rather than
+ *  everything. */
 function isVisibleToAgencyUser(g: Graphic, member: Member | null, email: string) {
-  if (!member && !email) return true;
-  if (agencyText(g.designer)) return true;
   const userKeys = [member?.name, member?.email, email].filter(Boolean).map((v) => String(v).toLowerCase());
+  if (!userKeys.length) return false;
   return userKeys.some((key) => g.designer.toLowerCase() === key);
 }
 
