@@ -423,6 +423,59 @@ export async function fetchCampaignKolEngagements(
   }).sort((a, b) => (b.actual_reach ?? 0) - (a.actual_reach ?? 0));
 }
 
+export interface KolCalendarPost {
+  collab_id: string;
+  kol_id: string;
+  display_name: string;
+  brand: string | null;
+  campaign_name: string | null;
+  /** Actual post date when known, otherwise the date agreed with the creator. */
+  date: string;
+  /** True when this is still only a plan — no post has been recorded yet. */
+  planned: boolean;
+  platforms: string[];
+}
+
+/**
+ * KOL posts as calendar entries, so the content calendar can show them beside
+ * brand posts. They were invisible there, which is how two campaigns ended up
+ * dropping on the same day without anyone seeing it coming.
+ *
+ * Fetched whole rather than by date range: the table is in the hundreds of rows
+ * and a range filter would have to span two nullable date columns.
+ */
+export async function fetchKolCalendarPosts(): Promise<KolCalendarPost[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db
+    .from("kol_collaboration_history")
+    .select("collab_id, kol_id, brand, campaign_name, posted_at, agreed_post_at, status, kol_profiles(display_name), kol_engagement_posts(platform)")
+    .or("posted_at.not.is.null,agreed_post_at.not.is.null")
+    .neq("status", "Cancel")
+    .limit(2000);
+  if (error || !data) return [];
+  const out: KolCalendarPost[] = [];
+  for (const r of data as Record<string, unknown>[]) {
+    const posted = r.posted_at as string | null;
+    const agreed = r.agreed_post_at as string | null;
+    const date = posted ?? agreed;
+    if (!date) continue;
+    const profile = r.kol_profiles as { display_name?: string } | null;
+    const posts = (r.kol_engagement_posts ?? []) as { platform: string | null }[];
+    out.push({
+      collab_id: r.collab_id as string,
+      kol_id: r.kol_id as string,
+      display_name: profile?.display_name ?? "—",
+      brand: (r.brand as string) ?? null,
+      campaign_name: (r.campaign_name as string) ?? null,
+      date: date.slice(0, 10),
+      planned: !posted,
+      platforms: [...new Set(posts.map((p) => p.platform).filter((p): p is string => !!p))],
+    });
+  }
+  return out;
+}
+
 /** Record the date agreed with the creator — what "late" is measured against. */
 export async function setAgreedPostDate(collabId: string, date: string | null): Promise<boolean> {
   const db = supabase();
