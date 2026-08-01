@@ -67,6 +67,43 @@ export function canAssignCaption(role: string): boolean {
   return r === "Creative Leader" || r === "CMO";
 }
 
+/** May this person raise a graphic brief?
+ *
+ *  Not the people the briefs are addressed to. The Graphic module level cannot
+ *  answer this — it says who may work on graphics, and by that measure a VDO
+ *  Editor (Edit) could brief while a Marketing Executive (View) could not,
+ *  which is backwards. So the producing side is excluded by name.
+ *
+ *  Creative Leader keeps it: they own the queue and re-raise work into it.
+ *  (CMO, 2026-08-02, asked directly whether a VDO Editor should be able to
+ *  send a brief — "ไม่".) */
+export function canSendGraphicBrief(role: string): boolean {
+  const r = (role || "").trim();
+  if (r === "Creative Leader" || r === "CMO") return true;
+  return !isCreativeSideRole(r);
+}
+
+/**
+ * Does this role only work its own queue — its own jobs plus whatever is still
+ * unclaimed — rather than the whole board?
+ *
+ * The Permissions table has said "Own" for the production roles since it was
+ * written, and nothing ever read the column; a VDO Editor saw all 22 requests
+ * across every brand. Switched on for VDO Editor per the CMO on 2026-08-02.
+ *
+ * Senior Graphic Designer, Content Creator and KOL Specialist carry the same
+ * "Own" in that table and are deliberately NOT switched on here — narrowing
+ * what someone can see is not a change to make on a column nobody has read in
+ * a year, without the person who runs that queue saying so.
+ *
+ * Unclaimed work stays visible on purpose. รับงาน is how a producer gets work
+ * at all; hiding the pool would leave them a board of only what someone else
+ * had already handed them.
+ */
+export function worksOwnQueueOnly(role: string): boolean {
+  return (role || "").trim() === "VDO Editor";
+}
+
 /** May this person hand a graphic request to a designer?
  *
  *  The claim canAssignCaption already makes — "the same person who hands

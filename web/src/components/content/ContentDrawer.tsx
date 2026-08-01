@@ -302,6 +302,12 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   };
 
   const removePost = async () => {
+    // Deleting a planned post is a scheduling decision, so it follows the same
+    // gate as editing and moving one. It had none: the button sat below the
+    // disabled fieldset, outside it, and a VDO Editor with Content = View could
+    // bin a post — along with its graphic request — from a screen that gave
+    // them no way to change so much as its title.
+    if (!canEditPlan) return;
     // The confirm names the Graphic Request too. Deleting a post used to leave
     // its request behind on /graphic forever; now it goes as well, and that is
     // not something to discover afterwards.
@@ -688,12 +694,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 </div>
               </div>
 
-              {/* Delete — permanent, confirmed */}
-              <button onClick={removePost} disabled={deleting}
-                className="text-[12.5px] font-bold py-[10px] rounded-[10px] disabled:opacity-40"
-                style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
-                {deleting ? "Deleting…" : "🗑 ลบโพสต์นี้"}
-              </button>
+              {/* Delete — soft, confirmed, and only for the planning side. */}
+              {canEditPlan && (
+                <button onClick={removePost} disabled={deleting}
+                  className="text-[12.5px] font-bold py-[10px] rounded-[10px] disabled:opacity-40"
+                  style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
+                  {deleting ? "Deleting…" : "🗑 ลบโพสต์นี้"}
+                </button>
+              )}
             </div>
           )}
 
