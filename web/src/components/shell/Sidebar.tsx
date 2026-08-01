@@ -87,7 +87,29 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
     .filter((href) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`)))
     .sort((a, b) => b.length - a.length)[0];
 
-  const isActive = (href: string) => href === activeHref;
+  // Tabbed entries share one href, so the ?tab= value decides which of them
+  // lights up. Read from location rather than useSearchParams: this component
+  // sits in the root layout and a Suspense boundary here would opt every static
+  // page into client rendering.
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setActiveTab(new URLSearchParams(window.location.search).get("tab"));
+    read();
+    window.addEventListener("popstate", read);
+    window.addEventListener("kol:tab", read as EventListener);
+    return () => {
+      window.removeEventListener("popstate", read);
+      window.removeEventListener("kol:tab", read as EventListener);
+    };
+  }, [pathname]);
+
+  const isActive = (item: { href: string; tab?: string }) => {
+    if (item.href !== activeHref) return false;
+    const siblings = groups.flatMap((g) => g.items).filter((it) => it.href === item.href);
+    if (siblings.length < 2) return true;          // not a tabbed entry
+    if (!activeTab) return item === siblings[0];   // no ?tab= yet → first one
+    return item.tab === activeTab;
+  };
 
   return (
     <div
@@ -145,14 +167,21 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
               <div className="mx-auto my-3 h-px w-6 bg-white/[0.12]" />
             )}
             {isGroupOpen && group.items.map((item) => {
-              const active = isActive(item.href);
+              const active = isActive(item);
               const Icon = item.icon;
               const accent = NAV_ACCENTS[item.href] ?? NAV_ACCENTS["/"];
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
+                  key={item.tab ? `${item.href}?${item.tab}` : item.href}
+                  href={item.tab ? `${item.href}?tab=${item.tab}` : item.href}
+                  onClick={() => {
+                    onNavigate?.();
+                    if (!item.tab) return;
+                    setActiveTab(item.tab);
+                    // Same pathname, different query → the page does not
+                    // remount, so tell it directly which tab to show.
+                    window.dispatchEvent(new CustomEvent("nav:tab", { detail: { href: item.href, tab: item.tab } }));
+                  }}
                   title={collapsed ? item.label : undefined}
                   className={clsx(
                     "group flex items-center rounded-[16px] mb-[4px] text-[13px] font-semibold transition min-w-0",

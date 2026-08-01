@@ -24,7 +24,9 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { baht } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
-import { logCollaboration, ensureKolProfile, searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
+import { logCollaboration, ensureKolProfile } from "@/lib/db/kolMaster";
+import { fetchKolScorecards, KolScorecardRow } from "@/lib/db/kolScorecard";
+import { tierTone, categoryTone, PARTNER_TONE } from "@/lib/kolTier";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { notify } from "@/lib/notify";
@@ -341,7 +343,7 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [libraryQuery, setLibraryQuery] = useState("");
-  const [libraryRows, setLibraryRows] = useState<KolMasterRow[]>([]);
+  const [libraryRows, setLibraryRows] = useState<KolScorecardRow[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [selectedMasterId, setSelectedMasterId] = useState(kol.masterKolId);
 
@@ -351,20 +353,30 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     if (q.length < 2) { setLibraryRows([]); setLibraryLoading(false); return; }
     setLibraryLoading(true);
     const timer = setTimeout(() => {
-      searchKolProfiles(q, 8)
+      fetchKolScorecards(q, 8)
         .then((rows) => { if (alive) { setLibraryRows(rows); setLibraryLoading(false); } })
         .catch(() => { if (alive) { setLibraryRows([]); setLibraryLoading(false); } });
     }, 200);
     return () => { alive = false; clearTimeout(timer); };
   }, [libraryQuery]);
 
-  const chooseLibraryKol = (row: KolMasterRow) => {
+  const chooseLibraryKol = (row: KolScorecardRow) => {
+    const primary = (row.channels ?? []).find((c) => c.url)?.url ?? "";
     setName(row.display_name || "");
-    setHandle(row.primary_handle || "");
+    setHandle(primary);
     setKolType(row.kol_type || "");
     setFollowers(row.total_followers || 0);
+    // Past results are the strongest signal we have; carry them into the
+    // proposal instead of making the specialist retype what the library knows.
+    if (row.times_used > 0) {
+      setPastCollab(
+        `ใช้ไป ${row.times_used} ครั้ง` +
+        (row.total_reach != null ? ` · reach รวม ${fmtFollow(row.total_reach)}` : "") +
+        (row.cost_per_reach != null ? ` · CPR ฿${Number(row.cost_per_reach).toFixed(3)}` : ""),
+      );
+    }
     setSelectedMasterId(row.kol_id);
-    setLibraryQuery(row.display_name || row.primary_handle || "");
+    setLibraryQuery(row.display_name || "");
     setLibraryRows([]);
   };
 
@@ -424,16 +436,58 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         {libraryLoading && <div className="text-[11px] text-faint mt-2">กำลังค้นหา…</div>}
         {libraryRows.length > 0 && (
           <div className="mt-2 border border-line rounded-[9px] overflow-hidden bg-white">
-            {libraryRows.map((row) => (
+            {libraryRows.map((row) => {
+              // Rate and past results sit on the row itself: choosing a creator
+              // without knowing what they cost or how they performed last time
+              // is exactly the decision this library exists to stop.
+              const rate = row.rate_min_thb != null
+                ? (row.rate_max_thb != null && row.rate_max_thb !== row.rate_min_thb
+                    ? `${baht(row.rate_min_thb, { compact: true })}–${baht(row.rate_max_thb, { compact: true })}`
+                    : baht(row.rate_min_thb, { compact: true }))
+                : null;
+              const cat = categoryTone(row.kol_type);
+              return (
               <button key={row.kol_id} type="button" onClick={() => chooseLibraryKol(row)}
-                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b border-line4 last:border-0 hover:bg-ivory">
-                <span className="min-w-0">
-                  <span className="block text-[12.5px] font-bold text-ink truncate">{row.display_name}</span>
-                  <span className="block text-[11px] text-faint truncate">{row.primary_handle || "ไม่มี handle"} · {row.kol_type || "ไม่ระบุประเภท"}</span>
+                className="w-full flex items-center justify-between gap-3 px-3 py-[9px] text-left border-b border-line4 last:border-0 hover:bg-ivory">
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-[6px] min-w-0">
+                    <span className="text-[12.5px] font-bold text-ink truncate">{row.display_name}</span>
+                    {row.is_partner && (
+                      <span className="text-[9px] font-bold px-[6px] py-[1px] rounded-pill flex-shrink-0"
+                        style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}
+                        title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</span>
+                    )}
+                    {row.tier && (
+                      <span className="text-[9px] font-bold px-[6px] py-[1px] rounded-pill flex-shrink-0"
+                        style={{ background: tierTone(row.tier).bg, border: `1px solid ${tierTone(row.tier).border}`, color: tierTone(row.tier).fg }}>{row.tier}</span>
+                    )}
+                    {row.kol_type && (
+                      <span className="text-[9px] font-semibold px-[6px] py-[1px] rounded-pill flex-shrink-0 truncate"
+                        style={{ background: cat.bg, border: `1px solid ${cat.border}`, color: cat.fg }}>{row.kol_type}</span>
+                    )}
+                  </span>
+                  <span className="mt-[3px] flex items-center gap-[10px] flex-wrap text-[10.5px]">
+                    {(row.channels ?? []).filter((c) => c.platform && c.followers != null).slice(0, 4).map((c) => (
+                      <span key={c.platform} className="font-semibold" style={{ color: platformIcon(c.platform!).bg }}>
+                        {platformIcon(c.platform!).icon} {fmtFollow(c.followers!)}
+                      </span>
+                    ))}
+                    <span className="text-faint">Rate {rate ?? "—"}</span>
+                    {row.times_used > 0 ? (
+                      <span className="text-muted font-semibold">
+                        ใช้ไป {row.times_used} ครั้ง
+                        {row.cost_per_reach != null && ` · CPR ฿${Number(row.cost_per_reach).toFixed(3)}`}
+                        {row.reach_per_follower != null && ` · R/F ${Number(row.reach_per_follower).toFixed(2)}x`}
+                      </span>
+                    ) : (
+                      <span className="text-faint">ยังไม่เคยใช้</span>
+                    )}
+                  </span>
                 </span>
                 <span className="text-[11px] font-bold text-accent flex-shrink-0">เลือก →</span>
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
         {selectedMasterId && <div className="text-[11px] font-semibold text-status-green mt-2">✓ เชื่อมกับ KOL Library แล้ว</div>}

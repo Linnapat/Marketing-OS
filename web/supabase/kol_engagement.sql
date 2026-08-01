@@ -24,6 +24,23 @@
 
 create extension if not exists pgcrypto;
 
+-- ── kol_profiles.is_partner — the ones we have an actual relationship with ──
+-- Distinct from status: a page can be Active (we can book them) without being a
+-- partner (we have worked with them repeatedly and the terms are settled).
+-- Seeded from history — 2+ bookings is a relationship, 1 is an experiment.
+alter table kol_profiles add column if not exists is_partner boolean default false;
+create index if not exists kol_profiles_partner_idx on kol_profiles(is_partner) where is_partner;
+
+-- ── Dating the follower counts ─────────────────────────────────────────
+-- Every number in the library arrived from a spreadsheet with no timestamp, so
+-- nobody can tell a count taken last week from one taken last year. There is no
+-- free API that returns these (Instagram/TikTok/Facebook all require the
+-- creator's own authorisation), so the counts stay hand-entered — but from now
+-- on each one is stamped with when, and by whom. Anything unconfirmed for more
+-- than 90 days is shown as undateable rather than as fact.
+-- last_synced_at already exists on kol_channels; this records the person.
+alter table kol_channels add column if not exists synced_by text;
+
 -- ── Extend kol_collaboration_history into a full engagement record ──────
 -- Kept nullable throughout: existing rows (currently none) stay valid, and the
 -- sheet itself leaves most of these blank on older entries.
@@ -42,8 +59,14 @@ alter table kol_collaboration_history
   add column if not exists confirmed_at    date,
   add column if not exists visited_at      date,
   add column if not exists draft_at        date,
+  add column if not exists agreed_post_at  date,   -- วันที่ตกลงกับ KOL — ตัวตั้งของคำว่า "ช้า"
   add column if not exists posted_at       date,
   add column if not exists resulted_at     date,
+  -- WHOSE FAULT THE DELAY WAS ---------------------------------------------
+  add column if not exists delay_reason    text,   -- kol | approval | campaign | venue | other
+  add column if not exists delay_note      text,
+  add column if not exists delay_logged_by text,
+  add column if not exists delay_logged_at timestamptz,
   -- MONEY (was COST_LOG) --------------------------------------------------
   add column if not exists food_cost       numeric,
   add column if not exists paid_fee        numeric,
@@ -67,6 +90,38 @@ alter table kol_collaboration_history
   add column if not exists needs_review    boolean default false,  -- ยกมาจากชีตแบบไม่ครบ ต้องมีคนไปเก็บ
   add column if not exists source_key      text,   -- idempotency key ตอน import เช่น 'sheet:Teppen:14'
   add column if not exists updated_at      timestamptz default now();
+
+-- ── on_time_delivery is derived, not declared ──────────────────────────
+-- It used to be a checkbox in the results form that defaulted to "on time",
+-- filled in by the same person who managed the deal — and it feeds 20% of
+-- recompute_kol_rank(). Nobody was ever going to tick it against themselves.
+--
+-- The rule that matters: a late post only counts against the creator when the
+-- delay was actually theirs. If our own approval ran long, that is our problem
+-- and it must not be filed inside their rating, or the score quietly launders
+-- our bottleneck into their reputation.
+create or replace function kol_apply_on_time() returns trigger
+language plpgsql as $$
+begin
+  if new.posted_at is null or new.agreed_post_at is null then
+    new.on_time_delivery := null;                       -- nothing to judge yet
+  elsif new.posted_at <= new.agreed_post_at then
+    new.on_time_delivery := true;
+  elsif new.delay_reason is null then
+    new.on_time_delivery := null;                       -- late, but whose fault is unrecorded
+  elsif new.delay_reason = 'kol' then
+    new.on_time_delivery := false;
+  else
+    new.on_time_delivery := true;                       -- late, but not the creator's doing
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists kol_on_time_trg on kol_collaboration_history;
+create trigger kol_on_time_trg
+  before insert or update of posted_at, agreed_post_at, delay_reason
+  on kol_collaboration_history
+  for each row execute function kol_apply_on_time();
 
 -- Re-importing the same sheet row must update, never duplicate.
 create unique index if not exists kol_collab_source_key_uidx
@@ -144,7 +199,10 @@ create index if not exists kol_notes_kol_idx on kol_notes(kol_id, created_at des
 -- computed from real engagements. This is what turns "302 names" into
 -- "302 names we know something about".
 -- ═══════════════════════════════════════════════════════════════════════
-create or replace view kol_scorecard_view with (security_invoker = on) as
+-- Dropped rather than replaced: adding is_partner shifts the column order, and
+-- CREATE OR REPLACE VIEW refuses to renumber existing columns.
+drop view if exists kol_scorecard_view;
+create view kol_scorecard_view with (security_invoker = on) as
 with agg as (
   select
     h.kol_id,
@@ -159,7 +217,11 @@ with agg as (
     sum(h.actual_engagement)                                as total_engagement,
     sum(h.total_cost)                                       as total_cost,
     avg(h.brand_feedback_score)                             as avg_feedback,
-    avg((h.on_time_delivery)::int)                          as on_time_rate
+    -- reliability counts only the deliveries we could actually judge
+    avg((h.on_time_delivery)::int) filter (where h.on_time_delivery is not null) as on_time_rate,
+    count(*) filter (where h.on_time_delivery is false) as late_by_kol,
+    count(*) filter (where h.posted_at is not null and h.agreed_post_at is not null
+                       and h.posted_at > h.agreed_post_at and h.delay_reason is null) as late_unattributed
   from kol_collaboration_history h
   group by h.kol_id
 )
@@ -170,6 +232,7 @@ select
   p.tier,
   p.status,
   p.contact_agency,
+  p.is_partner,
   p.data->'brand_fit'                    as brand_fit,
   ch.total_followers,
   ch.channels,
@@ -194,8 +257,7 @@ select
        then round(a.total_reach / ch.total_followers, 2) end as reach_per_follower,
   case when coalesce(a.total_reach,0) > 0
        then round(a.total_engagement / a.total_reach * 100, 2) end as engagement_rate,
-  a.avg_feedback,
-  a.on_time_rate,
+  a.avg_feedback, a.on_time_rate, a.late_by_kol, a.late_unattributed,
   -- "ยังไม่ทดลอง" — the 191 profiles nobody has ever booked
   (coalesce(a.times_used, 0) = 0)        as never_used,
   r.rank_score,
@@ -205,8 +267,12 @@ left join agg a on a.kol_id = p.kol_id
 left join lateral (
   select
     sum(followers) as total_followers,
+    -- oldest confirmation across the creator's channels: a profile is only as
+    -- trustworthy as its least recently checked number
+    min(last_synced_at) as followers_checked_at,
     jsonb_agg(jsonb_build_object(
-      'platform', platform, 'followers', followers, 'url', handle_url
+      'channel_id', channel_id, 'platform', platform, 'followers', followers,
+      'url', handle_url, 'checked_at', last_synced_at
     ) order by followers desc nulls last) as channels
   from kol_channels where kol_id = p.kol_id
 ) ch on true

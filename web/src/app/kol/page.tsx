@@ -2,8 +2,8 @@
 
 import { toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
-import { CSSProperties, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -20,9 +20,10 @@ import {
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
-import { fetchKolScorecards, createKolWithChannels, KolScorecardRow } from "@/lib/db/kolScorecard";
+import { fetchKolScorecards, createKolWithChannels, followerFreshness, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
-import { tierTone, KOL_TIERS } from "@/lib/kolTier";
+import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
+import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -51,7 +52,9 @@ function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d]
 /** ISO date n days from today — used for the ≤3-day approval due date. */
 function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 /** Stages where the specialist can still submit work from the row. */
-const TABS = [["list", "KOL / Creator Request List"], ["pipeline", "Status"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
+// "Status" retired — its lanes duplicated the Status Board, and the request
+// list already carries the same stage badges.
+const TABS = [["list", "KOL / Creator Request List"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: DateFilter }
@@ -63,7 +66,39 @@ export default function KolPage() {
     "kol", "", { tab: "list", brand: "all", campaign: "all", group: "campaign", date: DEFAULT_DATE_FILTER },
   );
   const { tab, brand, campaign, group } = sticky;
-  const setTab = (v: Tab) => setSticky({ ...sticky, tab: v });
+  // The sidebar listener below is registered once, so it needs a live handle on
+  // the current view rather than the value captured at mount.
+  const stickyRef = useRef(sticky);
+  stickyRef.current = sticky;
+  const setTab = (v: Tab) => {
+    setSticky({ ...sticky, tab: v });
+    // Keep ?tab= in step so the sidebar highlights the right entry and the URL
+    // can be shared. replaceState, not a route push — the page never remounts.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", v);
+      window.history.replaceState(null, "", url);
+      window.dispatchEvent(new Event("kol:tab"));
+    }
+  };
+  // Deep link from the sidebar wins over the sticky view on first paint, and
+  // the sidebar can also switch tabs while we are already here (same pathname,
+  // so no remount happens on its own).
+  useEffect(() => {
+    const apply = (wanted: string | null) => {
+      if (!wanted || !TABS.some(([t]) => t === wanted)) return;
+      const cur = stickyRef.current;
+      if (cur.tab !== wanted) setSticky({ ...cur, tab: wanted as Tab });
+    };
+    apply(new URLSearchParams(window.location.search).get("tab"));
+    const onNavTab = (e: Event) => {
+      const detail = (e as CustomEvent<{ href?: string; tab?: string }>).detail;
+      if (detail?.href === "/kol") apply(detail.tab ?? null);
+    };
+    window.addEventListener("nav:tab", onNavTab);
+    return () => window.removeEventListener("nav:tab", onNavTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const setBrand = (v: BrandFilterValue) => setSticky({ ...sticky, brand: v });
   const setCampaign = (v: string) => setSticky({ ...sticky, campaign: v });
   const setGroup = (v: "list" | "campaign") => setSticky({ ...sticky, group: v });
@@ -292,7 +327,6 @@ export default function KolPage() {
         {tab === "list" && group === "campaign" && (
           <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />
         )}
-        {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} />}
         {tab === "database" && <KolDatabase />}
@@ -437,45 +471,9 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
   );
 }
 
-function PipelineList({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
-  const stages = [...ALL_STAGES, "Paused"];
-  const groups = stages
-    .map((st) => ({ stage: st, kols: kols.filter((k) => normalizeStage(k.status) === st && (brand === "all" || k.b === brand)) }))
-    .filter((g) => g.kols.length > 0);
-  return (
-    <div className="flex flex-col gap-3">
-      {groups.map((g) => {
-        const totalFee = g.kols.reduce((s, k) => s + k.fee, 0);
-        return (
-          <div key={g.stage} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-line4">
-              <StatusBadge tone={kolTone(g.stage)}>{g.stage}</StatusBadge>
-              <span className="text-[12px] text-faint font-semibold">{g.kols.length}</span>
-              <span className="text-[12px] text-faint ml-auto">{baht(totalFee, { compact: true })}</span>
-            </div>
-            {g.kols.map((k) => {
-              const pi = platformIcon(k.plat);
-              return (
-                <button key={k.id} onClick={() => onOpen(k)} className="w-full grid grid-cols-[2fr_1.4fr_1fr_1fr] gap-y-1 px-5 py-3 items-center text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
-                    <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
-                    {k.name}
-                  </span>
-                  <span className="text-[12px] text-muted">{k.campaign}</span>
-                  <span className="text-[12px] text-muted">{k.owner}</span>
-                  <span className="text-[12.5px] font-semibold text-ink">{baht(k.fee, { compact: true })}</span>
-                </button>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void; budgetOf?: (campaign: string) => number }) {
   const list = kols.filter((k) => brand === "all" || k.b === brand);
+  const [planView, setPlanView] = useState<"list" | "month" | "week">("month");
   // Per-campaign budget context for the deal — from the campaign's KOL Plan.
   const budgetRows = useMemo(() => {
     const m = new Map<string, number>();
@@ -529,9 +527,19 @@ function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandF
         </div>
       </div>
 
-      {/* Deal timeline — grouped by post due date */}
+      {/* Deal timeline — list, or laid out on a calendar to catch collisions */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-[13px] font-bold text-ink">Deal Plan</span>
+        <Segmented<"list" | "month" | "week">
+          value={planView}
+          onChange={setPlanView}
+          options={[{ value: "list", label: "รายการ" }, { value: "month", label: "เดือน" }, { value: "week", label: "สัปดาห์" }]}
+        />
+      </div>
+      {planView !== "list" && <KolPlanCalendar kols={list} mode={planView} onOpen={onOpen} />}
+      {planView === "list" && (
       <div className="bg-surface border border-line rounded-cardLg p-5">
-        <div className="text-[13px] font-bold mb-4">Deal Plan — by post due date</div>
+        <div className="text-[13px] font-bold mb-4">เรียงตามวันครบกำหนดโพสต์</div>
         <div className="flex flex-col gap-2">
           {[...list].sort((a, b) => a.postDueDate.localeCompare(b.postDueDate)).map((k) => {
             const pi = platformIcon(k.plat);
@@ -552,6 +560,7 @@ function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandF
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -753,11 +762,17 @@ function KolDatabase() {
     const order = ["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"];
     return order.filter((p) => count.has(p)).concat([...count.keys()].filter((p) => !order.includes(p)));
   }, [rows]);
-  const cols = `1.9fr 0.7fr 1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.8fr 0.9fr 0.55fr 0.8fr 0.6fr`;
+  // Trailing metrics get their own breathing room — "ใช้ไป" and "Cost/Reach"
+  // read as one number when they sit flush against each other.
+  const cols = `2.1fr 0.7fr 1.1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.85fr 0.95fr 0.75fr 1fr 0.75fr 0.4fr`;
   // Creators we have evidence about first; the never-booked ones get their own
   // block so they read as "still to try", not as the bottom of a ranking.
   const used = rows.filter((r) => !r.never_used);
   const untried = rows.filter((r) => r.never_used);
+  // Every follower count arrived from the sheet undated. Saying how many are
+  // still unconfirmed is more honest than showing them as settled facts.
+  const unverifiedCount = rows.reduce(
+    (n, r) => n + (r.channels ?? []).filter((c) => followerFreshness(c.checked_at) !== "fresh").length, 0);
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-card px-4 py-[10px] text-[11.5px]" style={{ background: "#EEF1F8", border: "1px solid #D5DEEF", color: "#3E5C9A" }}>
@@ -809,16 +824,34 @@ function KolDatabase() {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"
           className="flex-1 min-w-[220px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
         <span className="text-[12px] text-faint">{rows.length} profile{rows.length === 1 ? "" : "s"}</span>
+        {unverifiedCount > 0 && (
+          <span className="text-[11.5px] font-semibold px-[10px] py-[5px] rounded-pill"
+            style={{ background: "#F5F3EF", border: "1px solid #E3DED4", color: "#8b8378" }}
+            title="ตัวเลขที่ขีดเส้นประคือยังไม่มีใครยืนยัน — เปิดโปรไฟล์แล้วกด อัปเดต ได้ในหน้า KOL">
+            {unverifiedCount} ช่องทางยังไม่ยืนยันตัวเลข
+          </span>
+        )}
         <button onClick={() => setAddOpen(true)}
           className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">+ เพิ่ม KOL</button>
       </div>
       <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
         <div className="min-w-[1080px]">
-        <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+        <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 items-center" style={{ gridTemplateColumns: cols }}>
           <div>KOL / Page</div><div>Tier</div><div>Category</div>
-          {platformCols.map((p) => <div key={p} className="text-right">{p}</div>)}
+          {/* Abbreviations, not full names — five platform columns of
+              "INSTAGRAM"/"FACEBOOK" crowd each other and push the metrics off
+              screen. The colour carries the identity. */}
+          {platformCols.map((p) => {
+            const ic = platformIcon(p);
+            return (
+              <div key={p} className="text-right tracking-[0.08em]" style={{ color: ic.bg }} title={p}>
+                {ic.icon}
+              </div>
+            );
+          })}
           <div className="text-right">รวม</div><div className="text-right">Rate</div>
-          <div className="text-right">ใช้ไป</div><div className="text-right">Cost/Reach</div><div className="text-right">R/F</div>
+          <div className="text-right">ใช้ไป</div><div className="text-right pl-3">Cost/Reach</div><div className="text-right">R/F</div>
+          <div className="text-right" title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</div>
         </div>
         {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} platformCols={platformCols} onOpen={setOpenKol} />)}
         {untried.length > 0 && (
@@ -852,6 +885,7 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
 }) {
   const byPlatform = new Map((r.channels ?? []).filter((c) => c.platform).map((c) => [c.platform!, c]));
   const tone = tierTone(r.tier);
+  const cat = categoryTone(r.kol_type);
   const rate = r.rate_min_thb != null
     ? (r.rate_max_thb != null && r.rate_max_thb !== r.rate_min_thb
         ? `${baht(r.rate_min_thb, { compact: true })}–${baht(r.rate_max_thb, { compact: true })}`
@@ -861,31 +895,52 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
     <div className="grid gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0 hover:bg-ivory/40" style={{ gridTemplateColumns: cols }}>
       <span className="flex items-center gap-2 min-w-0">
         <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
+        {/* Partner lives in its own column at the far right — inline it ate the
+            name and left every row's badges at a different x. */}
         <button onClick={() => onOpen(r.kol_id)} className="text-[13px] font-bold text-ink truncate text-left hover:underline">{r.display_name}</button>
-        <a href={`/kol/${r.kol_id}`} target="_blank" rel="noreferrer" aria-label={`เปิด ${r.display_name} ในแท็บใหม่`}
-          className="text-faint hover:text-accent flex-shrink-0"><ExternalLink size={12} /></a>
       </span>
       <span>
         {r.tier
           ? <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill" style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.fg }}>{r.tier}</span>
           : <span className="text-[12px] text-faint">—</span>}
       </span>
-      <span className="text-[12px] text-muted truncate">{r.kol_type ?? "—"}</span>
+      <span className="min-w-0">
+        {r.kol_type
+          ? <span className="text-[11px] font-semibold px-[9px] py-[3px] rounded-pill inline-block truncate max-w-full" style={{ background: cat.bg, border: `1px solid ${cat.border}`, color: cat.fg }}>{r.kol_type}</span>
+          : <span className="text-[12px] text-faint">—</span>}
+      </span>
       {platformCols.map((p) => {
         const c = byPlatform.get(p);
         if (!c || c.followers == null) return <span key={p} className="text-[12px] text-faint text-right">—</span>;
         const label = fmtFollow(c.followers);
+        // The number wears its platform's colour so a column reads straight
+        // down. A count nobody has confirmed lately loses that colour and gets a
+        // dotted underline — it is not wrong, it is undateable.
+        const fresh = followerFreshness(c.checked_at);
+        const style: CSSProperties = fresh === "fresh"
+          ? { color: platformIcon(p).bg }
+          : { color: fresh === "stale" ? "#B4622A" : "#9A9387", textDecoration: "underline dotted", textUnderlineOffset: 3 };
+        const hint = fresh === "fresh" ? `ยืนยัน ${c.checked_at?.slice(0, 10)}`
+          : fresh === "stale" ? `ยืนยันล่าสุด ${c.checked_at?.slice(0, 10)} — เกิน 90 วัน`
+          : "ยังไม่มีใครยืนยันตัวเลขนี้";
         return c.url
-          ? <a key={p} href={c.url} target="_blank" rel="noreferrer" title={c.url}
-              className="text-[12.5px] font-semibold text-accent text-right hover:underline">{label}</a>
-          : <span key={p} className="text-[12.5px] text-muted text-right" title={`${p} — ยังไม่มีลิงก์`}>{label}</span>;
+          ? <a key={p} href={c.url} target="_blank" rel="noreferrer" title={`${hint} · ${c.url}`}
+              className="text-[12.5px] font-semibold text-right hover:underline" style={style}>{label}</a>
+          : <span key={p} className="text-[12.5px] text-right" style={style} title={`${p} — ${hint}`}>{label}</span>;
       })}
       <span className="text-[12.5px] font-semibold text-ink text-right">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
       <span className="text-[12px] text-muted text-right">{rate}</span>
       <span className="text-[12.5px] text-right font-bold" style={{ color: r.times_used > 0 ? "#3E5C9A" : "#9A9387" }}>{r.times_used || "—"}</span>
-      <span className="text-[12px] text-muted text-right">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
+      <span className="text-[12px] text-muted text-right pl-3">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
       <span className="text-[12px] text-right" style={{ color: (r.reach_per_follower ?? 0) >= 1 ? "#3F6A34" : "#6b6258" }}>
         {r.reach_per_follower != null ? `${Number(r.reach_per_follower).toFixed(2)}x` : "—"}
+      </span>
+      <span className="text-right">
+        {r.is_partner
+          ? <span className="text-[9.5px] font-bold px-[6px] py-[2px] rounded-pill whitespace-nowrap"
+              style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}
+              title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</span>
+          : <span className="text-[12px] text-faint">—</span>}
       </span>
     </div>
   );
@@ -1070,7 +1125,10 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
   // Requester specifies the requirement only — the real page (and the master-DB
   // link) is proposed later by the KOL specialist, so there's no name/handle here.
   const count = Math.max(1, item.count || 1);
-  const canCreate = count > 0;
+  // Posting window is mandatory: without it the specialist cannot negotiate a
+  // date with the creator and the brief bounces straight back to the requester.
+  const hasWindow = Boolean(item.postingStart && item.postingEnd);
+  const canCreate = count > 0 && hasWindow;
   const syncOn = Boolean(campaign.trim());
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -1158,7 +1216,9 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
             Requester is fixed to login, and the KOL specialist will take over after this brief is sent.
           </div>
         </div>
-        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{busy ? "Creating…" : "Send KOL Request"}</button>
+        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">
+          {busy ? "Creating…" : !hasWindow ? "ระบุช่วงวันที่ต้องการโพสต์ก่อน" : "Send KOL Request"}
+        </button>
       </div>
     </div>
   );

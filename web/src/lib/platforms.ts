@@ -8,11 +8,15 @@ export const PLATFORM_ICON: Record<string, PlatformIcon> = {
   Facebook: { icon: "FB", bg: "#1877F2", fg: "#fff" },
   "LINE OA": { icon: "LN", bg: "#06C755", fg: "#fff" },
   "Google Map": { icon: "GM", bg: "#4285F4", fg: "#fff" },
-  YouTube: { icon: "YT", bg: "#FF0000", fg: "#fff" },
+  YouTube: { icon: "YT", bg: "#D62828", fg: "#fff" },
+  // Lemon8's own yellow is unreadable as text on white, so the chip uses a
+  // deepened gold — these colours double as label colours in table headers.
+  Lemon8: { icon: "L8", bg: "#C08A1E", fg: "#fff" },
 };
 
 export function platformIcon(name: string): PlatformIcon {
-  return PLATFORM_ICON[name] ?? { icon: "??", bg: "#ccc", fg: "#fff" };
+  // Readable grey rather than #ccc: the fallback is also used as a text colour.
+  return PLATFORM_ICON[name] ?? { icon: "??", bg: "#8b8378", fg: "#fff" };
 }
 
 /** Build a real channel URL from a platform + @handle (or return a full URL as-is).
