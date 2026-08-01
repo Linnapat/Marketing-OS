@@ -31,6 +31,16 @@ create extension if not exists pgcrypto;
 alter table kol_profiles add column if not exists is_partner boolean default false;
 create index if not exists kol_profiles_partner_idx on kol_profiles(is_partner) where is_partner;
 
+-- ── Dating the follower counts ─────────────────────────────────────────
+-- Every number in the library arrived from a spreadsheet with no timestamp, so
+-- nobody can tell a count taken last week from one taken last year. There is no
+-- free API that returns these (Instagram/TikTok/Facebook all require the
+-- creator's own authorisation), so the counts stay hand-entered — but from now
+-- on each one is stamped with when, and by whom. Anything unconfirmed for more
+-- than 90 days is shown as undateable rather than as fact.
+-- last_synced_at already exists on kol_channels; this records the person.
+alter table kol_channels add column if not exists synced_by text;
+
 -- ── Extend kol_collaboration_history into a full engagement record ──────
 -- Kept nullable throughout: existing rows (currently none) stay valid, and the
 -- sheet itself leaves most of these blank on older entries.
@@ -216,8 +226,12 @@ left join agg a on a.kol_id = p.kol_id
 left join lateral (
   select
     sum(followers) as total_followers,
+    -- oldest confirmation across the creator's channels: a profile is only as
+    -- trustworthy as its least recently checked number
+    min(last_synced_at) as followers_checked_at,
     jsonb_agg(jsonb_build_object(
-      'platform', platform, 'followers', followers, 'url', handle_url
+      'channel_id', channel_id, 'platform', platform, 'followers', followers,
+      'url', handle_url, 'checked_at', last_synced_at
     ) order by followers desc nulls last) as channels
   from kol_channels where kol_id = p.kol_id
 ) ch on true

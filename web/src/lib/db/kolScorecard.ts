@@ -10,9 +10,23 @@ import { supabase } from "@/lib/supabase";
 import { tierFromFollowers } from "@/lib/db/kolMaster";
 
 export interface KolChannel {
+  channel_id: string;
   platform: string | null;
   followers: number | null;
   url: string | null;
+  /** When a human last confirmed this number against the live profile. */
+  checked_at: string | null;
+}
+
+/** A follower count nobody has confirmed in this long is treated as unknown. */
+export const FOLLOWER_STALE_DAYS = 90;
+
+export type FollowerFreshness = "fresh" | "stale" | "unverified";
+
+export function followerFreshness(checkedAt: string | null | undefined): FollowerFreshness {
+  if (!checkedAt) return "unverified";
+  const days = (Date.now() - new Date(checkedAt).getTime()) / 86_400_000;
+  return days > FOLLOWER_STALE_DAYS ? "stale" : "fresh";
 }
 
 export interface KolScorecardRow {
@@ -27,6 +41,8 @@ export interface KolScorecardRow {
   brand_fit: string[] | null;
   total_followers: number | null;
   channels: KolChannel[] | null;
+  /** Oldest confirmation across this creator's channels. */
+  followers_checked_at: string | null;
   rate_min_thb: number | null;
   rate_max_thb: number | null;
   times_used: number;
@@ -226,6 +242,23 @@ export async function addKolNote(input: { kol_id: string; body: string; author?:
     .single();
   if (error || !data) return null;
   return data as KolNote;
+}
+
+/**
+ * Confirm a channel's follower count. The timestamp is the point: an unstamped
+ * number is one nobody can date, and the whole library arrived that way.
+ */
+export async function confirmChannelFollowers(
+  channelId: string, followers: number, by?: string,
+): Promise<string | null> {
+  const db = supabase();
+  if (!db) return null;
+  const checkedAt = new Date().toISOString();
+  const { error } = await db
+    .from("kol_channels")
+    .update({ followers, last_synced_at: checkedAt, synced_by: by ?? null })
+    .eq("channel_id", channelId);
+  return error ? null : checkedAt;
 }
 
 /** Mark / unmark a creator as a partner. */

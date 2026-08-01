@@ -15,8 +15,9 @@ import { tierTone, categoryTone, PARTNER_TONE } from "@/lib/kolTier";
 import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
-  fetchKolNotes, addKolNote, deleteKolNote, setKolPartner,
-  KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote,
+  fetchKolNotes, addKolNote, deleteKolNote, setKolPartner, confirmChannelFollowers,
+  followerFreshness, FOLLOWER_STALE_DAYS,
+  KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote, KolChannel,
 } from "@/lib/db/kolScorecard";
 
 /** Reach we bought per baht spent, versus what this tier normally costs us. */
@@ -29,12 +30,74 @@ function cprVerdict(cpr: number | null, bench: number | null) {
   return { label: `แพงกว่าค่าเฉลี่ยเทียร์ ${ratio.toFixed(1)} เท่า`, tone: "bad" as const };
 }
 
+interface Tone { bg: string; border: string; fg: string }
+
+const TONE_OK: Tone = { bg: "#EEF4EE", border: "#CFE4C2", fg: "#3F6A34" };
 const TONE = {
-  good: { bg: "#EEF4EE", border: "#CFE4C2", fg: "#3F6A34" },
+  good: TONE_OK,
   ok:   { bg: "#F4F6FA", border: "#D5DEEF", fg: "#3E5C9A" },
   warn: { bg: "#FBF6EC", border: "#EADBC1", fg: "#8A6D1E" },
   bad:  { bg: "#FFF5F4", border: "#F5C8C4", fg: "#B33A2E" },
 };
+
+const FRESH_TONE: Record<string, Tone & { label: string }> = {
+  fresh:      { ...TONE_OK, label: "ยืนยันแล้ว" },
+  stale:      { bg: "#FBF6EC", border: "#EADBC1", fg: "#8A6D1E", label: `เกิน ${FOLLOWER_STALE_DAYS} วัน` },
+  unverified: { bg: "#F5F3EF", border: "#E3DED4", fg: "#8b8378", label: "ยังไม่เคยยืนยัน" },
+};
+
+/** One platform: open the profile, type what you see, save. The save stamps the
+ *  date, which is the only thing that makes the number trustworthy later. */
+function ChannelChip({ channel, author }: { channel: KolChannel; author: string }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(channel.followers != null ? String(channel.followers) : "");
+  const [followers, setFollowers] = useState(channel.followers);
+  const [checkedAt, setCheckedAt] = useState(channel.checked_at);
+  const [busy, setBusy] = useState(false);
+  const ic = platformIcon(channel.platform ?? "");
+  const fresh = followerFreshness(checkedAt);
+  const tone = FRESH_TONE[fresh];
+
+  const save = async () => {
+    const n = Number(value.replace(/[^0-9]/g, ""));
+    if (!Number.isFinite(n) || busy || !channel.channel_id) return;
+    setBusy(true);
+    const stamp = await confirmChannelFollowers(channel.channel_id, n, author);
+    if (stamp) { setFollowers(n); setCheckedAt(stamp); setEditing(false); }
+    setBusy(false);
+  };
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-[6px] rounded-pill border px-3 py-[5px]" style={{ borderColor: ic.bg, background: "#fff" }}>
+        <span className="w-5 h-5 rounded-[6px] flex items-center justify-center text-[9px] font-bold flex-shrink-0" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
+        <input autoFocus value={value} inputMode="numeric"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          className="w-[86px] text-[12px] font-bold text-ink bg-ivory rounded-[7px] px-2 py-[3px] outline-none" />
+        <button onClick={save} disabled={busy} className="text-[11px] font-bold text-accent disabled:opacity-40">{busy ? "…" : "บันทึก"}</button>
+        <button onClick={() => setEditing(false)} className="text-[11px] text-faint hover:text-ink">ยกเลิก</button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-[6px] rounded-pill border px-3 py-[6px]"
+      style={{ background: tone.bg, borderColor: tone.border }}
+      title={checkedAt ? `ยืนยันล่าสุด ${checkedAt.slice(0, 10)}` : "ยังไม่มีใครยืนยันตัวเลขนี้ — ไม่รู้ว่าเก่าแค่ไหน"}>
+      <span className="w-5 h-5 rounded-[6px] flex items-center justify-center text-[9px] font-bold flex-shrink-0" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
+      <span className="text-[12px] font-bold text-ink">{followers != null ? fmtFollow(followers) : "—"}</span>
+      <span className="text-[10.5px]" style={{ color: tone.fg }}>{tone.label}</span>
+      {channel.url && (
+        <a href={channel.url} target="_blank" rel="noreferrer" title="เปิดโปรไฟล์จริง" className="text-faint hover:text-ink">
+          <ExternalLink size={11} />
+        </a>
+      )}
+      <button onClick={() => { setValue(followers != null ? String(followers) : ""); setEditing(true); }}
+        className="text-[10.5px] font-bold text-accent hover:underline">อัปเดต</button>
+    </span>
+  );
+}
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -47,6 +110,8 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 }
 
 export function KolProfileCard({ kolId, compact = false }: { kolId: string; compact?: boolean }) {
+  const { member, user } = useAuth();
+  const author = member?.name || user?.email?.split("@")[0] || "";
   const [row, setRow] = useState<KolScorecardRow | null>(null);
   const [history, setHistory] = useState<KolEngagementRow[]>([]);
   const [bench, setBench] = useState<KolTierBenchmark[]>([]);
@@ -132,23 +197,13 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
         </div>
       </div>
 
-      {/* Channels — the follower number itself opens the real profile */}
+      {/* Channels — open the real profile, and confirm the number while you are
+          looking at it. Ten seconds each, and the count stops being undateable. */}
       {channels.length > 0 && (
         <div className="flex gap-2 flex-wrap">
-          {channels.map((c) => {
-            const ic = platformIcon(c.platform!);
-            const body = (
-              <>
-                <span className="w-5 h-5 rounded-[6px] flex items-center justify-center text-[9px] font-bold flex-shrink-0" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
-                <span className="text-[12px] font-bold text-ink">{c.followers != null ? fmtFollow(c.followers) : "—"}</span>
-                <span className="text-[11px] text-faint">{c.platform}</span>
-                {c.url && <ExternalLink size={11} className="text-faint" />}
-              </>
-            );
-            return c.url
-              ? <a key={c.platform} href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-[6px] rounded-pill border border-line2 bg-surface px-3 py-[6px] hover:border-line">{body}</a>
-              : <span key={c.platform} className="inline-flex items-center gap-[6px] rounded-pill border border-line3 bg-ivory px-3 py-[6px]">{body}</span>;
-          })}
+          {channels.map((c) => (
+            <ChannelChip key={c.channel_id ?? c.platform} channel={c} author={author} />
+          ))}
         </div>
       )}
 

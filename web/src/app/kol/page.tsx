@@ -20,7 +20,7 @@ import {
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
-import { fetchKolScorecards, createKolWithChannels, KolScorecardRow } from "@/lib/db/kolScorecard";
+import { fetchKolScorecards, createKolWithChannels, followerFreshness, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
 import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
 import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
@@ -769,6 +769,10 @@ function KolDatabase() {
   // block so they read as "still to try", not as the bottom of a ranking.
   const used = rows.filter((r) => !r.never_used);
   const untried = rows.filter((r) => r.never_used);
+  // Every follower count arrived from the sheet undated. Saying how many are
+  // still unconfirmed is more honest than showing them as settled facts.
+  const unverifiedCount = rows.reduce(
+    (n, r) => n + (r.channels ?? []).filter((c) => followerFreshness(c.checked_at) !== "fresh").length, 0);
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-card px-4 py-[10px] text-[11.5px]" style={{ background: "#EEF1F8", border: "1px solid #D5DEEF", color: "#3E5C9A" }}>
@@ -820,6 +824,13 @@ function KolDatabase() {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"
           className="flex-1 min-w-[220px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
         <span className="text-[12px] text-faint">{rows.length} profile{rows.length === 1 ? "" : "s"}</span>
+        {unverifiedCount > 0 && (
+          <span className="text-[11.5px] font-semibold px-[10px] py-[5px] rounded-pill"
+            style={{ background: "#F5F3EF", border: "1px solid #E3DED4", color: "#8b8378" }}
+            title="ตัวเลขที่ขีดเส้นประคือยังไม่มีใครยืนยัน — เปิดโปรไฟล์แล้วกด อัปเดต ได้ในหน้า KOL">
+            {unverifiedCount} ช่องทางยังไม่ยืนยันตัวเลข
+          </span>
+        )}
         <button onClick={() => setAddOpen(true)}
           className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">+ เพิ่ม KOL</button>
       </div>
@@ -906,11 +917,19 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
         if (!c || c.followers == null) return <span key={p} className="text-[12px] text-faint text-right">—</span>;
         const label = fmtFollow(c.followers);
         // The number wears its platform's colour so a column reads straight
-        // down without checking the header each time.
+        // down. A count nobody has confirmed lately loses that colour and gets a
+        // dotted underline — it is not wrong, it is undateable.
+        const fresh = followerFreshness(c.checked_at);
+        const style: CSSProperties = fresh === "fresh"
+          ? { color: platformIcon(p).bg }
+          : { color: fresh === "stale" ? "#B4622A" : "#9A9387", textDecoration: "underline dotted", textUnderlineOffset: 3 };
+        const hint = fresh === "fresh" ? `ยืนยัน ${c.checked_at?.slice(0, 10)}`
+          : fresh === "stale" ? `ยืนยันล่าสุด ${c.checked_at?.slice(0, 10)} — เกิน 90 วัน`
+          : "ยังไม่มีใครยืนยันตัวเลขนี้";
         return c.url
-          ? <a key={p} href={c.url} target="_blank" rel="noreferrer" title={c.url}
-              className="text-[12.5px] font-semibold text-right hover:underline" style={{ color: platformIcon(p).bg }}>{label}</a>
-          : <span key={p} className="text-[12.5px] text-muted text-right" title={`${p} — ยังไม่มีลิงก์`}>{label}</span>;
+          ? <a key={p} href={c.url} target="_blank" rel="noreferrer" title={`${hint} · ${c.url}`}
+              className="text-[12.5px] font-semibold text-right hover:underline" style={style}>{label}</a>
+          : <span key={p} className="text-[12.5px] text-right" style={style} title={`${p} — ${hint}`}>{label}</span>;
       })}
       <span className="text-[12.5px] font-semibold text-ink text-right">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
       <span className="text-[12px] text-muted text-right">{rate}</span>
