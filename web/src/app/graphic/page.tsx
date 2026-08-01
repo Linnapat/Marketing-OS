@@ -45,7 +45,7 @@ import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, g
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
-import { canApproveRushBrief } from "@/lib/roleGates";
+import { canApproveRushBrief, canSendGraphicBrief, worksOwnQueueOnly } from "@/lib/roleGates";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -82,8 +82,13 @@ function GraphicPageInner() {
   // Monthly brief cutoff — read by everyone, moved by the people who also
   // clear the rush briefs it creates (Creative Leader, CMO). Read from auth,
   // not the "viewing as" switcher, so the gate cannot be flipped from the rail.
-  const { role: authRole } = useAuth();
+  const { role: authRole, member: authMember, user: authUser } = useAuth();
   const canEditCutoff = canApproveRushBrief(authRole);
+  // Read from auth, not the "viewing as" switcher, for the same reason as the
+  // cutoff: a gate that the rail can flip is not a gate.
+  const canBrief = canSendGraphicBrief(authRole);
+  const ownQueueOnly = worksOwnQueueOnly(authRole);
+  const myName = (authMember?.name || authUser?.email?.split("@")[0] || "").trim().toLowerCase();
   const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
   const [cutoffDirty, setCutoffDirty] = useState(false);
   const [cutoffBusy, setCutoffBusy] = useState(false);
@@ -111,7 +116,9 @@ function GraphicPageInner() {
   const briefForId = searchParams.get(GRAPHIC_BRIEF_FOR_PARAM);
   const [briefForPost, setBriefForPost] = useState<ContentItem | null>(null);
   useEffect(() => {
-    if (!briefForId) return;
+    // ?briefFor= is the second way into this form (Content Plan links here), so
+    // it needs the same gate — otherwise hiding the button is decoration.
+    if (!briefForId || !canBrief) return;
     let alive = true;
     fetchContent()
       .then((posts) => {
@@ -123,7 +130,7 @@ function GraphicPageInner() {
       })
       .catch(() => { if (alive) setReqOpen(true); });
     return () => { alive = false; };
-  }, [briefForId]);
+  }, [briefForId, canBrief]);
   // Drop the param on close so reopening the form by hand starts clean.
   const closeRequestModal = () => {
     setReqOpen(false);
@@ -247,7 +254,15 @@ function GraphicPageInner() {
       .catch((error) => toastError(`Approve ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
-  const items = graphics.filter((g) => brandVisibility.visibleBrands.includes(g.b) && (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
+  // "Own" scope: your jobs, plus whatever nobody has picked up yet. The
+  // unclaimed pool has to stay — รับงาน is how this role gets work at all.
+  const inMyQueue = (g: Graphic) => {
+    if (!ownQueueOnly || !myName) return true;
+    const holder = (g.designer ?? "").trim().toLowerCase();
+    const sb = (g.storyboardOwner ?? "").trim().toLowerCase();
+    return holder === myName || sb === myName || !holder || holder === "unassigned";
+  };
+  const items = graphics.filter((g) => brandVisibility.visibleBrands.includes(g.b) && inMyQueue(g) && (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
   const kpi = graphicKpis(items);
 
   const KPIS: { label: string; value: number; tone?: string; dark?: boolean }[] = [
@@ -277,7 +292,9 @@ function GraphicPageInner() {
               <Link href="/graphic/artwork" className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[12px] px-4 py-[10px] bg-surface">
                 📊 Artwork Count
               </Link>
-              <button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>
+              {canBrief && (
+                <button onClick={() => setReqOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send Brief</button>
+              )}
             </div>
           }
         >
