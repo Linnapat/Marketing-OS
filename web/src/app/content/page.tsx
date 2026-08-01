@@ -463,6 +463,10 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   const [campaign, setCampaign] = useState("");
   const [time, setTime] = useState("10:00");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Campaigns arrive async. Without this flag an empty list reads the same
+  // while loading as when there genuinely are none, and the picker told users
+  // "No campaigns for this brand" for a brand that has eight.
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   // Off by default: a post that needs no new artwork is the common case once
@@ -481,7 +485,7 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
 
   useEffect(() => {
     let alive = true;
-    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {}).finally(() => { if (alive) setCampaignsLoaded(true); });
     return () => { alive = false; };
   }, []);
   useEffect(() => { if (!brandOptions.includes(b)) setB(brandOptions[0] ?? "teppen"); }, [b, brandOptions]);
@@ -562,7 +566,7 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
                 options={brandCampaignNames}
                 disabled={brandCampaigns.length === 0}
                 inputClassName={field}
-                placeholder={brandCampaigns.length ? "พิมพ์เพื่อค้นหา campaign…" : "No campaigns for this brand"}
+                placeholder={!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : brandCampaigns.length ? "พิมพ์เพื่อค้นหา campaign…" : "แบรนด์นี้ยังไม่มีแคมเปญ"}
                 emptyLabel="ไม่พบ campaign ที่ตรงกับที่พิมพ์"
               />
               {campaign.trim() && !selectedCampaign && <div className="mt-1 text-[11px] font-semibold text-status-red">เลือก Campaign จากรายการที่มีอยู่ เพื่อให้ sync กลับ Campaign ได้ถูกต้อง</div>}

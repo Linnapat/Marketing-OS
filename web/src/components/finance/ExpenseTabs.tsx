@@ -62,6 +62,10 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   const [busyDraftId, setBusyDraftId] = useState<number | null>(null);
   const [requests, setRequests] = useState<ExpenseReq[]>(REQUESTS);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Campaigns arrive async. Without this flag an empty list reads the same
+  // while loading as when there genuinely are none, and the picker told users
+  // "No campaigns for this brand" for a brand that has eight.
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [preparerSig, setPreparerSig] = useState<string | null>(null);
   const [signingPreparer, setSigningPreparer] = useState(false);
   const { member, user } = useAuth();
@@ -76,7 +80,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
     let alive = true;
     setPreparerSig(getSavedSignature("preparer"));
     fetchExpenseRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
-    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {}).finally(() => { if (alive) setCampaignsLoaded(true); });
     return () => { alive = false; };
   }, [submitted]);
 
@@ -283,7 +287,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+                <option value="">{!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : brandCampaigns.length ? "Select campaign…" : "แบรนด์นี้ยังไม่มีแคมเปญ"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>

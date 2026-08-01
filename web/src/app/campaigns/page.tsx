@@ -341,7 +341,7 @@ export default function CampaignsPage() {
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
                     style={{ gridTemplateColumns: COLS }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center">Ready</div><div>Actions</div>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center" title="พร้อมเริ่มไหม — ✅ พร้อม · ⚠️ ยังขาดของ · ⛔ ติดปัญหา">Ready</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
                     <div
@@ -386,9 +386,16 @@ export default function CampaignsPage() {
                         {visitGoal(c) ? num(visitGoal(c)) : "—"}
                       </div>
                       {/* Readiness as a single symbol (label on hover) */}
+                      {/* Symbol + word: the icon alone was unreadable without
+                          hovering every row to find out what it meant. */}
                       <div className="md:text-center" title={READINESS_META[c.readiness].label}>
-                        <span className="text-[17px] leading-none">
-                          {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
+                        <span className="inline-flex items-center gap-[5px]">
+                          <span className="text-[15px] leading-none">
+                            {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
+                          </span>
+                          <span className="text-[10.5px] font-semibold text-faint md:hidden lg:inline">
+                            {c.readiness === "ready" ? "พร้อม" : c.readiness === "blocked" ? "ติด" : "ขาดของ"}
+                          </span>
                         </span>
                       </div>
                       {/* Actions — status + edit + delete, always on one row */}
@@ -425,8 +432,8 @@ export default function CampaignsPage() {
                             type="button"
                             onClick={() => onDelete(c)}
                             disabled={busyCampaignId === c.id}
-                            className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50 shrink-0 whitespace-nowrap"
-                            style={{ borderColor: "#F2CACA" }}
+                            title="ลบแคมเปญนี้"
+                            className="text-[11.5px] font-semibold rounded-[10px] px-3 py-[7px] border border-transparent bg-transparent text-faint hover:text-[#C74B4B] hover:border-[#F2CACA] hover:bg-white disabled:opacity-50 shrink-0 whitespace-nowrap transition"
                           >
                             Delete
                           </button>

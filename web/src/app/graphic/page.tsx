@@ -345,7 +345,10 @@ function GraphicPageInner() {
         </CampaignCommandBar>
 
         <ModuleSummaryCard
-          title="Graphic Request Summary ✨"
+          // Two counts sit 60px apart on this page — this one follows the
+          // filters above, the assignment queue below counts every month. Both
+          // were unlabelled, so the page appeared to contradict itself.
+          title="Graphic Request Summary ✨ · ตามตัวกรองด้านบน"
           titleClassName="text-[#7A5710]"
           style={{
             background: "linear-gradient(180deg, #F4D48D 0%, #E7BE67 100%)",
@@ -393,6 +396,10 @@ function GraphicPageInner() {
             <span className="text-[11px] w-3" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>{queueOpen ? "▾" : "▸"}</span>
             <span className="text-[13px] font-extrabold" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
               🙋 รอมอบหมาย {queueStats.total} งาน
+            </span>
+            <span className="text-[10.5px] font-semibold px-[7px] py-[1px] rounded-pill bg-white/70"
+              style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
+              ทุกเดือน · ไม่ตามตัวกรอง
             </span>
             <span className="text-[11.5px] font-semibold" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
               {queueStats.stuck > 0
@@ -1118,6 +1125,10 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Campaigns arrive async. Without this flag an empty list reads the same
+  // while loading as when there genuinely are none, and the picker told users
+  // "No campaigns for this brand" for a brand that has eight.
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [approver, setApprover] = useState("");
   const { member, user } = useAuth();
   const requester = member?.name || user?.email?.split("@")[0] || "You";
@@ -1146,7 +1157,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   const [posts, setPosts] = useState<ContentItem[]>([]);
   useEffect(() => {
     let alive = true;
-    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {}).finally(() => { if (alive) setCampaignsLoaded(true); });
     fetchAllBriefs().then((b) => { if (alive) setBriefs(b); }).catch(() => {});
     fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
@@ -1320,7 +1331,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+                <option value="">{!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : brandCampaigns.length ? "Select campaign…" : "แบรนด์นี้ยังไม่มีแคมเปญ"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>

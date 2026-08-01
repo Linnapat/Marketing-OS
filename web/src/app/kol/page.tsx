@@ -1099,6 +1099,10 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
   const [brandId, setBrandId] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Campaigns arrive async. Without this flag an empty list reads the same
+  // while loading as when there genuinely are none, and the picker told users
+  // "No campaigns for this brand" for a brand that has eight.
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const { member, user } = useAuth();
   const requester = member?.name || user?.email?.split("@")[0] || "You";
@@ -1113,7 +1117,8 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
         setCampaigns(c);
         setBrandConfigs(configs);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (alive) setCampaignsLoaded(true); });
     return () => { alive = false; };
   }, []);
 
@@ -1185,7 +1190,7 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign</label>
             <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-              <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+              <option value="">{!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : brandCampaigns.length ? "Select campaign…" : "แบรนด์นี้ยังไม่มีแคมเปญ"}</option>
               {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
             {(() => {

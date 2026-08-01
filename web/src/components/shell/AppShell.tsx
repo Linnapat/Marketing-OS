@@ -72,10 +72,11 @@ function Shell({ children }: { children: React.ReactNode }) {
     return next;
   });
 
-  if (!brandsReady) {
-    return <div className="min-h-screen flex items-center justify-center bg-ivory text-[13px] text-faint">Loading…</div>;
-  }
-
+  // Brand overrides used to gate the WHOLE shell, so every cold load showed a
+  // blank page with a centred "Loading…" and — worse — no navigation, leaving
+  // no way out while you waited. The rail and header do not depend on brand
+  // colours, so they render immediately now; only the page body waits, and it
+  // waits as a skeleton rather than an empty screen.
   return (
     <div className="min-h-screen bg-ivory">
       {/* Desktop sidebar (fixed) */}
@@ -119,10 +120,24 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main className={collapsed ? "lg:pl-[78px] transition-[padding] duration-200" : "lg:pl-[248px] transition-[padding] duration-200"}>
         <div className="max-w-content mx-auto px-5 sm:px-6 lg:px-8 pt-5 pb-16">
           <DemoModeBanner />
-          <ModuleGate>{children}</ModuleGate>
+          {brandsReady
+            ? <ModuleGate>{children}</ModuleGate>
+            : <PageSkeleton />}
         </div>
       </main>
       <Toaster />
+    </div>
+  );
+}
+
+/** Placeholder shaped like a page header plus a card, so the layout does not
+ *  jump when the real content lands. */
+function PageSkeleton() {
+  return (
+    <div className="animate-pulse" aria-busy="true" aria-label="กำลังโหลด">
+      <div className="h-[64px] rounded-cardLg bg-white/70 border border-line" />
+      <div className="mt-4 h-[104px] rounded-cardLg bg-white/50 border border-line" />
+      <div className="mt-4 h-[320px] rounded-cardLg bg-white/40 border border-line" />
     </div>
   );
 }
