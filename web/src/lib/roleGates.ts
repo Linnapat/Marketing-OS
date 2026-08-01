@@ -67,6 +67,22 @@ export function canAssignCaption(role: string): boolean {
   return r === "Creative Leader" || r === "CMO";
 }
 
+/** May this person mark a post's media released — the tick that says the file
+ *  is finished and the post may go out?
+ *
+ *  Content Creator and Creative Leader (CMO, 2026-08-02). Note what this
+ *  deliberately splits: whoever produced the file still pastes the link, since
+ *  they are the one holding it, but somebody else confirms it is done. An
+ *  editor who could both deliver and release their own work would be signing
+ *  their own delivery off, which is the same objection the two-lens artwork
+ *  review exists to answer.
+ *
+ *  CMO included as the standing override the rest of these gates give them. */
+export function canMarkMediaReleased(role: string): boolean {
+  const r = (role || "").trim();
+  return r === "Content Creator" || r === "Creative Leader" || r === "CMO";
+}
+
 /** May this person raise a graphic brief?
  *
  *  Not the people the briefs are addressed to. The Graphic module level cannot
