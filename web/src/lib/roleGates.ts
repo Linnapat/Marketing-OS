@@ -67,6 +67,23 @@ export function canAssignCaption(role: string): boolean {
   return r === "Creative Leader" || r === "CMO";
 }
 
+/** May this person hand a graphic request to a designer?
+ *
+ *  The claim canAssignCaption already makes — "the same person who hands
+ *  graphic requests to designers" — was true of the Content side and of
+ *  nothing else: the Assigned Designer dropdown in the graphic drawer had no
+ *  gate at all, so a VDO Editor could move any request onto any colleague
+ *  while the page above it read "Creative Leader มอบหมาย".
+ *
+ *  Same rule as the caption queue, and for the same reason: one person is
+ *  answerable for who is carrying what. Accepting work yourself is untouched —
+ *  canAcceptWork stays open to the whole producing side, because picking up a
+ *  job is not the same act as putting it on someone else. */
+export function canAssignDesigner(role: string): boolean {
+  const r = (role || "").trim();
+  return r === "Creative Leader" || r === "CMO";
+}
+
 /** May this person clear a rush brief — the one that jumped the monthly
  *  deadline, the lead time or the daily cap?
  *
