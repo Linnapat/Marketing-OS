@@ -32,24 +32,28 @@ async function call(method: string, body: Record<string, unknown>): Promise<Slac
   }
 }
 
-/** Slack user id for an email, or null when this workspace has no such member.
- *  `users_not_found` is the ordinary case (someone using a different email for
- *  Slack), not an error worth logging loudly. */
-export async function lookupUserByEmail(email: string): Promise<string | null> {
+/** Slack user id for an email, plus WHY when there isn't one.
+ *
+ *  This used to return a bare null, which made `users_not_found` (this person
+ *  uses a different email for Slack — ordinary, fix it in Users & Roles) look
+ *  exactly like `missing_scope` (the token can't ask — reinstall the app).
+ *  They need opposite fixes, and telling them apart from the outside cost an
+ *  afternoon, so the reason travels with the answer now. */
+export async function lookupUserByEmail(email: string): Promise<{ id: string | null; reason?: string }> {
   const res = await call("users.lookupByEmail", { email });
-  if (!res.ok) return null;
+  if (!res.ok) return { id: null, reason: res.error || "unknown_error" };
   const user = res.user as { id?: string } | undefined;
-  return user?.id ?? null;
+  return user?.id ? { id: user.id } : { id: null, reason: "no_user_in_response" };
 }
 
 /** DM a user. Passing a user id as `channel` opens the IM if needed. */
-export async function postDM(userId: string, text: string): Promise<boolean> {
+export async function postDM(userId: string, text: string): Promise<{ ok: boolean; reason?: string }> {
   const res = await call("chat.postMessage", {
     channel: userId,
     text: text.slice(0, 3900),
     unfurl_links: false,
   });
-  return res.ok;
+  return res.ok ? { ok: true } : { ok: false, reason: res.error || "unknown_error" };
 }
 
 /** Post to a channel by id/name with the bot token — used by the daily digest

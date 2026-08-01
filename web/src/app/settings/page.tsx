@@ -30,8 +30,19 @@ interface SlackWiring {
   teams: Record<string, { own: boolean; env?: string }>;
   dm: boolean;              // bot token present → per-person DMs are on
   financeDm: boolean;       // SLACK_FINANCE_DM set → money has somewhere to go
-  unmapped: string[];       // people the app tried to DM and couldn't find
+  unmapped: { name: string; reason: string; at: string }[]; // who we couldn't DM, and Slack's own reason
 }
+
+/** Slack's error codes say what to do — but only if you know what they mean. */
+const SLACK_REASON_HINT: Record<string, string> = {
+  users_not_found: "ไม่มีคนนี้ใน Slack ด้วยอีเมลนี้ — แก้อีเมลใน Users & Roles ให้ตรงกับที่ใช้ล็อกอิน Slack",
+  missing_scope: "token ไม่มีสิทธิ์ค้นหาคน — ไปที่ Slack app → OAuth & Permissions → Reinstall to Workspace แล้วอัปเดต SLACK_BOT_TOKEN",
+  not_allowed_token_type: "ใช้ token ผิดชนิด — ต้องเป็น Bot User OAuth Token (xoxb-…)",
+  invalid_auth: "token ใช้ไม่ได้แล้ว — ออก token ใหม่แล้วอัปเดต SLACK_BOT_TOKEN",
+  token_revoked: "token ถูกเพิกถอน — ติดตั้งแอปใหม่แล้วอัปเดต SLACK_BOT_TOKEN",
+  no_member_email: "ชื่อนี้ไม่ตรงกับใครใน Users & Roles — ตรวจว่าสะกดชื่อตรงกันไหม",
+  channel_not_found: "เปิด DM หาคนนี้ไม่ได้ — เช็ค scope im:write",
+};
 
 /** One line saying where alerts actually land — the rooms that are wired, and
  *  the two audiences that are DM-only by design. */
@@ -1271,8 +1282,12 @@ export default function SettingsPage() {
                       their own work and nobody finds out. */}
                   {live && slackWiring!.unmapped.length > 0 && (
                     <div className="text-[12px] rounded-[10px] px-3 py-2 mb-3" style={{ background: "#FBF8EE", color: "#8a6d1e", border: "1px solid #EFE2C2" }}>
-                      ⚠️ หา Slack ของ {slackWiring!.unmapped.length} คนไม่เจอ — <b>{slackWiring!.unmapped.join(", ")}</b> ยังไม่ได้รับ DM
-                      <div className="text-[11px] mt-1 opacity-80">แก้ได้โดยให้อีเมลใน Users &amp; Roles ตรงกับอีเมลที่ใช้ใน Slack</div>
+                      ⚠️ ส่ง DM ไม่ถึง {slackWiring!.unmapped.length} คน
+                      <ul className="mt-1 space-y-[2px]">
+                        {slackWiring!.unmapped.map((u) => (
+                          <li key={u.name}><b>{u.name}</b> — <code className="text-[11px]">{u.reason}</code> · {SLACK_REASON_HINT[u.reason] ?? "ดู error code ของ Slack ประกอบ"}</li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                   <div className="flex items-center justify-between">

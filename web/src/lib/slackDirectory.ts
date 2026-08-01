@@ -17,7 +17,10 @@ import { personKeys, isSamePerson } from "@/lib/identity";
 import { lookupUserByEmail, hasBotToken } from "@/lib/slackBot";
 
 const MAP_KEY = "slack_user_map_v1";      // { "<email>": "U123…" } — manual overrides + cache
-const UNMAPPED_KEY = "slack_unmapped_v1"; // { "<name>": "<iso date last tried>" }
+// { "<name>": { at, reason } } — reason is Slack's own error code, so the
+// difference between "this person isn't in Slack" and "our token may not ask"
+// is visible instead of being guessed at. Older rows stored a bare date string.
+const UNMAPPED_KEY = "slack_unmapped_v1";
 
 interface MemberRow { name: string; email: string }
 
@@ -55,23 +58,33 @@ async function rememberId(email: string, id: string): Promise<void> {
   await db.from("org_settings").upsert({ key: MAP_KEY, label: "Slack user mapping", value: JSON.stringify(next) }, { onConflict: "key" });
 }
 
-/** Record the people we could not reach, replacing the whole set for the names
- *  we just tried so someone who gets mapped later drops off the warning. */
-async function recordUnmapped(names: string[], resolved: Set<string>): Promise<void> {
+export interface UnmappedEntry { at: string; reason: string }
+
+async function readUnmapped(): Promise<Record<string, UnmappedEntry>> {
   const db = supabaseAdmin();
-  if (!db || names.length === 0) return;
+  if (!db) return {};
   const { data } = await db.from("org_settings").select("value").eq("key", UNMAPPED_KEY).maybeSingle();
-  let current: Record<string, string> = {};
   try {
-    current = data?.value ? (JSON.parse(data.value as string) as Record<string, string>) : {};
-  } catch { current = {}; }
-  const stamp = new Date().toISOString();
+    const raw = data?.value ? (JSON.parse(data.value as string) as Record<string, unknown>) : {};
+    // Rows written before reasons existed are a bare ISO string.
+    return Object.fromEntries(Object.entries(raw).map(([k, v]) =>
+      [k, typeof v === "string" ? { at: v, reason: "unknown" } : (v as UnmappedEntry)]));
+  } catch { return {}; }
+}
+
+/** Record the people we could not reach and why, replacing the whole set for
+ *  the names we just tried so someone who gets mapped later drops off. */
+async function recordUnmapped(reasons: Map<string, string | null>): Promise<void> {
+  const db = supabaseAdmin();
+  if (!db || reasons.size === 0) return;
+  const current = await readUnmapped();
+  const at = new Date().toISOString();
   let changed = false;
-  for (const name of names) {
-    if (resolved.has(name)) {
+  for (const [name, reason] of reasons) {
+    if (reason === null) {
       if (name in current) { delete current[name]; changed = true; }
-    } else if (current[name] !== stamp) {
-      current[name] = stamp; changed = true;
+    } else {
+      current[name] = { at, reason }; changed = true;
     }
   }
   if (!changed) return;
@@ -79,16 +92,12 @@ async function recordUnmapped(names: string[], resolved: Set<string>): Promise<v
 }
 
 /** Names the app tried to DM and couldn't, for Settings → Integrations. */
-export async function fetchUnmapped(): Promise<string[]> {
-  const db = supabaseAdmin();
-  if (!db) return [];
-  const { data } = await db.from("org_settings").select("value").eq("key", UNMAPPED_KEY).maybeSingle();
-  try {
-    return Object.keys(data?.value ? (JSON.parse(data.value as string) as Record<string, string>) : {});
-  } catch { return []; }
+export async function fetchUnmapped(): Promise<{ name: string; reason: string; at: string }[]> {
+  const rows = await readUnmapped();
+  return Object.entries(rows).map(([name, v]) => ({ name, ...v }));
 }
 
-export interface Resolution { name: string; slackId: string | null }
+export interface Resolution { name: string; slackId: string | null; reason?: string }
 
 /** Resolve display names to Slack user ids, in one pass. */
 export async function resolveSlackIds(names: string[]): Promise<Resolution[]> {
@@ -103,13 +112,13 @@ export async function resolveSlackIds(names: string[]): Promise<Resolution[]> {
     // part — identity.personKeys covers all three.
     const member = dir.members.find((m) => isSamePerson(name, personKeys({ name: m.name, email: m.email })));
     const email = (member?.email ?? (name.includes("@") ? name : "")).toLowerCase();
-    if (!email) { out.push({ name, slackId: null }); continue; }
+    if (!email) { out.push({ name, slackId: null, reason: "no_member_email" }); continue; }
     const known = dir.map[email];
     if (known) { out.push({ name, slackId: known }); continue; }
     const found = await lookupUserByEmail(email);
-    if (found) await rememberId(email, found);
-    out.push({ name, slackId: found });
+    if (found.id) await rememberId(email, found.id);
+    out.push({ name, slackId: found.id, reason: found.reason });
   }
-  await recordUnmapped(wanted, new Set(out.filter((r) => r.slackId).map((r) => r.name)));
+  await recordUnmapped(new Map(out.map((r) => [r.name, r.slackId ? null : (r.reason ?? "unknown")])));
   return out;
 }
