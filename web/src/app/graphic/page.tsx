@@ -256,8 +256,15 @@ function GraphicPageInner() {
 
   // "Own" scope: your jobs, plus whatever nobody has picked up yet. The
   // unclaimed pool has to stay — รับงาน is how this role gets work at all.
+  //
+  // Fails CLOSED. This shipped as `!myName → show everything`, which is the
+  // wrong way round for a scope that now covers an outside studio: the name
+  // resolves a beat after the session does, so the whole board — every brand,
+  // every supplier — flashed up before the filter engaged, and an account with
+  // no member row would have kept it. Unknown identity sees nothing.
   const inMyQueue = (g: Graphic) => {
-    if (!ownQueueOnly || !myName) return true;
+    if (!ownQueueOnly) return true;
+    if (!myName) return false;
     const holder = (g.designer ?? "").trim().toLowerCase();
     const sb = (g.storyboardOwner ?? "").trim().toLowerCase();
     return holder === myName || sb === myName || !holder || holder === "unassigned";
