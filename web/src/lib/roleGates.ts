@@ -67,6 +67,28 @@ export function canAssignCaption(role: string): boolean {
   return r === "Creative Leader" || r === "CMO";
 }
 
+/**
+ * Nav entries kept out of a role's rail because they are not that role's job —
+ * decluttering, not a permission. The Permissions matrix still decides who may
+ * open what; these routes stay reachable by a direct link, so a campaign code
+ * inside a job someone IS working on still opens.
+ *
+ * VDO Editor, per the CMO (2026-08-02): a rail of fifteen entries where five
+ * are reporting screens they never open buries the four they live in.
+ *
+ * Team KPI is deliberately kept even though it sits under /performance-center —
+ * it is the monthly review of the Creative team, which is them.
+ */
+const NAV_HIDDEN_BY_ROLE: Record<string, string[]> = {
+  "VDO Editor": ["/campaigns", "/platforms", "/performance-center", "/requests", "/expenses"],
+};
+
+/** Exact-href match, never a prefix: hiding /performance-center must not take
+ *  /performance-center/team-kpi with it. */
+export function isNavHiddenFor(role: string, href: string): boolean {
+  return (NAV_HIDDEN_BY_ROLE[(role || "").trim()] ?? []).includes(href);
+}
+
 /** May this person mark a post's media released — the tick that says the file
  *  is finished and the post may go out?
  *
