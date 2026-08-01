@@ -539,9 +539,19 @@ export async function createKolExpenseRequest(input: {
   amount: number;
   kolName: string;
   requester?: string;
-}): Promise<string | null> {
+}): Promise<{ id: string } | { error: string }> {
   const db = supabase();
-  if (!db) return null;
+  if (!db) return { error: "ยังไม่ได้เชื่อมต่อฐานข้อมูล" };
+
+  // requester goes IN the insert, not in a follow-up update. The insert policy
+  // on expense_requests is `requester = jwt_member_name()`, so a row filed
+  // without it is rejected outright — this whole button was dead for everyone.
+  // The update that used to carry it could not have rescued it either: the
+  // update policy needs Finance ≥ Approve, which a KOL Specialist does not
+  // have, and an RLS update that matches no row fails silently.
+  if (!input.requester) {
+    return { error: "ไม่พบชื่อผู้ขอเบิก — ออกจากระบบแล้วเข้าใหม่อีกครั้ง" };
+  }
   const { data, error } = await db.from("expense_requests").insert({
     category: "KOL fee",
     brand: input.brand,
@@ -550,20 +560,19 @@ export async function createKolExpenseRequest(input: {
     requested: input.amount,
     approved: 0,
     status: "Waiting Approval",
+    requester: input.requester,
+    vendor: input.kolName,
   }).select("id").single();
-  if (error || !data) return null;
+  if (error || !data) return { error: error?.message || "สร้างใบเบิกไม่สำเร็จ" };
   const id = String((data as { id: number | string }).id);
 
-  // vendor/requester arrived in later migrations; skip quietly if absent rather
-  // than losing the request itself.
-  await db.from("expense_requests")
-    .update({ vendor: input.kolName, requester: input.requester ?? null })
-    .eq("id", id);
-
-  await db.from("kol_collaboration_history")
+  const link = await db.from("kol_collaboration_history")
     .update({ expense_request_id: id, updated_at: new Date().toISOString() })
     .eq("collab_id", input.collabId);
-  return id;
+  // The request exists either way — say so rather than reporting a clean
+  // success on a booking that still shows no linked expense.
+  if (link.error) return { error: `สร้างใบเบิก #${id} แล้ว แต่ผูกกลับเข้าดีลไม่สำเร็จ` };
+  return { id };
 }
 
 /** Close the loop on a booking — the two fields that were empty on every sheet row. */
