@@ -125,6 +125,10 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
   kols: Kol[]; mode: "month" | "week"; onOpen: (k: Kol) => void;
 }) {
   const [anchor, setAnchor] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
+  // Real plans put many deals in the same month-long window, so the lane cap
+  // hides most of a week by default. Keyed by week start, not index, so the
+  // choice does not follow you onto a different month.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const { days, title } = useMemo(() => {
     if (mode === "week") {
@@ -217,10 +221,14 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
         const wFrom = week[0];
         const wTo = week[6];
         const hits = bands.filter((b) => +b.end >= +wFrom && +b.start <= +wTo);
-        const shown = hits.filter((b) => b.lane < MAX_LANES);
+        const open = expanded[iso(wFrom)];
+        const shown = open ? hits : hits.filter((b) => b.lane < MAX_LANES);
         const hidden = hits.length - shown.length;
         const laneCount = shown.length ? Math.max(...shown.map((b) => b.lane)) + 1 : 0;
         const laneH = mode === "week" ? 26 : 22;
+        // The expand/collapse control sits at the bottom of the row, so the row
+        // has to reserve a line for it or the last band lands on top of it.
+        const footer = hidden > 0 || open ? 20 : 8;
 
         return (
           <div key={wi} className="relative border-b border-line4 last:border-b-0">
@@ -236,7 +244,7 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
                     style={{
                       // The row is as tall as its bands need, with a floor so an
                       // empty week still reads as a week rather than a hairline.
-                      minHeight: Math.max(mode === "week" ? 190 : 62, 26 + laneCount * laneH + 8),
+                      minHeight: Math.max(mode === "week" ? 190 : 62, 26 + laneCount * laneH + footer),
                       background: dim ? "#FAF9F7" : undefined,
                       opacity: dim ? 0.55 : 1,
                     }}>
@@ -310,8 +318,11 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
               })}
             </div>
 
-            {hidden > 0 && (
-              <div className="absolute bottom-[3px] left-[8px] text-[9.5px] text-faint">+{hidden} อื่นๆ</div>
+            {(hidden > 0 || open) && (
+              <button onClick={() => setExpanded((e) => ({ ...e, [iso(wFrom)]: !open }))}
+                className="absolute bottom-[3px] left-[8px] text-[9.5px] font-bold text-faint hover:text-ink">
+                {open ? "ย่อ" : `+${hidden} อื่นๆ`}
+              </button>
             )}
           </div>
         );
