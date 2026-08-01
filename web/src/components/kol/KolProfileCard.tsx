@@ -11,11 +11,11 @@ import { baht } from "@/lib/format";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
 import { initials, fmtFollow } from "@/lib/data/kol";
-import { tierTone } from "@/lib/kolTier";
+import { tierTone, categoryTone, PARTNER_TONE } from "@/lib/kolTier";
 import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
-  fetchKolNotes, addKolNote, deleteKolNote,
+  fetchKolNotes, addKolNote, deleteKolNote, setKolPartner,
   KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote,
 } from "@/lib/db/kolScorecard";
 
@@ -50,13 +50,17 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
   const [row, setRow] = useState<KolScorecardRow | null>(null);
   const [history, setHistory] = useState<KolEngagementRow[]>([]);
   const [bench, setBench] = useState<KolTierBenchmark[]>([]);
+  const [partner, setPartner] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     Promise.all([fetchKolScorecard(kolId), fetchKolEngagements(kolId), fetchKolTierBenchmarks()])
-      .then(([r, h, b]) => { if (!alive) return; setRow(r); setHistory(h); setBench(b); setLoading(false); })
+      .then(([r, h, b]) => {
+        if (!alive) return;
+        setRow(r); setHistory(h); setBench(b); setPartner(Boolean(r?.is_partner)); setLoading(false);
+      })
       .catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [kolId]);
@@ -89,7 +93,12 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
                 {row.tier}
               </span>
             )}
-            {row.kol_type && <span>{row.kol_type}</span>}
+            {row.kol_type && (
+              <span className="text-[11px] font-semibold px-[9px] py-[3px] rounded-pill"
+                style={{ background: categoryTone(row.kol_type).bg, border: `1px solid ${categoryTone(row.kol_type).border}`, color: categoryTone(row.kol_type).fg }}>
+                {row.kol_type}
+              </span>
+            )}
             {row.total_followers != null && <><span>·</span><span>{fmtFollow(row.total_followers)} followers</span></>}
             {row.status && <><span>·</span><span>{row.status}</span></>}
           </div>
@@ -101,11 +110,26 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
             </div>
           )}
         </div>
-        {row.never_used && (
-          <span className="text-[11px] font-bold px-[10px] py-[4px] rounded-pill" style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
-            ยังไม่เคยใช้
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {row.never_used && (
+            <span className="text-[11px] font-bold px-[10px] py-[4px] rounded-pill" style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
+              ยังไม่เคยใช้
+            </span>
+          )}
+          <button
+            onClick={async () => {
+              const next = !partner;
+              setPartner(next);
+              if (!(await setKolPartner(kolId, next))) setPartner(!next);
+            }}
+            title={partner ? "ยกเลิกสถานะ Partner" : "ตั้งเป็น KOL Partner"}
+            className="text-[11px] font-bold px-[10px] py-[4px] rounded-pill"
+            style={partner
+              ? { background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }
+              : { background: "#fff", border: "1px dashed #D7D2C8", color: "#9A9387" }}>
+            {partner ? "✓ KOL Partner" : "+ ตั้งเป็น Partner"}
+          </button>
+        </div>
       </div>
 
       {/* Channels — the follower number itself opens the real profile */}
@@ -159,15 +183,15 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
             {history.map((h) => {
               // Brand-coloured left edge: a creator working across three brands
               // is the common case here, and the eye should catch that first.
-              const bc = h.brand ? brandColor(h.brand) : "#D7D2C8";
+              const bc = h.brand ? brandColor(h.brand) : "#9A9387";
               return (
-              <div key={h.collab_id} className="rounded-card border border-line bg-surface px-4 py-3"
-                style={{ borderLeft: `4px solid ${bc}` }}>
+              <div key={h.collab_id} className="rounded-card px-4 py-3"
+                style={{ background: `${bc}12`, border: `1px solid ${bc}38` }}>
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-[12.5px] font-bold text-ink">{h.campaign_name ?? "— ไม่ระบุแคมเปญ —"}</span>
                   {h.brand && (
-                    <span className="text-[10.5px] font-bold px-[8px] py-[2px] rounded-pill"
-                      style={{ background: `${bc}1A`, color: bc }}>{brandName(h.brand)}</span>
+                    <span className="text-[10.5px] font-bold px-[8px] py-[2px] rounded-pill text-white"
+                      style={{ background: bc }}>{brandName(h.brand)}</span>
                   )}
                   {h.branch && <span className="text-[11px] text-faint">{h.branch}</span>}
                   {h.month_key && <span className="text-[11px] text-faint">· {h.month_key}</span>}
@@ -208,7 +232,9 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
                     {h.next_action && <span className="px-[8px] py-[2px] rounded-pill bg-ivory border border-line3 text-muted">{h.next_action}</span>}
                   </div>
                 ) : h.status === "Resulted" && (
-                  <div className="mt-2 text-[11px] font-semibold" style={{ color: TONE.warn.fg }}>
+                  // Red on purpose: an unclosed booking is the one thing that
+                  // stops this history from teaching us anything next time.
+                  <div className="mt-2 text-[11px] font-bold" style={{ color: "#C0392B" }}>
                     ⚠ ยังไม่ได้สรุปผล — ขาด Performance tag และ Next action
                   </div>
                 )}

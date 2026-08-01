@@ -22,6 +22,8 @@ export interface KolScorecardRow {
   tier: string | null;
   status: string | null;
   contact_agency: string | null;
+  /** Repeat collaborator with settled terms — seeded from 2+ bookings. */
+  is_partner: boolean | null;
   brand_fit: string[] | null;
   total_followers: number | null;
   channels: KolChannel[] | null;
@@ -224,6 +226,17 @@ export async function addKolNote(input: { kol_id: string; body: string; author?:
     .single();
   if (error || !data) return null;
   return data as KolNote;
+}
+
+/** Mark / unmark a creator as a partner. */
+export async function setKolPartner(kolId: string, isPartner: boolean): Promise<boolean> {
+  const db = supabase();
+  if (!db) return false;
+  const { error } = await db
+    .from("kol_profiles")
+    .update({ is_partner: isPartner, updated_at: new Date().toISOString() })
+    .eq("kol_id", kolId);
+  return !error;
 }
 
 export async function deleteKolNote(noteId: string): Promise<boolean> {

@@ -24,6 +24,13 @@
 
 create extension if not exists pgcrypto;
 
+-- ── kol_profiles.is_partner — the ones we have an actual relationship with ──
+-- Distinct from status: a page can be Active (we can book them) without being a
+-- partner (we have worked with them repeatedly and the terms are settled).
+-- Seeded from history — 2+ bookings is a relationship, 1 is an experiment.
+alter table kol_profiles add column if not exists is_partner boolean default false;
+create index if not exists kol_profiles_partner_idx on kol_profiles(is_partner) where is_partner;
+
 -- ── Extend kol_collaboration_history into a full engagement record ──────
 -- Kept nullable throughout: existing rows (currently none) stay valid, and the
 -- sheet itself leaves most of these blank on older entries.
@@ -144,7 +151,10 @@ create index if not exists kol_notes_kol_idx on kol_notes(kol_id, created_at des
 -- computed from real engagements. This is what turns "302 names" into
 -- "302 names we know something about".
 -- ═══════════════════════════════════════════════════════════════════════
-create or replace view kol_scorecard_view with (security_invoker = on) as
+-- Dropped rather than replaced: adding is_partner shifts the column order, and
+-- CREATE OR REPLACE VIEW refuses to renumber existing columns.
+drop view if exists kol_scorecard_view;
+create view kol_scorecard_view with (security_invoker = on) as
 with agg as (
   select
     h.kol_id,
@@ -170,6 +180,7 @@ select
   p.tier,
   p.status,
   p.contact_agency,
+  p.is_partner,
   p.data->'brand_fit'                    as brand_fit,
   ch.total_followers,
   ch.channels,

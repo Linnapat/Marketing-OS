@@ -3,7 +3,7 @@
 import { toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
 import { CSSProperties, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -22,7 +22,7 @@ import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
 import { fetchKolScorecards, createKolWithChannels, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
-import { tierTone, KOL_TIERS } from "@/lib/kolTier";
+import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -753,7 +753,9 @@ function KolDatabase() {
     const order = ["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"];
     return order.filter((p) => count.has(p)).concat([...count.keys()].filter((p) => !order.includes(p)));
   }, [rows]);
-  const cols = `1.9fr 0.7fr 1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.8fr 0.9fr 0.55fr 0.8fr 0.6fr`;
+  // Trailing metrics get their own breathing room — "ใช้ไป" and "Cost/Reach"
+  // read as one number when they sit flush against each other.
+  const cols = `1.9fr 0.7fr 1.1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.85fr 0.95fr 0.75fr 1fr 0.75fr`;
   // Creators we have evidence about first; the never-booked ones get their own
   // block so they read as "still to try", not as the bottom of a ranking.
   const used = rows.filter((r) => !r.never_used);
@@ -814,11 +816,19 @@ function KolDatabase() {
       </div>
       <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
         <div className="min-w-[1080px]">
-        <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+        <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 items-center" style={{ gridTemplateColumns: cols }}>
           <div>KOL / Page</div><div>Tier</div><div>Category</div>
-          {platformCols.map((p) => <div key={p} className="text-right">{p}</div>)}
+          {platformCols.map((p) => {
+            const ic = platformIcon(p);
+            return (
+              <div key={p} className="flex items-center justify-end gap-[5px]">
+                <span className="w-[13px] h-[13px] rounded-[4px] flex items-center justify-center text-[7.5px] font-bold" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
+                <span style={{ color: ic.bg }}>{p}</span>
+              </div>
+            );
+          })}
           <div className="text-right">รวม</div><div className="text-right">Rate</div>
-          <div className="text-right">ใช้ไป</div><div className="text-right">Cost/Reach</div><div className="text-right">R/F</div>
+          <div className="text-right">ใช้ไป</div><div className="text-right pl-3">Cost/Reach</div><div className="text-right">R/F</div>
         </div>
         {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} platformCols={platformCols} onOpen={setOpenKol} />)}
         {untried.length > 0 && (
@@ -852,6 +862,7 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
 }) {
   const byPlatform = new Map((r.channels ?? []).filter((c) => c.platform).map((c) => [c.platform!, c]));
   const tone = tierTone(r.tier);
+  const cat = categoryTone(r.kol_type);
   const rate = r.rate_min_thb != null
     ? (r.rate_max_thb != null && r.rate_max_thb !== r.rate_min_thb
         ? `${baht(r.rate_min_thb, { compact: true })}–${baht(r.rate_max_thb, { compact: true })}`
@@ -862,28 +873,38 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
       <span className="flex items-center gap-2 min-w-0">
         <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
         <button onClick={() => onOpen(r.kol_id)} className="text-[13px] font-bold text-ink truncate text-left hover:underline">{r.display_name}</button>
-        <a href={`/kol/${r.kol_id}`} target="_blank" rel="noreferrer" aria-label={`เปิด ${r.display_name} ในแท็บใหม่`}
-          className="text-faint hover:text-accent flex-shrink-0"><ExternalLink size={12} /></a>
+        {r.is_partner && (
+          <span className="text-[9.5px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0 whitespace-nowrap"
+            style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}>
+            PARTNER
+          </span>
+        )}
       </span>
       <span>
         {r.tier
           ? <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill" style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.fg }}>{r.tier}</span>
           : <span className="text-[12px] text-faint">—</span>}
       </span>
-      <span className="text-[12px] text-muted truncate">{r.kol_type ?? "—"}</span>
+      <span className="min-w-0">
+        {r.kol_type
+          ? <span className="text-[11px] font-semibold px-[9px] py-[3px] rounded-pill inline-block truncate max-w-full" style={{ background: cat.bg, border: `1px solid ${cat.border}`, color: cat.fg }}>{r.kol_type}</span>
+          : <span className="text-[12px] text-faint">—</span>}
+      </span>
       {platformCols.map((p) => {
         const c = byPlatform.get(p);
         if (!c || c.followers == null) return <span key={p} className="text-[12px] text-faint text-right">—</span>;
         const label = fmtFollow(c.followers);
+        // The number wears its platform's colour so a column reads straight
+        // down without checking the header each time.
         return c.url
           ? <a key={p} href={c.url} target="_blank" rel="noreferrer" title={c.url}
-              className="text-[12.5px] font-semibold text-accent text-right hover:underline">{label}</a>
+              className="text-[12.5px] font-semibold text-right hover:underline" style={{ color: platformIcon(p).bg }}>{label}</a>
           : <span key={p} className="text-[12.5px] text-muted text-right" title={`${p} — ยังไม่มีลิงก์`}>{label}</span>;
       })}
       <span className="text-[12.5px] font-semibold text-ink text-right">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
       <span className="text-[12px] text-muted text-right">{rate}</span>
       <span className="text-[12.5px] text-right font-bold" style={{ color: r.times_used > 0 ? "#3E5C9A" : "#9A9387" }}>{r.times_used || "—"}</span>
-      <span className="text-[12px] text-muted text-right">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
+      <span className="text-[12px] text-muted text-right pl-3">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
       <span className="text-[12px] text-right" style={{ color: (r.reach_per_follower ?? 0) >= 1 ? "#3F6A34" : "#6b6258" }}>
         {r.reach_per_follower != null ? `${Number(r.reach_per_follower).toFixed(2)}x` : "—"}
       </span>
