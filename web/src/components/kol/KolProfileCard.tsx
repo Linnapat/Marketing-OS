@@ -8,12 +8,15 @@
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { baht } from "@/lib/format";
-import { brandName } from "@/lib/brands";
+import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
 import { initials, fmtFollow } from "@/lib/data/kol";
+import { tierTone } from "@/lib/kolTier";
+import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
-  KolScorecardRow, KolEngagementRow, KolTierBenchmark,
+  fetchKolNotes, addKolNote, deleteKolNote,
+  KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote,
 } from "@/lib/db/kolScorecard";
 
 /** Reach we bought per baht spent, versus what this tier normally costs us. */
@@ -79,9 +82,14 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[18px] font-extrabold text-ink truncate">{row.display_name}</div>
-          <div className="text-[12px] text-faint mt-[2px] flex items-center gap-2 flex-wrap">
-            {row.tier && <span className="font-semibold text-muted">{row.tier}</span>}
-            {row.kol_type && <><span>·</span><span>{row.kol_type}</span></>}
+          <div className="text-[12px] text-faint mt-[4px] flex items-center gap-2 flex-wrap">
+            {row.tier && (
+              <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill"
+                style={{ background: tierTone(row.tier).bg, border: `1px solid ${tierTone(row.tier).border}`, color: tierTone(row.tier).fg }}>
+                {row.tier}
+              </span>
+            )}
+            {row.kol_type && <span>{row.kol_type}</span>}
             {row.total_followers != null && <><span>·</span><span>{fmtFollow(row.total_followers)} followers</span></>}
             {row.status && <><span>·</span><span>{row.status}</span></>}
           </div>
@@ -148,12 +156,20 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {history.map((h) => (
-              <div key={h.collab_id} className="rounded-card border border-line bg-surface px-4 py-3">
+            {history.map((h) => {
+              // Brand-coloured left edge: a creator working across three brands
+              // is the common case here, and the eye should catch that first.
+              const bc = h.brand ? brandColor(h.brand) : "#D7D2C8";
+              return (
+              <div key={h.collab_id} className="rounded-card border border-line bg-surface px-4 py-3"
+                style={{ borderLeft: `4px solid ${bc}` }}>
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-[12.5px] font-bold text-ink">{h.campaign_name ?? "— ไม่ระบุแคมเปญ —"}</span>
-                  {h.brand && <span className="text-[11px] text-faint">{brandName(h.brand)}</span>}
-                  {h.branch && <span className="text-[11px] text-faint">· {h.branch}</span>}
+                  {h.brand && (
+                    <span className="text-[10.5px] font-bold px-[8px] py-[2px] rounded-pill"
+                      style={{ background: `${bc}1A`, color: bc }}>{brandName(h.brand)}</span>
+                  )}
+                  {h.branch && <span className="text-[11px] text-faint">{h.branch}</span>}
                   {h.month_key && <span className="text-[11px] text-faint">· {h.month_key}</span>}
                   <span className="ml-auto text-[11px] font-semibold text-muted">{h.status ?? "—"}</span>
                 </div>
@@ -197,10 +213,71 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+
+      <KolNotes kolId={kolId} />
+    </div>
+  );
+}
+
+/** Notes on the creator. Deliberately free text and append-only: this is where
+ *  "ไม่รับบรีฟ", "ต่อราคาได้ถึง 8,000", "เจ้าของเพจย้ายไปอยู่ภูเก็ตแล้ว" live —
+ *  the things that decide a booking but will never earn a column. */
+function KolNotes({ kolId }: { kolId: string }) {
+  const { member, user } = useAuth();
+  const author = member?.name || user?.email?.split("@")[0] || "";
+  const [notes, setNotes] = useState<KolNote[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { fetchKolNotes(kolId).then(setNotes).catch(() => {}); }, [kolId]);
+
+  const save = async () => {
+    if (!draft.trim() || busy) return;
+    setBusy(true);
+    try {
+      const created = await addKolNote({ kol_id: kolId, body: draft, author });
+      if (created) { setNotes((n) => [created, ...n]); setDraft(""); }
+    } finally { setBusy(false); }
+  };
+  const remove = async (id: string) => {
+    if (await deleteKolNote(id)) setNotes((n) => n.filter((x) => x.note_id !== id));
+  };
+
+  return (
+    <div>
+      <div className="text-[13px] font-bold text-ink mb-2">
+        Note {notes.length > 0 && <span className="text-faint font-normal">({notes.length})</span>}
+      </div>
+      <div className="flex gap-2 items-start">
+        <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(); }}
+          placeholder="บันทึกสิ่งที่คุยไว้ เงื่อนไข ข้อควรระวัง… (⌘/Ctrl + Enter เพื่อบันทึก)"
+          className="flex-1 text-[12.5px] px-[12px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+        <button onClick={save} disabled={!draft.trim() || busy}
+          className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px] disabled:opacity-40">
+          {busy ? "…" : "บันทึก"}
+        </button>
+      </div>
+      {notes.length > 0 && (
+        <div className="mt-2 flex flex-col gap-[6px]">
+          {notes.map((n) => (
+            <div key={n.note_id} className="group rounded-card border border-line4 bg-ivory px-3 py-2">
+              <div className="text-[12px] text-ink whitespace-pre-wrap">{n.body}</div>
+              <div className="mt-1 flex items-center gap-2 text-[10.5px] text-faint">
+                <span>{n.author || "—"}</span>
+                <span>· {n.created_at.slice(0, 16).replace("T", " ")}</span>
+                <button onClick={() => remove(n.note_id)}
+                  className="ml-auto opacity-0 group-hover:opacity-100 hover:text-ink">ลบ</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

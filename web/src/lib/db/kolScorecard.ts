@@ -7,6 +7,7 @@
 // follower count — which only exist once engagements are recorded.
 
 import { supabase } from "@/lib/supabase";
+import { tierFromFollowers } from "@/lib/db/kolMaster";
 
 export interface KolChannel {
   platform: string | null;
@@ -189,6 +190,98 @@ export async function fetchKolTierBenchmarks(): Promise<KolTierBenchmark[]> {
     cost_per_reach: num(r.cost_per_reach),
     cost_per_engagement: num(r.cost_per_engagement),
   }));
+}
+
+export interface KolNote {
+  note_id: string;
+  kol_id: string;
+  collab_id: string | null;
+  body: string;
+  author: string | null;
+  created_at: string;
+}
+
+/** Notes on a creator (newest first). `collab_id` pins a note to one booking. */
+export async function fetchKolNotes(kolId: string): Promise<KolNote[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db
+    .from("kol_notes")
+    .select("*")
+    .eq("kol_id", kolId)
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return data as KolNote[];
+}
+
+export async function addKolNote(input: { kol_id: string; body: string; author?: string; collab_id?: string }): Promise<KolNote | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data, error } = await db
+    .from("kol_notes")
+    .insert({ kol_id: input.kol_id, body: input.body.trim(), author: input.author, collab_id: input.collab_id ?? null })
+    .select("*")
+    .single();
+  if (error || !data) return null;
+  return data as KolNote;
+}
+
+export async function deleteKolNote(noteId: string): Promise<boolean> {
+  const db = supabase();
+  if (!db) return false;
+  const { error } = await db.from("kol_notes").delete().eq("note_id", noteId);
+  return !error;
+}
+
+/** Add a creator to the library by hand, with as many channels as we know. */
+export async function createKolWithChannels(input: {
+  display_name: string;
+  kol_type?: string;
+  tier?: string;
+  status?: string;
+  contact_agency?: string;
+  brand_fit?: string[];
+  notes?: string;
+  rate_thb?: number;
+  channels: { platform: string; url?: string; followers?: number }[];
+}): Promise<string | null> {
+  const db = supabase();
+  if (!db) return null;
+  const channels = input.channels.filter((c) => c.platform && (c.url || c.followers));
+  const total = channels.reduce((s, c) => s + (c.followers ?? 0), 0);
+  const tier = input.tier || tierFromFollowers(total || undefined);
+
+  const { data, error } = await db.from("kol_profiles").insert({
+    display_name: input.display_name.trim(),
+    kol_type: input.kol_type || null,
+    tier: tier || null,
+    status: input.status || "New",
+    contact_agency: input.contact_agency || null,
+    notes: input.notes || null,
+    data: {
+      brand_fit: input.brand_fit ?? [],
+      followers: total,            // kolCollab.ts reads followers from here
+      rate_thb_min: input.rate_thb ?? null,
+      source: "manual",
+      created_in_app: true,
+    },
+  }).select("kol_id").single();
+  if (error || !data) return null;
+  const kolId = (data as { kol_id: string }).kol_id;
+
+  if (channels.length) {
+    await db.from("kol_channels").insert(channels.map((c) => ({
+      kol_id: kolId, platform: c.platform, handle_url: c.url || null, followers: c.followers ?? null,
+    })));
+  }
+  if (input.rate_thb != null) {
+    await db.from("kol_rate_cards").insert({
+      kol_id: kolId, deliverable: "Package", price_thb: input.rate_thb, is_current: true,
+      data: { source: "manual" },
+    });
+  }
+  await db.rpc("recompute_kol_rank", { p_kol: kolId });
+  return kolId;
 }
 
 /** Close the loop on a booking — the two fields that were empty on every sheet row. */
