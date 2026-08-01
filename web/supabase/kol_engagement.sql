@@ -124,6 +124,21 @@ create table if not exists kol_rate_cards (
 create index if not exists kol_rate_cards_kol_idx on kol_rate_cards(kol_id);
 create index if not exists kol_rate_cards_current_idx on kol_rate_cards(kol_id) where is_current;
 
+-- ── kol_notes — what the specialist knows that no column captures ──────
+-- Free notes on a creator, or on one specific booking. This is the pressure
+-- valve that keeps structured fields structured: the sheet's "Why Good?" column
+-- became a dumping ground for deal terms precisely because there was nowhere
+-- else to write anything down.
+create table if not exists kol_notes (
+  note_id    uuid primary key default gen_random_uuid(),
+  kol_id     uuid not null references kol_profiles(kol_id) on delete cascade,
+  collab_id  uuid references kol_collaboration_history(collab_id) on delete cascade,
+  body       text not null,
+  author     text,
+  created_at timestamptz default now()
+);
+create index if not exists kol_notes_kol_idx on kol_notes(kol_id, created_at desc);
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- kol_scorecard_view — everything the Library table and the matcher need,
 -- computed from real engagements. This is what turns "302 names" into
@@ -232,7 +247,7 @@ group by p.tier;
 do $$
 declare t text;
 begin
-  foreach t in array array['kol_engagement_posts','kol_rate_cards'] loop
+  foreach t in array array['kol_engagement_posts','kol_rate_cards','kol_notes'] loop
     execute format('alter table %I enable row level security;', t);
     execute format('drop policy if exists demo_all on %I;', t);
     execute format('drop policy if exists staff_rw on %I;', t);

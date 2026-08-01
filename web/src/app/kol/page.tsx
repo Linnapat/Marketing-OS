@@ -20,8 +20,9 @@ import {
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
-import { fetchKolScorecards, KolScorecardRow } from "@/lib/db/kolScorecard";
+import { fetchKolScorecards, createKolWithChannels, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
+import { tierTone, KOL_TIERS } from "@/lib/kolTier";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -690,6 +691,7 @@ function KolDatabase() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<KolScorecardRow[]>([]);
   const [openKol, setOpenKol] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [sheetRows, setSheetRows] = useState<KolSheetRow[]>([]);
   const [sheetUrl, setSheetUrl] = useState("");
   const [urlDraft, setUrlDraft] = useState("");
@@ -741,7 +743,17 @@ function KolDatabase() {
     await setAppSetting("kol_library_sheet_url", url.trim());
     await loadSheet(url);
   };
-  const cols = "1.9fr 0.7fr 1fr 1.5fr 0.9fr 1fr 0.6fr 0.8fr 0.7fr";
+  // Only render a platform column when someone in the current result actually
+  // uses it — a fixed five would leave two near-empty columns for Lemon8/YouTube.
+  const platformCols = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const r of rows) for (const c of r.channels ?? []) {
+      if (c.platform && (c.followers ?? 0) > 0) count.set(c.platform, (count.get(c.platform) ?? 0) + 1);
+    }
+    const order = ["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"];
+    return order.filter((p) => count.has(p)).concat([...count.keys()].filter((p) => !order.includes(p)));
+  }, [rows]);
+  const cols = `1.9fr 0.7fr 1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.8fr 0.9fr 0.55fr 0.8fr 0.6fr`;
   // Creators we have evidence about first; the never-booked ones get their own
   // block so they read as "still to try", not as the bottom of a ranking.
   const used = rows.filter((r) => !r.never_used);
@@ -797,21 +809,25 @@ function KolDatabase() {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"
           className="flex-1 min-w-[220px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
         <span className="text-[12px] text-faint">{rows.length} profile{rows.length === 1 ? "" : "s"}</span>
+        <button onClick={() => setAddOpen(true)}
+          className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">+ เพิ่ม KOL</button>
       </div>
-      <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-        <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
-          <div>KOL / Page</div><div>Tier</div><div>Category</div><div>ช่องทาง · Followers</div>
+      <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
+        <div className="min-w-[1080px]">
+        <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
+          <div>KOL / Page</div><div>Tier</div><div>Category</div>
+          {platformCols.map((p) => <div key={p} className="text-right">{p}</div>)}
           <div className="text-right">รวม</div><div className="text-right">Rate</div>
           <div className="text-right">ใช้ไป</div><div className="text-right">Cost/Reach</div><div className="text-right">R/F</div>
         </div>
-        {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} onOpen={setOpenKol} />)}
+        {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} platformCols={platformCols} onOpen={setOpenKol} />)}
         {untried.length > 0 && (
           <div className="px-5 py-2 border-y border-line4 bg-ivory/60 text-[11px] font-bold text-muted">
             ยังไม่ทดลอง · {untried.length} ราย
             <span className="font-normal text-faint ml-2">ไม่มีประวัติให้ตัดสิน — แนะนำให้แทรกทดลอง 2–3 รายต่อแคมเปญ ไม่งั้นจะวนใช้แต่คนเดิม</span>
           </div>
         )}
-        {untried.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} onOpen={setOpenKol} />)}
+        {untried.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} platformCols={platformCols} onOpen={setOpenKol} />)}
         {rows.length === 0 && (
           <div className="px-5 py-10 text-center">
             <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#F1BDD7] bg-[#FFF4F8] px-6 py-5">
@@ -820,16 +836,22 @@ function KolDatabase() {
             </div>
           </div>
         )}
+        </div>
       </div>
       {openKol && <KolProfileDrawer kolId={openKol} onClose={() => setOpenKol(null)} />}
+      {addOpen && <AddKolModal onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); loadDb(); }} />}
     </div>
   );
 }
 
-/** One Library row. The follower number of each platform is the link to that
- *  real profile — the sheet kept those URLs hidden behind the number too. */
-function KolLibraryRow({ r, cols, onOpen }: { r: KolScorecardRow; cols: string; onOpen: (id: string) => void }) {
-  const channels = (r.channels ?? []).filter((c) => c.platform).slice(0, 5);
+/** One Library row. Each platform gets its own column, and the follower number
+ *  is the link to that real profile — the sheet hid those URLs behind the
+ *  number too, which is why its *_Link columns looked empty. */
+function KolLibraryRow({ r, cols, platformCols, onOpen }: {
+  r: KolScorecardRow; cols: string; platformCols: string[]; onOpen: (id: string) => void;
+}) {
+  const byPlatform = new Map((r.channels ?? []).filter((c) => c.platform).map((c) => [c.platform!, c]));
+  const tone = tierTone(r.tier);
   const rate = r.rate_min_thb != null
     ? (r.rate_max_thb != null && r.rate_max_thb !== r.rate_min_thb
         ? `${baht(r.rate_min_thb, { compact: true })}–${baht(r.rate_max_thb, { compact: true })}`
@@ -843,32 +865,161 @@ function KolLibraryRow({ r, cols, onOpen }: { r: KolScorecardRow; cols: string; 
         <a href={`/kol/${r.kol_id}`} target="_blank" rel="noreferrer" aria-label={`เปิด ${r.display_name} ในแท็บใหม่`}
           className="text-faint hover:text-accent flex-shrink-0"><ExternalLink size={12} /></a>
       </span>
-      <span className="text-[12px] text-muted">{r.tier ?? "—"}</span>
-      <span className="text-[12px] text-muted truncate">{r.kol_type ?? "—"}</span>
-      <span className="flex gap-[5px] flex-wrap">
-        {channels.length === 0 && <span className="text-[12px] text-faint">—</span>}
-        {channels.map((c) => {
-          const ic = platformIcon(c.platform!);
-          const inner = (
-            <>
-              <span className="w-[14px] h-[14px] rounded-[4px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
-              <span className="text-[11px] font-semibold">{c.followers != null ? fmtFollow(c.followers) : "—"}</span>
-            </>
-          );
-          return c.url
-            ? <a key={c.platform} href={c.url} target="_blank" rel="noreferrer" title={`${c.platform} — ${c.url}`}
-                className="inline-flex items-center gap-[4px] rounded-pill border border-line2 bg-surface px-[7px] py-[2px] text-accent hover:border-accent">{inner}</a>
-            : <span key={c.platform} title={`${c.platform} — ยังไม่มีลิงก์`}
-                className="inline-flex items-center gap-[4px] rounded-pill border border-line3 bg-ivory px-[7px] py-[2px] text-faint">{inner}</span>;
-        })}
+      <span>
+        {r.tier
+          ? <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill" style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.fg }}>{r.tier}</span>
+          : <span className="text-[12px] text-faint">—</span>}
       </span>
-      <span className="text-[12.5px] text-muted text-right">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
+      <span className="text-[12px] text-muted truncate">{r.kol_type ?? "—"}</span>
+      {platformCols.map((p) => {
+        const c = byPlatform.get(p);
+        if (!c || c.followers == null) return <span key={p} className="text-[12px] text-faint text-right">—</span>;
+        const label = fmtFollow(c.followers);
+        return c.url
+          ? <a key={p} href={c.url} target="_blank" rel="noreferrer" title={c.url}
+              className="text-[12.5px] font-semibold text-accent text-right hover:underline">{label}</a>
+          : <span key={p} className="text-[12.5px] text-muted text-right" title={`${p} — ยังไม่มีลิงก์`}>{label}</span>;
+      })}
+      <span className="text-[12.5px] font-semibold text-ink text-right">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
       <span className="text-[12px] text-muted text-right">{rate}</span>
       <span className="text-[12.5px] text-right font-bold" style={{ color: r.times_used > 0 ? "#3E5C9A" : "#9A9387" }}>{r.times_used || "—"}</span>
       <span className="text-[12px] text-muted text-right">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
       <span className="text-[12px] text-right" style={{ color: (r.reach_per_follower ?? 0) >= 1 ? "#3F6A34" : "#6b6258" }}>
         {r.reach_per_follower != null ? `${Number(r.reach_per_follower).toFixed(2)}x` : "—"}
       </span>
+    </div>
+  );
+}
+
+/** Add a creator by hand. The library grew from a sheet import, but the team
+ *  meets new pages every week and should not have to go back to the sheet. */
+function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const field = "w-full text-[13px] px-[12px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none";
+  const brandVisibility = useBrandVisibility();
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [tier, setTier] = useState("");
+  const [contact, setContact] = useState("");
+  const [rate, setRate] = useState("");
+  const [note, setNote] = useState("");
+  const [brandFit, setBrandFit] = useState<string[]>([]);
+  const [channels, setChannels] = useState<{ platform: string; url: string; followers: string }[]>([
+    { platform: "Instagram", url: "", followers: "" },
+    { platform: "TikTok", url: "", followers: "" },
+  ]);
+  const [busy, setBusy] = useState(false);
+
+  const setCh = (i: number, patch: Partial<{ platform: string; url: string; followers: string }>) =>
+    setChannels((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const total = channels.reduce((s, c) => s + (Number(c.followers.replace(/,/g, "")) || 0), 0);
+
+  const submit = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      const id = await createKolWithChannels({
+        display_name: name,
+        kol_type: category.trim() || undefined,
+        tier: tier || undefined,
+        contact_agency: contact.trim() || undefined,
+        brand_fit: brandFit,
+        notes: note.trim() || undefined,
+        rate_thb: rate.trim() ? Number(rate.replace(/,/g, "")) || undefined : undefined,
+        channels: channels.map((c) => ({
+          platform: c.platform,
+          url: c.url.trim() || undefined,
+          followers: Number(c.followers.replace(/,/g, "")) || undefined,
+        })),
+      });
+      if (!id) { toastError("บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง"); return; }
+      onCreated();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-surface rounded-cardLg w-full max-w-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
+        <div className="text-[16px] font-extrabold mb-1">เพิ่ม KOL เข้า Library</div>
+        <div className="text-[11.5px] text-faint mb-4">Tier เว้นว่างได้ — ระบบจะคิดให้จากยอด follower รวม</div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">ชื่อ KOL / เพจ *</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="เช่น orn the table" />
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category</label>
+            <input value={category} onChange={(e) => setCategory(e.target.value)} className={field} placeholder="Food Review / Lifestyle …" />
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Tier</label>
+            <select value={tier} onChange={(e) => setTier(e.target.value)} className={field} style={SELECT_STYLE}>
+              <option value="">คิดให้อัตโนมัติ{total > 0 ? ` (${fmtFollow(total)})` : ""}</option>
+              {KOL_TIERS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">ช่องทางติดต่อ</label>
+            <input value={contact} onChange={(e) => setContact(e.target.value)} className={field} placeholder="Line / เบอร์ / เอเจนซี่" />
+          </div>
+          <div>
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Rate (บาท)</label>
+            <input value={rate} onChange={(e) => setRate(e.target.value)} className={field} inputMode="numeric" placeholder="9,000" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">เหมาะกับแบรนด์</label>
+            <div className="flex gap-2 flex-wrap">
+              {brandVisibility.visibleBrands.map((b) => {
+                const on = brandFit.includes(brandName(b));
+                return (
+                  <button key={b} type="button"
+                    onClick={() => setBrandFit((f) => on ? f.filter((x) => x !== brandName(b)) : [...f, brandName(b)])}
+                    className="text-[11.5px] font-bold px-[11px] py-[5px] rounded-pill border"
+                    style={on
+                      ? { background: brandColor(b), borderColor: brandColor(b), color: "#fff" }
+                      : { background: "#fff", borderColor: "#E3DED4", color: "#6b6258" }}>
+                    {brandName(b)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-[11.5px] font-bold text-faint mb-[6px]">ช่องทาง · follower · ลิงก์โปรไฟล์</label>
+          <div className="flex flex-col gap-2">
+            {channels.map((c, i) => (
+              <div key={i} className="grid gap-2" style={{ gridTemplateColumns: "1fr 0.9fr 1.6fr auto" }}>
+                <select value={c.platform} onChange={(e) => setCh(i, { platform: e.target.value })} className={field} style={SELECT_STYLE}>
+                  {["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"].map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <input value={c.followers} onChange={(e) => setCh(i, { followers: e.target.value })} className={field} inputMode="numeric" placeholder="Followers" />
+                <input value={c.url} onChange={(e) => setCh(i, { url: e.target.value })} className={field} placeholder="https://…" />
+                <button type="button" onClick={() => setChannels((cs) => cs.filter((_, idx) => idx !== i))}
+                  className="text-faint hover:text-ink px-1" aria-label="ลบช่องทาง"><X size={15} /></button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => setChannels((cs) => [...cs, { platform: "Facebook", url: "", followers: "" }])}
+            className="mt-2 text-[12px] font-bold text-accent hover:underline">+ เพิ่มช่องทาง</button>
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Note</label>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} className={field}
+            placeholder="เงื่อนไขดีล ข้อควรระวัง สิ่งที่คุยไว้ …" />
+        </div>
+
+        <button onClick={submit} disabled={!name.trim() || busy}
+          className="w-full mt-5 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">
+          {busy ? "กำลังบันทึก…" : "บันทึกเข้า Library"}
+        </button>
+      </div>
     </div>
   );
 }
