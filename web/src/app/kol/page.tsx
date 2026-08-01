@@ -835,7 +835,11 @@ function KolDatabase() {
           className="text-[12.5px] font-bold text-white bg-panel rounded-[9px] px-4 py-[9px]">+ เพิ่ม KOL</button>
       </div>
       <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
-        <div className="min-w-[1080px]">
+        {/* Width follows the platform columns actually rendered. A flat 1080px
+            overflowed a 1044px container by exactly enough to push PN — a whole
+            column — off the edge, so the last thing added was the first thing
+            nobody could see. */}
+        <div style={{ minWidth: 720 + platformCols.length * 60 }}>
         <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 items-center" style={{ gridTemplateColumns: cols }}>
           <div>KOL / Page</div><div>Tier</div><div>Category</div>
           {/* Abbreviations, not full names — five platform columns of
@@ -850,7 +854,7 @@ function KolDatabase() {
             );
           })}
           <div className="text-right">รวม</div><div className="text-right">Rate</div>
-          <div className="text-right">ใช้ไป</div><div className="text-right pl-3">Cost/Reach</div><div className="text-right">R/F</div>
+          <div className="text-right">ใช้ไป</div><div className="text-right pl-3" title="Cost per reach — ค่าใช้จ่ายต่อการเข้าถึง 1 ครั้ง">CPR</div><div className="text-right">R/F</div>
           <div className="text-right" title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</div>
         </div>
         {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} platformCols={platformCols} onOpen={setOpenKol} />)}
@@ -913,13 +917,18 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
         const c = byPlatform.get(p);
         if (!c || c.followers == null) return <span key={p} className="text-[12px] text-faint text-right">—</span>;
         const label = fmtFollow(c.followers);
-        // The number wears its platform's colour so a column reads straight
-        // down. A count nobody has confirmed lately loses that colour and gets a
-        // dotted underline — it is not wrong, it is undateable.
+        // The number keeps its platform's colour so a column reads straight
+        // down — including when unconfirmed, because every one of the 507
+        // channels starts that way and greying them all out would have hidden
+        // the colour coding entirely. The dotted underline carries "nobody has
+        // dated this". Amber is reserved for the worse case: confirmed once,
+        // then left to go stale, which reads as fact but no longer is.
         const fresh = followerFreshness(c.checked_at);
         const style: CSSProperties = fresh === "fresh"
           ? { color: platformIcon(p).bg }
-          : { color: fresh === "stale" ? "#B4622A" : "#9A9387", textDecoration: "underline dotted", textUnderlineOffset: 3 };
+          : fresh === "stale"
+            ? { color: "#B4622A", textDecoration: "underline dotted", textUnderlineOffset: 3 }
+            : { color: platformIcon(p).bg, textDecoration: "underline dotted", textUnderlineOffset: 3, opacity: 0.75 };
         const hint = fresh === "fresh" ? `ยืนยัน ${c.checked_at?.slice(0, 10)}`
           : fresh === "stale" ? `ยืนยันล่าสุด ${c.checked_at?.slice(0, 10)} — เกิน 90 วัน`
           : "ยังไม่มีใครยืนยันตัวเลขนี้";
