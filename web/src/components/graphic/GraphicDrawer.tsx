@@ -31,7 +31,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -297,17 +297,21 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [footage, setFootage] = useState(g.footageLink ?? "");
   useEffect(() => { setSbLink(g.storyboardLink ?? ""); setFootage(g.footageLink ?? ""); }, [g.storyboardLink, g.footageLink]);
 
-  /** Who may set up the shoot / storyboard assignment: the creative side runs
-   *  its own pipeline, and the CMO covers. */
-  const canRunPipeline = role === "CMO" || isCreativeSideRole(role);
+  /** Who may set up the shoot / storyboard assignment — see the gate. */
+  const canRunPipeline = canRunProductionPipeline(role);
   /** The storyboard is accepted by the person who asked for the work — the same
    *  rule the artwork itself follows. Never the person who drew it. */
   const canDecideStoryboard = isRequester || role === "CMO";
 
-  const setShooting = (patch: Partial<Graphic>) => saveGraphic({ ...g, ...patch }, "บันทึกไม่สำเร็จ");
+  // Every shoot/storyboard write funnels through here, so the gate lives on the
+  // handler as well as the controls — a disabled input is not a rule.
+  const setShooting = (patch: Partial<Graphic>) => {
+    if (!canRunPipeline) return;
+    saveGraphic({ ...g, ...patch }, "บันทึกไม่สำเร็จ");
+  };
 
   const submitStoryboard = () => {
-    if (!sbLink.trim()) return;
+    if (!canRunPipeline || !sbLink.trim()) return;
     const at = new Date().toISOString();
     saveGraphic({
       ...g, storyboardLink: sbLink.trim(), storyboardStatus: "Submitted",
@@ -347,6 +351,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   /** Moving a shoot is a normal event, not a failure — it just has to be
    *  recorded, because the day the work lands on moves with it (workDayIso). */
   const moveShoot = (next: string) => {
+    if (!canRunPipeline) return;
     const from = g.shootDate || "—";
     saveGraphic({
       ...g, shootDate: next,
@@ -691,15 +696,22 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                         </span>
                       )}
                     </div>
-                    {canRunPipeline && (
-                      <div className="mb-2">
-                        <div className="text-[10.5px] font-bold text-faint mb-[4px]">คนทำ storyboard (Creative Content)</div>
+                    <div className="mb-2">
+                      <div className="text-[10.5px] font-bold text-faint mb-[4px]">คนทำ storyboard (Creative Content)</div>
+                      {canRunPipeline ? (
                         <OwnerSelect value={g.storyboardOwner ?? ""} onChange={(name) => setShooting({ storyboardOwner: name })} team="Creative" placeholder="ยังไม่ระบุ" />
-                      </div>
-                    )}
+                      ) : (
+                        <div className="text-[12.5px] text-ink">{g.storyboardOwner || "ยังไม่ระบุ"}</div>
+                      )}
+                    </div>
                     {g.storyboardStatus === "Revision" && g.storyboardNote && (
                       <div className="mb-2 rounded-[8px] px-2.5 py-[6px] text-[11px] font-semibold" style={{ background: "#FFF5F4", color: "#B33A2E" }}>
                         ส่งกลับแก้: {g.storyboardNote}
+                      </div>
+                    )}
+                    {g.storyboardStatus !== "Approved" && !canRunPipeline && (
+                      <div className="mb-2 text-[11px] text-faint">
+                        {g.storyboardOwner ? `รอ ${g.storyboardOwner} ส่ง storyboard` : "รอ Creative Content ส่ง storyboard"}
                       </div>
                     )}
                     {g.storyboardStatus !== "Approved" && canRunPipeline && (
