@@ -5,6 +5,16 @@
 import { BrandId, BRAND_ORDER, brandName, brandColor } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 
+/** The post is out and the plan is done with it.
+ *
+ *  Deliberately not "published OR scheduled": a scheduled post has not happened
+ *  yet and folding it away would hide work. And deliberately not gated on
+ *  results — per-post performance is not tracked here at all, results live per
+ *  ad in Campaign Result, so nothing is waiting on a published post. */
+export function isPostFinished(c: Pick<ContentItem, "publishStatus" | "status">): boolean {
+  return c.publishStatus === "Published" || c.status === "Published";
+}
+
 export interface ContentItem {
   id: string;
   day: number;

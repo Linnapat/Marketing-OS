@@ -920,6 +920,14 @@ export const WORK_KIND_LABEL: Record<WorkKind, string> = {
   photo_shoot: "Photo · งานถ่าย",
 };
 
+/** The request is finished as far as the queue is concerned. Approved counts
+ *  too, not only Delivered: once every deliverable passes review the artwork is
+ *  filed and attached automatically, so nobody is waiting on the request even
+ *  if the last hand-off has not been ticked. */
+export function isGraphicFinished(g: Pick<Graphic, "stage">): boolean {
+  return g.stage === "Delivered" || g.stage === "Approved";
+}
+
 /** Classify a request into one of the four capped work kinds. */
 export function workKind(type: string, requiredVideo = false): WorkKind {
   const t = (type || "").toLowerCase();
