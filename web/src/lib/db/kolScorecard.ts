@@ -8,6 +8,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { tierFromFollowers } from "@/lib/db/kolMaster";
+import { KolKpiRow } from "@/lib/data/kolKpiSignals";
 
 export interface KolChannel {
   channel_id: string;
@@ -96,6 +97,9 @@ export interface KolEngagementRow {
   paid_fee: number | null;
   total_cost: number | null;
   paid_status: string | null;
+  /** What the approver signed off. Null on everything imported from the sheet. */
+  approved_amount: number | null;
+  approved_by: string | null;
   expense_request_id: string | null;
   performance_tag: string | null;
   next_action: string | null;
@@ -203,7 +207,7 @@ export async function fetchKolEngagements(kolId: string): Promise<KolEngagementR
   if (!db) return [];
   const { data, error } = await db
     .from("kol_collaboration_history")
-    .select("collab_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, expense_request_id, performance_tag, next_action, needs_review")
+    .select("collab_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review")
     .eq("kol_id", kolId)
     .order("month_key", { ascending: false, nullsFirst: false });
   if (error || !data) return [];
@@ -227,6 +231,7 @@ export async function fetchKolEngagements(kolId: string): Promise<KolEngagementR
     food_cost: num(r.food_cost),
     paid_fee: num(r.paid_fee),
     total_cost: num(r.total_cost),
+    approved_amount: num(r.approved_amount),
     posts: byCollab.get(r.collab_id) ?? [],
   }));
 }
@@ -369,6 +374,124 @@ export async function createKolWithChannels(input: {
   }
   await db.rpc("recompute_kol_rank", { p_kol: kolId });
   return kolId;
+}
+
+export interface CampaignKolRow extends KolEngagementRow {
+  kol_id: string;
+  display_name: string;
+  tier: string | null;
+  /** True when we matched on the campaign's name because no id link exists. */
+  matched_by_name: boolean;
+}
+
+/**
+ * What this campaign actually did with creators. The campaign page has only ever
+ * shown rows from the campaign-scoped `kols` table — the plan — so a finished
+ * campaign displayed no reach, no cost and no posts even when all of it was
+ * recorded. Engagements carry that, and 100 of the 169 predate the campaigns
+ * table, hence the name fallback for the ones with no id to join on.
+ */
+export async function fetchCampaignKolEngagements(
+  campaignId: string, campaignName?: string,
+): Promise<CampaignKolRow[]> {
+  const db = supabase();
+  if (!db) return [];
+  const cols = "collab_id, kol_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review, kol_profiles(display_name, tier)";
+
+  const byId = await db.from("kol_collaboration_history").select(cols).eq("campaign_id", campaignId);
+  const rows = [...((byId.data ?? []) as Record<string, unknown>[])];
+  const seen = new Set(rows.map((r) => r.collab_id as string));
+
+  if (campaignName?.trim()) {
+    const byName = await db.from("kol_collaboration_history").select(cols)
+      .is("campaign_id", null).ilike("campaign_name", campaignName.trim());
+    for (const r of (byName.data ?? []) as Record<string, unknown>[]) {
+      if (!seen.has(r.collab_id as string)) { rows.push(r); seen.add(r.collab_id as string); }
+    }
+  }
+
+  return rows.map((r) => {
+    const profile = r.kol_profiles as { display_name?: string; tier?: string } | null;
+    return {
+      ...(r as unknown as KolEngagementRow),
+      display_name: profile?.display_name ?? "—",
+      tier: profile?.tier ?? null,
+      matched_by_name: r.campaign_id == null,
+      actual_reach: num(r.actual_reach),
+      actual_engagement: num(r.actual_engagement),
+      total_cost: num(r.total_cost),
+    } as CampaignKolRow;
+  }).sort((a, b) => (b.actual_reach ?? 0) - (a.actual_reach ?? 0));
+}
+
+/** Raw rows for the KPI review. Kept thin on purpose — the aggregation lives in
+ *  data/kolKpiSignals.ts so it stays testable without a database. */
+export async function fetchKolKpiRows(): Promise<KolKpiRow[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db
+    .from("kol_collaboration_history")
+    .select("owner, month_key, status, performance_tag, on_time_delivery, agreed_post_at, posted_at, delay_reason, total_cost, actual_reach")
+    .limit(5000);
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as KolKpiRow),
+    total_cost: num(r.total_cost),
+    actual_reach: num(r.actual_reach),
+  }));
+}
+
+export interface KolCalendarPost {
+  collab_id: string;
+  kol_id: string;
+  display_name: string;
+  brand: string | null;
+  campaign_name: string | null;
+  /** Actual post date when known, otherwise the date agreed with the creator. */
+  date: string;
+  /** True when this is still only a plan — no post has been recorded yet. */
+  planned: boolean;
+  platforms: string[];
+}
+
+/**
+ * KOL posts as calendar entries, so the content calendar can show them beside
+ * brand posts. They were invisible there, which is how two campaigns ended up
+ * dropping on the same day without anyone seeing it coming.
+ *
+ * Fetched whole rather than by date range: the table is in the hundreds of rows
+ * and a range filter would have to span two nullable date columns.
+ */
+export async function fetchKolCalendarPosts(): Promise<KolCalendarPost[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db
+    .from("kol_collaboration_history")
+    .select("collab_id, kol_id, brand, campaign_name, posted_at, agreed_post_at, status, kol_profiles(display_name), kol_engagement_posts(platform)")
+    .or("posted_at.not.is.null,agreed_post_at.not.is.null")
+    .neq("status", "Cancel")
+    .limit(2000);
+  if (error || !data) return [];
+  const out: KolCalendarPost[] = [];
+  for (const r of data as Record<string, unknown>[]) {
+    const posted = r.posted_at as string | null;
+    const agreed = r.agreed_post_at as string | null;
+    const date = posted ?? agreed;
+    if (!date) continue;
+    const profile = r.kol_profiles as { display_name?: string } | null;
+    const posts = (r.kol_engagement_posts ?? []) as { platform: string | null }[];
+    out.push({
+      collab_id: r.collab_id as string,
+      kol_id: r.kol_id as string,
+      display_name: profile?.display_name ?? "—",
+      brand: (r.brand as string) ?? null,
+      campaign_name: (r.campaign_name as string) ?? null,
+      date: date.slice(0, 10),
+      planned: !posted,
+      platforms: [...new Set(posts.map((p) => p.platform).filter((p): p is string => !!p))],
+    });
+  }
+  return out;
 }
 
 /** Record the date agreed with the creator — what "late" is measured against. */

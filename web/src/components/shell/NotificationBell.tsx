@@ -9,7 +9,11 @@ import { notifMeta } from "@/lib/db/notifications";
  * Tasks — and the thing being reported (a comment, a piece sent back) usually
  * arrives while you are somewhere else entirely. */
 
-export function NotificationBell({ collapsed }: { collapsed?: boolean }) {
+export function NotificationBell({ collapsed, tone = "dark" }: {
+  collapsed?: boolean;
+  /** "dark" for the navy sidebar, "light" for a white page header. */
+  tone?: "dark" | "light";
+}) {
   const { unread, markRead } = useNotifications();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -29,7 +33,9 @@ export function NotificationBell({ collapsed }: { collapsed?: boolean }) {
         onClick={() => setOpen((v) => !v)}
         title={unread.length ? `ยังไม่ได้อ่าน ${unread.length} รายการ` : "ไม่มีแจ้งเตือนใหม่"}
         aria-label={unread.length ? `แจ้งเตือน ${unread.length} รายการ` : "แจ้งเตือน"}
-        className="relative flex items-center justify-center w-9 h-9 rounded-[10px] text-white/80 hover:text-white hover:bg-white/[0.08] transition"
+        className={`relative flex items-center justify-center w-9 h-9 rounded-[10px] transition ${
+          tone === "light" ? "text-muted hover:text-ink hover:bg-ivory border border-line2" : "text-white/80 hover:text-white hover:bg-white/[0.08]"
+        }`}
       >
         <span className="text-[16px]">🔔</span>
         {unread.length > 0 && (

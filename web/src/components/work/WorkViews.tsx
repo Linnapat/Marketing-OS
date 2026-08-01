@@ -1,6 +1,7 @@
 "use client";
 
-import { CSSProperties, ReactNode } from "react";
+import { CSSProperties, ReactNode, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Graphic } from "@/lib/data/graphic";
 import { graphicBriefTeaser } from "@/components/graphic/TaskGraphicBrief";
 
@@ -122,7 +123,9 @@ export interface GroupDef { id: string; label: string; icon: string; countBg: st
 
 export function WorkGroupHeader({ g, count }: { g: GroupDef; count: number }) {
   return (
-    <div className="flex items-center gap-[10px] mb-[13px]">
+    /* wrap: in a 340px Kanban column the label and the warning no longer fit
+       on one line, and a nowrap header would push the column wider. */
+    <div className="flex items-center gap-[10px] mb-[13px] flex-wrap">
       <span className="text-[17px]">{g.icon}</span>
       <span className="text-[13.5px] font-bold tracking-[-0.01em]">{g.label}</span>
       <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: g.countBg, color: g.countColor }}>{count}</span>
@@ -349,13 +352,27 @@ export function WorkCalendarView({ items, month, year, onNavigate, onOpen, onOpe
   );
 }
 
-export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assigneeHeader = "Assignee" }: {
+/** Status order for the grouped list: what needs a decision first, what is
+ *  moving, what is stuck, and finished work last. Anything unrecognised keeps
+ *  its own group at the end rather than being folded into "other". */
+const STATUS_ORDER = ["Need Approval", "Stuck", "Revision", "In Progress", "Todo", "Waiting", "Done"];
+
+const statusRank = (s: string) => {
+  const i = STATUS_ORDER.indexOf(s);
+  return i === -1 ? STATUS_ORDER.length : i;
+};
+
+export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assigneeHeader = "Assignee", groupByStatus = false }: {
   items: WorkItem[];
   viewerColorOf?: (n: string) => string;
   onOpen?: (item: WorkItem) => void;
   onOpenGraphic?: (id: number) => void;
   assigneeHeader?: string;
+  /** Opt-in so the Agency Portal, which shares this view, is left as it was. */
+  groupByStatus?: boolean;
 }) {
+  // Done starts collapsed: it is the biggest group and the least actionable.
+  const [closed, setClosed] = useState<Record<string, boolean>>({ Done: true });
   /* The header and every row are separate grids, so the tracks only line up if
    * they resolve to the same widths independently of what is in the row. A bare
    * `2.5fr` means `minmax(auto, 2.5fr)`: a long brief line (nowrap, for the
@@ -363,13 +380,48 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
    * rest of the row slides right and starts wrapping. minmax(0, …) drops the
    * floor, so the split is purely proportional and identical on every row. */
   const cols = "minmax(0,2.4fr) minmax(0,0.8fr) minmax(0,1fr) minmax(0,1.2fr) minmax(0,0.7fr) minmax(0,0.7fr) minmax(0,1fr)";
+
+  // Status buckets, in decision order. Built even when grouping is off — the
+  // cost is one pass over a list the page has already filtered.
+  const groups = useMemo(() => {
+    const by = new Map<string, WorkItem[]>();
+    for (const it of items) {
+      const key = it.status || "—";
+      const arr = by.get(key);
+      if (arr) arr.push(it); else by.set(key, [it]);
+    }
+    return [...by.entries()].sort((a, b) => statusRank(a[0]) - statusRank(b[0]) || a[0].localeCompare(b[0]));
+  }, [items]);
+
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="grid gap-2 px-5 py-[11px] text-[10px] font-bold tracking-[0.06em] uppercase text-faint" style={{ gridTemplateColumns: cols, background: "#FBF9F4", borderBottom: "1px solid #ECE6DA" }}>
         <span>Task</span><span>Module</span><span>{assigneeHeader}</span><span>Campaign</span><span>Due</span><span>Priority</span><span>Status</span>
       </div>
       {items.length === 0 && <div className="py-12 text-center text-faint text-[13.5px]">No work matches — try a wider filter.</div>}
-      {items.map((item) => {
+      {groupByStatus && groups.map(([status, rows]) => {
+        const open = !closed[status];
+        return (
+          <div key={status}>
+            <button
+              type="button"
+              onClick={() => setClosed((c) => ({ ...c, [status]: open }))}
+              aria-expanded={open}
+              className="w-full flex items-center gap-2 px-5 py-[9px] text-left hover:bg-ivory/60 transition"
+              style={{ background: "#FBF9F4", borderBottom: "1px solid #F0EADE" }}>
+              {open ? <ChevronDown size={14} className="text-faint" /> : <ChevronRight size={14} className="text-faint" />}
+              <span style={{ ...badge(status, STATUS_MAP) }}>{status}</span>
+              <span className="text-[11.5px] font-bold text-faint">{rows.length}</span>
+            </button>
+            {open && rows.map((item) => renderRow(item))}
+          </div>
+        );
+      })}
+      {!groupByStatus && items.map(renderRow)}
+    </div>
+  );
+
+  function renderRow(item: WorkItem) {
         const [typeFg, typeBg] = TYPE_COLORS[item.type] ?? ["#6b6258", "#F0EDE6"];
         const rowBg = item.status === "Stuck" ? "#FFFAF9" : item.status === "Need Approval" ? "#FAFFF9" : "#fff";
         const blockerShort = item.blocker ? item.blocker.split("—")[0].trim() : "";
@@ -401,7 +453,5 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
             <span style={{ ...badge(item.status, STATUS_MAP), justifySelf: "start" }}>{item.status}</span>
           </div>
         );
-      })}
-    </div>
-  );
+  }
 }

@@ -59,10 +59,13 @@ export function CampaignPageHeaderSection({
   eyebrow,
   title,
   description,
+  right,
 }: {
   eyebrow: string;
   title: string;
   description: string;
+  /** Slot at the top-right, before the collapse chevron. */
+  right?: ReactNode;
 }) {
   const { collapsed, toggle } = usePanelCollapsed("page-header", title);
 
@@ -82,7 +85,10 @@ export function CampaignPageHeaderSection({
             </p>
           )}
         </div>
-        <CollapseButton collapsed={collapsed} onClick={toggle} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {right}
+          <CollapseButton collapsed={collapsed} onClick={toggle} />
+        </div>
       </div>
     </section>
   );

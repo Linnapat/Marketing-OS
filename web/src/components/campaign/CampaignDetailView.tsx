@@ -15,6 +15,8 @@ import { CampaignResultRow, deriveResultRow, cpr, emptyResultRow, mergeBudgetAll
 import { fetchResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchKols } from "@/lib/db/kol";
+import { fetchCampaignKolEngagements, CampaignKolRow } from "@/lib/db/kolScorecard";
+import { fmtFollow } from "@/lib/data/kol";
 import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, budgetSummary, materialised } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
@@ -187,7 +189,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
         {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} nextApproval={effectiveNextApproval} />}
         {tab === "brief" && <BriefTab detail={detail} brief={brief} />}
         {tab === "content" && <ContentList hub={hub} brief={brief} />}
-        {tab === "kol" && <KolList hub={hub} />}
+        {tab === "kol" && <KolList hub={hub} detail={detail} />}
         {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
         {tab === "budget" && <BudgetTab detail={detail} s={s} brief={brief} />}
         {tab === "assets" && <AssetsList hub={hub} />}
@@ -473,18 +475,82 @@ function ContentList({ hub, brief }: { hub: CampaignHub | null; brief?: Campaign
   );
 }
 
-function KolList({ hub }: { hub: CampaignHub | null }) {
+/** Plan (rows from the campaign-scoped `kols` table) and what actually happened
+ *  (engagements). The tab used to show only the first, so a finished campaign
+ *  reported no reach and no cost even when every post was on record. */
+function KolList({ hub, detail }: { hub: CampaignHub | null; detail: CampaignDetail }) {
+  const campaignId = detail.row.id;
+  const campaignName = detail.row.name;
+  const [done, setDone] = useState<CampaignKolRow[]>([]);
+  const [loadingDone, setLoadingDone] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadingDone(true);
+    fetchCampaignKolEngagements(campaignId, campaignName)
+      .then((r) => { if (alive) { setDone(r); setLoadingDone(false); } })
+      .catch(() => { if (alive) setLoadingDone(false); });
+    return () => { alive = false; };
+  }, [campaignId, campaignName]);
+
   if (!hub) return <div className="py-10 text-center text-faint text-[13px]">Loading…</div>;
-  if (hub.kols.length === 0) return <EmptyState title="No KOL assigned" note="Creators linked to this campaign will appear here. Assign them from the KOL module or the Planner tab." />;
+  if (hub.kols.length === 0 && !done.length && !loadingDone) {
+    return <EmptyState title="No KOL assigned" note="Creators linked to this campaign will appear here. Assign them from the KOL module or the Planner tab." />;
+  }
+
+  const reach = done.reduce((s, r) => s + (r.actual_reach ?? 0), 0);
+  const engage = done.reduce((s, r) => s + (r.actual_engagement ?? 0), 0);
+  const cost = done.reduce((s, r) => s + (r.total_cost ?? 0), 0);
+  const nameMatched = done.filter((r) => r.matched_by_name).length;
+
   return (
-    <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
-      {hub.kols.map((k) => (
-        <div key={k.id} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
-          <BrandDot brand={k.b} size={8} />
-          <div className="flex-1 min-w-0"><div className="text-[13px] font-bold truncate">{k.name}</div><div className="text-[11px] text-faint">{k.kolType} · {k.owner}</div></div>
-          <StatusBadge tone="gold">{k.status}</StatusBadge>
+    <div className="flex flex-col gap-4">
+      {done.length > 0 && (
+        <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div className="px-5 py-3 border-b border-line4 flex items-baseline gap-3 flex-wrap">
+            <span className="text-[13px] font-bold text-ink">ผลงานจริง</span>
+            <span className="text-[11.5px] text-faint">
+              {done.length} KOL · reach {fmtFollow(reach)} · engage {fmtFollow(engage)} · จ่าย {baht(cost, { compact: true })}
+              {reach > 0 && ` · CPR ฿${(cost / reach).toFixed(3)}`}
+            </span>
+            {nameMatched > 0 && (
+              <span className="ml-auto text-[10.5px] text-faint" title="งานก่อน ก.ค. 69 ไม่มี campaign_id ให้ผูก จับคู่ด้วยชื่อแคมเปญแทน">
+                {nameMatched} รายการจับคู่ด้วยชื่อ
+              </span>
+            )}
+          </div>
+          {done.map((r) => (
+            <Link key={r.collab_id} href={`/kol/${r.kol_id}`}
+              className="grid gap-y-1 px-5 py-[10px] items-center border-b border-line4 last:border-0 hover:bg-ivory/50"
+              style={{ gridTemplateColumns: "1.7fr 0.7fr 0.9fr 0.9fr 0.9fr 1fr" }}>
+              <span className="flex items-center gap-2 min-w-0">
+                <BrandDot brand={(r.brand ?? detail.row.b) as never} size={8} />
+                <span className="text-[13px] font-bold text-ink truncate">{r.display_name}</span>
+              </span>
+              <span className="text-[11.5px] text-faint">{r.tier ?? "—"}</span>
+              <span className="text-[12px] text-muted text-right">{r.actual_reach ? fmtFollow(r.actual_reach) : "—"}</span>
+              <span className="text-[12px] text-muted text-right">{r.actual_engagement ? fmtFollow(r.actual_engagement) : "—"}</span>
+              <span className="text-[12px] text-muted text-right">{r.total_cost ? baht(r.total_cost, { compact: true }) : "—"}</span>
+              <span className="text-[11.5px] text-right text-faint truncate">{r.status ?? "—"}</span>
+            </Link>
+          ))}
         </div>
-      ))}
+      )}
+
+      {hub.kols.length > 0 && (
+        <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <div className="px-5 py-3 border-b border-line4 text-[13px] font-bold text-ink">
+            แผน / ดีลในระบบ <span className="text-[11px] text-faint font-normal">· {hub.kols.length} รายการ</span>
+          </div>
+          {hub.kols.map((k) => (
+            <div key={k.id} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
+              <BrandDot brand={k.b} size={8} />
+              <div className="flex-1 min-w-0"><div className="text-[13px] font-bold truncate">{k.name}</div><div className="text-[11px] text-faint">{k.kolType} · {k.owner}</div></div>
+              <StatusBadge tone="gold">{k.status}</StatusBadge>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

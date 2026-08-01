@@ -131,14 +131,26 @@ export async function updateKol(kol: Kol): Promise<void> {
 }
 
 /** Approve a submitted KOL proposal from My Approval. */
-export async function approveKolProposal(kolId: number): Promise<void> {
+export async function approveKolProposal(kolId: number, by?: string): Promise<void> {
   const db = supabase();
   if (!db) return;
   const { data, error } = await db.from("kols").select("data").eq("data->>id", String(kolId)).maybeSingle();
   assertDbOk(error, "Could not load KOL proposal");
   const kol = data?.data as Kol | undefined;
   if (!kol) throw new Error("KOL proposal not found");
-  const next: Kol = { ...kol, quotationStatus: "Approved", currentBlocker: null };
+  // Record WHAT was approved, read from the stored row rather than from the
+  // caller, so the number cannot be talked up between screen and database.
+  // totalCost is the real commitment (fee + food); older rows may not have it
+  // filled, hence the fallback.
+  const approvedAmount = kol.totalCost || (kol.fee || 0) + (kol.foodCost || 0);
+  const next: Kol = {
+    ...kol,
+    quotationStatus: "Approved",
+    currentBlocker: null,
+    approvedAmount,
+    approvedAt: new Date().toISOString(),
+    approvedBy: by || kol.pendingApprover || undefined,
+  };
   await assertRowsTouched(
     db.from("kols").update({ status: next.status, data: next }).eq("data->>id", String(kolId)).select("id"),
     "อนุมัติ KOL proposal ไม่สำเร็จ",

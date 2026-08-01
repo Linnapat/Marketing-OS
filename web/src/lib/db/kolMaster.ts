@@ -149,8 +149,17 @@ export async function logCollaboration(input: {
   actual_reach?: number;
   actual_engagement?: number;
   roas?: number;
-  on_time_delivery?: boolean;
+  /** Derived by a DB trigger from agreed_post_at vs posted_at — never sent. */
+  agreed_post_at?: string;
+  posted_at?: string;
+  /** The specialist who ran this booking — what the KPI review groups by.
+   *  Everything imported from the sheet has none; it had no owner column. */
+  owner?: string;
   brand_feedback_score?: number;
+  /** Carried from the deal so the final bill has something to be checked against. */
+  approved_amount?: number;
+  approved_at?: string;
+  approved_by?: string;
   // Phase 2b: no dedicated columns for these — round-tripped in the `data`
   // jsonb so the Monthly Branch Report can split cost and branch per post.
   food_cost?: number;

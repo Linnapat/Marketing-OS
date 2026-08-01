@@ -30,6 +30,7 @@ import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
+import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -283,7 +284,8 @@ export default function MyTasksPage() {
   const markDone = (id: number) => {
     const task = tasks.find((t) => t.id === id);
     if (task?.approvalKind === "kolProposal" && task.relatedKolId != null) {
-      approveKolProposal(task.relatedKolId).catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      approveKolProposal(task.relatedKolId, member?.name || user?.email || undefined)
+        .catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
       updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
@@ -351,6 +353,7 @@ export default function MyTasksPage() {
         eyebrow="MY TASKS"
         title="My Tasks"
         description="Personal workspace, approvals, and team workload in one calm command center."
+        right={<NotificationBell tone="light" />}
       />
 
       <div className="mt-5 flex flex-col gap-5">
@@ -463,14 +466,19 @@ export default function MyTasksPage() {
           </div>
 
           {viewMode === "cards" ? (
-            <div className="flex flex-col gap-[26px]">
+            /* Kanban: the groups sit side by side and each one scrolls its own
+               cards. Stacked vertically, a group with one card left a whole
+               empty row and the later groups fell below the fold — you could
+               not see "what needs approval" and "what is stuck" at once, which
+               is the only reason to look at this screen. */
+            <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
               {GROUP_DEFS.map((g) => {
                 const groupTasks = scopedTasks.filter((t) => getGroup(t) === g.id);
                 if (groupTasks.length === 0) return null;
                 return (
-                  <div key={g.id}>
+                  <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>
                     <WorkGroupHeader g={g} count={groupTasks.length} />
-                    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))" }}>
+                    <div className="flex flex-col gap-3">
                       {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={setGraphicOpenId} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
                   </div>
@@ -831,6 +839,7 @@ function ListView({ tasks, getStatus, onOpen, onOpenGraphic, colorOf, graphicOf 
       viewerColorOf={colorOf}
       onOpen={(item) => onOpen(Number(item.key))}
       onOpenGraphic={onOpenGraphic}
+      groupByStatus
     />
   );
 }

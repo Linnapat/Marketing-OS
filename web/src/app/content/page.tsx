@@ -21,6 +21,9 @@ import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
 import { FinishedFold } from "@/components/ui/FinishedFold";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { appendBriefItem } from "@/lib/db/brief";
+import Link from "next/link";
+import { fetchKolCalendarPosts, KolCalendarPost } from "@/lib/db/kolScorecard";
+import { platformIcon } from "@/lib/platforms";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
@@ -39,6 +42,39 @@ import { useAuth } from "@/lib/auth";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 
 /** Row of platform badges (one per selected channel). */
+/** One visual identity for the KOL layer, shared by the toggle and the chips so
+ *  a KOL entry never reads as a brand post you can edit here. */
+const KOL_LAYER = { bg: "#FFF3E5", border: "#F0D3AE", fg: "#B4622A" };
+
+/** A KOL post on the calendar. Links out to the creator rather than opening the
+ *  content drawer — it is not a content row and cannot be edited from here. */
+function KolChip({ k }: { k: KolCalendarPost }) {
+  return (
+    <Link
+      href={`/kol/${k.kol_id}`}
+      title={`KOL · ${k.display_name}${k.campaign_name ? ` · ${k.campaign_name}` : ""}${k.planned ? " · ยังไม่ได้โพสต์ (วันที่นัดไว้)" : ""}`}
+      className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] border-l-[4px] transition hover:brightness-95"
+      style={{
+        background: KOL_LAYER.bg,
+        borderColor: KOL_LAYER.border,
+        borderLeftColor: KOL_LAYER.fg,
+        borderStyle: k.planned ? "dashed" : "solid",
+        borderLeftStyle: "solid",
+      }}>
+      <span className="w-[13px] h-[13px] rounded-[4px] flex items-center justify-center text-[8px] font-extrabold flex-shrink-0"
+        style={{ background: KOL_LAYER.fg, color: "#fff" }}>K</span>
+      {k.platforms.slice(0, 2).map((p) => {
+        const ic = platformIcon(p);
+        return (
+          <span key={p} className="w-[13px] h-[13px] rounded-[4px] flex items-center justify-center text-[7.5px] font-bold flex-shrink-0"
+            style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
+        );
+      })}
+      <span className="text-[10.5px] font-semibold truncate flex-1" style={{ color: KOL_LAYER.fg }}>{k.display_name}</span>
+    </Link>
+  );
+}
+
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
   return (
     <span className="flex items-center gap-[2px] flex-shrink-0">
@@ -72,10 +108,15 @@ export default function ContentPage() {
   const router = useRouter();
   const brandVisibility = useBrandVisibility();
   // Filters stick per tab so leaving the page and coming back keeps the view.
-  const [sticky, setSticky] = useStickyView<{ view: View; brand: BrandFilterValue; date: typeof DEFAULT_DATE_FILTER }>(
-    "content", "", { view: "campaign", brand: "all", date: DEFAULT_DATE_FILTER },
+  const [sticky, setSticky] = useStickyView<{ view: View; brand: BrandFilterValue; date: typeof DEFAULT_DATE_FILTER; showKol?: boolean }>(
+    "content", "", { view: "campaign", brand: "all", date: DEFAULT_DATE_FILTER, showKol: true },
   );
   const { view, brand, date } = sticky;
+  // KOL posts are a layer over the calendar, not content rows: they are not
+  // ours to edit here, and someone planning brand posts should be able to hide
+  // them again. Default on — the collisions they reveal are the point.
+  const showKol = sticky.showKol !== false;
+  const setShowKol = (v: boolean) => setSticky({ ...sticky, showKol: v });
   const setView = (v: View) => setSticky({ ...sticky, view: v });
   const setBrand = (b: BrandFilterValue) => setSticky({ ...sticky, brand: b });
   const setDate = (d: typeof DEFAULT_DATE_FILTER) => setSticky({ ...sticky, date: d });
@@ -83,6 +124,7 @@ export default function ContentPage() {
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [savedViews, setSavedViews] = useState<SavedContentView[]>([]);
   const [savedViewName, setSavedViewName] = useState("");
+  const [kolPosts, setKolPosts] = useState<KolCalendarPost[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const [newIso, setNewIso] = useState<string | null>(null);
   const { member, user } = useAuth();
@@ -101,6 +143,7 @@ export default function ContentPage() {
   useEffect(() => {
     let alive = true;
     fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
+    fetchKolCalendarPosts().then((k) => { if (alive) setKolPosts(k); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -139,6 +182,16 @@ export default function ContentPage() {
   const items = useMemo(
     () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
     [posts, brand, date, brandVisibility],
+  );
+  // The KOL layer obeys the same brand scope and date filter as the content it
+  // sits beside — a hidden brand must not leak in through a different module.
+  const kolLayer = useMemo(
+    () => (showKol
+      ? kolPosts.filter((k) => (!k.brand || brandVisibility.visibleBrands.includes(k.brand as BrandId))
+          && (brand === "all" || k.brand === brand)
+          && inDateFilter(date, k.date))
+      : []),
+    [kolPosts, showKol, brand, date, brandVisibility],
   );
   // Captions with nobody's name on them. Deliberately computed from `posts`,
   // not `items`: the month filter is exactly what hid this work. Opening the
@@ -244,6 +297,22 @@ export default function ContentPage() {
                   Save view
                 </button>
                 <span className="text-[12px] font-semibold text-faint">{items.length} posts in view</span>
+                {(view === "month" || view === "week") && (
+                  <button
+                    onClick={() => setShowKol(!showKol)}
+                    aria-pressed={showKol}
+                    title="แสดง/ซ่อนโพสต์ KOL บนปฏิทิน — ช่วยให้เห็นว่าวันไหนคอนเทนต์ชนกัน"
+                    className="flex items-center gap-[6px] rounded-[10px] border px-[10px] py-[6px] text-[12px] font-bold transition"
+                    style={showKol
+                      ? { background: KOL_LAYER.bg, borderColor: KOL_LAYER.border, color: KOL_LAYER.fg }
+                      : { background: "#fff", borderColor: "#E3DED4", color: "#9A9387" }}>
+                    <span className="w-[14px] h-[14px] rounded-[4px] flex items-center justify-center text-[9px] font-extrabold"
+                      style={{ background: showKol ? KOL_LAYER.fg : "#D7D2C8", color: "#fff" }}>
+                      {showKol ? "✓" : ""}
+                    </span>
+                    โพสต์ KOL{kolLayer.length > 0 ? ` (${kolLayer.length})` : ""}
+                  </button>
+                )}
               </div>
               <div className="flex items-center rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px] shadow-[0_8px_22px_rgba(108,92,231,0.08)]">
                 {[
@@ -351,8 +420,8 @@ export default function ContentPage() {
       </div>
 
       <div className="mt-5">
-        {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} />}
-        {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} />}
+        {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
+        {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
         {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
         {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
         {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
@@ -534,7 +603,7 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   );
 }
 
-function MonthView({ items, year, month, onOpen, onNew }: { items: ContentItem[]; year: number; month: number; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void }) {
+function MonthView({ items, year, month, onOpen, onNew, kolPosts = [] }: { items: ContentItem[]; year: number; month: number; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; kolPosts?: KolCalendarPost[] }) {
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const ymKey = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -549,7 +618,9 @@ function MonthView({ items, year, month, onOpen, onNew }: { items: ContentItem[]
       </div>
       <div className="grid grid-cols-7">
         {cells.map((day, i) => {
-          const dayItems = day ? items.filter((c) => contentDateIso(c) === `${ymKey}-${String(day).padStart(2, "0")}`) : [];
+          const dayIso = day ? `${ymKey}-${String(day).padStart(2, "0")}` : "";
+          const dayItems = day ? items.filter((c) => contentDateIso(c) === dayIso) : [];
+          const dayKols = day ? kolPosts.filter((k) => k.date === dayIso) : [];
           return (
             <div key={i} className="group min-h-[104px] border-r border-b border-line4 p-[6px] last:border-r-0 relative" style={{ background: day ? "#fff" : "#FBF9F4" }}>
               {day && (
@@ -571,6 +642,7 @@ function MonthView({ items, year, month, onOpen, onNew }: { items: ContentItem[]
                     <span className="text-[10.5px] font-semibold truncate flex-1">{c.title}</span>
                   </button>
                 ))}
+                {dayKols.map((k) => <KolChip key={k.collab_id} k={k} />)}
               </div>
             </div>
           );
@@ -580,14 +652,18 @@ function MonthView({ items, year, month, onOpen, onNew }: { items: ContentItem[]
   );
 }
 
-function WeekView({ items, monthName, onOpen }: { items: ContentItem[]; monthName: string; onOpen: (c: ContentItem) => void }) {
-  const byDate = [...new Set(items.map((c) => contentDateIso(c)))].sort();
+function WeekView({ items, monthName, onOpen, kolPosts = [] }: { items: ContentItem[]; monthName: string; onOpen: (c: ContentItem) => void; kolPosts?: KolCalendarPost[] }) {
+  // Days come from both layers, so a day with only KOL activity still shows up.
+  const byDate = [...new Set([...items.map((c) => contentDateIso(c)), ...kolPosts.map((k) => k.date)])].filter(Boolean).sort();
   return (
     <div className="flex flex-col gap-3">
       {byDate.map((iso) => (
         <div key={iso} className="bg-surface border border-line rounded-cardLg overflow-hidden">
           <div className="px-5 py-2 text-[12px] font-bold border-b border-line4">{labelDate(iso) || `${monthName} ${Number(iso.slice(8, 10))}`}</div>
           {items.filter((c) => contentDateIso(c) === iso).sort((a, b) => a.time.localeCompare(b.time)).map((c) => <Row key={c.id} c={c} onOpen={onOpen} />)}
+          {kolPosts.filter((k) => k.date === iso).map((k) => (
+            <div key={k.collab_id} className="px-5 py-2 border-b border-line4 last:border-b-0"><KolChip k={k} /></div>
+          ))}
         </div>
       ))}
     </div>

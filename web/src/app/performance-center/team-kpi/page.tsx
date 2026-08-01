@@ -29,6 +29,9 @@ import {
   summarize,
 } from "@/lib/data/teamKpi";
 import { KpiSignals, kpiSignals, signalsFor, totalSignals } from "@/lib/data/teamKpiSignals";
+import { KolKpiRow, KolKpiSignals, kolKpiSignals, kolTeamSignals, kolSignalsFor } from "@/lib/data/kolKpiSignals";
+import { fetchKolKpiRows } from "@/lib/db/kolScorecard";
+import { baht } from "@/lib/format";
 import { fetchTeamKpiMonth, saveTeamKpiMonth } from "@/lib/db/teamKpi";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
@@ -75,6 +78,7 @@ export default function TeamKpiPage() {
   // Graphic Requests are the source of the counted numbers (revisions, lateness).
   // Loaded once: they are re-sliced per month in memory rather than re-fetched.
   const [graphics, setGraphics] = useState<Graphic[]>([]);
+  const [kolRows, setKolRows] = useState<KolKpiRow[]>([]);
 
   const load = async (target: string) => {
     setLoading(true);
@@ -95,10 +99,15 @@ export default function TeamKpiPage() {
 
   useEffect(() => { load(month); }, [month]);
   useEffect(() => { fetchGraphics().then(setGraphics).catch(() => {}); }, []);
+  useEffect(() => { fetchKolKpiRows().then(setKolRows).catch(() => {}); }, []);
 
   // Counted-for-you numbers: revisions and lateness per person, this month.
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const signals = useMemo(() => kpiSignals(graphics, month, today), [graphics, month, today]);
+  // The KOL side of the review had no counted numbers at all, so it was the one
+  // group assessed purely from memory.
+  const kolSignals = useMemo(() => kolKpiSignals(kolRows, month), [kolRows, month]);
+  const kolTeam = useMemo(() => kolTeamSignals(kolRows, month), [kolRows, month]);
 
   const results = useMemo(
     () => review.people.map((person) => scorePerson(person, review.inputs)),
@@ -277,6 +286,26 @@ export default function TeamKpiPage() {
             <MiniStat label="ผ่านรวดเดียว" value={pct(teamSignals.cleanRate, 0)} hint={teamSignals.pieces ? `จาก ${teamSignals.pieces} ชิ้นที่อนุมัติ` : "ยังไม่มีชิ้นงานอนุมัติ"} />
           </div>
         </div>
+
+        {/* The KOL month, counted the same way. Kept as its own strip rather than
+            folded into the Creative numbers: different work, different clock. */}
+        <div className="mt-3 rounded-[20px] border border-[#F0D3AE] bg-white p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">ตัวเลขที่ระบบนับให้ · จากงาน KOL</div>
+            <div className="text-[11px] font-semibold text-faint">ทั้งเดือน รวมงานที่ยังไม่ได้ระบุผู้ดูแล</div>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-5">
+            <MiniStat label="งาน KOL เดือนนี้" value={`${kolTeam.engagements}`} hint={kolTeam.cancelled ? `ยกเลิก ${kolTeam.cancelled}` : "ไม่มีที่ยกเลิก"} />
+            <MiniStat label="โพสต์ตรงวันที่นัด" value={pct(kolTeam.onTimeRate, 0)}
+              hint={kolTeam.onTime + kolTeam.late ? `${kolTeam.onTime} ตรง · ${kolTeam.late} สายเพราะ KOL` : "ยังไม่มีงานที่ตัดสินได้"} />
+            <MiniStat label="ช้าแต่ยังไม่ระบุสาเหตุ" value={`${kolTeam.unattributedLate}`}
+              hint={kolTeam.unattributedLate ? "ต้องระบุก่อน ถึงจะรู้ว่าหักคะแนนใคร" : "ระบุครบแล้ว"} />
+            <MiniStat label="ปิดผลแล้ว" value={`${kolTeam.resulted - kolTeam.unclosed}/${kolTeam.resulted}`}
+              hint={kolTeam.unclosed ? `ค้างสรุปผล ${kolTeam.unclosed} งาน` : "สรุปครบแล้ว"} />
+            <MiniStat label="Cost / reach" value={kolTeam.costPerReach != null ? `฿${kolTeam.costPerReach.toFixed(3)}` : "—"}
+              hint={kolTeam.totalCost ? `ใช้ไป ${baht(kolTeam.totalCost, { compact: true })}` : "ยังไม่มีค่าใช้จ่าย"} />
+          </div>
+        </div>
       </section>
 
       {/* ── Roster ─────────────────────────────────────────────────── */}
@@ -332,6 +361,8 @@ export default function TeamKpiPage() {
             hint="ประเมินด้วยเกณฑ์ของตัวเอง — ไม่ถูกนับรวมในค่าเฉลี่ยทีม Creative"
             results={side}
             signals={signals}
+            kolSignals={kolSignals}
+            variant="kol"
             canEdit={canEdit}
             onPatch={patchInput}
             onRemove={removePerson}
@@ -368,12 +399,16 @@ function MiniStat({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 function PersonGroup({
-  title, hint, results, signals, canEdit, onPatch, onRemove,
+  title, hint, results, signals, kolSignals = [], variant = "creative", canEdit, onPatch, onRemove,
 }: {
   title: string;
   hint: string;
   results: PersonResult[];
   signals: KpiSignals[];
+  /** Only the KOL group passes these; Creative rows have none and show nothing. */
+  kolSignals?: KolKpiSignals[];
+  /** Which empty-state to show when nothing could be counted for this person. */
+  variant?: "creative" | "kol";
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -388,6 +423,7 @@ function PersonGroup({
       <div className="mt-2 grid gap-3">
         {results.map((result) => (
           <PersonCard key={result.person.id} result={result} signals={signalsFor(result.person.name, signals)}
+            kolSignals={kolSignalsFor(result.person.name, kolSignals)} variant={variant}
             canEdit={canEdit} onPatch={onPatch} onRemove={onRemove} />
         ))}
       </div>
@@ -396,10 +432,12 @@ function PersonGroup({
 }
 
 function PersonCard({
-  result, signals, canEdit, onPatch, onRemove,
+  result, signals, kolSignals = null, variant = "creative", canEdit, onPatch, onRemove,
 }: {
   result: PersonResult;
   signals: KpiSignals | null;
+  kolSignals?: KolKpiSignals | null;
+  variant?: "creative" | "kol";
   canEdit: boolean;
   onPatch: (personId: string, kpiName: string, patch: Partial<KpiInput>) => void;
   onRemove: (id: string) => void;
@@ -460,9 +498,40 @@ function PersonCard({
             <MiniStat label="ผ่านรวดเดียว" value={pct(signals.cleanRate, 0)} hint={signals.pieces ? `จาก ${signals.pieces} ชิ้นอนุมัติ` : "ยังไม่มีชิ้นอนุมัติ"} />
           </div>
         </div>
-      ) : (
+      ) : !kolSignals ? (
+        // Two different reasons for "no numbers", and telling a KOL specialist
+        // their name is missing from the Graphic board helps nobody.
         <div className="border-b border-line px-5 py-3 text-[11.5px] font-semibold text-faint">
-          ไม่พบงานของชื่อนี้ใน Graphic Request เดือนนี้ — ตัวเลขนับให้ไม่ได้ ต้องให้คะแนนเอง (ชื่อในหน้านี้ต้องตรงกับชื่อ designer บนบอร์ด)
+          {variant === "kol"
+            ? "ยังไม่มีงาน KOL ที่ระบุชื่อนี้เป็นผู้ดูแลในเดือนนี้ — งานที่ยกมาจากชีตไม่มีคอลัมน์ผู้ดูแล ตัวเลขรายคนจะเริ่มนับจากงานที่บันทึกในระบบ"
+            : "ไม่พบงานของชื่อนี้ใน Graphic Request เดือนนี้ — ตัวเลขนับให้ไม่ได้ ต้องให้คะแนนเอง (ชื่อในหน้านี้ต้องตรงกับชื่อ designer บนบอร์ด)"}
+        </div>
+      ) : null}
+
+      {kolSignals && (
+        <div className="border-b border-line px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-faint">ตัวเลขที่ระบบนับให้เดือนนี้ · งาน KOL</div>
+            {onTimeKpi && kolSignals.onTimeRate !== null && canEdit && (
+              <button
+                onClick={() => onPatch(person.id, onTimeKpi.name, { score: Number(kolSignals.onTimeRate!.toFixed(1)) })}
+                className="inline-flex items-center gap-1 rounded-pill border border-[#F0D3AE] bg-[#FFF3E5] px-3 py-1 text-[11.5px] font-bold text-[#B4622A]"
+              >
+                <Wand2 size={13} /> ใช้ {pct(kolSignals.onTimeRate, 0)} เป็นคะแนน {onTimeKpi.name}
+              </button>
+            )}
+          </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-5">
+            <MiniStat label="งาน KOL" value={`${kolSignals.engagements}`} hint={kolSignals.cancelled ? `ยกเลิก ${kolSignals.cancelled}` : undefined} />
+            <MiniStat label="โพสต์ตรงวันนัด" value={pct(kolSignals.onTimeRate, 0)}
+              hint={kolSignals.onTime + kolSignals.late ? `${kolSignals.onTime} ตรง · ${kolSignals.late} สาย` : "ยังสรุปไม่ได้"} />
+            <MiniStat label="ยังไม่ระบุสาเหตุที่ช้า" value={`${kolSignals.unattributedLate}`}
+              hint={kolSignals.unattributedLate ? "ค้างให้ระบุ" : "ครบแล้ว"} />
+            <MiniStat label="ค้างสรุปผล" value={`${kolSignals.unclosed}`}
+              hint={kolSignals.resulted ? `จบงาน ${kolSignals.resulted} งาน` : "ยังไม่มีงานจบ"} />
+            <MiniStat label="Cost / reach" value={kolSignals.costPerReach != null ? `฿${kolSignals.costPerReach.toFixed(3)}` : "—"}
+              hint={kolSignals.totalCost ? baht(kolSignals.totalCost, { compact: true }) : undefined} />
+          </div>
         </div>
       )}
 

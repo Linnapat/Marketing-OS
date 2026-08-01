@@ -411,7 +411,18 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
           due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
           dueIso: due.toISOString().slice(0, 10), blocker: null,
           pendingApprover: requester, isQuickWin: false,
-          nextAction: `Review profile, platforms and proposal budget ${baht(next.fee, { compact: true })}. Approve or request revision.`,
+          // The approver used to see the fee alone. Across 121 recorded deals the
+          // real bill ran 43.7% above the fee — every baht of it food support,
+          // and on 42 barter deals the fee was ฿0 while food was not. Show what
+          // is actually being committed, broken down so it is not a mystery.
+          nextAction: (() => {
+            const fee = next.fee || 0;
+            const food = next.foodCost || 0;
+            const total = next.totalCost || fee + food;
+            const parts = [`ค่าตัว ${baht(fee, { compact: true })}`];
+            if (food > 0) parts.push(`ค่าอาหาร ${baht(food, { compact: true })}`);
+            return `อนุมัติงบรวม ${baht(total, { compact: true })} (${parts.join(" + ")}) — ตรวจโปรไฟล์ แพลตฟอร์ม และงบ แล้ว Approve หรือขอแก้`;
+          })(),
           checklist: ["Check KOL profile & followers", "Check platforms / links", "Check proposal budget & food support"],
           relatedKolId: next.id, approvalKind: "kolProposal",
         };
@@ -615,6 +626,25 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
         ค่าตัว KOL นับเป็น <b>Committed (แผน)</b> เท่านั้น — ยังไม่ถือเป็น Actual Spend จนกว่าจะมี Expense/Payment ที่อนุมัติใน Finance
       </div>
 
+      {/* The number that actually goes for approval. Kept next to the two inputs
+          so a barter deal (fee ฿0) cannot read as free — 42 of them were not. */}
+      <div className="rounded-card px-4 py-3 flex items-baseline gap-2 flex-wrap"
+        style={{ background: "#EEF1F8", border: "1px solid #D5DEEF", color: "#3E5C9A" }}>
+        <span className="text-[12px] font-bold">ยอดที่จะขออนุมัติ</span>
+        <span className="text-[17px] font-extrabold text-ink">
+          {baht(Math.max(0, proposalBudget || 0) + Math.max(0, foodSupport || 0), { compact: true })}
+        </span>
+        <span className="text-[11px]">
+          = ค่าตัว {baht(Math.max(0, proposalBudget || 0), { compact: true })} + ค่าอาหาร {baht(Math.max(0, foodSupport || 0), { compact: true })}
+        </span>
+        {kol.approvedAmount != null && (
+          <span className="ml-auto text-[11px] font-semibold">
+            อนุมัติไว้ {baht(kol.approvedAmount, { compact: true })}
+            {kol.approvedBy ? ` · โดย ${kol.approvedBy}` : ""}
+          </span>
+        )}
+      </div>
+
       {/* Editable — these two unlock "Contract Signed" */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between bg-surface border border-line rounded-card px-4 py-[10px]">
@@ -687,7 +717,7 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   // "Log to master" — extra fields the collaboration-history record needs.
-  const [onTime, setOnTime] = useState(true);
+  const [agreedPostDate, setAgreedPostDate] = useState(kol.postingDate || "");
   const [feedback, setFeedback] = useState(0); // 0 = not rated
   const [logging, setLogging] = useState(false);
   const [logged, setLogged] = useState(false);
@@ -704,9 +734,18 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         actual_reach: reach || undefined,
         actual_engagement: eng || undefined,
         roas: roas || undefined,
-        on_time_delivery: onTime,
+        agreed_post_at: agreedPostDate || undefined,
+        // No fallback to postingDate: that is the date we PLANNED, and it is
+        // also what seeds agreed_post_at — falling back would make posted_at
+        // equal the agreed date and every delivery would score as on time. If
+        // the real post date was never recorded, leave it unjudged.
+        posted_at: kol.postedDate || undefined,
         brand_feedback_score: feedback || undefined,
         food_cost: kol.foodCost || undefined,
+        owner: kol.owner && !/^unassigned$/i.test(kol.owner) ? kol.owner : undefined,
+        approved_amount: kol.approvedAmount,
+        approved_at: kol.approvedAt,
+        approved_by: kol.approvedBy,
         branch: kol.branch || undefined,
         post_date: kol.postedDate || kol.postingDate || undefined,
       });
@@ -812,11 +851,13 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
           <>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
-                <label className="block text-[11px] font-bold text-faint mb-[5px]">On-time delivery</label>
-                <select value={onTime ? "yes" : "no"} onChange={(e) => setOnTime(e.target.value === "yes")} className={field}>
-                  <option value="yes">ตรงเวลา</option>
-                  <option value="no">ล่าช้า</option>
-                </select>
+                {/* On-time is no longer declared here. It is derived in the
+                    database from the agreed date vs the actual post date, and a
+                    late post only counts against the creator once someone says
+                    the delay was theirs — see kol_apply_on_time(). This field
+                    used to default to "ตรงเวลา" and feed 20% of their rank. */}
+                <label className="block text-[11px] font-bold text-faint mb-[5px]">นัดโพสต์ <span className="font-normal">· ใช้วัดว่าส่งงานตรงเวลาไหม</span></label>
+                <DatePicker value={agreedPostDate || null} onChange={(v) => setAgreedPostDate(v)} />
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-faint mb-[5px]">Brand feedback (1–5)</label>
