@@ -13,6 +13,7 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member, syncBrandRows } from "@/lib/db/settings";
+import { LineOaConfig, lineConfigFor, DEFAULT_LINE_OA } from "@/lib/data/lineQuota";
 import { fetchAuditLog, AuditEntry } from "@/lib/db/audit";
 import { CHANNEL_TEAMS, TEAM_LABELS, TEAM_CHANNEL, TEAM_ENV, NotifyTeam } from "@/lib/notifyRouting";
 import {
@@ -586,15 +587,27 @@ export default function SettingsPage() {
   const [brands, setBrands] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   const [brandsEdit, setBrandsEdit] = useState(false);
   const [brandsDirty, setBrandsDirty] = useState(false);
+  const [lineOa, setLineOa] = useState<LineOaConfig[]>([]);
   const [brandLiveStats, setBrandLiveStats] = useState<Record<string, { campaigns: number; budget: number }>>({});
   const [budgetYear, setBudgetYear] = useState(currentBudgetYearKey());
   const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
   // Mirror into the `brands` table too — it is the foreign key every other
   // module points at, and a brand that lives only in the config cannot hold a
   // campaign, an expense or a KOL booking.
+  const lineCfgOf = (key: string) => lineConfigFor(key, lineOa);
+  const editLineCfg = (key: string, patch: Partial<LineOaConfig>) => {
+    setLineOa((cfgs) => {
+      const at = cfgs.findIndex((c) => c.brand === key);
+      if (at === -1) return [...cfgs, { brand: key, ...DEFAULT_LINE_OA, ...patch }];
+      return cfgs.map((c, i) => (i === at ? { ...c, ...patch } : c));
+    });
+    setBrandsDirty(true);
+  };
+
   const persistBrands = () => {
     saveJsonSetting("brands_config", "Brands & branches", brands)
       .then(() => syncBrandRows(brands))
+      .then(() => saveJsonSetting("line_oa_config", "LINE OA quota", lineOa))
       .then(() => { setBrandsEdit(false); setBrandsDirty(false); })
       .catch(reportSaveError("บันทึก Brands & branches"));
   };
@@ -685,6 +698,7 @@ export default function SettingsPage() {
       if (m.rules.length) setRules(m.rules);
     }).catch(() => {});
     fetchJsonSetting<BrandCfg[]>("brands_config").then((b) => { if (alive && b?.length) setBrands(b); }).catch(() => {});
+    fetchJsonSetting<LineOaConfig[]>("line_oa_config").then((c) => { if (alive && c?.length) setLineOa(c); }).catch(() => {});
     fetchJsonSetting<string[]>("campaign_types_config").then((types) => { if (alive && types !== null) setCampaignTypes(types); }).catch(() => {});
     fetchJsonSetting<TeamCfg[]>("teams_config").then((t) => { if (alive && t?.length) setTeams(t); }).catch(() => {});
     fetchJsonSetting<Record<WfModule, WfStatus[]>>("workflow_status").then((w) => { if (alive && w) setStatusSets((cur) => ({ ...cur, ...w })); }).catch(() => {});
@@ -905,6 +919,32 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <BranchEditor branches={b.branchList} editable={brandsEdit} onChange={(branchList) => editBrand(i, { branchList })} />
+
+                  {/* Each brand runs its own LINE OA, so its own monthly
+                      allowance. Broadcasts inside it bill almost nothing, which
+                      is why campaign budgets alone cannot tell you what a
+                      broadcast cost — the messages are priced from here. */}
+                  <div className="mt-3 pt-3 border-t border-line4">
+                    <div className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-faint mb-2">LINE OA · โควตาต่อเดือน</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="block text-[10.5px] text-faint mb-[3px]">ข้อความฟรี / เดือน</span>
+                        {brandsEdit
+                          ? <input value={String(lineCfgOf(b.key).freeMessages)} inputMode="numeric"
+                              onChange={(e) => editLineCfg(b.key, { freeMessages: Number(e.target.value.replace(/[^0-9]/g, "")) || 0 })}
+                              className="w-full text-[12.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                          : <span className="text-[13px] font-bold">{lineCfgOf(b.key).freeMessages.toLocaleString("en-US")}</span>}
+                      </label>
+                      <label className="block">
+                        <span className="block text-[10.5px] text-faint mb-[3px]">เรตส่วนเกิน (฿/ข้อความ)</span>
+                        {brandsEdit
+                          ? <input value={String(lineCfgOf(b.key).ratePerMessage)} inputMode="decimal"
+                              onChange={(e) => editLineCfg(b.key, { ratePerMessage: Number(e.target.value.replace(/[^0-9.]/g, "")) || 0 })}
+                              className="w-full text-[12.5px] px-2 py-1 rounded-[7px] border border-line2 bg-ivory outline-none" />
+                          : <span className="text-[13px] font-bold">฿{lineCfgOf(b.key).ratePerMessage}</span>}
+                      </label>
+                    </div>
+                  </div>
                 </div>
               );})}
             </div>

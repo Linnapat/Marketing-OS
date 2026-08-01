@@ -26,12 +26,13 @@ import {
   campaignMonthKeys, todayIso,
   BriefContentItem, BriefKolItem, GuidelineItem,
 } from "@/lib/data/brief";
+import { LineOaConfig, lineConfigFor, notionalCost, quotaUsage } from "@/lib/data/lineQuota";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief, StaleBriefError } from "@/lib/db/brief";
 import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
 import { fetchContentSourceIds } from "@/lib/db/content";
 import { briefDiffSummary } from "@/lib/data/briefDiff";
 import { applyBriefPatch } from "@/lib/data/briefSheet";
-import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers } from "@/lib/db/settings";
+import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers, fetchJsonSetting } from "@/lib/db/settings";
 import { BudgetSheetRow, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { notify } from "@/lib/notify";
 import { baht } from "@/lib/format";
@@ -157,6 +158,7 @@ export default function NewCampaignPage() {
   const [triedNext, setTriedNext] = useState(false); // show step-1 inline errors after first Next
   const [ackWarn, setAckWarn] = useState(false);      // acknowledge unresolved warnings before Submit
   const [savedBriefs, setSavedBriefs] = useState<CampaignBrief[]>([]);
+  const [lineOaConfigs, setLineOaConfigs] = useState<LineOaConfig[]>([]);
   const [budgetSheetRows, setBudgetSheetRows] = useState<Awaited<ReturnType<typeof fetchBudgetSheetRows>>>([]);
   const [brandConfigs, setBrandConfigs] = useState<BrandCfg[]>(() => BRANDS_DATA.map((b) => ({ ...b, branchList: [...b.branchList] })));
   // The seed above is a placeholder for the first paint, NOT the truth. Nothing
@@ -221,9 +223,11 @@ export default function NewCampaignPage() {
   }, [brandOptions, brief.b, editingId]);
   useEffect(() => {
     let alive = true;
-    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs(), fetchCampaignTypeConfigs(), fetchMembers()])
-      .then(([briefMap, sheetRows, configs, types, members]) => {
+    Promise.all([fetchAllBriefs(), fetchBudgetSheetRows(), fetchBrandConfigs(), fetchCampaignTypeConfigs(), fetchMembers(),
+      fetchJsonSetting<LineOaConfig[]>("line_oa_config").catch(() => null)])
+      .then(([briefMap, sheetRows, configs, types, members, lineCfgs]) => {
         if (!alive) return;
+        setLineOaConfigs(lineCfgs ?? []);
         setSavedBriefs(Object.values(briefMap));
         setBudgetSheetRows(sheetRows);
         setBrandConfigs(configs);
@@ -517,7 +521,7 @@ export default function NewCampaignPage() {
           </>
         )}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} materialized={materializedIds} />}
-        {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} />}
+        {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} lineOaConfigs={lineOaConfigs} />}
         {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 4 && <Preview preview={preview} warnings={allWarnings} />}
         {step === 5 && <Guideline checklist={checklist} />}
@@ -1117,12 +1121,13 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
 }
 
 // ── Step 5 ──────────────────────────────────────────────────────────────────
-function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSheetRows, onEditKol }: {
+function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSheetRows, onEditKol, lineOaConfigs = [] }: {
   brief: CampaignBrief;
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>;
   bs: ReturnType<typeof budgetSummary>;
   budgetGuardWarning: string | null;
   savedBriefs: CampaignBrief[];
+  lineOaConfigs?: LineOaConfig[];
   budgetSheetRows: Awaited<ReturnType<typeof fetchBudgetSheetRows>>;
   onEditKol: () => void;
 }) {
@@ -1190,6 +1195,19 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
     ["Graphic / Production", "graphic"], ["Printing / POSM", "printing"], ["CRM / LINE OA", "crm"], ["Other", "other"],
   ];
   const contextRows = useMemo(() => monthlyBudgetContext(brief, savedBriefs, budgetSheetRows), [brief, savedBriefs, budgetSheetRows]);
+
+  // LINE OA allowance is per brand — each brand runs its own account — and it
+  // resets monthly, so the pot this broadcast draws from is "other campaigns of
+  // the same brand that overlap the same months".
+  const lineCfg = useMemo(() => lineConfigFor(brief.b, lineOaConfigs), [brief.b, lineOaConfigs]);
+  const lineUsedThisMonth = useMemo(() => {
+    const mine = new Set(campaignMonthKeys(brief.startDate, brief.endDate));
+    if (!mine.size) return 0;
+    return savedBriefs
+      .filter((b) => b.id !== brief.id && b.b === brief.b && (b.budget?.lineMessages ?? 0) > 0)
+      .filter((b) => campaignMonthKeys(b.startDate, b.endDate).some((m) => mine.has(m)))
+      .reduce((sum, b) => sum + (b.budget?.lineMessages ?? 0), 0);
+  }, [savedBriefs, brief.b, brief.id, brief.startDate, brief.endDate]);
   const branchScope = brief.branches.length ? brief.branches.join(", ") : "ยังไม่ได้เลือกสาขา";
   const overTotal = (brief.budget.total || 0) > 0 && bs.allocated > (brief.budget.total || 0);
 
@@ -1366,6 +1384,47 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
                     className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="฿" />
                   <span className="text-[10px] text-faint">{isProduction ? "cost ภายใน — แยกจาก media" : ""}</span>
                 </div>
+                {/* A LINE broadcast's baht figure understates it badly: inside
+                    the monthly allowance it bills next to nothing while still
+                    consuming a finite, shared resource. Capture the messages so
+                    the campaign can be judged on what it actually used. */}
+                {key === "crm" && (
+                  <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr" }}>
+                    <span className="text-[11px] text-faint pl-3">↳ LINE broadcast (ข้อความ)</span>
+                    <input value={fmtNum(brief.budget.lineMessages ?? 0)}
+                      onChange={(e) => setB({ lineMessages: num(e.target.value) })}
+                      className="w-full rounded-[7px] border border-line2 bg-ivory px-2 py-1 text-[12px] outline-none" placeholder="0" />
+                    <span className="text-[10px] text-faint">
+                      {(brief.budget.lineMessages ?? 0) > 0
+                        ? `≈ ${baht(notionalCost(brief.budget.lineMessages, lineCfg.ratePerMessage))} ที่เรต ฿${lineCfg.ratePerMessage}/ข้อความ`
+                        : `฿${lineCfg.ratePerMessage}/ข้อความ`}
+                    </span>
+                  </div>
+                )}
+                {key === "crm" && (brief.budget.lineMessages ?? 0) > 0 && (() => {
+                  const q = quotaUsage(lineUsedThisMonth + (brief.budget.lineMessages ?? 0), lineCfg);
+                  const tight = q.over > 0 || q.pct >= 80;
+                  return (
+                    <div className="border-t border-line4 bg-white px-3 py-[6px]">
+                      <div className="pl-3">
+                        <div className="flex flex-wrap items-baseline gap-2 text-[11px]">
+                          <span className="font-bold" style={{ color: tight ? "#B33A2E" : "#4E7A4E" }}>
+                            โควตา LINE · {brandName(brief.b)}
+                          </span>
+                          <span className="text-faint">
+                            {fmtNum(q.used)} / {fmtNum(q.free)} ข้อความ
+                            {q.over > 0
+                              ? ` · เกิน ${fmtNum(q.over)} → ต้องจ่ายเพิ่ม ${baht(q.billable)}`
+                              : ` · เหลือ ${fmtNum(q.remaining)}`}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-[6px] w-full max-w-[420px] rounded-pill" style={{ background: "#EFEBE2" }}>
+                          <div className="h-full rounded-pill" style={{ width: `${q.pct}%`, background: tight ? "#B33A2E" : "#4E7A4E" }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {isOther && amount > 0 && (
                   <div className="grid items-center gap-2 border-t border-line4 bg-white px-3 py-[4px]" style={{ gridTemplateColumns: "1.6fr 2.2fr" }}>
                     <span className="text-[11px] text-faint pl-3">↳ Other คืออะไร <span className="text-status-red">*</span></span>
