@@ -16,6 +16,35 @@ const DOW = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"];
 const MON_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const MON_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Deal dates are not stored in one shape: postedDate is ISO, while postDueDate
+ * and postingDate are display labels like "Aug 1" written by the drawer. Keying
+ * the grid on ISO alone matched nothing at all, so both are parsed here.
+ *
+ * A bare "Aug 1" carries no year. Rather than assume the current one — which
+ * puts "Dec 25" ten months away when read in January — pick whichever adjacent
+ * year lands closest to today.
+ */
+function toIsoDay(value: string | null | undefined): string | null {
+  const v = (value ?? "").trim();
+  if (!v) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+  const m = v.match(/^([A-Za-z]{3})[a-z]*\s+(\d{1,2})$/);
+  if (!m) return null;                                   // "TBD", "On hold", …
+  const mon = MON_EN.indexOf(m[1].slice(0, 1).toUpperCase() + m[1].slice(1, 3).toLowerCase());
+  const day = Number(m[2]);
+  if (mon < 0 || !day) return null;
+  const now = new Date();
+  let best: Date | null = null;
+  for (const y of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
+    const cand = new Date(y, mon, day);
+    if (!best || Math.abs(+cand - +now) < Math.abs(+best - +now)) best = cand;
+  }
+  return best ? iso(best) : null;
+}
 /** Monday-first: the posting week the team actually plans in. */
 function startOfWeek(d: Date): Date {
   const x = new Date(d);
@@ -37,7 +66,7 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
   const byDate = useMemo(() => {
     const m = new Map<string, Kol[]>();
     for (const k of kols) {
-      const day = (k.postedDate || k.postDueDate || "").slice(0, 10);
+      const day = toIsoDay(k.postedDate) ?? toIsoDay(k.postingDate) ?? toIsoDay(k.postDueDate);
       if (!day) continue;
       const list = m.get(day) ?? [];
       list.push(k);
