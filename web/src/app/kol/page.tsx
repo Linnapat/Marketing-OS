@@ -827,12 +827,14 @@ function KolDatabase() {
         <div className="min-w-[1080px]">
         <div className="grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 items-center" style={{ gridTemplateColumns: cols }}>
           <div>KOL / Page</div><div>Tier</div><div>Category</div>
+          {/* Abbreviations, not full names — five platform columns of
+              "INSTAGRAM"/"FACEBOOK" crowd each other and push the metrics off
+              screen. The colour carries the identity. */}
           {platformCols.map((p) => {
             const ic = platformIcon(p);
             return (
-              <div key={p} className="flex items-center justify-end gap-[5px]">
-                <span className="w-[13px] h-[13px] rounded-[4px] flex items-center justify-center text-[7.5px] font-bold" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
-                <span style={{ color: ic.bg }}>{p}</span>
+              <div key={p} className="text-right tracking-[0.08em]" style={{ color: ic.bg }} title={p}>
+                {ic.icon}
               </div>
             );
           })}
