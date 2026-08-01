@@ -577,6 +577,10 @@ export async function createKolExpenseRequest(input: {
   amount: number;
   kolName: string;
   requester?: string;
+  /** Tax lines, computed by the caller from the same helpers Expenses uses. */
+  vat?: number;
+  wht?: number;
+  whtRate?: number;
 }): Promise<{ id: string } | { error: string }> {
   const db = supabase();
   if (!db) return { error: "ยังไม่ได้เชื่อมต่อฐานข้อมูล" };
@@ -600,6 +604,9 @@ export async function createKolExpenseRequest(input: {
     status: "Waiting Approval",
     requester: input.requester,
     vendor: input.kolName,
+    vat: input.vat ?? 0,
+    wht: input.wht ?? 0,
+    wht_rate: input.whtRate ?? 0,
   }).select("id").single();
   if (error || !data) return { error: error?.message || "สร้างใบเบิกไม่สำเร็จ" };
   const id = String((data as { id: number | string }).id);

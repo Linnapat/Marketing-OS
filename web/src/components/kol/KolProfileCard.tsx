@@ -10,6 +10,7 @@ import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { baht } from "@/lib/format";
+import { VAT_RATE, WHT_PRESETS, grossUpFromNet, rateLabel } from "@/lib/data/expenseTax";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
 import { initials, fmtFollow } from "@/lib/data/kol";
@@ -214,11 +215,29 @@ function ExpenseReviewSheet({ engagement, kolName, requester, onClose, onFiled }
     other_cost: engagement.other_cost ?? 0,
   });
   const [busy, setBusy] = useState(false);
+  // No default rate: it is 2% or 3% depending on how the deal was contracted,
+  // and a pre-filled guess is the kind of thing nobody re-reads. "ไม่หัก" has to
+  // be chosen too, so a request that withholds nothing did so on purpose.
+  const [whtRate, setWhtRate] = useState<number | null>(null);
+  const [applyVat, setApplyVat] = useState(false);
+
   const total = costTotal(costs);
   const wasTotal = engagement.total_cost ?? 0;
   const changed = total !== wasTotal;
+
+  // Withholding applies to what the creator is paid — the fee, and a boost we
+  // hand them to run. Food support is the restaurant's bill, not their income.
+  const payableToKol = (costs.paid_fee || 0) + (costs.boost_cost || 0);
+  const passThrough = (costs.food_cost || 0) + (costs.other_cost || 0);
+  // The stored fee is what was transferred, so it is already net of tax; the
+  // invoice value has to be recovered before anything is withheld from it.
+  const { gross, wht } = grossUpFromNet(payableToKol, whtRate ?? 0);
+  const requested = gross + passThrough;
+  const vat = applyVat ? Math.round((requested * VAT_RATE) / 100) : 0;
+  const payout = requested - wht + vat;
+
   const approved = engagement.approved_amount;
-  const over = approved != null && approved > 0 && total > approved * (1 + OVERSPEND_TOLERANCE);
+  const over = approved != null && approved > 0 && requested > approved * (1 + OVERSPEND_TOLERANCE);
 
   const submit = async () => {
     setBusy(true);
@@ -234,9 +253,12 @@ function ExpenseReviewSheet({ engagement, kolName, requester, onClose, onFiled }
         brand: engagement.brand,
         campaign: engagement.campaign_name,
         campaignId: engagement.campaign_id,
-        amount: total,
+        amount: requested,
         kolName,
         requester,
+        vat,
+        wht,
+        whtRate: whtRate ?? 0,
       });
       if ("id" in res) { onFiled(res.id, costs); onClose(); }
       else toastError(res.error);
@@ -272,9 +294,82 @@ function ExpenseReviewSheet({ engagement, kolName, requester, onClose, onFiled }
             </label>
           ))}
 
+          {/* Tax. Deliberately after the amounts and before the total: it changes
+              the total, so burying it under the figure it moves would be a lie
+              about what is being filed. */}
+          <div className="border-t border-line4 pt-[10px] mt-[2px] flex flex-col gap-[8px]">
+            <div className="flex items-start gap-3">
+              <span className="text-[12px] font-semibold text-muted w-[104px] flex-shrink-0 pt-[6px]">
+                หัก ณ ที่จ่าย
+                <span className="block text-[10px] font-normal text-faint leading-tight mt-[1px]">
+                  คิดจากค่าตัว + boost เท่านั้น
+                </span>
+              </span>
+              <div className="flex-1 flex flex-wrap gap-1">
+                {[...WHT_PRESETS, { rate: 0, label: "ไม่หัก" }].map((p) => (
+                  <button key={p.rate} type="button" onClick={() => setWhtRate(p.rate)}
+                    className="text-[11px] font-bold rounded-[8px] px-2.5 py-[5px] border transition"
+                    style={whtRate === p.rate
+                      ? { background: "#211F1C", color: "#fff", borderColor: "#211F1C" }
+                      : { background: "#fff", color: "#6B6577", borderColor: "#ECEAF2" }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-[11.5px] text-muted">
+              <input type="checkbox" checked={applyVat} onChange={(e) => setApplyVat(e.target.checked)} />
+              KOL / เอเจนซี่รายนี้จด VAT — บวก VAT {VAT_RATE}%
+            </label>
+          </div>
+
+          {whtRate == null ? (
+            <div className="text-[11px] rounded-[8px] px-[10px] py-[7px] font-semibold"
+              style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
+              เลือกอัตราหัก ณ ที่จ่ายก่อน — 2% ค่าโฆษณา หรือ 3% ค่าบริการ แล้วแต่สัญญาของดีลนี้
+            </div>
+          ) : (
+            <div className="text-[11px] flex flex-col gap-[3px] rounded-[8px] px-[10px] py-[8px]"
+              style={{ background: "#F7F6F2", border: "1px solid #E9E5DC" }}>
+              {wht > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted">ค่าตัว+boost ก่อนหัก (ตั้งเบิก)</span>
+                    <span className="font-semibold text-ink">{baht(gross)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">หัก ณ ที่จ่าย {rateLabel(whtRate)}</span>
+                    <span className="font-semibold text-ink">− {baht(wht)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">KOL ได้รับจริง</span>
+                    <span className="font-semibold text-ink">{baht(payableToKol)}</span>
+                  </div>
+                </>
+              )}
+              {passThrough > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted">ค่าอาหาร + อื่นๆ (ไม่หัก)</span>
+                  <span className="font-semibold text-ink">{baht(passThrough)}</span>
+                </div>
+              )}
+              {vat > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted">VAT {VAT_RATE}%</span>
+                  <span className="font-semibold text-ink">+ {baht(vat)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-line4 pt-[3px] mt-[2px]">
+                <span className="text-muted">ยอดจ่ายออกจริง</span>
+                <span className="font-semibold text-ink">{baht(payout)}</span>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between border-t border-line4 pt-[10px] mt-[2px]">
             <span className="text-[12.5px] font-bold text-ink">รวมที่จะเบิก</span>
-            <span className="text-[17px] font-extrabold text-ink">{baht(total)}</span>
+            <span className="text-[17px] font-extrabold text-ink">{baht(requested)}</span>
           </div>
 
           {changed && (
@@ -293,7 +388,7 @@ function ExpenseReviewSheet({ engagement, kolName, requester, onClose, onFiled }
             // not happen is going over without anyone noticing.
             <div className="text-[11px] rounded-[8px] px-[10px] py-[7px] font-semibold"
               style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
-              ⚠ เกินยอดที่อนุมัติ {baht(total - approved!)} (+{Math.round(((total / approved!) - 1) * 100)}%) —
+              ⚠ เกินยอดที่อนุมัติ {baht(requested - approved!)} (+{Math.round(((requested / approved!) - 1) * 100)}%) —
               เบิกได้ แต่ควรแจ้งผู้อนุมัติก่อน
             </div>
           )}
@@ -304,9 +399,9 @@ function ExpenseReviewSheet({ engagement, kolName, requester, onClose, onFiled }
             className="text-[12.5px] font-bold text-muted border border-line2 rounded-[10px] px-4 py-[8px] bg-white disabled:opacity-40">
             ยกเลิก
           </button>
-          <button onClick={submit} disabled={busy || total <= 0}
+          <button onClick={submit} disabled={busy || requested <= 0 || whtRate == null}
             className="text-[12.5px] font-bold text-white rounded-[10px] px-4 py-[8px] bg-panel disabled:opacity-40">
-            {busy ? "กำลังส่ง…" : `ส่งใบเบิก ${baht(total)}`}
+            {busy ? "กำลังส่ง…" : `ส่งใบเบิก ${baht(requested)}`}
           </button>
         </div>
       </div>
