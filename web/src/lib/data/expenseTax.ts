@@ -65,6 +65,26 @@ export function taxBreakdown(
   };
 }
 
+/**
+ * Recover the pre-withholding amount from what was actually transferred.
+ *
+ * KOL fees are agreed and recorded as the figure the creator receives — all 121
+ * imported deals hold the transferred amount, not the invoice value. Withholding
+ * that figure again would deduct twice and pay the creator 3% short; the company
+ * has to gross it up, remit the tax, and leave the creator whole.
+ *
+ * wht is taken as the difference rather than computed from the gross, so the net
+ * is exactly the number that was agreed — rounding lands on the tax line, which
+ * is where a stray baht belongs.
+ */
+export function grossUpFromNet(net: number, whtRate: number): { gross: number; wht: number } {
+  const base = Number.isFinite(net) && net > 0 ? net : 0;
+  const r = normaliseRate(whtRate);
+  if (r <= 0 || r >= 100) return { gross: Math.round(base), wht: 0 };
+  const gross = Math.round(base / (1 - r / 100));
+  return { gross, wht: gross - Math.round(base) };
+}
+
 /** "3%" / "2.5%" — for the breakdown row and the voucher's rate column. */
 export function rateLabel(rate: number): string {
   const r = normaliseRate(rate);
