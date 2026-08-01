@@ -62,11 +62,16 @@ async function sendDMs(names: string[], title: string, detail: string, link: str
   const text = lines.join("\n");
 
   const resolved = await resolveSlackIds(names);
-  const results = await Promise.all(resolved.map(async (r) =>
-    ({ ...r, ok: r.slackId ? await postDM(r.slackId, text).catch(() => false) : false })));
+  const results = await Promise.all(resolved.map(async (r) => {
+    if (!r.slackId) return { ...r, ok: false };
+    const posted = await postDM(r.slackId, text).catch(() => ({ ok: false, reason: "request_failed" }));
+    return { ...r, ok: posted.ok, reason: posted.ok ? undefined : posted.reason };
+  }));
   return {
     sent: results.filter((r) => r.ok).map((r) => r.name),
-    unresolved: results.filter((r) => !r.ok).map((r) => r.name),
+    // The reason travels back so a failed test says what Slack objected to
+    // rather than just "it didn't work".
+    unresolved: results.filter((r) => !r.ok).map((r) => `${r.name} (${r.reason ?? "unknown"})`),
   };
 }
 
