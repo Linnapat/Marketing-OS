@@ -12,7 +12,7 @@ import { CAMPAIGN_TYPES } from "@/lib/data/brief";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { annualBudgetByBrandFromSheet, currentBudgetYearKey, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
 import { fetchMetaPublishingAccounts, saveMetaPublishingAccounts, MetaBrandAccount } from "@/lib/db/metaPublishing";
-import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member } from "@/lib/db/settings";
+import { fetchMembers, createMember, updateMember, deleteMember, fetchPermissions, savePermissions, fetchOrg, saveOrg, fetchNotifSettings, saveNotifSettings, fetchApprovalMatrix, saveApprovalMatrix, fetchJsonSetting, saveJsonSetting, BudgetThreshold, ModuleRule, Member, syncBrandRows } from "@/lib/db/settings";
 import { fetchAuditLog, AuditEntry } from "@/lib/db/audit";
 import { CHANNEL_TEAMS, TEAM_LABELS, TEAM_CHANNEL, TEAM_ENV, NotifyTeam } from "@/lib/notifyRouting";
 import {
@@ -589,7 +589,15 @@ export default function SettingsPage() {
   const [brandLiveStats, setBrandLiveStats] = useState<Record<string, { campaigns: number; budget: number }>>({});
   const [budgetYear, setBudgetYear] = useState(currentBudgetYearKey());
   const editBrand = (i: number, patch: Partial<BrandCfg>) => { setBrands((bs) => bs.map((b, j) => j === i ? { ...b, ...patch } : b)); setBrandsDirty(true); };
-  const persistBrands = () => { saveJsonSetting("brands_config", "Brands & branches", brands).then(() => { setBrandsEdit(false); setBrandsDirty(false); }).catch(reportSaveError("บันทึก Brands & branches")); };
+  // Mirror into the `brands` table too — it is the foreign key every other
+  // module points at, and a brand that lives only in the config cannot hold a
+  // campaign, an expense or a KOL booking.
+  const persistBrands = () => {
+    saveJsonSetting("brands_config", "Brands & branches", brands)
+      .then(() => syncBrandRows(brands))
+      .then(() => { setBrandsEdit(false); setBrandsDirty(false); })
+      .catch(reportSaveError("บันทึก Brands & branches"));
+  };
 
   // Campaign Types are shared by the full builder and quick-create form.
   const [campaignTypes, setCampaignTypes] = useState<string[]>(() => [...CAMPAIGN_TYPES]);
