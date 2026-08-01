@@ -25,7 +25,7 @@ import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canAssignCaption } from "@/lib/roleGates";
+import { canEditContentPlan, canAssignCaption, canMarkMediaReleased } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -84,6 +84,9 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // source its inline status gate reads, so "Viewing as" reflects reality here.
   const { role } = useRole();
   const canEditPlan = canEditContentPlan(role);
+  // Pasting the file link and confirming it is finished are two different acts,
+  // held by two different people on purpose — see canMarkMediaReleased.
+  const canRelease = canMarkMediaReleased(role);
   const [revising, setRevising] = useState(false);
   const [reason, setReason] = useState("");
   // Which part is being sent back. Off by default, so pressing Request
@@ -273,6 +276,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   const mediaDirty = mediaLink.trim() !== (item.mediaLink ?? "").trim();
   const saveMedia = () => persist({ ...item, mediaLink: mediaLink.trim() || undefined });
   const toggleRelease = () => {
+    if (!canRelease) return;
     const released = item.releaseStatus === "Released";
     persist(released
       ? { ...item, releaseStatus: "", releasedBy: undefined, releasedAt: undefined }
@@ -677,13 +681,19 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                         ? <span className="text-status-green font-bold">✓ Released{item.releasedBy ? ` · ${item.releasedBy}` : ""}</span>
                         : <span className="text-faint">ยังไม่ปล่อยงาน</span>}
                     </div>
-                    <button onClick={toggleRelease} disabled={busy}
-                      className="text-[12px] font-bold px-3 py-[7px] rounded-[9px] disabled:opacity-40"
-                      style={item.releaseStatus === "Released"
-                        ? { background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }
-                        : { background: "#4E7A4E", color: "#fff" }}>
-                      {item.releaseStatus === "Released" ? "ยกเลิก Release" : "✓ Mark Released"}
-                    </button>
+                    {canRelease ? (
+                      <button onClick={toggleRelease} disabled={busy}
+                        className="text-[12px] font-bold px-3 py-[7px] rounded-[9px] disabled:opacity-40"
+                        style={item.releaseStatus === "Released"
+                          ? { background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }
+                          : { background: "#4E7A4E", color: "#fff" }}>
+                        {item.releaseStatus === "Released" ? "ยกเลิก Release" : "✓ Mark Released"}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-faint text-right max-w-[190px]">
+                        วางลิงก์ไฟล์ได้ · Content Creator หรือ Creative Leader เป็นคนกดปล่อยงาน
+                      </span>
+                    )}
                   </div>
                   {mediaDirty && (
                     <button onClick={saveMedia} disabled={busy}
