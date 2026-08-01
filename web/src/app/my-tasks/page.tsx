@@ -466,14 +466,19 @@ export default function MyTasksPage() {
           </div>
 
           {viewMode === "cards" ? (
-            <div className="flex flex-col gap-[26px]">
+            /* Kanban: the groups sit side by side and each one scrolls its own
+               cards. Stacked vertically, a group with one card left a whole
+               empty row and the later groups fell below the fold — you could
+               not see "what needs approval" and "what is stuck" at once, which
+               is the only reason to look at this screen. */
+            <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
               {GROUP_DEFS.map((g) => {
                 const groupTasks = scopedTasks.filter((t) => getGroup(t) === g.id);
                 if (groupTasks.length === 0) return null;
                 return (
-                  <div key={g.id}>
+                  <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>
                     <WorkGroupHeader g={g} count={groupTasks.length} />
-                    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))" }}>
+                    <div className="flex flex-col gap-3">
                       {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={setGraphicOpenId} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
                   </div>

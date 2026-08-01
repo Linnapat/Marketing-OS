@@ -123,7 +123,9 @@ export interface GroupDef { id: string; label: string; icon: string; countBg: st
 
 export function WorkGroupHeader({ g, count }: { g: GroupDef; count: number }) {
   return (
-    <div className="flex items-center gap-[10px] mb-[13px]">
+    /* wrap: in a 340px Kanban column the label and the warning no longer fit
+       on one line, and a nowrap header would push the column wider. */
+    <div className="flex items-center gap-[10px] mb-[13px] flex-wrap">
       <span className="text-[17px]">{g.icon}</span>
       <span className="text-[13.5px] font-bold tracking-[-0.01em]">{g.label}</span>
       <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: g.countBg, color: g.countColor }}>{count}</span>
