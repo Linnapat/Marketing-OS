@@ -47,6 +47,19 @@ export function canSeeModule(matrix: PermMatrix | null, role: Role, module: stri
   return permLevel(matrix, role, module) !== PERM_NONE;
 }
 
+/** Ranking of the matrix levels, matching the database's has_module(). */
+const LEVEL_RANK: Record<string, number> = { [PERM_NONE]: 0, View: 1, Edit: 2, Approve: 3, Admin: 4 };
+
+/**
+ * Whether a role reaches `min` on a module — the client-side twin of the
+ * database's has_module(module, min). Use this, not canSeeModule, for anything
+ * that WRITES: being allowed to look at a module is not permission to change
+ * what is in it.
+ */
+export function hasModuleLevel(matrix: PermMatrix | null, role: Role, module: string, min: "View" | "Edit" | "Approve" | "Admin"): boolean {
+  return (LEVEL_RANK[permLevel(matrix, role, module)] ?? 0) >= (LEVEL_RANK[min] ?? 1);
+}
+
 /** Permission-matrix module guarding each route prefix. Routes not listed
  *  (Dashboard, My Tasks, Team, Work Calendar, Agency Portal, Expenses) are open
  *  to every internal role; the Agency role is confined to /agency separately.

@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { fetchPermissions } from "@/lib/db/settings";
-import { canSeeModule, type PermMatrix } from "@/lib/permissions";
+import { canSeeModule, hasModuleLevel, type PermMatrix } from "@/lib/permissions";
 
 export const ROLES = [
   "CMO",
@@ -24,6 +24,11 @@ interface RoleCtx {
   setRole: (r: Role) => void;
   /** Can the current role see a module? Driven by the Settings Permissions matrix. */
   can: (module: string) => boolean;
+  /** Does the role reach a level on a module? Gate WRITES on this, not on
+   *  `can` — six of the ten roles sit at View on Content, and treating "may
+   *  look at it" as "may change it" is how Trash ended up offering them a
+   *  permanent-delete button. Mirrors the database's has_module(). */
+  atLeast: (module: string, min: "View" | "Edit" | "Approve" | "Admin") => boolean;
 }
 
 const RoleContext = createContext<RoleCtx | null>(null);
@@ -52,7 +57,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     return () => { alive = false; };
   }, [user?.id]);
   const can = (module: string) => canSeeModule(matrix, role, module);
-  return <RoleContext.Provider value={{ role, setRole, can }}>{children}</RoleContext.Provider>;
+  const atLeast = (module: string, min: "View" | "Edit" | "Approve" | "Admin") => hasModuleLevel(matrix, role, module, min);
+  return <RoleContext.Provider value={{ role, setRole, can, atLeast }}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {
