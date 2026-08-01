@@ -43,6 +43,11 @@ const TONE = {
   bad:  { bg: "#FFF5F4", border: "#F5C8C4", fg: "#B33A2E" },
 };
 
+/** How far the final bill may drift past the approved figure before it is
+ *  worth interrupting anyone. Food support is estimated at proposal time, so a
+ *  small overshoot is normal and a zero-tolerance flag would be noise. */
+const OVERSPEND_TOLERANCE = 0.1;
+
 const FRESH_TONE: Record<string, Tone & { label: string }> = {
   fresh:      { ...TONE_OK, label: "ยืนยันแล้ว" },
   stale:      { bg: "#FBF6EC", border: "#EADBC1", fg: "#8A6D1E", label: `เกิน ${FOLLOWER_STALE_DAYS} วัน` },
@@ -183,6 +188,10 @@ function ExpenseRow({ engagement, kolName, requester }: {
   const [linked, setLinked] = useState(engagement.expense_request_id);
   const [busy, setBusy] = useState(false);
   const amount = engagement.total_cost ?? 0;
+  // Only a real approved figure can be exceeded. Everything imported from the
+  // sheet has none, so those stay silent rather than warning on a guess.
+  const approved = engagement.approved_amount;
+  const over = approved != null && approved > 0 && amount > approved * (1 + OVERSPEND_TOLERANCE);
   if (amount <= 0) return null;
 
   const create = async () => {
@@ -202,19 +211,33 @@ function ExpenseRow({ engagement, kolName, requester }: {
   };
 
   return (
-    <div className="mt-1 text-[11px] flex items-center gap-2 flex-wrap">
-      <span className="text-faint">ใบเบิก</span>
-      {linked ? (
-        <Link href="/expenses" className="font-bold text-accent hover:underline">
-          สร้างแล้ว · #{linked} ↗
-        </Link>
-      ) : (
-        <button onClick={create} disabled={busy}
-          className="font-bold text-accent border border-line2 rounded-[7px] px-[9px] py-[2px] bg-white hover:border-accent disabled:opacity-40">
-          {busy ? "กำลังสร้าง…" : `สร้างใบเบิก ${baht(amount, { compact: true })}`}
-        </button>
+    <div className="mt-1 text-[11px] flex flex-col gap-1">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-faint">ใบเบิก</span>
+        {linked ? (
+          <Link href="/expenses" className="font-bold text-accent hover:underline">
+            สร้างแล้ว · #{linked} ↗
+          </Link>
+        ) : (
+          <button onClick={create} disabled={busy}
+            className="font-bold text-accent border border-line2 rounded-[7px] px-[9px] py-[2px] bg-white hover:border-accent disabled:opacity-40">
+            {busy ? "กำลังสร้าง…" : `สร้างใบเบิก ${baht(amount, { compact: true })}`}
+          </button>
+        )}
+        {approved != null && (
+          <span className="text-faint">· อนุมัติไว้ {baht(approved, { compact: true })}</span>
+        )}
+        {engagement.paid_status && <span className="text-faint">· สถานะจ่าย {engagement.paid_status}</span>}
+      </div>
+      {over && (
+        // A warning, not a block: going over can be the right call. What must not
+        // happen is going over without anyone noticing.
+        <div className="rounded-[8px] px-[10px] py-[6px] font-semibold"
+          style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
+          ⚠ เกินยอดที่อนุมัติ {baht(amount - approved!, { compact: true })}
+          {` (+${Math.round(((amount / approved!) - 1) * 100)}%)`} — เบิกได้ แต่ควรแจ้งผู้อนุมัติก่อน
+        </div>
       )}
-      {engagement.paid_status && <span className="text-faint">· สถานะจ่าย {engagement.paid_status}</span>}
     </div>
   );
 }

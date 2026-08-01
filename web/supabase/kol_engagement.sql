@@ -77,6 +77,15 @@ alter table kol_collaboration_history
   add column if not exists paid_date       date,
   add column if not exists has_receipt     boolean,
   add column if not exists has_tax_invoice boolean,
+  -- WHAT WAS SIGNED OFF ---------------------------------------------------
+  -- Approval used to leave no number behind — only quotationStatus flipping to
+  -- "Approved" — so the final bill had nothing to be checked against. Worse,
+  -- the approver saw the fee alone while the real commitment is fee + food:
+  -- across 121 recorded deals that gap was +43.7% (฿263,957), and on 42 barter
+  -- deals the fee read ฿0 while food support was not free.
+  add column if not exists approved_amount numeric,
+  add column if not exists approved_at     timestamptz,
+  add column if not exists approved_by     text,
   -- Specialist creates the expense request manually at reimbursement time;
   -- this is the link back so Finance and KOL do not double-key the number.
   add column if not exists expense_request_id text,
@@ -117,10 +126,12 @@ begin
   return new;
 end $$;
 
+-- Fires on EVERY insert and update, not just the three source columns: scoped
+-- to those, an update that touched on_time_delivery alone slipped past the
+-- trigger and the declared value stuck — which is the exact hole this replaces.
 drop trigger if exists kol_on_time_trg on kol_collaboration_history;
 create trigger kol_on_time_trg
-  before insert or update of posted_at, agreed_post_at, delay_reason
-  on kol_collaboration_history
+  before insert or update on kol_collaboration_history
   for each row execute function kol_apply_on_time();
 
 -- Re-importing the same sheet row must update, never duplicate.

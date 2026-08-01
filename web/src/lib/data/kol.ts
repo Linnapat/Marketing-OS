@@ -70,6 +70,12 @@ export interface Kol {
   postingDate?: string;
   /** Actual sales attributed to this KOL (฿) — drives the auto ROAS. */
   revenue?: number;
+  /** What the approver actually signed off, captured at the moment of approval.
+   *  Without it there is no number to check the final bill against — the flag
+   *  was only ever quotationStatus = "Approved". */
+  approvedAmount?: number;
+  approvedAt?: string;
+  approvedBy?: string;
   /** Who requested this KOL (the campaign side). Approval tasks route back here. */
   requester?: string;
   /** Idempotency link to the proposal approval task created on submit. */

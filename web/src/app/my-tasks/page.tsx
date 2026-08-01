@@ -283,7 +283,8 @@ export default function MyTasksPage() {
   const markDone = (id: number) => {
     const task = tasks.find((t) => t.id === id);
     if (task?.approvalKind === "kolProposal" && task.relatedKolId != null) {
-      approveKolProposal(task.relatedKolId).catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      approveKolProposal(task.relatedKolId, member?.name || user?.email || undefined)
+        .catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
       updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));

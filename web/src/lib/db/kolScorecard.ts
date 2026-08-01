@@ -96,6 +96,9 @@ export interface KolEngagementRow {
   paid_fee: number | null;
   total_cost: number | null;
   paid_status: string | null;
+  /** What the approver signed off. Null on everything imported from the sheet. */
+  approved_amount: number | null;
+  approved_by: string | null;
   expense_request_id: string | null;
   performance_tag: string | null;
   next_action: string | null;
@@ -203,7 +206,7 @@ export async function fetchKolEngagements(kolId: string): Promise<KolEngagementR
   if (!db) return [];
   const { data, error } = await db
     .from("kol_collaboration_history")
-    .select("collab_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, expense_request_id, performance_tag, next_action, needs_review")
+    .select("collab_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review")
     .eq("kol_id", kolId)
     .order("month_key", { ascending: false, nullsFirst: false });
   if (error || !data) return [];
@@ -227,6 +230,7 @@ export async function fetchKolEngagements(kolId: string): Promise<KolEngagementR
     food_cost: num(r.food_cost),
     paid_fee: num(r.paid_fee),
     total_cost: num(r.total_cost),
+    approved_amount: num(r.approved_amount),
     posts: byCollab.get(r.collab_id) ?? [],
   }));
 }
@@ -391,7 +395,7 @@ export async function fetchCampaignKolEngagements(
 ): Promise<CampaignKolRow[]> {
   const db = supabase();
   if (!db) return [];
-  const cols = "collab_id, kol_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, expense_request_id, performance_tag, next_action, needs_review, kol_profiles(display_name, tier)";
+  const cols = "collab_id, kol_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review, kol_profiles(display_name, tier)";
 
   const byId = await db.from("kol_collaboration_history").select(cols).eq("campaign_id", campaignId);
   const rows = [...((byId.data ?? []) as Record<string, unknown>[])];
