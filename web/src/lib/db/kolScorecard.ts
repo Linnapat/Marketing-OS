@@ -8,6 +8,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { tierFromFollowers } from "@/lib/db/kolMaster";
+import { KolKpiRow } from "@/lib/data/kolKpiSignals";
 
 export interface KolChannel {
   channel_id: string;
@@ -421,6 +422,23 @@ export async function fetchCampaignKolEngagements(
       total_cost: num(r.total_cost),
     } as CampaignKolRow;
   }).sort((a, b) => (b.actual_reach ?? 0) - (a.actual_reach ?? 0));
+}
+
+/** Raw rows for the KPI review. Kept thin on purpose — the aggregation lives in
+ *  data/kolKpiSignals.ts so it stays testable without a database. */
+export async function fetchKolKpiRows(): Promise<KolKpiRow[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db
+    .from("kol_collaboration_history")
+    .select("owner, month_key, status, performance_tag, on_time_delivery, agreed_post_at, posted_at, delay_reason, total_cost, actual_reach")
+    .limit(5000);
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map((r) => ({
+    ...(r as unknown as KolKpiRow),
+    total_cost: num(r.total_cost),
+    actual_reach: num(r.actual_reach),
+  }));
 }
 
 export interface KolCalendarPost {

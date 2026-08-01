@@ -742,6 +742,7 @@ function ResultsTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         posted_at: kol.postedDate || undefined,
         brand_feedback_score: feedback || undefined,
         food_cost: kol.foodCost || undefined,
+        owner: kol.owner && !/^unassigned$/i.test(kol.owner) ? kol.owner : undefined,
         approved_amount: kol.approvedAmount,
         approved_at: kol.approvedAt,
         approved_by: kol.approvedBy,

@@ -152,6 +152,9 @@ export async function logCollaboration(input: {
   /** Derived by a DB trigger from agreed_post_at vs posted_at — never sent. */
   agreed_post_at?: string;
   posted_at?: string;
+  /** The specialist who ran this booking — what the KPI review groups by.
+   *  Everything imported from the sheet has none; it had no owner column. */
+  owner?: string;
   brand_feedback_score?: number;
   /** Carried from the deal so the final bill has something to be checked against. */
   approved_amount?: number;
