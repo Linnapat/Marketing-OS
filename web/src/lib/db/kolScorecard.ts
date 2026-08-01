@@ -95,6 +95,8 @@ export interface KolEngagementRow {
   actual_engagement: number | null;
   food_cost: number | null;
   paid_fee: number | null;
+  boost_cost: number | null;
+  other_cost: number | null;
   total_cost: number | null;
   paid_status: string | null;
   /** What the approver signed off. Null on everything imported from the sheet. */
@@ -207,7 +209,7 @@ export async function fetchKolEngagements(kolId: string): Promise<KolEngagementR
   if (!db) return [];
   const { data, error } = await db
     .from("kol_collaboration_history")
-    .select("collab_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review")
+    .select("collab_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, boost_cost, other_cost, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review")
     .eq("kol_id", kolId)
     .order("month_key", { ascending: false, nullsFirst: false });
   if (error || !data) return [];
@@ -230,6 +232,8 @@ export async function fetchKolEngagements(kolId: string): Promise<KolEngagementR
     actual_engagement: num(r.actual_engagement),
     food_cost: num(r.food_cost),
     paid_fee: num(r.paid_fee),
+    boost_cost: num(r.boost_cost),
+    other_cost: num(r.other_cost),
     total_cost: num(r.total_cost),
     approved_amount: num(r.approved_amount),
     posts: byCollab.get(r.collab_id) ?? [],
@@ -396,7 +400,7 @@ export async function fetchCampaignKolEngagements(
 ): Promise<CampaignKolRow[]> {
   const db = supabase();
   if (!db) return [];
-  const cols = "collab_id, kol_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review, kol_profiles(display_name, tier)";
+  const cols = "collab_id, kol_id, campaign_id, campaign_name, brand, branch, month_key, status, deal_type, why_chosen, visited_at, agreed_post_at, posted_at, delay_reason, delay_note, on_time_delivery, actual_reach, actual_engagement, food_cost, paid_fee, boost_cost, other_cost, total_cost, paid_status, approved_amount, approved_by, expense_request_id, performance_tag, next_action, needs_review, kol_profiles(display_name, tier)";
 
   const byId = await db.from("kol_collaboration_history").select(cols).eq("campaign_id", campaignId);
   const rows = [...((byId.data ?? []) as Record<string, unknown>[])];
@@ -522,6 +526,40 @@ export async function attributeDelay(
       updated_at: new Date().toISOString(),
     })
     .eq("collab_id", collabId);
+  return !error;
+}
+
+export interface KolCostBreakdown {
+  paid_fee: number;
+  food_cost: number;
+  boost_cost: number;
+  other_cost: number;
+}
+
+export const costTotal = (c: KolCostBreakdown): number =>
+  (c.paid_fee || 0) + (c.food_cost || 0) + (c.boost_cost || 0) + (c.other_cost || 0);
+
+/**
+ * Correct what a booking actually cost. Food support in particular is booked as
+ * an estimate and only settles when the bill arrives, so the figure on the deal
+ * is frequently not the figure being reimbursed.
+ *
+ * This writes the deal, not just the expense: total_cost feeds cost-per-reach,
+ * the tier benchmarks and the KOL KPI. Filing a corrected number against Finance
+ * while leaving the analytics on the estimate would give the company two costs
+ * for one booking — which is the exact drift the expense link exists to prevent.
+ */
+export async function updateKolCosts(collabId: string, c: KolCostBreakdown): Promise<boolean> {
+  const db = supabase();
+  if (!db) return false;
+  const { error } = await db.from("kol_collaboration_history").update({
+    paid_fee: c.paid_fee,
+    food_cost: c.food_cost,
+    boost_cost: c.boost_cost,
+    other_cost: c.other_cost,
+    total_cost: costTotal(c),
+    updated_at: new Date().toISOString(),
+  }).eq("collab_id", collabId);
   return !error;
 }
 
