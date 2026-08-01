@@ -61,9 +61,19 @@ interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; gr
 
 export default function KolPage() {
   const brandVisibility = useBrandVisibility();
+  // A tab named in the URL is the sidebar deep-linking in from another page.
+  // Read before the stored view loads and handed to useStickyView as an
+  // override, so the link decides the tab rather than racing the memory of the
+  // last one — see the note there.
+  const [tabFromUrl] = useState<{ tab: Tab } | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    const w = new URLSearchParams(window.location.search).get("tab");
+    return w && TABS.some(([t]) => t === w) ? { tab: w as Tab } : undefined;
+  });
   // Filters stick per tab so leaving the page and coming back keeps the view.
   const [sticky, setSticky] = useStickyView<{ tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: typeof DEFAULT_DATE_FILTER }>(
     "kol", "", { tab: "list", brand: "all", campaign: "all", group: "campaign", date: DEFAULT_DATE_FILTER },
+    tabFromUrl,
   );
   const { tab, brand, campaign, group } = sticky;
   // The sidebar listener below is registered once, so it needs a live handle on
@@ -81,16 +91,14 @@ export default function KolPage() {
       window.dispatchEvent(new Event("kol:tab"));
     }
   };
-  // Deep link from the sidebar wins over the sticky view on first paint, and
-  // the sidebar can also switch tabs while we are already here (same pathname,
-  // so no remount happens on its own).
+  // The sidebar can switch tabs while we are already here — same pathname, so
+  // no remount happens on its own. (First paint is handled by tabFromUrl above.)
   useEffect(() => {
     const apply = (wanted: string | null) => {
       if (!wanted || !TABS.some(([t]) => t === wanted)) return;
       const cur = stickyRef.current;
       if (cur.tab !== wanted) setSticky({ ...cur, tab: wanted as Tab });
     };
-    apply(new URLSearchParams(window.location.search).get("tab"));
     const onNavTab = (e: Event) => {
       const detail = (e as CustomEvent<{ href?: string; tab?: string }>).detail;
       if (detail?.href === "/kol") apply(detail.tab ?? null);
