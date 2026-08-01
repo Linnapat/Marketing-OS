@@ -47,8 +47,16 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
         {!collapsed && <span className="sr-only">แจ้งเตือน</span>}
       </button>
 
+      {/* Panel placement follows the bell, which is the thing that moved. In the
+          sidebar footer it opens upward off the bottom-left, which is where the
+          panel was pinned. In a page header — top of the screen, hard right —
+          those same two rules opened it off the top and 210px past the right
+          edge, which put a horizontal scrollbar on the whole page and dragged
+          the header sideways with it. */}
       {open && (
-        <div className="absolute bottom-[46px] left-0 w-[320px] max-w-[86vw] rounded-[14px] overflow-hidden shadow-2xl z-50"
+        <div className={`absolute w-[320px] max-w-[86vw] rounded-[14px] overflow-hidden shadow-2xl z-50 ${
+          tone === "light" ? "top-[46px] right-0" : "bottom-[46px] left-0"
+        }`}
           style={{ background: "#fff", border: "1px solid #E5DECF" }}>
           <div className="flex items-center gap-2 px-4 py-[10px]" style={{ background: "#FBF1E9" }}>
             <span className="text-[12.5px] font-bold text-ink">แจ้งเตือน</span>
