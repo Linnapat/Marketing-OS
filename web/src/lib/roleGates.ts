@@ -68,6 +68,26 @@ export function canAssignCaption(role: string): boolean {
 }
 
 /**
+ * May this person SET UP the production pipeline — pick who draws the
+ * storyboard, submit it, decide whether the job needs a shoot, name the
+ * shooter and the shoot date?
+ *
+ * The creative side runs its own pipeline and the CMO covers, with one
+ * exception: the VDO Editor (CMO, 2026-08-02). The edit happens after the
+ * footage exists, so they read this block and wait on it rather than arrange
+ * it. They still claim the job and deliver the asset — those are theirs.
+ *
+ * Read-only, not hidden. "Who is drawing the storyboard" and "is there a shoot
+ * first" are the two facts an editor most needs before their own work can
+ * start; taking the controls away must not take the answers with them.
+ */
+export function canRunProductionPipeline(role: string): boolean {
+  const r = (role || "").trim();
+  if (r === "VDO Editor") return false;
+  return r === "CMO" || isCreativeSideRole(r);
+}
+
+/**
  * Nav entries kept out of a role's rail because they are not that role's job —
  * decluttering, not a permission. The Permissions matrix still decides who may
  * open what; these routes stay reachable by a direct link, so a campaign code
