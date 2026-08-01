@@ -12,6 +12,9 @@ export interface NavItem {
   /** Built in this session; others render a Coming-soon placeholder. */
   ready?: boolean;
   badge?: number;
+  /** Deep-links to a tab within `href`. Permissions and accent colours still
+   *  resolve from the plain href, so a tabbed page stays one module. */
+  tab?: string;
 }
 
 export interface NavGroup {
@@ -44,11 +47,22 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/content", label: "Content Plan", icon: CalendarDays, ready: true },
       { href: "/graphic", label: "Graphic Request", icon: Palette, ready: true },
-      { href: "/kol", label: "KOL", icon: Star, ready: true },
       { href: "/requests", label: "Requests", icon: Inbox, ready: false },
       { href: "/assets", label: "Assets", icon: FolderOpen, ready: true },
       { href: "/expenses", label: "Expenses", icon: Receipt, ready: true },
       { href: "/finance", label: "Finance", icon: Wallet, ready: true },
+    ],
+  },
+  {
+    // Its own heading rather than one line under Plan & Produce: KOL is four
+    // distinct jobs (request, plan, results, roster) and burying them behind a
+    // tab strip meant the roster in particular was never opened.
+    label: "KOL",
+    items: [
+      { href: "/kol", tab: "list", label: "Request List", icon: Inbox, ready: true },
+      { href: "/kol", tab: "plan", label: "KOL Plan", icon: CalendarDays, ready: true },
+      { href: "/kol", tab: "performance", label: "Performance", icon: BarChart3, ready: true },
+      { href: "/kol", tab: "database", label: "KOL Library", icon: Star, ready: true },
     ],
   },
   {

@@ -143,15 +143,28 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
       )}
 
       {/* Posting window — after the monthly split so per-month post dates set
-          the overall range (auto = earliest → latest of the month rows). */}
+          the overall range (auto = earliest → latest of the month rows).
+          Required: a brief with no posting window forces the specialist to go
+          back and ask, which is where most of the waiting time went. */}
       <div>
-        <label className={label}>Posting Start{hasMonthlyDates && <span className="text-faint font-normal"> · auto จากวัน Post รายเดือน</span>}</label>
-        <DatePicker value={item.postingStart || null} onChange={(v) => onChange({ postingStart: v })} max={item.postingEnd || undefined} invalid={!!outOfRange?.(item.postingStart)} />
+        <label className={label}>
+          Posting Start <span className="text-status-red font-bold">*</span>
+          {hasMonthlyDates && <span className="text-faint font-normal"> · auto จากวัน Post รายเดือน</span>}
+        </label>
+        <DatePicker value={item.postingStart || null} onChange={(v) => onChange({ postingStart: v })} max={item.postingEnd || undefined} invalid={!item.postingStart || !!outOfRange?.(item.postingStart)} />
       </div>
       <div>
-        <label className={label}>Posting End{hasMonthlyDates && <span className="text-faint font-normal"> · auto จากวัน Post รายเดือน</span>}</label>
-        <DatePicker value={item.postingEnd || null} onChange={(v) => onChange({ postingEnd: v })} min={item.postingStart || undefined} />
+        <label className={label}>
+          Posting End <span className="text-status-red font-bold">*</span>
+          {hasMonthlyDates && <span className="text-faint font-normal"> · auto จากวัน Post รายเดือน</span>}
+        </label>
+        <DatePicker value={item.postingEnd || null} onChange={(v) => onChange({ postingEnd: v })} min={item.postingStart || undefined} invalid={!item.postingEnd} />
       </div>
+      {(!item.postingStart || !item.postingEnd) && (
+        <div className="md:col-span-3 -mt-1 text-[11.5px] font-semibold" style={{ color: "#B33A2E" }}>
+          ⚠ ต้องระบุช่วงวันที่ต้องการให้โพสต์ — ไม่งั้น specialist ต้องกลับมาถามใหม่ก่อนเริ่มทาบ KOL
+        </div>
+      )}
       <div><label className={label}>Owner <span className="text-faint font-normal">· KOL team</span></label><OwnerSelect value={item.owner} onChange={(v) => onChange({ owner: v })} team="KOL" /></div>
 
       {/* Engagement metric breakdown */}

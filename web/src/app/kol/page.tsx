@@ -2,7 +2,7 @@
 
 import { toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
-import { CSSProperties, useEffect, useMemo, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -22,6 +22,7 @@ import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
 import { fetchKolScorecards, createKolWithChannels, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
+import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
 import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
@@ -51,7 +52,9 @@ function labelDate(iso: string): string { if (!iso) return "TBD"; const [, m, d]
 /** ISO date n days from today — used for the ≤3-day approval due date. */
 function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 /** Stages where the specialist can still submit work from the row. */
-const TABS = [["list", "KOL / Creator Request List"], ["pipeline", "Status"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
+// "Status" retired — its lanes duplicated the Status Board, and the request
+// list already carries the same stage badges.
+const TABS = [["list", "KOL / Creator Request List"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: DateFilter }
@@ -63,7 +66,39 @@ export default function KolPage() {
     "kol", "", { tab: "list", brand: "all", campaign: "all", group: "campaign", date: DEFAULT_DATE_FILTER },
   );
   const { tab, brand, campaign, group } = sticky;
-  const setTab = (v: Tab) => setSticky({ ...sticky, tab: v });
+  // The sidebar listener below is registered once, so it needs a live handle on
+  // the current view rather than the value captured at mount.
+  const stickyRef = useRef(sticky);
+  stickyRef.current = sticky;
+  const setTab = (v: Tab) => {
+    setSticky({ ...sticky, tab: v });
+    // Keep ?tab= in step so the sidebar highlights the right entry and the URL
+    // can be shared. replaceState, not a route push — the page never remounts.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", v);
+      window.history.replaceState(null, "", url);
+      window.dispatchEvent(new Event("kol:tab"));
+    }
+  };
+  // Deep link from the sidebar wins over the sticky view on first paint, and
+  // the sidebar can also switch tabs while we are already here (same pathname,
+  // so no remount happens on its own).
+  useEffect(() => {
+    const apply = (wanted: string | null) => {
+      if (!wanted || !TABS.some(([t]) => t === wanted)) return;
+      const cur = stickyRef.current;
+      if (cur.tab !== wanted) setSticky({ ...cur, tab: wanted as Tab });
+    };
+    apply(new URLSearchParams(window.location.search).get("tab"));
+    const onNavTab = (e: Event) => {
+      const detail = (e as CustomEvent<{ href?: string; tab?: string }>).detail;
+      if (detail?.href === "/kol") apply(detail.tab ?? null);
+    };
+    window.addEventListener("nav:tab", onNavTab);
+    return () => window.removeEventListener("nav:tab", onNavTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const setBrand = (v: BrandFilterValue) => setSticky({ ...sticky, brand: v });
   const setCampaign = (v: string) => setSticky({ ...sticky, campaign: v });
   const setGroup = (v: "list" | "campaign") => setSticky({ ...sticky, group: v });
@@ -292,7 +327,6 @@ export default function KolPage() {
         {tab === "list" && group === "campaign" && (
           <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />
         )}
-        {tab === "pipeline" && <PipelineList kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} />}
         {tab === "database" && <KolDatabase />}
@@ -437,45 +471,9 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
   );
 }
 
-function PipelineList({ kols, brand, onOpen }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void }) {
-  const stages = [...ALL_STAGES, "Paused"];
-  const groups = stages
-    .map((st) => ({ stage: st, kols: kols.filter((k) => normalizeStage(k.status) === st && (brand === "all" || k.b === brand)) }))
-    .filter((g) => g.kols.length > 0);
-  return (
-    <div className="flex flex-col gap-3">
-      {groups.map((g) => {
-        const totalFee = g.kols.reduce((s, k) => s + k.fee, 0);
-        return (
-          <div key={g.stage} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-line4">
-              <StatusBadge tone={kolTone(g.stage)}>{g.stage}</StatusBadge>
-              <span className="text-[12px] text-faint font-semibold">{g.kols.length}</span>
-              <span className="text-[12px] text-faint ml-auto">{baht(totalFee, { compact: true })}</span>
-            </div>
-            {g.kols.map((k) => {
-              const pi = platformIcon(k.plat);
-              return (
-                <button key={k.id} onClick={() => onOpen(k)} className="w-full grid grid-cols-[2fr_1.4fr_1fr_1fr] gap-y-1 px-5 py-3 items-center text-left border-b border-line4 last:border-0 hover:bg-ivory/60">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
-                    <span className="w-[18px] h-[18px] rounded-[5px] flex items-center justify-center text-[8px] font-bold" style={{ background: pi.bg, color: pi.fg }}>{pi.icon}</span>
-                    {k.name}
-                  </span>
-                  <span className="text-[12px] text-muted">{k.campaign}</span>
-                  <span className="text-[12px] text-muted">{k.owner}</span>
-                  <span className="text-[12.5px] font-semibold text-ink">{baht(k.fee, { compact: true })}</span>
-                </button>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void; budgetOf?: (campaign: string) => number }) {
   const list = kols.filter((k) => brand === "all" || k.b === brand);
+  const [planView, setPlanView] = useState<"list" | "month" | "week">("month");
   // Per-campaign budget context for the deal — from the campaign's KOL Plan.
   const budgetRows = useMemo(() => {
     const m = new Map<string, number>();
@@ -529,9 +527,19 @@ function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandF
         </div>
       </div>
 
-      {/* Deal timeline — grouped by post due date */}
+      {/* Deal timeline — list, or laid out on a calendar to catch collisions */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-[13px] font-bold text-ink">Deal Plan</span>
+        <Segmented<"list" | "month" | "week">
+          value={planView}
+          onChange={setPlanView}
+          options={[{ value: "list", label: "รายการ" }, { value: "month", label: "เดือน" }, { value: "week", label: "สัปดาห์" }]}
+        />
+      </div>
+      {planView !== "list" && <KolPlanCalendar kols={list} mode={planView} onOpen={onOpen} />}
+      {planView === "list" && (
       <div className="bg-surface border border-line rounded-cardLg p-5">
-        <div className="text-[13px] font-bold mb-4">Deal Plan — by post due date</div>
+        <div className="text-[13px] font-bold mb-4">เรียงตามวันครบกำหนดโพสต์</div>
         <div className="flex flex-col gap-2">
           {[...list].sort((a, b) => a.postDueDate.localeCompare(b.postDueDate)).map((k) => {
             const pi = platformIcon(k.plat);
@@ -552,6 +560,7 @@ function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandF
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -1091,7 +1100,10 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
   // Requester specifies the requirement only — the real page (and the master-DB
   // link) is proposed later by the KOL specialist, so there's no name/handle here.
   const count = Math.max(1, item.count || 1);
-  const canCreate = count > 0;
+  // Posting window is mandatory: without it the specialist cannot negotiate a
+  // date with the creator and the brief bounces straight back to the requester.
+  const hasWindow = Boolean(item.postingStart && item.postingEnd);
+  const canCreate = count > 0 && hasWindow;
   const syncOn = Boolean(campaign.trim());
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -1179,7 +1191,9 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
             Requester is fixed to login, and the KOL specialist will take over after this brief is sent.
           </div>
         </div>
-        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{busy ? "Creating…" : "Send KOL Request"}</button>
+        <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">
+          {busy ? "Creating…" : !hasWindow ? "ระบุช่วงวันที่ต้องการโพสต์ก่อน" : "Send KOL Request"}
+        </button>
       </div>
     </div>
   );
