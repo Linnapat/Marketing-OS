@@ -43,7 +43,7 @@ const fmtWhen = (iso: string) => {
 };
 
 export default function TrashPage() {
-  const { can } = useRole();
+  const { can, atLeast } = useRole();
   const [entries, setEntries] = useState<TrashEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState<boolean | null>(null);
@@ -72,6 +72,16 @@ export default function TrashPage() {
     const mod = KIND_MODULE[e.kind];
     return (!mod || can(mod)) && (kind === "all" || e.kind === kind);
   }), [entries, can, kind]);
+
+  // Seeing the row was gated; acting on it was not. Six of the ten roles sit at
+  // View on Content, and every one of them was being offered ลบถาวร on a post
+  // they may not edit in Content Plan — a permanent delete of someone else's
+  // work, reached through the one screen where the module's own rules do not
+  // apply. Restoring counts as writing too: it puts the row back in the module.
+  const canWrite = (k: TrashKind) => {
+    const mod = KIND_MODULE[k];
+    return !mod || atLeast(mod, "Edit");
+  };
 
   const counts = useMemo(() => {
     const out: Record<string, number> = { all: 0 };
@@ -168,14 +178,20 @@ export default function TrashPage() {
               <StatusBadge tone={e.daysLeft <= 1 ? "red" : e.daysLeft <= 3 ? "gold" : "neutral"}>
                 {e.daysLeft <= 0 ? "กำลังจะถูกล้าง" : `เหลือ ${e.daysLeft} วัน`}
               </StatusBadge>
-              <button onClick={() => void restore(e)} disabled={busyId === e.id}
-                className="inline-flex items-center gap-[5px] text-[12px] font-bold rounded-[9px] px-3 py-[7px] text-white bg-panel disabled:opacity-40">
-                <RotateCcw size={13} /> กู้คืน
-              </button>
-              <button onClick={() => void purge(e)} disabled={busyId === e.id}
-                className="inline-flex items-center gap-[5px] text-[12px] font-bold rounded-[9px] px-3 py-[7px] border border-line2 bg-surface text-status-red disabled:opacity-40">
-                <Trash2 size={13} /> ลบถาวร
-              </button>
+              {canWrite(e.kind) ? (
+                <>
+                  <button onClick={() => void restore(e)} disabled={busyId === e.id}
+                    className="inline-flex items-center gap-[5px] text-[12px] font-bold rounded-[9px] px-3 py-[7px] text-white bg-panel disabled:opacity-40">
+                    <RotateCcw size={13} /> กู้คืน
+                  </button>
+                  <button onClick={() => void purge(e)} disabled={busyId === e.id}
+                    className="inline-flex items-center gap-[5px] text-[12px] font-bold rounded-[9px] px-3 py-[7px] border border-line2 bg-surface text-status-red disabled:opacity-40">
+                    <Trash2 size={13} /> ลบถาวร
+                  </button>
+                </>
+              ) : (
+                <span className="text-[11.5px] text-faint">ดูได้อย่างเดียว</span>
+              )}
             </div>
           ))}
         </div>
