@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { baht } from "@/lib/format";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
@@ -18,9 +18,11 @@ import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
   fetchKolNotes, addKolNote, deleteKolNote, setKolPartner, confirmChannelFollowers,
-  setAgreedPostDate, attributeDelay, createKolExpenseRequest, followerFreshness, daysLate,
+  setAgreedPostDate, attributeDelay, createKolExpenseRequest, updateKolCosts, costTotal,
+  followerFreshness, daysLate,
   FOLLOWER_STALE_DAYS, DELAY_REASONS,
   KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote, KolChannel, DelayReason,
+  KolCostBreakdown,
 } from "@/lib/db/kolScorecard";
 
 /** Reach we bought per baht spent, versus what this tier normally costs us. */
@@ -182,35 +184,150 @@ function DeliveryRow({ engagement, author }: { engagement: KolEngagementRow; aut
  * brand and amount travel with them, and the link back means Finance and KOL are
  * looking at one number instead of two that drift.
  */
-function ExpenseRow({ engagement, kolName, requester }: {
-  engagement: KolEngagementRow; kolName: string; requester: string;
-}) {
-  const [linked, setLinked] = useState(engagement.expense_request_id);
-  const [busy, setBusy] = useState(false);
-  const amount = engagement.total_cost ?? 0;
-  // Only a real approved figure can be exceeded. Everything imported from the
-  // sheet has none, so those stay silent rather than warning on a guess.
-  const approved = engagement.approved_amount;
-  const over = approved != null && approved > 0 && amount > approved * (1 + OVERSPEND_TOLERANCE);
-  if (amount <= 0) return null;
+const COST_FIELDS: { key: keyof KolCostBreakdown; label: string; hint?: string }[] = [
+  { key: "paid_fee", label: "ค่าตัว" },
+  { key: "food_cost", label: "ค่าอาหารจริง", hint: "ยอดตามบิลจริง ไม่ใช่ที่ประเมินไว้ตอนดีล" },
+  { key: "boost_cost", label: "ค่า boost" },
+  { key: "other_cost", label: "อื่นๆ" },
+];
 
-  const create = async () => {
+/**
+ * Check the numbers before filing, and fix the food support while you are here.
+ *
+ * The button used to file straight from the stored total. Food support is booked
+ * as an estimate and settles when the bill arrives — across the imported deals it
+ * is 30% of what was actually paid — so the one figure most likely to be wrong at
+ * this moment was the one nobody was being shown.
+ *
+ * Corrections write back to the deal as well as the request. A number fixed only
+ * on the Finance side would leave cost-per-reach and the tier benchmarks running
+ * on the estimate, which is the drift the expense link exists to stop.
+ */
+function ExpenseReviewSheet({ engagement, kolName, requester, onClose, onFiled }: {
+  engagement: KolEngagementRow; kolName: string; requester: string;
+  onClose: () => void; onFiled: (id: string, costs: KolCostBreakdown) => void;
+}) {
+  const [costs, setCosts] = useState<KolCostBreakdown>({
+    paid_fee: engagement.paid_fee ?? 0,
+    food_cost: engagement.food_cost ?? 0,
+    boost_cost: engagement.boost_cost ?? 0,
+    other_cost: engagement.other_cost ?? 0,
+  });
+  const [busy, setBusy] = useState(false);
+  const total = costTotal(costs);
+  const wasTotal = engagement.total_cost ?? 0;
+  const changed = total !== wasTotal;
+  const approved = engagement.approved_amount;
+  const over = approved != null && approved > 0 && total > approved * (1 + OVERSPEND_TOLERANCE);
+
+  const submit = async () => {
     setBusy(true);
     try {
+      // Correct the deal first. If filing then fails the numbers are still right;
+      // the other order would leave Finance holding a figure the deal denies.
+      if (changed && !(await updateKolCosts(engagement.collab_id, costs))) {
+        toastError("แก้ตัวเลขในดีลไม่สำเร็จ — ยังไม่ได้ส่งใบเบิก");
+        return;
+      }
       const res = await createKolExpenseRequest({
         collabId: engagement.collab_id,
         brand: engagement.brand,
         campaign: engagement.campaign_name,
         campaignId: engagement.campaign_id,
-        amount,
+        amount: total,
         kolName,
         requester,
       });
-      // "ลองใหม่อีกครั้ง" was the wrong advice for every way this fails —
-      // a permission or a missing name does not fix itself on a second click.
-      if ("id" in res) setLinked(res.id); else toastError(res.error);
+      if ("id" in res) { onFiled(res.id, costs); onClose(); }
+      else toastError(res.error);
     } finally { setBusy(false); }
   };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,16,0.45)" }}
+      onClick={onClose}>
+      <div className="bg-surface rounded-cardLg border border-line w-full max-w-[430px] max-h-[90vh] overflow-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-line4">
+          <div className="text-[14px] font-extrabold text-ink">ตรวจก่อนส่งใบเบิก</div>
+          <div className="text-[11.5px] text-faint mt-[2px]">
+            {[kolName, engagement.campaign_name, engagement.brand ? brandName(engagement.brand) : null, engagement.month_key]
+              .filter(Boolean).join(" · ")}
+          </div>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-[10px]">
+          {COST_FIELDS.map((f) => (
+            <label key={f.key} className="flex items-center gap-3">
+              <span className="text-[12px] font-semibold text-muted w-[104px] flex-shrink-0">
+                {f.label}
+                {f.hint && <span className="block text-[10px] font-normal text-faint leading-tight mt-[1px]">{f.hint}</span>}
+              </span>
+              <input
+                type="number" min={0} inputMode="numeric"
+                value={costs[f.key]}
+                onChange={(e) => setCosts({ ...costs, [f.key]: Math.max(0, Number(e.target.value) || 0) })}
+                className="flex-1 text-[13px] font-semibold text-ink text-right bg-white border border-line2 rounded-[9px] px-3 py-[7px] outline-none focus:border-accent"
+              />
+            </label>
+          ))}
+
+          <div className="flex items-center justify-between border-t border-line4 pt-[10px] mt-[2px]">
+            <span className="text-[12.5px] font-bold text-ink">รวมที่จะเบิก</span>
+            <span className="text-[17px] font-extrabold text-ink">{baht(total)}</span>
+          </div>
+
+          {changed && (
+            <div className="text-[11px] rounded-[8px] px-[10px] py-[7px]"
+              style={{ background: "#EEF1F8", border: "1px solid #CBD6EA", color: "#3E5C9A" }}>
+              เดิมบันทึกไว้ {baht(wasTotal)} — ตัวเลขใหม่จะอัปเดตต้นทุนของดีลนี้ด้วย
+              จึงมีผลกับ Cost/reach และค่าเฉลี่ยของเทียร์
+            </div>
+          )}
+
+          {approved != null && approved > 0 && (
+            <div className="text-[11px] text-faint">อนุมัติไว้ {baht(approved)}</div>
+          )}
+          {over && (
+            // A warning, not a block: going over can be the right call. What must
+            // not happen is going over without anyone noticing.
+            <div className="text-[11px] rounded-[8px] px-[10px] py-[7px] font-semibold"
+              style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
+              ⚠ เกินยอดที่อนุมัติ {baht(total - approved!)} (+{Math.round(((total / approved!) - 1) * 100)}%) —
+              เบิกได้ แต่ควรแจ้งผู้อนุมัติก่อน
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-line4 flex items-center justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="text-[12.5px] font-bold text-muted border border-line2 rounded-[10px] px-4 py-[8px] bg-white disabled:opacity-40">
+            ยกเลิก
+          </button>
+          <button onClick={submit} disabled={busy || total <= 0}
+            className="text-[12.5px] font-bold text-white rounded-[10px] px-4 py-[8px] bg-panel disabled:opacity-40">
+            {busy ? "กำลังส่ง…" : `ส่งใบเบิก ${baht(total)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpenseRow({ engagement, kolName, requester }: {
+  engagement: KolEngagementRow; kolName: string; requester: string;
+}) {
+  const [linked, setLinked] = useState(engagement.expense_request_id);
+  const [open, setOpen] = useState(false);
+  // Held locally so the row reflects a correction made in the sheet without
+  // re-fetching the whole profile.
+  const [row, setRow] = useState(engagement);
+  const amount = row.total_cost ?? 0;
+  // Only a real approved figure can be exceeded. Everything imported from the
+  // sheet has none, so those stay silent rather than warning on a guess.
+  const approved = row.approved_amount;
+  const over = approved != null && approved > 0 && amount > approved * (1 + OVERSPEND_TOLERANCE);
+  if (amount <= 0) return null;
 
   return (
     <div className="mt-1 text-[11px] flex flex-col gap-1">
@@ -221,24 +338,33 @@ function ExpenseRow({ engagement, kolName, requester }: {
             สร้างแล้ว · #{linked} ↗
           </Link>
         ) : (
-          <button onClick={create} disabled={busy}
-            className="font-bold text-accent border border-line2 rounded-[7px] px-[9px] py-[2px] bg-white hover:border-accent disabled:opacity-40">
-            {busy ? "กำลังสร้าง…" : `สร้างใบเบิก ${baht(amount, { compact: true })}`}
+          <button onClick={() => setOpen(true)}
+            className="font-bold text-accent border border-line2 rounded-[7px] px-[9px] py-[2px] bg-white hover:border-accent">
+            ตรวจ &amp; เบิก {baht(amount, { compact: true })}
           </button>
         )}
         {approved != null && (
           <span className="text-faint">· อนุมัติไว้ {baht(approved, { compact: true })}</span>
         )}
-        {engagement.paid_status && <span className="text-faint">· สถานะจ่าย {engagement.paid_status}</span>}
+        {row.paid_status && <span className="text-faint">· สถานะจ่าย {row.paid_status}</span>}
       </div>
       {over && (
-        // A warning, not a block: going over can be the right call. What must not
-        // happen is going over without anyone noticing.
         <div className="rounded-[8px] px-[10px] py-[6px] font-semibold"
           style={{ background: TONE.warn.bg, border: `1px solid ${TONE.warn.border}`, color: TONE.warn.fg }}>
           ⚠ เกินยอดที่อนุมัติ {baht(amount - approved!, { compact: true })}
           {` (+${Math.round(((amount / approved!) - 1) * 100)}%)`} — เบิกได้ แต่ควรแจ้งผู้อนุมัติก่อน
         </div>
+      )}
+      {open && (
+        <ExpenseReviewSheet
+          engagement={row} kolName={kolName} requester={requester}
+          onClose={() => setOpen(false)}
+          onFiled={(id, costs) => {
+            setLinked(id);
+            setRow({ ...row, ...costs, total_cost: costTotal(costs) });
+            toastSuccess(`ส่งใบเบิก #${id} แล้ว`);
+          }}
+        />
       )}
     </div>
   );
