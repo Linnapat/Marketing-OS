@@ -281,71 +281,70 @@ function GraphicPageInner() {
             </div>
           }
         >
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-4 flex-wrap">
-                <label className="flex items-center gap-[7px]">
-                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Brand</span>
-                  <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
-                    <option value="all">{brandVisibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
-                    {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
-                  </select>
-                </label>
-                <label className="flex items-center gap-[7px]">
-                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">Designer</span>
-                  <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE}>
-                    <option value="all">All</option>
-                    {designerOpts.map((d) => <option key={d} value={d}>{d}</option>)}
-                    <option value="Unassigned">Unassigned</option>
-                  </select>
-                </label>
-                <span className="text-[12px] font-semibold text-faint">{items.length} requests in view</span>
-                {/* The brief cutoff lives here, not in Settings: Creative
-                    Leader owns the queue's capacity but has no Settings access
-                    at all (Permissions matrix: Settings = none), so putting it
-                    there would have left the control reachable by nobody but
-                    the CMO. Everyone sees the date — it is the deadline they
-                    are working to — and only the people who clear rush briefs
-                    can move it. */}
-                <label className="flex items-center gap-[7px]" title="งานที่ส่งมอบเดือนถัดไป ต้องบรีฟเข้ามาภายในวันที่นี้ของเดือนก่อนหน้า">
-                  <span className="text-[11px] font-bold text-faint uppercase tracking-[0.05em]">ปิดรับบรีฟ</span>
-                  {canEditCutoff ? (
-                    <>
-                      <input
-                        type="number" min={0} max={28} value={cutoffDay}
-                        onChange={(e) => { setCutoffDay(Math.max(0, Math.min(28, Number(e.target.value) || 0))); setCutoffDirty(true); }}
-                        className="w-[64px] text-[12.5px] px-[9px] py-[6px] rounded-[9px] border border-line2 bg-ivory outline-none"
-                      />
-                      <span className="text-[11.5px] text-faint">ของทุกเดือน</span>
-                      {cutoffDirty && (
-                        <button onClick={saveCutoff} disabled={cutoffBusy}
-                          className="text-[11.5px] font-bold text-white bg-panel rounded-[8px] px-[10px] py-[5px] disabled:opacity-40">
-                          {cutoffBusy ? "…" : "Save"}
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-[12px] font-semibold text-muted">
-                      {cutoffDay === 0 ? "ไม่กำหนด" : `วันที่ ${cutoffDay} ของทุกเดือน`}
-                    </span>
-                  )}
-                </label>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <SavedViewsBar<GraphicSavedView>
-                  pageKey="graphic"
-                  current={{ view, brand, designer, date }}
-                  onApply={(v) => { setView(v.view); setBrand(v.brand); setDesigner(v.designer); setDate(v.date); }}
-                />
-                <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "campaign", label: "By Campaign" }, { value: "shoot", label: "🎬 Shoot Schedule" }]} />
-              </div>
-            </div>
+          {/* Filters, period and view toggle share one wrapping row. Three
+              stacked rows plus the summary card below were pushing the first
+              request past 70% of the screen, and the caps labels were most of
+              the height — a select already reading "All Brands" says "Brand". */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE}>
+              <option value="all">{brandVisibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
+              {brandOptions.map((id) => <option key={id} value={id}>{BRANDS[id].name}</option>)}
+            </select>
+            <select value={designer} onChange={(e) => setDesigner(e.target.value)} style={SELECT_STYLE} aria-label="Designer">
+              <option value="all">ดีไซเนอร์ทุกคน</option>
+              {designerOpts.map((d) => <option key={d} value={d}>{d}</option>)}
+              <option value="Unassigned">Unassigned</option>
+            </select>
             <DateFilterBar value={date} onChange={setDate} />
+            {/* The brief cutoff lives here, not in Settings: Creative
+                Leader owns the queue's capacity but has no Settings access
+                at all (Permissions matrix: Settings = none), so putting it
+                there would have left the control reachable by nobody but
+                the CMO. Everyone sees the date — it is the deadline they
+                are working to — and only the people who clear rush briefs
+                can move it. Kept visually apart from the filters beside it:
+                it changes the queue for everyone, it does not filter a view. */}
+            <label className="flex items-center gap-[6px] rounded-[11px] border border-line2 bg-ivory px-2.5 py-[5px]"
+              title="งานที่ส่งมอบเดือนถัดไป ต้องบรีฟเข้ามาภายในวันที่นี้ของเดือนก่อนหน้า">
+              <span className="text-[11px] font-bold text-faint">ปิดรับบรีฟ</span>
+              {canEditCutoff ? (
+                <>
+                  <input
+                    type="number" min={0} max={28} value={cutoffDay}
+                    onChange={(e) => { setCutoffDay(Math.max(0, Math.min(28, Number(e.target.value) || 0))); setCutoffDirty(true); }}
+                    className="w-[46px] text-[12px] px-[7px] py-[3px] rounded-[8px] border border-line2 bg-white outline-none"
+                  />
+                  <span className="text-[11px] text-faint">ของทุกเดือน</span>
+                  {cutoffDirty && (
+                    <button onClick={saveCutoff} disabled={cutoffBusy}
+                      className="text-[11px] font-bold text-white bg-panel rounded-[8px] px-[9px] py-[4px] disabled:opacity-40">
+                      {cutoffBusy ? "…" : "Save"}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="text-[11.5px] font-semibold text-muted">
+                  {cutoffDay === 0 ? "ไม่กำหนด" : `วันที่ ${cutoffDay} ของทุกเดือน`}
+                </span>
+              )}
+            </label>
+            <div className="ml-auto flex items-center gap-2 flex-wrap">
+              <span className="text-[11.5px] font-semibold text-faint">{items.length} requests in view</span>
+              <SavedViewsBar<GraphicSavedView>
+                pageKey="graphic"
+                current={{ view, brand, designer, date }}
+                onApply={(v) => { setView(v.view); setBrand(v.brand); setDesigner(v.designer); setDate(v.date); }}
+              />
+              <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "campaign", label: "By Campaign" }, { value: "shoot", label: "🎬 Shoot Schedule" }]} />
+            </div>
           </div>
         </CampaignCommandBar>
 
         <ModuleSummaryCard
-          title="Graphic Request Summary ✨"
+          // Two counts sit 60px apart on this page — this one follows the
+          // filters above, the assignment queue below counts every month. Both
+          // were unlabelled, so the page appeared to contradict itself.
+          title="Graphic Request Summary ✨ · ตามตัวกรองด้านบน"
           titleClassName="text-[#7A5710]"
           style={{
             background: "linear-gradient(180deg, #F4D48D 0%, #E7BE67 100%)",
@@ -393,6 +392,10 @@ function GraphicPageInner() {
             <span className="text-[11px] w-3" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>{queueOpen ? "▾" : "▸"}</span>
             <span className="text-[13px] font-extrabold" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
               🙋 รอมอบหมาย {queueStats.total} งาน
+            </span>
+            <span className="text-[10.5px] font-semibold px-[7px] py-[1px] rounded-pill bg-white/70"
+              style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
+              ทุกเดือน · ไม่ตามตัวกรอง
             </span>
             <span className="text-[11.5px] font-semibold" style={{ color: queueStats.stuck > 0 ? AGE_META.stuck.fg : AGE_META.slow.fg }}>
               {queueStats.stuck > 0
@@ -1118,6 +1121,10 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
   const [campaign, setCampaign] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  // Campaigns arrive async. Without this flag an empty list reads the same
+  // while loading as when there genuinely are none, and the picker told users
+  // "No campaigns for this brand" for a brand that has eight.
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [approver, setApprover] = useState("");
   const { member, user } = useAuth();
   const requester = member?.name || user?.email?.split("@")[0] || "You";
@@ -1146,7 +1153,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
   const [posts, setPosts] = useState<ContentItem[]>([]);
   useEffect(() => {
     let alive = true;
-    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
+    fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {}).finally(() => { if (alive) setCampaignsLoaded(true); });
     fetchAllBriefs().then((b) => { if (alive) setBriefs(b); }).catch(() => {});
     fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
@@ -1320,7 +1327,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
             <div>
               <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-                <option value="">{brandCampaigns.length ? "Select campaign…" : "No campaigns for this brand"}</option>
+                <option value="">{!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : brandCampaigns.length ? "Select campaign…" : "แบรนด์นี้ยังไม่มีแคมเปญ"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>

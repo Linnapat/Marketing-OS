@@ -170,6 +170,32 @@ export async function saveJsonSetting<T>(key: string, label: string, value: T): 
   assertDbOk(error, `Could not save ${label}`);
 }
 
+/**
+ * Settings writes brands to org_settings.brands_config, but campaigns, expenses,
+ * KOL engagements and content all carry `brand text references brands(id)`. A
+ * brand that exists only in the config is selectable everywhere and savable
+ * nowhere — three of them had reached production, and picking one produced a
+ * foreign-key violation rather than a message anyone could act on.
+ *
+ * So the row is mirrored on every save. Failure here is not fatal to the save
+ * itself: the config is the source of truth for naming and colour, this is the
+ * key other tables point at.
+ */
+export async function syncBrandRows(brands: BrandCfg[]): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const rows = brands
+    .filter((b) => (b.key ?? "").trim() && (b.name ?? "").trim())
+    .map((b) => ({
+      id: b.key.trim(),
+      name: b.name.trim(),
+      color: b.color || "#9A9387",
+      branch_list: [...(b.branchList ?? [])],
+    }));
+  if (!rows.length) return;
+  await db.from("brands").upsert(rows, { onConflict: "id" });
+}
+
 export async function fetchBrandConfigs(): Promise<BrandCfg[]> {
   const saved = await fetchJsonSetting<BrandCfg[]>("brands_config").catch(() => null);
   if (saved?.length) {

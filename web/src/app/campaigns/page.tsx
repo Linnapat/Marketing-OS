@@ -260,49 +260,49 @@ export default function CampaignsPage() {
             </>
           )}
         >
-          <div className="mb-2 flex justify-end">
-            <SavedViewsBar<{ brand: BrandFilterValue; search: string; date: DateFilter }>
-              pageKey="campaigns"
-              current={{ brand, search, date }}
-              onApply={(v) => { setBrand(v.brand); setSearch(v.search); setDate(v.date); }}
-            />
-          </div>
-          <DateFilterBar value={date} onChange={setDate} />
-          <div className="mt-2 grid gap-3 md:grid-cols-[240px_1fr]">
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Brand</span>
-              <select
-                value={brand}
-                onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
-                className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] cursor-pointer outline-none"
-                style={{ borderColor: "#ECEAF2" }}
-              >
-                <option value="all">{brandVisibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
-                {brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}
-              </select>
+          {/* One wrapping row of chips instead of four stacked labelled fields.
+              The controls were taking over half the first screen before a single
+              campaign appeared; the caps labels were the bulk of it, and a select
+              reading "All Brands" next to a box saying "ค้นชื่อแคมเปญ…" does not
+              need one. Same pattern as the Status Board. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นชื่อแคมเปญ…"
+              className="text-[12px] font-semibold text-ink bg-white border rounded-[11px] px-3 py-[7px] outline-none w-[190px]"
+              style={{ borderColor: "#ECEAF2" }} />
+            <select
+              value={brand}
+              onChange={(e) => setBrand(e.target.value as BrandFilterValue)}
+              className="text-[12px] font-semibold text-ink bg-white border rounded-[11px] px-3 py-[7px] cursor-pointer outline-none"
+              style={{ borderColor: "#ECEAF2" }}
+            >
+              <option value="all">{brandVisibility.allowAll ? "All Brands" : "ทุกแบรนด์ที่ดูแล"}</option>
+              {brandOptions.map((b) => <option key={b} value={b}>{configuredBrandName(b)}</option>)}
+            </select>
+            <DateFilterBar value={date} onChange={setDate} />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold" style={{ color: "#9D96AC" }}>จัดกลุ่ม</span>
+              <div className="flex gap-1 p-[2px] rounded-[11px] bg-white border" style={{ borderColor: "#ECEAF2" }}>
+                {([["status", "สถานะ"], ["brand", "แบรนด์"]] as [GroupBy, string][]).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setGroupBy(key)}
+                    className="text-[11.5px] font-bold rounded-[9px] px-2.5 py-[5px] transition"
+                    style={groupBy === key
+                      ? { background: "#6C5CE7", color: "#fff" }
+                      : { background: "transparent", color: "#6B6577" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Search</span>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นชื่อแคมเปญ…"
-                className="text-[12px] font-semibold text-ink bg-white border rounded-[14px] px-3.5 py-[10px] outline-none w-full" style={{ borderColor: "#ECEAF2" }} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: "#9D96AC" }}>Group by</span>
-            <div className="flex gap-1 p-[3px] rounded-[12px] bg-white border" style={{ borderColor: "#ECEAF2" }}>
-              {([["status", "สถานะ"], ["brand", "แบรนด์"]] as [GroupBy, string][]).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setGroupBy(key)}
-                  className="text-[12px] font-bold rounded-[9px] px-3 py-[6px] transition"
-                  style={groupBy === key
-                    ? { background: "#6C5CE7", color: "#fff" }
-                    : { background: "transparent", color: "#6B6577" }}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="ml-auto">
+              <SavedViewsBar<{ brand: BrandFilterValue; search: string; date: DateFilter }>
+                pageKey="campaigns"
+                current={{ brand, search, date }}
+                onApply={(v) => { setBrand(v.brand); setSearch(v.search); setDate(v.date); }}
+              />
             </div>
           </div>
         </CampaignCommandBar>
@@ -341,7 +341,7 @@ export default function CampaignsPage() {
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
                     style={{ gridTemplateColumns: COLS }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center">Ready</div><div>Actions</div>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center" title="พร้อมเริ่มไหม — ✅ พร้อม · ⚠️ ยังขาดของ · ⛔ ติดปัญหา">Ready</div><div>Actions</div>
                   </div>
                   {g.rows.map((c) => (
                     <div
@@ -386,9 +386,16 @@ export default function CampaignsPage() {
                         {visitGoal(c) ? num(visitGoal(c)) : "—"}
                       </div>
                       {/* Readiness as a single symbol (label on hover) */}
+                      {/* Symbol + word: the icon alone was unreadable without
+                          hovering every row to find out what it meant. */}
                       <div className="md:text-center" title={READINESS_META[c.readiness].label}>
-                        <span className="text-[17px] leading-none">
-                          {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
+                        <span className="inline-flex items-center gap-[5px]">
+                          <span className="text-[15px] leading-none">
+                            {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
+                          </span>
+                          <span className="text-[10.5px] font-semibold text-faint md:hidden lg:inline">
+                            {c.readiness === "ready" ? "พร้อม" : c.readiness === "blocked" ? "ติด" : "ขาดของ"}
+                          </span>
                         </span>
                       </div>
                       {/* Actions — status + edit + delete, always on one row */}
@@ -425,8 +432,8 @@ export default function CampaignsPage() {
                             type="button"
                             onClick={() => onDelete(c)}
                             disabled={busyCampaignId === c.id}
-                            className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#C74B4B] disabled:opacity-50 shrink-0 whitespace-nowrap"
-                            style={{ borderColor: "#F2CACA" }}
+                            title="ลบแคมเปญนี้"
+                            className="text-[11.5px] font-semibold rounded-[10px] px-3 py-[7px] border border-transparent bg-transparent text-faint hover:text-[#C74B4B] hover:border-[#F2CACA] hover:bg-white disabled:opacity-50 shrink-0 whitespace-nowrap transition"
                           >
                             Delete
                           </button>

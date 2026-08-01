@@ -179,6 +179,10 @@ export interface BriefBudget {
   other: number;
   /** Free-text explanation for the Other bucket (shown when other > 0). */
   otherNote?: string;
+  /** LINE OA broadcast size. Baht is a poor measure of a broadcast — inside the
+   *  monthly allowance it costs almost nothing — so the messages are recorded
+   *  and priced separately. See lib/data/lineQuota.ts. */
+  lineMessages?: number;
   adsByPlatform: AdsPlatformBudget[];
   monthly?: MonthlyBudgetAllocation[];
 }

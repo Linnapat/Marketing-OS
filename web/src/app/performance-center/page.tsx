@@ -232,7 +232,12 @@ export default function PerformanceCenterPage() {
   const totalRevenue = sum(filtered, rowRevenue);
   const totalConversions = sum(filtered, (r) => r.conversions);
   const rowsFilled = filtered.filter((r) => r.reachActual > 0 || r.budgetActual > 0 || r.revenue).length;
+  // Health is a budget-control score: it is 100% whenever spend has not exceeded
+  // plan — including when nothing has been spent because nothing was recorded.
+  // On a month with no actuals that reads as "all good" when the truth is "we
+  // have no idea", so it is only shown once at least one row carries an actual.
   const health = totalPlan > 0 ? Math.max(0, Math.min(100, 100 - Math.max(0, safePct(totalActual, totalPlan) - 100))) : 0;
+  const healthKnown = totalPlan > 0 && rowsFilled > 0;
 
   const platformGroups = useMemo(() => aggregateBy(filtered, "platform"), [filtered]);
   const campaignGroups = useMemo(() => aggregateBy(filtered, "campaign", nameOf), [filtered, nameOf]);
@@ -296,7 +301,11 @@ export default function PerformanceCenterPage() {
 
       <section className="mt-4 rounded-[24px] border border-line bg-white p-4 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
+          {/* basis-full: sharing a wrapping row with the brand + date filters
+              squeezed the tab strip into a narrow scroller, so only "Overview"
+              and a clipped "Creative KP…" were reachable without scrolling
+              sideways. The tabs get their own line; the filters wrap below. */}
+          <div className="flex min-w-0 basis-full gap-2 overflow-x-auto pb-1">
             {REPORTS.map((report) => {
               const Icon = report.icon;
               const on = active === report.key;
@@ -362,7 +371,9 @@ export default function PerformanceCenterPage() {
               <KpiCard label="Actual spend" value={compact(totalActual)} note={`${pct(safePct(totalActual, totalPlan))} of plan`} tone="#6C5CE7" />
               <KpiCard label="Reach" value={num(totalReach)} note={`${pct(safePct(totalReach, totalTarget))} of target`} tone="#7BC66D" />
               <KpiCard label="Revenue" value={compact(totalRevenue)} note="from actual report rows" tone="#D9B75F" />
-              <KpiCard label="Health" value={totalPlan ? pct(health) : "—"} note="budget control score" tone="#0EA5A0" />
+              <KpiCard label="Health" value={healthKnown ? pct(health) : "—"}
+                note={healthKnown ? "budget control score" : `ยังประเมินไม่ได้ · ยังไม่มี actual (${rowsFilled}/${filtered.length})`}
+                tone="#0EA5A0" />
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {brandRows.length ? brandRows.map((row) => (
