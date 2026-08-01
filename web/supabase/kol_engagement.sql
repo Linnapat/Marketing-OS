@@ -59,8 +59,14 @@ alter table kol_collaboration_history
   add column if not exists confirmed_at    date,
   add column if not exists visited_at      date,
   add column if not exists draft_at        date,
+  add column if not exists agreed_post_at  date,   -- วันที่ตกลงกับ KOL — ตัวตั้งของคำว่า "ช้า"
   add column if not exists posted_at       date,
   add column if not exists resulted_at     date,
+  -- WHOSE FAULT THE DELAY WAS ---------------------------------------------
+  add column if not exists delay_reason    text,   -- kol | approval | campaign | venue | other
+  add column if not exists delay_note      text,
+  add column if not exists delay_logged_by text,
+  add column if not exists delay_logged_at timestamptz,
   -- MONEY (was COST_LOG) --------------------------------------------------
   add column if not exists food_cost       numeric,
   add column if not exists paid_fee        numeric,
@@ -84,6 +90,38 @@ alter table kol_collaboration_history
   add column if not exists needs_review    boolean default false,  -- ยกมาจากชีตแบบไม่ครบ ต้องมีคนไปเก็บ
   add column if not exists source_key      text,   -- idempotency key ตอน import เช่น 'sheet:Teppen:14'
   add column if not exists updated_at      timestamptz default now();
+
+-- ── on_time_delivery is derived, not declared ──────────────────────────
+-- It used to be a checkbox in the results form that defaulted to "on time",
+-- filled in by the same person who managed the deal — and it feeds 20% of
+-- recompute_kol_rank(). Nobody was ever going to tick it against themselves.
+--
+-- The rule that matters: a late post only counts against the creator when the
+-- delay was actually theirs. If our own approval ran long, that is our problem
+-- and it must not be filed inside their rating, or the score quietly launders
+-- our bottleneck into their reputation.
+create or replace function kol_apply_on_time() returns trigger
+language plpgsql as $$
+begin
+  if new.posted_at is null or new.agreed_post_at is null then
+    new.on_time_delivery := null;                       -- nothing to judge yet
+  elsif new.posted_at <= new.agreed_post_at then
+    new.on_time_delivery := true;
+  elsif new.delay_reason is null then
+    new.on_time_delivery := null;                       -- late, but whose fault is unrecorded
+  elsif new.delay_reason = 'kol' then
+    new.on_time_delivery := false;
+  else
+    new.on_time_delivery := true;                       -- late, but not the creator's doing
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists kol_on_time_trg on kol_collaboration_history;
+create trigger kol_on_time_trg
+  before insert or update of posted_at, agreed_post_at, delay_reason
+  on kol_collaboration_history
+  for each row execute function kol_apply_on_time();
 
 -- Re-importing the same sheet row must update, never duplicate.
 create unique index if not exists kol_collab_source_key_uidx
@@ -179,7 +217,11 @@ with agg as (
     sum(h.actual_engagement)                                as total_engagement,
     sum(h.total_cost)                                       as total_cost,
     avg(h.brand_feedback_score)                             as avg_feedback,
-    avg((h.on_time_delivery)::int)                          as on_time_rate
+    -- reliability counts only the deliveries we could actually judge
+    avg((h.on_time_delivery)::int) filter (where h.on_time_delivery is not null) as on_time_rate,
+    count(*) filter (where h.on_time_delivery is false) as late_by_kol,
+    count(*) filter (where h.posted_at is not null and h.agreed_post_at is not null
+                       and h.posted_at > h.agreed_post_at and h.delay_reason is null) as late_unattributed
   from kol_collaboration_history h
   group by h.kol_id
 )
@@ -215,8 +257,7 @@ select
        then round(a.total_reach / ch.total_followers, 2) end as reach_per_follower,
   case when coalesce(a.total_reach,0) > 0
        then round(a.total_engagement / a.total_reach * 100, 2) end as engagement_rate,
-  a.avg_feedback,
-  a.on_time_rate,
+  a.avg_feedback, a.on_time_rate, a.late_by_kol, a.late_unattributed,
   -- "ยังไม่ทดลอง" — the 191 profiles nobody has ever booked
   (coalesce(a.times_used, 0) = 0)        as never_used,
   r.rank_score,

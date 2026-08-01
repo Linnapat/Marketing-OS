@@ -6,7 +6,9 @@
 // inside the Library drawer for a quick look without leaving the table.
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { toastError } from "@/lib/toast";
 import { baht } from "@/lib/format";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
@@ -16,8 +18,9 @@ import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
   fetchKolNotes, addKolNote, deleteKolNote, setKolPartner, confirmChannelFollowers,
-  followerFreshness, FOLLOWER_STALE_DAYS,
-  KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote, KolChannel,
+  setAgreedPostDate, attributeDelay, createKolExpenseRequest, followerFreshness, daysLate,
+  FOLLOWER_STALE_DAYS, DELAY_REASONS,
+  KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote, KolChannel, DelayReason,
 } from "@/lib/db/kolScorecard";
 
 /** Reach we bought per baht spent, versus what this tier normally costs us. */
@@ -96,6 +99,123 @@ function ChannelChip({ channel, author }: { channel: KolChannel; author: string 
       <button onClick={() => { setValue(followers != null ? String(followers) : ""); setEditing(true); }}
         className="text-[10.5px] font-bold text-accent hover:underline">อัปเดต</button>
     </span>
+  );
+}
+
+/**
+ * Delivery timing for one booking. Two jobs: capture the date agreed with the
+ * creator (without it "late" is unmeasurable, and the sheet never had it), and
+ * when a post misses that date, make someone say whose fault it was. Only a
+ * delay attributed to the creator touches their reliability score — our own
+ * approval bottleneck must not be filed under their name.
+ */
+function DeliveryRow({ engagement, author }: { engagement: KolEngagementRow; author: string }) {
+  const [agreed, setAgreed] = useState(engagement.agreed_post_at);
+  const [reason, setReason] = useState<DelayReason | null>(engagement.delay_reason);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(engagement.agreed_post_at ?? "");
+  const [busy, setBusy] = useState(false);
+  const late = daysLate(agreed, engagement.posted_at);
+
+  const saveAgreed = async () => {
+    setBusy(true);
+    if (await setAgreedPostDate(engagement.collab_id, draft || null)) { setAgreed(draft || null); setEditing(false); }
+    setBusy(false);
+  };
+  const saveReason = async (r: DelayReason) => {
+    setBusy(true);
+    if (await attributeDelay(engagement.collab_id, r, undefined, author)) setReason(r);
+    setBusy(false);
+  };
+
+  return (
+    <div className="mt-2 pt-2 border-t border-line4/60 text-[11px] flex items-center gap-2 flex-wrap">
+      <span className="text-faint">นัดโพสต์</span>
+      {editing ? (
+        <>
+          <input type="date" value={draft} onChange={(e) => setDraft(e.target.value)}
+            className="text-[11px] bg-white border border-line2 rounded-[7px] px-2 py-[2px] outline-none" />
+          <button onClick={saveAgreed} disabled={busy} className="font-bold text-accent disabled:opacity-40">บันทึก</button>
+          <button onClick={() => setEditing(false)} className="text-faint hover:text-ink">ยกเลิก</button>
+        </>
+      ) : (
+        <button onClick={() => { setDraft(agreed ?? ""); setEditing(true); }}
+          className="font-semibold text-muted hover:underline">{agreed ?? "— ยังไม่ระบุ —"}</button>
+      )}
+      <span className="text-faint">· โพสต์จริง {engagement.posted_at ?? "—"}</span>
+
+      {late != null && late > 0 && (
+        <>
+          <span className="font-bold" style={{ color: "#C0392B" }}>ช้า {late} วัน</span>
+          {reason ? (
+            <span className="px-[8px] py-[2px] rounded-pill font-semibold"
+              style={{ background: "#F5F3EF", border: "1px solid #E3DED4", color: "#6b6258" }}>
+              {DELAY_REASONS.find((d) => d.value === reason)?.label}
+              {DELAY_REASONS.find((d) => d.value === reason)?.blamesKol === false && " · ไม่หักคะแนน KOL"}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 flex-wrap">
+              <span className="font-bold" style={{ color: "#C0392B" }}>← เพราะอะไร?</span>
+              {DELAY_REASONS.map((d) => (
+                <button key={d.value} onClick={() => saveReason(d.value)} disabled={busy}
+                  className="px-[7px] py-[2px] rounded-pill border border-line2 bg-white hover:border-accent disabled:opacity-40">
+                  {d.label}
+                </button>
+              ))}
+            </span>
+          )}
+        </>
+      )}
+      {late === 0 && <span className="font-semibold" style={{ color: "#3F6A34" }}>ตรงเวลา</span>}
+    </div>
+  );
+}
+
+/**
+ * Raise the reimbursement for this booking without re-keying it. The specialist
+ * still owns the decision to file (per the team's own rule), but the campaign,
+ * brand and amount travel with them, and the link back means Finance and KOL are
+ * looking at one number instead of two that drift.
+ */
+function ExpenseRow({ engagement, kolName, requester }: {
+  engagement: KolEngagementRow; kolName: string; requester: string;
+}) {
+  const [linked, setLinked] = useState(engagement.expense_request_id);
+  const [busy, setBusy] = useState(false);
+  const amount = engagement.total_cost ?? 0;
+  if (amount <= 0) return null;
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const id = await createKolExpenseRequest({
+        collabId: engagement.collab_id,
+        brand: engagement.brand,
+        campaign: engagement.campaign_name,
+        campaignId: engagement.campaign_id,
+        amount,
+        kolName,
+        requester,
+      });
+      if (id) setLinked(id); else toastError("สร้างใบเบิกไม่สำเร็จ — ลองใหม่อีกครั้ง");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mt-1 text-[11px] flex items-center gap-2 flex-wrap">
+      <span className="text-faint">ใบเบิก</span>
+      {linked ? (
+        <Link href="/expenses" className="font-bold text-accent hover:underline">
+          สร้างแล้ว · #{linked} ↗
+        </Link>
+      ) : (
+        <button onClick={create} disabled={busy}
+          className="font-bold text-accent border border-line2 rounded-[7px] px-[9px] py-[2px] bg-white hover:border-accent disabled:opacity-40">
+          {busy ? "กำลังสร้าง…" : `สร้างใบเบิก ${baht(amount, { compact: true })}`}
+        </button>
+      )}
+      {engagement.paid_status && <span className="text-faint">· สถานะจ่าย {engagement.paid_status}</span>}
+    </div>
   );
 }
 
@@ -215,6 +335,11 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
         <Stat label="Cost / reach" value={row.cost_per_reach != null ? `฿${Number(row.cost_per_reach).toFixed(3)}` : "—"} hint={tierBench != null ? `เทียร์ ${row.tier}: ฿${Number(tierBench).toFixed(3)}` : undefined} />
         <Stat label="Reach / follower" value={row.reach_per_follower != null ? `${Number(row.reach_per_follower).toFixed(2)}x` : "—"} hint="เกิน 1 = ไปไกลกว่าฐานผู้ติดตาม" />
         <Stat label="Engagement rate" value={row.engagement_rate != null ? `${Number(row.engagement_rate).toFixed(2)}%` : "—"} />
+        <Stat
+          label="ส่งงานตรงเวลา"
+          value={row.on_time_rate != null ? `${Math.round(Number(row.on_time_rate) * 100)}%` : "—"}
+          hint={row.late_unattributed ? `${row.late_unattributed} ครั้งยังไม่ระบุสาเหตุ` : (row.on_time_rate == null ? "ยังไม่มีงานที่ตัดสินได้" : undefined)}
+        />
       </div>
 
       {verdict && (
@@ -281,6 +406,8 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
                 {!compact && h.why_chosen && (
                   <div className="mt-2 text-[11px] text-faint whitespace-pre-wrap border-t border-line4 pt-2">{h.why_chosen}</div>
                 )}
+                <DeliveryRow engagement={h} author={author} />
+                <ExpenseRow engagement={h} kolName={row.display_name} requester={author} />
                 {(h.performance_tag || h.next_action) ? (
                   <div className="mt-2 flex gap-2 flex-wrap text-[11px]">
                     {h.performance_tag && <span className="font-bold px-[8px] py-[2px] rounded-pill bg-ivory border border-line3 text-muted">{h.performance_tag}</span>}
