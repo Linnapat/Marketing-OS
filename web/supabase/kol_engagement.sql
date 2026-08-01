@@ -223,7 +223,11 @@ where coalesce(h.actual_reach, 0) > 0
 group by p.tier;
 
 -- ═══════════════════════════════════════════════════════════════════════
--- RLS — demo-open, matching kol_master.sql. Tighten together with that file.
+-- RLS — staff/admin only, same rule security_p1.sql already applies to
+-- kol_profiles / kol_channels / kol_collaboration_history. NOT the demo-open
+-- policy kol_master.sql ships with: these tables hold what we paid each
+-- creator, so a `using (true)` policy would expose rate cards and fees to any
+-- anon caller holding the publishable key.
 -- ═══════════════════════════════════════════════════════════════════════
 do $$
 declare t text;
@@ -231,6 +235,9 @@ begin
   foreach t in array array['kol_engagement_posts','kol_rate_cards'] loop
     execute format('alter table %I enable row level security;', t);
     execute format('drop policy if exists demo_all on %I;', t);
-    execute format('create policy demo_all on %I for all using (true) with check (true);', t);
+    execute format('drop policy if exists staff_rw on %I;', t);
+    execute format($f$create policy staff_rw on %I for all
+      using (auth.role() = 'authenticated' and app_role() in ('admin','staff'))
+      with check (auth.role() = 'authenticated' and app_role() in ('admin','staff'));$f$, t);
   end loop;
 end $$;

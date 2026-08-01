@@ -3,7 +3,7 @@
 import { toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
 import { CSSProperties, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -20,7 +20,8 @@ import {
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
-import { searchKolProfiles, KolMasterRow } from "@/lib/db/kolMaster";
+import { fetchKolScorecards, KolScorecardRow } from "@/lib/db/kolScorecard";
+import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -687,7 +688,8 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
 // Campaign-independent KOL master library (kol_profiles) — search + rank badges.
 function KolDatabase() {
   const [q, setQ] = useState("");
-  const [rows, setRows] = useState<KolMasterRow[]>([]);
+  const [rows, setRows] = useState<KolScorecardRow[]>([]);
+  const [openKol, setOpenKol] = useState<string | null>(null);
   const [sheetRows, setSheetRows] = useState<KolSheetRow[]>([]);
   const [sheetUrl, setSheetUrl] = useState("");
   const [urlDraft, setUrlDraft] = useState("");
@@ -697,7 +699,7 @@ function KolDatabase() {
   const [loading, setLoading] = useState(true);
   const loadDb = () => {
     setLoading(true);
-    searchKolProfiles(q, 100)
+    fetchKolScorecards(q, 400)
       .then((r) => { setRows(r); setLoading(false); })
       .catch(() => { setLoading(false); });
   };
@@ -705,7 +707,7 @@ function KolDatabase() {
     let alive = true;
     setLoading(true);
     const t = setTimeout(() => {
-      searchKolProfiles(q, 100)
+      fetchKolScorecards(q, 400)
         .then((r) => { if (alive) { setRows(r); setLoading(false); } })
         .catch(() => { if (alive) setLoading(false); });
     }, 200);
@@ -739,7 +741,11 @@ function KolDatabase() {
     await setAppSetting("kol_library_sheet_url", url.trim());
     await loadSheet(url);
   };
-  const cols = "1.8fr 1.4fr 1fr 0.9fr 1fr 1.2fr 0.9fr";
+  const cols = "1.9fr 0.7fr 1fr 1.5fr 0.9fr 1fr 0.6fr 0.8fr 0.7fr";
+  // Creators we have evidence about first; the never-booked ones get their own
+  // block so they read as "still to try", not as the bottom of a ranking.
+  const used = rows.filter((r) => !r.never_used);
+  const untried = rows.filter((r) => r.never_used);
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-card px-4 py-[10px] text-[11.5px]" style={{ background: "#EEF1F8", border: "1px solid #D5DEEF", color: "#3E5C9A" }}>
@@ -794,27 +800,18 @@ function KolDatabase() {
       </div>
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
         <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4" style={{ gridTemplateColumns: cols }}>
-          <div>KOL / Page</div><div>Handle</div><div>Type</div><div>Tier</div><div>Followers</div><div>Platforms</div><div>Rank</div>
+          <div>KOL / Page</div><div>Tier</div><div>Category</div><div>ช่องทาง · Followers</div>
+          <div className="text-right">รวม</div><div className="text-right">Rate</div>
+          <div className="text-right">ใช้ไป</div><div className="text-right">Cost/Reach</div><div className="text-right">R/F</div>
         </div>
-        {rows.map((r) => {
-          const url = channelUrl(r.platforms?.[0] ?? "Instagram", r.primary_handle ?? "");
-          return (
-            <div key={r.kol_id} className="grid gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0" style={{ gridTemplateColumns: cols }}>
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
-                <span className="text-[13px] font-bold text-ink truncate">{r.display_name}</span>
-              </span>
-              <span className="text-[12px] text-faint truncate">{url ? <a href={url} target="_blank" rel="noreferrer" className="text-accent font-semibold hover:underline">{r.primary_handle} ↗</a> : (r.primary_handle ?? "—")}</span>
-              <span className="text-[12px] text-muted">{r.kol_type ?? "—"}</span>
-              <span className="text-[12px] text-muted">{r.tier ?? "—"}</span>
-              <span className="text-[12.5px] text-muted">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
-              <span className="text-[11.5px] text-muted truncate">{(r.platforms ?? []).join(", ") || "—"}</span>
-              <span>{r.rank_label
-                ? <span className="text-[11px] font-bold px-[8px] py-[2px] rounded-pill bg-ivory border border-line3">{r.rank_label}{r.rank_score != null ? ` · ${r.rank_score}` : ""}</span>
-                : <span className="text-[12px] text-faint">—</span>}</span>
-            </div>
-          );
-        })}
+        {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} onOpen={setOpenKol} />)}
+        {untried.length > 0 && (
+          <div className="px-5 py-2 border-y border-line4 bg-ivory/60 text-[11px] font-bold text-muted">
+            ยังไม่ทดลอง · {untried.length} ราย
+            <span className="font-normal text-faint ml-2">ไม่มีประวัติให้ตัดสิน — แนะนำให้แทรกทดลอง 2–3 รายต่อแคมเปญ ไม่งั้นจะวนใช้แต่คนเดิม</span>
+          </div>
+        )}
+        {untried.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} onOpen={setOpenKol} />)}
         {rows.length === 0 && (
           <div className="px-5 py-10 text-center">
             <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#F1BDD7] bg-[#FFF4F8] px-6 py-5">
@@ -824,6 +821,54 @@ function KolDatabase() {
           </div>
         )}
       </div>
+      {openKol && <KolProfileDrawer kolId={openKol} onClose={() => setOpenKol(null)} />}
+    </div>
+  );
+}
+
+/** One Library row. The follower number of each platform is the link to that
+ *  real profile — the sheet kept those URLs hidden behind the number too. */
+function KolLibraryRow({ r, cols, onOpen }: { r: KolScorecardRow; cols: string; onOpen: (id: string) => void }) {
+  const channels = (r.channels ?? []).filter((c) => c.platform).slice(0, 5);
+  const rate = r.rate_min_thb != null
+    ? (r.rate_max_thb != null && r.rate_max_thb !== r.rate_min_thb
+        ? `${baht(r.rate_min_thb, { compact: true })}–${baht(r.rate_max_thb, { compact: true })}`
+        : baht(r.rate_min_thb, { compact: true }))
+    : "—";
+  return (
+    <div className="grid gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0 hover:bg-ivory/40" style={{ gridTemplateColumns: cols }}>
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
+        <button onClick={() => onOpen(r.kol_id)} className="text-[13px] font-bold text-ink truncate text-left hover:underline">{r.display_name}</button>
+        <a href={`/kol/${r.kol_id}`} target="_blank" rel="noreferrer" aria-label={`เปิด ${r.display_name} ในแท็บใหม่`}
+          className="text-faint hover:text-accent flex-shrink-0"><ExternalLink size={12} /></a>
+      </span>
+      <span className="text-[12px] text-muted">{r.tier ?? "—"}</span>
+      <span className="text-[12px] text-muted truncate">{r.kol_type ?? "—"}</span>
+      <span className="flex gap-[5px] flex-wrap">
+        {channels.length === 0 && <span className="text-[12px] text-faint">—</span>}
+        {channels.map((c) => {
+          const ic = platformIcon(c.platform!);
+          const inner = (
+            <>
+              <span className="w-[14px] h-[14px] rounded-[4px] flex items-center justify-center text-[8px] font-bold flex-shrink-0" style={{ background: ic.bg, color: ic.fg }}>{ic.icon}</span>
+              <span className="text-[11px] font-semibold">{c.followers != null ? fmtFollow(c.followers) : "—"}</span>
+            </>
+          );
+          return c.url
+            ? <a key={c.platform} href={c.url} target="_blank" rel="noreferrer" title={`${c.platform} — ${c.url}`}
+                className="inline-flex items-center gap-[4px] rounded-pill border border-line2 bg-surface px-[7px] py-[2px] text-accent hover:border-accent">{inner}</a>
+            : <span key={c.platform} title={`${c.platform} — ยังไม่มีลิงก์`}
+                className="inline-flex items-center gap-[4px] rounded-pill border border-line3 bg-ivory px-[7px] py-[2px] text-faint">{inner}</span>;
+        })}
+      </span>
+      <span className="text-[12.5px] text-muted text-right">{r.total_followers != null ? fmtFollow(r.total_followers) : "—"}</span>
+      <span className="text-[12px] text-muted text-right">{rate}</span>
+      <span className="text-[12.5px] text-right font-bold" style={{ color: r.times_used > 0 ? "#3E5C9A" : "#9A9387" }}>{r.times_used || "—"}</span>
+      <span className="text-[12px] text-muted text-right">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
+      <span className="text-[12px] text-right" style={{ color: (r.reach_per_follower ?? 0) >= 1 ? "#3F6A34" : "#6b6258" }}>
+        {r.reach_per_follower != null ? `${Number(r.reach_per_follower).toFixed(2)}x` : "—"}
+      </span>
     </div>
   );
 }
