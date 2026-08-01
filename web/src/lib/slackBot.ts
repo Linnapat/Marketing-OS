@@ -18,13 +18,30 @@ export const hasBotToken = () => Boolean(TOKEN);
 
 interface SlackResponse { ok: boolean; error?: string; [k: string]: unknown }
 
-async function call(method: string, body: Record<string, unknown>): Promise<SlackResponse> {
+/** Slack is not uniform about this: chat.postMessage takes JSON, but the older
+ *  read methods — users.lookupByEmail among them — accept ONLY
+ *  application/x-www-form-urlencoded. Post JSON to one of those and Slack does
+ *  not complain about the encoding; it simply sees no arguments and answers as
+ *  though you asked about nobody, which reads exactly like "that person is not
+ *  in this workspace". Every lookup failed this way for a day and looked like a
+ *  Slack account problem instead of ours. */
+type Encoding = "json" | "form";
+
+async function call(method: string, body: Record<string, unknown>, encoding: Encoding = "json"): Promise<SlackResponse> {
   if (!TOKEN) return { ok: false, error: "no_token" };
+  const isForm = encoding === "form";
   try {
     const res = await fetch(`${API_BASE}/${method}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": isForm
+          ? "application/x-www-form-urlencoded; charset=utf-8"
+          : "application/json; charset=utf-8",
+        Authorization: `Bearer ${TOKEN}`,
+      },
+      body: isForm
+        ? new URLSearchParams(Object.entries(body).map(([k, v]) => [k, String(v)])).toString()
+        : JSON.stringify(body),
     });
     return (await res.json()) as SlackResponse;
   } catch (e) {
@@ -40,7 +57,7 @@ async function call(method: string, body: Record<string, unknown>): Promise<Slac
  *  They need opposite fixes, and telling them apart from the outside cost an
  *  afternoon, so the reason travels with the answer now. */
 export async function lookupUserByEmail(email: string): Promise<{ id: string | null; reason?: string }> {
-  const res = await call("users.lookupByEmail", { email });
+  const res = await call("users.lookupByEmail", { email }, "form");
   if (!res.ok) return { id: null, reason: res.error || "unknown_error" };
   const user = res.user as { id?: string } | undefined;
   return user?.id ? { id: user.id } : { id: null, reason: "no_user_in_response" };
