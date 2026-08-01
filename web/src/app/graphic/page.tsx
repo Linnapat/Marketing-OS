@@ -11,13 +11,15 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BRAND_ORDER } from "@/lib/brands";
+import { FinishedFold } from "@/components/ui/FinishedFold";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, type ReviewLens,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
-  resolveOpenTarget,
+  resolveOpenTarget, isGraphicFinished,
+
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -917,19 +919,44 @@ function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (
   );
 }
 
+const BOARD_OPEN_KEY = "mos-graphic-board-open-stages";
+
 function BoardView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
+  // Which finished columns the user has opened. Remembered, so someone who
+  // works out of the Delivered column doesn't reopen it every morning.
+  const [openStages, setOpenStages] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      setOpenStages(JSON.parse(localStorage.getItem(BOARD_OPEN_KEY) || "[]") as string[]);
+    } catch { /* no-op */ }
+  }, []);
+  const toggleStage = (stage: string) => {
+    setOpenStages((current) => {
+      const next = current.includes(stage) ? current.filter((s) => s !== stage) : [...current, stage];
+      try { localStorage.setItem(BOARD_OPEN_KEY, JSON.stringify(next)); } catch { /* no-op */ }
+      return next;
+    });
+  };
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
       {STAGE_ORDER.map((stage) => {
         const cards = items.filter((g) => g.stage === stage);
+        // Finished columns start rolled up: they are the widest part of the
+        // board and the least often acted on, so they pushed live work off the
+        // right-hand edge. The count stays visible, and clicking opens them.
+        const done = isGraphicFinished({ stage });
+        const rolled = done && !openStages.includes(stage);
         return (
-          <div key={stage} className="flex-shrink-0 w-[280px]">
-            <div className="flex items-center gap-2 mb-3 px-1">
+          <div key={stage} className={`flex-shrink-0 ${rolled ? "w-[150px]" : "w-[280px]"}`}>
+            <button type="button" onClick={() => done && toggleStage(stage)} disabled={!done}
+              aria-expanded={done ? !rolled : undefined}
+              className={`w-full flex items-center gap-2 mb-3 px-1 text-left ${done ? "cursor-pointer" : "cursor-default"}`}>
               <StatusBadge tone={stageTone(stage)}>{stage}</StatusBadge>
               <span className="text-[12px] text-faint font-semibold">{cards.length}</span>
-            </div>
+              {done && <span className="text-[11px] text-faint ml-auto" aria-hidden>{rolled ? "▸" : "▾"}</span>}
+            </button>
             <div className="flex flex-col gap-2">
-              {cards.map((g) => (
+              {!rolled && cards.map((g) => (
                 <button key={g.id} onClick={() => onOpen(g)} className="w-full text-left bg-surface border border-line rounded-card p-[13px] hover:border-accent transition">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <span className="text-[13px] font-bold text-ink leading-tight">{g.title}</span>
@@ -1022,6 +1049,8 @@ const LIST_COLS = "minmax(0,1.9fr) minmax(0,1.25fr) minmax(0,0.95fr) minmax(0,0.
 
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
+  const active = items.filter((g) => !isGraphicFinished(g));
+  const finished = items.filter(isGraphicFinished);
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       {/* No "Pending" column: it printed `pendingApprover`, which is set once when
@@ -1032,29 +1061,11 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
         style={{ gridTemplateColumns: LIST_COLS }}>
         <div>Request</div><div>Campaign</div><div>รหัสแคมเปญ</div><div>Type task</div><div>Designer</div><div>Due</div><div>Stage</div>
       </div>
-      {items.map((g) => (
-        <button key={g.id} onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
-          style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
-          <div className="min-w-0">
-            <div className="text-[13px] font-bold text-ink flex items-center gap-[6px] min-w-0">
-              <span className="truncate">{g.title}</span>
-              <WorkCode code={g.code} />
-            </div>
-            {/* The type used to sit here; it has a column now, so this names the
-                brand instead of printing the same word twice on one row. */}
-            <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{brandName(g.b)}</div>
-          </div>
-          <span className="text-[12px] text-muted truncate min-w-0">{g.campaign}</span>
-          <span className="min-w-0"><CampaignCode code={codeOf(g.campaignId, g.campaign)} /></span>
-          <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
-          <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
-          <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
-          <span className="flex items-center gap-1.5 flex-wrap min-w-0">
-            <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
-            <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
-          </span>
-        </button>
-      ))}
+      {active.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
+      {/* Delivered and approved work, folded under what is still moving. */}
+      <FinishedFold count={finished.length} storageKey="mos-graphic-list-finished" label="ส่งงานแล้ว">
+        {finished.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
+      </FinishedFold>
       {items.length === 0 && (
         <div className="px-5 py-10 text-center">
           <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#D9B86A] bg-[#FFF8EA] px-6 py-5">
@@ -1064,6 +1075,32 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
         </div>
       )}
     </div>
+  );
+}
+
+function GraphicListRow({ g, codeOf, onOpen, onQuickApprove }: { g: Graphic; codeOf: (id?: string, name?: string) => string | undefined; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
+  return (
+      <button onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
+        style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
+        <div className="min-w-0">
+          <div className="text-[13px] font-bold text-ink flex items-center gap-[6px] min-w-0">
+            <span className="truncate">{g.title}</span>
+            <WorkCode code={g.code} />
+          </div>
+          {/* The type used to sit here; it has a column now, so this names the
+              brand instead of printing the same word twice on one row. */}
+          <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{brandName(g.b)}</div>
+        </div>
+        <span className="text-[12px] text-muted truncate min-w-0">{g.campaign}</span>
+        <span className="min-w-0"><CampaignCode code={codeOf(g.campaignId, g.campaign)} /></span>
+        <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
+        <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
+        <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
+        <span className="flex items-center gap-1.5 flex-wrap min-w-0">
+          <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
+          <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
+        </span>
+      </button>
   );
 }
 

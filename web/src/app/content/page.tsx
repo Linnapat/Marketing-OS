@@ -11,14 +11,14 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule,
-} from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
 import { useStickyView } from "@/lib/useStickyView";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
+import { FinishedFold } from "@/components/ui/FinishedFold";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { appendBriefItem } from "@/lib/db/brief";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
@@ -708,6 +708,8 @@ function assetDownload(c: ContentItem): string | null {
 const CONTENT_LIST_COLS = "70px minmax(0,2fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
 
 function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+  const active = items.filter((c) => !isPostFinished(c));
+  const finished = items.filter(isPostFinished);
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
@@ -720,9 +722,26 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
         style={{ gridTemplateColumns: CONTENT_LIST_COLS }}>
         <div>Post date</div><div>Content</div><div>Content ID</div><div>Caption status</div><div>Asset</div><div>Publish</div>
       </div>
-      {[...items].sort(bySchedule).map((c) => {
-        return (
-          <div key={c.id} onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
+      {active.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} />)}
+      {/* Posts that already went out, folded under the work that hasn't. */}
+      <FinishedFold count={finished.length} storageKey="mos-content-list-finished" label="โพสต์แล้ว">
+        {finished.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} />)}
+      </FinishedFold>
+      {items.length === 0 && (
+        <div className="px-5 py-10 text-center">
+          <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#DDD1FF] bg-[#F7F2FF] px-6 py-5">
+            <div className="text-[13px] font-bold text-[#5A4FB2]">No posts in this view yet</div>
+            <div className="text-[11.5px] text-[#7D778F]">Try another brand or date range, or start by planning the first post.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContentListRow({ c, onOpen, canEditStatus = false, onStatus }: { c: ContentItem; onOpen: (c: ContentItem) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+  return (
+          <div onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
             <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
             <div className="flex items-center gap-2 min-w-0">
@@ -752,17 +771,6 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
             </div>
             <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
           </div>
-        );
-      })}
-      {items.length === 0 && (
-        <div className="px-5 py-10 text-center">
-          <div className="inline-flex flex-col items-center gap-2 rounded-[18px] border border-dashed border-[#DDD1FF] bg-[#F7F2FF] px-6 py-5">
-            <div className="text-[13px] font-bold text-[#5A4FB2]">No posts in this view yet</div>
-            <div className="text-[11.5px] text-[#7D778F]">Try another brand or date range, or start by planning the first post.</div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
