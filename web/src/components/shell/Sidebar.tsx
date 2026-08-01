@@ -10,6 +10,7 @@ import { RoleSwitcher } from "./RoleSwitcher";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { moduleForPath } from "@/lib/permissions";
+import { isNavHiddenFor } from "@/lib/roleGates";
 import { MEMBER_PRESENCE_OPTIONS } from "@/lib/data/settings";
 import { saveMemberProfile, updateMember } from "@/lib/db/settings";
 import { toastError } from "@/lib/toast";
@@ -74,9 +75,19 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
     ? NAV.filter((g) => g.label === "External")
     : NAV;
   // Every item is gated by the Settings Permissions matrix via its module —
-  // same map the page gate uses, so nav and pages never disagree.
+  // same map the page gate uses, so nav and pages never disagree. On top of
+  // that, a role can have entries kept off its rail simply because they are not
+  // its job (isNavHiddenFor) — that one is tidying, not permission: the routes
+  // still open from a direct link.
   const groups = baseGroups
-    .map((g) => ({ ...g, items: g.items.filter((it) => { const m = moduleForPath(it.href); return !m || can(m); }) }))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((it) => {
+        if (isNavHiddenFor(role, it.href)) return false;
+        const m = moduleForPath(it.href);
+        return !m || can(m);
+      }),
+    }))
     .filter((g) => g.items.length > 0);
 
   // Longest matching href wins, so a nested item (/performance-center/team-kpi)
