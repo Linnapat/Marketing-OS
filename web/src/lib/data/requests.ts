@@ -74,6 +74,31 @@ export interface Asset {
   updated: string;
 }
 
+/** Sort key for "newest first".
+ *
+ *  There is no date to sort on: `updated` is free text and holds "Jun 27",
+ *  "2026-08-01" and "just now" all at once, so comparing it sorts nothing.
+ *  The row id is a serial, so id order IS the order things were filed —
+ *  the honest answer to "which campaign is newest" until assets get a real
+ *  created_at. Handles both "AST-003" and a bare "12". */
+export function assetSeq(a: Pick<Asset, "id">): number {
+  const digits = String(a.id).match(/\d+/g);
+  return digits ? Number(digits[digits.length - 1]) : 0;
+}
+
+/** Campaigns with their assets, newest campaign first. A campaign counts as
+ *  new by its most recently filed asset, not its name or its oldest piece. */
+export function assetsByCampaign(rows: Asset[]): [string, Asset[]][] {
+  const groups = new Map<string, Asset[]>();
+  for (const a of rows) {
+    const key = a.campaign || "—";
+    const list = groups.get(key);
+    if (list) list.push(a); else groups.set(key, [a]);
+  }
+  for (const list of groups.values()) list.sort((x, y) => assetSeq(y) - assetSeq(x));
+  return [...groups.entries()].sort((x, y) => assetSeq(y[1][0]) - assetSeq(x[1][0]));
+}
+
 export const ASSETS: Asset[] = [
   { id: "AST-001", name: "Wagyu Key Visual", b: "teppen", campaign: "Wagyu Festival", type: "Key Visual", version: "V2", approval: "Approved", driveUrl: "#", canvaUrl: "#", updated: "Jun 27" },
   { id: "AST-002", name: "Wagyu Teaser Story", b: "teppen", campaign: "Wagyu Festival", type: "Story", version: "Final", approval: "Approved", driveUrl: "#", canvaUrl: "#", updated: "Jun 21" },

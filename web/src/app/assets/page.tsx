@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
-import { ASSETS, ASSET_APPROVAL_TONE, Asset } from "@/lib/data/requests";
+import { ASSETS, ASSET_APPROVAL_TONE, Asset, assetSeq, assetsByCampaign } from "@/lib/data/requests";
 import { fetchAssets, createAsset } from "@/lib/db/assets";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
@@ -43,6 +43,8 @@ const emptyPortfolio = (brand: BrandId): PortfolioItem => ({
 
 interface AssetSavedView { tab: AssetTab; brand: BrandFilterValue; type: string; group: "list" | "campaign" }
 
+const COLLAPSED_KEY = "mos-assets-collapsed-campaigns";
+
 function AssetCard({ a }: { a: Asset }) {
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden shadow-soft">
@@ -74,6 +76,24 @@ export default function AssetLibraryPage() {
   const [tab, setTab] = useState<AssetTab>("library");
   // Library grid can render flat or grouped by campaign.
   const [group, setGroup] = useState<"list" | "campaign">("list");
+  // One box over both the campaign and the asset name. Splitting them into two
+  // fields would make the user decide which one they are remembering before
+  // they can type, and people arrive with either — "that Wagyu campaign" or
+  // "the key visual".
+  const [q, setQ] = useState("");
+  // Campaigns the user rolled up. Collapsed rather than filtered, so the header
+  // and its asset count stay on screen. Remembered between visits.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => {
+    try { setCollapsed(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]") as string[]); } catch { /* no-op */ }
+  }, []);
+  const toggleCampaign = (name: string) => {
+    setCollapsed((current) => {
+      const next = current.includes(name) ? current.filter((c) => c !== name) : [...current, name];
+      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next)); } catch { /* no-op */ }
+      return next;
+    });
+  };
   const [assets, setAssets] = useState<Asset[]>(ASSETS);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [portfolioDraft, setPortfolioDraft] = useState<PortfolioItem>(() => emptyPortfolio((brandOptions[0] ?? "teppen") as BrandId));
@@ -115,7 +135,13 @@ export default function AssetLibraryPage() {
     }
   };
 
-  const rows = assets.filter((a) => (brand === "all" || a.b === brand) && (type === "all" || a.type === type));
+  const needle = q.trim().toLowerCase();
+  const rows = assets
+    .filter((a) => (brand === "all" || a.b === brand) && (type === "all" || a.type === type)
+      && (!needle || `${a.campaign ?? ""} ${a.name}`.toLowerCase().includes(needle)))
+    // Newest first everywhere — see assetSeq for why this is id order, not a date.
+    .sort((x, y) => assetSeq(y) - assetSeq(x));
+  const campaignGroups = assetsByCampaign(rows);
   const portfolioRows = portfolio.filter((p) => (brand === "all" || p.brand === brand));
   const field = "w-full text-[14px] px-[12px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const approvedCount = rows.filter((a) => a.approval === "Approved").length;
@@ -199,6 +225,20 @@ export default function AssetLibraryPage() {
                   current={{ tab, brand, type, group }}
                   onApply={(v) => { setTab(v.tab); setBrand(v.brand); setType(v.type); setGroup(v.group ?? "list"); }}
                 />
+                <div className="relative">
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="ค้นหาแคมเปญ / ชื่อ asset…"
+                    aria-label="ค้นหาแคมเปญหรือชื่อ asset"
+                    className="text-[13px] pl-[30px] pr-[28px] py-[8px] rounded-[10px] border border-line2 bg-ivory outline-none w-[200px]"
+                  />
+                  <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-[12px] text-faint" aria-hidden>🔍</span>
+                  {q && (
+                    <button type="button" onClick={() => setQ("")} aria-label="ล้างคำค้น"
+                      className="absolute right-[8px] top-1/2 -translate-y-1/2 text-[13px] text-faint hover:text-ink">×</button>
+                  )}
+                </div>
                 <Segmented value={group} onChange={setGroup} options={[{ value: "list", label: "List" }, { value: "campaign", label: "Group Campaign" }]} />
               </span>
             </div>
@@ -244,23 +284,37 @@ export default function AssetLibraryPage() {
       {tab === "library" ? (
         group === "campaign" ? (
           <div className="mt-5 flex flex-col gap-5">
-            {Array.from(rows.reduce((m, a) => { const c = a.campaign || "—"; (m.get(c) ?? m.set(c, []).get(c)!).push(a); return m; }, new Map<string, Asset[]>()).entries())
-              .sort((x, y) => x[0].localeCompare(y[0]))
-              .map(([c, list]) => (
+            {campaignGroups.map(([c, list]) => {
+              const shut = collapsed.includes(c);
+              return (
                 <div key={c}>
-                  <div className="flex items-center gap-2 mb-2 px-1">
+                  <button type="button" onClick={() => toggleCampaign(c)} aria-expanded={!shut}
+                    className="w-full flex items-center gap-2 mb-2 px-1 text-left">
+                    <span className="text-[11px] text-faint" aria-hidden>{shut ? "▸" : "▾"}</span>
                     <span className="text-[13px] font-extrabold text-ink">🎯 {c}</span>
                     <span className="text-[12px] text-faint font-semibold">{list.length} asset{list.length > 1 ? "s" : ""}</span>
-                  </div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
-                    {list.map((a) => <AssetCard key={a.id} a={a} />)}
-                  </div>
+                  </button>
+                  {!shut && (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+                      {list.map((a) => <AssetCard key={a.id} a={a} />)}
+                    </div>
+                  )}
                 </div>
-              ))}
-            {rows.length === 0 && <div className="text-[12.5px] text-faint text-center py-10">No assets match this view.</div>}
+              );
+            })}
+            {rows.length === 0 && (
+              <div className="text-[12.5px] text-faint text-center py-10">
+                {needle ? `ไม่พบแคมเปญหรือ asset ที่ชื่อมี “${q.trim()}”` : "No assets match this view."}
+              </div>
+            )}
           </div>
         ) : (
           <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+            {/* A search that finds nothing has to say so. Without this the grid
+                shows only the drop zone, which reads as "the library is empty". */}
+            {rows.length === 0 && needle && (
+              <div className="col-span-full text-[12.5px] text-faint text-center py-8">ไม่พบแคมเปญหรือ asset ที่ชื่อมี “{q.trim()}”</div>
+            )}
             {rows.map((a) => <AssetCard key={a.id} a={a} />)}
             <div className="border-2 border-dashed border-line2 rounded-cardLg flex flex-col items-center justify-center p-8 text-center min-h-[180px] bg-white/70">
               <div className="text-[13px] font-bold text-muted">Drop asset</div>
