@@ -764,7 +764,7 @@ function KolDatabase() {
   }, [rows]);
   // Trailing metrics get their own breathing room — "ใช้ไป" and "Cost/Reach"
   // read as one number when they sit flush against each other.
-  const cols = `1.9fr 0.7fr 1.1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.85fr 0.95fr 0.75fr 1fr 0.75fr`;
+  const cols = `2.1fr 0.7fr 1.1fr ${platformCols.map(() => "0.8fr").join(" ")} 0.85fr 0.95fr 0.75fr 1fr 0.75fr 0.4fr`;
   // Creators we have evidence about first; the never-booked ones get their own
   // block so they read as "still to try", not as the bottom of a ranking.
   const used = rows.filter((r) => !r.never_used);
@@ -851,6 +851,7 @@ function KolDatabase() {
           })}
           <div className="text-right">รวม</div><div className="text-right">Rate</div>
           <div className="text-right">ใช้ไป</div><div className="text-right pl-3">Cost/Reach</div><div className="text-right">R/F</div>
+          <div className="text-right" title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</div>
         </div>
         {used.map((r) => <KolLibraryRow key={r.kol_id} r={r} cols={cols} platformCols={platformCols} onOpen={setOpenKol} />)}
         {untried.length > 0 && (
@@ -894,13 +895,9 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
     <div className="grid gap-y-1 px-5 py-3 items-center border-b border-line4 last:border-0 hover:bg-ivory/40" style={{ gridTemplateColumns: cols }}>
       <span className="flex items-center gap-2 min-w-0">
         <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
+        {/* Partner lives in its own column at the far right — inline it ate the
+            name and left every row's badges at a different x. */}
         <button onClick={() => onOpen(r.kol_id)} className="text-[13px] font-bold text-ink truncate text-left hover:underline">{r.display_name}</button>
-        {r.is_partner && (
-          <span className="text-[9.5px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0 whitespace-nowrap"
-            style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}>
-            PARTNER
-          </span>
-        )}
       </span>
       <span>
         {r.tier
@@ -937,6 +934,13 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
       <span className="text-[12px] text-muted text-right pl-3">{r.cost_per_reach != null ? `฿${Number(r.cost_per_reach).toFixed(3)}` : "—"}</span>
       <span className="text-[12px] text-right" style={{ color: (r.reach_per_follower ?? 0) >= 1 ? "#3F6A34" : "#6b6258" }}>
         {r.reach_per_follower != null ? `${Number(r.reach_per_follower).toFixed(2)}x` : "—"}
+      </span>
+      <span className="text-right">
+        {r.is_partner
+          ? <span className="text-[9.5px] font-bold px-[6px] py-[2px] rounded-pill whitespace-nowrap"
+              style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}
+              title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</span>
+          : <span className="text-[12px] text-faint">—</span>}
       </span>
     </div>
   );

@@ -454,7 +454,8 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
                     <span className="text-[12.5px] font-bold text-ink truncate">{row.display_name}</span>
                     {row.is_partner && (
                       <span className="text-[9px] font-bold px-[6px] py-[1px] rounded-pill flex-shrink-0"
-                        style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}>PARTNER</span>
+                        style={{ background: PARTNER_TONE.bg, border: `1px solid ${PARTNER_TONE.border}`, color: PARTNER_TONE.fg }}
+                        title="KOL Partner — เคยร่วมงานซ้ำ เงื่อนไขนิ่งแล้ว">PN</span>
                     )}
                     {row.tier && (
                       <span className="text-[9px] font-bold px-[6px] py-[1px] rounded-pill flex-shrink-0"
