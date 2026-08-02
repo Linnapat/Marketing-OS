@@ -66,8 +66,26 @@ export interface KpiPerson {
   id: string;
   name: string;
   position: string;
+  /** The name this person is filed under on the Graphic board, when it differs
+   *  from their name here. Spelling drifts between screens ("Jeeno" vs "Jino"),
+   *  and a review must not silently lose someone's work to a typo — so the link
+   *  is stored once, explicitly, instead of being re-guessed every month. */
+  boardName?: string;
   note?: string;
 }
+
+/** Which KPI set a member's role is reviewed against. Roles the review doesn't
+ *  cover (CMO, Co-ordinator…) map to nothing and the reviewer picks manually. */
+export const ROLE_TO_POSITION: Record<string, string> = {
+  "Creative Leader": "Creative Leader",
+  "Senior Graphic Designer": "Graphic Designer",
+  "VDO Editor": "Video Creator",
+  "Content Creator": "Creative Executive",
+  "KOL Specialist": "KOL Specialist",
+};
+
+/** The name to look this person up by on the board. */
+export const boardNameOf = (person: KpiPerson) => (person.boardName || person.name).trim();
 
 /** One KPI's raw input for one person. Which fields matter depends on the
  *  KPI's direction: Higher/Lower read target+actual, Manual reads score. */
@@ -241,7 +259,7 @@ export function parseMonth(month: string, raw: unknown): TeamKpiMonth {
     ? value.people
         .filter((p): p is KpiPerson => !!p && typeof p.id === "string" && typeof p.name === "string")
         .filter((p) => ALL_POSITIONS.includes(p.position))
-        .map((p) => ({ id: p.id, name: p.name, position: p.position, note: p.note ?? "" }))
+        .map((p) => ({ id: p.id, name: p.name, position: p.position, boardName: p.boardName ?? "", note: p.note ?? "" }))
     : [];
   const inputs: Record<string, KpiInput> = {};
   if (value.inputs && typeof value.inputs === "object") {

@@ -155,6 +155,18 @@ export function kpiSignals(graphics: Graphic[], month: string, today: string): K
   return [...rows.values()].sort((a, b) => (b.pieces + b.due) - (a.pieces + a.due));
 }
 
+/** Every real designer name that appears on the board, for the picker that links
+ *  a reviewed person to their board name. Sorted, de-duplicated, no "Unassigned". */
+export function boardDesigners(graphics: Graphic[]): string[] {
+  const seen = new Map<string, string>();
+  for (const g of graphics) {
+    if (!isPerson(g.designer)) continue;
+    const key = nameKey(g.designer);
+    if (!seen.has(key)) seen.set(key, g.designer.trim());
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
 /** The row for one person, matched on name. null when the name has no work that
  *  month — shown as "no data", never as a zero score. */
 export function signalsFor(name: string, rows: KpiSignals[]): KpiSignals | null {
