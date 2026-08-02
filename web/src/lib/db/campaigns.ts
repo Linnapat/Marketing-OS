@@ -80,7 +80,7 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
  *  so a Sheet hiccup never blocks (or reverts) a campaign save. Only runs in the
  *  browser — the server has no relative-URL base for the fetch. */
 // Columns of the reporting template's Campaigns tab, in order.
-const CAMPAIGN_SHEET_HEADERS = [
+export const CAMPAIGN_SHEET_HEADERS = [
   "campaign_id", "campaign_name", "brand", "branch",
   "KPI", "start", "end", "budget_plan", "notes",
 ];

@@ -3,7 +3,8 @@
  * Run: node --import tsx scripts/test-perf-mirror.ts */
 
 import {
-  PERF_MIRROR_HEADERS, perfMirrorRow, parseMirrorBrands, shouldMirrorBrand, mirrorableRows,
+  PERF_MIRROR_HEADERS, SHEET_FORMULA_COLUMNS, perfMirrorRow, parseMirrorBrands,
+  shouldMirrorBrand, mirrorableRows, splitDates,
 } from "../src/lib/data/perfMirror";
 import type { CampaignResultRow } from "../src/lib/data/campaignResult";
 import type { BrandId } from "../src/lib/brands";
@@ -25,28 +26,46 @@ const row = (over: Partial<CampaignResultRow> = {}): CampaignResultRow => ({
   ...over,
 } as CampaignResultRow);
 
-console.log("\n— แถวที่ส่งเข้าชีต —");
+console.log("\n— แถวที่ส่งเข้าแท็บ Ad_Activities —");
 {
-  const cells = perfMirrorRow(row(), { campaignName: "Wagyu Festival", brand: "teppen" as BrandId, syncedAt: "2026-07-28T03:00:00Z" });
-  is("จำนวนคอลัมน์ตรงกับ header", cells.length, PERF_MIRROR_HEADERS.length);
-  // ทั้ง id และชื่อต้องอยู่ครบ — id ไว้ให้สูตร match (rename แล้วไม่หลุด),
-  // ชื่อไว้ให้คนอ่านออก
-  is("คอลัมน์แรกคือ campaign_id", cells[0], "CAM-2026-0001");
-  is("คอลัมน์สองคือชื่อแคมเปญ", cells[1], "Wagyu Festival");
-  is("มีแบรนด์", cells[2], "teppen");
-  is("มี row_id ไว้ upsert ทับได้", cells[3], "res-CAM-2026-0001-01");
-  is("ตัวเลข actual ครบ", [cells[14], cells[15], cells[16], cells[17]], [87000, 28500, 210, 45]);
-  is("มีเวลาที่ sync", cells[cells.length - 1], "2026-07-28T03:00:00Z");
+  const cells = perfMirrorRow(row(), {
+    campaignName: "CPN01 Branding Sit and done", brand: "omakase" as BrandId,
+    start: "1 Jul", end: "31 Jul", syncedAt: "2026-07-28T03:00:00Z",
+  });
+  const at = (h: string) => cells[PERF_MIRROR_HEADERS.indexOf(h as never)];
+
+  is("จำนวนคอลัมน์ตรงกับแท็บจริง (23)", cells.length, PERF_MIRROR_HEADERS.length);
+  // ID ของแอปเป็นกุญแจ (ตัดสินใจ 28 ก.ค.) — rename แคมเปญแล้วยัง join ได้
+  is("campaign_id = id ของแอป", at("campaign_id"), "CAM-2026-0001");
+  is("campaign_name ไว้ให้คนอ่าน", at("campaign_name"), "CPN01 Branding Sit and done");
+  is("ads = ชื่อ ad", at("ads"), "Wagyu carousel");
+  is("target_audience", at("target_audience"), "Foodies 25-40");
+  is("types (ไม่ใช่ type)", at("types"), "Album");
+  is("วันที่มาจากแคมเปญ", [at("start"), at("end")], ["1 Jul", "31 Jul"]);
+  is("ตัวเลขแผน", [at("day"), at("reach_target"), at("budget")], [14, 100000, 30000]);
+  is("ตัวเลขจริง", [at("reach_actual"), at("conversions"), at("budget_actual")], [87000, 210, 28500]);
+
+  // ช่องที่ชีตคำนวณเอง ต้องส่งว่าง ไม่งั้นไปทับสูตร / ขัดกับแถวข้างบน
+  for (const col of SHEET_FORMULA_COLUMNS) {
+    is(`${col} ปล่อยให้ชีตคำนวณเอง`, at(col), "");
+  }
+  is("status ไม่ไปทับของที่ชีตคุมเอง", at("status"), "");
+  // ชีตไม่มีคอลัมน์ marketing visits — ใส่ใน remark ดีกว่าทิ้งเงียบๆ
+  is("marketing visits ไม่หายไป", at("remark"), "marketing_visits: 45");
 }
 {
-  // ค่าที่หายไปต้องกลายเป็น 0 / "" ไม่ใช่ undefined ที่ทำให้คอลัมน์เลื่อน
-  const sparse = perfMirrorRow(
-    { id: "r1", campaignId: "C1" } as CampaignResultRow,
-    { campaignName: "N", syncedAt: "t" },
-  );
-  is("แถวที่ข้อมูลไม่ครบ ยังได้จำนวนคอลัมน์เท่าเดิม", sparse.length, PERF_MIRROR_HEADERS.length);
+  const sparse = perfMirrorRow({ id: "r1", campaignId: "C1" } as CampaignResultRow, { campaignName: "N", syncedAt: "t" });
+  is("แถวข้อมูลไม่ครบ ยังได้ 23 คอลัมน์เท่าเดิม", sparse.length, PERF_MIRROR_HEADERS.length);
   is("ไม่มี undefined หลุดไปในชีต", sparse.some((c) => c === undefined || c === null), false);
-  is("ไม่มีแบรนด์ = ช่องว่าง", sparse[2], "");
+  is("ไม่มี marketing visits = remark ว่าง", sparse[PERF_MIRROR_HEADERS.indexOf("remark" as never)], "");
+}
+
+console.log("\n— แยกช่วงวันที่ของแคมเปญ —");
+{
+  is("เส้นประยาว", splitDates("1 Jul – 31 Jul"), { start: "1 Jul", end: "31 Jul" });
+  is("เส้นประ em dash", splitDates("1 Jul — 31 Jul"), { start: "1 Jul", end: "31 Jul" });
+  is("ขีดกลางมีเว้นวรรค", splitDates("1 Jul - 31 Jul"), { start: "1 Jul", end: "31 Jul" });
+  is("ไม่มีค่า", splitDates(undefined), { start: "", end: "" });
 }
 
 console.log("\n— อ่านค่าตั้งว่าจะ sync แบรนด์ไหน —");
