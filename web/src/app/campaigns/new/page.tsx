@@ -2,6 +2,7 @@
 
 import { toast, toastError, toastSuccess } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
+import { workLink } from "@/lib/deepLink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -330,7 +331,8 @@ export default function NewCampaignPage() {
         const changes = briefDiffSummary(originalBrief, brief);
         const entry = { action: "Edited — approval revoked, sent back to CMO", by: brief.plannerOwner || "Planner", at: now, comment: changes || "ไม่มีการเปลี่ยนแปลงที่ตรวจพบ", from: originalBrief.status, to: "Waiting for Approval" };
         await saveCampaignBrief(finalize("Waiting for Approval", [...brief.approvalLog, entry], now));
-        notify("approval", `✏️ แคมเปญแก้ไขแล้วรออนุมัติ: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"}${changes ? ` · สิ่งที่แก้: ${changes}` : ""}`, "/my-tasks", { to: [brief.approver || DEFAULT_APPROVER] });
+        notify("approval", `✏️ แคมเปญแก้ไขแล้วรออนุมัติ: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"}${changes ? ` · สิ่งที่แก้: ${changes}` : ""}`,
+          workLink.campaign(editingId ?? brief.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
         toast("แคมเปญนี้เคยอนุมัติแล้ว — การแก้ไขถูกส่งให้ CMO อนุมัติใหม่", "info");
       } else {
         await saveCampaignBrief(finalize("Draft", brief.approvalLog, now));
@@ -429,7 +431,8 @@ export default function NewCampaignPage() {
       toastSuccess(status === "Waiting for Approval"
         ? `ส่ง “${brief.name}” ให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติแล้ว`
         : `บันทึก “${brief.name}” เรียบร้อย`);
-      if (status === "Waiting for Approval") notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติ${editingId && changes ? ` · สิ่งที่แก้: ${changes}` : ""}`, "/my-tasks", { to: [brief.approver || DEFAULT_APPROVER] });
+      if (status === "Waiting for Approval") notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติ${editingId && changes ? ` · สิ่งที่แก้: ${changes}` : ""}`,
+        workLink.campaign(editingId ?? brief.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch (error) {
