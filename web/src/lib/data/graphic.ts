@@ -5,6 +5,7 @@
 import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { RushStatus } from "@/lib/data/briefDeadline";
+import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
@@ -748,7 +749,8 @@ export const GRAPHIC_BRIEF_FOR_PARAM = "briefFor";
  *  one goes post → new brief, this one goes post → the brief it already has.
  *  Content Plan's "ผูกกับ Graphic Request #N ↗" used to link at bare /graphic
  *  and leave you to find #N yourself in a list of forty-odd rows. */
-export const GRAPHIC_OPEN_PARAM = "open";
+/** Re-exported from lib/deepLink, which owns every deep-link param. */
+export const GRAPHIC_OPEN_PARAM = OPEN_PARAM.graphic;
 
 /** What /graphic should do about a ?open=<id> on this render.
  *
@@ -766,16 +768,18 @@ export const GRAPHIC_OPEN_PARAM = "open";
  *    missing → the fetch is in and the id is not there (deleted, or a brand
  *              this member cannot see). Say so rather than silently landing
  *              on the full list, which is what the old bare link did. */
+/** Kept as the Graphic-shaped view of the shared resolver (lib/deepLink), which
+ *  every deep-linked page now uses. Same decision, one implementation — two
+ *  copies would drift on exactly the timing question they exist to settle.
+ *  `graphic` rather than `item` because this file's callers and tests name it. */
 export function resolveOpenTarget<T extends Pick<Graphic, "id">>(
   openId: string | null,
   graphics: T[],
   loaded: boolean,
   alreadyOpened: boolean,
 ): { action: "idle" | "wait" | "open" | "missing"; graphic?: T } {
-  if (!openId || alreadyOpened) return { action: "idle" };
-  if (!loaded) return { action: "wait" };
-  const found = graphics.find((g) => String(g.id) === String(openId));
-  return found ? { action: "open", graphic: found } : { action: "missing" };
+  const { action, item } = resolveOpen(openId, graphics, loaded, alreadyOpened);
+  return item ? { action, graphic: item } : { action };
 }
 
 const linkKey = (s?: string) => (s ?? "").trim().toLowerCase();

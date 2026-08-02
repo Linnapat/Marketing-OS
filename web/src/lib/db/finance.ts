@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { REQUESTS, RequestRow, EXPENSES, ExpenseRow } from "@/lib/data/finance";
 import { BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import { logAudit } from "@/lib/db/audit";
 import { baht } from "@/lib/format";
 import { assertDbData, assertDbOk, softColumnUpdate } from "@/lib/db/assert";
@@ -175,7 +176,7 @@ export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
   assertDbOk(error, "Could not submit expense draft");
   if (!claimed || claimed.length === 0) return; // already submitted elsewhere — no-op
   notify("approval", `📥 คำขอเบิกงบจากงบแคมเปญ · ${req.category}`,
-    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, "/my-tasks");
+    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, workLink.approvals());
 }
 
 /** Insert a new expense request; extended columns go in a second update so the

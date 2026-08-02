@@ -24,6 +24,7 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import { RequestRow as QueueRow } from "@/lib/data/requests";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import { getAppSetting } from "@/lib/db/appSettings";
 import { SignaturePad } from "@/components/finance/SignaturePad";
 import { clearSignature, getSavedSignature, saveSignature } from "@/lib/signature";
@@ -147,7 +148,7 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       // ปิดช่องว่าง "แจ้งกลุ่ม LINE เอง" — ระบบแจ้งผู้อนุมัติให้ทันที
       notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${catKey || "Expense"}`,
         `${baht(amt)} (${reimburseType})${vendor ? ` · ${vendor}` : ""} · โดย ${requesterName} → รอ ${route} อนุมัติ`,
-        "/my-tasks");
+        workLink.approvals());
       setSubmitted(ref);
     } catch (error) {
       toastError(`บันทึก Expense Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);

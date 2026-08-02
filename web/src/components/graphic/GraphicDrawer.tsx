@@ -7,6 +7,7 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
 import { X } from "lucide-react";
+import { workLink } from "@/lib/deepLink";
 import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
@@ -439,7 +440,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       await updateGraphic(next);
       await createTaskDb(task);
       updateCurrentGraphic(next);
-      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks", { team: graphicTeam(g), to: [g.requester] });
+      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.requester] });
       setBriefComment("");
     } catch (error) {
       toastError(`ส่ง Brief กลับแก้ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -488,7 +489,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks", { team: graphicTeam(g), to: [g.designer] });
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.designer] });
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -1287,7 +1288,8 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       // POSM, posters and menu artwork serve no post, so that sync returns
       // early for them and they used to finish nowhere.
       void fileApprovedAsset(ng);
-      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content", { team: graphicTeam(g) });
+      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish",
+        ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id), { team: graphicTeam(g) });
     }
   };
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
@@ -1327,7 +1329,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
           brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks", { team: graphicTeam(g), to: [g.designer] });
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.designer] });
       // In-app, to BOTH sides. Only the designer used to hear about this, and
       // only through a LINE group — the person who raised the request learned
       // their artwork had gone back by opening the drawer and noticing.

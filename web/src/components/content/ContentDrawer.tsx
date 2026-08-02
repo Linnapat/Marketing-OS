@@ -3,6 +3,7 @@
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
+import { workLink } from "@/lib/deepLink";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -281,7 +282,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     persist(released
       ? { ...item, releaseStatus: "", releasedBy: undefined, releasedAt: undefined }
       : { ...item, releaseStatus: "Released", releasedBy: reviewer, releasedAt: new Date().toISOString(), mediaLink: mediaLink.trim() || item.mediaLink });
-    if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
   };
   const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
   // Warn against the date being EDITED, not the saved one — the point is to
@@ -344,7 +345,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await approveContent(item, reviewer);
       if (!res.ok) { toastError("ยัง Approve ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+      notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
     } catch (error) {
       toastError(`อนุมัติไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -371,7 +372,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
         brand: brandName(item.b), campaign: item.campaign, reason: r, by: reviewer,
       }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, "/my-tasks", { team: "graphic", to: [fixer] });
+    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "graphic", to: [fixer] });
     setReason(""); setRevising(false); setCaptionNeedsWork(false);
   };
 
@@ -382,7 +383,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await publishContent(item, reviewer);
       if (!res.ok) { toastError("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+      notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -398,7 +399,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await scheduleContentToMeta(item, reviewer, scheduledFor, selectedChannels);
       if (!res.ok) { toastError("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+      notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Queue ไป Meta ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -409,7 +410,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await publishContentToMeta(item, reviewer, selectedChannels, metaAccount);
       if (!res.ok) { toastError("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
       onUpdate?.(res.post);
-      notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+      notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Meta publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }

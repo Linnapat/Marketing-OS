@@ -2,12 +2,14 @@
 
 import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
+import { OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
@@ -89,7 +91,17 @@ const SCOPE_FILTERS = [
 // per-visit decision, and re-hiding it on every reload is its own annoyance.
 const SHOW_DONE_KEY = "mytasks.showDone";
 
+/** useSearchParams (for ?task=) opts the tree into client rendering, which
+ *  Next requires a Suspense boundary around. */
 export default function MyTasksPage() {
+  return (
+    <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
+      <MyTasksPageInner />
+    </Suspense>
+  );
+}
+
+function MyTasksPageInner() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [activeTab, setActiveTab] = useState<"myDay" | "approval">("myDay");
@@ -163,6 +175,19 @@ export default function MyTasksPage() {
   // Same rows the sidebar bell reads — one shared inbox, or the two drift and
   // a bell saying 3 sits above a list showing 1.
   const { unread, markRead } = useNotifications();
+  // /my-tasks?task=<id> — arriving from a Slack DM or the email about this one
+  // card. `tasksLoaded` exists because `tasks` starts as the bundled demo seed:
+  // a non-empty list says nothing about whether the real rows are in, and
+  // deciding too early tells someone their task is gone a beat before it loads.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const openTaskId = searchParams.get(OPEN_PARAM.task);
+  // ?tab=approval — money has no page of its own to open, so its notifications
+  // land here instead; without this they landed on My Day and the approver had
+  // to know which tab the request was hiding behind.
+  const wantsApprovals = searchParams.get(OPEN_PARAM.tab) === "approval";
+  const [tasksLoaded, setTasksLoaded] = useState(false);
+  const openedRef = useRef(false);
 
 
   const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
@@ -184,7 +209,8 @@ export default function MyTasksPage() {
       if (!alive) return;
       setTasks(tasks);
       setDoneIds(new Set(doneIds));
-    }).catch(() => {});
+      setTasksLoaded(true);
+    }).catch(() => { if (alive) setTasksLoaded(true); });
     // Team = real members from Settings (internal, non-external accounts).
     fetchMembers().then((ms) => {
       if (!alive) return;
@@ -197,6 +223,27 @@ export default function MyTasksPage() {
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Open the card the notification was about, once the real list is in. The
+  // param is dropped afterwards so closing the drawer does not reopen it, and a
+  // task that is gone says so instead of leaving the board looking normal.
+  // The approval queue is a tab, not a row, so it needs no loaded list — switch
+  // as soon as the link says so, then drop the param.
+  useEffect(() => {
+    if (!wantsApprovals) return;
+    setActiveTab("approval");
+    setScopeFilter("approvals");
+    router.replace("/my-tasks");
+  }, [wantsApprovals, router]);
+
+  useEffect(() => {
+    const { action, item } = resolveOpenTarget(openTaskId, tasks, tasksLoaded, openedRef.current);
+    if (action === "idle" || action === "wait") return;
+    openedRef.current = true;
+    if (action === "open" && item) setDrawerId(item.id);
+    else toastError(`ไม่พบงาน #${openTaskId} — อาจถูกลบไปแล้ว หรือถูกส่งต่อให้คนอื่น`);
+    router.replace("/my-tasks");
+  }, [openTaskId, tasks, tasksLoaded, router]);
 
   // My Approval inbox — campaigns + requests where the current person is the
   // approver (available to anyone in an approval tier).
@@ -907,7 +954,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     });
     // Asking for help has no room to shout into — it reaches the people the
     // task already belongs to, the same pair the in-app inbox notifies.
-    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), "/my-tasks", { to: [t.assignee, t.pendingApprover] });
+    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), workLink.task(t.id), { to: [t.assignee, t.pendingApprover] });
     setAsking(false); setHelpMsg("");
   };
   const requestRevision = () => {
@@ -929,7 +976,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
       event: "comment", actor: me,
       title: `คอมเมนต์ใหม่: ${t.title}`,
       detail: text,
-      link: "/my-tasks",
+      link: workLink.task(t.id),
     });
     setComment("");
   };

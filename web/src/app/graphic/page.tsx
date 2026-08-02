@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { workLink } from "@/lib/deepLink";
 import Link from "next/link";
 import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -247,7 +248,10 @@ function GraphicPageInner() {
         if (ng.stage === "Approved") {
           syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติแล้ว แต่ sync asset เข้า Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
           void fileApprovedAsset(ng);
-          notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${ng.title}`, `โดย ${me} — แนบ asset เข้า Content Calendar ให้แล้ว`, "/content",
+          notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${ng.title}`, // The message is about the asset landing on its post, so open that post
+          // when the request is linked to one; the request's own drawer otherwise.
+          `โดย ${me} — แนบ asset เข้า Content Calendar ให้แล้ว`,
+            ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id),
             { team: workKind(ng.type, ng.requiredVideo).startsWith("vdo") ? "vdo" : "graphic" });
         }
       })

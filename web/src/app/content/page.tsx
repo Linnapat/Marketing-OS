@@ -1,8 +1,9 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { CSSProperties, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { OPEN_PARAM, resolveOpenTarget } from "@/lib/deepLink";
+import { CSSProperties, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -136,7 +137,17 @@ const hashText = (value: string) => value.split("").reduce((sum, ch) => sum + ch
 const campaignAccent = (campaign?: string) => CAMPAIGN_COLORS[Math.abs(hashText(campaign || "default")) % CAMPAIGN_COLORS.length];
 const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || "guest"}`;
 
+/** useSearchParams (for ?post=) opts the tree into client rendering, which
+ *  Next requires a Suspense boundary around. */
 export default function ContentPage() {
+  return (
+    <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
+      <ContentPageInner />
+    </Suspense>
+  );
+}
+
+function ContentPageInner() {
   const router = useRouter();
   const brandVisibility = useBrandVisibility();
   // Filters stick per tab so leaving the page and coming back keeps the view.
@@ -153,6 +164,13 @@ export default function ContentPage() {
   const setBrand = (b: BrandFilterValue) => setSticky({ ...sticky, brand: b });
   const setDate = (d: typeof DEFAULT_DATE_FILTER) => setSticky({ ...sticky, date: d });
   const [open, setOpen] = useState<ContentItem | null>(null);
+  // /content?post=<id> — arriving from the notification about this one post.
+  // postsLoaded, not posts.length: the list starts as the bundled demo seed, so
+  // a non-empty list says nothing about whether the real rows are in yet.
+  const searchParams = useSearchParams();
+  const openPostId = searchParams.get(OPEN_PARAM.post);
+  const [postsLoaded, setPostsLoaded] = useState(false);
+  const openedRef = useRef(false);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [savedViews, setSavedViews] = useState<SavedContentView[]>([]);
   const [savedViewName, setSavedViewName] = useState("");
@@ -177,10 +195,24 @@ export default function ContentPage() {
 
   useEffect(() => {
     let alive = true;
-    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
+    fetchContent().then((c) => { if (alive) { setPosts(c); setPostsLoaded(true); } })
+      .catch(() => { if (alive) setPostsLoaded(true); });
     fetchKolCalendarPosts().then((k) => { if (alive) setKolPosts(k); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Open the post the notification named, once the real list is in. The param
+  // is dropped afterwards so closing the drawer does not reopen it, and a post
+  // that is gone says so rather than leaving a calendar that looks fine.
+  useEffect(() => {
+    const { action, item } = resolveOpenTarget(openPostId, posts, postsLoaded, openedRef.current);
+    if (action === "idle" || action === "wait") return;
+    openedRef.current = true;
+    if (action === "open" && item) setOpen(item);
+    else toastError(`ไม่พบโพสต์นี้ — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
+    router.replace("/content");
+  }, [openPostId, posts, postsLoaded, router]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
