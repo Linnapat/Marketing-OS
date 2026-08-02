@@ -84,6 +84,10 @@ const SCOPE_FILTERS = [
   { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
   { id: "approvals", label: "My approvals" }, { id: "stuck", label: "Stuck" },
 ];
+// Whether finished work is unfolded on this board. Remembered per browser, the
+// same way FinishedFold remembers a list — the choice is a habit, not a
+// per-visit decision, and re-hiding it on every reload is its own annoyance.
+const SHOW_DONE_KEY = "mytasks.showDone";
 
 export default function MyTasksPage() {
   const brandVisibility = useBrandVisibility();
@@ -131,6 +135,21 @@ export default function MyTasksPage() {
   // the filter can be set to a whole year and one grid only draws one month.
   const [calMonth, setCalMonth] = useState(() => ({ month: DEFAULT_DATE_FILTER.month, year: DEFAULT_DATE_FILTER.year }));
   const [scopeFilter, setScopeFilter] = useState("all");
+  // Done work only ever accumulates: nothing takes a finished task off this
+  // board, so the Done column grew past everything still to do and pushed the
+  // live groups sideways. Fold it away by default and keep the count on the
+  // toggle — hidden, never lost, one click to read it back (same bargain as
+  // FinishedFold). Starts false and is corrected from localStorage after mount,
+  // because reading storage during render breaks the server/client match.
+  const [showDone, setShowDone] = useState(false);
+  useEffect(() => {
+    try { setShowDone(localStorage.getItem(SHOW_DONE_KEY) === "1"); } catch { /* no-op */ }
+  }, []);
+  const toggleShowDone = () => setShowDone((current) => {
+    const next = !current;
+    try { localStorage.setItem(SHOW_DONE_KEY, next ? "1" : "0"); } catch { /* no-op */ }
+    return next;
+  });
   const [tasks, setTasks] = useState<Task[]>(TASKS);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set([1, 4, 7, 8, 12, 14, 18, 20]));
   const [drawerId, setDrawerId] = useState<number | null>(null);
@@ -346,6 +365,15 @@ export default function MyTasksPage() {
     return true;
   };
   const scopedTasks = myTasks.filter(matchScope);
+  // Finished is two facts, not one: the status a task reports and the column it
+  // sits in. They come apart — a row whose group is already "done" can still
+  // carry an older status — and asking only one question left those cards on a
+  // board that was meant to be clear of them.
+  const isDone = (t: Task) => getStatus(t) === "Done" || getGroup(t) === "done";
+  const doneCount = scopedTasks.filter(isDone).length;
+  // One filter above the view switch, so Cards, List and Calendar can never
+  // disagree about whether finished work is showing.
+  const visibleTasks = showDone ? scopedTasks : scopedTasks.filter((t) => !isDone(t));
 
   return (
     <div style={{ paddingBottom: 40 }}>
@@ -458,7 +486,19 @@ export default function MyTasksPage() {
                 </span>
               ))}
             </div>
-            <div className="flex gap-[6px]">
+            <div className="flex gap-[6px] items-center flex-wrap">
+              {/* Nothing finished in this period → no toggle and no divider,
+                  rather than a control that reads as broken because pressing
+                  it changes nothing on screen. */}
+              {doneCount > 0 && (
+                <>
+                  <span onClick={toggleShowDone} style={chip(showDone)} role="button" aria-pressed={showDone}
+                    title={showDone ? "ซ่อนงานที่เสร็จแล้วออกจากบอร์ด" : "แสดงงานที่เสร็จแล้วบนบอร์ด"}>
+                    ✓ {showDone ? "ซ่อนงานที่เสร็จ" : "ดูงานที่เสร็จ"} {doneCount}
+                  </span>
+                  <span className="w-px h-[18px] self-center" style={{ background: "#E5DECF" }} aria-hidden />
+                </>
+              )}
               <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>
               <span onClick={() => setViewMode("list")} style={chip(viewMode === "list")}>≡ List</span>
               <span onClick={() => setViewMode("calendar")} style={chip(viewMode === "calendar")}>🗓 Calendar</span>
@@ -473,7 +513,7 @@ export default function MyTasksPage() {
                is the only reason to look at this screen. */
             <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
               {GROUP_DEFS.map((g) => {
-                const groupTasks = scopedTasks.filter((t) => getGroup(t) === g.id);
+                const groupTasks = visibleTasks.filter((t) => getGroup(t) === g.id);
                 if (groupTasks.length === 0) return null;
                 return (
                   <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>
@@ -487,7 +527,7 @@ export default function MyTasksPage() {
             </div>
           ) : viewMode === "calendar" ? (
             <WorkCalendarView
-              items={scopedTasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
+              items={visibleTasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
               month={calMonth.month}
               year={calMonth.year}
               onNavigate={(month, year) => setCalMonth({ month, year })}
@@ -495,7 +535,7 @@ export default function MyTasksPage() {
               onOpenGraphic={setGraphicOpenId}
             />
           ) : (
-            <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
+            <ListView tasks={visibleTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
           )}
         </div>
       ) : (
