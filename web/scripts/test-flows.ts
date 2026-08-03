@@ -12,7 +12,7 @@ import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
-  awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience } from "../src/lib/data/graphic";
+  awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -469,6 +469,21 @@ console.log("Artwork counting — by pixels, platform collapsed");
     const steps = productionSteps(g({ type: "Poster", requiredVideo: false, requiresShooting: false }));
     check("Poster มีขั้นเดียว", steps.length === 1 && steps[0].key === "asset");
     check("Poster ส่ง asset ได้เลย", steps[0].state === "active");
+  }
+
+  // บรีฟที่ editor/คนถ่ายเห็นใน My Task ต้องมีลิงก์ storyboard ให้กดเปิดได้
+  {
+    const sbRow = (x: Graphic) => creativeBriefDetails(x).find((d) => d.label === "Storyboard");
+    const reel = (over: Partial<Graphic>) => g({ type: "Reel", requiredVideo: true, ...over });
+    check("Reel + มี storyboard = มีแถวให้กด", !!sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Approved" })));
+    check("แถวนั้นชี้ไปที่ลิงก์จริง", sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Approved" }))?.href === "https://slides/x");
+    check("อนุมัติแล้วบอกว่าอนุมัติแล้ว", sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Approved", storyboardDecidedBy: "Ken S." }))?.value.includes("Ken S.") === true);
+    check("ยังรออนุมัติก็เปิดดูได้ แต่บอกสถานะไว้", sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Submitted" }))?.value.includes("รอเจ้าของงานอนุมัติ") === true);
+    // ยังไม่มีลิงก์ = ไม่ต้องมีแถวเปล่า ๆ ให้กดแล้วไม่ไปไหน
+    check("ยังไม่ส่ง storyboard = ไม่มีแถวนี้", !sbRow(reel({ storyboardLink: "", storyboardStatus: "" })));
+    // งานที่ไม่ใช่วิดีโอไม่มี storyboard ให้ดู แม้ field จะค้างอยู่
+    check("Poster ไม่มีแถว storyboard", !sbRow(g({ type: "Poster", requiredVideo: false, storyboardLink: "https://slides/x" })));
+    check("บรีฟหลักยังอยู่ครบเหมือนเดิม", creativeBriefDetails(reel({ storyboardLink: "https://slides/x" })).some((d) => d.label.includes("ลิงก์บรีฟ")));
   }
 
   // วันที่ทำงานจริง / เดือนที่ทำงานจริง

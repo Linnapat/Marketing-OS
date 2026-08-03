@@ -1439,6 +1439,20 @@ export function creativeBriefDetails(g: Graphic): { label: string; value: string
   const briefLink = creativeBriefLink(g);
   return [
     { label: "ลิงก์บรีฟ (Drive / Slides)", value: briefLink ? "เปิดบรีฟ" : "ยังไม่มีลิงก์บรีฟ", href: briefLink || undefined },
+    // Video work only, and only once there is something to open. The people who
+    // shoot and cut a reel work FROM the storyboard, and it lived on the
+    // Overview tab of a drawer they had no reason to open — their own My Tasks
+    // card listed the brief and stopped there, so the plan they were building
+    // to was the one thing the card would not show them.
+    ...(needsStoryboard(g) && g.storyboardLink?.trim()
+      ? [{
+        label: "Storyboard",
+        value: g.storyboardStatus === "Approved"
+          ? `เปิด storyboard (อนุมัติแล้ว${g.storyboardDecidedBy ? ` โดย ${g.storyboardDecidedBy}` : ""})`
+          : `เปิด storyboard (${g.storyboardStatus === "Submitted" ? "รอเจ้าของงานอนุมัติ" : "ถูกส่งกลับแก้ — รอเวอร์ชันใหม่"})`,
+        href: g.storyboardLink.trim(),
+      }]
+      : []),
     { label: "Objective", value: g.objective || `${g.campaign} · ${g.type} for ${brandName(g.b)}` },
     // Key message must NOT fall back to nextAction — that's a workflow status
     // (e.g. "Design in progress"), not the creative message.
