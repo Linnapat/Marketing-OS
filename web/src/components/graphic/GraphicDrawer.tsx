@@ -17,7 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, workKind, briefChangeAudience,
-  releaseBriefForRevision, revisionAssignee,
+  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset,
 } from "@/lib/data/graphic";
 import type { NotifyTeam } from "@/lib/notifyRouting";
 
@@ -33,7 +33,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -1294,13 +1294,39 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
   const [revising, setRevising] = useState<{ i: number; lens: ReviewLens } | null>(null);
   const [reason, setReason] = useState("");
+  // Which approved row is having its address changed, and to what. Held per
+  // row so opening one does not wipe a link half-typed into another.
+  const [relocating, setRelocating] = useState<{ i: number; link: string } | null>(null);
+  const canRelocate = canRelocateApprovedAsset(role);
   const prog = deliverableProgress({ ...g, deliverables: dels });
+
+  /** File an approved piece somewhere else. The sign-off does not move with
+   *  it — see relocateApprovedAsset. */
+  const saveRelocated = (i: number, link: string) => {
+    const ng = relocateApprovedAsset({ ...g, deliverables: dels }, i, link, me);
+    if (!ng) { setRelocating(null); return; }
+    const before = dels[i];
+    setDels(ng.deliverables!);
+    setRelocating(null);
+    persistGraphic(ng, { announce: false });
+    toastSuccess("ย้ายที่เก็บ asset แล้ว — การอนุมัติเดิมยังอยู่");
+    // The requester approved a specific file at a specific address; they are
+    // told where it went. `inform`, not `to` — nothing is being asked of them.
+    notify("feedback", `🗂 ย้ายที่เก็บ asset: ${g.title}`,
+      `${before.platform} · ${before.size} — โดย ${me} · การอนุมัติเดิมยังอยู่`,
+      workLink.graphic(g.id), { team: graphicTeam(g), inform: [g.requester, before.submittedBy] });
+  };
 
   const persist = (next: GraphicDeliverable[], event?: NonNullable<Graphic["history"]>[number]) => {
     setDels(next);
     persistGraphic({ ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history });
   };
-  const persistGraphic = (base: Graphic) => {
+  /** `announce: false` still syncs the links outward — a relocated file has to
+   *  reach the Content post and the Asset Library, or those two keep pointing
+   *  at the folder the artwork just left — but skips the "approved everything"
+   *  message. Nothing was approved; a file was filed, and re-announcing a
+   *  sign-off that happened last week is how a channel stops being read. */
+  const persistGraphic = (base: Graphic, { announce = true }: { announce?: boolean } = {}) => {
     const ng: Graphic = { ...base };
     const ready = deliverableProgress(ng).ready;
     ng.stage = stageFromDeliverables(ng);
@@ -1316,8 +1342,10 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       // POSM, posters and menu artwork serve no post, so that sync returns
       // early for them and they used to finish nowhere.
       void fileApprovedAsset(ng);
-      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish",
-        ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id), { team: graphicTeam(g) });
+      if (announce) {
+        notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish",
+          ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id), { team: graphicTeam(g) });
+      }
     }
   };
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
@@ -1434,11 +1462,38 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
               </div>
             ) : (
               <div className="flex flex-col gap-2 mt-2">
-                <div className="flex items-center gap-3 text-[11.5px]">
+                <div className="flex items-center gap-3 text-[11.5px] flex-wrap">
                   <a href={d.assetLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Open artwork ↗</a>
                   {d.sourceLink && <a href={d.sourceLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Source ↗</a>}
                   <span className="text-faint">by {d.submittedBy}</span>
+                  {/* Filing an approved master somewhere else — an agency's
+                      Drive is not where the company keeps its artwork. */}
+                  {d.status === "Approved" && canRelocate && relocating?.i !== i && (
+                    <button onClick={() => setRelocating({ i, link: d.assetLink })}
+                      className="ml-auto text-[11px] font-bold text-muted border border-line2 rounded-[7px] px-[8px] py-[3px] bg-surface">
+                      🗂 ย้ายที่เก็บ
+                    </button>
+                  )}
                 </div>
+                {d.status === "Approved" && canRelocate && relocating?.i === i && (
+                  <div className="rounded-[10px] px-3 py-[10px] flex flex-col gap-2" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
+                    <div className="text-[11px] text-faint">
+                      เปลี่ยนที่เก็บไฟล์ที่อนุมัติแล้ว (เช่น Drive ของ agency → Dropbox ของบริษัท) ·
+                      <b className="text-muted"> การอนุมัติทั้งสองด้านยังอยู่เหมือนเดิม</b> และระบบจะบันทึกที่อยู่เดิมไว้ในประวัติ
+                    </div>
+                    <input value={relocating.link} autoFocus
+                      onChange={(e) => setRelocating({ i, link: e.target.value })}
+                      placeholder="ลิงก์ใหม่ (Dropbox / Drive)" className={inp} />
+                    <div className="flex gap-2">
+                      <button onClick={() => saveRelocated(i, relocating.link)}
+                        disabled={!relocating.link.trim() || relocating.link.trim() === d.assetLink.trim()}
+                        className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>
+                        บันทึกที่อยู่ใหม่
+                      </button>
+                      <button onClick={() => setRelocating(null)} className="text-[12px] font-bold text-muted px-3 py-[7px]">ยกเลิก</button>
+                    </div>
+                  </div>
+                )}
                 {inReview && (
                   <div className="rounded-[10px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
                     <div className="flex items-center gap-2 mb-2">

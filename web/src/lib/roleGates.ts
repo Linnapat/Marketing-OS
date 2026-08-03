@@ -97,6 +97,28 @@ export function canRunProductionPipeline(role: string): boolean {
 }
 
 /**
+ * Who may repoint an already-approved artwork at a new address.
+ *
+ * An agency delivers to their own Drive, the piece is approved from there, and
+ * then Creative files the master in the company Dropbox — at which point the
+ * approved link points at somebody else's folder, and the link is the only
+ * record of where the artwork lives. There was no way to update it: the editor
+ * closes on approval, and the only route was to send a passed piece back for
+ * revision, which un-approves work nobody objected to and drags the requester
+ * through a second sign-off.
+ *
+ * Creative Leader (and the CMO) only. Not the designer, and never the
+ * requester: this is custody of the final file, and a swap after sign-off is
+ * exactly the move a looser gate would let through unnoticed. Every change is
+ * stamped into the request's history, because "the link changed" and "the
+ * artwork changed" look identical from the outside.
+ */
+export function canRelocateApprovedAsset(role: string): boolean {
+  const r = (role || "").trim();
+  return r === "Creative Leader" || r === "CMO";
+}
+
+/**
  * Nav entries kept out of a role's rail because they are not that role's job —
  * decluttering, not a permission. The Permissions matrix still decides who may
  * open what; these routes stay reachable by a direct link, so a campaign code

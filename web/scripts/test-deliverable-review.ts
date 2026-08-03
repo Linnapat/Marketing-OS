@@ -12,8 +12,10 @@ import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
   applyLensVerdict, rejectionsByLens, emptyDeliverable,
   creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS, approvedAssetRow,
+  relocateApprovedAsset,
   type Graphic, type GraphicDeliverable,
 } from "../src/lib/data/graphic";
+import { canRelocateApprovedAsset } from "../src/lib/roleGates";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -152,6 +154,42 @@ console.log("\n— งานที่อนุมัติครบ → 1 แถ
   const linkless = req([submitted({ status: "Approved", assetLink: "" })]);
   is("ไม่มีไฟล์ → ไม่สร้างแถว", approvedAssetRow(linkless), null);
 }
+
+console.log("\n— ย้ายที่เก็บ asset ที่อนุมัติแล้ว (agency Drive → Dropbox บริษัท) —");
+{
+  const approved = req([submitted({ status: "Approved", version: 2, assetLink: "https://agency-drive/a.png" })]);
+  const moved = relocateApprovedAsset(approved, 0, "https://dropbox/company/a.png", "Boss")!;
+  is("ลิงก์เปลี่ยนตามที่ใส่", moved.deliverables![0].assetLink, "https://dropbox/company/a.png");
+  // หัวใจของข้อนี้: ย้ายที่เก็บ ≠ ส่งงานใหม่ การอนุมัติต้องไม่หลุด
+  is("ยังอนุมัติอยู่", moved.deliverables![0].status, "Approved");
+  is("version ไม่ขยับ", moved.deliverables![0].version, 2);
+  is("คนส่งงานเดิมยังเป็นคนเดิม", moved.deliverables![0].submittedBy, "Boss");
+  // ที่อยู่เดิมต้องอยู่ในประวัติ ไม่ใช่ถูกทับหาย — "ย้ายไฟล์" กับ "สลับงาน" หน้าตาเหมือนกันจากข้างนอก
+  const ev = moved.history!.at(-1)!;
+  is("บันทึกเหตุการณ์ไว้", ev.type, "asset_relocated");
+  is("บอกว่าใครย้าย", ev.by, "Boss");
+  is("ประวัติเก็บที่อยู่เดิมไว้", ev.note?.includes("https://agency-drive/a.png"), true);
+  is("ประวัติเก็บที่อยู่ใหม่ไว้", ev.note?.includes("https://dropbox/company/a.png"), true);
+  is("ผูกกับชิ้นที่ย้าย", ev.deliverableKey, "Instagram::1:1 (1080×1080)");
+
+  // ยังไม่อนุมัติ = ใช้ช่องแก้ปกติอยู่แล้ว ไม่ต้องมาทางนี้
+  is("ชิ้นที่ยังไม่อนุมัติ → ไม่ทำอะไร", relocateApprovedAsset(req([submitted()]), 0, "https://x/y.png", "Boss"), null);
+  is("ลิงก์เดิม → ไม่ทำอะไร", relocateApprovedAsset(approved, 0, "https://agency-drive/a.png", "Boss"), null);
+  is("ลิงก์ว่าง → ไม่ทำอะไร", relocateApprovedAsset(approved, 0, "   ", "Boss"), null);
+  is("ไม่มีชิ้นนั้น → ไม่ทำอะไร", relocateApprovedAsset(approved, 9, "https://x/y.png", "Boss"), null);
+  // ต้นฉบับต้องไม่ถูกแก้ (pure)
+  is("ไม่แตะของเดิม", approved.deliverables![0].assetLink, "https://agency-drive/a.png");
+}
+
+console.log("\n— ใครย้ายที่เก็บได้ —");
+// เจ้าของการเก็บไฟล์ตัวจริง ไม่ใช่คนทำงานหรือคนขอ — สลับไฟล์หลัง sign-off คือสิ่งที่ประตูหลวม ๆ จะปล่อยผ่าน
+is("Creative Leader ย้ายได้", canRelocateApprovedAsset("Creative Leader"), true);
+is("CMO ย้ายได้", canRelocateApprovedAsset("CMO"), true);
+is("Senior Graphic Designer ย้ายไม่ได้", canRelocateApprovedAsset("Senior Graphic Designer"), false);
+is("VDO Editor ย้ายไม่ได้", canRelocateApprovedAsset("VDO Editor"), false);
+is("Agency (External) ย้ายไม่ได้", canRelocateApprovedAsset("Agency (External)"), false);
+is("Marketing Manager / BGL ย้ายไม่ได้", canRelocateApprovedAsset("Marketing Manager / BGL"), false);
+is("role ว่างย้ายไม่ได้", canRelocateApprovedAsset(""), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

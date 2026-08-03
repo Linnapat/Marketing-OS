@@ -9,7 +9,7 @@ import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
-    | "brief_approved" | "brief_revision_requested";
+    | "brief_approved" | "brief_revision_requested" | "asset_relocated";
   at: string;
   by: string;
   deliverableKey?: string;
@@ -711,6 +711,45 @@ export function artworkGroup(dels: GraphicDeliverable[], index: number): number[
  *
  *  Returns null when there is nothing to do — no such row, or a piece that has
  *  not been submitted yet. Pure: the caller persists. */
+/** Point an approved piece at a new address without disturbing the sign-off.
+ *
+ *  Moving the master into the company Dropbox after an agency delivered it to
+ *  their own Drive is filing, not a new draft — the artwork the two reviewers
+ *  passed is the same artwork. So status, version and both verdicts are left
+ *  exactly as they are, and only the link moves.
+ *
+ *  What that costs is traceability: from the outside, repointing a link and
+ *  swapping the artwork behind an approval look identical. The old address is
+ *  therefore written into the request's history rather than overwritten, so
+ *  the trail says where the file used to be and who moved it.
+ *
+ *  Returns null when there is nothing to do — no such row, not approved, or
+ *  the link is unchanged. Pure: the caller persists and notifies. */
+export function relocateApprovedAsset(
+  g: Graphic,
+  index: number,
+  nextLink: string,
+  by: string,
+): Graphic | null {
+  const dels = g.deliverables ?? [];
+  const d = dels[index];
+  if (!d || d.status !== "Approved") return null;
+  const link = nextLink.trim();
+  if (!link || link === (d.assetLink ?? "").trim()) return null;
+  const at = new Date().toISOString();
+  return {
+    ...g,
+    deliverables: dels.map((x, i) => (i === index ? { ...x, assetLink: link } : x)),
+    history: [...(g.history ?? []), {
+      type: "asset_relocated",
+      at,
+      by,
+      deliverableKey: `${d.platform}::${d.size}`,
+      note: `ย้ายที่เก็บ asset: ${d.assetLink || "—"} → ${link}`,
+    }],
+  };
+}
+
 export function applyLensVerdict(
   g: Graphic,
   index: number,
