@@ -34,7 +34,7 @@ import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { Graphic } from "@/lib/data/graphic";
+import { Graphic, awaitsArtworkReview, awaitsStoryboardDecision } from "@/lib/data/graphic";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
 import {
   WorkItem, WorkCard, WorkListView, WorkCalendarView, WorkAction, WorkGroupHeader, StatMini,
@@ -67,6 +67,18 @@ const fmtThaiDate = (iso: string) => fmtShort(iso.slice(0, 10)) || iso.slice(0, 
 /** Campaign budget context shown to the approver on an expense request. */
 type ExpenseBudgetInfo = { budget: number; committed: number; left: number; campaignId: string };
 
+/** One thing on a graphic request that is waiting on its requester. A request
+ *  can raise two at once (a reel whose storyboard is still pending while an
+ *  earlier cut sits in review), which is why this is a row per decision rather
+ *  than a flag on the request. */
+type GraphicApproval = { g: Graphic; kind: "storyboard" | "artwork" };
+const GRAPHIC_APPROVAL_COPY = {
+  storyboard: { badge: "Storyboard รออนุมัติ", cta: "อนุมัติ storyboard →", tab: "overview" as GTab, bg: "#F2EEFF", fg: "#6C5CE7" },
+  // Artwork keeps landing on the brief, the way it always has — the review is
+  // "does this match what I asked for", and the brief is that question.
+  artwork: { badge: "Waiting review", cta: "Review artwork →", tab: "brief" as GTab, bg: "#FBF8EE", fg: "#C68A1E" },
+} as const;
+
 
 const GROUP_DEFS = [
   { id: "doFirst", label: "Do First", icon: "🎯", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "" },
@@ -81,6 +93,9 @@ const GROUP_DEFS = [
  * request from here. Module-level so the array identity is stable across
  * renders. */
 const HIDDEN_GRAPHIC_TABS: readonly GTab[] = ["overview"];
+/* …except when Overview IS the reason the drawer was opened: the storyboard
+ * accept / send-back pair sits in the production panel there. */
+const ALL_GRAPHIC_TABS: readonly GTab[] = [];
 
 const SCOPE_FILTERS = [
   { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
@@ -172,6 +187,12 @@ function MyTasksPageInner() {
   // edit made inside the drawer updates the card behind it in the same tick
   // instead of leaving a stale copy pinned in state.
   const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
+  // Which tab that drawer lands on. Almost everything here wants the brief, but
+  // the storyboard decision lives on Overview — the one tab this page normally
+  // hides — so opening a storyboard card at the default would show the requester
+  // a drawer with no approve button anywhere in it.
+  const [graphicOpenTab, setGraphicOpenTab] = useState<GTab>("brief");
+  const openGraphicAt = (id: number, tab: GTab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); };
   // Same rows the sidebar bell reads — one shared inbox, or the two drift and
   // a bell saying 3 sits above a list showing 1.
   const { unread, markRead } = useNotifications();
@@ -284,8 +305,21 @@ function MyTasksPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tasks, myKeys, doneIds, brandOptions, brandVisibility],
   );
+  // Two different things wait on the requester of a graphic request, and this
+  // queue only knew about the second one:
+  //   storyboard Submitted → accept the plan before anyone shoots or cuts
+  //   deliverable Waiting review → accept the finished artwork
+  // A reel's storyboard therefore sat in "ส่งแล้ว รออนุมัติ" with nothing on the
+  // requester's own screen to tell them, and production stalled behind a
+  // decision nobody knew was theirs. Both now land here, tagged so the card
+  // says which of the two it is.
   const approvalGraphics = useMemo(
-    () => graphics.filter((g) => isSamePerson(g.requester, myKeys) && brandVisibility.isVisible(g.b) && (g.deliverables ?? []).some((d) => d.status === "Waiting review")),
+    () => graphics
+      .filter((g) => isSamePerson(g.requester, myKeys) && brandVisibility.isVisible(g.b))
+      .flatMap((g) => [
+        ...(awaitsStoryboardDecision(g) ? [{ g, kind: "storyboard" as const }] : []),
+        ...(awaitsArtworkReview(g) ? [{ g, kind: "artwork" as const }] : []),
+      ]),
     [graphics, myKeys, brandVisibility],
   );
   const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
@@ -566,7 +600,7 @@ function MyTasksPageInner() {
                   <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>
                     <WorkGroupHeader g={g} count={groupTasks.length} />
                     <div className="flex flex-col gap-3">
-                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={setGraphicOpenId} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
+                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={openGraphicAt} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
                   </div>
                 );
@@ -579,23 +613,24 @@ function MyTasksPageInner() {
               year={calMonth.year}
               onNavigate={(month, year) => setCalMonth({ month, year })}
               onOpen={(item) => setDrawerId(Number(item.key))}
-              onOpenGraphic={setGraphicOpenId}
+              onOpenGraphic={openGraphicAt}
             />
           ) : (
-            <ListView tasks={visibleTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
+            <ListView tasks={visibleTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={openGraphicAt} colorOf={colorOf} graphicOf={graphicOf} />
           )}
         </div>
       ) : (
-        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={setGraphicOpenId} onApprove={approveExpense} onReject={rejectExpense} />
+        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
-      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={setGraphicOpenId} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
+      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
       {/* The real request drawer, over My Tasks. Wrapped in its own stacking
           context so it sits above the task drawer (z-[200]) — GraphicDrawer is
           z-50 inside, which is correct on /graphic and too low here. */}
       {openGraphic && (
         <div className="relative z-[260]">
-          <GraphicDrawer g={openGraphic} initialTab="brief" hideTabs={HIDDEN_GRAPHIC_TABS}
+          <GraphicDrawer g={openGraphic} initialTab={graphicOpenTab}
+            hideTabs={graphicOpenTab === "overview" ? ALL_GRAPHIC_TABS : HIDDEN_GRAPHIC_TABS}
             onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
         </div>
       )}
@@ -611,9 +646,9 @@ function MyTasksPageInner() {
 }
 
 function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
-  graphics: Graphic[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
+  graphics: GraphicApproval[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
   budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
-  onOpenTask: (id: number) => void; onOpenGraphic: (id: number) => void;
+  onOpenTask: (id: number) => void; onOpenGraphic: (id: number, tab?: GTab) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
   const codeOf = useCampaignCodes();
@@ -638,22 +673,31 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
             <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{graphics.length}</span>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {graphics.map((g) => (
-              <button key={g.id} onClick={() => onOpenGraphic(g.id)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
-                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>Waiting review</span>
-                </div>
-                <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                  <span>{brandName(g.b)} · {g.campaign} · {g.type}</span>
-                  <CampaignCode code={codeOf(g.campaignId, g.campaign)} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">Designer {g.designer}</span>
-                  <span className="text-[11.5px] font-bold text-accent">Review artwork →</span>
-                </div>
-              </button>
-            ))}
+            {graphics.map(({ g, kind }) => {
+              const copy = GRAPHIC_APPROVAL_COPY[kind];
+              return (
+                <button key={`${g.id}-${kind}`} onClick={() => onOpenGraphic(g.id, copy.tab)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
+                    <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: copy.bg, color: copy.fg }}>{copy.badge}</span>
+                  </div>
+                  <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+                    <span>{brandName(g.b)} · {g.campaign} · {g.type}</span>
+                    <CampaignCode code={codeOf(g.campaignId, g.campaign)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    {/* Whose work is waiting on you — the storyboard is the
+                        Creative Content person's, not the designer's. */}
+                    <span className="text-[11.5px] text-muted">
+                      {kind === "storyboard"
+                        ? `Storyboard ${g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}`
+                        : `Designer ${g.designer}`}
+                    </span>
+                    <span className="text-[11.5px] font-bold text-accent">{copy.cta}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

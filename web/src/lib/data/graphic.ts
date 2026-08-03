@@ -214,6 +214,23 @@ export function storyboardCleared(g: Graphic): boolean {
   return !needsStoryboard(g) || g.storyboardStatus === "Approved";
 }
 
+/** Is a storyboard sitting submitted, waiting on the person who asked for the
+ *  work to accept it or send it back?
+ *
+ *  Exists because "waiting on the requester" was written down in three places
+ *  that disagreed: the drawer offered the buttons, the pipeline listed it as a
+ *  blocker, and My Tasks did not know about it at all — so a submitted
+ *  storyboard reached the requester's approval inbox never. One predicate, and
+ *  the inbox can no longer fall behind the drawer. */
+export function awaitsStoryboardDecision(g: Graphic): boolean {
+  return needsStoryboard(g) && g.storyboardStatus === "Submitted";
+}
+
+/** Is any finished artwork waiting for the requester to review it? */
+export function awaitsArtworkReview(g: Graphic): boolean {
+  return (g.deliverables ?? []).some((d) => d.status === "Waiting review");
+}
+
 /** What still stops the designer/editor from submitting the finished asset.
  *  Empty = clear to submit. Enforced on the button AND explained in the panel,
  *  from this one list. */
