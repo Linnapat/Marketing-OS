@@ -216,6 +216,44 @@ export interface AssignedShoot {
   kind: WorkKind;
 }
 
+/** Move a shoot to another day, keeping the trail.
+ *
+ *  Shared by the request drawer and the Shoot Schedule, because the schedule is
+ *  where shoot days are actually juggled and both had to write the same thing:
+ *  a moved shoot changes which month the work counts in (workDayIso) and which
+ *  day the daily cap counts it against, so a second copy of this that forgot
+ *  the history note would leave those numbers moving with no record of why. */
+export function withShootMoved(g: Graphic, nextDate: string, by: string): Graphic {
+  const from = g.shootDate || "—";
+  const to = (nextDate || "").trim();
+  if (from === (to || "—")) return g;
+  return {
+    ...g,
+    shootDate: to,
+    history: [...(g.history ?? []), {
+      type: "assigned", at: new Date().toISOString(), by,
+      note: `เลื่อนวันถ่าย ${from} → ${to || "—"}`,
+    }],
+  };
+}
+
+/** Name (or rename) the shooter, keeping the trail. Same reasoning as above:
+ *  the sheet is where a shoot gets handed to someone, and the request is where
+ *  everyone else reads who is going. */
+export function withShooterAssigned(g: Graphic, name: string, by: string): Graphic {
+  const next = (name || "").trim();
+  const from = (g.shooter || "").trim();
+  if (next === from) return g;
+  return {
+    ...g,
+    shooter: next,
+    history: [...(g.history ?? []), {
+      type: "assigned", at: new Date().toISOString(), by,
+      note: `คนถ่าย ${from || "ยังไม่ระบุ"} → ${next || "ยังไม่ระบุ"}`,
+    }],
+  };
+}
+
 /** Every request whose shoot is still ahead of it.
  *
  *  Once footage is handed over the shoot has happened, and a call sheet is a

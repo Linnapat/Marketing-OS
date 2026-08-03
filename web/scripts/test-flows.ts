@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -508,6 +508,26 @@ console.log("Artwork counting — by pixels, platform collapsed");
       const rows = assignedShoots([shoot({ id: 1, shootDate: "2026-09-20" }), shoot({ id: 2, shootDate: "2026-09-02" })]);
       check("เรียงตามวันถ่าย", rows.map((r) => r.graphicId).join(",") === "2,1");
     }
+  }
+
+  // แก้วันถ่าย/คนถ่ายจากตารางถ่าย ต้องเขียนกลับใบงาน ไม่ใช่เก็บไว้เองคนละที่
+  {
+    const s0 = g({ id: 5, requiresShooting: true, shootDate: "2026-09-10", shooter: "Jeeno" });
+    const moved = withShootMoved(s0, "2026-09-14", "Boss");
+    check("วันถ่ายเปลี่ยนที่ใบงาน", moved.shootDate === "2026-09-14");
+    check("มีร่องรอยว่าเลื่อนจากวันไหนไปวันไหน", (moved.history?.at(-1)?.note ?? "").includes("2026-09-10 → 2026-09-14"));
+    check("บอกว่าใครเลื่อน", moved.history?.at(-1)?.by === "Boss");
+    check("วันเดิม = ไม่เขียนอะไรเพิ่ม", withShootMoved(s0, "2026-09-10", "Boss") === s0);
+    // เลื่อนวันถ่ายแล้วเดือนที่งานไปนับต้องขยับตาม (โควตา/รายงานอ่านจากตรงนี้)
+    check("เดือนที่ทำงานจริงขยับตามวันถ่ายใหม่", workingMonth(moved) === "2026-09");
+
+    const named = withShooterAssigned(s0, "Four", "Boss");
+    check("เปลี่ยนคนถ่ายที่ใบงาน", named.shooter === "Four");
+    check("ร่องรอยบอกคนเดิม→คนใหม่", (named.history?.at(-1)?.note ?? "").includes("Jeeno → Four"));
+    check("คนเดิม = ไม่เขียนอะไรเพิ่ม", withShooterAssigned(s0, "Jeeno", "Boss") === s0);
+    check("ล้างคนถ่ายได้", withShooterAssigned(s0, "", "Boss").shooter === "");
+    // ต้นฉบับต้องไม่ถูกแก้
+    check("ไม่แตะของเดิม", s0.shootDate === "2026-09-10" && s0.shooter === "Jeeno");
   }
 
   // วันที่ทำงานจริง / เดือนที่ทำงานจริง

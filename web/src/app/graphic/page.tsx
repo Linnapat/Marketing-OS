@@ -20,7 +20,7 @@ import {
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
   resolveOpenTarget, isGraphicFinished,
-  assignedShoots, type AssignedShoot,
+  assignedShoots, withShootMoved, withShooterAssigned, type AssignedShoot,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -149,6 +149,9 @@ function GraphicPageInner() {
   // as the mock seed, so "graphics is non-empty" says nothing about whether the
   // real list has arrived — see the ?open= effect below.
   const [graphicsLoaded, setGraphicsLoaded] = useState(false);
+  /** Swap one request in local state. The caller persists — this only keeps the
+   *  board and the shoot sheet showing the same thing in the same tick. */
+  const patchGraphicRow = (ng: Graphic) => setGraphics((gs) => gs.map((x) => (x.id === ng.id ? ng : x)));
   // Work with nobody's name on it. Not a status — an owner problem: somebody
   // has to hand it out, and until they do it ages silently. 43 of 46 live
   // requests sat here, 28 of them a week or more.
@@ -457,7 +460,7 @@ function GraphicPageInner() {
         {/* Brand-visible requests, NOT `items`: the call sheet is not filtered by
             the board's designer/date controls — hiding a booked shoot because the
             board is showing August would be a way to miss it. */}
-        {view === "shoot" && <ShootCalendar me={me} requests={graphics.filter((g) => brandVisibility.isVisible(g.b))} />}
+        {view === "shoot" && <ShootCalendar me={me} requests={graphics.filter((g) => brandVisibility.isVisible(g.b))} onPatchRequest={patchGraphicRow} onOpenRequest={(g) => setDrawer({ g, tab: "overview" })} />}
       </div>
 
       {drawer && (
@@ -716,7 +719,9 @@ const REQ_ROW_PREFIX = "req-";
 const reqRowId = (graphicId: number) => `${REQ_ROW_PREFIX}${graphicId}`;
 const isReqRow = (r: { id: string }) => r.id.startsWith(REQ_ROW_PREFIX);
 
-function ShootCalendar({ me, requests }: { me: string; requests: Graphic[] }) {
+function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
+  me: string; requests: Graphic[]; onPatchRequest: (g: Graphic) => void; onOpenRequest: (g: Graphic) => void;
+}) {
   const [rows, setRows] = useState<ShootRow[]>([]);
   const [autoRows, setAutoRows] = useState<ShootRow[]>([]);
   // Derived, not fetched: the page already holds these rows, so moving a
@@ -798,6 +803,25 @@ function ShootCalendar({ me, requests }: { me: string; requests: Graphic[] }) {
     persist([...rows, { ...seed, ...patch, source: "request" }]);
   };
   const removeRow = (id: string) => persist(rows.filter((r) => r.id !== id));
+
+  /** Shoot day and shooter are the REQUEST's fields, not this table's — the
+   *  sheet is simply where they get juggled. Writing them back rather than
+   *  keeping a local copy is what stops the sheet and the request disagreeing
+   *  about when a shoot is, which is the disagreement that actually costs a
+   *  shoot day. The history note comes with them (withShootMoved). */
+  const patchRequest = (graphicId: number, change: (g: Graphic) => Graphic, failMsg: string) => {
+    const current = requests.find((g) => g.id === graphicId);
+    if (!current) return;
+    const next = change(current);
+    if (next === current) return;
+    onPatchRequest(next);
+    updateGraphic(next).catch((error) => toastError(`${failMsg}: ${error?.message || "Unknown error"}`));
+  };
+  const moveShoot = (graphicId: number, date: string) =>
+    patchRequest(graphicId, (g) => withShootMoved(g, date, me), "เลื่อนวันถ่ายไม่สำเร็จ");
+  const setShooter = (graphicId: number, name: string) =>
+    patchRequest(graphicId, (g) => withShooterAssigned(g, name, me), "บันทึกคนถ่ายไม่สำเร็จ");
+  const reqIdOf = (rowId: string) => Number(rowId.slice(REQ_ROW_PREFIX.length));
 
   // What the table (and the printed sheet) shows: rows typed here, plus one per
   // assigned shoot, ordered by day so it reads as a schedule.
@@ -895,9 +919,12 @@ function ShootCalendar({ me, requests }: { me: string; requests: Graphic[] }) {
                 // Tinted by brand — the row reads as "whose shoot this is" at a glance.
                 <tr key={r.id} className="border-b border-line4 last:border-0" style={{ background: r.brand ? tint(brandColor(r.brand), 0.05) : undefined }}>
                   <td className="px-[10px] py-[5px]" style={{ borderLeft: `3px solid ${r.brand ? brandColor(r.brand) : "transparent"}` }}>
-                    {fromReq
-                      ? <span className="text-[12px] font-semibold text-ink">{r.date || "—"}</span>
-                      : <input type="date" value={r.date} onChange={(e) => editRow(r.id, { date: e.target.value })} className={cell} />}
+                    {/* Editable on both kinds of row — this is the sheet where
+                        shoot days get moved. A request-backed row writes the
+                        new day back to the request instead of keeping it here. */}
+                    <input type="date" value={r.date}
+                      onChange={(e) => (fromReq ? moveShoot(reqIdOf(r.id), e.target.value) : editRow(r.id, { date: e.target.value }))}
+                      className={cell} />
                   </td>
                   <td className="px-[10px] py-[5px]">
                     {/* Two time pickers → stored as "start-end" */}
@@ -949,9 +976,8 @@ function ShootCalendar({ me, requests }: { me: string; requests: Graphic[] }) {
                   <td className="px-[10px] py-[5px]"><input value={r.location} onChange={(e) => editRow(r.id, { location: e.target.value })} list={listId("location", r.brand)} placeholder="เลือกสาขา" className={`${cell} min-w-[130px]`} /></td>
                   <td className="px-[10px] py-[5px]"><input value={r.menu} onChange={(e) => editRow(r.id, { menu: e.target.value })} placeholder="เมนู / งานที่ถ่าย" className={`${cell} min-w-[150px]`} /></td>
                   <td className="px-[10px] py-[5px] min-w-[150px]">
-                    {fromReq
-                      ? <span className="text-[12px] text-ink">{r.cast || <span className="text-faint">ยังไม่ระบุคนถ่าย</span>}</span>
-                      : <CastPicker value={r.cast} options={castOpts} onChange={(v) => editRow(r.id, { cast: v })} />}
+                    <CastPicker value={r.cast} options={castOpts}
+                      onChange={(v) => (fromReq ? setShooter(reqIdOf(r.id), v) : editRow(r.id, { cast: v }))} />
                   </td>
                   <td className="px-[10px] py-[5px] text-right no-print">
                     {fromReq ? (
@@ -959,10 +985,15 @@ function ShootCalendar({ me, requests }: { me: string; requests: Graphic[] }) {
                       // request says a shoot is happening. Removing it from the
                       // sheet without touching the request would hide a shoot
                       // that is still booked.
-                      <Link href={`/graphic?${GRAPHIC_OPEN_PARAM}=${r.id.slice(REQ_ROW_PREFIX.length)}`}
-                        className="text-[11.5px] font-bold text-accent whitespace-nowrap" title="แก้วันถ่าย/คนถ่ายที่ใบงาน">
+                      // Opens the drawer directly rather than through
+                      // ?open=<id>: that route latches after the first use
+                      // (openedRef), so a link back to the request worked once
+                      // per page load and then silently did nothing — which is
+                      // no way to build a sheet you click up and down all day.
+                      <button onClick={() => { const g = requests.find((x) => x.id === reqIdOf(r.id)); if (g) onOpenRequest(g); }}
+                        className="text-[11.5px] font-bold text-accent whitespace-nowrap" title="เปิดใบงานนี้">
                         ใบงาน ↗
-                      </Link>
+                      </button>
                     ) : (
                       <button onClick={() => removeRow(r.id)} className="text-[12px] text-status-red font-bold" aria-label="ลบ">✕</button>
                     )}
