@@ -195,6 +195,50 @@ export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink"
   return !g.requiresShooting || !!g.footageLink?.trim();
 }
 
+/** A shoot that has been assigned on a request, as the shoot schedule needs it.
+ *
+ *  Assigning a shooter and a date on a Graphic Request settled the question on
+ *  the request and nowhere else: the Shoot Schedule — the sheet the team
+ *  actually prints and turns up to — only ever knew about Content Plan items
+ *  typed "Photo shoot"/"VDO shooting", dated by their PUBLISH day, cast listed
+ *  as the literal words "จาก Content Plan". So the one place a real shooter and
+ *  a real shoot date exist was the one place the call sheet did not read. */
+export interface AssignedShoot {
+  graphicId: number;
+  /** The shoot date from the request. Moves when the shoot is moved. */
+  date: string;
+  brand: BrandId;
+  /** The request's title — what is being shot. */
+  content: string;
+  /** Assigned shooter, blank when the shoot is dated but nobody is named yet. */
+  cast: string;
+  /** Reel / photo / video, so the sheet can say what kind of day it is. */
+  kind: WorkKind;
+}
+
+/** Every request whose shoot is still ahead of it.
+ *
+ *  Once footage is handed over the shoot has happened, and a call sheet is a
+ *  list of what to turn up to — leaving finished shoots on it forever would
+ *  bury the next one, and a derived row cannot be ticked off by hand. The
+ *  request keeps the full history either way.
+ *
+ *  Sorted by date so the sheet reads as a schedule; undated shoots cannot
+ *  appear at all — there is nothing to turn up to yet. */
+export function assignedShoots(gs: Graphic[]): AssignedShoot[] {
+  return gs
+    .filter((g) => g.requiresShooting === true && (g.shootDate ?? "").trim() && !footageReady(g))
+    .map((g) => ({
+      graphicId: g.id,
+      date: (g.shootDate ?? "").trim(),
+      brand: g.b,
+      content: g.title,
+      cast: (g.shooter ?? "").trim() === "Unassigned" ? "" : (g.shooter ?? "").trim(),
+      kind: workKind(g.type, g.requiredVideo),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export type ShootingDecision = "undecided" | "required" | "not_required";
 
 /** Which of the three states the shoot question is actually in.

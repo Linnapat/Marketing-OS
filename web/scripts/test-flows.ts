@@ -12,7 +12,8 @@ import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
-  awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails } from "../src/lib/data/graphic";
+  awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
+  assignedShoots } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -484,6 +485,29 @@ console.log("Artwork counting — by pixels, platform collapsed");
     // งานที่ไม่ใช่วิดีโอไม่มี storyboard ให้ดู แม้ field จะค้างอยู่
     check("Poster ไม่มีแถว storyboard", !sbRow(g({ type: "Poster", requiredVideo: false, storyboardLink: "https://slides/x" })));
     check("บรีฟหลักยังอยู่ครบเหมือนเดิม", creativeBriefDetails(reel({ storyboardLink: "https://slides/x" })).some((d) => d.label.includes("ลิงก์บรีฟ")));
+  }
+
+  // คิวถ่ายที่มอบหมายในใบงาน ต้องไหลไปตารางถ่าย (ใบนัดถ่ายที่ทีมปริ้นไปใช้จริง)
+  {
+    const shoot = (over: Partial<Graphic>) => g({ type: "VDO shooting", requiresShooting: true, shootDate: "2026-09-10", shooter: "Jeeno", footageLink: "", ...over });
+    check("มอบหมายคนถ่าย+วันถ่าย = ขึ้นตารางถ่าย", assignedShoots([shoot({})]).length === 1);
+    check("เอาวันถ่ายจากใบงาน ไม่ใช่วันโพสต์", assignedShoots([shoot({})])[0].date === "2026-09-10");
+    check("คนถ่ายคือ cast", assignedShoots([shoot({})])[0].cast === "Jeeno");
+    check("ผูกกลับไปที่ใบงานได้", assignedShoots([shoot({ id: 77 })])[0].graphicId === 77);
+    // ยังไม่ระบุคนถ่าย ก็ยังต้องขึ้น — คิวถ่ายมีอยู่จริง แค่ยังไม่รู้ว่าใครไป
+    check("ยังไม่ระบุคนถ่ายก็ยังขึ้น", assignedShoots([shoot({ shooter: "" })]).length === 1);
+    check("Unassigned ไม่ถือเป็นชื่อคน", assignedShoots([shoot({ shooter: "Unassigned" })])[0].cast === "");
+    // ไม่มีวันถ่าย = ยังไม่มีอะไรให้ไปโผล่บนใบนัด
+    check("ไม่มีวันถ่าย = ไม่ขึ้น", assignedShoots([shoot({ shootDate: "" })]).length === 0);
+    check("ไม่ต้องถ่าย = ไม่ขึ้น", assignedShoots([shoot({ requiresShooting: false })]).length === 0);
+    check("ยังไม่ตัดสินใจว่าถ่ายไหม = ไม่ขึ้น", assignedShoots([shoot({ requiresShooting: undefined })]).length === 0);
+    // ส่ง footage แล้ว = ถ่ายเสร็จแล้ว ใบนัดถ่ายคือรายการที่ต้องไป ไม่ใช่ประวัติ
+    check("ส่ง footage แล้ว = หลุดจากใบนัด", assignedShoots([shoot({ footageLink: "https://drive/f" })]).length === 0);
+    // เรียงตามวัน เพราะมันคือตาราง ไม่ใช่กอง
+    {
+      const rows = assignedShoots([shoot({ id: 1, shootDate: "2026-09-20" }), shoot({ id: 2, shootDate: "2026-09-02" })]);
+      check("เรียงตามวันถ่าย", rows.map((r) => r.graphicId).join(",") === "2,1");
+    }
   }
 
   // วันที่ทำงานจริง / เดือนที่ทำงานจริง
