@@ -231,6 +231,22 @@ export function awaitsArtworkReview(g: Graphic): boolean {
   return (g.deliverables ?? []).some((d) => d.status === "Waiting review");
 }
 
+/** Who has to hear that this request's brief just changed — or null when the
+ *  change is nobody's news yet.
+ *
+ *  Nobody, until someone holds the job: before that, editing the brief IS
+ *  writing the brief, and pinging a designer through a requester's drafting is
+ *  the kind of noise that teaches people to mute a channel.
+ *
+ *  Once it is held, the person who ACCEPTED it outranks the named designer —
+ *  a request can be assigned to one person and picked up by another, and it is
+ *  whoever picked it up who is working from the words that just moved. */
+export function briefChangeAudience(g: Pick<Graphic, "acceptedAt" | "acceptedBy" | "designer">): string | null {
+  if (!isAccepted(g)) return null;
+  const held = (g.acceptedBy ?? "").trim() || (g.designer ?? "").trim();
+  return held && held !== "Unassigned" ? held : null;
+}
+
 /** What still stops the designer/editor from submitting the finished asset.
  *  Empty = clear to submit. Enforced on the button AND explained in the panel,
  *  from this one list. */
