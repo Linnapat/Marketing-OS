@@ -11,7 +11,8 @@ import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, 
 import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
-  needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth } from "../src/lib/data/graphic";
+  needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
+  awaitsStoryboardDecision, awaitsArtworkReview } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -417,6 +418,20 @@ console.log("Artwork counting — by pixels, platform collapsed");
   check("storyboard ส่งแล้วรออนุมัติ = ยังบล็อก", productionBlockers(g({ type: "Reel", storyboardStatus: "Submitted" }))[0].includes("รอเจ้าของงานอนุมัติ"));
   check("storyboard ถูกตีกลับ = ยังบล็อก", productionBlockers(g({ type: "Reel", storyboardStatus: "Revision" }))[0].includes("ส่งกลับแก้"));
   check("storyboard อนุมัติแล้ว = ผ่าน", productionBlockers(g({ type: "Reel", storyboardStatus: "Approved" })).length === 0);
+
+  // สิ่งที่ค้างอยู่ที่ "เจ้าของงาน" — คิวอนุมัติใน My Tasks อ่านจากสองอันนี้
+  check("storyboard ส่งแล้ว = รอเจ้าของงานตัดสิน", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "Submitted" })) === true);
+  check("ยังไม่ส่ง storyboard = ไม่เข้าคิวอนุมัติ", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "" })) === false);
+  check("storyboard ตีกลับแล้ว = ไม่เข้าคิวอนุมัติ", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "Revision" })) === false);
+  check("storyboard อนุมัติแล้ว = ออกจากคิว", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "Approved" })) === false);
+  // งานที่ไม่ใช่วิดีโอไม่มี storyboard ให้อนุมัติ แม้ field จะค้างอยู่
+  check("Poster ที่มี field ค้าง ไม่เข้าคิว storyboard", awaitsStoryboardDecision(g({ type: "Poster", requiredVideo: false, storyboardStatus: "Submitted" })) === false);
+  {
+    const d = (status: GraphicDeliverable["status"]): GraphicDeliverable => ({ ...(GRAPHICS[0].deliverables?.[0] as GraphicDeliverable), status });
+    check("ไม่มี deliverable = ไม่มีอะไรให้รีวิว", awaitsArtworkReview(g({ deliverables: [] })) === false);
+    check("มีชิ้นที่รอรีวิว = เข้าคิว", awaitsArtworkReview(g({ deliverables: [d("Approved"), d("Waiting review")] })) === true);
+    check("อนุมัติครบแล้ว = ออกจากคิว", awaitsArtworkReview(g({ deliverables: [d("Approved")] })) === false);
+  }
 
   const shootPending = g({ type: "Poster", requiredVideo: false, requiresShooting: true, shooter: "Jeeno" });
   check("require shooting ยังไม่ส่ง footage = บล็อก", productionBlockers(shootPending).length === 1);

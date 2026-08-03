@@ -308,7 +308,11 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       nextAction: `รอ ${g.requester} อนุมัติ storyboard`,
     }, "ส่ง storyboard ไม่สำเร็จ");
     toastSuccess("ส่ง storyboard แล้ว — รอเจ้าของงานอนุมัติ");
-    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
+    // `to` the requester, not the channel alone: this is a decision that is
+    // theirs and nobody else's, and until it was addressed to them the only
+    // trace of a submitted storyboard was a badge inside a drawer they had no
+    // reason to open — production waited on a person who was never told.
+    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.requester] });
   };
 
   const decideStoryboard = (approved: boolean) => {
