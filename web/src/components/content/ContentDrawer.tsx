@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { ExpandableTextarea } from "@/components/ui/ExpandableTextarea";
 import { WorkCode } from "@/components/ui/CampaignCode";
 import { issueContentCode } from "@/lib/db/workCode";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
@@ -57,6 +58,42 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
   );
 }
 
+/** The Content Plan brief, as the caption writer needs to read it.
+ *
+ *  Its own component because it is now rendered twice — under the field in the
+ *  drawer, and beside it when the field is popped out — and two copies of this
+ *  list would drift the moment a brief field is added. */
+function CaptionBriefGuide({ item }: { item: ContentItem }) {
+  const guide: [string, string | undefined][] = [
+    ["Main head", item.title],
+    ["Sub head", item.subHead],
+    ["Main message", item.mainMessage],
+    ["CTA (เป้า)", item.cta],
+    ["Product highlight", item.productHighlight],
+    ["Caption direction", item.captionDirection],
+    ["Mandatory text", item.mandatoryText],
+    ["Do / Don't", item.doDont],
+  ];
+  const rows = guide.filter(([, v]) => (v ?? "").toString().trim());
+  return (
+    <div className="rounded-[14px] border p-3" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
+      <div className="text-[11.5px] font-extrabold text-[#5B4FB2] mb-2">📋 Brief guide · เขียน caption ตามนี้</div>
+      {rows.length ? (
+        <div className="flex flex-col gap-[7px]">
+          {rows.map(([label, v]) => (
+            <div key={label} className="grid gap-1" style={{ gridTemplateColumns: "110px 1fr" }}>
+              <span className="text-[11px] font-bold text-[#7D72B4]">{label}</span>
+              <span className="text-[12px] text-ink">{v}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-[11.5px] text-faint">ยังไม่มีข้อมูลบรีฟ — โพสต์นี้อาจสร้างก่อนมีฟิลด์บรีฟ หรือกรอก brief ที่ Content Plan</div>
+      )}
+    </div>
+  );
+}
+
 export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete }: {
   item: ContentItem;
   /** Everything else on the calendar — for the same-day clash warning. */
@@ -67,6 +104,9 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
 }) {
   const [tab, setTab] = useState<DTab>("overview");
   const [caption, setCaption] = useState(item.caption);
+  // Pop-out state lives here, not inside the field, so the drawer keeps it
+  // across the re-renders a save triggers.
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   // Editable post basics (title / date / time) — saved from the Overview tab.
   const [editTitle, setEditTitle] = useState(item.title);
   const [editDate, setEditDate] = useState<string | null>(item.dateIso ?? null);
@@ -723,41 +763,27 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                   <label className="text-[11.5px] font-bold text-muted">Caption</label>
                   <StatusBadge tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>
                 </div>
-                <textarea rows={6} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Write caption here…" className={`${field} resize-y leading-[1.5]`} />
+                {/* The brief travels with the caption into the expanded view:
+                    writing one FROM the other is the whole job, and a pop-out
+                    that left the brief behind in the drawer would trade one
+                    cramped screen for a blind one. */}
+                <ExpandableTextarea
+                  value={caption}
+                  onChange={setCaption}
+                  expanded={captionExpanded}
+                  onExpandedChange={setCaptionExpanded}
+                  rows={6}
+                  placeholder="Write caption here…"
+                  className={field}
+                  title={`Caption · ${item.title}`}
+                  asideTitle="บรีฟของโพสต์นี้"
+                  aside={<CaptionBriefGuide item={item} />}
+                />
                 <div className="text-[11px] text-faint mt-1 text-right">{caption.length} chars</div>
               </div>
 
               {/* Brief guide — reference from the Content Plan for writing the caption */}
-              {(() => {
-                const guide: [string, string | undefined][] = [
-                  ["Main head", item.title],
-                  ["Sub head", item.subHead],
-                  ["Main message", item.mainMessage],
-                  ["CTA (เป้า)", item.cta],
-                  ["Product highlight", item.productHighlight],
-                  ["Caption direction", item.captionDirection],
-                  ["Mandatory text", item.mandatoryText],
-                  ["Do / Don't", item.doDont],
-                ];
-                const rows = guide.filter(([, v]) => (v ?? "").toString().trim());
-                return (
-                  <div className="rounded-[14px] border p-3" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
-                    <div className="text-[11.5px] font-extrabold text-[#5B4FB2] mb-2">📋 Brief guide · เขียน caption ตามนี้</div>
-                    {rows.length ? (
-                      <div className="flex flex-col gap-[7px]">
-                        {rows.map(([label, v]) => (
-                          <div key={label} className="grid gap-1" style={{ gridTemplateColumns: "110px 1fr" }}>
-                            <span className="text-[11px] font-bold text-[#7D72B4]">{label}</span>
-                            <span className="text-[12px] text-ink">{v}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[11.5px] text-faint">ยังไม่มีข้อมูลบรีฟ — โพสต์นี้อาจสร้างก่อนมีฟิลด์บรีฟ หรือกรอก brief ที่ Content Plan</div>
-                    )}
-                  </div>
-                );
-              })()}
+              <CaptionBriefGuide item={item} />
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Hashtags</label>
                 <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="#wagyu #bangkok #teppen" className={field} />
