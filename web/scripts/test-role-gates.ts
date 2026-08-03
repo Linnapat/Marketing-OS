@@ -6,7 +6,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
-import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, type Graphic } from "../src/lib/data/graphic";
+import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
 import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
 
 import { readFileSync } from "node:fs";
@@ -209,6 +209,31 @@ is("เว้นวรรค/ตัวพิมพ์ยังจับได้
 // สิทธิ์ใช้ได้ครั้งเดียว — เติมเสร็จแล้วต้องขอใหม่
 is("เติมเสร็จ → สิทธิ์ถูกใช้ไป เติมซ้ำไม่ได้", canEditBriefNow(consumeBriefUnlock(freed as Graphic), asRequester), false);
 is("ยังไม่ได้ปล่อย → consume ไม่ทำอะไร", briefUnlockState(consumeBriefUnlock(asked as Graphic)), "pending");
+
+console.log("\n— Creative ส่งบรีฟกลับมาแก้ = ปล่อยให้แก้ได้เลย ไม่ต้องขอซ้ำ —");
+{
+  // บั๊กจริง: ตีบรีฟกลับแล้วสร้าง task ให้ requester ว่า "แก้ brief ตาม comment"
+  // แต่ canEditBriefNow ยังปิดอยู่ → คนได้ใบสั่งให้ทำสิ่งที่ตัวเองทำไม่ได้
+  const sentBack = releaseBriefForRevision(taken as Graphic, "Boss", "บรีฟยังไม่มี key message");
+  is("ตีบรีฟกลับ → requester แก้ได้ทันที", canEditBriefNow(sentBack, asRequester), true);
+  is("ปล่อยในนามคนที่ตีกลับ", sentBack.briefUnlock?.decidedBy, "Boss");
+  is("เก็บเหตุผลที่ตีกลับไว้เป็นที่มาของการปล่อย", sentBack.briefUnlock?.reason, "บรีฟยังไม่มี key message");
+  // one-shot เหมือนการปล่อยปกติ — รอบถัดไปต้องขอใหม่
+  is("แก้เสร็จ 1 รอบแล้วต้องขอใหม่", canEditBriefNow(consumeBriefUnlock(sentBack), asRequester), false);
+  // คนอื่นไม่ได้สิทธิ์ติดมาด้วย
+  is("คนอื่นยังแก้ไม่ได้", canEditBriefNow(sentBack, { isRequester: false, isCmo: false }), false);
+}
+
+console.log("\n— งานที่ถูกตีกลับต้องถึงคนที่ส่งงานจริง —");
+{
+  const req = { acceptedBy: "Aom", designer: "Boss" };
+  is("คนส่งงานมาก่อนทุกชื่อ", revisionAssignee(req, { submittedBy: "Studio Nine" }), "Studio Nine");
+  is("ไม่มีคนส่ง → คนที่รับงาน", revisionAssignee(req, { submittedBy: "" }), "Aom");
+  is("ไม่มีทั้งคู่ → designer", revisionAssignee({ acceptedBy: "", designer: "Boss" }, undefined), "Boss");
+  // "Unassigned" เป็นคำที่แอปใช้แทนช่องว่าง ไม่ใช่ชื่อคน — เคสนี้คือที่ทำให้ feedback หายไปทั้งรอบ
+  is("Unassigned ไม่นับเป็นคน", revisionAssignee({ acceptedBy: "Aom", designer: "Unassigned" }, undefined), "Aom");
+  is("ไม่มีใครเลย → null (ไม่แจ้งผิดคน)", revisionAssignee({ acceptedBy: "Unassigned", designer: "" }, { submittedBy: "  " }), null);
+}
 
 console.log("\n— กติกาเติมบรีฟต้องตรงกันทั้งฝั่ง client และ SQL —");
 {

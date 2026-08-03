@@ -17,6 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, workKind, briefChangeAudience,
+  releaseBriefForRevision, revisionAssignee,
 } from "@/lib/data/graphic";
 import type { NotifyTeam } from "@/lib/notifyRouting";
 
@@ -405,7 +406,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     if (!comment) return;
     setBriefBusy(true);
     const at = new Date().toISOString();
-    const next: Graphic = {
+    // Hand the editor back with the request. Asking someone to revise a brief
+    // and then making them go ask permission to type in it is the same round
+    // trip twice — see releaseBriefForRevision.
+    const next: Graphic = releaseBriefForRevision({
       ...g,
       briefComplete: false,
       briefApprovedBy: undefined,
@@ -413,7 +417,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       blocker: "Brief revision requested",
       nextAction: `${g.requester} to revise brief — ${comment}`,
       history: [...(g.history ?? []), { type: "brief_revision_requested", at, by: currentUser, note: comment }],
-    };
+    }, currentUser, comment);
     // The comment becomes a task in the requester's My Tasks, due in 2 days.
     const due = new Date(); due.setDate(due.getDate() + 2);
     const task: Task = {
@@ -444,6 +448,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const d = targetDeliverable;
     if (!reason || !d || d.status !== "Waiting review") return;
     const at = new Date().toISOString();
+    // Whoever handed this piece in, not whoever the request is filed under.
+    const owner = revisionAssignee(g, d);
     const nextDeliverables = deliverables.map((x, i) => i === feedbackTarget
       ? { ...x, status: "Revision" as const, feedback: [...x.feedback, { reason, by: currentUser, at }] }
       : x);
@@ -454,7 +460,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       openFb: (g.openFb ?? 0) + 1,
       fb: (g.fb ?? 0) + 1,
       blocker: "Design revision needed",
-      nextAction: `${g.designer} to revise ${d.platform} per feedback`,
+      nextAction: `${owner ?? "Creative"} to revise ${d.platform} per feedback`,
       history: [...(g.history ?? []), { type: "revision_requested", at, by: currentUser, deliverableKey: `${d.platform}::${d.size}`, note: reason }],
     };
     updateGraphic(next)
@@ -465,23 +471,23 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const localEntry = {
       id: Date.now(), gid: g.id, owner: currentUser, team: "Requester / Approver", ownerColor: "#B5577E",
       type: "Design revision", text: reason, version: `V${d.version || 1}`, status: "Open",
-      assignedTo: g.designer, due: g.due, createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      assignedTo: owner ?? "Unassigned", due: g.due, createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     };
     setFeedback((fs) => [localEntry, ...fs]);
     addGraphicFeedback(g.id, {
       owner: currentUser, team: "Requester / Approver", ownerColor: "#B5577E", type: "Design revision",
-      text: reason, version: `V${d.version || 1}`, assignedTo: g.designer, due: g.due,
+      text: reason, version: `V${d.version || 1}`, assignedTo: owner ?? "Unassigned", due: g.due,
     })
       .then((saved) => { if (saved) setFeedback((fs) => fs.map((x) => (x === localEntry ? saved : x))); })
       .catch(() => {});
-    // Bounce the revision into the designer's My Tasks.
-    if (g.designer && g.designer !== "Unassigned") {
+    // Bounce the revision into their My Tasks.
+    if (owner) {
       createRevisionTask({
-        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: g.designer,
+        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: owner,
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.designer] });
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${owner ?? "Creative"} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [owner] });
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -1345,17 +1351,19 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       // out of feedback — every entry stamped in this round, both lenses.
       const lastAt = after.feedback.at(-1)?.at;
       const said = after.feedback.filter((f) => f.at === lastAt).map((f) => `[${LENS_META[f.lens ?? "info"].short}] ${f.reason}`).join(" · ");
-      if (g.designer && g.designer !== "Unassigned") {
+      // The person who submitted this piece — see revisionAssignee.
+      const owner = revisionAssignee(g, before);
+      if (owner) {
         createRevisionTask({
-          module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: g.designer,
+          module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: owner,
           brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`,         // The requester hears about it too, in the bell rather than as a DM:
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${owner ?? "Creative"} · โดย ${me}`,         // The requester hears about it too, in the bell rather than as a DM:
         // they used to learn their artwork had gone back by opening the drawer
         // and noticing. It is not their decision to act on, so it does not
         // interrupt them.
-        workLink.graphic(g.id), { team: graphicTeam(g), to: [g.designer], inform: [g.requester] });
+        workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester] });
     }
   };
 

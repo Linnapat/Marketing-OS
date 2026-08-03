@@ -243,8 +243,35 @@ export function awaitsArtworkReview(g: Graphic): boolean {
  *  whoever picked it up who is working from the words that just moved. */
 export function briefChangeAudience(g: Pick<Graphic, "acceptedAt" | "acceptedBy" | "designer">): string | null {
   if (!isAccepted(g)) return null;
-  const held = (g.acceptedBy ?? "").trim() || (g.designer ?? "").trim();
-  return held && held !== "Unassigned" ? held : null;
+  return firstRealName(g.acceptedBy, g.designer);
+}
+
+/** Who has to redo a piece of artwork that just came back.
+ *
+ *  The person who SUBMITTED it, before anyone named on the request: an agency
+ *  or a second editor can hand in work on a request whose `designer` field
+ *  still points at whoever was assigned first, and sending the revision to
+ *  that name means the person who actually has to redo it is never told. The
+ *  revision task went to `g.designer` alone and was skipped outright when that
+ *  read "Unassigned", so a whole round of feedback could land nowhere.
+ *
+ *  Null when there is genuinely nobody to tell — better than inventing a
+ *  recipient the notification would silently go missing behind. */
+export function revisionAssignee(
+  g: Pick<Graphic, "acceptedBy" | "designer">,
+  d?: Pick<GraphicDeliverable, "submittedBy">,
+): string | null {
+  return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
+}
+
+/** First name in the list that is a real person. "Unassigned" is the app's own
+ *  word for an empty slot, so it counts as blank wherever a person is meant. */
+function firstRealName(...names: (string | null | undefined)[]): string | null {
+  for (const raw of names) {
+    const name = (raw ?? "").trim();
+    if (name && name !== "Unassigned") return name;
+  }
+  return null;
 }
 
 /** What still stops the designer/editor from submitting the finished asset.
@@ -433,6 +460,34 @@ export function briefEditBlockedReason(
 /** Raise the top-up request. */
 export function requestBriefEdit(g: Graphic, by: string, reason: string): Graphic {
   return { ...g, briefUnlock: { status: "Pending", requestedBy: by, requestedAt: new Date().toISOString(), reason: reason.trim() || undefined } };
+}
+
+/** Creative sent the brief back — so Creative has already answered the only
+ *  question the top-up gate asks.
+ *
+ *  Sending a brief back for revision handed the requester a task saying "แก้
+ *  brief ตาม comment" and then refused them the editor: the request was
+ *  accepted, no release had been granted, and canEditBriefNow said no. The
+ *  requester's next move was to ask the Creative Leader for permission to do
+ *  the thing the Creative Leader had just told them to do.
+ *
+ *  Granted in Creative's name, spent on the first save like any other release
+ *  — so a revision opens the brief exactly once, and the round after that goes
+ *  back through asking. */
+export function releaseBriefForRevision(g: Graphic, by: string, comment: string): Graphic {
+  const at = new Date().toISOString();
+  return {
+    ...g,
+    briefUnlock: {
+      status: "Granted",
+      requestedBy: g.requester,
+      requestedAt: at,
+      reason: comment.trim() || undefined,
+      decidedBy: by,
+      decidedAt: at,
+      decisionNote: "ปล่อยอัตโนมัติเพราะ Creative ส่งบรีฟกลับมาแก้",
+    },
+  };
 }
 
 /** Creative Leader's answer. */
