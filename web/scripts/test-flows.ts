@@ -12,7 +12,7 @@ import { materialised } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
-  awaitsStoryboardDecision, awaitsArtworkReview } from "../src/lib/data/graphic";
+  awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -431,6 +431,17 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ไม่มี deliverable = ไม่มีอะไรให้รีวิว", awaitsArtworkReview(g({ deliverables: [] })) === false);
     check("มีชิ้นที่รอรีวิว = เข้าคิว", awaitsArtworkReview(g({ deliverables: [d("Approved"), d("Waiting review")] })) === true);
     check("อนุมัติครบแล้ว = ออกจากคิว", awaitsArtworkReview(g({ deliverables: [d("Approved")] })) === false);
+  }
+
+  // แก้บรีฟแล้วต้องบอกใคร — เงียบจนกว่าจะมีคนรับงาน
+  {
+    const at = "2026-08-01T03:00:00.000Z";
+    check("ยังไม่มีใครรับงาน = ไม่ต้องแจ้งใคร", briefChangeAudience(g({ acceptedAt: undefined, designer: "Aom" })) === null);
+    check("รับงานแล้ว = แจ้งคนที่รับ", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "Aom", designer: "Boss" })) === "Aom");
+    // มอบหมายคนหนึ่ง แต่อีกคนหยิบไปทำ — ต้องเป็นคนที่หยิบไป ไม่ใช่ชื่อบนใบงาน
+    check("คนรับงานมาก่อนชื่อ designer", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "Aom", designer: "Unassigned" })) === "Aom");
+    check("ไม่มี acceptedBy ใช้ designer แทน", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "", designer: "Boss" })) === "Boss");
+    check("รับงานแล้วแต่ยังไม่มีคนทำ = ไม่มีใครให้แจ้ง", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "", designer: "Unassigned" })) === null);
   }
 
   const shootPending = g({ type: "Poster", requiredVideo: false, requiresShooting: true, shooter: "Jeeno" });

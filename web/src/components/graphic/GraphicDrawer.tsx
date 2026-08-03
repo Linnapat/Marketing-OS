@@ -16,7 +16,7 @@ import { GRAPHIC_OPEN_PARAM,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
-  requestBriefEdit, decideBriefEdit, workKind,
+  requestBriefEdit, decideBriefEdit, workKind, briefChangeAudience,
 } from "@/lib/data/graphic";
 import type { NotifyTeam } from "@/lib/notifyRouting";
 
@@ -919,7 +919,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                 </div>
 
                 {briefEditing ? (
-                  <BriefEditor g={g} onCancel={() => setBriefEditing(false)}
+                  <BriefEditor g={g} me={currentUser} onCancel={() => setBriefEditing(false)}
                     onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); }} />
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -1188,8 +1188,37 @@ const BRIEF_FIELDS: { key: RequesterBriefField; label: string; placeholder: stri
   { key: "extraDetails", label: "Additional details", placeholder: "อย่างอื่นที่ Creative ควรรู้", area: true },
 ];
 
-function BriefEditor({ g, onSaved, onCancel }: {
-  g: Graphic; onSaved: (g: Graphic) => void; onCancel: () => void;
+/** Tell whoever is building this that the brief under them just moved.
+ *
+ *  Saving the brief used to be completely silent — no notification, no notice,
+ *  and the RPC writes no history either — so a request could be re-briefed
+ *  mid-production and the only way to find out was to reopen the drawer and
+ *  notice the words had changed. The permission dance around it was fully
+ *  wired (asking the Creative Leader for a top-up notifies, granting it
+ *  notifies) which made the silence at the end of it worse: the designer heard
+ *  "may I change this" and "yes", and never heard what changed.
+ *
+ *  Who hears it (and whether anyone does yet) is briefChangeAudience's call,
+ *  in data/graphic with the rest of the pipeline rules.
+ *
+ *  Best-effort throughout: the brief is already saved by the time this runs,
+ *  and a message that fails to send must not look like a save that failed. */
+function announceBriefEdit(g: Graphic, by: string, fields: RequesterBriefField[]): void {
+  const worker = briefChangeAudience(g);
+  if (!worker || !fields.length) return;
+  const labels = fields
+    .map((key) => BRIEF_FIELDS.find((f) => f.key === key)?.label ?? key)
+    .join(" · ");
+  // On the request as well as in the bell: the notice is the durable trail the
+  // history table does not keep, and it is there next time anyone opens this.
+  updateGraphic(withNotice(g, by, `แก้บรีฟ: ${labels}`)).catch(() => {});
+  notify("feedback", `📝 บรีฟถูกแก้: ${g.title}`,
+    `${labels} · โดย ${by} → ${worker} ทำงานจากบรีฟนี้อยู่`,
+    workLink.graphic(g.id), { team: graphicTeam(g), to: [worker], inform: [g.requester] });
+}
+
+function BriefEditor({ g, me, onSaved, onCancel }: {
+  g: Graphic; me: string; onSaved: (g: Graphic) => void; onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(BRIEF_FIELDS.map((f) => [f.key, g[f.key] ?? ""])));
@@ -1204,6 +1233,7 @@ function BriefEditor({ g, onSaved, onCancel }: {
     try {
       const next = await patchGraphicBrief(g, patch);
       toastSuccess(`บันทึกบรีฟแล้ว · แก้ ${changed} ช่อง`);
+      announceBriefEdit(next, me, Object.keys(patch) as RequesterBriefField[]);
       onSaved(next);
     } catch (error) {
       // Includes the two server-side refusals worth reading in full: Creative
