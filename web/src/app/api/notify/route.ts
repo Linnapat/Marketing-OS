@@ -25,7 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
-import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam } from "@/lib/notifyRouting";
+import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, inboxKind } from "@/lib/notifyRouting";
 import { hasBotToken, postDM } from "@/lib/slackBot";
 import { resolveSlackIds, fetchUnmapped } from "@/lib/slackDirectory";
 
@@ -49,7 +49,7 @@ function slackWebhookFor(team: NotifyTeam): string | undefined {
 
 const anySlackConfigured = () => CHANNEL_TEAMS.some((t) => Boolean(slackWebhookFor(t)));
 
-interface NotifyBody { event?: string; title?: string; detail?: string; link?: string; team?: string; to?: string[] }
+interface NotifyBody { event?: string; title?: string; detail?: string; link?: string; team?: string; to?: string[]; inform?: string[] }
 
 /** DM everyone the event is for. Returns who was reached and who could not be
  *  found — an unfound person is skipped quietly here and surfaced in Settings
@@ -85,6 +85,61 @@ async function queueForDigest(team: NotifyTeam, event: string, title: string, de
       team, event, title, detail: detail || null, link: link || null, recipients, delivered,
     });
   } catch { /* the DM already went out; the summary line is the lesser loss */ }
+}
+
+/** Everything that means "me", for the person who triggered this. Telling
+ *  someone their own action came back is noise, and noise is how an inbox stops
+ *  being read — the client-side writer this replaces already dropped the actor,
+ *  so losing that would be a regression. The caller's email comes from their
+ *  JWT; the member name is looked up because most rows name people that way. */
+async function actorKeys(email: string | null): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const add = (v?: string | null) => {
+    const k = (v ?? "").trim().toLowerCase();
+    if (!k) return;
+    keys.add(k);
+    if (k.includes("@")) keys.add(k.split("@")[0]);
+  };
+  add(email);
+  try {
+    const db = supabaseAdmin();
+    if (db && email) {
+      const { data } = await db.from("members").select("name").ilike("email", email).limit(1);
+      add(data?.[0]?.name as string | undefined);
+    }
+  } catch { /* a missing name only risks one self-notification */ }
+  return keys;
+}
+
+/** Write the in-app inbox rows. `to` are the people the event is for; `inform`
+ *  are people who should find it in the bell without being interrupted by a DM.
+ *  Best-effort, like every other channel here: the Slack message already went
+ *  out and must not be undone by a failed insert. */
+async function fillInbox(
+  people: string[], actor: Set<string>,
+  n: { event: string; title: string; detail: string; link: string },
+): Promise<number> {
+  try {
+    const db = supabaseAdmin();
+    if (!db) return 0;
+    const seen = new Set<string>();
+    const rows: Record<string, unknown>[] = [];
+    for (const raw of people) {
+      const name = (raw ?? "").trim();
+      const key = name.toLowerCase();
+      if (!name || name === "Unassigned" || seen.has(key)) continue;
+      if (actor.has(key) || (key.includes("@") && actor.has(key.split("@")[0]))) continue;
+      seen.add(key);
+      rows.push({
+        recipient: name, event: inboxKind(n.event), title: n.title,
+        detail: n.detail || null, link: n.link || null, actor: null,
+      });
+    }
+    if (!rows.length) return 0;
+    const { error } = await db.from("notifications").insert(rows);
+    if (error) { console.warn("inbox insert skipped", error.message); return 0; }
+    return rows.length;
+  } catch { return 0; }
 }
 
 /** Settings → Notifications toggles (org_settings kv). Missing = everything on. */
@@ -150,8 +205,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid body" }, { status: 400 });
   }
-  const { event = "generic", title, detail = "", link = "", team: teamHint, to = [] } = body;
+  const { event = "generic", title, detail = "", link = "", team: teamHint, to = [], inform = [] } = body;
   const recipients = Array.isArray(to) ? to.filter((n): n is string => typeof n === "string") : [];
+  // People who should find this in the bell but not be interrupted by a DM.
+  const informed = Array.isArray(inform) ? inform.filter((n): n is string => typeof n === "string") : [];
   if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
 
   const prefs = await loadPrefs();
@@ -200,8 +257,21 @@ export async function POST(req: NextRequest) {
     await queueForDigest(team, event, title, detail, fullLink, dmTargets, dm.sent.length > 0);
   }
 
+  // The in-app inbox. Deliberately NOT gated on the Slack toggle or on whether
+  // a DM was delivered: the bell is the one channel that works when Slack is
+  // off, the token has expired, or the person's email does not match their
+  // Slack account — which is exactly when a notification is most likely to be
+  // lost. Money is the one exception: it is DM'd to one person by design and
+  // must not appear in anyone else's bell.
+  // The stored link stays relative — the bell renders an in-app <Link>, and an
+  // absolute URL there would send someone out to the browser and back.
+  const inboxPeople = team === "finance" ? [] : [...recipients, ...informed];
+  const inbox = inboxPeople.length
+    ? await fillInbox(inboxPeople, await actorKeys(guard.user.email), { event, title, detail, link: safeLink })
+    : 0;
+
   return NextResponse.json({
-    ok: true, slack, line, email, team, dm,
+    ok: true, slack, line, email, team, dm, inbox,
     configured: {
       slack: anySlackConfigured(),
       line: Boolean(LINE_TOKEN && LINE_TO),

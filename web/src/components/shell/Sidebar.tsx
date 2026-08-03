@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, LogOut, Pencil, X } from "lucide-react";
 import { NAV } from "@/lib/nav";
+import { useMyTaskCount } from "@/lib/useMyTaskCount";
 import { clsx } from "@/lib/clsx";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
@@ -49,6 +50,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
   onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
+  const myTaskCount = useMyTaskCount();
   const { user, member, role, signOut } = useAuth();
   const { can } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
@@ -180,6 +182,10 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
               const active = isActive(item);
               const Icon = item.icon;
               const accent = NAV_ACCENTS[item.href] ?? NAV_ACCENTS["/"];
+              // A live count wins over the static one in lib/nav. Zero shows
+              // nothing at all: "0" is a thing to read and dismiss on every
+              // page, and the absence already says the same.
+              const badge = item.href === "/my-tasks" && !item.tab ? myTaskCount || undefined : item.badge;
               return (
                 <Link
                   key={item.tab ? `${item.href}?${item.tab}` : item.href}
@@ -212,11 +218,14 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
                     />
                   </span>
                   {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-                  {!collapsed && item.badge && (
-                    <span className="text-[10.5px] font-bold px-[7px] py-[1px] rounded-pill bg-white/95 text-[#5B4FD8]">
-                      {item.badge}
+                  {!collapsed && badge ? (
+                    <span
+                      className="text-[10.5px] font-bold px-[7px] py-[1px] rounded-pill bg-white/95 text-[#5B4FD8]"
+                      title={item.href === "/my-tasks" ? `${badge} งานที่ยังไม่เสร็จของคุณ` : undefined}
+                    >
+                      {badge}
                     </span>
-                  )}
+                  ) : null}
                   {!collapsed && !item.ready && (
                     <span className="text-[9px] font-bold text-[#D7B76A] bg-white/[0.06] border border-white/[0.08] tracking-wide rounded-pill px-[6px] py-[2px]">SOON</span>
                   )}

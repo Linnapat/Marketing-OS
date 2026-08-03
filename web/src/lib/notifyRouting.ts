@@ -61,3 +61,35 @@ export function resolveTeam(team: string | undefined, link: string | undefined):
   if (team && (NOTIFY_TEAMS as string[]).includes(team)) return team as NotifyTeam;
   return teamFromLink(link);
 }
+
+// ── In-app inbox ───────────────────────────────────────────────────────────
+//
+// The bell had its own writer (db/notifications.pushNotifications) and only
+// four call sites ever used it, against forty-two for notify(). So Slack knew
+// a piece of artwork had been sent back and the app did not: on 2 Aug 2026 the
+// production `notifications` table held zero rows while twenty-two Slack
+// messages had gone out the same day, and the bell read "ไม่มีอะไรค้างอยู่".
+//
+// One call now feeds both. This map is the translation, and it lives here
+// rather than in db/notifications because that file is "use client" and the
+// API route cannot import it.
+
+/** Inbox categories. The first four predate this and are already in the table;
+ *  the rest exist because notify() carries events the inbox had no word for. */
+export type InboxKind = "comment" | "revision" | "brief" | "assigned" | "approval" | "approved" | "launch";
+
+const EVENT_TO_INBOX: Record<string, InboxKind> = {
+  newTask: "assigned",
+  approval: "approval",
+  mention: "comment",
+  feedback: "revision",
+  approved: "approved",
+  rejected: "revision",
+  launch: "launch",
+};
+
+/** Which inbox row a notify() event becomes. Unknown events land under
+ *  "assigned" rather than being dropped: an inbox that silently discards what
+ *  it does not recognise is how this gap opened in the first place. */
+export const inboxKind = (event: string | undefined): InboxKind =>
+  EVENT_TO_INBOX[event ?? ""] ?? "assigned";
