@@ -17,7 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, workKind, briefChangeAudience,
-  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset,
+  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset, withShootMoved,
 } from "@/lib/data/graphic";
 import type { NotifyTeam } from "@/lib/notifyRouting";
 
@@ -346,11 +346,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
    *  recorded, because the day the work lands on moves with it (workDayIso). */
   const moveShoot = (next: string) => {
     if (!canRunPipeline) return;
-    const from = g.shootDate || "—";
-    saveGraphic({
-      ...g, shootDate: next,
-      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: `เลื่อนวันถ่าย ${from} → ${next || "—"}` }],
-    }, "เลื่อนวันถ่ายไม่สำเร็จ");
+    saveGraphic(withShootMoved(g, next, currentUser), "เลื่อนวันถ่ายไม่สำเร็จ");
     if (next) toastSuccess(`เลื่อนวันถ่ายเป็น ${next} — งานจะไปนับในเดือน ${next.slice(0, 7)}`);
   };
 
