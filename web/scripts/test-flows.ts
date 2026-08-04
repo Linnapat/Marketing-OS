@@ -8,7 +8,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange } from "../src/lib/data/content";
-import { materialised } from "../src/lib/data/brief";
+import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
@@ -741,6 +741,25 @@ console.log("Artwork counting — by pixels, platform collapsed");
 
   const bouncedOther = { ...ready, approvalStatus: "Revision Requested" };
   check("ตีกลับเรื่องอื่น → แคปชั่นยัง Ready", bouncedOther.captionStatus === "Ready");
+}
+
+console.log("\n— แคมเปญอนุมัติแล้วแต่แผนไม่เคยถูกสร้าง (content ที่ดราฟไว้ไม่ขึ้น) —");
+{
+  const plan = [{ title: "โพสต์ 1" }, { title: "โพสต์ 2" }, { title: "   " }];
+  const approved = { status: "Approved", content: plan };
+  check("แผนนับเฉพาะแถวที่มีหัวข้อ", plannedItems(approved).length === 2);
+  // เคสของ Peach: อนุมัติแล้ว ไม่มีโพสต์เลย ไม่เคยมี stamp → ต้องโชว์แผน
+  check("อนุมัติแล้วไม่มีโพสต์เลย = โชว์แผน", approvedButNothingMade(approved, 0) === true);
+  // มีโพสต์แล้ว = ทำงานปกติ ไม่ต้องเตือน
+  check("มีโพสต์แล้ว = ไม่เตือน", approvedButNothingMade(approved, 3) === false);
+  // ยังไม่อนุมัติ = ใช้เส้นทางเดิม (โชว์แผนอยู่แล้ว) ไม่ใช่เคสนี้
+  check("ยังไม่อนุมัติ = ไม่ใช่เคสนี้", approvedButNothingMade({ status: "Waiting for Approval", content: plan }, 0) === false);
+  // เคยสร้างแล้วแต่ถูกลบหมด = ห้ามเอาแผนกลับมาโชว์ (บั๊กเก่า "ลบแล้วยังไม่หาย")
+  check("เคยสร้างแล้วลบหมด = ไม่โชว์แผน", approvedButNothingMade({ ...approved, materialisedAt: "2026-08-01T00:00:00Z" }, 0) === false);
+  check("stamp ช่องว่างไม่นับว่าเคยสร้าง", approvedButNothingMade({ ...approved, materialisedAt: "  " }, 0) === true);
+  // แผนว่างเปล่า = ไม่มีอะไรให้โชว์
+  check("แผนว่าง = ไม่เตือน", approvedButNothingMade({ status: "Approved", content: [] }, 0) === false);
+  check("แผนมีแต่แถวเปล่า = ไม่เตือน", approvedButNothingMade({ status: "Approved", content: [{ title: " " }] }, 0) === false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

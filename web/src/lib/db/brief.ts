@@ -310,8 +310,32 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     if (madeReportTask.created) tasks++;
   }
 
+  // Mark that this plan has become real work at least once. Absence of the
+  // stamp is what lets the Content tab tell "never made" from "made and then
+  // deleted" — see approvedButNothingMade. Written only when something was
+  // actually created, and only once: a re-save of an already materialised
+  // campaign creates nothing and must not move the date.
+  //
+  // Best-effort and last, deliberately. The rows are already in; failing the
+  // whole save because a bookkeeping stamp would not write would turn a
+  // completed fan-out into an error the caller has to interpret.
+  const madeSomething = content + graphics + kols + tasks > 0;
+  if (madeSomething && !normalizedBrief.materialisedAt) {
+    await markMaterialised(normalizedBrief.id).catch(() => {});
+  }
+
   // Report the real materialised counts (idempotency may make a retry all-zero).
   return { campaign: row, created: { content, graphics, kols, tasks } };
+}
+
+/** Stamp the brief blob as materialised, without rewriting the rest of it. */
+async function markMaterialised(id: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const { data } = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
+  const blob = data?.data as CampaignBrief | undefined;
+  if (!blob || blob.materialisedAt) return;
+  await db.from("campaigns").update({ data: { ...blob, materialisedAt: new Date().toISOString() } }).eq("id", id);
 }
 
 function dayOf(iso: string): number { const d = Number(iso?.split("-")[2]); return Number.isFinite(d) ? d : 0; }
