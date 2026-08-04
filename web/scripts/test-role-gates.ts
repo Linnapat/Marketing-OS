@@ -262,6 +262,27 @@ console.log("\n— กติกาเติมบรีฟต้องตรง�
   is("client: ปล่อยแล้ว → แก้ได้ (ตรงกับ SQL)", canEditBriefNow(granted, { isRequester: true, isCmo: false }), true);
 }
 
+console.log("\n— Agency ต้องคุยในใบงานตัวเองได้ (RLS ต้องตรงกับ UI) —");
+{
+  // บั๊กจริง: กล่อง "คุยกันในงานนี้" ขึ้นให้ทุกคนที่เปิดใบงานได้ รวม Agency Portal
+  // ที่เปิด GraphicDrawer ตัวเต็ม แต่ RLS ของ graphic_feedback เปิดแค่ admin/staff
+  // → เห็นกล่อง กดส่ง แล้ว error · เทสต์นี้เช็คว่าไฟล์ SQL ปิดช่องนั้นแล้ว
+  const sql = readFileSync(new URL("../supabase/security_p16_agency_conversation.sql", import.meta.url), "utf8");
+  check("มี policy ให้ agency อ่านบทสนทนา", /agency_own_feedback_read[\s\S]*for select/i.test(sql));
+  check("มี policy ให้ agency ตอบได้", /agency_own_feedback_write[\s\S]*for insert/i.test(sql));
+  // ขอบเขต: เฉพาะใบงานตัวเอง ไม่ใช่ทั้งตาราง
+  check("จำกัดเฉพาะใบงานของตัวเอง", (sql.match(/owns_designer_slot/g) ?? []).length >= 2);
+  // ปลอมชื่อคนพูดไม่ได้ — บทสนทนาต้องเชื่อชื่อได้
+  check("ต้องลงชื่อตัวเอง", /jwt_member_name\(\)|jwt_email\(\)/.test(sql));
+  // ห้ามลบ/แก้ประวัติการตีงาน
+  check("ไม่เปิด update/delete ให้ agency", !/agency[\s\S]*for (update|delete)/i.test(sql));
+  // ของเดิมต้องไม่ถูกแตะ — policy เป็น OR กัน การเพิ่มต้อง additive
+  check("ไม่ไปแตะ staff_rw ของเดิม", !/drop policy if exists staff_rw/.test(sql));
+  const rollback = readFileSync(new URL("../supabase/security_p16_agency_conversation_rollback.sql", import.meta.url), "utf8");
+  check("มี rollback ที่ลบเฉพาะ policy ที่เพิ่ม", /agency_own_feedback_read/.test(rollback) && /agency_own_feedback_write/.test(rollback));
+  check("rollback ไม่ลบ staff_rw", !/drop policy if exists staff_rw/.test(rollback));
+}
+
 console.log("\n— assets: หนึ่งใบงานหนึ่งแถว (ต้อง upsert ได้จริง) —");
 {
   const sql = readFileSync(new URL("../supabase/assets_from_graphic.sql", import.meta.url), "utf8");
