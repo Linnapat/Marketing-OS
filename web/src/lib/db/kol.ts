@@ -3,6 +3,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import { baht } from "@/lib/format";
 import { KOLS, Kol, withLiveKolOverdue } from "@/lib/data/kol";
 import { BrandId, brandName } from "@/lib/brands";
@@ -161,7 +162,7 @@ export async function approveKolProposal(kolId: number, by?: string): Promise<vo
   // the specialist waiting on a yes learned about it by re-opening the page.
   notify("approved", `✅ อนุมัติ KOL: ${kol.name}`,
     `${brandName(kol.b)} · ${kol.campaign} · ${baht(approvedAmount)} (ค่าตัว + ค่าอาหาร)${next.approvedBy ? ` · โดย ${next.approvedBy}` : ""}`,
-    "/kol?tab=list", { team: "kol", to: [kol.owner] });
+    kol.masterKolId ? workLink.kol(kol.masterKolId) : "/kol?tab=list", { team: "kol", to: [kol.owner] });
 }
 
 /** Build a full Kol from the request form. Owner/Approver default to

@@ -15,6 +15,7 @@ import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
   kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
@@ -176,7 +177,10 @@ export default function KolPage() {
         notify("newTask", `🌟 KOL request ใหม่ · ${created.length} ราย`,
           `${brandName(head.b)} · ${campaignName || head.campaign || "—"}` +
           `${cost ? ` · ${baht(cost)}` : ""}${head.postingPeriod ? ` · โพสต์ ${head.postingPeriod}` : ""}`,
-          "/kol?tab=list", { team: "kol" });
+          // One creator gets a link to that creator; a batch has no single
+          // page to name, so it points at the list rather than inventing one.
+          created.length === 1 && head.masterKolId ? workLink.kol(head.masterKolId) : "/kol?tab=list",
+          { team: "kol" });
       }
       setKols((ks) => [...created, ...ks]);
       setRequestOpen(false);
