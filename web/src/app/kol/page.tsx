@@ -14,6 +14,8 @@ import { BrandFilterValue, BrandId, brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
+import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import {
   KOLS, ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
   kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
@@ -166,6 +168,20 @@ export default function KolPage() {
       const results = await Promise.all(kolsToCreate.map((k) => createKolIfNew(k)));
       if (item && campaignName && campaignName !== "—") await appendBriefKolItem(campaignName, item);
       const created = results.filter((r) => r.created).map((r) => r.kol);
+      // The event the room existed for and never received: work arriving. One
+      // message per submission, not per row — a brief for eight creators is one
+      // decision, and eight pings would train people to mute the channel.
+      if (created.length) {
+        const head = created[0];
+        const cost = created.reduce((sum, k) => sum + (k.totalCost || k.fee || 0), 0);
+        notify("newTask", `🌟 KOL request ใหม่ · ${created.length} ราย`,
+          `${brandName(head.b)} · ${campaignName || head.campaign || "—"}` +
+          `${cost ? ` · ${baht(cost)}` : ""}${head.postingPeriod ? ` · โพสต์ ${head.postingPeriod}` : ""}`,
+          // One creator gets a link to that creator; a batch has no single
+          // page to name, so it points at the list rather than inventing one.
+          created.length === 1 && head.masterKolId ? workLink.kol(head.masterKolId) : "/kol?tab=list",
+          { team: "kol" });
+      }
       setKols((ks) => [...created, ...ks]);
       setRequestOpen(false);
     } catch (error) {
