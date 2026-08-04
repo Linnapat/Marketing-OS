@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -528,6 +528,25 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ล้างคนถ่ายได้", withShooterAssigned(s0, "", "Boss").shooter === "");
     // ต้นฉบับต้องไม่ถูกแก้
     check("ไม่แตะของเดิม", s0.shootDate === "2026-09-10" && s0.shooter === "Jeeno");
+  }
+
+  // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง
+  {
+    const req = { requester: "Khun Aran", acceptedBy: "Jungjing", designer: "Boss" };
+    const msg = (owner: string) => ({ owner, type: MESSAGE_TYPE });
+    // thread เรียงใหม่สุดขึ้นก่อน (ตาม fetchGraphicFeedback)
+    check("ตอบไปหาคนที่พูดล่าสุด", replyAudience(req, [msg("Jungjing")], "Khun Aran").join() === "Jungjing");
+    check("ข้ามข้อความของตัวเอง", replyAudience(req, [msg("Khun Aran"), msg("Jungjing")], "Khun Aran").join() === "Jungjing");
+    check("ไม่เด้งใส่ตัวเอง", replyAudience(req, [msg("Khun Aran")], "Khun Aran").includes("Khun Aran") === false);
+    // ยังไม่มีใครพูด = ข้อความแรก ต้องถึงคนที่ถือใบงาน
+    check("ข้อความแรกถึงคนที่รับงาน", replyAudience(req, [], "Khun Aran").join() === "Jungjing");
+    check("ไม่มีคนรับงานก็ถึง designer", replyAudience({ ...req, acceptedBy: "" }, [], "Khun Aran").join() === "Boss");
+    check("ฝั่ง Creative ตอบ = ถึง requester", replyAudience(req, [], "Jungjing").join() === "Khun Aran");
+    check("Unassigned ไม่นับเป็นคน", replyAudience({ requester: "Khun Aran", acceptedBy: "Unassigned", designer: "Unassigned" }, [], "Jungjing").join() === "Khun Aran");
+    check("ไม่มีใครให้ตอบ = ไม่แจ้งใคร", replyAudience({ requester: "Khun Aran", acceptedBy: "", designer: "" }, [], "Khun Aran").length === 0);
+    // ข้อความธรรมดา vs feedback ที่สั่งงาน ต้องแยกออกจากกัน
+    check("Message = ข้อความคุย", isMessage({ type: MESSAGE_TYPE }) === true);
+    check("Design revision ไม่ใช่ข้อความคุย", isMessage({ type: "Design revision" }) === false);
   }
 
   // วันที่ทำงานจริง / เดือนที่ทำงานจริง

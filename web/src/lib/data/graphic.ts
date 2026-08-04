@@ -1373,6 +1373,59 @@ export interface Feedback {
   type: string; text: string; version: string; status: string; assignedTo: string; due: string | null; createdAt: string;
 }
 
+/* ── Talking about a request ───────────────────────────────────────────────
+ *
+ * Every message on a request already had a job to do: a revision reason, a
+ * lens verdict, a reason a brief went back. There was no way to just say
+ * something — so "ยังไม่มีลิงก์บรีฟฮะ ภาพอันนี้หรือจะให้หนูเลือกเอง" arrived as
+ * the title of a task, with nowhere to answer it. The requester's only reply
+ * box wrote into the task's own blob, which the request never reads, so the
+ * person who asked the question could not see the answer.
+ *
+ * MESSAGE_TYPE rows are that missing thing: a message that changes nothing.
+ * They live in graphic_feedback with everything else, so one request has one
+ * conversation no matter which screen you opened it from.
+ */
+export const MESSAGE_TYPE = "Message";
+
+export const isMessage = (f: Pick<Feedback, "type">) => f.type === MESSAGE_TYPE;
+
+/** Who a reply is addressed to — one person, the one being answered.
+ *
+ *  The last person to speak who is not me. A conversation answers whoever
+ *  asked, and on a request that is as often Creative asking the requester as
+ *  the other way round.
+ *
+ *  With nothing said yet there is nobody to answer, so it goes to the other
+ *  SIDE: the requester writes to whoever holds the job, Creative writes to the
+ *  requester. Deliberately one person and not "everyone on the request" —
+ *  copying a designer into a question meant for the requester is how a channel
+ *  earns the habit of being ignored.
+ *
+ *  Never me: notifying yourself about your own message is the same disease.
+ *  Empty when there is genuinely nobody on the other side, rather than falling
+ *  back to a name that would silently swallow the message. */
+export function replyAudience(
+  g: Pick<Graphic, "requester" | "acceptedBy" | "designer">,
+  thread: Pick<Feedback, "owner" | "type">[],
+  me: string,
+): string[] {
+  const norm = (s: string | null | undefined) => (s ?? "").trim();
+  const mine = (name: string) => name.toLowerCase() === norm(me).toLowerCase();
+  const real = (name: string) => !!name && name !== "Unassigned" && !mine(name);
+
+  const lastSpeaker = thread.map((f) => norm(f.owner)).find(real);
+  if (lastSpeaker) return [lastSpeaker];
+
+  // Nothing said yet — write across the table, not around it.
+  const amRequester = mine(norm(g.requester));
+  const order = amRequester
+    ? [g.acceptedBy, g.designer, g.requester]
+    : [g.requester, g.acceptedBy, g.designer];
+  const other = order.map(norm).find(real);
+  return other ? [other] : [];
+}
+
 export const FEEDBACK: Feedback[] = [
   { id: 0, gid: 6, owner: "Ken S.", team: "Campaign Lead", ownerColor: "#3E5C9A", type: "Design revision", text: "Brand colours need adjustment — use Omakase navy (#3E5C9A) as dominant, not the current warm brown. Also the CTA button is too small on mobile.", version: "V2", status: "Open", assignedTo: "Boss", due: "Jun 29", createdAt: "Jun 27" },
   { id: 1, gid: 6, owner: "Ploy R.", team: "Brand Manager", ownerColor: "#B5577E", type: "Copy revision", text: "The headline copy needs to say 'Father's Day Omakase Set' not 'Special Set'. Brand guideline: always use the full name.", version: "V2", status: "Open", assignedTo: "Boss", due: "Jun 28", createdAt: "Jun 26" },

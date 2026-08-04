@@ -1,3 +1,4 @@
+import { workKind } from "@/lib/data/graphic";
 // Where a notification goes. Shared by the client helper (lib/notify) and the
 // API route so both agree on one set of rules.
 //
@@ -93,3 +94,14 @@ const EVENT_TO_INBOX: Record<string, InboxKind> = {
  *  it does not recognise is how this gap opened in the first place. */
 export const inboxKind = (event: string | undefined): InboxKind =>
   EVENT_TO_INBOX[event ?? ""] ?? "assigned";
+
+/** Which room a graphic request belongs to. A "Graphic Request" is the form for
+ *  video work too, so the module can't decide this — workKind() reads the type
+ *  the requester picked, the same classifier the capacity board counts by.
+ *
+ *  Lives here rather than inside the drawer because the request's conversation
+ *  is now posted from two screens, and a second copy of this rule would route
+ *  the same request to two different rooms depending on where you typed. */
+export function graphicTeam(g: { type: string; requiredVideo?: boolean }): NotifyTeam {
+  return workKind(g.type, g.requiredVideo).startsWith("vdo") ? "vdo" : "graphic";
+}

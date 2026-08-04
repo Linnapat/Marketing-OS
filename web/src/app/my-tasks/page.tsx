@@ -34,7 +34,9 @@ import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { Graphic, awaitsArtworkReview, awaitsStoryboardDecision } from "@/lib/data/graphic";
+import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { fetchGraphicFeedback } from "@/lib/db/feedback";
+import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
 import {
   WorkItem, WorkCard, WorkListView, WorkCalendarView, WorkAction, WorkGroupHeader, StatMini,
@@ -987,6 +989,18 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
   const [revising, setRevising] = useState(false);
   const [reviseMsg, setReviseMsg] = useState("");
   const [comment, setComment] = useState("");
+  // A task about a graphic request is a window onto that request, not a place
+  // of its own: the conversation belongs to the request, so both screens read
+  // and write the same thread. Tasks with no request keep their own comments.
+  const [thread, setThread] = useState<Feedback[]>([]);
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    if (!graphic) { setThread([]); return; }
+    let alive = true;
+    fetchGraphicFeedback(graphic.id).then((f) => { if (alive) setThread(f); }).catch(() => {});
+    return () => { alive = false; };
+  }, [graphic]);
+  const replyTo = graphic ? replyAudience(graphic, thread, me) : [];
   const checklistDone = new Set(t.checklistDone ?? []);
 
   const start = () => onPatch({ status: "In Progress", group: "doFirst" });
@@ -1009,9 +1023,28 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     });
     setRevising(false); setReviseMsg("");
   };
-  const addComment = () => {
+  const addComment = async () => {
     const text = comment.trim();
-    if (!text) return;
+    if (!text || sending) return;
+    // On a graphic task the reply goes to the REQUEST, where the person who
+    // asked the question is reading. It used to go into the task's own blob,
+    // which the request never reads — so Creative asked, the requester
+    // answered, and the answer landed somewhere Creative could not open.
+    if (graphic) {
+      setSending(true);
+      try {
+        const saved = await postGraphicMessage({ graphic, text, me, thread });
+        setThread((ts) => [saved ?? {
+          id: Date.now(), gid: graphic.id, owner: me, team: "Conversation", ownerColor: colorOf(me),
+          type: MESSAGE_TYPE, text, version: "", status: "Open", assignedTo: "", due: null,
+          createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        }, ...ts]);
+        setComment("");
+      } catch (error) {
+        toastError(`ส่งข้อความไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      } finally { setSending(false); }
+      return;
+    }
     onPatch({ comments: [...(t.comments ?? []), { by: me, text, at: new Date().toISOString() }] });
     // The comment reaches the people the task belongs to. Before this it went
     // into the task blob and nowhere else: you saw it only if you happened to
@@ -1101,10 +1134,25 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
             })}
           </div>
 
-          {/* Comments — stored with the task so the whole team sees them */}
-          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mt-5 mb-[10px]">Comments {t.comments?.length ? `(${t.comments.length})` : ""}</div>
+          {/* Comments. On a graphic task this IS the request's thread — same
+              messages the Creative side sees in the request drawer. */}
+          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mt-5 mb-[10px]">
+            {graphic ? "คุยกันในใบงานนี้" : "Comments"} {graphic ? (thread.length ? `(${thread.length})` : "") : (t.comments?.length ? `(${t.comments.length})` : "")}
+          </div>
           <div className="flex flex-col gap-2 mb-2">
-            {(t.comments ?? []).map((c, i) => (
+            {graphic ? thread.map((f) => (
+              <div key={f.id} className="rounded-[10px] px-3 py-[9px]" style={{ background: isMessage(f) ? "#F7F2FF" : "#FAF8F4" }}>
+                <div className="flex items-center gap-2 mb-[3px] flex-wrap">
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold" style={{ background: f.ownerColor }}>{init(f.owner)}</span>
+                  <span className="text-[11px] font-bold text-ink">{f.owner}</span>
+                  <span className="text-[10px] text-faint">{f.createdAt}</span>
+                  {/* Revision reasons live in this thread too — labelled, so a
+                      request to change the work does not read as small talk. */}
+                  {!isMessage(f) && <span className="text-[9.5px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{f.type}</span>}
+                </div>
+                <div className="text-[12.5px] text-muted leading-[1.5]">{f.text}</div>
+              </div>
+            )) : (t.comments ?? []).map((c, i) => (
               <div key={i} className="rounded-[10px] px-3 py-[9px]" style={{ background: "#FAF8F4" }}>
                 <div className="flex items-center gap-2 mb-[3px]">
                   <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold" style={{ background: colorOf(c.by) }}>{init(c.by)}</span>
@@ -1114,12 +1162,18 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
                 <div className="text-[12.5px] text-muted leading-[1.5]">{c.text}</div>
               </div>
             ))}
+            {graphic && thread.length === 0 && (
+              <div className="text-[11.5px] text-faint">ยังไม่มีใครคุยในใบงานนี้ — พิมพ์ตอบได้เลย</div>
+            )}
           </div>
           <div className="flex gap-2">
-            <input value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addComment()}
-              placeholder="เขียนคอมเมนต์ถึงทีม…" className="flex-1 text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
-            <button onClick={addComment} disabled={!comment.trim()} className="text-[12px] font-bold text-white rounded-[9px] px-3 disabled:opacity-40" style={{ background: "#211F1C" }}>Send</button>
+            <input value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void addComment()}
+              placeholder={graphic ? "ตอบกลับในใบงานนี้…" : "เขียนคอมเมนต์ถึงทีม…"} className="flex-1 text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+            <button onClick={() => void addComment()} disabled={!comment.trim() || sending} className="text-[12px] font-bold text-white rounded-[9px] px-3 disabled:opacity-40" style={{ background: "#211F1C" }}>{sending ? "…" : "Send"}</button>
           </div>
+          {graphic && replyTo.length > 0 && (
+            <div className="text-[10.5px] text-faint mt-[6px]">ข้อความจะแจ้งเตือนถึง <b className="text-muted">{replyTo.join(", ")}</b></div>
+          )}
         </div>
         <div className="sticky bottom-0" style={{ padding: "16px 24px", borderTop: "1px solid #ECE6DA", background: "#FBF9F4" }}>
           <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[10px]">Actions</div>
