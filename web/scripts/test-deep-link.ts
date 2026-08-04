@@ -62,20 +62,32 @@ is("คิวอนุมัติยังเป็น general", teamFromLink(w
 
 console.log("\nรอข้อมูลจริงก่อนค่อยบอกว่าไม่เจอ");
 const ROWS = [{ id: 1 }, { id: 2 }];
-is("ยังไม่มี param → ไม่ทำอะไร", resolveOpenTarget(null, ROWS, true, false).action, "idle");
-is("ยังโหลดไม่เสร็จ → รอ", resolveOpenTarget("1", [], false, false).action, "wait");
+is("ยังไม่มี param → ไม่ทำอะไร", resolveOpenTarget(null, ROWS, true, null).action, "idle");
+is("ยังโหลดไม่เสร็จ → รอ", resolveOpenTarget("1", [], false, null).action, "wait");
 // The bug this is really about: the page seeds itself with demo rows, so a
 // non-empty list is no proof the real ones are in. Deciding early told people
 // their work was deleted a beat before it loaded.
-is("ลิสต์ยังเป็น seed ก็ยังต้องรอ", resolveOpenTarget("999", ROWS, false, false).action, "wait");
-is("โหลดเสร็จแล้วเจอ → เปิด", resolveOpenTarget("2", ROWS, true, false).action, "open");
-is("เปิดแล้วได้แถวที่ถูก", resolveOpenTarget("2", ROWS, true, false).item?.id, 2);
-is("โหลดเสร็จแล้วไม่เจอ → บอกว่าหาย", resolveOpenTarget("999", ROWS, true, false).action, "missing");
-is("ลิสต์ว่างหลังโหลด → หาย", resolveOpenTarget("1", [], true, false).action, "missing");
-is("เปิดไปแล้ว ห้ามเปิดซ้ำ", resolveOpenTarget("1", ROWS, true, true).action, "idle");
+is("ลิสต์ยังเป็น seed ก็ยังต้องรอ", resolveOpenTarget("999", ROWS, false, null).action, "wait");
+is("โหลดเสร็จแล้วเจอ → เปิด", resolveOpenTarget("2", ROWS, true, null).action, "open");
+is("เปิดแล้วได้แถวที่ถูก", resolveOpenTarget("2", ROWS, true, null).item?.id, 2);
+is("โหลดเสร็จแล้วไม่เจอ → บอกว่าหาย", resolveOpenTarget("999", ROWS, true, null).action, "missing");
+is("ลิสต์ว่างหลังโหลด → หาย", resolveOpenTarget("1", [], true, null).action, "missing");
+is("เปิดไปแล้ว ห้ามเปิดซ้ำ", resolveOpenTarget("1", ROWS, true, "1").action, "idle");
+// บั๊กจริง: latch เดิมเป็น boolean เลยล็อกตลอดกาล — คลิกลิงก์จาก Slack อันแรก
+// เปิดได้ อันที่สองในแท็บเดิมเงียบสนิท ต้องแยกตาม id
+is("ลิงก์คนละงานในแท็บเดิมต้องเปิดได้", resolveOpenTarget("2", ROWS, true, "1").action, "open");
+is("และได้แถวที่ถูก", resolveOpenTarget("2", ROWS, true, "1").item?.id, 2);
 // Task ids are numbers, post ids are strings, and the param is always a string.
-is("string param เทียบกับ number id ได้", resolveOpenTarget("1", ROWS, true, false).action, "open");
-is('id เป็น string ก็ยังเจอ', resolveOpenTarget("c-1", [{ id: "c-1" }], true, false).action, "open");
+is("string param เทียบกับ number id ได้", resolveOpenTarget("1", ROWS, true, null).action, "open");
+is('id เป็น string ก็ยังเจอ', resolveOpenTarget("c-1", [{ id: "c-1" }], true, null).action, "open");
+
+console.log("\nลิงก์คำขอเบิกงบต้องชี้ที่ใบ ไม่ใช่หน้าโมดูล");
+is("มี ref → ชี้ที่ใบนั้น", workLink.expense("EXP-2026-014"), "/expenses?ref=EXP-2026-014");
+is("เว้นวรรครอบ ๆ ตัดทิ้ง", workLink.expense("  EXP-2026-014 "), "/expenses?ref=EXP-2026-014");
+// ยังไม่มี ref (draft ที่เปิดจากงบแคมเปญ) → ชี้หน้าโมดูลตามตรง ดีกว่าลิงก์ที่พาไปหาอะไรไม่เจอ
+is("ไม่มี ref → หน้าโมดูล", workLink.expense(""), "/expenses");
+is("null ก็หน้าโมดูล", workLink.expense(null), "/expenses");
+is("ref ที่มีอักขระพิเศษต้อง encode", workLink.expense("EXP/2026 #14"), "/expenses?ref=EXP%2F2026%20%2314");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

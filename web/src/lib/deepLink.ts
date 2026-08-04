@@ -22,6 +22,9 @@ export const OPEN_PARAM = {
   graphic: "open",
   task: "task",
   post: "post",
+  /** An expense request, by its human reference (EXP-…). The row has no page
+   *  of its own, so the page filters down to it and marks it. */
+  expense: "ref",
   /** Which tab to land on, where a page has more than one. */
   tab: "tab",
 } as const;
@@ -42,10 +45,17 @@ export const workLink = {
   campaign: (id: string | number, tab?: string) => `/campaigns/${q(id)}${tab ? `?tab=${q(tab)}` : ""}`,
   /** A KOL profile — also a real page. */
   kol: (id: string | number) => `/kol/${q(id)}`,
+  /** One expense request on the Expenses page. A row, not a record with a
+   *  drawer — so the page filters to it rather than opening it. Falls back to
+   *  the plain module page when a request has no ref yet (drafts raised from a
+   *  campaign budget get theirs on submit), which is honest: there is nothing
+   *  to point at. */
+  expense: (ref?: string | null) =>
+    (ref ?? "").trim() ? `/expenses?${OPEN_PARAM.expense}=${q((ref ?? "").trim())}` : "/expenses",
   /** The approval queue itself. Used where the thing to act on has no page of
-   *  its own to open (an expense request is a row in a table, not a record with
-   *  a drawer) — landing on the queue that holds the Approve button still beats
-   *  landing on someone's personal task board and asking them to find the tab. */
+   *  its own to open — landing on the queue that holds the Approve button still
+   *  beats landing on someone's personal task board and asking them to find the
+   *  tab. */
   approvals: () => `/my-tasks?${OPEN_PARAM.tab}=approval`,
 };
 
@@ -57,15 +67,23 @@ export const workLink = {
  *  not exist a beat before it loads. Hence `loaded`, and hence a pure function
  *  — it can be replayed in order in a test, which an inline effect cannot.
  *
- *  `alreadyOpened` stops the drawer reopening every render (and reopening
- *  after the person closes it). */
+ *  `openedId` stops the drawer reopening every render (and reopening after the
+ *  person closes it). It remembers WHICH id was opened, not merely that one
+ *  was: a plain boolean latched forever, so the first notification you clicked
+ *  opened its drawer and every one after it in the same tab quietly did
+ *  nothing. From Slack that reads as "the link is not specific" — you land on
+ *  the module and have to find the work by name, which is the exact problem
+ *  these links exist to remove.
+ *
+ *  Callers clear it when the param goes away (they drop it from the URL right
+ *  after opening), so clicking the same message twice still works. */
 export function resolveOpenTarget<T extends { id: string | number }>(
   openId: string | null,
   items: T[],
   loaded: boolean,
-  alreadyOpened: boolean,
+  openedId: string | null,
 ): { action: "idle" | "wait" | "open" | "missing"; item?: T } {
-  if (!openId || alreadyOpened) return { action: "idle" };
+  if (!openId || openId === openedId) return { action: "idle" };
   if (!loaded) return { action: "wait" };
   const found = items.find((i) => String(i.id) === String(openId));
   return found ? { action: "open", item: found } : { action: "missing" };

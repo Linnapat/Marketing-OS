@@ -142,25 +142,27 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
 
   // เรนเดอร์แรก: mock อยู่ในมือแล้วแต่ของจริงยังไม่มา — ห้ามตัดสินใจ
   is("ยังโหลดไม่เสร็จ (มี mock อยู่) → wait ไม่ใช่ missing",
-    resolveOpenTarget(OPEN, MOCK, false, false).action, "wait");
+    resolveOpenTarget(OPEN, MOCK, false, null).action, "wait");
   // เรนเดอร์ถัดมา: ของจริงมาแล้ว
-  const done = resolveOpenTarget(OPEN, REAL, true, false);
+  const done = resolveOpenTarget(OPEN, REAL, true, null);
   is("โหลดเสร็จแล้ว → open", done.action, "open");
   is("เปิดใบที่ถูกต้อง", String(done.graphic?.id), OPEN);
 
   // ถ้าเช็คแบบเดิม (length) จะได้ missing ตั้งแต่ยังไม่โหลด — นี่คือบั๊ก
   is("ป้องกันการถอยกลับ: ยังไม่โหลด ห้ามคืน missing เด็ดขาด",
-    resolveOpenTarget(OPEN, MOCK, false, false).action === "missing", false);
+    resolveOpenTarget(OPEN, MOCK, false, null).action === "missing", false);
 
   // id ที่ไม่มีจริง ต้องบอก ไม่ใช่เงียบ
   is("โหลดเสร็จแล้วแต่ไม่มี id นี้ → missing",
-    resolveOpenTarget("404404", REAL, true, false).action, "missing");
-  is("ไม่มี param → idle", resolveOpenTarget(null, REAL, true, false).action, "idle");
-  is("เปิดไปแล้ว ห้ามเปิดซ้ำ", resolveOpenTarget(OPEN, REAL, true, true).action, "idle");
+    resolveOpenTarget("404404", REAL, true, null).action, "missing");
+  is("ไม่มี param → idle", resolveOpenTarget(null, REAL, true, null).action, "idle");
+  is("เปิดไปแล้ว ห้ามเปิดซ้ำ", resolveOpenTarget(OPEN, REAL, true, OPEN).action, "idle");
+  // แต่คนละใบต้องเปิดได้ — latch เดิมเป็น boolean เลยล็อกทั้งแท็บ
+  is("ลิงก์ใบอื่นในแท็บเดิมเปิดได้", resolveOpenTarget("1784302143872", REAL, true, OPEN).action, "open");
   // โหลดเสร็จแต่ไม่มีใบงานเลยสักใบ ก็ยังต้องบอกว่าไม่เจอ
-  is("โหลดเสร็จ ลิสต์ว่าง → missing", resolveOpenTarget(OPEN, [], true, false).action, "missing");
+  is("โหลดเสร็จ ลิสต์ว่าง → missing", resolveOpenTarget(OPEN, [], true, null).action, "missing");
   // id มาจาก URL เป็น string ส่วน g.id เป็น number
-  is("เทียบ string กับ number ได้", resolveOpenTarget("1784302143875", REAL, true, false).action, "open");
+  is("เทียบ string กับ number ได้", resolveOpenTarget("1784302143875", REAL, true, null).action, "open");
 }
 
 {
