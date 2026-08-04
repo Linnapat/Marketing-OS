@@ -27,13 +27,15 @@ import { personKeys, isSamePerson } from "@/lib/identity";
 import { notifMeta, pushNotifications } from "@/lib/db/notifications";
 import { useNotifications } from "@/lib/useNotifications";
 import { useCanApproveExpense } from "@/lib/usePermGates";
-import { canApproveCampaign } from "@/lib/roleGates";
+import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
+import { fetchContent } from "@/lib/db/content";
+import { ContentItem, captionAwaitsApproval } from "@/lib/data/content";
 import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
@@ -129,6 +131,7 @@ function MyTasksPageInner() {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
   const [graphics, setGraphics] = useState<Graphic[]>([]);
+  const [posts, setPosts] = useState<ContentItem[]>([]);
   // Expense approvals are a role gate, not a person filter. Read it from the
   // same permissions matrix the database checks (Finance >= Approve) rather
   // than string-matching "CMO" here, so this queue and
@@ -244,6 +247,7 @@ function MyTasksPageInner() {
     fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
     fetchExpenseRequests().then((r) => { if (alive) setExpenseReqs(r); }).catch(() => {});
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
+    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -325,7 +329,18 @@ function MyTasksPageInner() {
       ]),
     [graphics, myKeys, brandVisibility],
   );
-  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
+  // Captions waiting on the planning side. Same lesson as the storyboard: the
+  // buttons existed on the post and nothing told the person holding them, so
+  // the words sat "Ready" until somebody happened to open that drawer.
+  const approvalCaptions = useMemo(
+    () => (canEditContentPlan(authRole)
+      ? posts.filter((p) => captionAwaitsApproval(p)
+          && brandVisibility.isVisible(p.b)
+          && (p.owner ?? "").trim().toLowerCase() !== (member?.name ?? "").trim().toLowerCase())
+      : []),
+    [posts, authRole, brandVisibility, member],
+  );
+  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length + approvalCaptions.length;
   // Budget context for an expense request: the campaign's budget, what's already
   // been approved against it, and what's left if this one goes through. Matches
   // on campaign_id when the row has it (a rename breaks name matching), else on
@@ -623,7 +638,7 @@ function MyTasksPageInner() {
           )}
         </div>
       ) : (
-        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
+        <MyApprovalView captions={approvalCaptions} graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
@@ -648,14 +663,15 @@ function MyTasksPageInner() {
   );
 }
 
-function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
+function MyApprovalView({ captions, graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
+  captions: ContentItem[];
   graphics: GraphicApproval[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
   budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
   onOpenTask: (id: number) => void; onOpenGraphic: (id: number, tab?: GTab) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
   const codeOf = useCampaignCodes();
-  const total = graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
+  const total = captions.length + graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
   if (total === 0) {
     return (
       <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
@@ -668,6 +684,34 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
   }
   return (
     <div className="flex flex-col gap-5">
+      {captions.length > 0 && (
+        <div>
+          <div className="flex items-center gap-[10px] mb-3">
+            <span className="text-[17px]">📝</span>
+            <span className="text-[13.5px] font-bold">Caption รออนุมัติ</span>
+            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>{captions.length}</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {captions.map((p) => (
+              <Link key={p.id} href={`${workLink.post(p.id)}`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[13.5px] font-bold text-ink truncate">{p.title}</span>
+                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>Caption รออนุมัติ</span>
+                </div>
+                <div className="text-[11.5px] text-faint mb-2">{brandCampaignLine(brandName(p.b), p.campaign)}</div>
+                {/* The words themselves, so an easy yes needs no click. */}
+                <div className="text-[12px] text-muted leading-[1.5] mb-3" style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {(p.caption ?? "").trim() || "— ไม่มีข้อความ —"}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11.5px] text-muted">เขียนโดย {p.owner || "—"}</span>
+                  <span className="text-[11.5px] font-bold text-accent">อ่านและอนุมัติ →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       {graphics.length > 0 && (
         <div>
           <div className="flex items-center gap-[10px] mb-3">

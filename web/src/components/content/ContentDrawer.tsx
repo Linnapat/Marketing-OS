@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -27,7 +27,7 @@ import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canAssignCaption, canMarkMediaReleased } from "@/lib/roleGates";
+import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -377,6 +377,39 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // is now fully ready, advanceApprovalState pushes it into My Approval.
   const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer }));
   const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
+
+  // ── Caption sign-off ─────────────────────────────────────────────────
+  // Step 4 of the agreed flow: the words get accepted (or sent back) on their
+  // own, before production, instead of riding along with the whole post.
+  const [captionReason, setCaptionReason] = useState("");
+  const canDecideCap = canDecideCaption(role, { me: reviewer, writer: item.owner });
+  // Told apart from "not on the planning side" so the reason on screen is the
+  // true one — being the writer is a different refusal from being Creative.
+  const isSameCaptionWriter =
+    (reviewer ?? "").trim().toLowerCase() === (item.owner ?? "").trim().toLowerCase();
+  const decideCaption = (decision: "approve" | "revise") => {
+    const next = applyCaptionDecision(item, decision, reviewer, captionReason);
+    if (next === item) {
+      if (decision === "revise") toastError("เขียนเหตุผลที่ส่งกลับแก้ก่อน");
+      return;
+    }
+    setCaptionReason("");
+    void persist(next, decision === "approve" ? "อนุมัติ caption แล้ว" : "ส่ง caption กลับไปแก้แล้ว");
+    if (decision === "approve") {
+      notify("approved", `✅ อนุมัติ caption: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`,
+        workLink.post(item.id), { inform: [item.owner] });
+      return;
+    }
+    // The writer is the one who has to act, so this is a DM, not a bell entry.
+    notify("rejected", `✏️ caption ถูกส่งกลับแก้: ${item.title}`, `${captionReason.trim()} · โดย ${reviewer}`,
+      workLink.post(item.id), { to: [item.owner] });
+    if (item.owner && item.owner !== "Unassigned") {
+      createRevisionTask({
+        module: "Content", title: `แก้ caption — ${item.title}`, assignee: item.owner,
+        brand: brandName(item.b), campaign: item.campaign, reason: captionReason.trim(), by: reviewer,
+      }).catch(() => {});
+    }
+  };
 
   const approveBlockers = contentApproveBlockers(item);
   const approve = async () => {
@@ -823,6 +856,52 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 <button onClick={markCaptionReady} disabled={busy || !caption.trim()} className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted disabled:opacity-40">Mark Ready</button>
               </div>
               <div className="text-[11.5px] text-faint">Last edited by {item.owner}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
+
+              {/* What the writer was told last time — kept in front of them
+                  while they rewrite, not buried in a notification. */}
+              {(item.captionFeedback ?? []).length > 0 && item.captionStatus !== "Approved" && (
+                <div className="rounded-[12px] px-3 py-[10px]" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
+                  <div className="text-[11px] font-extrabold mb-1" style={{ color: "#B33A2E" }}>↩ caption ถูกส่งกลับแก้</div>
+                  {(item.captionFeedback ?? []).slice(-3).map((f, i) => (
+                    <div key={i} className="text-[12px] leading-[1.5]" style={{ color: "#B33A2E" }}>
+                      · {f.reason} <span className="text-faint">— {f.by}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {captionApproved(item) && (
+                <div className="rounded-[12px] px-3 py-[10px] text-[12px] font-semibold" style={{ background: "#EEF4EE", color: "#4E7A4E", border: "1px solid #CFE4C2" }}>
+                  ✓ caption อนุมัติแล้วโดย {item.captionApprovedBy || "—"}
+                </div>
+              )}
+
+              {/* Marketing's call, and never the writer's own — see canDecideCaption. */}
+              {captionAwaitsApproval(item) && canDecideCap && (
+                <div className="rounded-[12px] border border-line2 bg-ivory p-3 flex flex-col gap-2">
+                  <div className="text-[12px] font-extrabold text-ink">caption รออนุมัติ</div>
+                  <div className="text-[11.5px] text-faint">
+                    อนุมัติที่ตัวหนังสือได้เลย ไม่ต้องรอ artwork — ทีมผลิตจะได้เริ่มงานจาก caption ที่ตกลงแล้ว
+                  </div>
+                  <input value={captionReason} onChange={(e) => setCaptionReason(e.target.value)}
+                    placeholder="เหตุผลถ้าส่งกลับแก้…" className={field} />
+                  <div className="flex gap-2">
+                    <button onClick={() => decideCaption("approve")} disabled={busy}
+                      className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                      อนุมัติ caption
+                    </button>
+                    <button onClick={() => decideCaption("revise")} disabled={busy || !captionReason.trim()}
+                      className="text-[12.5px] font-bold rounded-[9px] px-4 py-[8px] border border-line2 bg-surface text-status-red disabled:opacity-40">
+                      ส่งกลับแก้
+                    </button>
+                  </div>
+                </div>
+              )}
+              {captionAwaitsApproval(item) && !canDecideCap && (
+                <div className="text-[11.5px] text-faint">
+                  caption ส่งแล้ว — รอฝั่ง Marketing อนุมัติ{isSameCaptionWriter ? " (คนเขียนอนุมัติงานตัวเองไม่ได้)" : ""}
+                </div>
+              )}
             </div>
           )}
 

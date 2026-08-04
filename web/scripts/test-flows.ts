@@ -7,7 +7,7 @@ import { assertMockUniqueId, releaseMockId, seedMockIds, resetMockGuard } from "
 import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
-import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange } from "../src/lib/data/content";
+import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
 import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
@@ -772,6 +772,37 @@ console.log("\n— แคมเปญอนุมัติแล้วแต่�
   // แผนว่างเปล่า = ไม่มีอะไรให้โชว์
   check("แผนว่าง = ไม่เตือน", approvedButNothingMade({ status: "Approved", content: [] }, 0) === false);
   check("แผนมีแต่แถวเปล่า = ไม่เตือน", approvedButNothingMade({ status: "Approved", content: [{ title: " " }] }, 0) === false);
+}
+
+console.log("\n— caption มีรอบอนุมัติของตัวเอง (ไม่ต้องรอ artwork) —");
+{
+  const post = (over: Partial<ContentItem>): ContentItem => ({
+    ...(CONTENT[0] as ContentItem), caption: "ลองชิมวากิวเกรด A5", captionStatus: "Ready",
+    assetStatus: "Waiting Design", approvalStatus: "Draft", owner: "May T.", ...over,
+  });
+  check("caption ที่ Mark Ready แล้ว = เข้าคิวอนุมัติ", captionAwaitsApproval(post({})) === true);
+  check("ยังเป็น Draft = ยังไม่เข้าคิว", captionAwaitsApproval(post({ captionStatus: "Draft" })) === false);
+
+  const ok = applyCaptionDecision(post({}), "approve", "Ken S.");
+  check("อนุมัติแล้วสถานะเปลี่ยน", ok.captionStatus === "Approved");
+  check("เก็บว่าใครอนุมัติ", ok.captionApprovedBy === "Ken S.");
+  // หัวใจของข้อนี้: อนุมัติ caption ได้ทั้งที่ artwork ยังไม่เสร็จ
+  check("อนุมัติได้แม้ artwork ยังไม่เสร็จ", ok.assetStatus === "Waiting Design" && captionApproved(ok));
+
+  const back = applyCaptionDecision(post({}), "revise", "Ken S.", "โทนยังไม่ตรงแบรนด์");
+  check("ส่งกลับแล้วกลับไป Draft", back.captionStatus === "Draft");
+  check("เก็บเหตุผลไว้ให้คนเขียนอ่าน", back.captionFeedback?.at(-1)?.reason === "โทนยังไม่ตรงแบรนด์");
+  check("ล้างคนอนุมัติเดิมทิ้ง", back.captionApprovedBy === undefined);
+  // ไม่มีข้อความเลย = Missing ไม่ใช่ Draft (สองสถานะนี้ไม่เหมือนกัน)
+  check("ไม่มีข้อความ → Missing", applyCaptionDecision(post({ caption: "" }), "revise", "Ken S.", "เขียนมาก่อน").captionStatus === "Missing");
+  // กันกดสองที / กันส่งกลับโดยไม่บอกเหตุผล
+  // ตัวเดียวกันจริง ๆ ไม่ใช่สร้างใหม่แล้วเทียบ (เทียบ object คนละตัวยังไงก็ไม่เท่ากัน)
+  const waiting = post({});
+  check("ส่งกลับโดยไม่ให้เหตุผล = ไม่ทำอะไร", applyCaptionDecision(waiting, "revise", "Ken S.", "  ") === waiting);
+  check("ช่องว่างล้วนก็ไม่นับว่าให้เหตุผล", applyCaptionDecision(waiting, "revise", "Ken S.", "\n \t ") === waiting);
+  const already = post({ captionStatus: "Approved" });
+  check("อนุมัติซ้ำไม่ได้", applyCaptionDecision(already, "approve", "Ken S.") === already);
+  check("ต้นฉบับไม่ถูกแก้", post({}).captionStatus === "Ready");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
