@@ -77,21 +77,67 @@ export interface Asset {
   previewUrl?: string;
 }
 
+/** Is this link a FOLDER rather than a single file?
+ *
+ *  A folder has no thumbnail, and pretending otherwise is worse than showing
+ *  none: the card renders a broken image where a placeholder would have said
+ *  "open it". Dropbox spells the difference in the path — /scl/fi/ and /s/ are
+ *  files, /scl/fo/ and /sh/ are folders — and Drive uses /folders/.
+ *
+ *  This is what the team's asset links actually are: three of the four assets
+ *  in the library are Dropbox photo FOLDERS, which is why no preview ever
+ *  appeared. */
+export function isFolderLink(url: string): boolean {
+  const u = (url || "").trim();
+  return /dropbox\.com\/(sh|scl\/fo)\//i.test(u) || /drive\.google\.com\/(?:drive\/)?(?:u\/\d+\/)?folders\//i.test(u);
+}
+
+/** A Dropbox FILE link, rewritten so an <img> can render it.
+ *
+ *  Two things the old one-liner got wrong. It matched /scl/ without checking
+ *  fi vs fo, so every photo folder produced a URL that could only ever 404 —
+ *  and it dropped the query string, which on a /scl/ link removes `rlkey`, the
+ *  token the link needs to be readable at all. Keeping the query and adding
+ *  raw=1 is what actually renders.
+ *
+ *  Returns "" for folders and for anything that is not a Dropbox share link. */
+export function dropboxImageSrc(url: string): string {
+  const u = (url || "").trim();
+  if (isFolderLink(u)) return "";
+  if (!/dropbox\.com\/(s|scl\/fi)\//i.test(u)) return "";
+  const [path, query = ""] = u.split("#")[0].split("?");
+  const params = new URLSearchParams(query);
+  params.delete("dl");     // dl=0 opens the viewer page; dl=1 downloads
+  params.set("raw", "1");  // raw=1 serves the bytes
+  return `${path}?${params.toString()}`;
+}
+
 /** Google Drive / Dropbox share links point at a viewer page, not an image.
  *  Rewrite the ones that have a known direct form so pasting the same link the
  *  team already keeps is enough to get a thumbnail. Returns "" when the link
- *  cannot be turned into an image (a Drive *folder*, a Canva design, a private
- *  `dropbox.com/home/…` path) — the card then falls back to its placeholder. */
+ *  cannot be turned into an image (a folder on either host, a Canva design, a
+ *  private `dropbox.com/home/…` path) — the card then falls back to its
+ *  placeholder, which is the honest answer. */
 export function assetPreviewSrc(a: Pick<Asset, "previewUrl" | "driveUrl">): string {
+  // An explicit thumbnail still has to be an image. The one asset in the
+  // library with a previewUrl had a /home/ viewer path pasted into it, so the
+  // card trusted it and rendered a broken image — worse than the placeholder
+  // it was overriding.
   const explicit = (a.previewUrl ?? "").trim();
-  if (explicit) return explicit;
+  if (explicit && !isFolderLink(explicit) && !/dropbox\.com\/home\//i.test(explicit)) {
+    return dropboxImageSrc(explicit) || explicit;
+  }
   const url = (a.driveUrl ?? "").trim();
   if (!url || url === "#") return "";
+  if (isFolderLink(url)) return "";
+  // Dropbox first, before the file-extension shortcut: a share link ending
+  // ".jpg" still serves the viewer PAGE unless raw=1 is on it, so trusting the
+  // extension returns a URL that renders as nothing.
+  const dropbox = dropboxImageSrc(url);
+  if (dropbox) return dropbox;
   if (/\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/i.test(url)) return url;
   const drive = /drive\.google\.com\/(?:file\/d\/([\w-]{10,})|.*[?&]id=([\w-]{10,}))/.exec(url);
   if (drive) return `https://drive.google.com/thumbnail?id=${drive[1] ?? drive[2]}&sz=w600`;
-  // Shared Dropbox links (/s/ or /scl/) render raw; /home/ paths are private.
-  if (/dropbox\.com\/(s|scl)\//.test(url)) return `${url.split("?")[0]}?raw=1`;
   return "";
 }
 
