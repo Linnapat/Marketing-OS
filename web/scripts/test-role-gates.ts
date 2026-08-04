@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption } from "../src/lib/roleGates";
 
 import { readFileSync } from "node:fs";
 
@@ -260,6 +260,26 @@ console.log("\n— กติกาเติมบรีฟต้องตรง�
   const granted = { ...accepted, briefUnlock: { status: "Granted" as const, requestedBy: "Ken S.", requestedAt: "x" } };
   is("client: รับงานแล้ว + ไม่ปล่อย → แก้ไม่ได้ (ตรงกับ SQL)", canEditBriefNow(accepted, { isRequester: true, isCmo: false }), false);
   is("client: ปล่อยแล้ว → แก้ได้ (ตรงกับ SQL)", canEditBriefNow(granted, { isRequester: true, isCmo: false }), true);
+}
+
+console.log("\n— ใครอนุมัติ caption ได้ —");
+{
+  const other = { me: "Ken S.", writer: "May T." };
+  // ฝั่งวางแผนเป็นคนตรวจ ("marketing revise or approve caption")
+  for (const r of ["CMO", "Marketing Manager / BGL", "Marketing Executive", "Co-ordinator"]) {
+    is(`${r} อนุมัติ caption ได้`, canDecideCaption(r, other), true);
+  }
+  // ฝั่งผลิตเป็นคนเขียน ไม่ใช่คนตรวจ
+  for (const r of ["Creative Leader", "Content Creator", "Senior Graphic Designer", "VDO Editor", "Agency (External)"]) {
+    is(`${r} อนุมัติ caption ไม่ได้`, canDecideCaption(r, other), false);
+  }
+  // เขียนเองอนุมัติเองไม่ได้ แม้จะอยู่ฝั่งวางแผน — เช็คที่ผ่านได้ด้วยการเขียนเองไม่ใช่เช็ค
+  is("คนเขียนอนุมัติงานตัวเองไม่ได้", canDecideCaption("CMO", { me: "May T.", writer: "May T." }), false);
+  is("ตัวพิมพ์/เว้นวรรคยังจับได้", canDecideCaption("CMO", { me: " may t. ", writer: "May T." }), false);
+  // ยังไม่มอบหมายคนเขียน = ไม่มีใครให้กันท่า
+  is("ยังไม่มีคนเขียน → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "Unassigned" }), true);
+  is("คนเขียนว่าง → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "" }), true);
+  is("role ว่างอนุมัติไม่ได้", canDecideCaption("", other), false);
 }
 
 console.log("\n— Agency ต้องคุยในใบงานตัวเองได้ (RLS ต้องตรงกับ UI) —");

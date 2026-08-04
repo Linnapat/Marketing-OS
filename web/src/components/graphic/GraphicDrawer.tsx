@@ -22,6 +22,9 @@ import { GRAPHIC_OPEN_PARAM,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { postGraphicMessage } from "@/lib/graphicThread";
+import Link from "next/link";
+import { fetchContentById } from "@/lib/db/content";
+import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -64,6 +67,18 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     hideTabs?.includes(initialTab) ? (visibleTabs[0]?.[0] ?? initialTab) : initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
   const [messageText, setMessageText] = useState("");
+  // The post this artwork serves, for the caption shown beside it in Assets.
+  // Step 8 of the agreed flow: Marketing checks the media and the words in one
+  // pass — reviewing artwork with the caption on another screen is how a
+  // picture gets approved against copy nobody re-read.
+  const [linkedPost, setLinkedPost] = useState<ContentItem | null>(null);
+  useEffect(() => {
+    const postId = g.contentPostId;
+    if (!postId) { setLinkedPost(null); return; }
+    let alive = true;
+    fetchContentById(String(postId)).then((p) => { if (alive) setLinkedPost(p); }).catch(() => {});
+    return () => { alive = false; };
+  }, [g.contentPostId]);
   const [sendingMessage, setSendingMessage] = useState(false);
   // Load persisted feedback (audit P2-5) — resolves survive a refresh now. The
   // mock filter above is the demo-mode fallback and the initial paint.
@@ -1069,7 +1084,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
             </div>
           )}
 
-          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />}
+          {tab === "assets" && (
+            <div className="flex flex-col gap-3">
+              <CaptionBesideArtwork post={linkedPost} />
+              <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />
+            </div>
+          )}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
@@ -1316,6 +1336,47 @@ function BriefEditor({ g, me, onSaved, onCancel }: {
         <button onClick={onCancel} disabled={saving} className="text-[12px] font-bold text-muted px-3 py-[7px]">ยกเลิก</button>
         <span className="text-[10.5px] text-faint ml-auto">บันทึกเฉพาะช่องที่แก้ · ไม่ทับงานคนอื่น</span>
       </div>
+    </div>
+  );
+}
+
+/** The caption of the post this artwork is for, read-only, above the pieces.
+ *
+ *  Read-only on purpose: the caption is written and signed off on the post, and
+ *  a second editable copy here would be two sources for one set of words. This
+ *  is the reviewer's reference — media and message checked together — with a
+ *  link to the post for anyone who needs to change it. */
+function CaptionBesideArtwork({ post }: { post: ContentItem | null }) {
+  if (!post) return null;
+  const caption = (post.caption ?? "").trim();
+  const approved = captionApproved(post);
+  return (
+    <div className="rounded-card border border-line bg-surface p-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-[13px] font-extrabold text-ink">📝 Caption ของโพสต์นี้</span>
+        <StatusBadge tone={approved ? "green" : post.captionStatus === "Ready" ? "gold" : "neutral"}>
+          {post.captionStatus}
+        </StatusBadge>
+        <Link href={workLink.post(post.id)} className="ml-auto text-[11.5px] font-bold text-accent whitespace-nowrap">
+          เปิดโพสต์ ↗
+        </Link>
+      </div>
+      {caption ? (
+        <div className="text-[12.5px] text-muted leading-[1.6] whitespace-pre-wrap">{caption}</div>
+      ) : (
+        <div className="text-[12px] text-faint">ยังไม่มี caption — ตรวจ artwork ได้ แต่ตัวหนังสือยังไม่ถูกเขียน</div>
+      )}
+      {(post.hashtags || post.cta) && (
+        <div className="mt-2 text-[11.5px] text-faint">
+          {post.cta && <div>CTA · {post.cta}</div>}
+          {post.hashtags && <div>{post.hashtags}</div>}
+        </div>
+      )}
+      {approved && (
+        <div className="mt-2 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
+          ✓ อนุมัติแล้วโดย {post.captionApprovedBy || "—"}
+        </div>
+      )}
     </div>
   );
 }

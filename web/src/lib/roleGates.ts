@@ -62,6 +62,29 @@ export function canEditContentPlan(role: string): boolean {
  *  This is what makes caption work findable at all. Until now every post kept
  *  owner "Unassigned" (45 of 50 live posts) with no control anywhere to change
  *  it, so "งานเขียนแคปชั่นไหลเข้า Content creator" had nothing behind it. */
+/**
+ * May this person accept — or send back — a caption?
+ *
+ * The planning side, the same people who own the schedule (canEditContentPlan):
+ * "marketing revise or approve storyboard / caption" in the agreed flow. Not
+ * the creative side, who write it.
+ *
+ * `me` and `writer` are compared as well, because the writer being on the
+ * planning side does not make them their own reviewer — the brief sign-off
+ * already draws this line, and a check you can pass by writing it yourself is
+ * not a check.
+ */
+export function canDecideCaption(
+  role: string,
+  opts: { me: string; writer: string | null | undefined },
+): boolean {
+  if (!canEditContentPlan(role)) return false;
+  const me = (opts.me ?? "").trim().toLowerCase();
+  const writer = (opts.writer ?? "").trim().toLowerCase();
+  if (!me || !writer || writer === "unassigned") return true;
+  return me !== writer;
+}
+
 export function canAssignCaption(role: string): boolean {
   const r = (role || "").trim();
   return r === "Creative Leader" || r === "CMO";
