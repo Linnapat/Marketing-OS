@@ -1,2 +1,8 @@
 .vercel
 .env*
+
+# Build output and OS junk. These three were tracked, so every machine
+# that ran the app carried a permanent dirty file it could not clean.
+.next/
+.DS_Store
+node_modules/
