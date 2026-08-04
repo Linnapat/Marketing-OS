@@ -170,7 +170,7 @@ function ContentPageInner() {
   const searchParams = useSearchParams();
   const openPostId = searchParams.get(OPEN_PARAM.post);
   const [postsLoaded, setPostsLoaded] = useState(false);
-  const openedRef = useRef(false);
+  const openedRef = useRef<string | null>(null);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [savedViews, setSavedViews] = useState<SavedContentView[]>([]);
   const [savedViewName, setSavedViewName] = useState("");
@@ -205,9 +205,10 @@ function ContentPageInner() {
   // is dropped afterwards so closing the drawer does not reopen it, and a post
   // that is gone says so rather than leaving a calendar that looks fine.
   useEffect(() => {
+    if (!openPostId) { openedRef.current = null; return; }
     const { action, item } = resolveOpenTarget(openPostId, posts, postsLoaded, openedRef.current);
     if (action === "idle" || action === "wait") return;
-    openedRef.current = true;
+    openedRef.current = openPostId;
     if (action === "open" && item) setOpen(item);
     else toastError(`ไม่พบโพสต์นี้ — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
     router.replace("/content");

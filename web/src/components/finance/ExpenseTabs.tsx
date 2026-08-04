@@ -8,7 +8,7 @@ import { optimistic } from "@/lib/optimistic";
 import { useCanMarkPaid } from "@/lib/usePermGates";
 import { authHeaders } from "@/lib/supabase";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { CSSProperties, useEffect, useMemo, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useState, useRef } from "react";
 import { DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -42,7 +42,11 @@ const REIMBURSE_TYPES = ["Petty Cash", "Payment Voucher"];
 // Vendor suggestions for the searchable field — distinct past vendors + free text.
 const VENDORS = Array.from(new Set(EXPENSES.map((e) => e.vendor))).sort();
 
-export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; date?: DateFilter }) {
+export function ExpenseRequestTab({ brand, date, highlightRef }: {
+  brand: BrandFilterValue; date?: DateFilter;
+  /** ?ref= from a notification — the one request the message was about. */
+  highlightRef?: string | null;
+}) {
   const [catKey, setCatKey] = useState("");
   const [amount, setAmount] = useState("");
   const [formBrand, setFormBrand] = useState("TEPPEN");
@@ -62,6 +66,15 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
   // button disables, not the whole list.
   const [busyDraftId, setBusyDraftId] = useState<number | null>(null);
   const [requests, setRequests] = useState<ExpenseReq[]>(REQUESTS);
+  const highlightEl = useRef<HTMLDivElement | null>(null);
+  const wanted = (highlightRef ?? "").trim().toLowerCase();
+  const isHighlighted = (r: ExpenseReq) => !!wanted && (r.ref ?? "").trim().toLowerCase() === wanted;
+  // Scroll to it once the rows are in — the list is short but it sits in a
+  // right-hand column that can be below the fold on a laptop.
+  useEffect(() => {
+    if (!wanted) return;
+    highlightEl.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [wanted, requests]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   // Campaigns arrive async. Without this flag an empty list reads the same
   // while loading as when there genuinely are none, and the picker told users
@@ -466,10 +479,31 @@ export function ExpenseRequestTab({ brand, date }: { brand: BrandFilterValue; da
       {/* RIGHT: Recent Requests */}
       <div className="lg:w-[340px] flex-shrink-0 flex flex-col gap-3">
         <div className="text-[15px] font-bold">Recent Requests</div>
-        {requests.filter((r) => visibility.isVisible(r.b) && (brand === "all" || r.b === brand) && (!date || inDateFilter(date, r.createdAt))).map((r, i) => {
+        {/* A notification names one request; arriving here to hunt for it in a
+            list filtered by this month is the "link ไม่เจาะจง" complaint. The
+            one it is about comes first and is marked — and the brand/date
+            filters are bypassed for it, because a request raised last month is
+            exactly the one a message is most likely to be chasing. */}
+        {requests
+          .filter((r) => {
+            if (isHighlighted(r)) return true;
+            return visibility.isVisible(r.b) && (brand === "all" || r.b === brand) && (!date || inDateFilter(date, r.createdAt));
+          })
+          .sort((a, b) => Number(isHighlighted(b)) - Number(isHighlighted(a)))
+          .map((r, i) => {
           const wait = daysWaiting(r.createdAt);
+          const marked = isHighlighted(r);
           return (
-          <div key={i} className="bg-surface border border-line rounded-card p-4">
+          <div key={i} ref={marked ? highlightEl : undefined}
+            className="bg-surface border rounded-card p-4"
+            style={marked
+              ? { borderColor: "#6C5CE7", borderWidth: 2, background: "#FAF8FF" }
+              : { borderColor: "#ECE6DA" }}>
+            {marked && (
+              <div className="text-[10.5px] font-extrabold mb-2" style={{ color: "#6C5CE7" }}>
+                ↓ คำขอที่แจ้งเตือนถึง
+              </div>
+            )}
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 <BrandDot brand={r.b} size={9} />

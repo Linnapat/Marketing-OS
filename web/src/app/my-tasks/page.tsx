@@ -210,7 +210,7 @@ function MyTasksPageInner() {
   // to know which tab the request was hiding behind.
   const wantsApprovals = searchParams.get(OPEN_PARAM.tab) === "approval";
   const [tasksLoaded, setTasksLoaded] = useState(false);
-  const openedRef = useRef(false);
+  const openedRef = useRef<string | null>(null);
 
 
   const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
@@ -260,9 +260,10 @@ function MyTasksPageInner() {
   }, [wantsApprovals, router]);
 
   useEffect(() => {
+    if (!openTaskId) { openedRef.current = null; return; }
     const { action, item } = resolveOpenTarget(openTaskId, tasks, tasksLoaded, openedRef.current);
     if (action === "idle" || action === "wait") return;
-    openedRef.current = true;
+    openedRef.current = openTaskId;
     if (action === "open" && item) setDrawerId(item.id);
     else toastError(`ไม่พบงาน #${openTaskId} — อาจถูกลบไปแล้ว หรือถูกส่งต่อให้คนอื่น`);
     router.replace("/my-tasks");

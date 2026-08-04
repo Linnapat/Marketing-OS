@@ -82,7 +82,7 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
   if (!db || req._id === undefined) {
     // Demo mode (no DB) — nothing to persist, but still fire the notification.
     notify("approved", `✅ อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
-      `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
+      `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, workLink.expense(req.ref));
     return;
   }
   // Atomic: the RPC claims the still-"Waiting Approval" row, books the approved
@@ -97,7 +97,7 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
   }
   // Notifications + audit are best-effort side effects, kept on the client.
   notify("approved", `✅ อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
-    `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, "/expenses");
+    `${baht(approved)}${req.requester ? ` · ของ ${req.requester}` : ""} — Finance บันทึกลง Spending Log แล้ว (Unpaid)`, workLink.expense(req.ref));
   logAudit(`อนุมัติเบิกงบ${req.ref ? ` ${req.ref}` : ""} · ${req.category}`, "Finance", {
     before: `ขอ ${baht(req.requested)}`, after: `อนุมัติ ${baht(approved)}`, meta: { ref: req.ref, brand: req.b, campaign: req.campaign },
   });
@@ -107,7 +107,7 @@ export async function approveExpenseRequest(req: ExpenseReq, approved: number): 
  *  to Revision with the reason on its feedback history. */
 export async function rejectExpenseRequest(req: ExpenseReq, reason: string, by: string): Promise<void> {
   const rejectNote = () => notify("rejected", `↩️ ตีกลับคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${req.category}`,
-    `เหตุผล: ${reason} — โดย ${by}${req.requester ? ` → ${req.requester} แก้แล้ว submit ใหม่` : ""}`, "/expenses");
+    `เหตุผล: ${reason} — โดย ${by}${req.requester ? ` → ${req.requester} แก้แล้ว submit ใหม่` : ""}`, workLink.expense(req.ref));
   const db = supabase();
   if (!db || req._id === undefined) { rejectNote(); return; } // demo mode — just notify
 
@@ -134,7 +134,7 @@ export async function updateExpenseRequest(req: ExpenseReq, patch: {
   category: string; vendor?: string; requested: number;
 }, by: string): Promise<void> {
   notify("approval", `✏️ แก้ไขคำขอเบิก${req.ref ? ` ${req.ref}` : ""} · ${patch.category}`,
-    `ยอดขอ ${baht(patch.requested)}${patch.vendor ? ` · ${patch.vendor}` : ""} — แก้โดย ${by}${req.requester ? ` (แจ้ง ${req.requester})` : ""}`, "/expenses");
+    `ยอดขอ ${baht(patch.requested)}${patch.vendor ? ` · ${patch.vendor}` : ""} — แก้โดย ${by}${req.requester ? ` (แจ้ง ${req.requester})` : ""}`, workLink.expense(req.ref));
   const db = supabase();
   if (!db || req._id === undefined) return;
   const { error } = await db.from("expense_requests")

@@ -996,9 +996,9 @@ export function resolveOpenTarget<T extends Pick<Graphic, "id">>(
   openId: string | null,
   graphics: T[],
   loaded: boolean,
-  alreadyOpened: boolean,
+  openedId: string | null,
 ): { action: "idle" | "wait" | "open" | "missing"; graphic?: T } {
-  const { action, item } = resolveOpen(openId, graphics, loaded, alreadyOpened);
+  const { action, item } = resolveOpen(openId, graphics, loaded, openedId);
   return item ? { action, graphic: item } : { action };
 }
 

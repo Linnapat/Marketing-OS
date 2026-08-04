@@ -142,7 +142,7 @@ function GraphicPageInner() {
   // Request #N ↗". Opened once, after the requests have loaded, then the param
   // is dropped so closing the drawer does not reopen it on the next render.
   const openId = searchParams.get(GRAPHIC_OPEN_PARAM);
-  const openedRef = useRef(false);
+  const openedRef = useRef<string | null>(null);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
   // Whether fetchGraphics has come back. Needed because the state above starts
@@ -194,9 +194,10 @@ function GraphicPageInner() {
   // resolveOpenTarget (pure, unit-tested) — the timing is the whole bug here,
   // so it lives somewhere it can be replayed in order rather than inline.
   useEffect(() => {
+    if (!openId) { openedRef.current = null; return; }
     const { action, graphic } = resolveOpenTarget(openId, graphics, graphicsLoaded, openedRef.current);
     if (action === "idle" || action === "wait") return;
-    openedRef.current = true;
+    openedRef.current = openId;
     if (action === "open" && graphic) setDrawer({ g: graphic, tab: "overview" });
     else toastError(`ไม่พบใบงาน #${openId} — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
     router.replace("/graphic");
