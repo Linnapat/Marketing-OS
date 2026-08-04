@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
-import { ASSETS, ASSET_APPROVAL_TONE, Asset, assetSeq, assetsByCampaign, assetPreviewSrc } from "@/lib/data/requests";
+import { ASSETS, ASSET_APPROVAL_TONE, Asset, assetSeq, assetsByCampaign, assetPreviewSrc, isFolderLink } from "@/lib/data/requests";
 import { fetchAssets, createAsset, updateAssetPreview } from "@/lib/db/assets";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -65,9 +65,15 @@ function AssetPreview({ a, height, showType = true }: { a: Asset; height: number
       </div>
     );
   }
+  // A folder is not a missing thumbnail, it is a different kind of thing —
+  // saying so beats a blank tile that reads as "the image failed to load" and
+  // sends people looking for a bug. Most of the library is folders of photos.
+  const folder = isFolderLink(a.driveUrl ?? "");
   return (
-    <div className="w-full flex items-center justify-center" style={{ height, background: STRIPES }}>
-      {showType && <span className="text-[11px] font-mono text-faint">{a.type}</span>}
+    <div className="w-full flex flex-col items-center justify-center gap-1" style={{ height, background: STRIPES }}>
+      {folder && <span className="text-[18px]" aria-hidden>📁</span>}
+      {folder && <span className="text-[10.5px] font-semibold text-muted">โฟลเดอร์รูป — เปิดดูที่ลิงก์</span>}
+      {showType && !folder && <span className="text-[11px] font-mono text-faint">{a.type}</span>}
     </div>
   );
 }
