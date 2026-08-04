@@ -17,7 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
-  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset, withShootMoved,
+  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset, withShootMoved, storyboardAuthor,
   MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
@@ -361,7 +361,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     }, "บันทึกผล storyboard ไม่สำเร็จ");
     setSbNote("");
     toastSuccess(approved ? "อนุมัติ storyboard แล้ว" : "ส่ง storyboard กลับไปแก้แล้ว");
-    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`, `โดย ${currentUser}`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
+    // The person who drew it is the one this decision is about — approved means
+    // they can stop waiting, sent back means they have work to do. It went to
+    // the room only, so the author learned either way by opening the drawer.
+    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`,
+      approved ? `โดย ${currentUser} — เริ่มถ่าย/ผลิตงานได้` : `${sbNote.trim()} · โดย ${currentUser}`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [storyboardAuthor(g)] });
   };
 
   const submitFootage = () => {
@@ -369,10 +374,16 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const at = new Date().toISOString();
     saveGraphic({
       ...g, footageLink: footage.trim(), footageSubmittedBy: currentUser, footageSubmittedAt: at,
-      nextAction: `${g.designer && g.designer !== "Unassigned" ? g.designer : "Designer"} ตัดต่อ/ทำ artwork ต่อ`,
+      nextAction: `${revisionAssignee(g) ?? "Designer"} ตัดต่อ/ทำ artwork ต่อ`,
     }, "ส่ง footage ไม่สำเร็จ");
     toastSuccess("ส่ง footage แล้ว — ส่งต่อให้ designer/editor ทำงานต่อได้");
-    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${g.designer || "Designer"} ทำต่อ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
+    // This is a handover: the shoot is done and the job is now the editor's.
+    // It went to the room only, so the person who just became responsible was
+    // the one person not told. Addressed to whoever holds the job — the one
+    // who accepted it, not merely the name on the request.
+    const editor = revisionAssignee(g);
+    notify("feedback", `📷 ส่ง footage แล้ว: ${g.title}`, `โดย ${currentUser} → ${editor ?? "Designer"} ตัดต่อ/ทำ artwork ต่อ`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [editor] });
   };
 
   /** Moving a shoot is a normal event, not a failure — it just has to be
