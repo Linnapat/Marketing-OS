@@ -16,17 +16,12 @@ import { GRAPHIC_OPEN_PARAM,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
-  requestBriefEdit, decideBriefEdit, workKind, briefChangeAudience,
+  requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, relocateApprovedAsset, withShootMoved,
+  MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
-import type { NotifyTeam } from "@/lib/notifyRouting";
-
-/** Which room a graphic request belongs to. A "Graphic Request" is the form for
- *  video work too, so the module can't decide this — workKind() reads the type
- *  the requester picked, the same classifier the capacity board counts by. */
-function graphicTeam(g: Pick<Graphic, "type" | "requiredVideo">): NotifyTeam {
-  return workKind(g.type, g.requiredVideo).startsWith("vdo") ? "vdo" : "graphic";
-}
+import { graphicTeam } from "@/lib/notifyRouting";
+import { postGraphicMessage } from "@/lib/graphicThread";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
@@ -68,6 +63,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [tab, setTab] = useState<GTab>(() =>
     hideTabs?.includes(initialTab) ? (visibleTabs[0]?.[0] ?? initialTab) : initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
+  const [messageText, setMessageText] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
   // Load persisted feedback (audit P2-5) — resolves survive a refresh now. The
   // mock filter above is the demo-mode fallback and the initial paint.
   useEffect(() => {
@@ -109,6 +106,27 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user, role } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
+  /** Who this reply will reach, shown before it is sent so nobody types into
+   *  the dark. Same rule the send uses — see replyAudience. */
+  const replyTo = replyAudience(g, feedback, currentUser);
+  const sendMessage = async () => {
+    const text = messageText.trim();
+    if (!text || sendingMessage) return;
+    setSendingMessage(true);
+    try {
+      const saved = await postGraphicMessage({ graphic: g, text, me: currentUser, thread: feedback });
+      // Demo mode stores nothing; show the line anyway so the drawer behaves
+      // the same way it will once a database is attached.
+      setFeedback((fs) => [saved ?? {
+        id: Date.now(), gid: g.id, owner: currentUser, team: "Conversation", ownerColor: "#6C5CE7",
+        type: MESSAGE_TYPE, text, version: "", status: "Open", assignedTo: "", due: null,
+        createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      }, ...fs]);
+      setMessageText("");
+    } catch (error) {
+      toastError(`ส่งข้อความไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setSendingMessage(false); }
+  };
   // The brief sign-off belongs to the RECEIVING side (content leader /
   // designer). The requester wrote the brief — approving it themselves would
   // make the check meaningless, so the sign-off controls hide for them.
@@ -1055,6 +1073,28 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
+              {/* Just talking. Every other box on this screen does something to
+                  the work — sends it back, records a verdict, reopens a brief.
+                  A question like "ภาพอันนี้หรือจะให้หนูเลือกเอง" is none of
+                  those, and having nowhere to put it is why it ended up as the
+                  title of a task nobody could answer. */}
+              <div className="rounded-card border border-line bg-surface p-4">
+                <div className="text-[13px] font-extrabold text-ink mb-1">💬 คุยกันในงานนี้</div>
+                <div className="text-[11.5px] text-faint mb-3">
+                  ถาม-ตอบกับอีกฝั่งได้เลย ไม่เปลี่ยนสถานะงาน · คนที่คุยด้วยจะได้รับแจ้งเตือน
+                  {replyTo.length > 0 && <> · ข้อความนี้จะถึง <b className="text-muted">{replyTo.join(", ")}</b></>}
+                </div>
+                <div className="flex gap-2">
+                  <input value={messageText} onChange={(e) => setMessageText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                    placeholder="พิมพ์ข้อความ… (Enter เพื่อส่ง)"
+                    className="flex-1 text-[12.5px] px-[11px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+                  <button onClick={sendMessage} disabled={!messageText.trim() || sendingMessage}
+                    className="text-[12px] font-bold text-white rounded-[9px] px-4 disabled:opacity-40" style={{ background: "#211F1C" }}>
+                    {sendingMessage ? "…" : "ส่ง"}
+                  </button>
+                </div>
+              </div>
               <div className="rounded-card border border-line bg-ivory p-4">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
@@ -1107,15 +1147,22 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: f.ownerColor }}>{f.owner.slice(0, 1)}</span>
                     <span className="text-[12.5px] font-bold">{f.owner}</span>
-                    <span className="text-[10.5px] text-faint">{f.team} · {f.createdAt}</span>
-                    <StatusBadge tone={stageTone(f.status)} className="ml-auto">{f.status}</StatusBadge>
+                    <span className="text-[10.5px] text-faint">{isMessage(f) ? f.createdAt : `${f.team} · ${f.createdAt}`}</span>
+                    {/* A message has no state to be in. Badging it "Open" would
+                        put a chat line in the queue of things owed an answer. */}
+                    {!isMessage(f) && <StatusBadge tone={stageTone(f.status)} className="ml-auto">{f.status}</StatusBadge>}
                   </div>
                   <div className="text-[12.5px] text-muted leading-[1.5]">{f.text}</div>
-                  <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
-                    <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
-                    <span>{f.version}</span><span>→ {f.assignedTo}</span>
-                    {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
-                  </div>
+                  {/* The revision furniture — which version, who it is on,
+                      Resolve — belongs to feedback that asks for work. A
+                      message carries none of it. */}
+                  {!isMessage(f) && (
+                    <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
+                      <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
+                      <span>{f.version}</span><span>→ {f.assignedTo}</span>
+                      {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
