@@ -214,6 +214,13 @@ export interface AssignedShoot {
   cast: string;
   /** Reel / photo / video, so the sheet can say what kind of day it is. */
   kind: WorkKind;
+  /** What to read before turning up. Blank when the request has none.
+   *
+   *  A shoot list of eight lines saying "Cocktail Hour" tells a photographer
+   *  nothing about what to bring; the storyboard and the brief do, and they
+   *  were one module away from the sheet the shoot day is planned on. */
+  storyboardLink: string;
+  briefLink: string;
 }
 
 /** Move a shoot to another day, keeping the trail.
@@ -273,6 +280,10 @@ export function assignedShoots(gs: Graphic[]): AssignedShoot[] {
       content: g.title,
       cast: (g.shooter ?? "").trim() === "Unassigned" ? "" : (g.shooter ?? "").trim(),
       kind: workKind(g.type, g.requiredVideo),
+      // Only once there is something to open — a link that goes nowhere is
+      // worse on a call sheet than no link, because it reads as prepared.
+      storyboardLink: needsStoryboard(g) ? (g.storyboardLink ?? "").trim() : "",
+      briefLink: creativeBriefLink(g),
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }

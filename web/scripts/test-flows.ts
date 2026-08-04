@@ -494,6 +494,18 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("เอาวันถ่ายจากใบงาน ไม่ใช่วันโพสต์", assignedShoots([shoot({})])[0].date === "2026-09-10");
     check("คนถ่ายคือ cast", assignedShoots([shoot({})])[0].cast === "Jeeno");
     check("ผูกกลับไปที่ใบงานได้", assignedShoots([shoot({ id: 77 })])[0].graphicId === 77);
+    // คนถ่ายต้องรู้ว่าจะไปถ่ายอะไร — ชื่อคอนเทนต์ซ้ำกันได้ storyboard/บรีฟจึงต้องติดไปด้วย
+    {
+      const withPrep = assignedShoots([shoot({ type: "Reel", requiredVideo: true, storyboardLink: "https://slides/sb", briefLink: "https://drive/brief" })])[0];
+      check("ติดลิงก์ storyboard ไปให้", withPrep.storyboardLink === "https://slides/sb");
+      check("ติดลิงก์บรีฟไปให้", withPrep.briefLink === "https://drive/brief");
+      // งานที่ไม่ใช่วิดีโอไม่มี storyboard — ลิงก์ค้างใน field ก็ไม่เอามาโชว์
+      const photo = assignedShoots([shoot({ type: "Photo shoot", requiredVideo: false, storyboardLink: "https://slides/stale" })])[0];
+      check("Photo shoot ไม่โชว์ storyboard ที่ค้างอยู่", photo.storyboardLink === "");
+      // ไม่มีลิงก์ = ว่าง ไม่ใช่ undefined (ตารางเช็คด้วย truthiness)
+      const bare = assignedShoots([shoot({})])[0];
+      check("ไม่มีลิงก์ = ค่าว่าง", bare.storyboardLink === "" && typeof bare.briefLink === "string");
+    }
     // ยังไม่ระบุคนถ่าย ก็ยังต้องขึ้น — คิวถ่ายมีอยู่จริง แค่ยังไม่รู้ว่าใครไป
     check("ยังไม่ระบุคนถ่ายก็ยังขึ้น", assignedShoots([shoot({ shooter: "" })]).length === 1);
     check("Unassigned ไม่ถือเป็นชื่อคน", assignedShoots([shoot({ shooter: "Unassigned" })])[0].cast === "");

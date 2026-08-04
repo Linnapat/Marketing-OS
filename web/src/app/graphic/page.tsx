@@ -495,7 +495,7 @@ function GraphicPageInner() {
 // Columns mirror the team's shoot Google Sheet: Date · Time · Brand · Content
 // · Location · Menu · Cast (no "request date" — dropped per the sheet).
 // `brand` holds a BrandId, `cast` a comma-separated list of member names.
-interface ShootRow { id: string; date: string; time: string; brand: BrandId; content: string; location: string; menu: string; cast: string; source?: "manual" | "content" | "request" }
+interface ShootRow { id: string; date: string; time: string; brand: BrandId; content: string; location: string; menu: string; cast: string; note?: string; source?: "manual" | "content" | "request" }
 
 // Rows saved before brand became data-driven stored the display NAME ("Omakase
 // Don"); match it back to its id so brand-scoped filtering works on old rows. An
@@ -527,6 +527,7 @@ const normalizeShoot = (r: LegacyShootRow): ShootRow => ({
   location: r.location ?? "",
   menu: r.menu ?? "",
   cast: r.cast ?? r.owner ?? "",
+  note: r.note ?? "",
   source: r.source ?? "manual",
 });
 
@@ -669,12 +670,12 @@ function ShootSheetPreview({ rows, printedAt, onClose }: { rows: ShootRow[]; pri
             <tr style={{ background: "#17172A" }}>
               <th className={sh}>Date</th><th className={sh}>Time</th><th className={sh}>Brand</th>
               <th className={sh}>Content</th><th className={sh}>Location</th><th className={sh}>Menu</th>
-              <th className={sh}>Cast</th>
+              <th className={sh}>Cast</th><th className={sh}>หมายเหตุ</th>
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-[11.5px] text-faint">ยังไม่มีคิวถ่าย</td></tr>
+              <tr><td colSpan={8} className="px-3 py-6 text-center text-[11.5px] text-faint">ยังไม่มีคิวถ่าย</td></tr>
             )}
             {sorted.map((r) => (
               <tr key={r.id} style={{ background: r.brand ? tint(brandColor(r.brand), 0.05) : undefined }}>
@@ -693,6 +694,7 @@ function ShootSheetPreview({ rows, printedAt, onClose }: { rows: ShootRow[]; pri
                     </span>
                   )}
                 </td>
+                <td className={sd}>{r.note?.trim() || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -793,7 +795,7 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
     saveJsonSetting("creative_shoots_v2", "Creative shoot schedule", next)
       .catch((error) => toastError(`บันทึกตารางถ่ายงานไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
-  const addRow = () => persist([...rows, { id: `shoot-${Date.now()}`, date: "", time: "", brand: "", content: "", location: "", menu: "", cast: me, source: "manual" }]);
+  const addRow = () => persist([...rows, { id: `shoot-${Date.now()}`, date: "", time: "", brand: "", content: "", location: "", menu: "", cast: me, note: "", source: "manual" }]);
   /** Editing a request-backed row writes an override, creating it on first
    *  touch — the row exists on screen before it exists in storage. */
   const editRow = (id: string, patch: Partial<ShootRow>) => {
@@ -835,7 +837,7 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
         // From the request, always — a moved shoot moves this row with it.
         date: a.date, brand: a.brand, content: a.content, cast: a.cast,
         // Only the schedule's own columns survive from what was typed here.
-        time: saved?.time ?? "", location: saved?.location ?? "", menu: saved?.menu ?? "",
+        time: saved?.time ?? "", location: saved?.location ?? "", menu: saved?.menu ?? "", note: saved?.note ?? "",
         source: "request" as const,
       };
     });
@@ -843,6 +845,12 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
   }, [assigned, overrides, manualRows]);
   const kindOf = useMemo(
     () => new Map(assigned.map((a) => [reqRowId(a.graphicId), a.kind])),
+    [assigned],
+  );
+  // What to read before turning up, per row. A shoot list of eight lines
+  // reading "Cocktail Hour" tells a photographer nothing about what to bring.
+  const prepOf = useMemo(
+    () => new Map(assigned.map((a) => [reqRowId(a.graphicId), { storyboard: a.storyboardLink, brief: a.briefLink }])),
     [assigned],
   );
   const importAuto = (a: ShootRow) => persist([...rows, { ...a, id: `shoot-${Date.now()}`, cast: me, source: "manual" }]);
@@ -902,11 +910,11 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
             <thead><tr className="bg-ivory">
               <th className={th}>Date</th><th className={th}>Time</th><th className={th}>Brand</th>
               <th className={th}>Content</th><th className={th}>Location</th><th className={th}>Menu</th>
-              <th className={th}>Cast</th><th className={`${th} no-print`}></th>
+              <th className={th}>Cast</th><th className={th}>หมายเหตุ</th><th className={`${th} no-print`}></th>
             </tr></thead>
             <tbody>
               {merged.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — มอบหมายคนถ่าย + วันถ่ายในใบงาน แล้วจะขึ้นที่นี่เอง · หรือกด &quot;เพิ่มคิวถ่าย&quot;</td></tr>
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — มอบหมายคนถ่าย + วันถ่ายในใบงาน แล้วจะขึ้นที่นี่เอง · หรือกด &quot;เพิ่มคิวถ่าย&quot;</td></tr>
               )}
               {merged.map((r) => {
                 // A request-backed row is a view of the request, not a copy of
@@ -963,11 +971,29 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
                   </td>
                   <td className="px-[10px] py-[5px]">
                     {fromReq ? (
-                      <span className="flex items-center gap-[6px] min-w-[180px]">
-                        <span className="text-[12px] font-semibold text-ink truncate">{r.content}</span>
-                        <span className="text-[10px] font-bold rounded-pill px-[7px] py-[2px] flex-shrink-0 no-print" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>
-                          {WORK_KIND_LABEL[kindOf.get(r.id) ?? "photo_shoot"]}
+                      <span className="flex flex-col gap-[3px] min-w-[200px]">
+                        <span className="flex items-center gap-[6px]">
+                          <span className="text-[12px] font-semibold text-ink truncate">{r.content}</span>
+                          <span className="text-[10px] font-bold rounded-pill px-[7px] py-[2px] flex-shrink-0" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>
+                            {WORK_KIND_LABEL[kindOf.get(r.id) ?? "photo_shoot"]}
+                          </span>
                         </span>
+                        {/* Prep for whoever is shooting. Hidden on the printed
+                            sheet — a URL on paper is not a link, it is noise. */}
+                        {(() => {
+                          const prep = prepOf.get(r.id);
+                          if (!prep?.storyboard && !prep?.brief) return null;
+                          return (
+                            <span className="flex items-center gap-[10px] no-print">
+                              {prep.storyboard && (
+                                <a href={prep.storyboard} target="_blank" rel="noreferrer" className="text-[10.5px] font-bold text-accent">🎬 storyboard ↗</a>
+                              )}
+                              {prep.brief && (
+                                <a href={prep.brief} target="_blank" rel="noreferrer" className="text-[10.5px] font-bold text-accent">📋 บรีฟงาน ↗</a>
+                              )}
+                            </span>
+                          );
+                        })()}
                       </span>
                     ) : (
                       <input value={r.content} onChange={(e) => editRow(r.id, { content: e.target.value })} list={listId("content", r.brand)} placeholder="เลือก/พิมพ์จาก Content Plan" className={`${cell} min-w-[180px]`} />
@@ -978,6 +1004,10 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
                   <td className="px-[10px] py-[5px] min-w-[150px]">
                     <CastPicker value={r.cast} options={castOpts}
                       onChange={(v) => (fromReq ? setShooter(reqIdOf(r.id), v) : editRow(r.id, { cast: v }))} />
+                  </td>
+                  <td className="px-[10px] py-[5px]">
+                    <input value={r.note ?? ""} onChange={(e) => editRow(r.id, { note: e.target.value })}
+                      placeholder="เช่น ขอ 2 มุม / เตรียมพร็อพ" className={`${cell} min-w-[160px]`} />
                   </td>
                   <td className="px-[10px] py-[5px] text-right no-print">
                     {fromReq ? (
