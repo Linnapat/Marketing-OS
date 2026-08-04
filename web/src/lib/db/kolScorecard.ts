@@ -7,6 +7,9 @@
 // follower count — which only exist once engagements are recorded.
 
 import { supabase } from "@/lib/supabase";
+import { notify } from "@/lib/notify";
+import { baht } from "@/lib/format";
+import { BrandId, brandName } from "@/lib/brands";
 import { tierFromFollowers } from "@/lib/db/kolMaster";
 import { KolKpiRow } from "@/lib/data/kolKpiSignals";
 
@@ -526,6 +529,13 @@ export async function attributeDelay(
       updated_at: new Date().toISOString(),
     })
     .eq("collab_id", collabId);
+  if (!error) {
+    const label = DELAY_REASONS.find((r) => r.value === reason);
+    notify("feedback", `⏰ ระบุสาเหตุงาน KOL ส่งช้า`,
+      `${label?.label ?? reason}${label?.blamesKol ? " — มีผลกับคะแนน KOL" : " — ไม่นับเป็นความผิด KOL"}` +
+      `${note ? ` · ${note}` : ""}${by ? ` · โดย ${by}` : ""}`,
+      "/kol?tab=performance", { team: "kol" });
+  }
   return !error;
 }
 
@@ -611,6 +621,13 @@ export async function createKolExpenseRequest(input: {
   if (error || !data) return { error: error?.message || "สร้างใบเบิกไม่สำเร็จ" };
   const id = String((data as { id: number | string }).id);
 
+  // Money reaches one person by DM and no room — the routing rule the team set
+  // for every other financial event (lib/notifyRouting).
+  notify("approval", `📥 ใบเบิก KOL · ${input.kolName}`,
+    `${input.campaign || "—"}${input.brand ? ` · ${brandName(input.brand as BrandId)}` : ""} · ${baht(input.amount)}` +
+    `${input.whtRate ? ` · หัก ณ ที่จ่าย ${input.whtRate}%` : ""} · โดย ${input.requester}`,
+    "/expenses", { team: "finance" });
+
   const link = await db.from("kol_collaboration_history")
     .update({ expense_request_id: id, updated_at: new Date().toISOString() })
     .eq("collab_id", input.collabId);
@@ -631,5 +648,12 @@ export async function reviewKolEngagement(
     .from("kol_collaboration_history")
     .update({ ...patch, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("collab_id", collabId);
+  if (!error && patch.performance_tag) {
+    // Only when a verdict is actually recorded. Saving a next action on its own
+    // is housekeeping and does not need to interrupt a room.
+    notify("approved", `📊 สรุปผล KOL: ${patch.performance_tag}`,
+      `${patch.next_action ? `ครั้งหน้า: ${patch.next_action}` : "ยังไม่ระบุ next action"}${patch.reviewed_by ? ` · โดย ${patch.reviewed_by}` : ""}`,
+      "/kol?tab=performance", { team: "kol" });
+  }
   return !error;
 }
