@@ -339,6 +339,17 @@ export function briefChangeAudience(g: Pick<Graphic, "acceptedAt" | "acceptedBy"
   return firstRealName(g.acceptedBy, g.designer);
 }
 
+/** Who drew the storyboard — the person a decision on it is about.
+ *
+ *  Whoever actually submitted it, before whoever was nominated to: the owner
+ *  slot is a plan and the submitter is a fact, and they come apart when
+ *  somebody covers for a colleague. */
+export function storyboardAuthor(
+  g: Pick<Graphic, "storyboardSubmittedBy" | "storyboardOwner">,
+): string | null {
+  return firstRealName(g.storyboardSubmittedBy, g.storyboardOwner);
+}
+
 /** Who has to redo a piece of artwork that just came back.
  *
  *  The person who SUBMITTED it, before anyone named on the request: an agency

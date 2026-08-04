@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -540,6 +540,21 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ล้างคนถ่ายได้", withShooterAssigned(s0, "", "Boss").shooter === "");
     // ต้นฉบับต้องไม่ถูกแก้
     check("ไม่แตะของเดิม", s0.shootDate === "2026-09-10" && s0.shooter === "Jeeno");
+  }
+
+  // ผลตัดสิน storyboard ต้องถึงคนที่วาด ไม่ใช่แค่เข้าห้องรวม
+  {
+    check("คนที่ส่งจริงมาก่อนคนที่ถูกมอบหมาย", storyboardAuthor({ storyboardSubmittedBy: "Jungjing", storyboardOwner: "Boss" }) === "Jungjing");
+    check("ไม่มีคนส่ง → ใช้คนที่ถูกมอบหมาย", storyboardAuthor({ storyboardSubmittedBy: "", storyboardOwner: "Boss" }) === "Boss");
+    check("Unassigned ไม่นับเป็นคน", storyboardAuthor({ storyboardSubmittedBy: "Unassigned", storyboardOwner: "Unassigned" }) === null);
+    check("ไม่มีใครเลย → null", storyboardAuthor({}) === null);
+  }
+
+  // ส่ง footage = ส่งไม้ต่อให้คนตัดต่อ ต้องบอกคนที่รับไม้
+  {
+    check("ส่ง footage → ถึงคนที่รับงาน", revisionAssignee({ acceptedBy: "Aom", designer: "Boss" }) === "Aom");
+    check("ไม่มีคนรับงาน → ชื่อบนใบงาน", revisionAssignee({ acceptedBy: "", designer: "Boss" }) === "Boss");
+    check("ไม่มีใครเลย → null (ไม่แจ้งผิดคน)", revisionAssignee({ acceptedBy: "", designer: "Unassigned" }) === null);
   }
 
   // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง
