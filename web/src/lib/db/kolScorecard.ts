@@ -8,6 +8,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import { baht } from "@/lib/format";
 import { BrandId, brandName } from "@/lib/brands";
 import { tierFromFollowers } from "@/lib/db/kolMaster";
@@ -517,7 +518,7 @@ export async function setAgreedPostDate(collabId: string, date: string | null): 
  * from this, never written here — so the UI and any script agree on the rule.
  */
 export async function attributeDelay(
-  collabId: string, reason: DelayReason, note?: string, by?: string,
+  collabId: string, reason: DelayReason, note?: string, by?: string, kolId?: string,
 ): Promise<boolean> {
   const db = supabase();
   if (!db) return false;
@@ -534,7 +535,7 @@ export async function attributeDelay(
     notify("feedback", `⏰ ระบุสาเหตุงาน KOL ส่งช้า`,
       `${label?.label ?? reason}${label?.blamesKol ? " — มีผลกับคะแนน KOL" : " — ไม่นับเป็นความผิด KOL"}` +
       `${note ? ` · ${note}` : ""}${by ? ` · โดย ${by}` : ""}`,
-      "/kol?tab=performance", { team: "kol" });
+      kolId ? workLink.kol(kolId) : "/kol?tab=performance", { team: "kol" });
   }
   return !error;
 }
@@ -626,7 +627,7 @@ export async function createKolExpenseRequest(input: {
   notify("approval", `📥 ใบเบิก KOL · ${input.kolName}`,
     `${input.campaign || "—"}${input.brand ? ` · ${brandName(input.brand as BrandId)}` : ""} · ${baht(input.amount)}` +
     `${input.whtRate ? ` · หัก ณ ที่จ่าย ${input.whtRate}%` : ""} · โดย ${input.requester}`,
-    "/expenses", { team: "finance" });
+    workLink.expense(null), { team: "finance" });
 
   const link = await db.from("kol_collaboration_history")
     .update({ expense_request_id: id, updated_at: new Date().toISOString() })
@@ -641,6 +642,7 @@ export async function createKolExpenseRequest(input: {
 export async function reviewKolEngagement(
   collabId: string,
   patch: { performance_tag?: string; next_action?: string; brand_feedback_score?: number; on_time_delivery?: boolean; reviewed_by?: string },
+  kolId?: string,
 ): Promise<boolean> {
   const db = supabase();
   if (!db) return false;
@@ -653,7 +655,7 @@ export async function reviewKolEngagement(
     // is housekeeping and does not need to interrupt a room.
     notify("approved", `📊 สรุปผล KOL: ${patch.performance_tag}`,
       `${patch.next_action ? `ครั้งหน้า: ${patch.next_action}` : "ยังไม่ระบุ next action"}${patch.reviewed_by ? ` · โดย ${patch.reviewed_by}` : ""}`,
-      "/kol?tab=performance", { team: "kol" });
+      kolId ? workLink.kol(kolId) : "/kol?tab=performance", { team: "kol" });
   }
   return !error;
 }

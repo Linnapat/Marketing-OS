@@ -117,7 +117,7 @@ function ChannelChip({ channel, author }: { channel: KolChannel; author: string 
  * delay attributed to the creator touches their reliability score — our own
  * approval bottleneck must not be filed under their name.
  */
-function DeliveryRow({ engagement, author }: { engagement: KolEngagementRow; author: string }) {
+function DeliveryRow({ engagement, author, kolId }: { engagement: KolEngagementRow; author: string; kolId: string }) {
   const [agreed, setAgreed] = useState(engagement.agreed_post_at);
   const [reason, setReason] = useState<DelayReason | null>(engagement.delay_reason);
   const [editing, setEditing] = useState(false);
@@ -132,7 +132,7 @@ function DeliveryRow({ engagement, author }: { engagement: KolEngagementRow; aut
   };
   const saveReason = async (r: DelayReason) => {
     setBusy(true);
-    if (await attributeDelay(engagement.collab_id, r, undefined, author)) setReason(r);
+    if (await attributeDelay(engagement.collab_id, r, undefined, author, kolId)) setReason(r);
     setBusy(false);
   };
 
@@ -652,7 +652,7 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
                 {!compact && h.why_chosen && (
                   <div className="mt-2 text-[11px] text-faint whitespace-pre-wrap border-t border-line4 pt-2">{h.why_chosen}</div>
                 )}
-                <DeliveryRow engagement={h} author={author} />
+                <DeliveryRow engagement={h} author={author} kolId={kolId} />
                 <ExpenseRow engagement={h} kolName={row.display_name} requester={author} />
                 {(h.performance_tag || h.next_action) ? (
                   <div className="mt-2 flex gap-2 flex-wrap text-[11px]">
