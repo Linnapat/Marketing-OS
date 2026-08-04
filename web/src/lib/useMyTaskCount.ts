@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
-import { personKeys, isSamePerson } from "@/lib/identity";
+import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 
 let cache: number | null = null;
 const listeners = new Set<(n: number) => void>();
@@ -47,7 +47,7 @@ export function useMyTaskCount(): number {
         // Same identity rule as My Tasks: one person is filed under a display
         // name, a nickname and an email across these tables, so an exact string
         // match undercounts (see lib/identity).
-        let keys = personKeys(member, user);
+        let keys = personKeys(memberRef(member), user);
         // Demo mode has no session to read an identity from, and the page
         // itself falls back to the first member for exactly that reason. Guard
         // it on AUTH_REQUIRED: doing this where sign-in IS enforced would badge

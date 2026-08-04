@@ -9,6 +9,9 @@ import { logAudit } from "@/lib/db/audit";
 export interface Member {
   name: string; email: string; role: string; access: string;
   brandAccess: string; status: string; color: string;
+  /** Display names this person has used before. Kept so a rename does not
+   *  orphan the work already filed under the old one — see lib/identity. */
+  previousNames?: string[];
   avatarUrl?: string;
   presence?: string;
   statusNote?: string;
@@ -16,11 +19,13 @@ export interface Member {
 type Row = {
   email: string; name: string; role: string; access: string;
   brand_access: string; status: string; color: string;
+  data?: { previousNames?: string[] } | null;
 };
 
 const toMember = (r: Row): Member => ({
   name: r.name, email: r.email, role: r.role, access: r.access,
   brandAccess: r.brand_access, status: r.status, color: r.color,
+  previousNames: r.data?.previousNames ?? undefined,
 });
 
 export interface MemberProfile {
@@ -78,12 +83,25 @@ export async function updateMember(m: Member, origEmail?: string): Promise<void>
     await createMember(m);
     return;
   }
+  // A rename keeps the old name as an alias. Work rows store the name as a
+  // plain string, so without this every task, request and post filed under the
+  // previous one silently stops being theirs — see lib/identity.
+  const prior = await db.from("members").select("name, data").eq("email", m.email).maybeSingle();
+  const oldName = (prior.data?.name ?? "").trim();
+  const blob = (prior.data?.data ?? {}) as { previousNames?: string[] };
+  const kept = blob.previousNames ?? [];
+  const renamed = !!oldName && oldName.toLowerCase() !== m.name.trim().toLowerCase();
+  const previousNames = renamed && !kept.some((n) => n.toLowerCase() === oldName.toLowerCase())
+    ? [...kept, oldName]
+    : kept;
+
   // Pure UPDATE (not upsert) so it works under the members RLS: an admin may
   // update anyone; a staff member may update only their own row, and a trigger
   // freezes role/access/brand/status for non-admins (see supabase/security_p5.sql).
   const { error } = await db.from("members").update({
     name: m.name, role: m.role, access: m.access,
     brand_access: m.brandAccess, status: m.status, color: m.color,
+    ...(previousNames.length ? { data: { ...blob, previousNames } } : {}),
   }).eq("email", m.email);
   assertDbOk(error, "Could not update member");
   logAudit(`บันทึกสมาชิก ${m.name}`, "Settings", { after: `${m.role} · ${m.access} · ${m.status}`, meta: { email: m.email } });
