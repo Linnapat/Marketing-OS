@@ -28,7 +28,10 @@ begin
     raise notice 'ยังไม่มีตาราง graphic_feedback — รัน supabase/feedback_p1.sql ก่อน';
     return;
   end if;
-  if to_regproc('public.owns_designer_slot(text)') is null then
+  -- to_regprocedure ไม่ใช่ to_regproc: to_regproc รับได้แค่ "ชื่อ" ถ้าใส่วงเล็บ
+  -- พร้อมชนิดพารามิเตอร์เข้าไปมันคืน null เสมอ — guard เวอร์ชันแรกเลยฟ้องว่า
+  -- ยังไม่ได้รัน p10 ทั้งที่รันไปแล้ว (โชคดีที่มัน fail ปิด ไม่ใช่ปิดเงียบ)
+  if to_regprocedure('public.owns_designer_slot(text)') is null then
     raise exception 'ยังไม่มี owns_designer_slot() — ต้องรัน security_p10_agency_portal.sql ก่อน';
   end if;
 end $$;
