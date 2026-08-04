@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { OPEN_PARAM } from "@/lib/deepLink";
 import { Download } from "lucide-react";
 import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
 import { BrandFilter } from "@/components/ui/BrandFilter";
@@ -30,7 +32,21 @@ function download(filename: string, content: string) {
 }
 
 export default function ExpensesPage() {
+  return (
+    <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
+      <ExpensesPageInner />
+    </Suspense>
+  );
+}
+
+function ExpensesPageInner() {
+  // ?ref=EXP-… from a notification. Reading it here rather than inside the tab
+  // so the page can also switch to the tab that actually holds the row — a
+  // link that lands on the Spending Log with the request one click away is the
+  // same near-miss as landing on the module front page.
+  const highlightRef = useSearchParams().get(OPEN_PARAM.expense);
   const [tab, setTab] = useState<"request" | "log">("request");
+  useEffect(() => { if (highlightRef) setTab("request"); }, [highlightRef]);
   // The page itself is open to everyone — submitting an expense request is
   // everyone's job (CMO, 2026-07-30), and gating the route on the Finance
   // module used to lock out the five roles with Finance="—". The Spending Log
@@ -150,7 +166,7 @@ export default function ExpensesPage() {
       </div>
 
       <div className="mt-5">
-        {tab === "request" && <ExpenseRequestTab brand={brand} date={date} />}
+        {tab === "request" && <ExpenseRequestTab brand={brand} date={date} highlightRef={highlightRef} />}
         {tab === "log" && canSeeSpending && <SpendingLogTab brand={brand} date={date} onVoucher={setPvExpense} />}
       </div>
 

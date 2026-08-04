@@ -55,6 +55,10 @@ export interface ContentItem {
   mandatoryText?: string;
   doDont?: string;
   captionStatus: string;
+  /** Caption sign-off, separate from the post's. See applyCaptionDecision. */
+  captionApprovedBy?: string;
+  captionApprovedAt?: string;
+  captionFeedback?: { reason: string; by: string; at: string }[];
   assetStatus: string;
   approvalStatus: string;
   publishStatus: string;
@@ -288,6 +292,65 @@ export const contentReadyForApproval = (c: ContentItem): boolean => contentAppro
  *  would lose that. */
 export function captionStatusAfterRevision(c: Pick<ContentItem, "caption">): string {
   return (c.caption ?? "").trim() ? "Draft" : "Missing";
+}
+
+/* ── Caption as its own piece of work ──────────────────────────────────────
+ *
+ * The caption already had a writer, a status and a "Mark Ready" button, but no
+ * sign-off of its own: it could only be accepted as part of approving the whole
+ * post, and contentApproveBlockers refuses that until the artwork is approved
+ * too. So the agreed flow — Creative Content sends the caption, Marketing
+ * approves or sends it back, THEN production starts — had no step 4. Words
+ * were written, nobody said yes, and the first person to react to them was
+ * whoever read the post on the day it went out.
+ *
+ * Modelled on the storyboard, which answers the same question one stage
+ * earlier: submitted, then accepted or returned with a reason, by someone other
+ * than the person who wrote it.
+ */
+
+/** Is the caption written and waiting for someone to accept it? */
+export function captionAwaitsApproval(c: Pick<ContentItem, "captionStatus">): boolean {
+  return c.captionStatus === "Ready";
+}
+
+/** Has the caption been signed off in its own right? */
+export function captionApproved(c: Pick<ContentItem, "captionStatus">): boolean {
+  return c.captionStatus === "Approved";
+}
+
+/** Accept the caption, or send it back with a reason.
+ *
+ *  Approve moves it out of the queue and records who accepted it — the trail
+ *  the post-level approval never kept for the words on their own.
+ *
+ *  Revise returns it to the writer at Draft (or Missing, if there is nothing
+ *  written — see captionStatusAfterRevision) with the reason kept, and pulls
+ *  the post back out of Waiting Approval if it had got there: a caption under
+ *  revision is not a post ready to be approved.
+ *
+ *  Pure — the caller persists and notifies. Returns the input unchanged when
+ *  there is nothing waiting, so a double-click cannot approve twice. */
+export function applyCaptionDecision(
+  c: ContentItem,
+  decision: "approve" | "revise",
+  by: string,
+  reason = "",
+): ContentItem {
+  if (!captionAwaitsApproval(c)) return c;
+  const at = new Date().toISOString();
+  if (decision === "approve") {
+    return advanceApprovalState({ ...c, captionStatus: "Approved", captionApprovedBy: by, captionApprovedAt: at });
+  }
+  const said = reason.trim();
+  if (!said) return c;
+  return advanceApprovalState({
+    ...c,
+    captionStatus: captionStatusAfterRevision(c),
+    captionApprovedBy: undefined,
+    captionApprovedAt: undefined,
+    captionFeedback: [...(c.captionFeedback ?? []), { reason: said, by, at }],
+  });
 }
 
 export function advanceApprovalState(c: ContentItem): ContentItem {

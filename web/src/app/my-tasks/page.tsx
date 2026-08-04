@@ -2,12 +2,14 @@
 
 import { toastError } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
+import { OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
@@ -25,14 +27,18 @@ import { personKeys, isSamePerson } from "@/lib/identity";
 import { notifMeta, pushNotifications } from "@/lib/db/notifications";
 import { useNotifications } from "@/lib/useNotifications";
 import { useCanApproveExpense } from "@/lib/usePermGates";
-import { canApproveCampaign } from "@/lib/roleGates";
+import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { Graphic } from "@/lib/data/graphic";
+import { fetchContent } from "@/lib/db/content";
+import { ContentItem, captionAwaitsApproval } from "@/lib/data/content";
+import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { fetchGraphicFeedback } from "@/lib/db/feedback";
+import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
 import {
   WorkItem, WorkCard, WorkListView, WorkCalendarView, WorkAction, WorkGroupHeader, StatMini,
@@ -65,6 +71,18 @@ const fmtThaiDate = (iso: string) => fmtShort(iso.slice(0, 10)) || iso.slice(0, 
 /** Campaign budget context shown to the approver on an expense request. */
 type ExpenseBudgetInfo = { budget: number; committed: number; left: number; campaignId: string };
 
+/** One thing on a graphic request that is waiting on its requester. A request
+ *  can raise two at once (a reel whose storyboard is still pending while an
+ *  earlier cut sits in review), which is why this is a row per decision rather
+ *  than a flag on the request. */
+type GraphicApproval = { g: Graphic; kind: "storyboard" | "artwork" };
+const GRAPHIC_APPROVAL_COPY = {
+  storyboard: { badge: "Storyboard รออนุมัติ", cta: "อนุมัติ storyboard →", tab: "overview" as GTab, bg: "#F2EEFF", fg: "#6C5CE7" },
+  // Artwork keeps landing on the brief, the way it always has — the review is
+  // "does this match what I asked for", and the brief is that question.
+  artwork: { badge: "Waiting review", cta: "Review artwork →", tab: "brief" as GTab, bg: "#FBF8EE", fg: "#C68A1E" },
+} as const;
+
 
 const GROUP_DEFS = [
   { id: "doFirst", label: "Do First", icon: "🎯", countBg: "#FFF5F4", countColor: "#B33A2E", warnMsg: "" },
@@ -79,13 +97,30 @@ const GROUP_DEFS = [
  * request from here. Module-level so the array identity is stable across
  * renders. */
 const HIDDEN_GRAPHIC_TABS: readonly GTab[] = ["overview"];
+/* …except when Overview IS the reason the drawer was opened: the storyboard
+ * accept / send-back pair sits in the production panel there. */
+const ALL_GRAPHIC_TABS: readonly GTab[] = [];
 
 const SCOPE_FILTERS = [
   { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
   { id: "approvals", label: "My approvals" }, { id: "stuck", label: "Stuck" },
 ];
+// Whether finished work is unfolded on this board. Remembered per browser, the
+// same way FinishedFold remembers a list — the choice is a habit, not a
+// per-visit decision, and re-hiding it on every reload is its own annoyance.
+const SHOW_DONE_KEY = "mytasks.showDone";
 
+/** useSearchParams (for ?task=) opts the tree into client rendering, which
+ *  Next requires a Suspense boundary around. */
 export default function MyTasksPage() {
+  return (
+    <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
+      <MyTasksPageInner />
+    </Suspense>
+  );
+}
+
+function MyTasksPageInner() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
   const [activeTab, setActiveTab] = useState<"myDay" | "approval">("myDay");
@@ -96,6 +131,7 @@ export default function MyTasksPage() {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
   const [graphics, setGraphics] = useState<Graphic[]>([]);
+  const [posts, setPosts] = useState<ContentItem[]>([]);
   // Expense approvals are a role gate, not a person filter. Read it from the
   // same permissions matrix the database checks (Finance >= Approve) rather
   // than string-matching "CMO" here, so this queue and
@@ -131,6 +167,21 @@ export default function MyTasksPage() {
   // the filter can be set to a whole year and one grid only draws one month.
   const [calMonth, setCalMonth] = useState(() => ({ month: DEFAULT_DATE_FILTER.month, year: DEFAULT_DATE_FILTER.year }));
   const [scopeFilter, setScopeFilter] = useState("all");
+  // Done work only ever accumulates: nothing takes a finished task off this
+  // board, so the Done column grew past everything still to do and pushed the
+  // live groups sideways. Fold it away by default and keep the count on the
+  // toggle — hidden, never lost, one click to read it back (same bargain as
+  // FinishedFold). Starts false and is corrected from localStorage after mount,
+  // because reading storage during render breaks the server/client match.
+  const [showDone, setShowDone] = useState(false);
+  useEffect(() => {
+    try { setShowDone(localStorage.getItem(SHOW_DONE_KEY) === "1"); } catch { /* no-op */ }
+  }, []);
+  const toggleShowDone = () => setShowDone((current) => {
+    const next = !current;
+    try { localStorage.setItem(SHOW_DONE_KEY, next ? "1" : "0"); } catch { /* no-op */ }
+    return next;
+  });
   const [tasks, setTasks] = useState<Task[]>(TASKS);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set([1, 4, 7, 8, 12, 14, 18, 20]));
   const [drawerId, setDrawerId] = useState<number | null>(null);
@@ -141,9 +192,28 @@ export default function MyTasksPage() {
   // edit made inside the drawer updates the card behind it in the same tick
   // instead of leaving a stale copy pinned in state.
   const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
+  // Which tab that drawer lands on. Almost everything here wants the brief, but
+  // the storyboard decision lives on Overview — the one tab this page normally
+  // hides — so opening a storyboard card at the default would show the requester
+  // a drawer with no approve button anywhere in it.
+  const [graphicOpenTab, setGraphicOpenTab] = useState<GTab>("brief");
+  const openGraphicAt = (id: number, tab: GTab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); };
   // Same rows the sidebar bell reads — one shared inbox, or the two drift and
   // a bell saying 3 sits above a list showing 1.
   const { unread, markRead } = useNotifications();
+  // /my-tasks?task=<id> — arriving from a Slack DM or the email about this one
+  // card. `tasksLoaded` exists because `tasks` starts as the bundled demo seed:
+  // a non-empty list says nothing about whether the real rows are in, and
+  // deciding too early tells someone their task is gone a beat before it loads.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const openTaskId = searchParams.get(OPEN_PARAM.task);
+  // ?tab=approval — money has no page of its own to open, so its notifications
+  // land here instead; without this they landed on My Day and the approver had
+  // to know which tab the request was hiding behind.
+  const wantsApprovals = searchParams.get(OPEN_PARAM.tab) === "approval";
+  const [tasksLoaded, setTasksLoaded] = useState(false);
+  const openedRef = useRef<string | null>(null);
 
 
   const getStatus = (t: Task) => (doneIds.has(t.id) ? "Done" : t.status);
@@ -165,7 +235,8 @@ export default function MyTasksPage() {
       if (!alive) return;
       setTasks(tasks);
       setDoneIds(new Set(doneIds));
-    }).catch(() => {});
+      setTasksLoaded(true);
+    }).catch(() => { if (alive) setTasksLoaded(true); });
     // Team = real members from Settings (internal, non-external accounts).
     fetchMembers().then((ms) => {
       if (!alive) return;
@@ -176,8 +247,31 @@ export default function MyTasksPage() {
     fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
     fetchExpenseRequests().then((r) => { if (alive) setExpenseReqs(r); }).catch(() => {});
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
+    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Open the card the notification was about, once the real list is in. The
+  // param is dropped afterwards so closing the drawer does not reopen it, and a
+  // task that is gone says so instead of leaving the board looking normal.
+  // The approval queue is a tab, not a row, so it needs no loaded list — switch
+  // as soon as the link says so, then drop the param.
+  useEffect(() => {
+    if (!wantsApprovals) return;
+    setActiveTab("approval");
+    setScopeFilter("approvals");
+    router.replace("/my-tasks");
+  }, [wantsApprovals, router]);
+
+  useEffect(() => {
+    if (!openTaskId) { openedRef.current = null; return; }
+    const { action, item } = resolveOpenTarget(openTaskId, tasks, tasksLoaded, openedRef.current);
+    if (action === "idle" || action === "wait") return;
+    openedRef.current = openTaskId;
+    if (action === "open" && item) setDrawerId(item.id);
+    else toastError(`ไม่พบงาน #${openTaskId} — อาจถูกลบไปแล้ว หรือถูกส่งต่อให้คนอื่น`);
+    router.replace("/my-tasks");
+  }, [openTaskId, tasks, tasksLoaded, router]);
 
   // My Approval inbox — campaigns + requests where the current person is the
   // approver (available to anyone in an approval tier).
@@ -218,11 +312,35 @@ export default function MyTasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tasks, myKeys, doneIds, brandOptions, brandVisibility],
   );
+  // Two different things wait on the requester of a graphic request, and this
+  // queue only knew about the second one:
+  //   storyboard Submitted → accept the plan before anyone shoots or cuts
+  //   deliverable Waiting review → accept the finished artwork
+  // A reel's storyboard therefore sat in "ส่งแล้ว รออนุมัติ" with nothing on the
+  // requester's own screen to tell them, and production stalled behind a
+  // decision nobody knew was theirs. Both now land here, tagged so the card
+  // says which of the two it is.
   const approvalGraphics = useMemo(
-    () => graphics.filter((g) => isSamePerson(g.requester, myKeys) && brandVisibility.isVisible(g.b) && (g.deliverables ?? []).some((d) => d.status === "Waiting review")),
+    () => graphics
+      .filter((g) => isSamePerson(g.requester, myKeys) && brandVisibility.isVisible(g.b))
+      .flatMap((g) => [
+        ...(awaitsStoryboardDecision(g) ? [{ g, kind: "storyboard" as const }] : []),
+        ...(awaitsArtworkReview(g) ? [{ g, kind: "artwork" as const }] : []),
+      ]),
     [graphics, myKeys, brandVisibility],
   );
-  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length;
+  // Captions waiting on the planning side. Same lesson as the storyboard: the
+  // buttons existed on the post and nothing told the person holding them, so
+  // the words sat "Ready" until somebody happened to open that drawer.
+  const approvalCaptions = useMemo(
+    () => (canEditContentPlan(authRole)
+      ? posts.filter((p) => captionAwaitsApproval(p)
+          && brandVisibility.isVisible(p.b)
+          && (p.owner ?? "").trim().toLowerCase() !== (member?.name ?? "").trim().toLowerCase())
+      : []),
+    [posts, authRole, brandVisibility, member],
+  );
+  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length + approvalCaptions.length;
   // Budget context for an expense request: the campaign's budget, what's already
   // been approved against it, and what's left if this one goes through. Matches
   // on campaign_id when the row has it (a rename breaks name matching), else on
@@ -346,6 +464,15 @@ export default function MyTasksPage() {
     return true;
   };
   const scopedTasks = myTasks.filter(matchScope);
+  // Finished is two facts, not one: the status a task reports and the column it
+  // sits in. They come apart — a row whose group is already "done" can still
+  // carry an older status — and asking only one question left those cards on a
+  // board that was meant to be clear of them.
+  const isDone = (t: Task) => getStatus(t) === "Done" || getGroup(t) === "done";
+  const doneCount = scopedTasks.filter(isDone).length;
+  // One filter above the view switch, so Cards, List and Calendar can never
+  // disagree about whether finished work is showing.
+  const visibleTasks = showDone ? scopedTasks : scopedTasks.filter((t) => !isDone(t));
 
   return (
     <div style={{ paddingBottom: 40 }}>
@@ -458,7 +585,19 @@ export default function MyTasksPage() {
                 </span>
               ))}
             </div>
-            <div className="flex gap-[6px]">
+            <div className="flex gap-[6px] items-center flex-wrap">
+              {/* Nothing finished in this period → no toggle and no divider,
+                  rather than a control that reads as broken because pressing
+                  it changes nothing on screen. */}
+              {doneCount > 0 && (
+                <>
+                  <span onClick={toggleShowDone} style={chip(showDone)} role="button" aria-pressed={showDone}
+                    title={showDone ? "ซ่อนงานที่เสร็จแล้วออกจากบอร์ด" : "แสดงงานที่เสร็จแล้วบนบอร์ด"}>
+                    ✓ {showDone ? "ซ่อนงานที่เสร็จ" : "ดูงานที่เสร็จ"} {doneCount}
+                  </span>
+                  <span className="w-px h-[18px] self-center" style={{ background: "#E5DECF" }} aria-hidden />
+                </>
+              )}
               <span onClick={() => setViewMode("cards")} style={chip(viewMode === "cards")}>⊞ Cards</span>
               <span onClick={() => setViewMode("list")} style={chip(viewMode === "list")}>≡ List</span>
               <span onClick={() => setViewMode("calendar")} style={chip(viewMode === "calendar")}>🗓 Calendar</span>
@@ -473,13 +612,13 @@ export default function MyTasksPage() {
                is the only reason to look at this screen. */
             <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
               {GROUP_DEFS.map((g) => {
-                const groupTasks = scopedTasks.filter((t) => getGroup(t) === g.id);
+                const groupTasks = visibleTasks.filter((t) => getGroup(t) === g.id);
                 if (groupTasks.length === 0) return null;
                 return (
                   <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>
                     <WorkGroupHeader g={g} count={groupTasks.length} />
                     <div className="flex flex-col gap-3">
-                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={setGraphicOpenId} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
+                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={openGraphicAt} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
                   </div>
                 );
@@ -487,28 +626,29 @@ export default function MyTasksPage() {
             </div>
           ) : viewMode === "calendar" ? (
             <WorkCalendarView
-              items={scopedTasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
+              items={visibleTasks.map((t) => taskToWorkItem(t, getStatus(t), graphicOf(t)))}
               month={calMonth.month}
               year={calMonth.year}
               onNavigate={(month, year) => setCalMonth({ month, year })}
               onOpen={(item) => setDrawerId(Number(item.key))}
-              onOpenGraphic={setGraphicOpenId}
+              onOpenGraphic={openGraphicAt}
             />
           ) : (
-            <ListView tasks={scopedTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={setGraphicOpenId} colorOf={colorOf} graphicOf={graphicOf} />
+            <ListView tasks={visibleTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={openGraphicAt} colorOf={colorOf} graphicOf={graphicOf} />
           )}
         </div>
       ) : (
-        <MyApprovalView graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={setGraphicOpenId} onApprove={approveExpense} onReject={rejectExpense} />
+        <MyApprovalView captions={approvalCaptions} graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
-      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={setGraphicOpenId} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
+      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
       {/* The real request drawer, over My Tasks. Wrapped in its own stacking
           context so it sits above the task drawer (z-[200]) — GraphicDrawer is
           z-50 inside, which is correct on /graphic and too low here. */}
       {openGraphic && (
         <div className="relative z-[260]">
-          <GraphicDrawer g={openGraphic} initialTab="brief" hideTabs={HIDDEN_GRAPHIC_TABS}
+          <GraphicDrawer g={openGraphic} initialTab={graphicOpenTab}
+            hideTabs={graphicOpenTab === "overview" ? ALL_GRAPHIC_TABS : HIDDEN_GRAPHIC_TABS}
             onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
         </div>
       )}
@@ -523,14 +663,15 @@ export default function MyTasksPage() {
   );
 }
 
-function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
-  graphics: Graphic[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
+function MyApprovalView({ captions, graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
+  captions: ContentItem[];
+  graphics: GraphicApproval[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
   budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
-  onOpenTask: (id: number) => void; onOpenGraphic: (id: number) => void;
+  onOpenTask: (id: number) => void; onOpenGraphic: (id: number, tab?: GTab) => void;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
   const codeOf = useCampaignCodes();
-  const total = graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
+  const total = captions.length + graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
   if (total === 0) {
     return (
       <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
@@ -543,6 +684,34 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
   }
   return (
     <div className="flex flex-col gap-5">
+      {captions.length > 0 && (
+        <div>
+          <div className="flex items-center gap-[10px] mb-3">
+            <span className="text-[17px]">📝</span>
+            <span className="text-[13.5px] font-bold">Caption รออนุมัติ</span>
+            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>{captions.length}</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {captions.map((p) => (
+              <Link key={p.id} href={`${workLink.post(p.id)}`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[13.5px] font-bold text-ink truncate">{p.title}</span>
+                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>Caption รออนุมัติ</span>
+                </div>
+                <div className="text-[11.5px] text-faint mb-2">{brandCampaignLine(brandName(p.b), p.campaign)}</div>
+                {/* The words themselves, so an easy yes needs no click. */}
+                <div className="text-[12px] text-muted leading-[1.5] mb-3" style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {(p.caption ?? "").trim() || "— ไม่มีข้อความ —"}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11.5px] text-muted">เขียนโดย {p.owner || "—"}</span>
+                  <span className="text-[11.5px] font-bold text-accent">อ่านและอนุมัติ →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       {graphics.length > 0 && (
         <div>
           <div className="flex items-center gap-[10px] mb-3">
@@ -551,22 +720,31 @@ function MyApprovalView({ graphics, campaigns, requests, expenses, tasks, budget
             <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{graphics.length}</span>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {graphics.map((g) => (
-              <button key={g.id} onClick={() => onOpenGraphic(g.id)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
-                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>Waiting review</span>
-                </div>
-                <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                  <span>{brandName(g.b)} · {g.campaign} · {g.type}</span>
-                  <CampaignCode code={codeOf(g.campaignId, g.campaign)} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">Designer {g.designer}</span>
-                  <span className="text-[11.5px] font-bold text-accent">Review artwork →</span>
-                </div>
-              </button>
-            ))}
+            {graphics.map(({ g, kind }) => {
+              const copy = GRAPHIC_APPROVAL_COPY[kind];
+              return (
+                <button key={`${g.id}-${kind}`} onClick={() => onOpenGraphic(g.id, copy.tab)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
+                    <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: copy.bg, color: copy.fg }}>{copy.badge}</span>
+                  </div>
+                  <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+                    <span>{brandName(g.b)} · {g.campaign} · {g.type}</span>
+                    <CampaignCode code={codeOf(g.campaignId, g.campaign)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    {/* Whose work is waiting on you — the storyboard is the
+                        Creative Content person's, not the designer's. */}
+                    <span className="text-[11.5px] text-muted">
+                      {kind === "storyboard"
+                        ? `Storyboard ${g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}`
+                        : `Designer ${g.designer}`}
+                    </span>
+                    <span className="text-[11.5px] font-bold text-accent">{copy.cta}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -856,6 +1034,18 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
   const [revising, setRevising] = useState(false);
   const [reviseMsg, setReviseMsg] = useState("");
   const [comment, setComment] = useState("");
+  // A task about a graphic request is a window onto that request, not a place
+  // of its own: the conversation belongs to the request, so both screens read
+  // and write the same thread. Tasks with no request keep their own comments.
+  const [thread, setThread] = useState<Feedback[]>([]);
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    if (!graphic) { setThread([]); return; }
+    let alive = true;
+    fetchGraphicFeedback(graphic.id).then((f) => { if (alive) setThread(f); }).catch(() => {});
+    return () => { alive = false; };
+  }, [graphic]);
+  const replyTo = graphic ? replyAudience(graphic, thread, me) : [];
   const checklistDone = new Set(t.checklistDone ?? []);
 
   const start = () => onPatch({ status: "In Progress", group: "doFirst" });
@@ -867,7 +1057,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     });
     // Asking for help has no room to shout into — it reaches the people the
     // task already belongs to, the same pair the in-app inbox notifies.
-    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), "/my-tasks", { to: [t.assignee, t.pendingApprover] });
+    notify("mention", `🆘 ${me} ขอความช่วยเหลือ: ${t.title}`, helpMsg.trim(), workLink.task(t.id), { to: [t.assignee, t.pendingApprover] });
     setAsking(false); setHelpMsg("");
   };
   const requestRevision = () => {
@@ -878,9 +1068,28 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     });
     setRevising(false); setReviseMsg("");
   };
-  const addComment = () => {
+  const addComment = async () => {
     const text = comment.trim();
-    if (!text) return;
+    if (!text || sending) return;
+    // On a graphic task the reply goes to the REQUEST, where the person who
+    // asked the question is reading. It used to go into the task's own blob,
+    // which the request never reads — so Creative asked, the requester
+    // answered, and the answer landed somewhere Creative could not open.
+    if (graphic) {
+      setSending(true);
+      try {
+        const saved = await postGraphicMessage({ graphic, text, me, thread });
+        setThread((ts) => [saved ?? {
+          id: Date.now(), gid: graphic.id, owner: me, team: "Conversation", ownerColor: colorOf(me),
+          type: MESSAGE_TYPE, text, version: "", status: "Open", assignedTo: "", due: null,
+          createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        }, ...ts]);
+        setComment("");
+      } catch (error) {
+        toastError(`ส่งข้อความไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      } finally { setSending(false); }
+      return;
+    }
     onPatch({ comments: [...(t.comments ?? []), { by: me, text, at: new Date().toISOString() }] });
     // The comment reaches the people the task belongs to. Before this it went
     // into the task blob and nowhere else: you saw it only if you happened to
@@ -889,7 +1098,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
       event: "comment", actor: me,
       title: `คอมเมนต์ใหม่: ${t.title}`,
       detail: text,
-      link: "/my-tasks",
+      link: workLink.task(t.id),
     });
     setComment("");
   };
@@ -970,10 +1179,25 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
             })}
           </div>
 
-          {/* Comments — stored with the task so the whole team sees them */}
-          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mt-5 mb-[10px]">Comments {t.comments?.length ? `(${t.comments.length})` : ""}</div>
+          {/* Comments. On a graphic task this IS the request's thread — same
+              messages the Creative side sees in the request drawer. */}
+          <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mt-5 mb-[10px]">
+            {graphic ? "คุยกันในใบงานนี้" : "Comments"} {graphic ? (thread.length ? `(${thread.length})` : "") : (t.comments?.length ? `(${t.comments.length})` : "")}
+          </div>
           <div className="flex flex-col gap-2 mb-2">
-            {(t.comments ?? []).map((c, i) => (
+            {graphic ? thread.map((f) => (
+              <div key={f.id} className="rounded-[10px] px-3 py-[9px]" style={{ background: isMessage(f) ? "#F7F2FF" : "#FAF8F4" }}>
+                <div className="flex items-center gap-2 mb-[3px] flex-wrap">
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold" style={{ background: f.ownerColor }}>{init(f.owner)}</span>
+                  <span className="text-[11px] font-bold text-ink">{f.owner}</span>
+                  <span className="text-[10px] text-faint">{f.createdAt}</span>
+                  {/* Revision reasons live in this thread too — labelled, so a
+                      request to change the work does not read as small talk. */}
+                  {!isMessage(f) && <span className="text-[9.5px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{f.type}</span>}
+                </div>
+                <div className="text-[12.5px] text-muted leading-[1.5]">{f.text}</div>
+              </div>
+            )) : (t.comments ?? []).map((c, i) => (
               <div key={i} className="rounded-[10px] px-3 py-[9px]" style={{ background: "#FAF8F4" }}>
                 <div className="flex items-center gap-2 mb-[3px]">
                   <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[7px] font-bold" style={{ background: colorOf(c.by) }}>{init(c.by)}</span>
@@ -983,12 +1207,18 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
                 <div className="text-[12.5px] text-muted leading-[1.5]">{c.text}</div>
               </div>
             ))}
+            {graphic && thread.length === 0 && (
+              <div className="text-[11.5px] text-faint">ยังไม่มีใครคุยในใบงานนี้ — พิมพ์ตอบได้เลย</div>
+            )}
           </div>
           <div className="flex gap-2">
-            <input value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addComment()}
-              placeholder="เขียนคอมเมนต์ถึงทีม…" className="flex-1 text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
-            <button onClick={addComment} disabled={!comment.trim()} className="text-[12px] font-bold text-white rounded-[9px] px-3 disabled:opacity-40" style={{ background: "#211F1C" }}>Send</button>
+            <input value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void addComment()}
+              placeholder={graphic ? "ตอบกลับในใบงานนี้…" : "เขียนคอมเมนต์ถึงทีม…"} className="flex-1 text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+            <button onClick={() => void addComment()} disabled={!comment.trim() || sending} className="text-[12px] font-bold text-white rounded-[9px] px-3 disabled:opacity-40" style={{ background: "#211F1C" }}>{sending ? "…" : "Send"}</button>
           </div>
+          {graphic && replyTo.length > 0 && (
+            <div className="text-[10.5px] text-faint mt-[6px]">ข้อความจะแจ้งเตือนถึง <b className="text-muted">{replyTo.join(", ")}</b></div>
+          )}
         </div>
         <div className="sticky bottom-0" style={{ padding: "16px 24px", borderTop: "1px solid #ECE6DA", background: "#FBF9F4" }}>
           <div className="text-[10px] tracking-[0.08em] uppercase font-bold text-faint mb-[10px]">Actions</div>

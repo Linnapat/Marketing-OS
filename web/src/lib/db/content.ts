@@ -60,6 +60,30 @@ export async function createContent(input: ContentItem): Promise<ContentItem> {
 
 /** Source content-item ids already materialised for a campaign — the
  *  idempotency set that makes re-running a Submit a no-op. */
+/** One post by id — the graphic drawer needs the caption of the post its
+ *  artwork serves, and pulling the whole calendar to find one row is not that.
+ *
+ *  Filtered in SQL on data->>'id', which is where the app's own ids live (the
+ *  table's own `id` is the database's). Null when there is no such post. */
+export async function fetchContentById(id: string): Promise<ContentItem | null> {
+  const key = String(id ?? "").trim();
+  if (!key) return null;
+  const db = supabase();
+  if (!db) return CONTENT.find((c) => String(c.id) === key) ?? null;
+  const { data, error } = await liveOnly(
+    db.from("content_posts").select("id, data, created_at").eq("data->>id", key).limit(1),
+    await trashReady(),
+  );
+  if (error || !data?.length) return null;
+  const r = data[0];
+  if (!r.data) return null;
+  return {
+    ...(r.data as ContentItem),
+    id: (r.data as ContentItem).id ?? `c${r.id}`,
+    createdAt: (r.data as ContentItem).createdAt ?? (r.created_at as string | undefined),
+  };
+}
+
 export async function fetchContentSourceIds(campaignId: string): Promise<Set<string>> {
   const db = supabase();
   if (!db) return new Set();

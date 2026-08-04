@@ -7,6 +7,7 @@ import { fetchCampaigns } from "@/lib/db/campaigns";
 import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
 import { X } from "lucide-react";
+import { workLink } from "@/lib/deepLink";
 import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
@@ -15,27 +16,25 @@ import { GRAPHIC_OPEN_PARAM,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
-  requestBriefEdit, decideBriefEdit, workKind,
+  requestBriefEdit, decideBriefEdit, briefChangeAudience,
+  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset, withShootMoved,
+  MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
-import type { NotifyTeam } from "@/lib/notifyRouting";
-
-/** Which room a graphic request belongs to. A "Graphic Request" is the form for
- *  video work too, so the module can't decide this — workKind() reads the type
- *  the requester picked, the same classifier the capacity board counts by. */
-function graphicTeam(g: Pick<Graphic, "type" | "requiredVideo">): NotifyTeam {
-  return workKind(g.type, g.requiredVideo).startsWith("vdo") ? "vdo" : "graphic";
-}
+import { graphicTeam } from "@/lib/notifyRouting";
+import { postGraphicMessage } from "@/lib/graphicThread";
+import Link from "next/link";
+import { fetchContentById } from "@/lib/db/content";
+import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
-import { pushNotifications } from "@/lib/db/notifications";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { useDeadlines } from "@/lib/useDeadlines";
@@ -67,6 +66,20 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [tab, setTab] = useState<GTab>(() =>
     hideTabs?.includes(initialTab) ? (visibleTabs[0]?.[0] ?? initialTab) : initialTab);
   const [feedback, setFeedback] = useState(() => FEEDBACK.filter((f) => f.gid === g.id));
+  const [messageText, setMessageText] = useState("");
+  // The post this artwork serves, for the caption shown beside it in Assets.
+  // Step 8 of the agreed flow: Marketing checks the media and the words in one
+  // pass — reviewing artwork with the caption on another screen is how a
+  // picture gets approved against copy nobody re-read.
+  const [linkedPost, setLinkedPost] = useState<ContentItem | null>(null);
+  useEffect(() => {
+    const postId = g.contentPostId;
+    if (!postId) { setLinkedPost(null); return; }
+    let alive = true;
+    fetchContentById(String(postId)).then((p) => { if (alive) setLinkedPost(p); }).catch(() => {});
+    return () => { alive = false; };
+  }, [g.contentPostId]);
+  const [sendingMessage, setSendingMessage] = useState(false);
   // Load persisted feedback (audit P2-5) — resolves survive a refresh now. The
   // mock filter above is the demo-mode fallback and the initial paint.
   useEffect(() => {
@@ -108,6 +121,27 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user, role } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
+  /** Who this reply will reach, shown before it is sent so nobody types into
+   *  the dark. Same rule the send uses — see replyAudience. */
+  const replyTo = replyAudience(g, feedback, currentUser);
+  const sendMessage = async () => {
+    const text = messageText.trim();
+    if (!text || sendingMessage) return;
+    setSendingMessage(true);
+    try {
+      const saved = await postGraphicMessage({ graphic: g, text, me: currentUser, thread: feedback });
+      // Demo mode stores nothing; show the line anyway so the drawer behaves
+      // the same way it will once a database is attached.
+      setFeedback((fs) => [saved ?? {
+        id: Date.now(), gid: g.id, owner: currentUser, team: "Conversation", ownerColor: "#6C5CE7",
+        type: MESSAGE_TYPE, text, version: "", status: "Open", assignedTo: "", due: null,
+        createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      }, ...fs]);
+      setMessageText("");
+    } catch (error) {
+      toastError(`ส่งข้อความไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setSendingMessage(false); }
+  };
   // The brief sign-off belongs to the RECEIVING side (content leader /
   // designer). The requester wrote the brief — approving it themselves would
   // make the check meaningless, so the sign-off controls hide for them.
@@ -210,13 +244,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       updateCurrentGraphic(next);
       notify("approval", `✋ ขอเติมบรีฟ: ${g.title}`,
         `โดย ${currentUser} → Creative Leader · ${unlockReason.trim()}`,
-        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
-      void pushNotifications([g.acceptedBy, g.designer], {
-        event: "brief", actor: currentUser,
-        title: `ขอเติมบรีฟ: ${g.title}`,
-        detail: unlockReason.trim(),
-        link: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
-      });
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g), inform: [g.acceptedBy, g.designer] });
       toastSuccess("ส่งคำขอให้ Creative Leader แล้ว — รอปล่อยงานก่อนถึงจะเติมบรีฟได้");
       setUnlockReason("");
     } catch (error) {
@@ -235,13 +263,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       notify(grant ? "approved" : "rejected",
         grant ? `✅ ปล่อยให้เติมบรีฟ: ${g.title}` : `⛔ ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
         `โดย ${currentUser} → ${g.briefUnlock?.requestedBy || g.requester}`,
-        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
-      void pushNotifications([g.briefUnlock?.requestedBy, g.requester], {
-        event: "brief", actor: currentUser,
-        title: grant ? `ปล่อยให้เติมบรีฟแล้ว: ${g.title}` : `ยังไม่ปล่อยให้เติมบรีฟ: ${g.title}`,
-        detail: grant ? "แก้ได้ 1 ครั้ง — ถ้าจะแก้อีกต้องขอใหม่" : undefined,
-        link: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
-      });
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
+        { team: graphicTeam(g), inform: [g.briefUnlock?.requestedBy, g.requester] });
       toastSuccess(grant ? "ปล่อยให้เติมบรีฟแล้ว" : "ไม่ปล่อยให้เติมบรีฟรอบนี้");
     } catch (error) {
       toastError(`บันทึกผลไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -319,7 +342,11 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       nextAction: `รอ ${g.requester} อนุมัติ storyboard`,
     }, "ส่ง storyboard ไม่สำเร็จ");
     toastSuccess("ส่ง storyboard แล้ว — รอเจ้าของงานอนุมัติ");
-    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
+    // `to` the requester, not the channel alone: this is a decision that is
+    // theirs and nobody else's, and until it was addressed to them the only
+    // trace of a submitted storyboard was a badge inside a drawer they had no
+    // reason to open — production waited on a person who was never told.
+    notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.requester] });
   };
 
   const decideStoryboard = (approved: boolean) => {
@@ -352,11 +379,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
    *  recorded, because the day the work lands on moves with it (workDayIso). */
   const moveShoot = (next: string) => {
     if (!canRunPipeline) return;
-    const from = g.shootDate || "—";
-    saveGraphic({
-      ...g, shootDate: next,
-      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: `เลื่อนวันถ่าย ${from} → ${next || "—"}` }],
-    }, "เลื่อนวันถ่ายไม่สำเร็จ");
+    saveGraphic(withShootMoved(g, next, currentUser), "เลื่อนวันถ่ายไม่สำเร็จ");
     if (next) toastSuccess(`เลื่อนวันถ่ายเป็น ${next} — งานจะไปนับในเดือน ${next.slice(0, 7)}`);
   };
 
@@ -412,7 +435,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     if (!comment) return;
     setBriefBusy(true);
     const at = new Date().toISOString();
-    const next: Graphic = {
+    // Hand the editor back with the request. Asking someone to revise a brief
+    // and then making them go ask permission to type in it is the same round
+    // trip twice — see releaseBriefForRevision.
+    const next: Graphic = releaseBriefForRevision({
       ...g,
       briefComplete: false,
       briefApprovedBy: undefined,
@@ -420,7 +446,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       blocker: "Brief revision requested",
       nextAction: `${g.requester} to revise brief — ${comment}`,
       history: [...(g.history ?? []), { type: "brief_revision_requested", at, by: currentUser, note: comment }],
-    };
+    }, currentUser, comment);
     // The comment becomes a task in the requester's My Tasks, due in 2 days.
     const due = new Date(); due.setDate(due.getDate() + 2);
     const task: Task = {
@@ -439,7 +465,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       await updateGraphic(next);
       await createTaskDb(task);
       updateCurrentGraphic(next);
-      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, "/my-tasks", { team: graphicTeam(g), to: [g.requester] });
+      notify("rejected", `↩ Brief ถูกส่งกลับแก้: ${g.title}`, `ถึง ${g.requester} — ${comment} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.requester] });
       setBriefComment("");
     } catch (error) {
       toastError(`ส่ง Brief กลับแก้ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -451,6 +477,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const d = targetDeliverable;
     if (!reason || !d || d.status !== "Waiting review") return;
     const at = new Date().toISOString();
+    // Whoever handed this piece in, not whoever the request is filed under.
+    const owner = revisionAssignee(g, d);
     const nextDeliverables = deliverables.map((x, i) => i === feedbackTarget
       ? { ...x, status: "Revision" as const, feedback: [...x.feedback, { reason, by: currentUser, at }] }
       : x);
@@ -461,7 +489,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       openFb: (g.openFb ?? 0) + 1,
       fb: (g.fb ?? 0) + 1,
       blocker: "Design revision needed",
-      nextAction: `${g.designer} to revise ${d.platform} per feedback`,
+      nextAction: `${owner ?? "Creative"} to revise ${d.platform} per feedback`,
       history: [...(g.history ?? []), { type: "revision_requested", at, by: currentUser, deliverableKey: `${d.platform}::${d.size}`, note: reason }],
     };
     updateGraphic(next)
@@ -472,23 +500,23 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const localEntry = {
       id: Date.now(), gid: g.id, owner: currentUser, team: "Requester / Approver", ownerColor: "#B5577E",
       type: "Design revision", text: reason, version: `V${d.version || 1}`, status: "Open",
-      assignedTo: g.designer, due: g.due, createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      assignedTo: owner ?? "Unassigned", due: g.due, createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     };
     setFeedback((fs) => [localEntry, ...fs]);
     addGraphicFeedback(g.id, {
       owner: currentUser, team: "Requester / Approver", ownerColor: "#B5577E", type: "Design revision",
-      text: reason, version: `V${d.version || 1}`, assignedTo: g.designer, due: g.due,
+      text: reason, version: `V${d.version || 1}`, assignedTo: owner ?? "Unassigned", due: g.due,
     })
       .then((saved) => { if (saved) setFeedback((fs) => fs.map((x) => (x === localEntry ? saved : x))); })
       .catch(() => {});
-    // Bounce the revision into the designer's My Tasks.
-    if (g.designer && g.designer !== "Unassigned") {
+    // Bounce the revision into their My Tasks.
+    if (owner) {
       createRevisionTask({
-        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: g.designer,
+        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: owner,
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${g.designer} · โดย ${currentUser}`, "/my-tasks", { team: graphicTeam(g), to: [g.designer] });
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${owner ?? "Creative"} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [owner] });
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -926,7 +954,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                 </div>
 
                 {briefEditing ? (
-                  <BriefEditor g={g} onCancel={() => setBriefEditing(false)}
+                  <BriefEditor g={g} me={currentUser} onCancel={() => setBriefEditing(false)}
                     onSaved={(next) => { setBriefEditing(false); updateCurrentGraphic(next); }} />
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -1056,10 +1084,37 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
             </div>
           )}
 
-          {tab === "assets" && <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />}
+          {tab === "assets" && (
+            <div className="flex flex-col gap-3">
+              <CaptionBesideArtwork post={linkedPost} />
+              <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />
+            </div>
+          )}
 
           {tab === "feedback" && (
             <div className="flex flex-col gap-3">
+              {/* Just talking. Every other box on this screen does something to
+                  the work — sends it back, records a verdict, reopens a brief.
+                  A question like "ภาพอันนี้หรือจะให้หนูเลือกเอง" is none of
+                  those, and having nowhere to put it is why it ended up as the
+                  title of a task nobody could answer. */}
+              <div className="rounded-card border border-line bg-surface p-4">
+                <div className="text-[13px] font-extrabold text-ink mb-1">💬 คุยกันในงานนี้</div>
+                <div className="text-[11.5px] text-faint mb-3">
+                  ถาม-ตอบกับอีกฝั่งได้เลย ไม่เปลี่ยนสถานะงาน · คนที่คุยด้วยจะได้รับแจ้งเตือน
+                  {replyTo.length > 0 && <> · ข้อความนี้จะถึง <b className="text-muted">{replyTo.join(", ")}</b></>}
+                </div>
+                <div className="flex gap-2">
+                  <input value={messageText} onChange={(e) => setMessageText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                    placeholder="พิมพ์ข้อความ… (Enter เพื่อส่ง)"
+                    className="flex-1 text-[12.5px] px-[11px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+                  <button onClick={sendMessage} disabled={!messageText.trim() || sendingMessage}
+                    className="text-[12px] font-bold text-white rounded-[9px] px-4 disabled:opacity-40" style={{ background: "#211F1C" }}>
+                    {sendingMessage ? "…" : "ส่ง"}
+                  </button>
+                </div>
+              </div>
               <div className="rounded-card border border-line bg-ivory p-4">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
@@ -1112,15 +1167,22 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: f.ownerColor }}>{f.owner.slice(0, 1)}</span>
                     <span className="text-[12.5px] font-bold">{f.owner}</span>
-                    <span className="text-[10.5px] text-faint">{f.team} · {f.createdAt}</span>
-                    <StatusBadge tone={stageTone(f.status)} className="ml-auto">{f.status}</StatusBadge>
+                    <span className="text-[10.5px] text-faint">{isMessage(f) ? f.createdAt : `${f.team} · ${f.createdAt}`}</span>
+                    {/* A message has no state to be in. Badging it "Open" would
+                        put a chat line in the queue of things owed an answer. */}
+                    {!isMessage(f) && <StatusBadge tone={stageTone(f.status)} className="ml-auto">{f.status}</StatusBadge>}
                   </div>
                   <div className="text-[12.5px] text-muted leading-[1.5]">{f.text}</div>
-                  <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
-                    <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
-                    <span>{f.version}</span><span>→ {f.assignedTo}</span>
-                    {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
-                  </div>
+                  {/* The revision furniture — which version, who it is on,
+                      Resolve — belongs to feedback that asks for work. A
+                      message carries none of it. */}
+                  {!isMessage(f) && (
+                    <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
+                      <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
+                      <span>{f.version}</span><span>→ {f.assignedTo}</span>
+                      {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1195,8 +1257,37 @@ const BRIEF_FIELDS: { key: RequesterBriefField; label: string; placeholder: stri
   { key: "extraDetails", label: "Additional details", placeholder: "อย่างอื่นที่ Creative ควรรู้", area: true },
 ];
 
-function BriefEditor({ g, onSaved, onCancel }: {
-  g: Graphic; onSaved: (g: Graphic) => void; onCancel: () => void;
+/** Tell whoever is building this that the brief under them just moved.
+ *
+ *  Saving the brief used to be completely silent — no notification, no notice,
+ *  and the RPC writes no history either — so a request could be re-briefed
+ *  mid-production and the only way to find out was to reopen the drawer and
+ *  notice the words had changed. The permission dance around it was fully
+ *  wired (asking the Creative Leader for a top-up notifies, granting it
+ *  notifies) which made the silence at the end of it worse: the designer heard
+ *  "may I change this" and "yes", and never heard what changed.
+ *
+ *  Who hears it (and whether anyone does yet) is briefChangeAudience's call,
+ *  in data/graphic with the rest of the pipeline rules.
+ *
+ *  Best-effort throughout: the brief is already saved by the time this runs,
+ *  and a message that fails to send must not look like a save that failed. */
+function announceBriefEdit(g: Graphic, by: string, fields: RequesterBriefField[]): void {
+  const worker = briefChangeAudience(g);
+  if (!worker || !fields.length) return;
+  const labels = fields
+    .map((key) => BRIEF_FIELDS.find((f) => f.key === key)?.label ?? key)
+    .join(" · ");
+  // On the request as well as in the bell: the notice is the durable trail the
+  // history table does not keep, and it is there next time anyone opens this.
+  updateGraphic(withNotice(g, by, `แก้บรีฟ: ${labels}`)).catch(() => {});
+  notify("feedback", `📝 บรีฟถูกแก้: ${g.title}`,
+    `${labels} · โดย ${by} → ${worker} ทำงานจากบรีฟนี้อยู่`,
+    workLink.graphic(g.id), { team: graphicTeam(g), to: [worker], inform: [g.requester] });
+}
+
+function BriefEditor({ g, me, onSaved, onCancel }: {
+  g: Graphic; me: string; onSaved: (g: Graphic) => void; onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(BRIEF_FIELDS.map((f) => [f.key, g[f.key] ?? ""])));
@@ -1211,6 +1302,7 @@ function BriefEditor({ g, onSaved, onCancel }: {
     try {
       const next = await patchGraphicBrief(g, patch);
       toastSuccess(`บันทึกบรีฟแล้ว · แก้ ${changed} ช่อง`);
+      announceBriefEdit(next, me, Object.keys(patch) as RequesterBriefField[]);
       onSaved(next);
     } catch (error) {
       // Includes the two server-side refusals worth reading in full: Creative
@@ -1248,6 +1340,47 @@ function BriefEditor({ g, onSaved, onCancel }: {
   );
 }
 
+/** The caption of the post this artwork is for, read-only, above the pieces.
+ *
+ *  Read-only on purpose: the caption is written and signed off on the post, and
+ *  a second editable copy here would be two sources for one set of words. This
+ *  is the reviewer's reference — media and message checked together — with a
+ *  link to the post for anyone who needs to change it. */
+function CaptionBesideArtwork({ post }: { post: ContentItem | null }) {
+  if (!post) return null;
+  const caption = (post.caption ?? "").trim();
+  const approved = captionApproved(post);
+  return (
+    <div className="rounded-card border border-line bg-surface p-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-[13px] font-extrabold text-ink">📝 Caption ของโพสต์นี้</span>
+        <StatusBadge tone={approved ? "green" : post.captionStatus === "Ready" ? "gold" : "neutral"}>
+          {post.captionStatus}
+        </StatusBadge>
+        <Link href={workLink.post(post.id)} className="ml-auto text-[11.5px] font-bold text-accent whitespace-nowrap">
+          เปิดโพสต์ ↗
+        </Link>
+      </div>
+      {caption ? (
+        <div className="text-[12.5px] text-muted leading-[1.6] whitespace-pre-wrap">{caption}</div>
+      ) : (
+        <div className="text-[12px] text-faint">ยังไม่มี caption — ตรวจ artwork ได้ แต่ตัวหนังสือยังไม่ถูกเขียน</div>
+      )}
+      {(post.hashtags || post.cta) && (
+        <div className="mt-2 text-[11.5px] text-faint">
+          {post.cta && <div>CTA · {post.cta}</div>}
+          {post.hashtags && <div>{post.hashtags}</div>}
+        </div>
+      )}
+      {approved && (
+        <div className="mt-2 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
+          ✓ อนุมัติแล้วโดย {post.captionApprovedBy || "—"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
   g: Graphic; me: string; role: string; isRequester: boolean; onUpdate?: (g: Graphic) => void;
 }) {
@@ -1265,13 +1398,39 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     g.deliverables?.length ? g.deliverables.map((d) => ({ ...d })) : deriveDeliverables(g));
   const [revising, setRevising] = useState<{ i: number; lens: ReviewLens } | null>(null);
   const [reason, setReason] = useState("");
+  // Which approved row is having its address changed, and to what. Held per
+  // row so opening one does not wipe a link half-typed into another.
+  const [relocating, setRelocating] = useState<{ i: number; link: string } | null>(null);
+  const canRelocate = canRelocateApprovedAsset(role);
   const prog = deliverableProgress({ ...g, deliverables: dels });
+
+  /** File an approved piece somewhere else. The sign-off does not move with
+   *  it — see relocateApprovedAsset. */
+  const saveRelocated = (i: number, link: string) => {
+    const ng = relocateApprovedAsset({ ...g, deliverables: dels }, i, link, me);
+    if (!ng) { setRelocating(null); return; }
+    const before = dels[i];
+    setDels(ng.deliverables!);
+    setRelocating(null);
+    persistGraphic(ng, { announce: false });
+    toastSuccess("ย้ายที่เก็บ asset แล้ว — การอนุมัติเดิมยังอยู่");
+    // The requester approved a specific file at a specific address; they are
+    // told where it went. `inform`, not `to` — nothing is being asked of them.
+    notify("feedback", `🗂 ย้ายที่เก็บ asset: ${g.title}`,
+      `${before.platform} · ${before.size} — โดย ${me} · การอนุมัติเดิมยังอยู่`,
+      workLink.graphic(g.id), { team: graphicTeam(g), inform: [g.requester, before.submittedBy] });
+  };
 
   const persist = (next: GraphicDeliverable[], event?: NonNullable<Graphic["history"]>[number]) => {
     setDels(next);
     persistGraphic({ ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history });
   };
-  const persistGraphic = (base: Graphic) => {
+  /** `announce: false` still syncs the links outward — a relocated file has to
+   *  reach the Content post and the Asset Library, or those two keep pointing
+   *  at the folder the artwork just left — but skips the "approved everything"
+   *  message. Nothing was approved; a file was filed, and re-announcing a
+   *  sign-off that happened last week is how a channel stops being read. */
+  const persistGraphic = (base: Graphic, { announce = true }: { announce?: boolean } = {}) => {
     const ng: Graphic = { ...base };
     const ready = deliverableProgress(ng).ready;
     ng.stage = stageFromDeliverables(ng);
@@ -1287,7 +1446,10 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       // POSM, posters and menu artwork serve no post, so that sync returns
       // early for them and they used to finish nowhere.
       void fileApprovedAsset(ng);
-      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", "/content", { team: graphicTeam(g) });
+      if (announce) {
+        notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish",
+          ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id), { team: graphicTeam(g) });
+      }
     }
   };
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
@@ -1321,22 +1483,19 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
       // out of feedback — every entry stamped in this round, both lenses.
       const lastAt = after.feedback.at(-1)?.at;
       const said = after.feedback.filter((f) => f.at === lastAt).map((f) => `[${LENS_META[f.lens ?? "info"].short}] ${f.reason}`).join(" · ");
-      if (g.designer && g.designer !== "Unassigned") {
+      // The person who submitted this piece — see revisionAssignee.
+      const owner = revisionAssignee(g, before);
+      if (owner) {
         createRevisionTask({
-          module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: g.designer,
+          module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: owner,
           brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${g.designer} · โดย ${me}`, "/my-tasks", { team: graphicTeam(g), to: [g.designer] });
-      // In-app, to BOTH sides. Only the designer used to hear about this, and
-      // only through a LINE group — the person who raised the request learned
-      // their artwork had gone back by opening the drawer and noticing.
-      void pushNotifications([g.designer, g.requester], {
-        event: "revision", actor: me,
-        title: `งานถูกตีกลับ: ${g.title}`,
-        detail: `${before.platform} · ${said}`,
-        link: `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
-      });
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${owner ?? "Creative"} · โดย ${me}`,         // The requester hears about it too, in the bell rather than as a DM:
+        // they used to learn their artwork had gone back by opening the drawer
+        // and noticing. It is not their decision to act on, so it does not
+        // interrupt them.
+        workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester] });
     }
   };
 
@@ -1407,11 +1566,38 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
               </div>
             ) : (
               <div className="flex flex-col gap-2 mt-2">
-                <div className="flex items-center gap-3 text-[11.5px]">
+                <div className="flex items-center gap-3 text-[11.5px] flex-wrap">
                   <a href={d.assetLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Open artwork ↗</a>
                   {d.sourceLink && <a href={d.sourceLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Source ↗</a>}
                   <span className="text-faint">by {d.submittedBy}</span>
+                  {/* Filing an approved master somewhere else — an agency's
+                      Drive is not where the company keeps its artwork. */}
+                  {d.status === "Approved" && canRelocate && relocating?.i !== i && (
+                    <button onClick={() => setRelocating({ i, link: d.assetLink })}
+                      className="ml-auto text-[11px] font-bold text-muted border border-line2 rounded-[7px] px-[8px] py-[3px] bg-surface">
+                      🗂 ย้ายที่เก็บ
+                    </button>
+                  )}
                 </div>
+                {d.status === "Approved" && canRelocate && relocating?.i === i && (
+                  <div className="rounded-[10px] px-3 py-[10px] flex flex-col gap-2" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
+                    <div className="text-[11px] text-faint">
+                      เปลี่ยนที่เก็บไฟล์ที่อนุมัติแล้ว (เช่น Drive ของ agency → Dropbox ของบริษัท) ·
+                      <b className="text-muted"> การอนุมัติทั้งสองด้านยังอยู่เหมือนเดิม</b> และระบบจะบันทึกที่อยู่เดิมไว้ในประวัติ
+                    </div>
+                    <input value={relocating.link} autoFocus
+                      onChange={(e) => setRelocating({ i, link: e.target.value })}
+                      placeholder="ลิงก์ใหม่ (Dropbox / Drive)" className={inp} />
+                    <div className="flex gap-2">
+                      <button onClick={() => saveRelocated(i, relocating.link)}
+                        disabled={!relocating.link.trim() || relocating.link.trim() === d.assetLink.trim()}
+                        className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>
+                        บันทึกที่อยู่ใหม่
+                      </button>
+                      <button onClick={() => setRelocating(null)} className="text-[12px] font-bold text-muted px-3 py-[7px]">ยกเลิก</button>
+                    </div>
+                  </div>
+                )}
                 {inReview && (
                   <div className="rounded-[10px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
                     <div className="flex items-center gap-2 mb-2">

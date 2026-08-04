@@ -217,7 +217,15 @@ export function DateFilterBar({
       </button>
       <div className="text-[11px] font-semibold text-faint whitespace-nowrap ml-auto flex items-center gap-2">
         {trailing}
-        <span>{f.mode === "year" ? f.year : `${MONTHS[f.month]} ${f.year}`}</span>
+        {/* Range mode used to keep showing the month/year of the *other* modes,
+            which reads as "August 2026" while the range covers something else
+            entirely (or every date, when both ends are blank). */}
+        <span>
+          {f.mode === "year" ? f.year
+            : f.mode === "month" ? `${MONTHS[f.month]} ${f.year}`
+            : !f.start && !f.end ? "ทุกช่วงเวลา"
+            : `${f.start || "…"} → ${f.end || "…"}`}
+        </span>
       </div>
     </div>
   );

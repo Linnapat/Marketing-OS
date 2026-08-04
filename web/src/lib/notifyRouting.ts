@@ -1,3 +1,4 @@
+import { workKind } from "@/lib/data/graphic";
 // Where a notification goes. Shared by the client helper (lib/notify) and the
 // API route so both agree on one set of rules.
 //
@@ -60,4 +61,47 @@ export function teamFromLink(link: string | undefined): NotifyTeam {
 export function resolveTeam(team: string | undefined, link: string | undefined): NotifyTeam {
   if (team && (NOTIFY_TEAMS as string[]).includes(team)) return team as NotifyTeam;
   return teamFromLink(link);
+}
+
+// ── In-app inbox ───────────────────────────────────────────────────────────
+//
+// The bell had its own writer (db/notifications.pushNotifications) and only
+// four call sites ever used it, against forty-two for notify(). So Slack knew
+// a piece of artwork had been sent back and the app did not: on 2 Aug 2026 the
+// production `notifications` table held zero rows while twenty-two Slack
+// messages had gone out the same day, and the bell read "ไม่มีอะไรค้างอยู่".
+//
+// One call now feeds both. This map is the translation, and it lives here
+// rather than in db/notifications because that file is "use client" and the
+// API route cannot import it.
+
+/** Inbox categories. The first four predate this and are already in the table;
+ *  the rest exist because notify() carries events the inbox had no word for. */
+export type InboxKind = "comment" | "revision" | "brief" | "assigned" | "approval" | "approved" | "launch";
+
+const EVENT_TO_INBOX: Record<string, InboxKind> = {
+  newTask: "assigned",
+  approval: "approval",
+  mention: "comment",
+  feedback: "revision",
+  approved: "approved",
+  rejected: "revision",
+  launch: "launch",
+};
+
+/** Which inbox row a notify() event becomes. Unknown events land under
+ *  "assigned" rather than being dropped: an inbox that silently discards what
+ *  it does not recognise is how this gap opened in the first place. */
+export const inboxKind = (event: string | undefined): InboxKind =>
+  EVENT_TO_INBOX[event ?? ""] ?? "assigned";
+
+/** Which room a graphic request belongs to. A "Graphic Request" is the form for
+ *  video work too, so the module can't decide this — workKind() reads the type
+ *  the requester picked, the same classifier the capacity board counts by.
+ *
+ *  Lives here rather than inside the drawer because the request's conversation
+ *  is now posted from two screens, and a second copy of this rule would route
+ *  the same request to two different rooms depending on where you typed. */
+export function graphicTeam(g: { type: string; requiredVideo?: boolean }): NotifyTeam {
+  return workKind(g.type, g.requiredVideo).startsWith("vdo") ? "vdo" : "graphic";
 }

@@ -6,8 +6,8 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
-import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign } from "../src/lib/roleGates";
+import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption } from "../src/lib/roleGates";
 
 import { readFileSync } from "node:fs";
 
@@ -210,6 +210,31 @@ is("เว้นวรรค/ตัวพิมพ์ยังจับได้
 is("เติมเสร็จ → สิทธิ์ถูกใช้ไป เติมซ้ำไม่ได้", canEditBriefNow(consumeBriefUnlock(freed as Graphic), asRequester), false);
 is("ยังไม่ได้ปล่อย → consume ไม่ทำอะไร", briefUnlockState(consumeBriefUnlock(asked as Graphic)), "pending");
 
+console.log("\n— Creative ส่งบรีฟกลับมาแก้ = ปล่อยให้แก้ได้เลย ไม่ต้องขอซ้ำ —");
+{
+  // บั๊กจริง: ตีบรีฟกลับแล้วสร้าง task ให้ requester ว่า "แก้ brief ตาม comment"
+  // แต่ canEditBriefNow ยังปิดอยู่ → คนได้ใบสั่งให้ทำสิ่งที่ตัวเองทำไม่ได้
+  const sentBack = releaseBriefForRevision(taken as Graphic, "Boss", "บรีฟยังไม่มี key message");
+  is("ตีบรีฟกลับ → requester แก้ได้ทันที", canEditBriefNow(sentBack, asRequester), true);
+  is("ปล่อยในนามคนที่ตีกลับ", sentBack.briefUnlock?.decidedBy, "Boss");
+  is("เก็บเหตุผลที่ตีกลับไว้เป็นที่มาของการปล่อย", sentBack.briefUnlock?.reason, "บรีฟยังไม่มี key message");
+  // one-shot เหมือนการปล่อยปกติ — รอบถัดไปต้องขอใหม่
+  is("แก้เสร็จ 1 รอบแล้วต้องขอใหม่", canEditBriefNow(consumeBriefUnlock(sentBack), asRequester), false);
+  // คนอื่นไม่ได้สิทธิ์ติดมาด้วย
+  is("คนอื่นยังแก้ไม่ได้", canEditBriefNow(sentBack, { isRequester: false, isCmo: false }), false);
+}
+
+console.log("\n— งานที่ถูกตีกลับต้องถึงคนที่ส่งงานจริง —");
+{
+  const req = { acceptedBy: "Aom", designer: "Boss" };
+  is("คนส่งงานมาก่อนทุกชื่อ", revisionAssignee(req, { submittedBy: "Studio Nine" }), "Studio Nine");
+  is("ไม่มีคนส่ง → คนที่รับงาน", revisionAssignee(req, { submittedBy: "" }), "Aom");
+  is("ไม่มีทั้งคู่ → designer", revisionAssignee({ acceptedBy: "", designer: "Boss" }, undefined), "Boss");
+  // "Unassigned" เป็นคำที่แอปใช้แทนช่องว่าง ไม่ใช่ชื่อคน — เคสนี้คือที่ทำให้ feedback หายไปทั้งรอบ
+  is("Unassigned ไม่นับเป็นคน", revisionAssignee({ acceptedBy: "Aom", designer: "Unassigned" }, undefined), "Aom");
+  is("ไม่มีใครเลย → null (ไม่แจ้งผิดคน)", revisionAssignee({ acceptedBy: "Unassigned", designer: "" }, { submittedBy: "  " }), null);
+}
+
 console.log("\n— กติกาเติมบรีฟต้องตรงกันทั้งฝั่ง client และ SQL —");
 {
   // บั๊กจริงที่เคยหลุด: UI ปล่อยให้แก้บรีฟหลัง Creative รับงาน (เมื่อ Creative
@@ -235,6 +260,47 @@ console.log("\n— กติกาเติมบรีฟต้องตรง�
   const granted = { ...accepted, briefUnlock: { status: "Granted" as const, requestedBy: "Ken S.", requestedAt: "x" } };
   is("client: รับงานแล้ว + ไม่ปล่อย → แก้ไม่ได้ (ตรงกับ SQL)", canEditBriefNow(accepted, { isRequester: true, isCmo: false }), false);
   is("client: ปล่อยแล้ว → แก้ได้ (ตรงกับ SQL)", canEditBriefNow(granted, { isRequester: true, isCmo: false }), true);
+}
+
+console.log("\n— ใครอนุมัติ caption ได้ —");
+{
+  const other = { me: "Ken S.", writer: "May T." };
+  // ฝั่งวางแผนเป็นคนตรวจ ("marketing revise or approve caption")
+  for (const r of ["CMO", "Marketing Manager / BGL", "Marketing Executive", "Co-ordinator"]) {
+    is(`${r} อนุมัติ caption ได้`, canDecideCaption(r, other), true);
+  }
+  // ฝั่งผลิตเป็นคนเขียน ไม่ใช่คนตรวจ
+  for (const r of ["Creative Leader", "Content Creator", "Senior Graphic Designer", "VDO Editor", "Agency (External)"]) {
+    is(`${r} อนุมัติ caption ไม่ได้`, canDecideCaption(r, other), false);
+  }
+  // เขียนเองอนุมัติเองไม่ได้ แม้จะอยู่ฝั่งวางแผน — เช็คที่ผ่านได้ด้วยการเขียนเองไม่ใช่เช็ค
+  is("คนเขียนอนุมัติงานตัวเองไม่ได้", canDecideCaption("CMO", { me: "May T.", writer: "May T." }), false);
+  is("ตัวพิมพ์/เว้นวรรคยังจับได้", canDecideCaption("CMO", { me: " may t. ", writer: "May T." }), false);
+  // ยังไม่มอบหมายคนเขียน = ไม่มีใครให้กันท่า
+  is("ยังไม่มีคนเขียน → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "Unassigned" }), true);
+  is("คนเขียนว่าง → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "" }), true);
+  is("role ว่างอนุมัติไม่ได้", canDecideCaption("", other), false);
+}
+
+console.log("\n— Agency ต้องคุยในใบงานตัวเองได้ (RLS ต้องตรงกับ UI) —");
+{
+  // บั๊กจริง: กล่อง "คุยกันในงานนี้" ขึ้นให้ทุกคนที่เปิดใบงานได้ รวม Agency Portal
+  // ที่เปิด GraphicDrawer ตัวเต็ม แต่ RLS ของ graphic_feedback เปิดแค่ admin/staff
+  // → เห็นกล่อง กดส่ง แล้ว error · เทสต์นี้เช็คว่าไฟล์ SQL ปิดช่องนั้นแล้ว
+  const sql = readFileSync(new URL("../supabase/security_p16_agency_conversation.sql", import.meta.url), "utf8");
+  check("มี policy ให้ agency อ่านบทสนทนา", /agency_own_feedback_read[\s\S]*for select/i.test(sql));
+  check("มี policy ให้ agency ตอบได้", /agency_own_feedback_write[\s\S]*for insert/i.test(sql));
+  // ขอบเขต: เฉพาะใบงานตัวเอง ไม่ใช่ทั้งตาราง
+  check("จำกัดเฉพาะใบงานของตัวเอง", (sql.match(/owns_designer_slot/g) ?? []).length >= 2);
+  // ปลอมชื่อคนพูดไม่ได้ — บทสนทนาต้องเชื่อชื่อได้
+  check("ต้องลงชื่อตัวเอง", /jwt_member_name\(\)|jwt_email\(\)/.test(sql));
+  // ห้ามลบ/แก้ประวัติการตีงาน
+  check("ไม่เปิด update/delete ให้ agency", !/agency[\s\S]*for (update|delete)/i.test(sql));
+  // ของเดิมต้องไม่ถูกแตะ — policy เป็น OR กัน การเพิ่มต้อง additive
+  check("ไม่ไปแตะ staff_rw ของเดิม", !/drop policy if exists staff_rw/.test(sql));
+  const rollback = readFileSync(new URL("../supabase/security_p16_agency_conversation_rollback.sql", import.meta.url), "utf8");
+  check("มี rollback ที่ลบเฉพาะ policy ที่เพิ่ม", /agency_own_feedback_read/.test(rollback) && /agency_own_feedback_write/.test(rollback));
+  check("rollback ไม่ลบ staff_rw", !/drop policy if exists staff_rw/.test(rollback));
 }
 
 console.log("\n— assets: หนึ่งใบงานหนึ่งแถว (ต้อง upsert ได้จริง) —");

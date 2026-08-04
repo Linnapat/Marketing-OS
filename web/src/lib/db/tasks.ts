@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { TASKS, Task } from "@/lib/data/tasks";
 import { BRANDS, BRAND_ORDER, BrandId } from "@/lib/brands";
 import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
 import { assertDbOk } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
 
@@ -81,7 +82,7 @@ export async function createRevisionTask(opts: {
 }
 
 export async function createTaskDb(t: Task): Promise<void> {
-  notify("newTask", `🗒️ งานใหม่: ${t.title}`, `มอบหมายให้ ${t.assignee} · ${t.brand} · due ${t.due}`, "/my-tasks", { to: [t.assignee] });
+  notify("newTask", `🗒️ งานใหม่: ${t.title}`, `มอบหมายให้ ${t.assignee} · ${t.brand} · due ${t.due}`, workLink.task(t.id), { to: [t.assignee] });
   const db = supabase();
   if (!db) return;
   const { error } = await db.from("tasks").insert({
@@ -149,7 +150,7 @@ export async function updateTaskDb(id: number, patch: Partial<Task>): Promise<vo
 
 export const markDoneDb = (id: number) => updateTaskDb(id, { status: "Done" });
 export const reassignDb = (id: number, to: string) => {
-  notify("newTask", `🔁 งาน #${id} ถูกส่งต่อให้ ${to}`, undefined, "/my-tasks", { to: [to] });
+  notify("newTask", `🔁 งาน #${id} ถูกส่งต่อให้ ${to}`, undefined, workLink.task(id), { to: [to] });
   return updateTaskDb(id, { assignee: to });
 };
 
@@ -189,7 +190,8 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
   };
 
   if (current.assignee !== task.assignee && task.assignee !== "Unassigned") {
-    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, "/my-tasks", { team: "graphic", to: [task.assignee] });
+    notify("newTask", `🔁 งานกราฟิกถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand}`, task.relatedGraphicId ? workLink.graphic(task.relatedGraphicId) : workLink.task(task.id),
+      { team: "graphic", to: [task.assignee] });
   }
 
   await updateTaskDb(current.id, patch);

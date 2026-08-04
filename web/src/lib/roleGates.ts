@@ -62,6 +62,29 @@ export function canEditContentPlan(role: string): boolean {
  *  This is what makes caption work findable at all. Until now every post kept
  *  owner "Unassigned" (45 of 50 live posts) with no control anywhere to change
  *  it, so "งานเขียนแคปชั่นไหลเข้า Content creator" had nothing behind it. */
+/**
+ * May this person accept — or send back — a caption?
+ *
+ * The planning side, the same people who own the schedule (canEditContentPlan):
+ * "marketing revise or approve storyboard / caption" in the agreed flow. Not
+ * the creative side, who write it.
+ *
+ * `me` and `writer` are compared as well, because the writer being on the
+ * planning side does not make them their own reviewer — the brief sign-off
+ * already draws this line, and a check you can pass by writing it yourself is
+ * not a check.
+ */
+export function canDecideCaption(
+  role: string,
+  opts: { me: string; writer: string | null | undefined },
+): boolean {
+  if (!canEditContentPlan(role)) return false;
+  const me = (opts.me ?? "").trim().toLowerCase();
+  const writer = (opts.writer ?? "").trim().toLowerCase();
+  if (!me || !writer || writer === "unassigned") return true;
+  return me !== writer;
+}
+
 export function canAssignCaption(role: string): boolean {
   const r = (role || "").trim();
   return r === "Creative Leader" || r === "CMO";
@@ -94,6 +117,28 @@ export function canAssignCaption(role: string): boolean {
 export function canRunProductionPipeline(role: string): boolean {
   const r = (role || "").trim();
   return r === "Content Creator" || r === "Creative Leader" || r === "CMO";
+}
+
+/**
+ * Who may repoint an already-approved artwork at a new address.
+ *
+ * An agency delivers to their own Drive, the piece is approved from there, and
+ * then Creative files the master in the company Dropbox — at which point the
+ * approved link points at somebody else's folder, and the link is the only
+ * record of where the artwork lives. There was no way to update it: the editor
+ * closes on approval, and the only route was to send a passed piece back for
+ * revision, which un-approves work nobody objected to and drags the requester
+ * through a second sign-off.
+ *
+ * Creative Leader (and the CMO) only. Not the designer, and never the
+ * requester: this is custody of the final file, and a swap after sign-off is
+ * exactly the move a looser gate would let through unnoticed. Every change is
+ * stamped into the request's history, because "the link changed" and "the
+ * artwork changed" look identical from the outside.
+ */
+export function canRelocateApprovedAsset(role: string): boolean {
+  const r = (role || "").trim();
+  return r === "Creative Leader" || r === "CMO";
 }
 
 /**

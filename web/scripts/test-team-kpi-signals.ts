@@ -4,7 +4,7 @@
  * Run: node --import tsx scripts/test-team-kpi-signals.ts */
 
 import { Graphic } from "../src/lib/data/graphic";
-import { approvedAt, daysLate, kpiSignals, nameKey, signalsFor, totalSignals } from "../src/lib/data/teamKpiSignals";
+import { approvedAt, boardDesigners, daysLate, kpiSignals, nameKey, signalsFor, totalSignals } from "../src/lib/data/teamKpiSignals";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -87,6 +87,17 @@ const unassigned = kpiSignals([
   req(32, "Jino", "2026-07-01", ""),
 ], "2026-07", TODAY);
 is("นับเฉพาะคนจริง", unassigned.map((r) => r.designer), ["Jino"]);
+
+console.log("— รายชื่อ designer บนบอร์ด (สำหรับ dropdown ผูกชื่อ) —");
+is("เรียง ตัดซ้ำ ไม่เอา Unassigned",
+  boardDesigners([
+    req(40, "Four", "2026-07-01", ""),
+    req(41, "four", "2026-07-02", ""),
+    req(42, "Unassigned", "2026-07-03", ""),
+    req(43, "Jungjing", "2026-07-04", ""),
+  ]),
+  ["Four", "Jungjing"]);
+is("บอร์ดว่าง → ลิสต์ว่าง", boardDesigners([]), []);
 
 console.log("— ชื่อพิมพ์ต่างกันถือเป็นคนเดียวกัน —");
 is("ตัดช่องว่าง + ไม่สนตัวพิมพ์", nameKey("  BOSS "), "boss");

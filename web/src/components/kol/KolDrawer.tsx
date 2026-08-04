@@ -3,6 +3,7 @@
 import { toastError } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { workLink } from "@/lib/deepLink";
 import {
   Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
@@ -179,7 +180,7 @@ function NextActionBar({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => voi
           brand: brandName(kol.b), campaign: kol.campaign, reason: r, by: kol.pendingApprover || "Approver",
         });
       }
-      notify("rejected", `↩ งาน KOL ถูกส่งกลับแก้: ${kol.name}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r}`, "/my-tasks", { team: "kol", to: [fixer] });
+      notify("rejected", `↩ งาน KOL ถูกส่งกลับแก้: ${kol.name}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r}`, workLink.kol(kol.id), { team: "kol", to: [fixer] });
       onUpdate?.(next);
       setRevising(false); setReason("");
     } catch (error) {

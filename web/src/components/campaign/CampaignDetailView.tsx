@@ -1,10 +1,11 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { workLink } from "@/lib/deepLink";
 import { CampaignDetail, CAMPAIGN_TABS, CAMPAIGN_TAB_LABELS, CampaignTab } from "@/lib/data/campaigns";
 import { campaignTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -20,12 +21,13 @@ import { LineOaConfig, lineConfigFor, notionalCost, effectiveCost } from "@/lib/
 import { fetchJsonSetting } from "@/lib/db/settings";
 import { fmtFollow } from "@/lib/data/kol";
 import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
-import { CampaignBrief, budgetSummary, materialised } from "@/lib/data/brief";
+import { CampaignBrief, BriefContentItem, budgetSummary, materialised, approvedButNothingMade, plannedItems } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
 import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { brandName } from "@/lib/brands";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
+import { canEditContentPlan } from "@/lib/roleGates";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { fmtDisplay } from "@/components/ui/DatePicker";
@@ -190,7 +192,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       <div className="mt-5">
         {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} nextApproval={effectiveNextApproval} />}
         {tab === "brief" && <BriefTab detail={detail} brief={brief} />}
-        {tab === "content" && <ContentList hub={hub} brief={brief} />}
+        {tab === "content" && <ContentList hub={hub} brief={brief} canMake={canApprove || canEditContentPlan(role)} onReload={onReload} />}
         {tab === "kol" && <KolList hub={hub} detail={detail} />}
         {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
         {tab === "budget" && <BudgetTab detail={detail} s={s} brief={brief} />}
@@ -428,8 +430,69 @@ function EmptyState({ title, note }: { title: string; note: string }) {
   );
 }
 
-function ContentList({ hub, brief }: { hub: CampaignHub | null; brief?: CampaignBrief | null }) {
+function ContentList({ hub, brief, canMake, onReload }: {
+  hub: CampaignHub | null; brief?: CampaignBrief | null; canMake?: boolean; onReload?: () => void;
+}) {
+  const [making, setMaking] = useState(false);
+  // Re-run the fan-out for a plan that never became work. saveCampaignBrief is
+  // idempotent (createXIfNew skips what exists), so this is safe to press twice
+  // and safe on a campaign that is only partly made.
+  const makeTheWork = async () => {
+    if (!brief || making) return;
+    setMaking(true);
+    try {
+      const res = await saveCampaignBrief(brief);
+      const made = res.created.content + res.created.graphics + res.created.kols + res.created.tasks;
+      if (made === 0) {
+        toastError("ยังสร้างไม่ได้ — ไม่มีอะไรถูกสร้างเพิ่ม ลองเช็คว่าแผนมีหัวข้อครบไหม");
+      } else {
+        toastSuccess(`สร้างงานจากแผนแล้ว · โพสต์ ${res.created.content} · งานกราฟฟิก ${res.created.graphics} · task ${res.created.tasks}`);
+        onReload?.();
+      }
+    } catch (error) {
+      toastError(`สร้างงานจากแผนไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setMaking(false); }
+  };
+
   if (!hub) return <div className="py-10 text-center text-faint text-[13px]">Loading…</div>;
+
+  // Approved, but the plan never became anything. The status says the work
+  // exists and the Content module disagrees; the plan is the thing that is
+  // actually there, so show it — and say plainly that it has not been made.
+  if (approvedButNothingMade(brief, hub.content.length)) {
+    const planned = plannedItems(brief) as BriefContentItem[];
+    return (
+      <div className="bg-surface border rounded-cardLg overflow-hidden" style={{ borderColor: "#F0D5BC" }}>
+        <div className="px-5 py-3 border-b" style={{ background: "#FBF1E9", borderColor: "#F0D5BC" }}>
+          <div className="text-[12.5px] font-extrabold" style={{ color: "#B3641E" }}>
+            ⚠ แคมเปญนี้อนุมัติแล้ว แต่แผน {planned.length} รายการยังไม่ถูกสร้างเป็นงานจริง
+          </div>
+          <div className="text-[11.5px] mt-1" style={{ color: "#8A5A1E" }}>
+            แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ กดปุ่มด้านล่างเพื่อสร้างใหม่ได้เลย
+          </div>
+          {canMake && (
+            <button onClick={makeTheWork} disabled={making}
+              className="mt-2 text-[12px] font-bold text-white rounded-[9px] px-4 py-[7px] disabled:opacity-40"
+              style={{ background: "#B3641E" }}>
+              {making ? "กำลังสร้าง…" : "สร้างงานจากแผนนี้"}
+            </button>
+          )}
+        </div>
+        {planned.map((ci) => (
+          <div key={ci.id} className="flex items-center gap-3 px-5 py-3 border-b border-line4 last:border-0">
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-bold truncate">{ci.title}</div>
+              <div className="text-[11px] text-faint">{ci.type} · {ci.platforms.join(", ") || "—"}{ci.publishDate ? ` · ${fmtDisplay(ci.publishDate)}` : ""}</div>
+            </div>
+            {ci.requiredVideo && <StatusBadge tone="neutral">🎬 VDO</StatusBadge>}
+            {ci.requiredGraphic && <StatusBadge tone="neutral">🎨 Graphic</StatusBadge>}
+            <StatusBadge tone="orange">ยังไม่ถูกสร้าง</StatusBadge>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (hub.content.length === 0) {
     // Before approval nothing is materialised into the Content module — but the
     // brief's plan exists, and "No content planned" here while Edit Campaign
@@ -789,9 +852,9 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
     const next: CampaignBrief = { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] };
     try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
     // Approval-flow steps ping the team on LINE/email.
-    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || DEFAULT_APPROVER}`, "/my-tasks", { to: [brief.approver || DEFAULT_APPROVER] });
+    if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || DEFAULT_APPROVER}`, workLink.campaign(detail.row.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
     else if (nextStatus === "Approved") {
-      notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, "/campaigns", { to: [brief.plannerOwner || detail.row.owner] });
+      notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, workLink.campaign(detail.row.id), { to: [brief.plannerOwner || detail.row.owner] });
       // CMO approval is the gate: only now do content posts, graphic requests,
       // KOL rows and tasks materialise into their modules (idempotent).
       const made = await saveCampaignBrief(next).catch((error) => {
@@ -800,7 +863,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
       });
       if (made) {
         const c = made.created;
-        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, "/campaigns", { to: [brief.plannerOwner || detail.row.owner] });
+        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, workLink.campaign(detail.row.id), { to: [brief.plannerOwner || detail.row.owner] });
       }
       // Approved budget flows straight into Finance as Draft expense requests —
       // one per funded bucket — so the finance team never re-keys the plan.
@@ -821,7 +884,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
           by: reviewer, relatedBrief: brief.id, dueDays: 2,
         }).catch((error) => toastError(`สร้าง task แก้แคมเปญไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — ถึง ${planner} · โดย ${reviewer}`, "/my-tasks", { to: [planner] });
+      notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — ถึง ${planner} · โดย ${reviewer}`, workLink.campaign(detail.row.id), { to: [planner] });
     }
   };
   const doRevision = () => {

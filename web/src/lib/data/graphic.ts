@@ -5,10 +5,11 @@
 import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { RushStatus } from "@/lib/data/briefDeadline";
+import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
-    | "brief_approved" | "brief_revision_requested";
+    | "brief_approved" | "brief_revision_requested" | "asset_relocated";
   at: string;
   by: string;
   deliverableKey?: string;
@@ -194,6 +195,99 @@ export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink"
   return !g.requiresShooting || !!g.footageLink?.trim();
 }
 
+/** A shoot that has been assigned on a request, as the shoot schedule needs it.
+ *
+ *  Assigning a shooter and a date on a Graphic Request settled the question on
+ *  the request and nowhere else: the Shoot Schedule — the sheet the team
+ *  actually prints and turns up to — only ever knew about Content Plan items
+ *  typed "Photo shoot"/"VDO shooting", dated by their PUBLISH day, cast listed
+ *  as the literal words "จาก Content Plan". So the one place a real shooter and
+ *  a real shoot date exist was the one place the call sheet did not read. */
+export interface AssignedShoot {
+  graphicId: number;
+  /** The shoot date from the request. Moves when the shoot is moved. */
+  date: string;
+  brand: BrandId;
+  /** The request's title — what is being shot. */
+  content: string;
+  /** Assigned shooter, blank when the shoot is dated but nobody is named yet. */
+  cast: string;
+  /** Reel / photo / video, so the sheet can say what kind of day it is. */
+  kind: WorkKind;
+  /** What to read before turning up. Blank when the request has none.
+   *
+   *  A shoot list of eight lines saying "Cocktail Hour" tells a photographer
+   *  nothing about what to bring; the storyboard and the brief do, and they
+   *  were one module away from the sheet the shoot day is planned on. */
+  storyboardLink: string;
+  briefLink: string;
+}
+
+/** Move a shoot to another day, keeping the trail.
+ *
+ *  Shared by the request drawer and the Shoot Schedule, because the schedule is
+ *  where shoot days are actually juggled and both had to write the same thing:
+ *  a moved shoot changes which month the work counts in (workDayIso) and which
+ *  day the daily cap counts it against, so a second copy of this that forgot
+ *  the history note would leave those numbers moving with no record of why. */
+export function withShootMoved(g: Graphic, nextDate: string, by: string): Graphic {
+  const from = g.shootDate || "—";
+  const to = (nextDate || "").trim();
+  if (from === (to || "—")) return g;
+  return {
+    ...g,
+    shootDate: to,
+    history: [...(g.history ?? []), {
+      type: "assigned", at: new Date().toISOString(), by,
+      note: `เลื่อนวันถ่าย ${from} → ${to || "—"}`,
+    }],
+  };
+}
+
+/** Name (or rename) the shooter, keeping the trail. Same reasoning as above:
+ *  the sheet is where a shoot gets handed to someone, and the request is where
+ *  everyone else reads who is going. */
+export function withShooterAssigned(g: Graphic, name: string, by: string): Graphic {
+  const next = (name || "").trim();
+  const from = (g.shooter || "").trim();
+  if (next === from) return g;
+  return {
+    ...g,
+    shooter: next,
+    history: [...(g.history ?? []), {
+      type: "assigned", at: new Date().toISOString(), by,
+      note: `คนถ่าย ${from || "ยังไม่ระบุ"} → ${next || "ยังไม่ระบุ"}`,
+    }],
+  };
+}
+
+/** Every request whose shoot is still ahead of it.
+ *
+ *  Once footage is handed over the shoot has happened, and a call sheet is a
+ *  list of what to turn up to — leaving finished shoots on it forever would
+ *  bury the next one, and a derived row cannot be ticked off by hand. The
+ *  request keeps the full history either way.
+ *
+ *  Sorted by date so the sheet reads as a schedule; undated shoots cannot
+ *  appear at all — there is nothing to turn up to yet. */
+export function assignedShoots(gs: Graphic[]): AssignedShoot[] {
+  return gs
+    .filter((g) => g.requiresShooting === true && (g.shootDate ?? "").trim() && !footageReady(g))
+    .map((g) => ({
+      graphicId: g.id,
+      date: (g.shootDate ?? "").trim(),
+      brand: g.b,
+      content: g.title,
+      cast: (g.shooter ?? "").trim() === "Unassigned" ? "" : (g.shooter ?? "").trim(),
+      kind: workKind(g.type, g.requiredVideo),
+      // Only once there is something to open — a link that goes nowhere is
+      // worse on a call sheet than no link, because it reads as prepared.
+      storyboardLink: needsStoryboard(g) ? (g.storyboardLink ?? "").trim() : "",
+      briefLink: creativeBriefLink(g),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export type ShootingDecision = "undecided" | "required" | "not_required";
 
 /** Which of the three states the shoot question is actually in.
@@ -211,6 +305,66 @@ export function shootingDecision(g: Pick<Graphic, "requiresShooting">): Shooting
 /** Has the requester accepted the storyboard? */
 export function storyboardCleared(g: Graphic): boolean {
   return !needsStoryboard(g) || g.storyboardStatus === "Approved";
+}
+
+/** Is a storyboard sitting submitted, waiting on the person who asked for the
+ *  work to accept it or send it back?
+ *
+ *  Exists because "waiting on the requester" was written down in three places
+ *  that disagreed: the drawer offered the buttons, the pipeline listed it as a
+ *  blocker, and My Tasks did not know about it at all — so a submitted
+ *  storyboard reached the requester's approval inbox never. One predicate, and
+ *  the inbox can no longer fall behind the drawer. */
+export function awaitsStoryboardDecision(g: Graphic): boolean {
+  return needsStoryboard(g) && g.storyboardStatus === "Submitted";
+}
+
+/** Is any finished artwork waiting for the requester to review it? */
+export function awaitsArtworkReview(g: Graphic): boolean {
+  return (g.deliverables ?? []).some((d) => d.status === "Waiting review");
+}
+
+/** Who has to hear that this request's brief just changed — or null when the
+ *  change is nobody's news yet.
+ *
+ *  Nobody, until someone holds the job: before that, editing the brief IS
+ *  writing the brief, and pinging a designer through a requester's drafting is
+ *  the kind of noise that teaches people to mute a channel.
+ *
+ *  Once it is held, the person who ACCEPTED it outranks the named designer —
+ *  a request can be assigned to one person and picked up by another, and it is
+ *  whoever picked it up who is working from the words that just moved. */
+export function briefChangeAudience(g: Pick<Graphic, "acceptedAt" | "acceptedBy" | "designer">): string | null {
+  if (!isAccepted(g)) return null;
+  return firstRealName(g.acceptedBy, g.designer);
+}
+
+/** Who has to redo a piece of artwork that just came back.
+ *
+ *  The person who SUBMITTED it, before anyone named on the request: an agency
+ *  or a second editor can hand in work on a request whose `designer` field
+ *  still points at whoever was assigned first, and sending the revision to
+ *  that name means the person who actually has to redo it is never told. The
+ *  revision task went to `g.designer` alone and was skipped outright when that
+ *  read "Unassigned", so a whole round of feedback could land nowhere.
+ *
+ *  Null when there is genuinely nobody to tell — better than inventing a
+ *  recipient the notification would silently go missing behind. */
+export function revisionAssignee(
+  g: Pick<Graphic, "acceptedBy" | "designer">,
+  d?: Pick<GraphicDeliverable, "submittedBy">,
+): string | null {
+  return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
+}
+
+/** First name in the list that is a real person. "Unassigned" is the app's own
+ *  word for an empty slot, so it counts as blank wherever a person is meant. */
+function firstRealName(...names: (string | null | undefined)[]): string | null {
+  for (const raw of names) {
+    const name = (raw ?? "").trim();
+    if (name && name !== "Unassigned") return name;
+  }
+  return null;
 }
 
 /** What still stops the designer/editor from submitting the finished asset.
@@ -399,6 +553,34 @@ export function briefEditBlockedReason(
 /** Raise the top-up request. */
 export function requestBriefEdit(g: Graphic, by: string, reason: string): Graphic {
   return { ...g, briefUnlock: { status: "Pending", requestedBy: by, requestedAt: new Date().toISOString(), reason: reason.trim() || undefined } };
+}
+
+/** Creative sent the brief back — so Creative has already answered the only
+ *  question the top-up gate asks.
+ *
+ *  Sending a brief back for revision handed the requester a task saying "แก้
+ *  brief ตาม comment" and then refused them the editor: the request was
+ *  accepted, no release had been granted, and canEditBriefNow said no. The
+ *  requester's next move was to ask the Creative Leader for permission to do
+ *  the thing the Creative Leader had just told them to do.
+ *
+ *  Granted in Creative's name, spent on the first save like any other release
+ *  — so a revision opens the brief exactly once, and the round after that goes
+ *  back through asking. */
+export function releaseBriefForRevision(g: Graphic, by: string, comment: string): Graphic {
+  const at = new Date().toISOString();
+  return {
+    ...g,
+    briefUnlock: {
+      status: "Granted",
+      requestedBy: g.requester,
+      requestedAt: at,
+      reason: comment.trim() || undefined,
+      decidedBy: by,
+      decidedAt: at,
+      decisionNote: "ปล่อยอัตโนมัติเพราะ Creative ส่งบรีฟกลับมาแก้",
+    },
+  };
 }
 
 /** Creative Leader's answer. */
@@ -622,6 +804,45 @@ export function artworkGroup(dels: GraphicDeliverable[], index: number): number[
  *
  *  Returns null when there is nothing to do — no such row, or a piece that has
  *  not been submitted yet. Pure: the caller persists. */
+/** Point an approved piece at a new address without disturbing the sign-off.
+ *
+ *  Moving the master into the company Dropbox after an agency delivered it to
+ *  their own Drive is filing, not a new draft — the artwork the two reviewers
+ *  passed is the same artwork. So status, version and both verdicts are left
+ *  exactly as they are, and only the link moves.
+ *
+ *  What that costs is traceability: from the outside, repointing a link and
+ *  swapping the artwork behind an approval look identical. The old address is
+ *  therefore written into the request's history rather than overwritten, so
+ *  the trail says where the file used to be and who moved it.
+ *
+ *  Returns null when there is nothing to do — no such row, not approved, or
+ *  the link is unchanged. Pure: the caller persists and notifies. */
+export function relocateApprovedAsset(
+  g: Graphic,
+  index: number,
+  nextLink: string,
+  by: string,
+): Graphic | null {
+  const dels = g.deliverables ?? [];
+  const d = dels[index];
+  if (!d || d.status !== "Approved") return null;
+  const link = nextLink.trim();
+  if (!link || link === (d.assetLink ?? "").trim()) return null;
+  const at = new Date().toISOString();
+  return {
+    ...g,
+    deliverables: dels.map((x, i) => (i === index ? { ...x, assetLink: link } : x)),
+    history: [...(g.history ?? []), {
+      type: "asset_relocated",
+      at,
+      by,
+      deliverableKey: `${d.platform}::${d.size}`,
+      note: `ย้ายที่เก็บ asset: ${d.assetLink || "—"} → ${link}`,
+    }],
+  };
+}
+
 export function applyLensVerdict(
   g: Graphic,
   index: number,
@@ -748,7 +969,8 @@ export const GRAPHIC_BRIEF_FOR_PARAM = "briefFor";
  *  one goes post → new brief, this one goes post → the brief it already has.
  *  Content Plan's "ผูกกับ Graphic Request #N ↗" used to link at bare /graphic
  *  and leave you to find #N yourself in a list of forty-odd rows. */
-export const GRAPHIC_OPEN_PARAM = "open";
+/** Re-exported from lib/deepLink, which owns every deep-link param. */
+export const GRAPHIC_OPEN_PARAM = OPEN_PARAM.graphic;
 
 /** What /graphic should do about a ?open=<id> on this render.
  *
@@ -766,16 +988,18 @@ export const GRAPHIC_OPEN_PARAM = "open";
  *    missing → the fetch is in and the id is not there (deleted, or a brand
  *              this member cannot see). Say so rather than silently landing
  *              on the full list, which is what the old bare link did. */
+/** Kept as the Graphic-shaped view of the shared resolver (lib/deepLink), which
+ *  every deep-linked page now uses. Same decision, one implementation — two
+ *  copies would drift on exactly the timing question they exist to settle.
+ *  `graphic` rather than `item` because this file's callers and tests name it. */
 export function resolveOpenTarget<T extends Pick<Graphic, "id">>(
   openId: string | null,
   graphics: T[],
   loaded: boolean,
-  alreadyOpened: boolean,
+  openedId: string | null,
 ): { action: "idle" | "wait" | "open" | "missing"; graphic?: T } {
-  if (!openId || alreadyOpened) return { action: "idle" };
-  if (!loaded) return { action: "wait" };
-  const found = graphics.find((g) => String(g.id) === String(openId));
-  return found ? { action: "open", graphic: found } : { action: "missing" };
+  const { action, item } = resolveOpen(openId, graphics, loaded, openedId);
+  return item ? { action, graphic: item } : { action };
 }
 
 const linkKey = (s?: string) => (s ?? "").trim().toLowerCase();
@@ -1160,6 +1384,59 @@ export interface Feedback {
   type: string; text: string; version: string; status: string; assignedTo: string; due: string | null; createdAt: string;
 }
 
+/* ── Talking about a request ───────────────────────────────────────────────
+ *
+ * Every message on a request already had a job to do: a revision reason, a
+ * lens verdict, a reason a brief went back. There was no way to just say
+ * something — so "ยังไม่มีลิงก์บรีฟฮะ ภาพอันนี้หรือจะให้หนูเลือกเอง" arrived as
+ * the title of a task, with nowhere to answer it. The requester's only reply
+ * box wrote into the task's own blob, which the request never reads, so the
+ * person who asked the question could not see the answer.
+ *
+ * MESSAGE_TYPE rows are that missing thing: a message that changes nothing.
+ * They live in graphic_feedback with everything else, so one request has one
+ * conversation no matter which screen you opened it from.
+ */
+export const MESSAGE_TYPE = "Message";
+
+export const isMessage = (f: Pick<Feedback, "type">) => f.type === MESSAGE_TYPE;
+
+/** Who a reply is addressed to — one person, the one being answered.
+ *
+ *  The last person to speak who is not me. A conversation answers whoever
+ *  asked, and on a request that is as often Creative asking the requester as
+ *  the other way round.
+ *
+ *  With nothing said yet there is nobody to answer, so it goes to the other
+ *  SIDE: the requester writes to whoever holds the job, Creative writes to the
+ *  requester. Deliberately one person and not "everyone on the request" —
+ *  copying a designer into a question meant for the requester is how a channel
+ *  earns the habit of being ignored.
+ *
+ *  Never me: notifying yourself about your own message is the same disease.
+ *  Empty when there is genuinely nobody on the other side, rather than falling
+ *  back to a name that would silently swallow the message. */
+export function replyAudience(
+  g: Pick<Graphic, "requester" | "acceptedBy" | "designer">,
+  thread: Pick<Feedback, "owner" | "type">[],
+  me: string,
+): string[] {
+  const norm = (s: string | null | undefined) => (s ?? "").trim();
+  const mine = (name: string) => name.toLowerCase() === norm(me).toLowerCase();
+  const real = (name: string) => !!name && name !== "Unassigned" && !mine(name);
+
+  const lastSpeaker = thread.map((f) => norm(f.owner)).find(real);
+  if (lastSpeaker) return [lastSpeaker];
+
+  // Nothing said yet — write across the table, not around it.
+  const amRequester = mine(norm(g.requester));
+  const order = amRequester
+    ? [g.acceptedBy, g.designer, g.requester]
+    : [g.requester, g.acceptedBy, g.designer];
+  const other = order.map(norm).find(real);
+  return other ? [other] : [];
+}
+
 export const FEEDBACK: Feedback[] = [
   { id: 0, gid: 6, owner: "Ken S.", team: "Campaign Lead", ownerColor: "#3E5C9A", type: "Design revision", text: "Brand colours need adjustment — use Omakase navy (#3E5C9A) as dominant, not the current warm brown. Also the CTA button is too small on mobile.", version: "V2", status: "Open", assignedTo: "Boss", due: "Jun 29", createdAt: "Jun 27" },
   { id: 1, gid: 6, owner: "Ploy R.", team: "Brand Manager", ownerColor: "#B5577E", type: "Copy revision", text: "The headline copy needs to say 'Father's Day Omakase Set' not 'Special Set'. Brand guideline: always use the full name.", version: "V2", status: "Open", assignedTo: "Boss", due: "Jun 28", createdAt: "Jun 26" },
@@ -1347,6 +1624,20 @@ export function creativeBriefDetails(g: Graphic): { label: string; value: string
   const briefLink = creativeBriefLink(g);
   return [
     { label: "ลิงก์บรีฟ (Drive / Slides)", value: briefLink ? "เปิดบรีฟ" : "ยังไม่มีลิงก์บรีฟ", href: briefLink || undefined },
+    // Video work only, and only once there is something to open. The people who
+    // shoot and cut a reel work FROM the storyboard, and it lived on the
+    // Overview tab of a drawer they had no reason to open — their own My Tasks
+    // card listed the brief and stopped there, so the plan they were building
+    // to was the one thing the card would not show them.
+    ...(needsStoryboard(g) && g.storyboardLink?.trim()
+      ? [{
+        label: "Storyboard",
+        value: g.storyboardStatus === "Approved"
+          ? `เปิด storyboard (อนุมัติแล้ว${g.storyboardDecidedBy ? ` โดย ${g.storyboardDecidedBy}` : ""})`
+          : `เปิด storyboard (${g.storyboardStatus === "Submitted" ? "รอเจ้าของงานอนุมัติ" : "ถูกส่งกลับแก้ — รอเวอร์ชันใหม่"})`,
+        href: g.storyboardLink.trim(),
+      }]
+      : []),
     { label: "Objective", value: g.objective || `${g.campaign} · ${g.type} for ${brandName(g.b)}` },
     // Key message must NOT fall back to nextAction — that's a workflow status
     // (e.g. "Design in progress"), not the creative message.

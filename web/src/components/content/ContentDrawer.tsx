@@ -3,7 +3,8 @@
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange } from "@/lib/data/content";
+import { workLink } from "@/lib/deepLink";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -13,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { ExpandableTextarea } from "@/components/ui/ExpandableTextarea";
 import { WorkCode } from "@/components/ui/CampaignCode";
 import { issueContentCode } from "@/lib/db/workCode";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
@@ -25,7 +27,7 @@ import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canAssignCaption, canMarkMediaReleased } from "@/lib/roleGates";
+import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -56,6 +58,42 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
   );
 }
 
+/** The Content Plan brief, as the caption writer needs to read it.
+ *
+ *  Its own component because it is now rendered twice — under the field in the
+ *  drawer, and beside it when the field is popped out — and two copies of this
+ *  list would drift the moment a brief field is added. */
+function CaptionBriefGuide({ item }: { item: ContentItem }) {
+  const guide: [string, string | undefined][] = [
+    ["Main head", item.title],
+    ["Sub head", item.subHead],
+    ["Main message", item.mainMessage],
+    ["CTA (เป้า)", item.cta],
+    ["Product highlight", item.productHighlight],
+    ["Caption direction", item.captionDirection],
+    ["Mandatory text", item.mandatoryText],
+    ["Do / Don't", item.doDont],
+  ];
+  const rows = guide.filter(([, v]) => (v ?? "").toString().trim());
+  return (
+    <div className="rounded-[14px] border p-3" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
+      <div className="text-[11.5px] font-extrabold text-[#5B4FB2] mb-2">📋 Brief guide · เขียน caption ตามนี้</div>
+      {rows.length ? (
+        <div className="flex flex-col gap-[7px]">
+          {rows.map(([label, v]) => (
+            <div key={label} className="grid gap-1" style={{ gridTemplateColumns: "110px 1fr" }}>
+              <span className="text-[11px] font-bold text-[#7D72B4]">{label}</span>
+              <span className="text-[12px] text-ink">{v}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-[11.5px] text-faint">ยังไม่มีข้อมูลบรีฟ — โพสต์นี้อาจสร้างก่อนมีฟิลด์บรีฟ หรือกรอก brief ที่ Content Plan</div>
+      )}
+    </div>
+  );
+}
+
 export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete }: {
   item: ContentItem;
   /** Everything else on the calendar — for the same-day clash warning. */
@@ -66,6 +104,9 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
 }) {
   const [tab, setTab] = useState<DTab>("overview");
   const [caption, setCaption] = useState(item.caption);
+  // Pop-out state lives here, not inside the field, so the drawer keeps it
+  // across the re-renders a save triggers.
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   // Editable post basics (title / date / time) — saved from the Overview tab.
   const [editTitle, setEditTitle] = useState(item.title);
   const [editDate, setEditDate] = useState<string | null>(item.dateIso ?? null);
@@ -281,7 +322,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     persist(released
       ? { ...item, releaseStatus: "", releasedBy: undefined, releasedAt: undefined }
       : { ...item, releaseStatus: "Released", releasedBy: reviewer, releasedAt: new Date().toISOString(), mediaLink: mediaLink.trim() || item.mediaLink });
-    if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+    if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
   };
   const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
   // Warn against the date being EDITED, not the saved one — the point is to
@@ -337,6 +378,39 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer }));
   const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
 
+  // ── Caption sign-off ─────────────────────────────────────────────────
+  // Step 4 of the agreed flow: the words get accepted (or sent back) on their
+  // own, before production, instead of riding along with the whole post.
+  const [captionReason, setCaptionReason] = useState("");
+  const canDecideCap = canDecideCaption(role, { me: reviewer, writer: item.owner });
+  // Told apart from "not on the planning side" so the reason on screen is the
+  // true one — being the writer is a different refusal from being Creative.
+  const isSameCaptionWriter =
+    (reviewer ?? "").trim().toLowerCase() === (item.owner ?? "").trim().toLowerCase();
+  const decideCaption = (decision: "approve" | "revise") => {
+    const next = applyCaptionDecision(item, decision, reviewer, captionReason);
+    if (next === item) {
+      if (decision === "revise") toastError("เขียนเหตุผลที่ส่งกลับแก้ก่อน");
+      return;
+    }
+    setCaptionReason("");
+    void persist(next, decision === "approve" ? "อนุมัติ caption แล้ว" : "ส่ง caption กลับไปแก้แล้ว");
+    if (decision === "approve") {
+      notify("approved", `✅ อนุมัติ caption: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`,
+        workLink.post(item.id), { inform: [item.owner] });
+      return;
+    }
+    // The writer is the one who has to act, so this is a DM, not a bell entry.
+    notify("rejected", `✏️ caption ถูกส่งกลับแก้: ${item.title}`, `${captionReason.trim()} · โดย ${reviewer}`,
+      workLink.post(item.id), { to: [item.owner] });
+    if (item.owner && item.owner !== "Unassigned") {
+      createRevisionTask({
+        module: "Content", title: `แก้ caption — ${item.title}`, assignee: item.owner,
+        brand: brandName(item.b), campaign: item.campaign, reason: captionReason.trim(), by: reviewer,
+      }).catch(() => {});
+    }
+  };
+
   const approveBlockers = contentApproveBlockers(item);
   const approve = async () => {
     setBusy(true);
@@ -344,7 +418,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await approveContent(item, reviewer);
       if (!res.ok) { toastError("ยัง Approve ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+      notify("approved", `✅ Content อนุมัติแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
     } catch (error) {
       toastError(`อนุมัติไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -371,7 +445,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
         brand: brandName(item.b), campaign: item.campaign, reason: r, by: reviewer,
       }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, "/my-tasks", { team: "graphic", to: [fixer] });
+    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "graphic", to: [fixer] });
     setReason(""); setRevising(false); setCaptionNeedsWork(false);
   };
 
@@ -382,7 +456,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await publishContent(item, reviewer);
       if (!res.ok) { toastError("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, "/content");
+      notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -398,7 +472,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await scheduleContentToMeta(item, reviewer, scheduledFor, selectedChannels);
       if (!res.ok) { toastError("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+      notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Queue ไป Meta ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -409,7 +483,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await publishContentToMeta(item, reviewer, selectedChannels, metaAccount);
       if (!res.ok) { toastError("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
       onUpdate?.(res.post);
-      notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, "/content");
+      notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Meta publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -722,41 +796,27 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                   <label className="text-[11.5px] font-bold text-muted">Caption</label>
                   <StatusBadge tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>
                 </div>
-                <textarea rows={6} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Write caption here…" className={`${field} resize-y leading-[1.5]`} />
+                {/* The brief travels with the caption into the expanded view:
+                    writing one FROM the other is the whole job, and a pop-out
+                    that left the brief behind in the drawer would trade one
+                    cramped screen for a blind one. */}
+                <ExpandableTextarea
+                  value={caption}
+                  onChange={setCaption}
+                  expanded={captionExpanded}
+                  onExpandedChange={setCaptionExpanded}
+                  rows={6}
+                  placeholder="Write caption here…"
+                  className={field}
+                  title={`Caption · ${item.title}`}
+                  asideTitle="บรีฟของโพสต์นี้"
+                  aside={<CaptionBriefGuide item={item} />}
+                />
                 <div className="text-[11px] text-faint mt-1 text-right">{caption.length} chars</div>
               </div>
 
               {/* Brief guide — reference from the Content Plan for writing the caption */}
-              {(() => {
-                const guide: [string, string | undefined][] = [
-                  ["Main head", item.title],
-                  ["Sub head", item.subHead],
-                  ["Main message", item.mainMessage],
-                  ["CTA (เป้า)", item.cta],
-                  ["Product highlight", item.productHighlight],
-                  ["Caption direction", item.captionDirection],
-                  ["Mandatory text", item.mandatoryText],
-                  ["Do / Don't", item.doDont],
-                ];
-                const rows = guide.filter(([, v]) => (v ?? "").toString().trim());
-                return (
-                  <div className="rounded-[14px] border p-3" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
-                    <div className="text-[11.5px] font-extrabold text-[#5B4FB2] mb-2">📋 Brief guide · เขียน caption ตามนี้</div>
-                    {rows.length ? (
-                      <div className="flex flex-col gap-[7px]">
-                        {rows.map(([label, v]) => (
-                          <div key={label} className="grid gap-1" style={{ gridTemplateColumns: "110px 1fr" }}>
-                            <span className="text-[11px] font-bold text-[#7D72B4]">{label}</span>
-                            <span className="text-[12px] text-ink">{v}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[11.5px] text-faint">ยังไม่มีข้อมูลบรีฟ — โพสต์นี้อาจสร้างก่อนมีฟิลด์บรีฟ หรือกรอก brief ที่ Content Plan</div>
-                    )}
-                  </div>
-                );
-              })()}
+              <CaptionBriefGuide item={item} />
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Hashtags</label>
                 <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="#wagyu #bangkok #teppen" className={field} />
@@ -796,6 +856,52 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 <button onClick={markCaptionReady} disabled={busy || !caption.trim()} className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted disabled:opacity-40">Mark Ready</button>
               </div>
               <div className="text-[11.5px] text-faint">Last edited by {item.owner}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
+
+              {/* What the writer was told last time — kept in front of them
+                  while they rewrite, not buried in a notification. */}
+              {(item.captionFeedback ?? []).length > 0 && item.captionStatus !== "Approved" && (
+                <div className="rounded-[12px] px-3 py-[10px]" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4" }}>
+                  <div className="text-[11px] font-extrabold mb-1" style={{ color: "#B33A2E" }}>↩ caption ถูกส่งกลับแก้</div>
+                  {(item.captionFeedback ?? []).slice(-3).map((f, i) => (
+                    <div key={i} className="text-[12px] leading-[1.5]" style={{ color: "#B33A2E" }}>
+                      · {f.reason} <span className="text-faint">— {f.by}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {captionApproved(item) && (
+                <div className="rounded-[12px] px-3 py-[10px] text-[12px] font-semibold" style={{ background: "#EEF4EE", color: "#4E7A4E", border: "1px solid #CFE4C2" }}>
+                  ✓ caption อนุมัติแล้วโดย {item.captionApprovedBy || "—"}
+                </div>
+              )}
+
+              {/* Marketing's call, and never the writer's own — see canDecideCaption. */}
+              {captionAwaitsApproval(item) && canDecideCap && (
+                <div className="rounded-[12px] border border-line2 bg-ivory p-3 flex flex-col gap-2">
+                  <div className="text-[12px] font-extrabold text-ink">caption รออนุมัติ</div>
+                  <div className="text-[11.5px] text-faint">
+                    อนุมัติที่ตัวหนังสือได้เลย ไม่ต้องรอ artwork — ทีมผลิตจะได้เริ่มงานจาก caption ที่ตกลงแล้ว
+                  </div>
+                  <input value={captionReason} onChange={(e) => setCaptionReason(e.target.value)}
+                    placeholder="เหตุผลถ้าส่งกลับแก้…" className={field} />
+                  <div className="flex gap-2">
+                    <button onClick={() => decideCaption("approve")} disabled={busy}
+                      className="text-[12.5px] font-bold text-white rounded-[9px] px-4 py-[8px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>
+                      อนุมัติ caption
+                    </button>
+                    <button onClick={() => decideCaption("revise")} disabled={busy || !captionReason.trim()}
+                      className="text-[12.5px] font-bold rounded-[9px] px-4 py-[8px] border border-line2 bg-surface text-status-red disabled:opacity-40">
+                      ส่งกลับแก้
+                    </button>
+                  </div>
+                </div>
+              )}
+              {captionAwaitsApproval(item) && !canDecideCap && (
+                <div className="text-[11.5px] text-faint">
+                  caption ส่งแล้ว — รอฝั่ง Marketing อนุมัติ{isSameCaptionWriter ? " (คนเขียนอนุมัติงานตัวเองไม่ได้)" : ""}
+                </div>
+              )}
             </div>
           )}
 

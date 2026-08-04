@@ -7,11 +7,13 @@ import { assertMockUniqueId, releaseMockId, seedMockIds, resetMockGuard } from "
 import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
-import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange } from "../src/lib/data/content";
-import { materialised } from "../src/lib/data/brief";
+import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
+import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
-  needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth } from "../src/lib/data/graphic";
+  needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
+  awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
+  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE } from "../src/lib/data/graphic";
 import { memberTeam } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -418,6 +420,31 @@ console.log("Artwork counting — by pixels, platform collapsed");
   check("storyboard ถูกตีกลับ = ยังบล็อก", productionBlockers(g({ type: "Reel", storyboardStatus: "Revision" }))[0].includes("ส่งกลับแก้"));
   check("storyboard อนุมัติแล้ว = ผ่าน", productionBlockers(g({ type: "Reel", storyboardStatus: "Approved" })).length === 0);
 
+  // สิ่งที่ค้างอยู่ที่ "เจ้าของงาน" — คิวอนุมัติใน My Tasks อ่านจากสองอันนี้
+  check("storyboard ส่งแล้ว = รอเจ้าของงานตัดสิน", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "Submitted" })) === true);
+  check("ยังไม่ส่ง storyboard = ไม่เข้าคิวอนุมัติ", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "" })) === false);
+  check("storyboard ตีกลับแล้ว = ไม่เข้าคิวอนุมัติ", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "Revision" })) === false);
+  check("storyboard อนุมัติแล้ว = ออกจากคิว", awaitsStoryboardDecision(g({ type: "Reel", storyboardStatus: "Approved" })) === false);
+  // งานที่ไม่ใช่วิดีโอไม่มี storyboard ให้อนุมัติ แม้ field จะค้างอยู่
+  check("Poster ที่มี field ค้าง ไม่เข้าคิว storyboard", awaitsStoryboardDecision(g({ type: "Poster", requiredVideo: false, storyboardStatus: "Submitted" })) === false);
+  {
+    const d = (status: GraphicDeliverable["status"]): GraphicDeliverable => ({ ...(GRAPHICS[0].deliverables?.[0] as GraphicDeliverable), status });
+    check("ไม่มี deliverable = ไม่มีอะไรให้รีวิว", awaitsArtworkReview(g({ deliverables: [] })) === false);
+    check("มีชิ้นที่รอรีวิว = เข้าคิว", awaitsArtworkReview(g({ deliverables: [d("Approved"), d("Waiting review")] })) === true);
+    check("อนุมัติครบแล้ว = ออกจากคิว", awaitsArtworkReview(g({ deliverables: [d("Approved")] })) === false);
+  }
+
+  // แก้บรีฟแล้วต้องบอกใคร — เงียบจนกว่าจะมีคนรับงาน
+  {
+    const at = "2026-08-01T03:00:00.000Z";
+    check("ยังไม่มีใครรับงาน = ไม่ต้องแจ้งใคร", briefChangeAudience(g({ acceptedAt: undefined, designer: "Aom" })) === null);
+    check("รับงานแล้ว = แจ้งคนที่รับ", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "Aom", designer: "Boss" })) === "Aom");
+    // มอบหมายคนหนึ่ง แต่อีกคนหยิบไปทำ — ต้องเป็นคนที่หยิบไป ไม่ใช่ชื่อบนใบงาน
+    check("คนรับงานมาก่อนชื่อ designer", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "Aom", designer: "Unassigned" })) === "Aom");
+    check("ไม่มี acceptedBy ใช้ designer แทน", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "", designer: "Boss" })) === "Boss");
+    check("รับงานแล้วแต่ยังไม่มีคนทำ = ไม่มีใครให้แจ้ง", briefChangeAudience(g({ acceptedAt: at, acceptedBy: "", designer: "Unassigned" })) === null);
+  }
+
   const shootPending = g({ type: "Poster", requiredVideo: false, requiresShooting: true, shooter: "Jeeno" });
   check("require shooting ยังไม่ส่ง footage = บล็อก", productionBlockers(shootPending).length === 1);
   check("บอกชื่อคนถ่าย", productionBlockers(shootPending)[0].includes("Jeeno"));
@@ -443,6 +470,95 @@ console.log("Artwork counting — by pixels, platform collapsed");
     const steps = productionSteps(g({ type: "Poster", requiredVideo: false, requiresShooting: false }));
     check("Poster มีขั้นเดียว", steps.length === 1 && steps[0].key === "asset");
     check("Poster ส่ง asset ได้เลย", steps[0].state === "active");
+  }
+
+  // บรีฟที่ editor/คนถ่ายเห็นใน My Task ต้องมีลิงก์ storyboard ให้กดเปิดได้
+  {
+    const sbRow = (x: Graphic) => creativeBriefDetails(x).find((d) => d.label === "Storyboard");
+    const reel = (over: Partial<Graphic>) => g({ type: "Reel", requiredVideo: true, ...over });
+    check("Reel + มี storyboard = มีแถวให้กด", !!sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Approved" })));
+    check("แถวนั้นชี้ไปที่ลิงก์จริง", sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Approved" }))?.href === "https://slides/x");
+    check("อนุมัติแล้วบอกว่าอนุมัติแล้ว", sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Approved", storyboardDecidedBy: "Ken S." }))?.value.includes("Ken S.") === true);
+    check("ยังรออนุมัติก็เปิดดูได้ แต่บอกสถานะไว้", sbRow(reel({ storyboardLink: "https://slides/x", storyboardStatus: "Submitted" }))?.value.includes("รอเจ้าของงานอนุมัติ") === true);
+    // ยังไม่มีลิงก์ = ไม่ต้องมีแถวเปล่า ๆ ให้กดแล้วไม่ไปไหน
+    check("ยังไม่ส่ง storyboard = ไม่มีแถวนี้", !sbRow(reel({ storyboardLink: "", storyboardStatus: "" })));
+    // งานที่ไม่ใช่วิดีโอไม่มี storyboard ให้ดู แม้ field จะค้างอยู่
+    check("Poster ไม่มีแถว storyboard", !sbRow(g({ type: "Poster", requiredVideo: false, storyboardLink: "https://slides/x" })));
+    check("บรีฟหลักยังอยู่ครบเหมือนเดิม", creativeBriefDetails(reel({ storyboardLink: "https://slides/x" })).some((d) => d.label.includes("ลิงก์บรีฟ")));
+  }
+
+  // คิวถ่ายที่มอบหมายในใบงาน ต้องไหลไปตารางถ่าย (ใบนัดถ่ายที่ทีมปริ้นไปใช้จริง)
+  {
+    const shoot = (over: Partial<Graphic>) => g({ type: "VDO shooting", requiresShooting: true, shootDate: "2026-09-10", shooter: "Jeeno", footageLink: "", ...over });
+    check("มอบหมายคนถ่าย+วันถ่าย = ขึ้นตารางถ่าย", assignedShoots([shoot({})]).length === 1);
+    check("เอาวันถ่ายจากใบงาน ไม่ใช่วันโพสต์", assignedShoots([shoot({})])[0].date === "2026-09-10");
+    check("คนถ่ายคือ cast", assignedShoots([shoot({})])[0].cast === "Jeeno");
+    check("ผูกกลับไปที่ใบงานได้", assignedShoots([shoot({ id: 77 })])[0].graphicId === 77);
+    // คนถ่ายต้องรู้ว่าจะไปถ่ายอะไร — ชื่อคอนเทนต์ซ้ำกันได้ storyboard/บรีฟจึงต้องติดไปด้วย
+    {
+      const withPrep = assignedShoots([shoot({ type: "Reel", requiredVideo: true, storyboardLink: "https://slides/sb", briefLink: "https://drive/brief" })])[0];
+      check("ติดลิงก์ storyboard ไปให้", withPrep.storyboardLink === "https://slides/sb");
+      check("ติดลิงก์บรีฟไปให้", withPrep.briefLink === "https://drive/brief");
+      // งานที่ไม่ใช่วิดีโอไม่มี storyboard — ลิงก์ค้างใน field ก็ไม่เอามาโชว์
+      const photo = assignedShoots([shoot({ type: "Photo shoot", requiredVideo: false, storyboardLink: "https://slides/stale" })])[0];
+      check("Photo shoot ไม่โชว์ storyboard ที่ค้างอยู่", photo.storyboardLink === "");
+      // ไม่มีลิงก์ = ว่าง ไม่ใช่ undefined (ตารางเช็คด้วย truthiness)
+      const bare = assignedShoots([shoot({})])[0];
+      check("ไม่มีลิงก์ = ค่าว่าง", bare.storyboardLink === "" && typeof bare.briefLink === "string");
+    }
+    // ยังไม่ระบุคนถ่าย ก็ยังต้องขึ้น — คิวถ่ายมีอยู่จริง แค่ยังไม่รู้ว่าใครไป
+    check("ยังไม่ระบุคนถ่ายก็ยังขึ้น", assignedShoots([shoot({ shooter: "" })]).length === 1);
+    check("Unassigned ไม่ถือเป็นชื่อคน", assignedShoots([shoot({ shooter: "Unassigned" })])[0].cast === "");
+    // ไม่มีวันถ่าย = ยังไม่มีอะไรให้ไปโผล่บนใบนัด
+    check("ไม่มีวันถ่าย = ไม่ขึ้น", assignedShoots([shoot({ shootDate: "" })]).length === 0);
+    check("ไม่ต้องถ่าย = ไม่ขึ้น", assignedShoots([shoot({ requiresShooting: false })]).length === 0);
+    check("ยังไม่ตัดสินใจว่าถ่ายไหม = ไม่ขึ้น", assignedShoots([shoot({ requiresShooting: undefined })]).length === 0);
+    // ส่ง footage แล้ว = ถ่ายเสร็จแล้ว ใบนัดถ่ายคือรายการที่ต้องไป ไม่ใช่ประวัติ
+    check("ส่ง footage แล้ว = หลุดจากใบนัด", assignedShoots([shoot({ footageLink: "https://drive/f" })]).length === 0);
+    // เรียงตามวัน เพราะมันคือตาราง ไม่ใช่กอง
+    {
+      const rows = assignedShoots([shoot({ id: 1, shootDate: "2026-09-20" }), shoot({ id: 2, shootDate: "2026-09-02" })]);
+      check("เรียงตามวันถ่าย", rows.map((r) => r.graphicId).join(",") === "2,1");
+    }
+  }
+
+  // แก้วันถ่าย/คนถ่ายจากตารางถ่าย ต้องเขียนกลับใบงาน ไม่ใช่เก็บไว้เองคนละที่
+  {
+    const s0 = g({ id: 5, requiresShooting: true, shootDate: "2026-09-10", shooter: "Jeeno" });
+    const moved = withShootMoved(s0, "2026-09-14", "Boss");
+    check("วันถ่ายเปลี่ยนที่ใบงาน", moved.shootDate === "2026-09-14");
+    check("มีร่องรอยว่าเลื่อนจากวันไหนไปวันไหน", (moved.history?.at(-1)?.note ?? "").includes("2026-09-10 → 2026-09-14"));
+    check("บอกว่าใครเลื่อน", moved.history?.at(-1)?.by === "Boss");
+    check("วันเดิม = ไม่เขียนอะไรเพิ่ม", withShootMoved(s0, "2026-09-10", "Boss") === s0);
+    // เลื่อนวันถ่ายแล้วเดือนที่งานไปนับต้องขยับตาม (โควตา/รายงานอ่านจากตรงนี้)
+    check("เดือนที่ทำงานจริงขยับตามวันถ่ายใหม่", workingMonth(moved) === "2026-09");
+
+    const named = withShooterAssigned(s0, "Four", "Boss");
+    check("เปลี่ยนคนถ่ายที่ใบงาน", named.shooter === "Four");
+    check("ร่องรอยบอกคนเดิม→คนใหม่", (named.history?.at(-1)?.note ?? "").includes("Jeeno → Four"));
+    check("คนเดิม = ไม่เขียนอะไรเพิ่ม", withShooterAssigned(s0, "Jeeno", "Boss") === s0);
+    check("ล้างคนถ่ายได้", withShooterAssigned(s0, "", "Boss").shooter === "");
+    // ต้นฉบับต้องไม่ถูกแก้
+    check("ไม่แตะของเดิม", s0.shootDate === "2026-09-10" && s0.shooter === "Jeeno");
+  }
+
+  // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง
+  {
+    const req = { requester: "Khun Aran", acceptedBy: "Jungjing", designer: "Boss" };
+    const msg = (owner: string) => ({ owner, type: MESSAGE_TYPE });
+    // thread เรียงใหม่สุดขึ้นก่อน (ตาม fetchGraphicFeedback)
+    check("ตอบไปหาคนที่พูดล่าสุด", replyAudience(req, [msg("Jungjing")], "Khun Aran").join() === "Jungjing");
+    check("ข้ามข้อความของตัวเอง", replyAudience(req, [msg("Khun Aran"), msg("Jungjing")], "Khun Aran").join() === "Jungjing");
+    check("ไม่เด้งใส่ตัวเอง", replyAudience(req, [msg("Khun Aran")], "Khun Aran").includes("Khun Aran") === false);
+    // ยังไม่มีใครพูด = ข้อความแรก ต้องถึงคนที่ถือใบงาน
+    check("ข้อความแรกถึงคนที่รับงาน", replyAudience(req, [], "Khun Aran").join() === "Jungjing");
+    check("ไม่มีคนรับงานก็ถึง designer", replyAudience({ ...req, acceptedBy: "" }, [], "Khun Aran").join() === "Boss");
+    check("ฝั่ง Creative ตอบ = ถึง requester", replyAudience(req, [], "Jungjing").join() === "Khun Aran");
+    check("Unassigned ไม่นับเป็นคน", replyAudience({ requester: "Khun Aran", acceptedBy: "Unassigned", designer: "Unassigned" }, [], "Jungjing").join() === "Khun Aran");
+    check("ไม่มีใครให้ตอบ = ไม่แจ้งใคร", replyAudience({ requester: "Khun Aran", acceptedBy: "", designer: "" }, [], "Khun Aran").length === 0);
+    // ข้อความธรรมดา vs feedback ที่สั่งงาน ต้องแยกออกจากกัน
+    check("Message = ข้อความคุย", isMessage({ type: MESSAGE_TYPE }) === true);
+    check("Design revision ไม่ใช่ข้อความคุย", isMessage({ type: "Design revision" }) === false);
   }
 
   // วันที่ทำงานจริง / เดือนที่ทำงานจริง
@@ -637,6 +753,56 @@ console.log("Artwork counting — by pixels, platform collapsed");
 
   const bouncedOther = { ...ready, approvalStatus: "Revision Requested" };
   check("ตีกลับเรื่องอื่น → แคปชั่นยัง Ready", bouncedOther.captionStatus === "Ready");
+}
+
+console.log("\n— แคมเปญอนุมัติแล้วแต่แผนไม่เคยถูกสร้าง (content ที่ดราฟไว้ไม่ขึ้น) —");
+{
+  const plan = [{ title: "โพสต์ 1" }, { title: "โพสต์ 2" }, { title: "   " }];
+  const approved = { status: "Approved", content: plan };
+  check("แผนนับเฉพาะแถวที่มีหัวข้อ", plannedItems(approved).length === 2);
+  // เคสของ Peach: อนุมัติแล้ว ไม่มีโพสต์เลย ไม่เคยมี stamp → ต้องโชว์แผน
+  check("อนุมัติแล้วไม่มีโพสต์เลย = โชว์แผน", approvedButNothingMade(approved, 0) === true);
+  // มีโพสต์แล้ว = ทำงานปกติ ไม่ต้องเตือน
+  check("มีโพสต์แล้ว = ไม่เตือน", approvedButNothingMade(approved, 3) === false);
+  // ยังไม่อนุมัติ = ใช้เส้นทางเดิม (โชว์แผนอยู่แล้ว) ไม่ใช่เคสนี้
+  check("ยังไม่อนุมัติ = ไม่ใช่เคสนี้", approvedButNothingMade({ status: "Waiting for Approval", content: plan }, 0) === false);
+  // เคยสร้างแล้วแต่ถูกลบหมด = ห้ามเอาแผนกลับมาโชว์ (บั๊กเก่า "ลบแล้วยังไม่หาย")
+  check("เคยสร้างแล้วลบหมด = ไม่โชว์แผน", approvedButNothingMade({ ...approved, materialisedAt: "2026-08-01T00:00:00Z" }, 0) === false);
+  check("stamp ช่องว่างไม่นับว่าเคยสร้าง", approvedButNothingMade({ ...approved, materialisedAt: "  " }, 0) === true);
+  // แผนว่างเปล่า = ไม่มีอะไรให้โชว์
+  check("แผนว่าง = ไม่เตือน", approvedButNothingMade({ status: "Approved", content: [] }, 0) === false);
+  check("แผนมีแต่แถวเปล่า = ไม่เตือน", approvedButNothingMade({ status: "Approved", content: [{ title: " " }] }, 0) === false);
+}
+
+console.log("\n— caption มีรอบอนุมัติของตัวเอง (ไม่ต้องรอ artwork) —");
+{
+  const post = (over: Partial<ContentItem>): ContentItem => ({
+    ...(CONTENT[0] as ContentItem), caption: "ลองชิมวากิวเกรด A5", captionStatus: "Ready",
+    assetStatus: "Waiting Design", approvalStatus: "Draft", owner: "May T.", ...over,
+  });
+  check("caption ที่ Mark Ready แล้ว = เข้าคิวอนุมัติ", captionAwaitsApproval(post({})) === true);
+  check("ยังเป็น Draft = ยังไม่เข้าคิว", captionAwaitsApproval(post({ captionStatus: "Draft" })) === false);
+
+  const ok = applyCaptionDecision(post({}), "approve", "Ken S.");
+  check("อนุมัติแล้วสถานะเปลี่ยน", ok.captionStatus === "Approved");
+  check("เก็บว่าใครอนุมัติ", ok.captionApprovedBy === "Ken S.");
+  // หัวใจของข้อนี้: อนุมัติ caption ได้ทั้งที่ artwork ยังไม่เสร็จ
+  check("อนุมัติได้แม้ artwork ยังไม่เสร็จ", ok.assetStatus === "Waiting Design" && captionApproved(ok));
+
+  const back = applyCaptionDecision(post({}), "revise", "Ken S.", "โทนยังไม่ตรงแบรนด์");
+  check("ส่งกลับแล้วกลับไป Draft", back.captionStatus === "Draft");
+  check("เก็บเหตุผลไว้ให้คนเขียนอ่าน", back.captionFeedback?.at(-1)?.reason === "โทนยังไม่ตรงแบรนด์");
+  check("ล้างคนอนุมัติเดิมทิ้ง", back.captionApprovedBy === undefined);
+  // ไม่มีข้อความเลย = Missing ไม่ใช่ Draft (สองสถานะนี้ไม่เหมือนกัน)
+  check("ไม่มีข้อความ → Missing", applyCaptionDecision(post({ caption: "" }), "revise", "Ken S.", "เขียนมาก่อน").captionStatus === "Missing");
+  // กันกดสองที / กันส่งกลับโดยไม่บอกเหตุผล
+  // ตัวเดียวกันจริง ๆ ไม่ใช่สร้างใหม่แล้วเทียบ (เทียบ object คนละตัวยังไงก็ไม่เท่ากัน)
+  const waiting = post({});
+  check("ส่งกลับโดยไม่ให้เหตุผล = ไม่ทำอะไร", applyCaptionDecision(waiting, "revise", "Ken S.", "  ") === waiting);
+  check("ช่องว่างล้วนก็ไม่นับว่าให้เหตุผล", applyCaptionDecision(waiting, "revise", "Ken S.", "\n \t ") === waiting);
+  const already = post({ captionStatus: "Approved" });
+  check("อนุมัติซ้ำไม่ได้", applyCaptionDecision(already, "approve", "Ken S.") === already);
+  check("ต้นฉบับไม่ถูกแก้", post({}).captionStatus === "Ready");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

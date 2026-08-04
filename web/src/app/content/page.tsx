@@ -1,8 +1,9 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { CSSProperties, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { OPEN_PARAM, resolveOpenTarget } from "@/lib/deepLink";
+import { CSSProperties, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -91,6 +92,38 @@ function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
   );
 }
 
+/** Everything the search box reads. Title and campaign are what people look for
+ *  first, but a post is also findable by its caption text, the people on it, its
+ *  channel or its status — so "ยังไม่อนุมัติ" style hunting works too.
+ *
+ *  `code` is the job number on screen (OMD_2609_001-C01). It is the one thing
+ *  people copy out of a chat message to go looking for, and its campaign prefix
+ *  means typing the campaign code alone pulls up every post under it. */
+const searchText = (c: ContentItem) => [
+  c.title, c.campaign, c.code, c.caption, c.hashtags, c.cta,
+  c.subHead, c.mainMessage, c.productHighlight,
+  c.owner, c.requester, c.designer, c.approver,
+  // Both the stored channel name and the two-letter badge the row actually
+  // shows: the calendar prints FB / IG / TK, so that is what gets typed, and
+  // matching only "Facebook" made the visible label the one thing unsearchable.
+  brandName(c.b), itemPlatforms(c).flatMap((p) => [p, platIcon(p).icon]).join(" "),
+  c.status, c.captionStatus, c.assetStatus, c.approvalStatus, c.publishStatus,
+  contentDateIso(c),
+].filter(Boolean).join(" ").toLowerCase();
+
+/** Every word must match somewhere — "ocean ig" finds the Ocean Don post on IG. */
+const matchesQuery = (c: ContentItem, terms: string[]) =>
+  terms.length === 0 || (() => { const hay = searchText(c); return terms.every((t) => hay.includes(t)); })();
+
+/** Same rule for the KOL chips overlaid on the calendar — matched on the
+ *  creator's name, the campaign and the channel, which is all a chip shows. */
+const matchesKolQuery = (k: KolCalendarPost, terms: string[]) =>
+  terms.length === 0 || (() => {
+    const hay = [k.display_name, k.campaign_name, k.brand, k.platforms.join(" "), k.date]
+      .filter(Boolean).join(" ").toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  })();
+
 type View = "month" | "week" | "list" | "queue" | "campaign";
 type SavedContentView = { name: string; view: View; brand: BrandFilterValue; date: DateFilter };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -104,7 +137,17 @@ const hashText = (value: string) => value.split("").reduce((sum, ch) => sum + ch
 const campaignAccent = (campaign?: string) => CAMPAIGN_COLORS[Math.abs(hashText(campaign || "default")) % CAMPAIGN_COLORS.length];
 const savedViewKey = (userKey: string) => `mos-content-saved-views:${userKey || "guest"}`;
 
+/** useSearchParams (for ?post=) opts the tree into client rendering, which
+ *  Next requires a Suspense boundary around. */
 export default function ContentPage() {
+  return (
+    <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
+      <ContentPageInner />
+    </Suspense>
+  );
+}
+
+function ContentPageInner() {
   const router = useRouter();
   const brandVisibility = useBrandVisibility();
   // Filters stick per tab so leaving the page and coming back keeps the view.
@@ -121,12 +164,22 @@ export default function ContentPage() {
   const setBrand = (b: BrandFilterValue) => setSticky({ ...sticky, brand: b });
   const setDate = (d: typeof DEFAULT_DATE_FILTER) => setSticky({ ...sticky, date: d });
   const [open, setOpen] = useState<ContentItem | null>(null);
+  // /content?post=<id> — arriving from the notification about this one post.
+  // postsLoaded, not posts.length: the list starts as the bundled demo seed, so
+  // a non-empty list says nothing about whether the real rows are in yet.
+  const searchParams = useSearchParams();
+  const openPostId = searchParams.get(OPEN_PARAM.post);
+  const [postsLoaded, setPostsLoaded] = useState(false);
+  const openedRef = useRef<string | null>(null);
   const [posts, setPosts] = useState<ContentItem[]>(CONTENT);
   const [savedViews, setSavedViews] = useState<SavedContentView[]>([]);
   const [savedViewName, setSavedViewName] = useState("");
   const [kolPosts, setKolPosts] = useState<KolCalendarPost[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const [newIso, setNewIso] = useState<string | null>(null);
+  // Deliberately not part of the sticky view: a saved filter set that silently
+  // still holds a search would explain away an empty calendar days later.
+  const [query, setQuery] = useState("");
   const { member, user } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "You";
   // Only the creative team (Content Creator / Creative Leader; CMO as admin)
@@ -142,10 +195,25 @@ export default function ContentPage() {
 
   useEffect(() => {
     let alive = true;
-    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
+    fetchContent().then((c) => { if (alive) { setPosts(c); setPostsLoaded(true); } })
+      .catch(() => { if (alive) setPostsLoaded(true); });
     fetchKolCalendarPosts().then((k) => { if (alive) setKolPosts(k); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Open the post the notification named, once the real list is in. The param
+  // is dropped afterwards so closing the drawer does not reopen it, and a post
+  // that is gone says so rather than leaving a calendar that looks fine.
+  useEffect(() => {
+    if (!openPostId) { openedRef.current = null; return; }
+    const { action, item } = resolveOpenTarget(openPostId, posts, postsLoaded, openedRef.current);
+    if (action === "idle" || action === "wait") return;
+    openedRef.current = openPostId;
+    if (action === "open" && item) setOpen(item);
+    else toastError(`ไม่พบโพสต์นี้ — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
+    router.replace("/content");
+  }, [openPostId, posts, postsLoaded, router]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -179,19 +247,42 @@ export default function ContentPage() {
 
   const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
 
-  const items = useMemo(
-    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && inDateFilter(date, contentDateIso(c))),
-    [posts, brand, date, brandVisibility],
+  const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  const scoped = useMemo(
+    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand)),
+    [posts, brand, brandVisibility],
   );
+  const items = useMemo(
+    () => scoped.filter((c) => inDateFilter(date, contentDateIso(c)) && matchesQuery(c, terms)),
+    [scoped, date, terms],
+  );
+  // Hits the period filter hides. A calendar can only draw one month, so instead
+  // of letting the post look non-existent, offer to widen the window.
+  const hiddenByDate = useMemo(
+    () => (terms.length === 0 ? 0 : scoped.filter((c) => matchesQuery(c, terms) && !inDateFilter(date, contentDateIso(c))).length),
+    [scoped, date, terms],
+  );
+  // Widening the window is only half the answer: a month grid draws one month
+  // whatever the filter says, so "ค้นทุกช่วงเวลา" pressed from Month left the
+  // count reading "พบ 3 โพสต์" above a calendar with nothing on it. Land on the
+  // one view that can actually show every hit.
+  const searchEverywhere = () => {
+    setDate({ ...date, mode: "range", start: "", end: "" });
+    if (view === "month") setView("list");
+  };
   // The KOL layer obeys the same brand scope and date filter as the content it
   // sits beside — a hidden brand must not leak in through a different module.
+  // The search box is the same argument: a KOL chip left on the calendar while
+  // the posts around it were filtered away reads as a hit for a word it does
+  // not contain.
   const kolLayer = useMemo(
     () => (showKol
       ? kolPosts.filter((k) => (!k.brand || brandVisibility.visibleBrands.includes(k.brand as BrandId))
           && (brand === "all" || k.brand === brand)
-          && inDateFilter(date, k.date))
+          && inDateFilter(date, k.date)
+          && matchesKolQuery(k, terms))
       : []),
-    [kolPosts, showKol, brand, date, brandVisibility],
+    [kolPosts, showKol, brand, date, brandVisibility, terms],
   );
   // Captions with nobody's name on them. Deliberately computed from `posts`,
   // not `items`: the month filter is exactly what hid this work. Opening the
@@ -271,6 +362,24 @@ export default function ContentPage() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-[12px] text-faint pointer-events-none">🔍</span>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="ค้นหา content / campaign…"
+                    className="w-[230px] text-[12px] rounded-pill border border-line2 bg-white pl-[30px] pr-[28px] py-[8px] outline-none focus:border-[#6C5CE7]"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery("")}
+                      title="ล้างคำค้น"
+                      className="absolute right-[9px] top-1/2 -translate-y-1/2 text-faint hover:text-ink"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
                 <BrandFilter value={brand} onChange={setBrand} label="" />
                 <select
                   value=""
@@ -296,7 +405,18 @@ export default function ContentPage() {
                 >
                   Save view
                 </button>
-                <span className="text-[12px] font-semibold text-faint">{items.length} posts in view</span>
+                <span className="text-[12px] font-semibold text-faint">
+                  {terms.length > 0 ? `พบ ${items.length} โพสต์` : `${items.length} posts in view`}
+                </span>
+                {hiddenByDate > 0 && (
+                  <button
+                    onClick={searchEverywhere}
+                    className="text-[11.5px] font-bold rounded-pill px-3 py-[7px]"
+                    style={{ background: "#FBF8EE", color: "#C68A1E", border: "1px solid #EFE2C4" }}
+                  >
+                    อีก {hiddenByDate} โพสต์อยู่นอกช่วงวันที่ · ค้นทุกช่วงเวลา →
+                  </button>
+                )}
                 {(view === "month" || view === "week") && (
                   <button
                     onClick={() => setShowKol(!showKol)}
@@ -419,13 +539,29 @@ export default function ContentPage() {
         <DeadlineStrip forMonth={ymKey} />
       </div>
 
-      <div className="mt-5">
-        {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
-        {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
-        {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
-        {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-        {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
-      </div>
+      {/* A search with no hits replaces the views outright — an empty calendar
+          under an empty table reads as two different problems. */}
+      {terms.length > 0 && items.length === 0 ? (
+        <div className="mt-5 border-2 border-dashed border-line2 rounded-cardLg p-10 text-center">
+          <div className="text-[14px] font-bold text-ink">ไม่พบ content หรือ campaign ที่ตรงกับ “{query.trim()}”</div>
+          <div className="text-[12px] text-faint mt-1">
+            {hiddenByDate > 0
+              ? `มี ${hiddenByDate} โพสต์ที่ตรงกันอยู่นอกช่วงวันที่ที่เลือก — กด “ค้นทุกช่วงเวลา” ด้านบน`
+              : "ลองคำสั้นลง หรือเช็คตัวกรองแบรนด์ / ช่วงวันที่"}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5">
+          {/* The KOL layer is filtered by the same words — leaving it unfiltered
+              put unrelated KOL posts on a calendar the search had just emptied,
+              which reads as a hit. */}
+          {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
+          {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
+          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+          {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
+          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+        </div>
+      )}
 
       {open && (
         // Keyed by post id: the drawer seeds caption/hashtags/CTA/footer into
