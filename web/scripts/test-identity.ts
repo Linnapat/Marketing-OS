@@ -7,7 +7,7 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { personKeys, isSamePerson, sameName } from "../src/lib/identity";
+import { personKeys, isSamePerson, sameName, memberRef } from "../src/lib/identity";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -43,6 +43,27 @@ is("ชื่อเดียวกัน", sameName("Boss", "boss"), true);
 is("อีเมลกับส่วนหน้าอีเมล", sameName("orapan.ch@teppenthailand.co.th", "orapan.ch"), true);
 is("คนละคน", sameName("Boss", "Aom"), false);
 is("ค่าว่างไม่เท่ากับอะไรเลย", sameName("", ""), false);
+
+console.log("\n— เปลี่ยนชื่อเล่นแล้วงานเดิมต้องยังเป็นของเรา —");
+{
+  // งานเก่าเก็บชื่อไว้เป็นข้อความ ("Pupay" บน task) พอเจ้าตัวเปลี่ยนชื่อ
+  // ทุกแถวที่ใช้ชื่อเดิมจะหลุดมือทันทีถ้าไม่จำชื่อเก่าไว้
+  const renamed = personKeys(memberRef({
+    name: "Pu", email: "orapan.ch@teppenthailand.co.th", previousNames: ["Pupay"],
+  }));
+  is("ชื่อใหม่", isSamePerson("Pu", renamed), true);
+  is("งานที่ค้างอยู่ใต้ชื่อเดิม ยังเป็นของเรา", isSamePerson("Pupay", renamed), true);
+  is("อีเมลยังใช้ได้เหมือนเดิม", isSamePerson("orapan.ch@teppenthailand.co.th", renamed), true);
+  is("ชื่อหน้า @ ก็ยังได้", isSamePerson("orapan.ch", renamed), true);
+  // เปลี่ยนหลายรอบก็ต้องยังจำได้ทุกชื่อ
+  const twice = personKeys(memberRef({ name: "Pui", email: "orapan.ch@x.com", previousNames: ["Pupay", "Pu"] }));
+  is("ชื่อเก่ารอบแรก", isSamePerson("Pupay", twice), true);
+  is("ชื่อเก่ารอบสอง", isSamePerson("Pu", twice), true);
+  // แต่ต้องไม่กลายเป็นจับมั่ว — คนอื่นยังต้องเป็นคนอื่น
+  is("ชื่อคนอื่นยังไม่ใช่เรา", isSamePerson("Ken S.", twice), false);
+  is("ไม่มีชื่อเก่าก็ทำงานปกติ", isSamePerson("Boss", personKeys(memberRef({ name: "Boss", email: "b@x.com" }))), true);
+  is("previousNames ว่างไม่พัง", personKeys(memberRef({ name: "Boss", email: "b@x.com", previousNames: [] })).has("boss"), true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

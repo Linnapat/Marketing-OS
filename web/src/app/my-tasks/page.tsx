@@ -23,7 +23,7 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
-import { personKeys, isSamePerson } from "@/lib/identity";
+import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 import { notifMeta, pushNotifications } from "@/lib/db/notifications";
 import { useNotifications } from "@/lib/useNotifications";
 import { useCanApproveExpense } from "@/lib/usePermGates";
@@ -156,7 +156,7 @@ function MyTasksPageInner() {
   // filter below returns nothing, which reads as "you have no work" rather
   // than "we do not know who you are yet".
   const myKeys = useMemo(() => {
-    const keys = personKeys(member, user);
+    const keys = personKeys(memberRef(member), user);
     return keys.size ? keys : personKeys({ name: viewAs });
   }, [member, user, viewAs]);
   const canApproveCampaignBrief = canApproveCampaign(authRole);
