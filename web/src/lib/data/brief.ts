@@ -99,6 +99,44 @@ export function materialised(brief: { status?: string } | null | undefined): boo
   return !!brief?.status && MATERIALISED_STATUSES.includes(brief.status);
 }
 
+/** Items in the plan that are worth turning into posts — a row with no title is
+ *  a half-typed line, not a piece of work. */
+export function plannedItems(brief: { content?: { title?: string }[] } | null | undefined) {
+  return (brief?.content ?? []).filter((ci) => (ci.title ?? "").trim());
+}
+
+/** A campaign that says it is approved while none of its plan was ever made.
+ *
+ *  Approval is what turns the plan into posts, graphic requests and tasks, so
+ *  the two normally move together and `materialised` reads the status alone.
+ *  When they come apart the status is the thing that lies: a campaign approved,
+ *  a fan-out that did not finish, and a Content tab that — trusting the status
+ *  — reported "No content planned" over a plan of seven items sitting right
+ *  there in the brief. Reported as "content ที่ดราฟไว้ไม่ขึ้น", which is
+ *  exactly what it looks like from the outside.
+ *
+ *  "Nothing there" is two different situations and they must not be treated
+ *  alike: never made, and made then deleted. Showing the plan for the second
+ *  brings back a complaint this app already had — deleting the last post of a
+ *  campaign made the plan reappear, so deleting looked broken.
+ *
+ *  An empty post count cannot tell them apart, so it does not try:
+ *  `materialisedAt` is stamped the first time a fan-out actually creates
+ *  something, and its absence is what says "never made". Campaigns approved
+ *  before that stamp existed carry no mark; for them this falls back to the
+ *  post count and can show the plan of a campaign whose posts were all deleted.
+ *  Accepted knowingly — the alternative is leaving real plans invisible, which
+ *  is the worse of the two, and each campaign self-heals the next time it is
+ *  saved. */
+export function approvedButNothingMade(
+  brief: { status?: string; content?: { title?: string }[]; materialisedAt?: string } | null | undefined,
+  livePosts: number,
+): boolean {
+  if (!materialised(brief) || livePosts > 0) return false;
+  if ((brief?.materialisedAt ?? "").trim()) return false;
+  return plannedItems(brief).length > 0;
+}
+
 // ── Row types ─────────────────────────────────────────────────────────────
 /** A chosen platform + asset size pair (content can target several). */
 export interface AssetTarget { platform: string; size: string; }
@@ -238,6 +276,11 @@ export interface CampaignBrief {
   budget: BriefBudget;
   status: BriefStatus;
   approvalLog: ApprovalLogEntry[];
+  /** When this plan first turned into real posts/requests/tasks. Absent means
+   *  it never did — see approvedButNothingMade. Stamped by saveCampaignBrief on
+   *  the fan-out that actually creates something, so a re-save of an already
+   *  materialised campaign does not move it. */
+  materialisedAt?: string;
   createdAt: string;
 }
 
