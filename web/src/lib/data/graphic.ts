@@ -368,6 +368,25 @@ export function revisionAssignee(
   return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
 }
 
+/** Who handed this job to whoever is doing it.
+ *
+ *  Not the person who fixes a revision — that is revisionAssignee — but the one
+ *  who has to know it came back: they are balancing the queue and carrying the
+ *  deadline, and a piece bouncing changes both. The Creative Leader assigns
+ *  nearly everything here, and her bell read "ไม่มีอะไรค้างอยู่" through a whole
+ *  round of revisions because every revision notice went to the designer and
+ *  the requester and stopped (3/8/26).
+ *
+ *  Read from the history rather than a role lookup: the record says who
+ *  actually assigned this one, so the CMO covering for the leader hears about
+ *  the jobs they handed out and not about the ones they did not. Latest wins —
+ *  work gets reassigned, and it is the current owner's handler who is on the
+ *  hook. Null when nobody ever assigned it (self-claimed work). */
+export function assignedBy(g: Pick<Graphic, "history">): string | null {
+  const handed = (g.history ?? []).filter((e) => e.type === "assigned");
+  return firstRealName(handed.at(-1)?.by);
+}
+
 /** First name in the list that is a real person. "Unassigned" is the app's own
  *  word for an empty slot, so it counts as blank wherever a person is meant. */
 function firstRealName(...names: (string | null | undefined)[]): string | null {

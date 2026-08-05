@@ -17,7 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
-  releaseBriefForRevision, revisionAssignee, relocateApprovedAsset, withShootMoved, storyboardAuthor,
+  releaseBriefForRevision, revisionAssignee, assignedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
   MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
@@ -527,7 +527,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${owner ?? "Creative"} · โดย ${currentUser}`, workLink.graphic(g.id), { team: graphicTeam(g), to: [owner] });
+    // Same audience as the two-lens revision above — whoever assigned the job
+    // is told here too, so the two revision paths cannot tell different people.
+    notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${owner ?? "Creative"} · โดย ${currentUser}`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -1502,11 +1505,13 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
           brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
         }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${owner ?? "Creative"} · โดย ${me}`,         // The requester hears about it too, in the bell rather than as a DM:
-        // they used to learn their artwork had gone back by opening the drawer
-        // and noticing. It is not their decision to act on, so it does not
-        // interrupt them.
-        workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester] });
+      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${owner ?? "Creative"} · โดย ${me}`,
+        // The requester and whoever assigned the job hear about it too, in the
+        // bell rather than as a DM: the requester used to learn their artwork
+        // had gone back by opening the drawer and noticing, and the Creative
+        // Leader who is juggling the queue never learned at all. Neither has to
+        // act on it, so neither gets interrupted.
+        workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
     }
   };
 

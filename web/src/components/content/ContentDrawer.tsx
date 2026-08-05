@@ -48,7 +48,11 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
     <>
       {values.map((v) => (
         <span key={v} className="inline-flex items-center gap-[5px] rounded-pill px-[10px] py-1 text-[11px] font-bold" style={{ background: bg, color: fg }}>
-          <button onClick={() => onPick(v)} title={v} className="max-w-[170px] truncate">{v}</button>
+          {/* Saved sets are multi-line now that Footer/CTA are. A newline inside
+              a pill collapses to nothing visible, so the label flattens the
+              breaks to " · " — picking it still restores the real text, and the
+              tooltip shows it as it will actually be written. */}
+          <button onClick={() => onPick(v)} title={v} className="max-w-[170px] truncate">{v.replace(/\s*\n+\s*/g, " · ")}</button>
           <button onClick={() => onRemove(v)} aria-label={`ลบชุดนี้: ${v}`} title="ลบชุดนี้" className="opacity-45 hover:opacity-100">
             <X size={11} />
           </button>
@@ -830,7 +834,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Call to Action</label>
-                <input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="e.g. Reserve now via link in bio" className={field} />
+                {/* Multi-line: a real CTA is two or three lines with a link
+                    under them, and a single-line input let the team type it but
+                    never see it — the text scrolled sideways out of the box and
+                    Enter did nothing (3/8/26). The composed caption joins the
+                    blocks with a blank line and leaves what is inside each one
+                    alone, so the breaks typed here survive to the post. */}
+                <textarea value={cta} onChange={(e) => setCta(e.target.value)} rows={2}
+                  placeholder="e.g. Reserve now via link in bio" className={`${field} resize-y leading-[1.5]`} />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button onClick={() => saveTemplate("ctas", cta)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save CTA</button>
                   <TemplateChips values={templates.ctas} bg="#EEF4EE" fg="#4E7A4E" onPick={setCta} onRemove={(v) => removeTemplate("ctas", v)} />
@@ -838,7 +849,11 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Footer</label>
-                <input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="เช่น เงื่อนไข / สาขา / เวลาทำการ" className={field} />
+                {/* Same reason as the CTA above, more so: a footer is a stack of
+                    branch lines ("📍LUNCH TIME at … / 📍DELIVERY Grab / Line …")
+                    that has to break, not run on. */}
+                <textarea value={footer} onChange={(e) => setFooter(e.target.value)} rows={3}
+                  placeholder="เช่น เงื่อนไข / สาขา / เวลาทำการ" className={`${field} resize-y leading-[1.5]`} />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button onClick={() => saveTemplate("footers", footer)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save footer</button>
                   <TemplateChips values={templates.footers} bg="#FFF6E8" fg="#C68A1E" onPick={setFooter} onRemove={(v) => removeTemplate("footers", v)} />

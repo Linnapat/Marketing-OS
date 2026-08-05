@@ -13,8 +13,8 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee } from "../src/lib/data/graphic";
-import { memberTeam } from "../src/components/ui/OwnerSelect";
+  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy } from "../src/lib/data/graphic";
+import { memberTeam, isAssignableMember } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -259,6 +259,20 @@ console.log("memberTeam — any \"creative\"-titled role reaches the Creative bu
   check("Agency - Freelance → Creative", memberTeam("Agency - Freelance") === "Creative");
   // "creator" must not accidentally match "creative" — Content Creator stays Planner.
   check("Content Creator stays Planner", memberTeam("Content Creator") === "Planner");
+}
+
+console.log("ใครถูก assign งานได้ — Invited ต้องอยู่ในลิสต์");
+{
+  // 4/8/26: เชิญ agency 2 รายไว้ตั้งแต่ 30 ก.ค. แต่ทั้งคู่ไม่เคย login สถานะจึงค้าง
+  // ที่ "Invited" (auth เป็นตัวเดียวที่พลิกเป็น Active) → ไม่โผล่ใน dropdown ไหนเลย
+  // ทั้งที่การ assign งานนั่นแหละคือเหตุผลที่เขาจะเข้ามา
+  check("Active assign ได้", isAssignableMember({ status: "Active" }));
+  check("Invited assign ได้ (agency ที่ยังไม่เคยเข้าระบบ)", isAssignableMember({ status: "Invited" }));
+  check("ตัวพิมพ์เล็ก/ใหญ่ไม่สำคัญ", isAssignableMember({ status: "invited" }));
+  // คนที่ถูกถอดออกจากกระดาน ต่างจากคนที่ยังไม่มา
+  check("Suspended assign ไม่ได้", !isAssignableMember({ status: "Suspended" }));
+  check("Inactive assign ไม่ได้", !isAssignableMember({ status: "Inactive" }));
+  check("สถานะว่าง assign ไม่ได้", !isAssignableMember({ status: "" }));
 }
 
 console.log("Graphic request — daily capacity guard (3/day per kind)");
@@ -555,6 +569,22 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ส่ง footage → ถึงคนที่รับงาน", revisionAssignee({ acceptedBy: "Aom", designer: "Boss" }) === "Aom");
     check("ไม่มีคนรับงาน → ชื่อบนใบงาน", revisionAssignee({ acceptedBy: "", designer: "Boss" }) === "Boss");
     check("ไม่มีใครเลย → null (ไม่แจ้งผิดคน)", revisionAssignee({ acceptedBy: "", designer: "Unassigned" }) === null);
+  }
+
+  // งานเด้งกลับ = คนคุมคิวต้องรู้ด้วย ไม่ใช่รู้แค่คนแก้
+  // (3/8/26: กระดิ่งของ Peach ขึ้น "ไม่มีอะไรค้างอยู่" ทั้งรอบ revise
+  //  เพราะแจ้งแค่ designer + requester)
+  {
+    const ev = (type: string, by: string, at: string) => ({ type, by, at } as never);
+    check("คนที่ assign งานคือคนที่ต้องรู้",
+      assignedBy({ history: [ev("requested", "Pupay", "1"), ev("assigned", "Pichayaporn", "2")] }) === "Pichayaporn");
+    check("assign ซ้ำ → เอาคนล่าสุด",
+      assignedBy({ history: [ev("assigned", "Pichayaporn", "1"), ev("assigned", "Gik", "2")] }) === "Gik");
+    check("เหตุการณ์อื่นไม่นับเป็นการ assign",
+      assignedBy({ history: [ev("submitted", "Jungjing", "1"), ev("approved", "Pupay", "2")] }) === null);
+    check("ไม่มีใคร assign (หยิบงานเอง) → null", assignedBy({ history: [] }) === null);
+    check("ไม่มี history เลย → null", assignedBy({}) === null);
+    check("Unassigned ไม่ใช่ชื่อคน", assignedBy({ history: [ev("assigned", "Unassigned", "1")] }) === null);
   }
 
   // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง
