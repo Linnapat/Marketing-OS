@@ -9,6 +9,7 @@ import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campa
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
 import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix } from "../src/lib/roleGates";
 
+import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
@@ -280,6 +281,34 @@ console.log("\n— ใครอนุมัติ caption ได้ —");
   is("ยังไม่มีคนเขียน → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "Unassigned" }), true);
   is("คนเขียนว่าง → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "" }), true);
   is("role ว่างอนุมัติไม่ได้", canDecideCaption("", other), false);
+
+  // 5 ส.ค. 69: caption proposal เด้งเข้า CMO ซึ่งไม่ต้องการ — ต้องเข้า requester
+  // / คนสร้างแคมเปญ พอส่งไปหาคนนั้นแล้ว ปุ่มก็ต้องเปิดให้เขาด้วย ไม่งั้นย้ายทางตัน
+  {
+    const owed = (me: string, reviewer: string | null) => ({ me, writer: "May T.", reviewer });
+    is("คนที่ถูกระบุให้ตรวจ กดได้แม้ไม่ใช่ฝั่งวางแผน",
+      canDecideCaption("Creative Leader", owed("Pichayaporn", "Pichayaporn")), true);
+    is("ฝั่งผลิตที่ไม่ได้ถูกระบุ ยังกดไม่ได้",
+      canDecideCaption("Creative Leader", owed("Pichayaporn", "Pupay")), false);
+    is("CMO ยังมีสิทธิ์ override เหมือนทุกที่ในแอป",
+      canDecideCaption("CMO", owed("Gik", "Pupay")), true);
+    is("ไม่มีคนถูกระบุ → กลับไปใช้กติกาฝั่งวางแผนเหมือนเดิม",
+      canDecideCaption("Marketing Executive", owed("Ken S.", null)), true);
+    // ถูกระบุให้ตรวจ ก็ยังตรวจงานที่ตัวเองเขียนไม่ได้อยู่ดี
+    is("คนที่ถูกระบุแต่เป็นคนเขียนเอง กดไม่ได้",
+      canDecideCaption("Creative Leader", { me: "May T.", writer: "May T.", reviewer: "May T." }), false);
+  }
+}
+
+console.log("\n— caption รออนุมัติของใคร —");
+{
+  // approver มาก่อน requester (db/brief ตั้ง approver = requester ให้อยู่แล้ว
+  // ถ้าไม่ได้ระบุ) และ "Unassigned" คือช่องว่าง ไม่ใช่ชื่อคน
+  is("มี approver → เป็นของ approver", captionReviewer({ approver: "Pupay", requester: "Peach" }), "Pupay");
+  is("ไม่มี approver → ตกไปที่ requester", captionReviewer({ approver: "", requester: "Peach" }), "Peach");
+  is("approver = Unassigned → ตกไปที่ requester", captionReviewer({ approver: "Unassigned", requester: "Peach" }), "Peach");
+  is("ไม่มีทั้งคู่ → null (คิวกลับไปเป็นของฝั่งวางแผน)", captionReviewer({}), null);
+  is("Unassigned ทั้งคู่ → null", captionReviewer({ approver: "Unassigned", requester: "Unassigned" }), null);
 }
 
 console.log("\n— Agency ต้องคุยในใบงานตัวเองได้ (RLS ต้องตรงกับ UI) —");

@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
 import { memberTeam, isAssignableMember } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -585,6 +585,44 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ไม่มีใคร assign (หยิบงานเอง) → null", assignedBy({ history: [] }) === null);
     check("ไม่มี history เลย → null", assignedBy({}) === null);
     check("Unassigned ไม่ใช่ชื่อคน", assignedBy({ history: [ev("assigned", "Unassigned", "1")] }) === null);
+  }
+
+  // 5 ส.ค. 69: "Peach ไม่ได้รับ Noti เรื่องการปรับแก้บรีฟตาม Request ไป"
+  // คนที่ตีบรีฟกลับ/ขอเติมบรีฟ คือคนที่รอฟังผลการแก้ ต้องได้รับแจ้งด้วย
+  {
+    const ev = (type: string, by: string, at: string) => ({ type, by, at } as never);
+    const unlock = (requestedBy: string, requestedAt: string) =>
+      ({ status: "Pending", requestedBy, requestedAt } as never);
+    check("ตีบรีฟกลับ → คนที่ตีกลับคือคนที่รอฟัง",
+      briefFixRequestedBy({ history: [ev("brief_revision_requested", "Peach", "2026-08-01")] }) === "Peach");
+    check("ขอเติมบรีฟ → คนที่ขอคือคนที่รอฟัง",
+      briefFixRequestedBy({ history: [], briefUnlock: unlock("Jungjing", "2026-08-02") }) === "Jungjing");
+    check("ขอสองทาง → เอาคนที่ขอล่าสุด",
+      briefFixRequestedBy({
+        history: [ev("brief_revision_requested", "Peach", "2026-08-01")],
+        briefUnlock: unlock("Jungjing", "2026-08-03"),
+      }) === "Jungjing");
+    check("ตีกลับทีหลัง → เอาคนตีกลับ",
+      briefFixRequestedBy({
+        history: [ev("brief_revision_requested", "Peach", "2026-08-04")],
+        briefUnlock: unlock("Jungjing", "2026-08-03"),
+      }) === "Peach");
+    check("ตีกลับหลายรอบ → เอารอบล่าสุด",
+      briefFixRequestedBy({ history: [
+        ev("brief_revision_requested", "Peach", "2026-08-01"),
+        ev("brief_revision_requested", "Four", "2026-08-02"),
+      ] }) === "Four");
+    check("ไม่มีใครขอแก้ → null (ไม่แจ้งมั่ว)", briefFixRequestedBy({ history: [ev("assigned", "Peach", "1")] }) === null);
+    check("ใบงานเปล่า → null", briefFixRequestedBy({}) === null);
+  }
+
+  // คำขอเติมบรีฟต้องขึ้นคิวของ Creative Leader ไม่ใช่ค้างอยู่ในใบงานเงียบ ๆ
+  {
+    const unlock = (status: string) => ({ status, requestedBy: "Pupay", requestedAt: "1" } as never);
+    check("ขอแล้วยังไม่ตัดสิน → เข้าคิว", awaitsBriefUnlockDecision({ briefUnlock: unlock("Pending") }));
+    check("ปล่อยแล้ว → ออกจากคิว", !awaitsBriefUnlockDecision({ briefUnlock: unlock("Granted") }));
+    check("ไม่ปล่อย → ออกจากคิว", !awaitsBriefUnlockDecision({ briefUnlock: unlock("Rejected") }));
+    check("ไม่เคยขอ → ไม่อยู่ในคิว", !awaitsBriefUnlockDecision({}));
   }
 
   // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง

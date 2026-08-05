@@ -76,11 +76,19 @@ export function canEditContentPlan(role: string): boolean {
  */
 export function canDecideCaption(
   role: string,
-  opts: { me: string; writer: string | null | undefined },
+  opts: { me: string; writer: string | null | undefined; reviewer?: string | null },
 ): boolean {
-  if (!canEditContentPlan(role)) return false;
   const me = (opts.me ?? "").trim().toLowerCase();
   const writer = (opts.writer ?? "").trim().toLowerCase();
+  const reviewer = (opts.reviewer ?? "").trim().toLowerCase();
+  // The person the caption was addressed to decides it, whatever their role.
+  // The post's requester is often the Creative Leader, who is not on the
+  // planning side — routing the caption to them and then refusing them the
+  // button would just move the dead end. The CMO keeps the standing override
+  // they have everywhere; what changed is that the caption no longer lands in
+  // their queue unless it is actually theirs (see captionReviewer).
+  const addressed = !!reviewer && me === reviewer;
+  if (!addressed && role !== "CMO" && !canEditContentPlan(role)) return false;
   if (!me || !writer || writer === "unassigned") return true;
   return me !== writer;
 }

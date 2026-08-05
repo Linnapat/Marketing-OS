@@ -17,7 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
-  releaseBriefForRevision, revisionAssignee, assignedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
+  releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
   MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
@@ -189,12 +189,19 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // Real Marketing Manager / BGL from Settings for the approval chain — no more
   // hardcoded "Mei T." Shows "—" when the role has no member yet.
   const [bglApprover, setBglApprover] = useState("—");
+  // Only the Creative Leader may release a brief top-up (canReleaseBriefEdit),
+  // so the request has to reach them by NAME — a notification cannot be sent to
+  // a role. The ask used to say "→ Creative Leader" in its text and go to the
+  // designer, which is how requests sat Pending with nobody aware of them.
+  const [creativeLeader, setCreativeLeader] = useState("");
   useEffect(() => {
     let alive = true;
     fetchMembers().then((ms) => {
       if (!alive) return;
       const m = ms.find((x) => /marketing manager|bgl|brand lead/i.test(x.role));
       if (m) setBglApprover(m.name);
+      const lead = ms.find((x) => /creative leader/i.test(x.role));
+      if (lead) setCreativeLeader(lead.name);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -242,9 +249,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       const next = withNotice(asked, currentUser, `${currentUser} ขอเติมบรีฟเพิ่มเติม: ${unlockReason.trim()} — รอ Creative Leader ปล่อยงานให้แก้`);
       await updateGraphic(next);
       updateCurrentGraphic(next);
+      // `to` the Creative Leader — theirs to decide. The people producing the
+      // work are only informed: a top-up they cannot grant is not their action.
       notify("approval", `✋ ขอเติมบรีฟ: ${g.title}`,
-        `โดย ${currentUser} → Creative Leader · ${unlockReason.trim()}`,
-        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g), inform: [g.acceptedBy, g.designer] });
+        `โดย ${currentUser} → ${creativeLeader || "Creative Leader"} · ${unlockReason.trim()}`,
+        `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`,
+        { team: graphicTeam(g), to: [creativeLeader], inform: [g.acceptedBy, g.designer] });
       toastSuccess("ส่งคำขอให้ Creative Leader แล้ว — รอปล่อยงานก่อนถึงจะเติมบรีฟได้");
       setUnlockReason("");
     } catch (error) {
@@ -1288,16 +1298,23 @@ const BRIEF_FIELDS: { key: RequesterBriefField; label: string; placeholder: stri
  *  and a message that fails to send must not look like a save that failed. */
 function announceBriefEdit(g: Graphic, by: string, fields: RequesterBriefField[]): void {
   const worker = briefChangeAudience(g);
-  if (!worker || !fields.length) return;
+  // Whoever sent the brief back or asked to top it up is waiting on this edit
+  // specifically — they get told even when no one is producing the work yet,
+  // which is exactly when a brief comes back for fixing. Without them the only
+  // person guaranteed to miss the answer was the one who asked the question.
+  const asker = briefFixRequestedBy(g);
+  if ((!worker && !asker) || !fields.length) return;
   const labels = fields
     .map((key) => BRIEF_FIELDS.find((f) => f.key === key)?.label ?? key)
     .join(" · ");
   // On the request as well as in the bell: the notice is the durable trail the
   // history table does not keep, and it is there next time anyone opens this.
   updateGraphic(withNotice(g, by, `แก้บรีฟ: ${labels}`)).catch(() => {});
+  // The asker is a `to:` and not an `inform:`: they stopped work over this and
+  // have to decide whether the answer is good enough to carry on.
   notify("feedback", `📝 บรีฟถูกแก้: ${g.title}`,
-    `${labels} · โดย ${by} → ${worker} ทำงานจากบรีฟนี้อยู่`,
-    workLink.graphic(g.id), { team: graphicTeam(g), to: [worker], inform: [g.requester] });
+    `${labels} · โดย ${by}${worker ? ` → ${worker} ทำงานจากบรีฟนี้อยู่` : ""}${asker ? ` · ตามที่ ${asker} ขอแก้` : ""}`,
+    workLink.graphic(g.id), { team: graphicTeam(g), to: [worker, asker], inform: [g.requester] });
 }
 
 function BriefEditor({ g, me, onSaved, onCancel }: {

@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionReviewer } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -380,13 +380,25 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // Save caption/hashtags/cta; "Mark Ready" flips captionStatus and, if the post
   // is now fully ready, advanceApprovalState pushes it into My Approval.
   const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer }));
-  const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
+  // Handing the words over is a handoff like any other, and it was the one with
+  // no message attached: the writer pressed Mark Ready and the person who has
+  // to accept it found out by opening the drawer. Addressed to the requester of
+  // the post — see captionReviewer — so it reaches the person who asked for it
+  // rather than every planner in the company.
+  const markCaptionReady = () => {
+    void persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
+    const owed = captionReviewer(item);
+    notify("approval", `📝 caption รออนุมัติ: ${item.title}`,
+      `${brandName(item.b)} · ${item.campaign} · เขียนโดย ${reviewer}${owed ? ` → รอ ${owed}` : ""}`,
+      workLink.post(item.id), { team: "graphic", to: [owed] });
+  };
 
   // ── Caption sign-off ─────────────────────────────────────────────────
   // Step 4 of the agreed flow: the words get accepted (or sent back) on their
   // own, before production, instead of riding along with the whole post.
   const [captionReason, setCaptionReason] = useState("");
-  const canDecideCap = canDecideCaption(role, { me: reviewer, writer: item.owner });
+  const captionOwedTo = captionReviewer(item);
+  const canDecideCap = canDecideCaption(role, { me: reviewer, writer: item.owner, reviewer: captionOwedTo });
   // Told apart from "not on the planning side" so the reason on screen is the
   // true one — being the writer is a different refusal from being Creative.
   const isSameCaptionWriter =
