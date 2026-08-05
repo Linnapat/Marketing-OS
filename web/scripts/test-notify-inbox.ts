@@ -9,9 +9,13 @@
  * still land somewhere, and money must never land in a bell at all.
  * Run: node --import tsx scripts/test-notify-inbox.ts */
 
-import { inboxKind, resolveTeam, teamFromLink } from "../src/lib/notifyRouting";
+import { inboxKind, resolveTeam, teamFromLink, hasChannel } from "../src/lib/notifyRouting";
 
 let pass = 0, fail = 0;
+function check(name: string, cond: boolean) {
+  if (cond) { pass++; console.log(`  ✓ ${name}`); }
+  else { fail++; console.error(`  ✗ FAIL: ${name}`); }
+}
 function is(name: string, actual: unknown, expected: unknown) {
   if (actual !== expected) console.error(`    expected ${String(expected)}, got ${String(actual)}`);
   if (actual === expected) { pass++; console.log(`  ✓ ${name}`); }
@@ -51,6 +55,18 @@ console.log("\nงานแต่ละแบบยังเข้าห้อ�
 is("graphic", teamFromLink("/graphic?open=1"), "graphic");
 is("content", teamFromLink("/content?post=c1"), "graphic");
 is("kol", teamFromLink("/kol/5"), "kol");
+
+console.log("\nCaption sign-off ต้องไม่หลุดเข้าห้อง Slack");
+// 5 ส.ค. 69: อนุมัติ caption รวดเดียว 10 อัน → ขึ้นห้อง #05_marketing_graphic
+// 10 ข้อความ เพราะตัวแจ้งไม่ได้ระบุ team จึง route ตามลิงก์ /content ซึ่งมีห้อง
+// และไม่มีใครให้ DM (คนเขียนเป็น inform) route เลยตกไปเข้าห้องแทน
+is("ลิงก์ /content ยังชี้ห้อง graphic (จึงต้องระบุ team ทับ)", teamFromLink("/content?post=c1"), "graphic");
+is("ระบุ general ต้องชนะลิงก์", resolveTeam("general", "/content?post=c1"), "general");
+check("general ไม่มีห้อง Slack — ต่อให้ไม่มีใครให้ DM ก็ไม่หลุดเข้าห้อง", !hasChannel("general"));
+// ทางอื่นยังมีห้องเหมือนเดิม จะได้รู้ว่าปิดเฉพาะ caption ไม่ได้ปิดทั้งระบบ
+check("graphic ยังมีห้อง", hasChannel("graphic"));
+check("vdo ยังมีห้อง", hasChannel("vdo"));
+check("kol ยังมีห้อง", hasChannel("kol"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

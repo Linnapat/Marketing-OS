@@ -13,6 +13,7 @@ import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
+import type { NotifyTeam } from "@/lib/notifyRouting";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { ExpandableTextarea } from "@/components/ui/ExpandableTextarea";
 import { WorkCode } from "@/components/ui/CampaignCode";
@@ -34,6 +35,26 @@ const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Ap
 type DTab = (typeof TABS)[number][0];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Where caption sign-off is allowed to go: to people, never to a room.
+ *
+ *  These notifications carry no `team`, so they were routed off their link —
+ *  /content resolves to the Graphic team, which has a room. And the approval
+ *  named nobody to DM (the writer is `inform`, a bell entry by design), so the
+ *  route's "nobody to DM → tell the room instead" fallback sent every single
+ *  one to #05_marketing_graphic. Approving ten captions in a sitting posted ten
+ *  messages, which is what the team saw on 5 Aug 2026 at 14:01 and asked to
+ *  stop: "ในส่วนของ Caption อนุมัติ ยังไม่ต้องส่งเข้า Slack".
+ *
+ *  "general" is the app's DM-only audience (notifyRouting.CHANNEL_TEAMS), so
+ *  this holds even when nobody resolves to DM — a room post cannot happen by
+ *  accident again. The writer still gets the bell, the DM and the revision
+ *  task; only the channel goes quiet.
+ *
+ *  Named rather than inlined three times because it is meant to be reversible:
+ *  "ยังไม่ต้อง" is not "never", and putting captions back in a room is one edit
+ *  here rather than three scattered ones. */
+const CAPTION_NOTIFY_TEAM: NotifyTeam = "general";
 
 /** The saved-set picker under a caption field. Footers carry branch details and
  *  run long, so each chip truncates and keeps the full text in its tooltip. */
@@ -390,7 +411,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     const owed = captionReviewer(item);
     notify("approval", `📝 caption รออนุมัติ: ${item.title}`,
       `${brandName(item.b)} · ${item.campaign} · เขียนโดย ${reviewer}${owed ? ` → รอ ${owed}` : ""}`,
-      workLink.post(item.id), { team: "graphic", to: [owed] });
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [owed] });
   };
 
   // ── Caption sign-off ─────────────────────────────────────────────────
@@ -413,12 +434,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     void persist(next, decision === "approve" ? "อนุมัติ caption แล้ว" : "ส่ง caption กลับไปแก้แล้ว");
     if (decision === "approve") {
       notify("approved", `✅ อนุมัติ caption: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`,
-        workLink.post(item.id), { inform: [item.owner] });
+        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, inform: [item.owner] });
       return;
     }
     // The writer is the one who has to act, so this is a DM, not a bell entry.
+    // Still DM-only even when the post has no writer yet, which used to fall
+    // through to the room — see CAPTION_NOTIFY_TEAM.
     notify("rejected", `✏️ caption ถูกส่งกลับแก้: ${item.title}`, `${captionReason.trim()} · โดย ${reviewer}`,
-      workLink.post(item.id), { to: [item.owner] });
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [item.owner] });
     if (item.owner && item.owner !== "Unassigned") {
       createRevisionTask({
         module: "Content", title: `แก้ caption — ${item.title}`, assignee: item.owner,
