@@ -8,6 +8,7 @@ import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
 import { liveOnly, trashReady } from "@/lib/db/trash";
+import { adoptBriefVersion, forgetBriefVersion } from "@/lib/db/briefVersion";
 
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
@@ -63,14 +64,19 @@ export async function addCampaignType(name: string): Promise<void> {
 export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   const db = supabase();
   if (!db) return c;
-  const { error } = await db.from("campaigns").upsert({
+  // On an existing campaign this upsert is an UPDATE, which moves updated_at —
+  // and saveCampaignBrief writes the brief blob straight after it. Adopting the
+  // version here is what stops our own row-write from reading as somebody else's
+  // edit two lines later (see db/briefVersion).
+  const { data: written, error } = await db.from("campaigns").upsert({
     id: c.id, name: c.name, brand: c.b, branch: c.branch, owner: c.owner, budget: c.budget, spend: c.spend,
     roi: c.roi, dates: c.dates, status: c.status, camp_type: c.campType, readiness: c.readiness,
     task_blocked: c.taskBlocked, task_waiting: c.taskWaiting, task_overdue: c.taskOverdue,
     task_total: c.taskTotal, task_done: c.taskDone, task_in_progress: c.taskInProgress,
     bottleneck_team: c.bottleneckTeam, next_approval: c.nextApproval,
-  }, { onConflict: "id" });
+  }, { onConflict: "id" }).select("id, updated_at");
   assertDbOk(error, "Could not save campaign");
+  adoptBriefVersion(c.id, written as { updated_at?: string }[] | null);
   mirrorCampaignToSheet(c);
   return c;
 }
@@ -100,8 +106,10 @@ export async function updateCampaignStatus(id: string, status: string): Promise<
   const db = supabase();
   if (!db) return;
   const nextApproval = status === "Waiting Approval" || status === "Waiting for Approval" ? DEFAULT_APPROVER : "None";
-  const { error } = await db.from("campaigns").update({ status, next_approval: nextApproval }).eq("id", id);
+  const { data: written, error } = await db.from("campaigns")
+    .update({ status, next_approval: nextApproval }).eq("id", id).select("id, updated_at");
   assertDbOk(error, "Could not update campaign status");
+  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
   logAudit(`เปลี่ยนสถานะแคมเปญ ${id}`, "Campaign", { after: status, meta: { campaignId: id, nextApproval } });
 }
 
@@ -129,6 +137,7 @@ export async function deleteCampaign(id: string, by = ""): Promise<void> {
     for (const result of soft) assertDbOk(result.error, "Could not move linked campaign records to trash");
     const { error: softError } = await db.from("campaigns").update(stamp).eq("id", id).is("deleted_at", null);
     assertDbOk(softError, "Could not move campaign to trash");
+    forgetBriefVersion(id);
     return;
   }
 
@@ -143,6 +152,7 @@ export async function deleteCampaign(id: string, by = ""): Promise<void> {
 
   const { error } = await db.from("campaigns").delete().eq("id", id);
   assertDbOk(error, "Could not delete campaign");
+  forgetBriefVersion(id);
 }
 
 /** Keep the campaign's ROAS multiple (stored in the legacy `roi` column) in
@@ -156,8 +166,10 @@ export async function updateCampaignRoas(id: string, roas: number): Promise<void
     if (c) c.roi = rounded;
     return;
   }
-  const { error } = await db.from("campaigns").update({ roi: rounded }).eq("id", id);
+  const { data: written, error } = await db.from("campaigns")
+    .update({ roi: rounded }).eq("id", id).select("id, updated_at");
   assertDbOk(error, "Could not update campaign ROAS");
+  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
 }
 
 /** CMO-approved budget revision. Spend stays untouched; only the campaign plan
@@ -169,8 +181,10 @@ export async function updateCampaignBudget(id: string, budget: number): Promise<
     if (c) c.budget = budget;
     return;
   }
-  const { error } = await db.from("campaigns").update({ budget }).eq("id", id);
+  const { data: written, error } = await db.from("campaigns")
+    .update({ budget }).eq("id", id).select("id, updated_at");
   assertDbOk(error, "Could not update campaign budget");
+  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
 }
 
 /** A single campaign by id — for the detail page. */

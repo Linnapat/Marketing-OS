@@ -23,6 +23,12 @@ import { brandName } from "@/lib/brands";
 import { assertDbOk } from "@/lib/db/assert";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
+import { noteBriefVersion, forgetBriefVersion, briefVersionOf, adoptBriefVersion } from "./briefVersion";
+
+// Re-exported from here because this is where callers already reach for brief
+// persistence; the map itself lives in ./briefVersion so db/campaigns can keep
+// it current too, without importing this module back.
+export { noteBriefVersion, forgetBriefVersion } from "./briefVersion";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtRange(startIso: string, endIso: string): string {
@@ -335,7 +341,9 @@ async function markMaterialised(id: string): Promise<void> {
   const { data } = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
   const blob = data?.data as CampaignBrief | undefined;
   if (!blob || blob.materialisedAt) return;
-  await db.from("campaigns").update({ data: { ...blob, materialisedAt: new Date().toISOString() } }).eq("id", id);
+  const { data: written } = await db.from("campaigns")
+    .update({ data: { ...blob, materialisedAt: new Date().toISOString() } }).eq("id", id).select("id, updated_at");
+  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
 }
 
 function dayOf(iso: string): number { const d = Number(iso?.split("-")[2]); return Number.isFinite(d) ? d : 0; }
@@ -344,20 +352,6 @@ function labelDate(iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
   return m ? `${MON[m - 1]} ${d}` : "";
 }
-
-/** The row version a brief was loaded at, so a save can tell whether anybody
- *  else has written to it since. Kept out of CampaignBrief itself: it belongs
- *  to the ROW, not to the plan, and putting it in the blob would mean the
- *  version travels inside the thing it is versioning. */
-const briefVersions = new Map<string, string>();
-
-/** Remember the version a brief was read at. */
-export function noteBriefVersion(id: string, updatedAt?: string | null): void {
-  if (id && updatedAt) briefVersions.set(id, updatedAt);
-}
-
-/** Forget it — after a successful save, or when abandoning an edit. */
-export function forgetBriefVersion(id: string): void { briefVersions.delete(id); }
 
 export class StaleBriefError extends Error {
   constructor() {
@@ -377,7 +371,7 @@ export class StaleBriefError extends Error {
 async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const seenAt = briefVersions.get(brief.id);
+  const seenAt = briefVersionOf(brief.id);
   let q = db.from("campaigns").update({ data: brief }).eq("id", brief.id);
   if (seenAt) q = q.eq("updated_at", seenAt);
   const { data, error } = await q.select("id, updated_at");
@@ -391,8 +385,7 @@ async function persistBriefBlob(brief: CampaignBrief): Promise<void> {
     throw new Error("บันทึกรายละเอียดแคมเปญไม่สำเร็จ — ไม่พบแคมเปญนี้ (อาจถูกลบ หรือคุณไม่มีสิทธิ์แก้) ลอง refresh แล้วบันทึกใหม่");
   }
   // Move our marker forward so a second save in the same session still works.
-  const next = (data[0] as { updated_at?: string }).updated_at;
-  if (next) briefVersions.set(brief.id, next);
+  adoptBriefVersion(brief.id, data as { updated_at?: string }[]);
 }
 
 /** All saved briefs keyed by campaign name — one query, for pages that show
@@ -489,8 +482,10 @@ export async function syncBriefKolFromRows(kol: Kol): Promise<void> {
     if (only.name && !/^new request/i.test(only.name)) item.name = only.name;
     if (only.h && only.h !== "@tbd") item.handle = only.h;
   }
-  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", kol.campaignId);
+  const { data: written, error } = await db.from("campaigns")
+    .update({ data: brief }).eq("id", kol.campaignId).select("id, updated_at");
   assertDbOk(error, "Could not sync KOL changes back to campaign brief");
+  adoptBriefVersion(kol.campaignId, written as { updated_at?: string }[] | null);
 }
 
 /** Two-way sync: a New Post created in the Content Calendar (using the same
@@ -507,8 +502,10 @@ export async function appendBriefItem(campaignName: string, item: BriefContentIt
   const existingIndex = brief.content.findIndex((c) => c.id === nextId);
   if (existingIndex >= 0) brief.content[existingIndex] = { ...item, id: nextId };
   else brief.content = [...brief.content, { ...item, id: nextId }];
-  const { error } = await db.from("campaigns").update({ data: brief }).eq("id", camp.id);
+  const { data: written, error } = await db.from("campaigns")
+    .update({ data: brief }).eq("id", camp.id).select("id, updated_at");
   assertDbOk(error, "Could not sync content item back to campaign brief");
+  adoptBriefVersion(camp.id, written as { updated_at?: string }[] | null);
 }
 
 /** Two-way sync for KOL: a "Request KOL" created in the KOL module (using the
@@ -524,18 +521,21 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
     // Campaign has no brief (created outside the wizard) — the fee must still
     // count toward the campaign's committed budget, not vanish.
     const spend = (camp.spend || 0) + (item.budget || 0);
-    const { error } = await db.from("campaigns").update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id);
+    const { data: written, error } = await db.from("campaigns")
+      .update({ spend, budget: Math.max(camp.budget || 0, spend) }).eq("id", camp.id).select("id, updated_at");
     assertDbOk(error, "Could not sync KOL budget to campaign");
+    adoptBriefVersion(camp.id, written as { updated_at?: string }[] | null);
     return;
   }
   brief.kols = [...brief.kols, { ...item, id: item.id || `kr-req-${Date.now()}` }];
   // Re-derive the campaign's committed budget so the row (Budget/Spend shown on
   // the Campaigns list, detail header, Finance) moves together with the plan.
   const s = budgetSummary(brief);
-  const { error } = await db.from("campaigns").update({
+  const { data: written, error } = await db.from("campaigns").update({
     data: brief, spend: s.allocated, budget: Math.max(brief.budget.total || 0, s.allocated),
-  }).eq("id", camp.id);
+  }).eq("id", camp.id).select("id, updated_at");
   assertDbOk(error, "Could not sync KOL item back to campaign brief");
+  adoptBriefVersion(camp.id, written as { updated_at?: string }[] | null);
 }
 
 /** Append an approval-log entry + status change to a saved brief. */
@@ -547,8 +547,14 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
   const nextApproval = status === "Waiting for Approval" ? (brief.approver || DEFAULT_APPROVER) : "None";
-  const { error } = await db.from("campaigns").update({ data: brief, status, next_approval: nextApproval }).eq("id", id);
+  // Adopt the version this write produced. Approving runs the fan-out
+  // (saveCampaignBrief) immediately afterwards, so a marker left pointing at the
+  // row as it was BEFORE this update makes that save look like someone else's
+  // edit — which is exactly how approved campaigns ended up with no posts.
+  const { data: written, error } = await db.from("campaigns")
+    .update({ data: brief, status, next_approval: nextApproval }).eq("id", id).select("id, updated_at");
   assertDbOk(error, "Could not save campaign approval status");
+  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
   logAudit(`Brief ${brief.name || id}: ${entry.action}`, "Campaign", {
     after: status, actorName: entry.by, meta: { campaignId: id, comment: entry.comment },
   });

@@ -467,8 +467,15 @@ function ContentList({ hub, brief, canMake, onReload }: {
           <div className="text-[12.5px] font-extrabold" style={{ color: "#B3641E" }}>
             ⚠ แคมเปญนี้อนุมัติแล้ว แต่แผน {planned.length} รายการยังไม่ถูกสร้างเป็นงานจริง
           </div>
+          {/* Who is reading this decides what it can honestly say. The banner
+              used to tell everyone to "กดปุ่มด้านล่าง" while the button renders
+              only for the roles that may create the work — so the Creative
+              Leader whose seven planned items these are read an instruction
+              pointing at nothing, and reported it as "กดเข้าไปสร้างไม่ได้". */}
           <div className="text-[11.5px] mt-1" style={{ color: "#8A5A1E" }}>
-            แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ กดปุ่มด้านล่างเพื่อสร้างใหม่ได้เลย
+            {canMake
+              ? "แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ กดปุ่มด้านล่างเพื่อสร้างใหม่ได้เลย"
+              : `แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ แจ้ง ${DEFAULT_APPROVER} หรือ Marketing Manager / BGL ให้เปิดแท็บนี้แล้วกด “สร้างงานจากแผนนี้” (สิทธิ์สร้างงานจากแผนอยู่ที่ฝั่งวางแผน)`}
           </div>
           {canMake && (
             <button onClick={makeTheWork} disabled={making}
