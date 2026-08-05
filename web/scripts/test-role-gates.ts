@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix } from "../src/lib/roleGates";
 
 import { readFileSync } from "node:fs";
 
@@ -310,6 +310,42 @@ console.log("\n— assets: หนึ่งใบงานหนึ่งแถ�
   check("มี unique index สำหรับ upsert", /create unique index[\s\S]{0,120}assets \(graphic_request_id\)/.test(sql));
   // partial index ใช้เป็น ON CONFLICT target ไม่ได้ — เคยพลาดตรงนี้แล้ว insert เงียบ
   check("ต้องไม่เป็น partial index", !/assets_graphic_request_uniq[\s\S]{0,200}where graphic_request_id is not null/.test(sql));
+}
+
+console.log("\n— กู้คืน fan-out ที่ล้ม: ใครกดปุ่ม “สร้างงานจากแผนนี้” ได้ —");
+{
+  // เปิดกว้างขึ้นตั้งใจ (Gik 5 ส.ค. 69): ปุ่มนี้ไม่ได้ตัดสินใจอะไรใหม่ CMO อนุมัติ
+  // รายการพวกนี้ไปแล้ว มันแค่สร้างสิ่งที่แผนบอกไว้ ถ้ากั้นไว้ที่ฝั่งวางแผน งานจะค้าง
+  // จนกว่า planner จะบังเอิญเปิดแท็บ — Creative Leader เจ้าของแผนเห็น warning แต่ไม่เห็นปุ่ม
+  //
+  // แต่กว้างได้แค่เท่าที่ RLS ยอม: write แรกของ fan-out คือ upsert แถว campaigns ซึ่ง
+  // policy staff_insert ขอ has_module('Campaign','Edit') ปุ่มที่ DB จะปฏิเสธคือทางตัน
+  // แบบเดียวกับที่ audit 1 ส.ค. เจอ เกตนี้เลยอ่าน matrix ตัวเดียวกับที่ has_module อ่าน
+  const live: PermMatrix = {
+    "CMO": { Campaign: "Approve" },
+    "Marketing Manager / BGL": { Campaign: "Edit" },
+    "Creative Leader": { Campaign: "Edit" },       // ตาราง permissions จริงบน prod
+    "Senior Graphic Designer": { Campaign: "View" },
+    "VDO Editor": { Campaign: "View" },
+    "Content Creator": { Campaign: "View" },
+    "Agency (External)": { Campaign: "—" },
+  };
+  for (const role of ["CMO", "Marketing Manager / BGL", "Creative Leader"]) {
+    is(`${role} (Campaign ≥ Edit) กดได้`, canMakeApprovedPlan(role, live), true);
+  }
+  for (const role of ["Senior Graphic Designer", "VDO Editor", "Content Creator"]) {
+    is(`${role} (Campaign = View) ไม่เห็นปุ่ม — DB ก็จะปฏิเสธอยู่ดี`, canMakeApprovedPlan(role, live), false);
+  }
+  is("Agency (External) กดไม่ได้", canMakeApprovedPlan("Agency (External)", live), false);
+  is("role ว่าง (demo / member ยังโหลดไม่เสร็จ) ไม่ถูกบล็อก", canMakeApprovedPlan("", live), true);
+  // กว้างกว่า canEditContentPlan จริง ๆ ไม่ใช่ alias ของกันและกัน — นี่คือหัวใจของการแก้
+  check("Creative Leader กดกู้คืนได้ ทั้งที่แก้ Content Plan ไม่ได้",
+    canMakeApprovedPlan("Creative Leader", live) && !canEditContentPlan("Creative Leader"));
+  // ตรงกับเกตสร้างแคมเปญเป๊ะ ๆ เพราะ RLS ใช้เงื่อนไขเดียวกัน
+  for (const role of Object.keys(live)) {
+    is(`${role}: ตรงกับ canCreateCampaign (RLS เงื่อนไขเดียวกัน)`,
+      canMakeApprovedPlan(role, live), canCreateCampaign(role, live));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

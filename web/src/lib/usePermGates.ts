@@ -10,6 +10,7 @@ import { useRole } from "@/lib/role";
 import { fetchPermissions } from "@/lib/db/settings";
 import {
   canCreateCampaign,
+  canMakeApprovedPlan,
   canApproveExpense,
   canSeeAllSpending,
   canMarkPaid,
@@ -37,6 +38,14 @@ function usePermMatrix(): PermMatrix | null {
 export function useCanCreateCampaign(): boolean {
   const { role } = useRole();
   return canCreateCampaign(role, usePermMatrix());
+}
+
+/** May the current user re-run the fan-out for an approved campaign whose plan
+ *  never became work? Mirrors campaigns' INSERT policy (Campaign ≥ Edit), which
+ *  the fan-out's first write has to satisfy. */
+export function useCanMakeApprovedPlan(): boolean {
+  const { role } = useRole();
+  return canMakeApprovedPlan(role, usePermMatrix());
 }
 
 /** May the current user decide an expense request? Mirrors the database rule

@@ -356,3 +356,44 @@ export function canSeePlatformPerformance(role: string): boolean {
   if (/kol|influencer/i.test(role || "")) return false;
   return !isCreativeSideRole(role);
 }
+
+// ── Repairing a fan-out that failed ────────────────────────────────────────
+// A campaign can sit "Approved" with none of its plan turned into posts,
+// graphic requests or tasks — the fan-out is several writes and any one of them
+// can fail after the status has already flipped (it did, for every campaign
+// approved between 2026-07-29 and the briefVersion fix). The Content tab offers
+// "สร้างงานจากแผนนี้" to run it again; saveCampaignBrief is idempotent, so it
+// only fills in what is missing.
+//
+// Wider than canEditContentPlan on purpose. Pressing this decides nothing: the
+// CMO already approved these exact items, and the button creates what the
+// approved plan says and no more. Gated to the planning side, the work sat dead
+// until a planner happened to open the tab — the Creative Leader whose seven
+// items they were could see the warning and not the button. Gik's call on
+// 2026-08-05: let the person looking at it fix it.
+//
+// Not "everyone", though — "everyone the database will actually let through".
+// The fan-out's first write is an upsert of the campaign row, and campaigns'
+// INSERT policy asks has_module('Campaign','Edit'); a button offered to someone
+// the row policy refuses is the dead end this app has hit before (Agency ทางตัน,
+// AUDIT 2026-08-01). So the gate is the matrix level, read from the SAME live
+// permissions table that has_module() reads:
+//
+//   Campaign ≥ Edit  CMO, Marketing Manager / BGL, Marketing Executive,
+//                    Co-ordinator, KOL Specialist, Creative Leader ← Peach
+//   Campaign = View  Senior Graphic Designer, VDO Editor, Content Creator
+//   Campaign = —     Agency (External)
+//
+// Note the live matrix has Creative Leader at Edit while the shipped seed still
+// says View. Reading the live table is what makes this land where the database
+// stands today; raise or lower it in Settings → Permissions and both move.
+
+/** May this person re-run the fan-out for a plan the CMO already approved?
+ *
+ *  Same level the campaigns INSERT policy requires, so the button and the row
+ *  policy cannot disagree. Use the useCanMakeApprovedPlan hook in components —
+ *  it supplies the live matrix. */
+export function canMakeApprovedPlan(role: string, matrix?: PermMatrix | null): boolean {
+  if (!role) return true;  // demo mode, or the member row is still loading
+  return CAMPAIGN_CREATE_LEVELS.includes(campaignPermLevel(role, matrix) ?? "—");
+}

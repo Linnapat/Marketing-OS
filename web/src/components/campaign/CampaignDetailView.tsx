@@ -27,7 +27,7 @@ import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { brandName } from "@/lib/brands";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
-import { canEditContentPlan } from "@/lib/roleGates";
+import { useCanMakeApprovedPlan } from "@/lib/usePermGates";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
 import { fmtDisplay } from "@/components/ui/DatePicker";
@@ -58,6 +58,8 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   // Admin (or the named approver) can approve or send back, so campaigns never get
   // stuck permanently in "Waiting for Approval".
   const { role, member } = useAuth();
+  // Hoisted out of the tab switch: hooks cannot sit behind `tab === "content"`.
+  const canMakePlan = useCanMakeApprovedPlan();
   const [approving, setApproving] = useState(false);
   // Status is the approval flow, so the CMO alone moves it — same gate as the
   // campaign list's status dropdown.
@@ -192,7 +194,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       <div className="mt-5">
         {tab === "overview" && <OverviewTab detail={detail} hub={hub} s={s} nextApproval={effectiveNextApproval} />}
         {tab === "brief" && <BriefTab detail={detail} brief={brief} />}
-        {tab === "content" && <ContentList hub={hub} brief={brief} canMake={canApprove || canEditContentPlan(role)} onReload={onReload} />}
+        {tab === "content" && <ContentList hub={hub} brief={brief} canMake={canMakePlan} onReload={onReload} />}
         {tab === "kol" && <KolList hub={hub} detail={detail} />}
         {tab === "ads" && <AdsTab detail={detail} hub={hub} />}
         {tab === "budget" && <BudgetTab detail={detail} s={s} brief={brief} />}
@@ -468,14 +470,16 @@ function ContentList({ hub, brief, canMake, onReload }: {
             ⚠ แคมเปญนี้อนุมัติแล้ว แต่แผน {planned.length} รายการยังไม่ถูกสร้างเป็นงานจริง
           </div>
           {/* Who is reading this decides what it can honestly say. The banner
-              used to tell everyone to "กดปุ่มด้านล่าง" while the button renders
-              only for the roles that may create the work — so the Creative
-              Leader whose seven planned items these are read an instruction
-              pointing at nothing, and reported it as "กดเข้าไปสร้างไม่ได้". */}
+              used to tell everyone to "กดปุ่มด้านล่าง" while the button rendered
+              only for the planning side — so the Creative Leader whose seven
+              planned items these are read an instruction pointing at nothing,
+              and reported it as "กดเข้าไปสร้างไม่ได้". The button is now open to
+              the whole team (canMakeApprovedPlan); this line is what an external
+              agency, the one role still without it, sees instead. */}
           <div className="text-[11.5px] mt-1" style={{ color: "#8A5A1E" }}>
             {canMake
               ? "แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ กดปุ่มด้านล่างเพื่อสร้างใหม่ได้เลย"
-              : `แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ แจ้ง ${DEFAULT_APPROVER} หรือ Marketing Manager / BGL ให้เปิดแท็บนี้แล้วกด “สร้างงานจากแผนนี้” (สิทธิ์สร้างงานจากแผนอยู่ที่ฝั่งวางแผน)`}
+              : "แผนยังอยู่ครบ ไม่ได้หายไปไหน — ตอนอนุมัติระบบสร้างโพสต์/ใบงานไม่สำเร็จ แจ้งทีม Marketing ให้เปิดแท็บนี้แล้วกด “สร้างงานจากแผนนี้” ให้ (ใบงานฝั่งเราต้องเปิดจากทีมภายใน)"}
           </div>
           {canMake && (
             <button onClick={makeTheWork} disabled={making}
