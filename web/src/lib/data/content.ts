@@ -314,6 +314,28 @@ export function captionAwaitsApproval(c: Pick<ContentItem, "captionStatus">): bo
   return c.captionStatus === "Ready";
 }
 
+/** WHOSE decision a finished caption is.
+ *
+ *  The person who asked for the post — the approver named on the plan row, else
+ *  the requester who raised it. Not "the planning side" as a group, which is
+ *  how every ready caption landed in the CMO's queue as well as the four other
+ *  planners': "Caption proposal เข้า CMO (ซึ่งไม่ต้องการ) ต้องการให้เข้า
+ *  Requester หรือคนสร้างแคมเปญ".
+ *
+ *  Both fields come off the campaign's Content Plan row when the post is made
+ *  (db/brief), and `approver` already defaults to the requester there, so this
+ *  names one real person for anything raised through a campaign. Null for a
+ *  post that carries neither — legacy rows, and posts added straight to the
+ *  calendar — and the queue falls back to the planning side for those rather
+ *  than stranding a caption nobody is shown. */
+export function captionReviewer(c: Pick<ContentItem, "approver" | "requester">): string | null {
+  for (const raw of [c.approver, c.requester]) {
+    const name = (raw ?? "").trim();
+    if (name && name !== "Unassigned") return name;
+  }
+  return null;
+}
+
 /** Has the caption been signed off in its own right? */
 export function captionApproved(c: Pick<ContentItem, "captionStatus">): boolean {
   return c.captionStatus === "Approved";
