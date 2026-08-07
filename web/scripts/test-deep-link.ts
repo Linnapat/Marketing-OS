@@ -52,7 +52,7 @@ console.log("\nลิงก์เจาะจงแล้วยังส่ง�
 // Routing reads the path, so adding a query must not move a message to another
 // team's channel (or, worse, to no channel).
 is("graphic + param", teamFromLink(workLink.graphic(1)), "graphic");
-is("content + param", teamFromLink(workLink.post("c-1")), "graphic");
+is("content + param", teamFromLink(workLink.post("c-1")), "content");
 is("kol รายคน", teamFromLink(workLink.kol(1)), "kol");
 is("campaign รายตัว", teamFromLink(workLink.campaign("CAM-1")), "general");
 is("campaign + tab", teamFromLink(workLink.campaign("CAM-1", "approval")), "general");

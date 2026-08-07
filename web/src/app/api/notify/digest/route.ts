@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { NotifyTeam, CHANNEL_TEAMS, TEAM_ENV, TEAM_CHANNEL } from "@/lib/notifyRouting";
+import { NotifyTeam, CHANNEL_TEAMS, TEAM_CHANNEL, webhookEnvKeys } from "@/lib/notifyRouting";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const MAX_LINES = 40; // a Slack message is capped; past this we say "and N more"
@@ -22,8 +22,11 @@ interface QueueRow {
 }
 
 function webhookFor(team: NotifyTeam): string | undefined {
-  const key = TEAM_ENV[team];
-  return key ? process.env[key] || undefined : undefined;
+  for (const key of webhookEnvKeys(team)) {
+    const url = process.env[key];
+    if (url) return url;
+  }
+  return undefined;
 }
 
 async function postWebhook(url: string, text: string): Promise<boolean> {

@@ -25,7 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
-import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, inboxKind } from "@/lib/notifyRouting";
+import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, inboxKind, webhookEnvKeys } from "@/lib/notifyRouting";
 import { hasBotToken, postDM } from "@/lib/slackBot";
 import { resolveSlackIds, fetchUnmapped } from "@/lib/slackDirectory";
 
@@ -41,13 +41,25 @@ const FINANCE_DM = () => process.env.SLACK_FINANCE_DM || "";
 
 /** A team's webhook. Read per call rather than cached at module load so a newly
  *  added env var takes effect without a redeploy. Teams with no room (general,
- *  finance) have no env var and deliberately return nothing. */
+ *  finance) have no env var and deliberately return nothing. Content borrows
+ *  the graphic room until its own webhook is set — see TEAM_FALLBACK. */
 function slackWebhookFor(team: NotifyTeam): string | undefined {
-  const key = TEAM_ENV[team];
-  return key ? process.env[key] || undefined : undefined;
+  for (const key of webhookEnvKeys(team)) {
+    const url = process.env[key];
+    if (url) return url;
+  }
+  return undefined;
 }
 
-const anySlackConfigured = () => CHANNEL_TEAMS.some((t) => Boolean(slackWebhookFor(t)));
+/** Whether the team's OWN webhook is set — no borrowing. Settings reports this
+ *  one, so a room still waiting for its webhook shows up as missing instead of
+ *  looking wired because a fallback covers it. */
+function ownWebhook(team: NotifyTeam): boolean {
+  const key = TEAM_ENV[team];
+  return Boolean(key && process.env[key]);
+}
+
+const anySlackConfigured = () => CHANNEL_TEAMS.some(ownWebhook);
 
 interface NotifyBody { event?: string; title?: string; detail?: string; link?: string; team?: string; to?: string[]; inform?: string[] }
 
@@ -287,7 +299,7 @@ export async function GET(req: NextRequest) {
   if (isApiAuthError(guard)) return guard.error;
 
   const teams = Object.fromEntries(
-    CHANNEL_TEAMS.map((t) => [t, { own: Boolean(slackWebhookFor(t)), env: TEAM_ENV[t] }]),
+    CHANNEL_TEAMS.map((t) => [t, { own: ownWebhook(t), env: TEAM_ENV[t] }]),
   );
   // Who the app tried to DM and couldn't — shown as a warning rather than left
   // to be discovered by someone wondering why they never hear about their work.

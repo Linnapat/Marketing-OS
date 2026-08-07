@@ -6,25 +6,31 @@ import { workKind } from "@/lib/data/graphic";
 //
 //   KOL work      → #04_marketing_kol
 //   VDO work      → #06_marketing_vdo      (งานตัด and งานถ่าย both)
-//   Graphic work  → #05_marketing_graphic  (Content posts live here too)
+//   Graphic work  → #05_marketing_graphic
+//   Content work  → #07_marketing_content  (posts, captions, publishing)
 //   Everything else — campaigns, tasks, asking for help — goes to the people
 //   involved as a DM and to no channel at all.
 //   Money never reaches a channel: it is DM'd to one person (SLACK_FINANCE_DM).
 //
-// So "team" is really "which audience", and only three of them are rooms.
+// So "team" is really "which audience", and only four of them are rooms.
+//
+// Content used to share #05 with graphic work. It stopped being one audience
+// once caption sign-off became its own step: a designer scrolling for the piece
+// they were asked to fix had to read past every caption someone approved.
 
-export type NotifyTeam = "kol" | "vdo" | "graphic" | "general" | "finance";
+export type NotifyTeam = "kol" | "vdo" | "graphic" | "content" | "general" | "finance";
 
-export const NOTIFY_TEAMS: NotifyTeam[] = ["graphic", "kol", "vdo", "general", "finance"];
+export const NOTIFY_TEAMS: NotifyTeam[] = ["graphic", "content", "kol", "vdo", "general", "finance"];
 
 /** The audiences that have a Slack channel. The rest are DM-only by design. */
-export const CHANNEL_TEAMS: NotifyTeam[] = ["graphic", "kol", "vdo"];
+export const CHANNEL_TEAMS: NotifyTeam[] = ["graphic", "content", "kol", "vdo"];
 
 export const hasChannel = (team: NotifyTeam): boolean =>
   (CHANNEL_TEAMS as string[]).includes(team);
 
 export const TEAM_LABELS: Record<NotifyTeam, string> = {
-  graphic: "Graphic + Content",
+  graphic: "Graphic",
+  content: "Content (โพสต์ + แคปชั่น)",
   kol: "KOL",
   vdo: "VDO",
   general: "งานทั่วไป (DM เท่านั้น)",
@@ -35,6 +41,7 @@ export const TEAM_LABELS: Record<NotifyTeam, string> = {
  *  webhook URL itself never says which room it points at. */
 export const TEAM_CHANNEL: Partial<Record<NotifyTeam, string>> = {
   graphic: "#05_marketing_graphic",
+  content: "#07_marketing_content",
   kol: "#04_marketing_kol",
   vdo: "#06_marketing_vdo",
 };
@@ -42,9 +49,27 @@ export const TEAM_CHANNEL: Partial<Record<NotifyTeam, string>> = {
 /** Env var holding each channel team's incoming webhook. */
 export const TEAM_ENV: Partial<Record<NotifyTeam, string>> = {
   graphic: "SLACK_WEBHOOK_URL_GRAPHIC",
+  content: "SLACK_WEBHOOK_URL_CONTENT",
   kol: "SLACK_WEBHOOK_URL_KOL",
   vdo: "SLACK_WEBHOOK_URL_VDO",
 };
+
+/** A room to borrow when a team's own webhook is not set yet. Only Content has
+ *  one, and only because #05 is where its messages already went: the day this
+ *  split ships, the new room's webhook does not exist in Vercel yet, and the
+ *  alternative is caption sign-off going silent until someone notices. Every
+ *  other team still stays quiet rather than post to a room it does not belong
+ *  in — the rule this bends is "wrong room is worse than no room", and the
+ *  previous room is not the wrong room. */
+export const TEAM_FALLBACK: Partial<Record<NotifyTeam, NotifyTeam>> = {
+  content: "graphic",
+};
+
+/** Env vars to try, in order, for a team's incoming webhook. */
+export function webhookEnvKeys(team: NotifyTeam): string[] {
+  const chain = [TEAM_ENV[team], TEAM_ENV[TEAM_FALLBACK[team] ?? team]];
+  return [...new Set(chain.filter((k): k is string => Boolean(k)))];
+}
 
 /** Fallback routing from the page a notification links to. Graphic requests
  *  also cover video, and the link cannot tell them apart — those call sites
@@ -53,7 +78,8 @@ export function teamFromLink(link: string | undefined): NotifyTeam {
   const path = (link || "").split(/[?#]/)[0].toLowerCase();
   if (path.startsWith("/finance") || path.startsWith("/expenses")) return "finance";
   if (path.startsWith("/kol")) return "kol";
-  if (path.startsWith("/graphic") || path.startsWith("/content")) return "graphic";
+  if (path.startsWith("/content")) return "content";
+  if (path.startsWith("/graphic")) return "graphic";
   return "general";
 }
 

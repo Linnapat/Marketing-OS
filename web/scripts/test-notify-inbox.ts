@@ -9,7 +9,7 @@
  * still land somewhere, and money must never land in a bell at all.
  * Run: node --import tsx scripts/test-notify-inbox.ts */
 
-import { inboxKind, resolveTeam, teamFromLink } from "../src/lib/notifyRouting";
+import { inboxKind, resolveTeam, teamFromLink, webhookEnvKeys } from "../src/lib/notifyRouting";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -49,8 +49,14 @@ is("คิวอนุมัติเป็น general", teamFromLink("/my-tasks
 
 console.log("\nงานแต่ละแบบยังเข้าห้อง Slack เดิม");
 is("graphic", teamFromLink("/graphic?open=1"), "graphic");
-is("content", teamFromLink("/content?post=c1"), "graphic");
+// Content left #05 on 7 ส.ค. 2026 — caption sign-off was burying the designers'
+// own revision requests in a room they read for work assigned to them.
+is("content แยกห้องแล้ว", teamFromLink("/content?post=c1"), "content");
 is("kol", teamFromLink("/kol/5"), "kol");
+// The new room falls back to the old one until SLACK_WEBHOOK_URL_CONTENT is set,
+// so the split can ship before the webhook exists without going silent.
+is("content ยืมห้อง graphic ไว้ก่อน", webhookEnvKeys("content").join(","), "SLACK_WEBHOOK_URL_CONTENT,SLACK_WEBHOOK_URL_GRAPHIC");
+is("ห้องอื่นไม่ยืมใคร", webhookEnvKeys("kol").join(","), "SLACK_WEBHOOK_URL_KOL");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
