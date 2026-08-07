@@ -406,7 +406,7 @@ function MyTasksPageInner() {
         .catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
-      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget, member?.name || user?.email || "").catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       setCampaigns((cs) => cs.map((c) => c.id === task.relatedCampaignId ? { ...c, budget: task.requestedBudget! } : c));
     }
     setDoneIds((s) => new Set(s).add(id));
