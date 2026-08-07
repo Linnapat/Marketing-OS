@@ -166,24 +166,6 @@ async function readCampaignBlob(id: string): Promise<{ found: boolean; blob: Bri
   return { found: !!fallback.data, blob: (fallback.data?.data as BriefBlob) ?? null };
 }
 
-/** Patch a campaign row AND the brief it carries, in ONE write.
- *
- *  The row's columns (status, budget) and the same facts inside the brief blob
- *  are two copies of one thing, and every writer that moved only the column left
- *  them disagreeing. That is not cosmetic: the Campaign Builder loads the BLOB,
- *  so the next Save writes the blob's stale value back over the column and the
- *  change quietly reverts — an approval or a CMO-approved budget revision undone
- *  by someone else opening Edit. Mother's Day (approved 17 ก.ค. on the row, still
- *  "Waiting for Approval" in its brief and no entry in its approval log) is what
- *  that looks like weeks later.
- *
- *  Compare-and-set, not read-then-write: the blob is rewritten whole, so writing
- *  it back against a row that moved in between would swallow the other person's
- *  edit entirely. If the version moved we re-read and rebuild the patch on top of
- *  what they wrote, and only give up — loudly — if that keeps happening.
- *
- *  `patch` returns the new blob, or null to leave the blob alone (a campaign
- *  created outside the wizard has none; the columns still move). */
 export interface CampaignRowIO {
   /** The row as it is now, with the version it was read at. */
   read(): Promise<{ found: boolean; blob: BriefBlob | null; seen?: string }>;
@@ -220,6 +202,24 @@ export async function patchCampaignRowIO(
   throw new Error(`${failure} — มีคนแก้แคมเปญนี้อยู่พร้อมกัน ลองใหม่อีกครั้ง`);
 }
 
+/** Patch a campaign row AND the brief it carries, in ONE write.
+ *
+ *  The row's columns (status, budget) and the same facts inside the brief blob
+ *  are two copies of one thing, and every writer that moved only the column left
+ *  them disagreeing. That is not cosmetic: the Campaign Builder loads the BLOB,
+ *  so the next Save writes the blob's stale value back over the column and the
+ *  change quietly reverts — an approval or a CMO-approved budget revision undone
+ *  by someone else opening Edit. Mother's Day (approved 17 ก.ค. on the row, still
+ *  "Waiting for Approval" in its brief and no entry in its approval log) is what
+ *  that looks like weeks later.
+ *
+ *  Compare-and-set, not read-then-write: the blob is rewritten whole, so writing
+ *  it back against a row that moved in between would swallow the other person's
+ *  edit entirely. If the version moved we re-read and rebuild the patch on top of
+ *  what they wrote, and only give up — loudly — if that keeps happening.
+ *
+ *  `patch` returns the new blob, or null to leave the blob alone (a campaign
+ *  created outside the wizard has none; the columns still move). */
 async function patchCampaignAndBrief(
   id: string,
   rowPatch: Record<string, unknown>,
