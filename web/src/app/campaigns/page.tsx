@@ -16,7 +16,7 @@ import { campaignTone } from "@/lib/status";
 import {
   STATUS_ORDER, READINESS_META, CampaignRow,
 } from "@/lib/data/campaigns";
-import { CampaignBrief, visitGoalOf } from "@/lib/data/brief";
+import { BRIEF_STATUSES, CampaignBrief, visitGoalOf } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
@@ -31,7 +31,11 @@ import {
   CampaignPageHeaderSection,
 } from "@/components/campaign/CampaignHeadController";
 
-const ACTION_STATUSES = ["Draft", "Waiting Approval", "Approved", "Active", "Paused", "Inactive", "Completed", "Cancelled"];
+// The dropdown offers exactly the statuses the brief pipeline knows — see
+// BRIEF_STATUSES. A campaign already parked on a legacy value still shows it
+// (statusOptions prepends the current one), so nothing reads as renamed; it
+// just can't be set again.
+const ACTION_STATUSES: readonly string[] = BRIEF_STATUSES;
 
 // Campaign · Brand·Branch · Owner · Budget · Visit · Ready · Actions.
 // Actions has a hard floor rather than a bare fr: it holds the status select,
@@ -210,7 +214,9 @@ export default function CampaignsPage() {
         };
         await saveCampaignBrief({ ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] });
       } else {
-        await updateCampaignStatus(id, nextStatus);
+        // No brief to route through (or its read just failed) — the status still
+        // has to reach the blob if one is there, so pass who did it.
+        await updateCampaignStatus(id, nextStatus, member?.name || role || "");
       }
     } catch (error) {
       if (previous) setCampaigns((rows) => rows.map((row) => row.id === id ? previous : row));

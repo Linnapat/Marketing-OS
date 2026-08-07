@@ -78,7 +78,7 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
         const entry = { action: approve ? "Approved" : "Sent back to Draft", by: member?.name || role || "—", at: new Date().toISOString(), from: brief.status, to: next };
         await saveCampaignBrief({ ...brief, status: next, approvalLog: [...(brief.approvalLog ?? []), entry] });
       } else {
-        await updateCampaignStatus(c.id, next);
+        await updateCampaignStatus(c.id, next, member?.name || role || "");
       }
       onReload();
     } catch (error) {

@@ -77,9 +77,16 @@ export const ADS_PLATFORMS = ["Facebook / Instagram", "TikTok", "Google", "LINE 
 
 export const PRIORITIES = ["High", "Med", "Low"] as const;
 
+// Every status a campaign can be in — and the ONLY list any status picker may
+// offer. The Campaigns list used to carry its own set ("Active", "Paused",
+// "Inactive", "Waiting Approval" — one word short of the real thing), so a CMO
+// could park a campaign on a value nothing else in the app recognises: not
+// past-approval, so its plan never became work, and not waiting either, so no
+// approval queue ever showed it. "Unlimited Side Dish" sat on "Active" with 3
+// planned items and 0 posts because of it.
 export const BRIEF_STATUSES = [
   "Draft", "Ready for Review", "Waiting for Approval",
-  "Approved", "Need Revision", "In Progress", "Completed",
+  "Approved", "Need Revision", "In Progress", "Completed", "Cancelled",
 ] as const;
 export type BriefStatus = (typeof BRIEF_STATUSES)[number];
 
