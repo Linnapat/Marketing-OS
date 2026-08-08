@@ -165,7 +165,8 @@ export const NOTIF_TRIGGERS = [
   { trigger: "Task due soon", desc: "24h before deadline", channels: ["Email"], timing: "24h before", key: "due", def: true },
   { trigger: "Task overdue", desc: "When due date has passed", channels: ["LINE", "Email"], timing: "08:00 daily", key: "overdue", def: true },
   { trigger: "Graphic waiting feedback", desc: "Asset waiting review >2 days", channels: ["LINE"], timing: "Daily", key: "feedback", def: true },
-  { trigger: "Campaign launching soon", desc: "48h before campaign live date", channels: ["Email"], timing: "48h before", key: "launch", def: false },
+  { trigger: "Post published", desc: "โพสต์ถูก publish · Creative ปล่อยงาน · ส่งขึ้น Meta", channels: ["Slack"], timing: "Immediately", key: "published", def: true },
+  { trigger: "Campaign launching soon", desc: "48h before campaign live date (ยังไม่มีตัวยิง event นี้)", channels: ["Email"], timing: "48h before", key: "launch", def: false },
   { trigger: "KOL missing post link", desc: "KOL has posted but no link added", channels: ["LINE"], timing: "Daily", key: "kol", def: true },
 ];
 

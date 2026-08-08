@@ -20,7 +20,9 @@ export type NotifyEvent =
   | "feedback"   // graphic submitted / revision loop
   | "approved"   // request or work approved
   | "rejected"   // request sent back
-  | "launch";    // campaign submitted / published
+  | "published"  // a post went out, or Creative released it to production
+  | "launch";    // a campaign is about to go live
+
 
 /** Extra routing for one notification. `to` names the people the event is FOR
  *  (assigned, asked to revise) — they get a Slack DM and the team channel sees

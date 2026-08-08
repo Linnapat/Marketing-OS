@@ -10,6 +10,7 @@
  * Run: node --import tsx scripts/test-notify-inbox.ts */
 
 import { inboxKind, resolveTeam, teamFromLink, TEAM_FALLBACK } from "../src/lib/notifyRouting";
+import { NOTIF_TRIGGERS } from "../src/lib/data/settings";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -19,7 +20,7 @@ function is(name: string, actual: unknown, expected: unknown) {
 }
 
 console.log("\nทุก event ของ notify() มีที่ลงในกล่องแจ้งเตือน");
-// The seven NotifyEvent values in lib/notify. If someone adds an eighth and
+// The eight NotifyEvent values in lib/notify. If someone adds a ninth and
 // forgets the map, it must still be delivered — see the fallback test below.
 is("newTask", inboxKind("newTask"), "assigned");
 is("approval", inboxKind("approval"), "approval");
@@ -27,7 +28,18 @@ is("mention", inboxKind("mention"), "comment");
 is("feedback", inboxKind("feedback"), "revision");
 is("approved", inboxKind("approved"), "approved");
 is("rejected → ตีกลับ", inboxKind("rejected"), "revision");
+is("published", inboxKind("published"), "launch");
 is("launch", inboxKind("launch"), "launch");
+
+console.log("\npublish แยกสวิตช์จาก 'แคมเปญใกล้ live'");
+// One key gated both, and the row on screen said "48h before campaign live
+// date" — so a switch nobody thought applied to publishing silenced every
+// "โพสต์ถูก publish" in the app, Slack and bell alike, with no hint why.
+const trig = Object.fromEntries(NOTIF_TRIGGERS.map((t) => [t.key, t]));
+is("มีสวิตช์ published", Boolean(trig.published), true);
+is("published เปิดมาแต่แรก", trig.published?.def, true);
+is("launch ยังปิดตามเดิม", trig.launch?.def, false);
+is("คนละ key กัน", trig.published?.key !== trig.launch?.key, true);
 
 console.log("\nevent ที่ไม่รู้จักต้องไม่หายไปเฉย ๆ");
 // Dropping the unrecognised is exactly how the inbox went empty in the first
