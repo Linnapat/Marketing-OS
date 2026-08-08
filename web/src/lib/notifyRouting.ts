@@ -54,22 +54,16 @@ export const TEAM_ENV: Partial<Record<NotifyTeam, string>> = {
   vdo: "SLACK_WEBHOOK_URL_VDO",
 };
 
-/** A room to borrow when a team's own webhook is not set yet. Only Content has
- *  one, and only because #05 is where its messages already went: the day this
- *  split ships, the new room's webhook does not exist in Vercel yet, and the
- *  alternative is caption sign-off going silent until someone notices. Every
- *  other team still stays quiet rather than post to a room it does not belong
- *  in — the rule this bends is "wrong room is worse than no room", and the
- *  previous room is not the wrong room. */
+/** A room to borrow when a team's own is not wired yet. Only Content has one,
+ *  and only because #05 is where its messages already went: if the room it was
+ *  given ever stops working, caption sign-off falls back to the room the team
+ *  was already reading instead of going silent until someone notices. Every
+ *  other team stays quiet rather than post to a room it does not belong in —
+ *  the rule this bends is "wrong room is worse than no room", and the room
+ *  Content came from is not the wrong room. */
 export const TEAM_FALLBACK: Partial<Record<NotifyTeam, NotifyTeam>> = {
   content: "graphic",
 };
-
-/** Env vars to try, in order, for a team's incoming webhook. */
-export function webhookEnvKeys(team: NotifyTeam): string[] {
-  const chain = [TEAM_ENV[team], TEAM_ENV[TEAM_FALLBACK[team] ?? team]];
-  return [...new Set(chain.filter((k): k is string => Boolean(k)))];
-}
 
 /** Fallback routing from the page a notification links to. Graphic requests
  *  also cover video, and the link cannot tell them apart — those call sites

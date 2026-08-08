@@ -25,7 +25,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
-import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, inboxKind, webhookEnvKeys } from "@/lib/notifyRouting";
+import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, inboxKind } from "@/lib/notifyRouting";
+import { ChannelIds, loadChannelIds, postToTeam, roomWired } from "@/lib/slackRooms";
 import { hasBotToken, postDM } from "@/lib/slackBot";
 import { resolveSlackIds, fetchUnmapped } from "@/lib/slackDirectory";
 
@@ -39,27 +40,7 @@ const MAIL_TO = process.env.NOTIFY_EMAIL_TO;     // comma-separated recipients
  *  reaches no channel — an email, or any name the members table knows. */
 const FINANCE_DM = () => process.env.SLACK_FINANCE_DM || "";
 
-/** A team's webhook. Read per call rather than cached at module load so a newly
- *  added env var takes effect without a redeploy. Teams with no room (general,
- *  finance) have no env var and deliberately return nothing. Content borrows
- *  the graphic room until its own webhook is set — see TEAM_FALLBACK. */
-function slackWebhookFor(team: NotifyTeam): string | undefined {
-  for (const key of webhookEnvKeys(team)) {
-    const url = process.env[key];
-    if (url) return url;
-  }
-  return undefined;
-}
-
-/** Whether the team's OWN webhook is set — no borrowing. Settings reports this
- *  one, so a room still waiting for its webhook shows up as missing instead of
- *  looking wired because a fallback covers it. */
-function ownWebhook(team: NotifyTeam): boolean {
-  const key = TEAM_ENV[team];
-  return Boolean(key && process.env[key]);
-}
-
-const anySlackConfigured = () => CHANNEL_TEAMS.some(ownWebhook);
+const anySlackConfigured = (ids: ChannelIds) => CHANNEL_TEAMS.some((t) => roomWired(t, ids));
 
 interface NotifyBody { event?: string; title?: string; detail?: string; link?: string; team?: string; to?: string[]; inform?: string[] }
 
@@ -171,20 +152,14 @@ async function loadPrefs(): Promise<{ channels: Record<string, boolean>; trigger
   }
 }
 
-/** Slack incoming webhook for one team. mrkdwn, so the link becomes a real one
- *  rather than a bare URL taking up a line of its own. */
-async function sendSlack(team: NotifyTeam, title: string, detail: string, link: string): Promise<boolean> {
-  const webhook = slackWebhookFor(team);
-  if (!webhook) return false;
+/** Post to a team's room. mrkdwn, so the link becomes a real one rather than a
+ *  bare URL taking up a line of its own. Which room and by what means is
+ *  lib/slackRooms' problem, not this route's. */
+async function sendSlack(team: NotifyTeam, title: string, detail: string, link: string, ids: ChannelIds): Promise<boolean> {
   const lines = [`*${title}*`];
   if (detail) lines.push(detail);
   if (link) lines.push(`<${link}|เปิดใน Marketing OS>`);
-  const res = await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: lines.join("\n").slice(0, 3900) }),
-  });
-  return res.ok;
+  return postToTeam(team, lines.join("\n"), ids);
 }
 
 async function sendLine(text: string): Promise<boolean> {
@@ -223,7 +198,7 @@ export async function POST(req: NextRequest) {
   const informed = Array.isArray(inform) ? inform.filter((n): n is string => typeof n === "string") : [];
   if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
 
-  const prefs = await loadPrefs();
+  const [prefs, channelIds] = await Promise.all([loadPrefs(), loadChannelIds()]);
   // A trigger toggled OFF in Settings silences the event; unknown events pass.
   if (prefs.triggers[event] === false) {
     return NextResponse.json({ ok: true, skipped: "trigger disabled" });
@@ -260,7 +235,7 @@ export async function POST(req: NextRequest) {
 
   const [dm, slack, line, email] = await Promise.all([
     canDM ? sendDMs(dmTargets, title, detail, fullLink).catch(() => ({ sent: [], unresolved: dmTargets })) : Promise.resolve({ sent: [] as string[], unresolved: [] as string[] }),
-    toChannel ? sendSlack(team, title, detail, fullLink).catch(() => false) : Promise.resolve(false),
+    toChannel ? sendSlack(team, title, detail, fullLink, channelIds).catch(() => false) : Promise.resolve(false),
     lineOn ? sendLine(text).catch(() => false) : Promise.resolve(false),
     emailOn ? sendEmail(`[Marketing OS] ${title}`, html).catch(() => false) : Promise.resolve(false),
   ]);
@@ -285,7 +260,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true, slack, line, email, team, dm, inbox,
     configured: {
-      slack: anySlackConfigured(),
+      slack: anySlackConfigured(channelIds),
       line: Boolean(LINE_TOKEN && LINE_TO),
       email: Boolean(RESEND_KEY && MAIL_FROM && MAIL_TO),
     },
@@ -298,8 +273,9 @@ export async function GET(req: NextRequest) {
   const guard = await requireApiUser(req);
   if (isApiAuthError(guard)) return guard.error;
 
+  const channelIds = await loadChannelIds();
   const teams = Object.fromEntries(
-    CHANNEL_TEAMS.map((t) => [t, { own: ownWebhook(t), env: TEAM_ENV[t] }]),
+    CHANNEL_TEAMS.map((t) => [t, { own: roomWired(t, channelIds), env: TEAM_ENV[t] }]),
   );
   // Who the app tried to DM and couldn't — shown as a warning rather than left
   // to be discovered by someone wondering why they never hear about their work.
@@ -307,7 +283,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    slack: { configured: anySlackConfigured(), teams, dm: hasBotToken(), financeDm: Boolean(FINANCE_DM()), unmapped },
+    slack: { configured: anySlackConfigured(channelIds), teams, dm: hasBotToken(), financeDm: Boolean(FINANCE_DM()), unmapped },
     line: Boolean(LINE_TOKEN && LINE_TO),
     email: Boolean(RESEND_KEY && MAIL_FROM && MAIL_TO),
   });
