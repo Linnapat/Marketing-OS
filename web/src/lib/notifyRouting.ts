@@ -106,6 +106,11 @@ const EVENT_TO_INBOX: Record<string, InboxKind> = {
   feedback: "revision",
   approved: "approved",
   rejected: "revision",
+  // Two events, one shelf in the bell: "this went out" reads the same to the
+  // person reading it whether a post published or a campaign went live. They
+  // are separate events because they are separately mutable in Settings, not
+  // because the inbox needs to tell them apart.
+  published: "launch",
   launch: "launch",
 };
 
