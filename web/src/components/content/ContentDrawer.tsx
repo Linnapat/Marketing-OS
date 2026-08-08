@@ -445,7 +445,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
         brand: brandName(item.b), campaign: item.campaign, reason: r, by: reviewer,
       }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "graphic", to: [fixer] });
+    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "content", to: [fixer] });
     setReason(""); setRevising(false); setCaptionNeedsWork(false);
   };
 
