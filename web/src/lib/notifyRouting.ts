@@ -83,6 +83,30 @@ export function resolveTeam(team: string | undefined, link: string | undefined):
   return teamFromLink(link);
 }
 
+/** Who gets DM'd, once the room question is settled.
+ *
+ *  Money reaches one standing recipient (SLACK_FINANCE_DM) and no room. That
+ *  rule used to REPLACE the names an event carried, which quietly made the two
+ *  sides of a budget request unreachable: the person who asked for it heard
+ *  nothing back, and a call site that named nobody reached nobody at all. So
+ *  the standing recipient is added to the named people rather than swapped for
+ *  them — the room stays out of it either way, which is the part that matters.
+ *
+ *  Deduped case-insensitively so naming the finance person explicitly does not
+ *  DM them the same message twice. */
+export function dmTargetsFor(team: NotifyTeam, recipients: string[], financeDm: string): string[] {
+  const all = team === "finance" ? [financeDm, ...recipients] : recipients;
+  const seen = new Set<string>();
+  return all.reduce<string[]>((keep, raw) => {
+    const name = (raw ?? "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return keep;
+    seen.add(key);
+    keep.push(name);
+    return keep;
+  }, []);
+}
+
 // ── In-app inbox ───────────────────────────────────────────────────────────
 //
 // The bell had its own writer (db/notifications.pushNotifications) and only

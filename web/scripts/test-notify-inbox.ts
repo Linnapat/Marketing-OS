@@ -9,7 +9,7 @@
  * still land somewhere, and money must never land in a bell at all.
  * Run: node --import tsx scripts/test-notify-inbox.ts */
 
-import { inboxKind, resolveTeam, teamFromLink, TEAM_FALLBACK } from "../src/lib/notifyRouting";
+import { inboxKind, resolveTeam, teamFromLink, dmTargetsFor, TEAM_FALLBACK } from "../src/lib/notifyRouting";
 import { NOTIF_TRIGGERS } from "../src/lib/data/settings";
 
 let pass = 0, fail = 0;
@@ -58,6 +58,22 @@ is("team ระบุมาเป็น finance", resolveTeam("finance", "/my-ta
 // because it points at My Tasks. The route keys the exclusion off `team`, which
 // is why that call site passes no team and lands on general.
 is("คิวอนุมัติเป็น general", teamFromLink("/my-tasks?tab=approval"), "general");
+
+console.log("\nเรื่องเงินถึงทั้งคนดูแลเงินและคนขอ");
+// The standing recipient is ADDED to the named people, not swapped in: naming
+// nobody used to mean the request itself went out to nobody, and naming the
+// requester used to drop them.
+const gik = "Gik", req = "Ploy";
+is("ไม่ระบุชื่อ = ถึงคนดูแลเงินคนเดียว", dmTargetsFor("finance", [], gik).join(","), "Gik");
+is("ระบุคนขอ = ถึงทั้งคู่", dmTargetsFor("finance", [req], gik).join(","), "Gik,Ploy");
+// Same person twice — once from the env, once because the call site named them
+// — is one message, not two.
+is("คนเดียวกันไม่ได้สองครั้ง", dmTargetsFor("finance", ["gik"], gik).join(","), "Gik");
+// Without SLACK_FINANCE_DM set, the named people still get theirs; the empty
+// string must not become a recipient nobody can resolve.
+is("ยังไม่ตั้ง SLACK_FINANCE_DM", dmTargetsFor("finance", [req], "").join(","), "Ploy");
+// Everything else is untouched: no finance recipient smuggled into other teams.
+is("ทีมอื่นไม่มีคนดูแลเงินแถมมา", dmTargetsFor("graphic", [req], gik).join(","), "Ploy");
 
 console.log("\nงานแต่ละแบบยังเข้าห้อง Slack เดิม");
 is("graphic", teamFromLink("/graphic?open=1"), "graphic");
