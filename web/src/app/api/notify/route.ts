@@ -25,7 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireApiUser, isApiAuthError } from "@/lib/apiAuth";
-import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, inboxKind } from "@/lib/notifyRouting";
+import { NotifyTeam, TEAM_ENV, CHANNEL_TEAMS, hasChannel, resolveTeam, dmTargetsFor, inboxKind } from "@/lib/notifyRouting";
 import { ChannelIds, loadChannelIds, postToTeam, roomWired } from "@/lib/slackRooms";
 import { hasBotToken, postDM } from "@/lib/slackBot";
 import { resolveSlackIds, fetchUnmapped } from "@/lib/slackDirectory";
@@ -223,10 +223,9 @@ export async function POST(req: NextRequest) {
 
   // Routed on the link the notification carries unless the caller named a team.
   const team = resolveTeam(teamHint, link);
-  // Money goes to one person and never to a room, whoever the event is about.
-  const dmTargets = team === "finance"
-    ? [FINANCE_DM()].filter(Boolean)
-    : recipients;
+  // Money never reaches a room, whoever the event is about — it goes to the one
+  // standing recipient plus anyone the event names (lib/notifyRouting).
+  const dmTargets = dmTargetsFor(team, recipients, FINANCE_DM());
   // A room only hears about it when the event isn't addressed to anyone —
   // otherwise the people concerned get a DM and the room gets the daily digest.
   // Teams with no room (general, finance) are DM-only either way.

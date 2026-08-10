@@ -175,8 +175,12 @@ export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
     .select("id");
   assertDbOk(error, "Could not submit expense draft");
   if (!claimed || claimed.length === 0) return; // already submitted elsewhere — no-op
+  // Same as the Expenses form: the queue link routes to `general`, which has no
+  // room and no names, so this went out to nobody. Money's own team plus the
+  // requester — the approver hears it through SLACK_FINANCE_DM.
   notify("approval", `📥 คำขอเบิกงบจากงบแคมเปญ · ${req.category}`,
-    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, workLink.approvals());
+    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, workLink.approvals(),
+    { team: "finance", to: [req.requester] });
 }
 
 /** Insert a new expense request; extended columns go in a second update so the
