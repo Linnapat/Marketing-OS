@@ -20,7 +20,7 @@ import {
   emptyBrief, emptyContentItem, emptyKolItem, emptyBudget,
   OBJECTIVES, CAMPAIGN_TYPES, PRIORITIES, CHANNELS, SUCCESS_METRICS,
   CONTENT_TYPES, CONTENT_PLATFORMS, KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT,
-  ADS_PLATFORMS, assetSizesFor, AssetTarget,
+  ADS_PLATFORMS, assetSizesFor, needsAssetSize, AssetTarget,
 } from "@/lib/data/brief";
 
 /** The tab names the template ships with. Addressed by name, not gid, so a
@@ -217,6 +217,26 @@ function isNoteRow(row: string[]): boolean {
   return row.slice(1).every((cell) => !norm(cell));
 }
 
+/** Does this row carry nothing but words — no counts, budgets, dates, handles?
+ *
+ *  `carriers` names the columns whose text is the prose itself, so they are not
+ *  counted as evidence of a real row. Everything else is: a requirement that
+ *  means anything says how many, how much, when, or where. */
+function isProseOnlyRow(row: string[], carriers: ((row: string[]) => string)[]): boolean {
+  const carried = new Set(carriers.map((c) => norm(c(row))).filter(Boolean));
+  return row.every((cell) => {
+    const v = norm(cell);
+    return !v || carried.has(v);
+  });
+}
+
+/** Shorten a sheet cell for a message — a pasted paragraph must not become the
+ *  whole warning. */
+function clip(value: string, max = 60): string {
+  const v = norm(value);
+  return v.length > max ? `${v.slice(0, max)}…` : v;
+}
+
 /** A header-row tab → column resolver by any of several accepted names. */
 function columns(grid: string[][]) {
   const header = (grid[0] ?? []).map((h) => key(h));
@@ -321,23 +341,46 @@ function readOverview(grid: string[][], resolveBrand: BrandResolver, warn: strin
  *  prefix is enough, so "1:1" finds "1:1 (1080×1080)" for that platform. */
 function readAssets(cell: string, platforms: string[], title: string, warn: string[]): AssetTarget[] {
   const out: AssetTarget[] = [];
+  // Platforms with no size list at all (Delivery today, deliberately — see
+  // needsAssetSize). Anything written under one of those is a production spec,
+  // not a size, and telling the planner to "เลือกในฟอร์มเอง" points at a
+  // dropdown that is empty by design. Collected per platform so a row carrying
+  // five specs says so once, naming all five, instead of five identical lines.
+  const specless = new Map<string, string[]>();
   const add = (platform: string, sizeRaw: string) => {
+    if (!needsAssetSize(platform)) {
+      const v = norm(sizeRaw);
+      if (v) specless.set(platform, [...(specless.get(platform) ?? []), v]);
+      return;
+    }
     const sizes = assetSizesFor(platform);
     const k = key(sizeRaw);
     const hit = sizes.find((s) => key(s) === k) ?? sizes.find((s) => key(s).startsWith(k));
-    if (!hit) { warn.push(`Content “${title}”: ${platform} ไม่มี asset size “${sizeRaw}” — เลือกในฟอร์มเอง`); return; }
+    if (!hit) { warn.push(`Content “${title}”: ${platform} ไม่มี asset size “${norm(sizeRaw)}” — เลือกในฟอร์มเอง (สเปกไฟล์ให้ใส่ช่อง Mandatory Text / Do–Don't)`); return; }
     if (!out.some((a) => a.platform === platform && a.size === hit)) out.push({ platform, size: hit });
   };
   for (const part of list(cell)) {
-    const [left, right] = part.includes(":") && !/^\d+:\d+$/.test(part) ? [part.slice(0, part.indexOf(":")), part.slice(part.indexOf(":") + 1)] : ["", part];
-    if (left) {
-      const platform = matchOption(left, CONTENT_PLATFORMS);
-      if (!platform) { warn.push(`Content “${title}”: ไม่รู้จัก platform “${left}” ในช่อง Asset Sizes — ข้ามไป`); continue; }
-      add(platform, right);
+    // "Facebook: 4:5" is a platform and a size; "1200 × 1200 px (1:1)" is ONE
+    // size whose ratio happens to contain a colon. Splitting on the first colon
+    // regardless turned the second into platform "1200 × 1200 px (1", which was
+    // then dropped as unknown — the size never arrived and the message blamed a
+    // platform nobody had typed. A platform name carries no digits, which is
+    // what tells the two apart (and what makes a bare "9:16" a size, not a
+    // platform called "9").
+    const colon = part.indexOf(":");
+    const head = colon > 0 ? part.slice(0, colon) : "";
+    const namesPlatform = !!head && !/\d/.test(head);
+    if (namesPlatform) {
+      const platform = matchOption(head, CONTENT_PLATFORMS);
+      if (!platform) { warn.push(`Content “${title}”: ไม่รู้จัก platform “${norm(head)}” ในช่อง Asset Sizes — ข้ามไป`); continue; }
+      add(platform, part.slice(colon + 1));
     } else {
       // Bare size: apply to every platform the row targets.
-      for (const p of platforms) add(p, right);
+      for (const p of platforms) add(p, part);
     }
+  }
+  for (const [platform, values] of specless) {
+    warn.push(`Content “${title}”: ${platform} ไม่ต้องระบุ asset size — ย้าย “${values.join(" · ")}” ไปช่อง Mandatory Text / Do–Don't`);
   }
   return out;
 }
@@ -430,6 +473,16 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
     // starts as "3 foodie micro pages, not chosen yet".
     if (!name && !typeRaw) return;
     if (isNoteRow(row)) return; // the tab's trailing footnote, not a creator
+    // …but isNoteRow only catches a note written in the FIRST column. The KOL
+    // tab's house rules get typed into whichever column they fit, and one in
+    // the Type column ("ทุกดีลต้องระบุสิทธิ์นำคลิปมา Repost ในสัญญา") arrived as
+    // a real requirement with type Foodie — which on approval fans out into an
+    // actual KOL request carrying budget. A requirement always brings something
+    // countable with it; a house rule brings prose and nothing else.
+    if (!name && !matchOption(typeRaw, KOL_TYPES) && isProseOnlyRow(row, [cType])) {
+      warn.push(`KOL: ข้าม “${clip(typeRaw)}” — อ่านว่าเป็นหมายเหตุ ไม่ใช่รายการ KOL (ถ้าตั้งใจให้เป็นรายการ ใส่ชื่อเพจหรือ KOL Type ที่ระบบรู้จัก)`);
+      return;
+    }
     const seq = items.length + 1;
     const base = emptyKolItem(seq);
     const kolType = typeRaw ? matchOption(typeRaw, KOL_TYPES) : null;

@@ -293,5 +293,93 @@ console.log("\n— the paste-into-one-cell accident (from a real sheet) —");
     looksLikeCollapsedFieldTab([["หมายเหตุ: กรุณากรอก Campaign Name ให้ครบทุกแคมเปญก่อนส่งให้ทีมตรวจสอบอีกครั้งนะครับ", ""]]), false);
 }
 
+console.log("\n— a real delivery brief, verbatim from the sheet that reported this —");
+{
+  // Every row below is copied from the campaign a planner imported on
+  // 2026-08-12, which produced 21 warnings for 4 content items and 2 KOL rows.
+  const head = ["Title", "Type", "Platforms", "Asset Sizes", "Publish Date"];
+  const { patch, warnings } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "Kaisen Temari Set"]],
+    content: [
+      head,
+      // A bare size whose RATIO carries the colon. This is the row that lost
+      // its size entirely and complained about a platform called "1200 × 1200 px (1".
+      ["Delivery Launch", "Photo", "Facebook", "1200 × 1200 px (1:1)", "2026-09-01"],
+      // Delivery has no size list at all: these are file specs, not sizes.
+      ["Delivery POP", "Poster", "Delivery", "A4 210 × 297 mm, 300 dpi, CMYK, bleed 3 mm", "2026-09-02"],
+      // A qualified prefix still wins, and an unknown one still says so.
+      ["Weekend", "Reel", "Instagram", "Instagram: 9:16, Faceboook: 1:1", "2026-09-03"],
+    ],
+    kol: [
+      ["Name", "KOL Type", "Platforms", "Followers", "Count", "Budget", "Posting Start"],
+      ["@foodie.bkk", "Foodie", "Instagram", "80k", "2", "12,000", "2026-09-05"],
+      // The tab's house rule, typed into the Type column rather than the first.
+      ["", "ทุกดีลต้องระบุสิทธิ์นำคลิปมา Repost ในสัญญา", "", "", "", "", ""],
+    ],
+    budget: null,
+  }, resolve);
+
+  const [launch, pop, weekend] = patch.content ?? [];
+  // The size still isn't one of Facebook's four options, so it is still not
+  // imported — what changed is that the row is now judged as a SIZE. It used to
+  // be torn in half at the ratio's colon and rejected as a platform, so the
+  // message named a platform nobody had typed and the size itself was never
+  // mentioned. The planner now sees the exact text to fix.
+  is("a ratio in brackets is read as one size, not platform:size", launch.assets.length, 0);
+  check("…and no phantom platform is invented from the pixel text",
+    !warnings.some((w) => w.includes("ไม่รู้จัก platform “1200")));
+  check("…the message quotes the size the sheet actually holds",
+    warnings.some((w) => w.includes("Facebook ไม่มี asset size “1200 × 1200 px (1:1)”")));
+  check("…and points at where a file spec belongs",
+    warnings.some((w) => w.includes("Facebook ไม่มี") && w.includes("Mandatory Text")));
+
+  is("a spec-less platform keeps no sizes", pop.assets.length, 0);
+  is("…and says so ONCE for the row, not once per spec",
+    warnings.filter((w) => w.includes("Delivery ไม่ต้องระบุ asset size")).length, 1);
+  check("…naming every spec it dropped",
+    warnings.some((w) => ["A4 210 × 297 mm", "300 dpi", "CMYK", "bleed 3 mm"].every((s) => w.includes(s))));
+  // Matched on the platform phrasing, not the bare word "Delivery" — the first
+  // row is TITLED "Delivery Launch", so a looser check passes on the title.
+  check("…and never tells them to pick from a dropdown that is empty by design",
+    !warnings.some((w) => w.includes("Delivery ไม่มี asset size")));
+
+  is("a real platform prefix still resolves", weekend.assets[0]?.size, "9:16 Reel/Story (1080×1920)");
+  check("a misspelt platform prefix is still called out",
+    warnings.some((w) => w.includes("ไม่รู้จัก platform “Faceboook”")));
+
+  is("the house rule does not become a KOL requirement", (patch.kols ?? []).length, 1);
+  is("…the real creator is untouched", patch.kols?.[0].name, "@foodie.bkk");
+  check("…and the skip is reported, not silent",
+    warnings.some((w) => w.startsWith("KOL: ข้าม") && w.includes("Repost")));
+  check("…without pasting the whole paragraph into the warning",
+    warnings.every((w) => w.length < 200));
+}
+
+console.log("\n— what must still get through —");
+{
+  const kolHead = ["Name", "KOL Type", "Platforms", "Count", "Budget"];
+  const { patch, warnings } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"]],
+    content: null,
+    kol: [
+      kolHead,
+      // Named page, unknown type: countable, so it is a requirement.
+      ["@cafe.hopper", "คาเฟ่สายชิล", "Instagram", "2", "8000"],
+      // No name, unknown type, but it carries a count and a budget — a plan
+      // ("3 pages, not chosen yet"), not a note.
+      ["", "สายรีวิวอาหารญี่ปุ่น", "TikTok", "3", "9000"],
+      // No name, but a type the system knows.
+      ["", "Micro", "TikTok", "", ""],
+    ],
+    budget: null,
+  }, resolve);
+  is("all three plans survive", (patch.kols ?? []).length, 3);
+  is("an unknown type falls back rather than dropping the row", patch.kols?.[0].kolType, "Foodie");
+  check("…and the fallback is reported",
+    warnings.some((w) => w.includes("ไม่รู้จัก type") && w.includes("คาเฟ่สายชิล")));
+  check("nothing countable was mistaken for a note",
+    !warnings.some((w) => w.startsWith("KOL: ข้าม")));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
