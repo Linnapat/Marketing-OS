@@ -355,6 +355,74 @@ console.log("\n— a real delivery brief, verbatim from the sheet that reported 
     warnings.every((w) => w.length < 200));
 }
 
+console.log("\n— the labels the form itself shows —");
+{
+  // Whoever fills the sheet is looking at the Create Campaign form, so these
+  // are the words they copy. Matching is whole-name, so a label the list did
+  // not carry was read as nothing and the field arrived empty in silence.
+  const { patch } = briefFromSheet({
+    overview: [
+      ["Field", "Value"],
+      ["Campaign Name", "X"],
+      ["Campaign Concept", "เลือกความครบได้ตามงบ"],
+      ["Key Visual Direction", "โทนอบอุ่น ฉากไม้"],
+      ["Campaign Proposal Link", "https://drive.google.com/deck"],
+      ["Promotion หน้าร้าน", "ลด 20% ทุกเมนู"],
+    ],
+    content: null, kol: null, budget: null,
+  }, resolve);
+  is("Campaign Concept (form label)", patch.concept, "เลือกความครบได้ตามงบ");
+  is("Key Visual Direction (form label)", patch.kvDirection, "โทนอบอุ่น ฉากไม้");
+  is("Campaign Proposal Link (form label)", patch.proposalLink, "https://drive.google.com/deck");
+  is("Promotion หน้าร้าน (form label)", patch.storePromotion, "ลด 20% ทุกเมนู");
+}
+{
+  // The template's own shorter names must keep working — sheets already in use
+  // are written that way.
+  const { patch } = briefFromSheet({
+    overview: [
+      ["Field", "Value"], ["Campaign Name", "X"],
+      ["Concept", "c"], ["KV Direction", "k"], ["Proposal Link", "p"], ["Store Promotion", "s"],
+    ],
+    content: null, kol: null, budget: null,
+  }, resolve);
+  is("Concept still reads", patch.concept, "c");
+  is("KV Direction still reads", patch.kvDirection, "k");
+  is("Proposal Link still reads", patch.proposalLink, "p");
+  is("Store Promotion still reads", patch.storePromotion, "s");
+}
+
+console.log("\n— the links a plan carries per content item —");
+{
+  // The Graphic Request shows ONE briefLink, fed from these four first-non-empty
+  // (Drive → brief → image → competitor). None could come from a sheet before,
+  // so a plan that named its Drive folder still reached the designer blank.
+  const { patch } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"]],
+    content: [
+      ["Title", "Reference Brief Link", "Reference Image Link", "Google Drive Link", "Competitor / Inspiration Link"],
+      ["KV Launch", "https://docs/brief", "https://drive/ref.jpg", "https://drive/folder", "https://ig.com/rival"],
+      // The shorter names a person is likelier to type as a header.
+      ["", "", "", "", ""],
+    ],
+    kol: null, budget: null,
+  }, resolve);
+  const item = patch.content![0];
+  is("Reference Brief Link", item.referenceBriefLink, "https://docs/brief");
+  is("Reference Image Link", item.referenceImageLink, "https://drive/ref.jpg");
+  is("Google Drive Link", item.driveLink, "https://drive/folder");
+  is("Competitor / Inspiration Link", item.competitorLink, "https://ig.com/rival");
+}
+{
+  const { patch } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"]],
+    content: [["Title", "Brief Link", "Drive Link"], ["KV", "https://b", "https://d"]],
+    kol: null, budget: null,
+  }, resolve);
+  is("short header 'Brief Link'", patch.content![0].referenceBriefLink, "https://b");
+  is("short header 'Drive Link'", patch.content![0].driveLink, "https://d");
+}
+
 console.log("\n— the KOL tab as that sheet actually writes it —");
 {
   // Verbatim shape from the same import. The tab keeps its own schema — no
