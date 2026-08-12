@@ -355,6 +355,52 @@ console.log("\n— a real delivery brief, verbatim from the sheet that reported 
     warnings.every((w) => w.length < 200));
 }
 
+console.log("\n— the KOL tab as that sheet actually writes it —");
+{
+  // Verbatim shape from the same import. The tab keeps its own schema — no
+  // Name column at all, "Quantity" for count, "Budget / Status" for money —
+  // and labels its house rule in the first column.
+  const { patch, warnings } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"]],
+    content: null,
+    kol: [
+      ["KOL Objective", "KOL Type", "Audience Match", "Quantity", "Deliverable", "Posting Period", "Expected Reach", "Budget / Status"],
+      ["เพิ่ม Delivery Reach", "Micro 10K–50K", "Office Lunch", "2", "Unboxing Reel", "3–16 ต.ค. 2026", "40,000–90,000", "4,956 บาท — Reconciled"],
+      ["Note", "ทุกดีลต้องระบุสิทธิ์นำคลิปมา Repost ในสัญญา", "", "", "", "", "", ""],
+    ],
+    budget: null,
+  }, resolve);
+
+  is("a labelled note is not a creator", (patch.kols ?? []).length, 1);
+  is("…and the real requirement still reads its type", patch.kols?.[0].kolType, "Micro");
+  // The numbers behind it did NOT arrive — the tab calls them something else.
+  // That is allowed, but it must be said: a KOL requirement that silently reads
+  // 1 page at ฿0 understates the campaign's committed budget.
+  is("count falls back", patch.kols?.[0].count, 1);
+  is("budget falls back", patch.kols?.[0].budget, 0);
+  check("…and the tab says which columns it could not read",
+    warnings.some((w) => w.startsWith("KOL: แท็บนี้ไม่มีคอลัมน์")
+      && ["Name", "Count", "Budget", "Posting Start"].every((c) => w.includes(c))));
+  is("…once for the tab, not once per row",
+    warnings.filter((w) => w.startsWith("KOL: แท็บนี้ไม่มีคอลัมน์")).length, 1);
+}
+{
+  // A tab that follows the template says nothing, and an empty one has nothing
+  // to lose — the warning must not become background noise.
+  const { warnings } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"]], content: null, kol: KOL, budget: null,
+  }, resolve);
+  check("a template-shaped KOL tab is not nagged",
+    !warnings.some((w) => w.startsWith("KOL: แท็บนี้ไม่มีคอลัมน์")));
+
+  const empty = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"]],
+    content: null, kol: [["KOL Objective", "Quantity"]], budget: null,
+  }, resolve);
+  check("…nor is a KOL tab with no rows at all",
+    !empty.warnings.some((w) => w.startsWith("KOL: แท็บนี้ไม่มีคอลัมน์")));
+}
+
 console.log("\n— what must still get through —");
 {
   const kolHead = ["Name", "KOL Type", "Platforms", "Count", "Budget"];

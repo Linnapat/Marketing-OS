@@ -213,8 +213,26 @@ export function looksLikeCollapsedFieldTab(grid: string[][]): boolean {
 /** True for a row that carries text in its first column and nothing anywhere
  *  else — a footnote or a leftover heading, never a real record. Both the
  *  Content and KOL tabs end with such a line in the shipped template. */
+/** How a note announces itself in the first column. Real sheets label the row
+ *  rather than leaving it bare — "Note | ทุกดีลต้องระบุสิทธิ์…" is the shape the
+ *  KOL tab actually uses, and reading only the bare form let that one through
+ *  as a creator. */
+const NOTE_LABEL = /^(note|notes|หมายเหตุ|remark|remarks|เพิ่มเติม)$/i;
+
 function isNoteRow(row: string[]): boolean {
-  return row.slice(1).every((cell) => !norm(cell));
+  // A note written in the first column with nothing beside it…
+  if (row.slice(1).every((cell) => !norm(cell))) return true;
+  // …or one that says up front that it is a note.
+  return NOTE_LABEL.test(norm(row[0] ?? ""));
+}
+
+/** Column labels this tab does not have, so the caller can say what it could
+ *  not read instead of importing a row that quietly means something else. */
+function missingColumns(grid: string[][], wanted: Record<string, string[]>): string[] {
+  const header = (grid[0] ?? []).map((h) => key(h));
+  return Object.entries(wanted)
+    .filter(([, names]) => !names.some((n) => header.includes(key(n))))
+    .map(([label]) => label);
 }
 
 /** Does this row carry nothing but words — no counts, budgets, dates, handles?
@@ -465,6 +483,18 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
   const cOwner = col("Owner");
   const cNote = col("Note", "Notes");
 
+  // A KOL tab written to a different schema still imports its rows — the type
+  // is usually readable — while the numbers behind them silently do not: a
+  // requirement of 2 pages at 4,956 บาท arrived as 1 page at 0 because the tab
+  // called them "Quantity" and "Budget / Status". A brief that understates the
+  // KOL budget is worse than one that fails to import, because it looks fine.
+  const unread = missingColumns(grid, {
+    Name: ["Name", "KOL", "Display Name"],
+    Count: ["Count", "Pages", "จำนวน"],
+    Budget: ["Budget"],
+    "Posting Start": ["Posting Start", "Start"],
+  });
+
   const items: BriefKolItem[] = [];
   grid.slice(1).forEach((row) => {
     const name = cName(row);
@@ -506,6 +536,11 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
       note: cNote(row),
     });
   });
+  // Said once for the tab, and only when rows actually came through — a tab
+  // nobody filled in has nothing to lose.
+  if (items.length && unread.length) {
+    warn.push(`KOL: แท็บนี้ไม่มีคอลัมน์ ${unread.join(" / ")} ตาม template — ค่าพวกนี้ไม่ได้ถูกอ่านเข้ามา (${items.length} รายการจึงได้ค่าเริ่มต้น เช่น จำนวน 1 งบ 0) ต้องกรอกในฟอร์มเอง หรือแก้ชื่อคอลัมน์ในชีตให้ตรง template`);
+  }
   return items;
 }
 
