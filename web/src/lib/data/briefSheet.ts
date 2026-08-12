@@ -310,14 +310,19 @@ function readOverview(grid: string[][], resolveBrand: BrandResolver, warn: strin
     if (d) (patch[field] as string) = d;
   }
 
+  // Field names are matched whole, not by prefix, so every label someone might
+  // reasonably write has to be listed. The FORM'S OWN LABEL is the one people
+  // copy — a planner filling the sheet reads "Campaign Concept" off the screen
+  // and types that — and until it was listed here the row was read as nothing
+  // and the field arrived empty, with no warning to say so.
   const texts: [keyof CampaignBrief, string[]][] = [
     ["audience", ["Target Audience", "Audience", "กลุ่มเป้าหมาย"]],
     ["mainMessage", ["Key Message", "Main Message", "Message"]],
     ["offer", ["Main Offer", "Offer", "โปรโมชั่น"]],
-    ["storePromotion", ["Store Promotion", "โปรหน้าร้าน"]],
-    ["concept", ["Concept"]],
-    ["kvDirection", ["KV Direction", "KV"]],
-    ["proposalLink", ["Proposal Link", "Deck Link"]],
+    ["storePromotion", ["Store Promotion", "Promotion หน้าร้าน", "โปรหน้าร้าน"]],
+    ["concept", ["Campaign Concept", "Concept", "คอนเซ็ปต์"]],
+    ["kvDirection", ["Key Visual Direction", "KV Direction", "KV"]],
+    ["proposalLink", ["Campaign Proposal Link", "Proposal Link", "Deck Link"]],
   ];
   for (const [field, names] of texts) {
     const v = get(...names);
@@ -422,6 +427,14 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
   const cHighlight = col("Product Highlight", "Highlight");
   const cMandatory = col("Mandatory Text");
   const cDoDont = col("Do / Don't", "Do Dont", "Do/Don't");
+  // The four links the content-item form carries. None of them could arrive
+  // from a sheet before, so a plan that named its Drive folder still reached
+  // the designer blank — and the Graphic Request's single briefLink is fed from
+  // exactly these, first non-empty (driveLink → brief → image → competitor).
+  const cBriefLink = col("Reference Brief Link", "Brief Link", "Link Brief", "ลิงก์บรีฟ");
+  const cImageLink = col("Reference Image Link", "Image Link");
+  const cDriveLink = col("Google Drive Link", "Drive Link", "Drive");
+  const cCompetitorLink = col("Competitor / Inspiration Link", "Competitor Link", "Inspiration Link");
   const cNote = col("Note", "Notes");
 
   const items: BriefContentItem[] = [];
@@ -458,6 +471,10 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
       productHighlight: cHighlight(row),
       mandatoryText: cMandatory(row),
       doDont: cDoDont(row),
+      referenceBriefLink: cBriefLink(row),
+      referenceImageLink: cImageLink(row),
+      driveLink: cDriveLink(row),
+      competitorLink: cCompetitorLink(row),
       note: cNote(row),
     });
   });
