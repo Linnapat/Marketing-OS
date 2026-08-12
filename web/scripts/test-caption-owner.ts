@@ -14,6 +14,8 @@
 import { captionOwner, realName, ContentItem } from "../src/lib/data/content";
 import { contentItems, groupByOwner, NO_OWNER } from "../src/lib/data/statusBoard";
 import { teamFromDb } from "../src/lib/data/derive";
+import { CAPTION_WRITER_ROLES } from "../src/lib/roleGates";
+import { memberTeam } from "../src/components/ui/OwnerSelect";
 import type { Member } from "../src/lib/db/settings";
 
 let pass = 0, fail = 0;
@@ -78,6 +80,28 @@ console.log("\nthe Status Board names the planner instead of nobody");
 
   const [orphan] = contentItems([post({ requester: "" })]);
   is("with genuinely nobody, the board still says so", groupByOwner([orphan]).map((l) => l.owner), [NO_OWNER]);
+}
+
+console.log("\nonly writers may be handed the words");
+{
+  is("a Content Creator writes", CAPTION_WRITER_ROLES.test("Content Creator"), true);
+  is("so does the Creative Leader", CAPTION_WRITER_ROLES.test("Creative Leader"), true);
+  is("the planner does not (they hold it, they aren't handed it)",
+    CAPTION_WRITER_ROLES.test("Marketing Manager / BGL"), false);
+  is("nor the Co-ordinator", CAPTION_WRITER_ROLES.test("Co-ordinator"), false);
+  is("nor the CMO", CAPTION_WRITER_ROLES.test("CMO"), false);
+  // Anchored: the artwork roles must not be swept in by a bare word match.
+  is("a designer draws, they do not write", CAPTION_WRITER_ROLES.test("Senior Graphic Designer"), false);
+  is("neither does the VDO Editor", CAPTION_WRITER_ROLES.test("VDO Editor"), false);
+  is("and a role merely containing the words is not one of them",
+    CAPTION_WRITER_ROLES.test("Assistant Content Creator Intern"), false);
+
+  // The trap this pairing sets: the two writer roles are bucketed into
+  // DIFFERENT teams, so a picker narrowed by team before the role filter would
+  // have nobody left to offer. The drawer therefore scopes to "all".
+  is("Content Creator sits in Planner", memberTeam("Content Creator"), "Planner");
+  is("Creative Leader sits in Creative", memberTeam("Creative Leader"), "Creative");
+  is("…so no single team holds both", memberTeam("Content Creator") === memberTeam("Creative Leader"), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
