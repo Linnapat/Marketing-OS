@@ -110,6 +110,31 @@ export interface ContentChange {
   detail?: string;
 }
 
+/** Who owns writing this post's caption.
+ *
+ *  `owner` is the assigned writer, but it is not always filled: "Unassigned" is
+ *  the app's own placeholder, not a person, and 40 of the 60 live posts carried
+ *  it while their content planner (`requester`) had been known since the
+ *  campaign was approved. Everything that routes caption work reads the owner —
+ *  My Tasks, the writer's notification, workload — so those 40 caption jobs
+ *  belonged to nobody and appeared in no one's queue.
+ *
+ *  The rule the fan-out already follows for new posts: the person who planned
+ *  the item owns it until someone in Creative picks it up. This says the same
+ *  thing for every post, wherever it came from. Empty when there is genuinely
+ *  no one — a caller showing a name must handle that, not print "Unassigned"
+ *  at somebody. */
+export function captionOwner(c: Pick<ContentItem, "owner" | "requester">): string {
+  return realName(c.owner) || realName(c.requester);
+}
+
+/** A name only when it is a person's. "Unassigned" is the app's own word for an
+ *  empty slot, so it reads as blank wherever a person is meant. */
+export function realName(name?: string): string {
+  const n = (name ?? "").trim();
+  return n && n.toLowerCase() !== "unassigned" ? n : "";
+}
+
 /** Append a change, newest last, capped so the data blob stays bounded. */
 export function withChange(c: ContentItem, by: string, action: string, detail?: string): ContentItem {
   const changeLog = [...(c.changeLog ?? []), { at: new Date().toISOString(), by, action, detail }];

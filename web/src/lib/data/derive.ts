@@ -8,7 +8,7 @@ import { Kpi } from "@/components/ui/KpiCard";
 import { collapseTaskWorkItems, Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
 import type { Member } from "@/lib/db/settings";
-import { ContentItem } from "@/lib/data/content";
+import { ContentItem, captionOwner } from "@/lib/data/content";
 import { GRAPHIC_OPEN_PARAM, Graphic, artworkUnits } from "@/lib/data/graphic";
 import { BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
@@ -330,7 +330,7 @@ export function teamFromDb(
 
   const view: TeamMemberView[] = members.map((m) => ({
     name: m.name, role: m.role, color: m.color, avatarUrl: m.avatarUrl, presence: m.presence, statusNote: m.statusNote,
-    ...bucket(tasks.filter((t) => t.assignee === m.name), posts.filter((p) => p.owner === m.name)),
+    ...bucket(tasks.filter((t) => t.assignee === m.name), posts.filter((p) => captionOwner(p) === m.name)),
   }));
 
   // Work assigned to nobody — or to a name that isn't a real member — is still
@@ -338,7 +338,7 @@ export function teamFromDb(
   // vanish from the summary.
   const known = new Set(members.map((m) => m.name));
   const orphans = tasks.filter((t) => !known.has(t.assignee));
-  const orphanPosts = posts.filter((p) => !known.has(p.owner)).filter(isPostOpenWork);
+  const orphanPosts = posts.filter((p) => !known.has(captionOwner(p))).filter(isPostOpenWork);
   if (orphans.length || orphanPosts.length) {
     view.push({
       name: "Unassigned", role: "งานที่ยังไม่มีเจ้าของจริงในระบบ — ต้องมีคนรับ", color: "#9A9387",

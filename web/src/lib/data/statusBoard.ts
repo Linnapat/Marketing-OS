@@ -10,7 +10,7 @@
  * See scripts/test-status-board.ts. */
 
 import { BrandId } from "@/lib/brands";
-import { ContentItem, contentDateIso } from "@/lib/data/content";
+import { ContentItem, contentDateIso, captionOwner } from "@/lib/data/content";
 import { Graphic, needsStoryboard } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { Tone } from "@/lib/status";
@@ -355,7 +355,10 @@ export function contentItems(rows: ContentItem[]): WorkItem[] {
       id: `content:${c.id}`, module: "content" as const, title: c.title,
       campaignId: c.campaignId ?? "", brand: c.b, health,
       rawStatus: health === "done" ? "Published" : `${stage}: ${statusOfStage(c, stage)}`,
-      owner: c.owner,
+      // The content planner while no writer has been assigned — an unwritten
+      // caption on an approved campaign has an owner, and the board saying
+      // "ยังไม่มีเจ้าของ" is what let 40 of them sit unread.
+      owner: captionOwner(c),
       // The publish date IS the deadline for a post: artwork or caption still
       // missing the day before it goes out is late, whatever the asset says.
       dueIso: contentDateIso(c),

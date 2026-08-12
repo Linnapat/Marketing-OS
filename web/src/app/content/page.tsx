@@ -12,7 +12,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
@@ -294,7 +294,9 @@ function ContentPageInner() {
   const captionQueue = useMemo(
     () => assignmentQueue(
       posts.filter((p) => p.captionStatus !== "Approved" && p.publishStatus !== "Published"),
-      (p) => p.owner,
+      // The planner holds the caption until Creative takes it — a post nobody
+      // has been assigned is their queue, not an ownerless pile.
+      (p) => captionOwner(p),
       todayIso,
     ),
     [posts, todayIso],
@@ -967,7 +969,7 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus }: { c: Con
               <PlatBadges item={c} size={18} />
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold truncate">{c.title}</div>
-                <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{c.owner}</div>
+                <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{captionOwner(c) || "ยังไม่มอบหมาย"}</div>
               </div>
             </div>
             {/* Content ID: the post's job number, in FULL. The campaign column is
