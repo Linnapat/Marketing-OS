@@ -77,5 +77,8 @@ export async function GET(req: NextRequest) {
   ].filter(Boolean) as string[];
   if (missing.length) result.warnings.push(`ไม่พบแท็บ ${missing.join(" / ")} — ข้ามส่วนนั้นไป กรอกในฟอร์มได้`);
 
-  return NextResponse.json(result);
+  // Which build actually answered. Vercel sets the commit for every deployment;
+  // locally there is none, and "dev" is the honest answer.
+  const build = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || "dev";
+  return NextResponse.json({ ...result, build });
 }

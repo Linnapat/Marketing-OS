@@ -629,7 +629,17 @@ export function briefFromSheet(grids: BriefSheetGrids, resolveBrand: BrandResolv
 }
 
 /** Shape returned by /api/campaign-brief-sheet — the patch travels as JSON. */
-export interface BriefSheetResponse extends BriefSheetImport {}
+export interface BriefSheetResponse extends BriefSheetImport {
+  /** Which build answered — the short commit the running server was built from.
+   *
+   *  Added after an afternoon spent arguing with the wrong evidence: fields the
+   *  sheet clearly held were arriving empty, and neither side could tell whether
+   *  the server had the code that reads them. The client bundle cannot answer it
+   *  (the mapping is server-only and tree-shaken out), and grepping the deployed
+   *  assets for a "new" string proved nothing when that string turned out to
+   *  predate the change. So the server says so itself, in the import summary. */
+  build?: string;
+}
 
 /** Merge an imported patch onto the brief the form currently holds. Keeps the
  *  identity fields the sheet has no business setting (id, code, status, planner,
