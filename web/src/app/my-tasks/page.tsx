@@ -35,7 +35,7 @@ import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchContent } from "@/lib/db/content";
-import { ContentItem, captionAwaitsApproval } from "@/lib/data/content";
+import { ContentItem, captionAwaitsApproval, captionOwner } from "@/lib/data/content";
 import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
@@ -336,7 +336,9 @@ function MyTasksPageInner() {
     () => (canEditContentPlan(authRole)
       ? posts.filter((p) => captionAwaitsApproval(p)
           && brandVisibility.isVisible(p.b)
-          && (p.owner ?? "").trim().toLowerCase() !== (member?.name ?? "").trim().toLowerCase())
+          // Nobody approves their own words — including on a post still marked
+          // "Unassigned", where the planner is the writer by default.
+          && captionOwner(p).toLowerCase() !== (member?.name ?? "").trim().toLowerCase())
       : []),
     [posts, authRole, brandVisibility, member],
   );
@@ -704,7 +706,7 @@ function MyApprovalView({ captions, graphics, campaigns, requests, expenses, tas
                   {(p.caption ?? "").trim() || "— ไม่มีข้อความ —"}
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">เขียนโดย {p.owner || "—"}</span>
+                  <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(p) || "—"}</span>
                   <span className="text-[11.5px] font-bold text-accent">อ่านและอนุมัติ →</span>
                 </div>
               </Link>

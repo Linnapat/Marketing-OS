@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionOwner, realName } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -382,11 +382,15 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // Step 4 of the agreed flow: the words get accepted (or sent back) on their
   // own, before production, instead of riding along with the whole post.
   const [captionReason, setCaptionReason] = useState("");
-  const canDecideCap = canDecideCaption(role, { me: reviewer, writer: item.owner });
+  // The writer is whoever owns the caption — the content planner while nobody
+  // has been assigned. Read straight from `owner`, the self-review guard let a
+  // planner sign off their own words on any post still marked "Unassigned".
+  const writer = captionOwner(item);
+  const canDecideCap = canDecideCaption(role, { me: reviewer, writer });
   // Told apart from "not on the planning side" so the reason on screen is the
   // true one — being the writer is a different refusal from being Creative.
   const isSameCaptionWriter =
-    (reviewer ?? "").trim().toLowerCase() === (item.owner ?? "").trim().toLowerCase();
+    !!writer && (reviewer ?? "").trim().toLowerCase() === writer.trim().toLowerCase();
   const decideCaption = (decision: "approve" | "revise") => {
     const next = applyCaptionDecision(item, decision, reviewer, captionReason);
     if (next === item) {
@@ -397,15 +401,15 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     void persist(next, decision === "approve" ? "อนุมัติ caption แล้ว" : "ส่ง caption กลับไปแก้แล้ว");
     if (decision === "approve") {
       notify("approved", `✅ อนุมัติ caption: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`,
-        workLink.post(item.id), { inform: [item.owner] });
+        workLink.post(item.id), { inform: writer ? [writer] : [] });
       return;
     }
     // The writer is the one who has to act, so this is a DM, not a bell entry.
     notify("rejected", `✏️ caption ถูกส่งกลับแก้: ${item.title}`, `${captionReason.trim()} · โดย ${reviewer}`,
-      workLink.post(item.id), { to: [item.owner] });
-    if (item.owner && item.owner !== "Unassigned") {
+      workLink.post(item.id), { to: writer ? [writer] : [] });
+    if (writer) {
       createRevisionTask({
-        module: "Content", title: `แก้ caption — ${item.title}`, assignee: item.owner,
+        module: "Content", title: `แก้ caption — ${item.title}`, assignee: writer,
         brand: brandName(item.b), campaign: item.campaign, reason: captionReason.trim(), by: reviewer,
       }).catch(() => {});
     }
@@ -437,8 +441,8 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       ...(captionNeedsWork ? { captionStatus: captionStatusAfterRevision(item) } : {}),
       feedback: [...(item.feedback ?? []), { round, reason: r, by: reviewer, at: new Date().toISOString() }],
     });
-    // Bounce it back into the fixer's My Tasks (creator, else requester).
-    const fixer = item.owner && item.owner !== "Unassigned" ? item.owner : (item.requester || item.designer || "");
+    // Bounce it back into the fixer's My Tasks (caption owner, else the designer).
+    const fixer = captionOwner(item) || realName(item.designer);
     if (fixer) {
       createRevisionTask({
         module: "Content", title: `แก้ Content — ${item.title}`, assignee: fixer,
@@ -565,17 +569,19 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                       // The one control that turns "งานเขียนแคปชั่นไหลเข้า Content
                       // creator" into something the app actually does. Scoped to
                       // the Planner team, which is where memberTeam() puts
-                      // Content Creator.
+                      // Content Creator. Shows the content planner while nobody
+                      // has been assigned — that is who owns the words until
+                      // Creative takes them, not "ยังไม่มอบหมาย".
                       <OwnerSelect
                         key="o"
-                        value={item.owner === "Unassigned" ? "" : item.owner}
+                        value={captionOwner(item)}
                         onChange={assignOwner}
                         team="Planner"
                         placeholder="ยังไม่มอบหมาย"
                         className="text-[13px]"
                       />
                     )
-                    : <span key="o" className="text-[13.5px] font-semibold">{item.owner}</span>],
+                    : <span key="o" className="text-[13.5px] font-semibold">{captionOwner(item) || "ยังไม่มอบหมาย"}</span>],
                   ["Asset", <StatusBadge key="a" tone={contentTone(item.assetStatus)}>{item.assetStatus}</StatusBadge>],
                   ["Caption", <StatusBadge key="c" tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>]].map(([label, node], i) => (
                   <div key={i} className="rounded-[12px] px-[14px] py-3" style={{ background: "#F7F4EE" }}>
@@ -855,7 +861,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 <button onClick={saveCaption} disabled={busy} className="flex-1 text-[13.5px] font-bold py-[11px] rounded-[10px] bg-panel text-white disabled:opacity-40">{busy ? "Saving…" : "Save Caption"}</button>
                 <button onClick={markCaptionReady} disabled={busy || !caption.trim()} className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted disabled:opacity-40">Mark Ready</button>
               </div>
-              <div className="text-[11.5px] text-faint">Last edited by {item.owner}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
+              <div className="text-[11.5px] text-faint">Last edited by {captionOwner(item) || "—"}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
 
               {/* What the writer was told last time — kept in front of them
                   while they rewrite, not buried in a notification. */}

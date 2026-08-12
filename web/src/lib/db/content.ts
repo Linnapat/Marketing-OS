@@ -88,7 +88,10 @@ export async function fetchContentSourceIds(campaignId: string): Promise<Set<str
   const db = supabase();
   if (!db) return new Set();
   const { data, error } = await db.from("content_posts").select("data").eq("campaign_id", campaignId);
-  if (error || !data) return new Set();
+  // A failed read must abort the fan-out, not come back as "nothing exists yet":
+  // an empty set here sends every item to insert, straight into the unique index.
+  if (error) throw new Error(`เช็คงานเดิมของแคมเปญไม่สำเร็จ (${error.message}) — ยังไม่ได้สร้างอะไรเพิ่ม ลองใหม่อีกครั้ง`);
+  if (!data) return new Set();
   const ids = new Set<string>();
   for (const r of data) { const s = (r.data as ContentItem)?.sourceContentItemId; if (s) ids.add(s); }
   return ids;
@@ -102,8 +105,21 @@ export async function createContentIfNew(post: ContentItem, existing?: Set<strin
     if (set.has(key)) return { created: false, post };
     set.add(key);
   }
-  const created = await createContent(post);
-  return { created: true, post: created };
+  try {
+    const created = await createContent(post);
+    return { created: true, post: created };
+  } catch (error) {
+    // Two Approves can race (two buttons, two tabs, two people): both pass the
+    // read above, both insert, and the slower one dies on content_posts_source_uniq
+    // even though the post it wanted now exists — which is this function's
+    // promise kept, not an error. Re-check the database instead of parsing the
+    // message; anything still missing is a real failure and is rethrown.
+    if (key && post.campaignId) {
+      const now = await fetchContentSourceIds(post.campaignId).catch(() => new Set<string>());
+      if (now.has(key)) return { created: false, post };
+    }
+    throw error;
+  }
 }
 
 /** Persist an edited post (approval action, caption edit, etc). The whole
