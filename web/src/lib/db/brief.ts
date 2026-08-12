@@ -42,8 +42,29 @@ export interface BriefSaveResult {
   created: { content: number; graphics: number; kols: number; tasks: number };
 }
 
+// One fan-out per campaign at a time, chained not joined: the detail page has
+// more than one control that ends in saveCampaignBrief (Approve on the header,
+// Approve on the Approval tab, the campaigns-list status dropdown), and two of
+// them fired within seconds have raced each other in production — the second
+// run's idempotency read happened mid-flight through the first run's inserts,
+// so it re-inserted a post the first run had just written and died on
+// content_posts_source_uniq. Queueing the second run behind the first keeps
+// every read after every prior write; each caller still writes its own brief.
+const briefSaveQueue = new Map<string, Promise<unknown>>();
+
 /** The row types this expands into (kept in one place for the preview + save). */
 export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResult> {
+  const prior = briefSaveQueue.get(brief.id) ?? Promise.resolve();
+  const run = prior.catch(() => {}).then(() => doSaveCampaignBrief(brief));
+  briefSaveQueue.set(brief.id, run);
+  try {
+    return await run;
+  } finally {
+    if (briefSaveQueue.get(brief.id) === run) briefSaveQueue.delete(brief.id);
+  }
+}
+
+async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResult> {
   const normalizedBrief: CampaignBrief = {
     ...brief,
     content: brief.content.map((ci) => {
@@ -204,9 +225,11 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       const madeGraphic = await createGraphicIfNew(g, graphicSeen);
       // Already there: push the brief detail down instead of skipping the row
       // entirely, which is how a request ended up blank while its campaign
-      // carried the link. Blanks only, never on an accepted request.
+      // carried the link. Blanks only, never on an accepted request. Aimed at
+      // the request that exists — `gid` is this run's fresh number, which on a
+      // re-run names no row (every top-up landed on "ไม่พบใบงานนี้" until now).
       if (!madeGraphic.created) {
-        await topUpGraphicBrief(gid, {
+        await topUpGraphicBrief(madeGraphic.existingId ?? gid, {
           briefLink: g.briefLink, objective: g.objective, keyMessage: g.keyMessage,
           moodDirection: g.moodDirection, captionCopy: g.captionCopy, extraDetails: g.extraDetails,
         });
@@ -538,12 +561,20 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
   adoptBriefVersion(camp.id, written as { updated_at?: string }[] | null);
 }
 
-/** Append an approval-log entry + status change to a saved brief. */
-export async function logBriefApproval(id: string, entry: ApprovalLogEntry, status: string): Promise<void> {
+/** Append an approval-log entry + status change to a saved brief.
+ *
+ *  Returns the brief AS WRITTEN so the caller can hand that same object to
+ *  saveCampaignBrief — the caller's own copy may predate other people's (or
+ *  other buttons') writes, and persisting it verbatim has silently erased
+ *  approval-log entries in production. Returns null without writing when the
+ *  brief is missing OR already in `status`: the second of two Approve clicks
+ *  must become a no-op, not a second fan-out. */
+export async function logBriefApproval(id: string, entry: ApprovalLogEntry, status: string): Promise<CampaignBrief | null> {
   const db = supabase();
-  if (!db) return;
+  if (!db) return null;
   const brief = await fetchCampaignBrief(id);
-  if (!brief) return;
+  if (!brief) return null;
+  if (brief.status === status) return null;
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
   const nextApproval = status === "Waiting for Approval" ? (brief.approver || DEFAULT_APPROVER) : "None";
@@ -558,4 +589,5 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   logAudit(`Brief ${brief.name || id}: ${entry.action}`, "Campaign", {
     after: status, actorName: entry.by, meta: { campaignId: id, comment: entry.comment },
   });
+  return brief;
 }

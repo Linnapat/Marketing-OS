@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { CampaignDetail, CAMPAIGN_TABS, CAMPAIGN_TAB_LABELS, CampaignTab } from "@/lib/data/campaigns";
+import { CampaignDetail, CampaignRow, CAMPAIGN_TABS, CAMPAIGN_TAB_LABELS, CampaignTab } from "@/lib/data/campaigns";
+import { supabase } from "@/lib/supabase";
 import { campaignTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
@@ -38,6 +39,30 @@ import { fmtDisplay } from "@/components/ui/DatePicker";
 // P2-7 / P2-9): gross margin, and the share of budget/spend that goes to ads.
 const EST_GROSS_MARGIN = 0.38;
 const EST_AD_BUDGET_SHARE = 0.4;
+
+// Everything that follows a campaign turning "Approved", shared by BOTH approve
+// controls (the header's quick Approve and the Approval tab's) so they cannot
+// drift apart: approval is the gate that materialises posts / graphic requests /
+// KOL rows / tasks, and opens one Draft expense request per funded budget bucket.
+async function materialiseApproved(row: CampaignRow, fresh: CampaignBrief, by: string) {
+  notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${fresh.name}`, `โดย ${by}`, workLink.campaign(row.id), { to: [fresh.plannerOwner || row.owner] });
+  const made = await saveCampaignBrief(fresh).catch((error) => {
+    toastError(`อนุมัติแล้ว แต่สร้างงานเข้าโมดูลไม่สำเร็จ: ${error?.message || "Unknown error"}`);
+    return null;
+  });
+  if (made) {
+    const c = made.created;
+    notify("newTask", `📦 แตกงานจากแคมเปญ: ${fresh.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, workLink.campaign(row.id), { to: [fresh.plannerOwner || row.owner] });
+  }
+  // Approved budget flows straight into Finance as Draft expense requests —
+  // one per funded bucket — so the finance team never re-keys the plan.
+  const drafts = await createBudgetExpenseDrafts(row, fresh)
+    .catch((error) => {
+      toastError(`สร้าง Draft เบิกงบจาก Campaign ไม่สำเร็จ: ${error?.message || "Unknown error"}`);
+      return 0;
+    });
+  if (drafts > 0) notify("approval", `💰 เปิด Draft เบิกงบ ${drafts} รายการจากงบแคมเปญ: ${fresh.name}`, `ตามงบที่อนุมัติ — ตรวจและกดส่งอนุมัติได้ในโมดูล Expenses`, "/expenses");
+}
 const EST_AD_SPEND_SHARE = 0.55;
 
 export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange }: { detail: CampaignDetail; hub: CampaignHub | null; onReload: () => void; brief?: CampaignBrief | null; onBriefChange?: (b: CampaignBrief) => void }) {
@@ -70,13 +95,20 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       // Approving must run the brief pipeline, not just flip a column: it used
       // to write status "Active" — a value no status list knows — straight onto
       // the campaigns row, so the brief stayed "Waiting for Approval" and no
-      // content/graphic/KOL/task rows were ever materialised. Saving the brief
-      // with the real status does all of that in one place, and the decision is
-      // recorded in the brief's approval log like the Approval tab's own flow.
+      // content/graphic/KOL/task rows were ever materialised. Same pipeline as
+      // the Approval tab: log against the brief as the DATABASE holds it (null =
+      // already in that status; the click that got there first owns the
+      // follow-through), then let approval materialise the work. This button
+      // used to fan out its own possibly-stale copy in parallel with the tab's
+      // Approve — the two runs raced into content_posts_source_uniq and the
+      // stale write silently ate the other's approval-log entries.
       const next = approve ? "Approved" as const : "Draft" as const;
       if (brief) {
-        const entry = { action: approve ? "Approved" : "Sent back to Draft", by: member?.name || role || "—", at: new Date().toISOString(), from: brief.status, to: next };
-        await saveCampaignBrief({ ...brief, status: next, approvalLog: [...(brief.approvalLog ?? []), entry] });
+        const by = member?.name || role || "—";
+        const entry = { action: approve ? "Approved" : "Sent back to Draft", by, at: new Date().toISOString(), from: brief.status, to: next };
+        const fresh = (await logBriefApproval(brief.id, entry, next))
+          ?? (supabase() ? null : { ...brief, status: next, approvalLog: [...(brief.approvalLog ?? []), entry] });
+        if (fresh && approve) await materialiseApproved(c, fresh, by);
       } else {
         await updateCampaignStatus(c.id, next, member?.name || role || "");
       }
@@ -860,30 +892,28 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
   const act = async (nextStatus: string, action: string, comment?: string) => {
     setBusy(true);
     const entry = { action, by: reviewer, at: new Date().toISOString(), comment, from: status, to: nextStatus };
-    const next: CampaignBrief = { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] };
-    try { await logBriefApproval(brief.id, entry, nextStatus); onBriefChange?.(next); } finally { setBusy(false); }
+    // The brief as the DATABASE now holds it (fresh fetch + this entry), not this
+    // component's copy — persisting the local copy verbatim has silently erased
+    // approval-log entries other buttons or people wrote in the meantime. Null =
+    // the campaign is already in that status: whichever click got there first
+    // owns the follow-through, so this one stops instead of double-running the
+    // fan-out. Without a database (demo) there is nobody to race — local is truth.
+    let fresh: CampaignBrief | null = null;
+    try {
+      fresh = (await logBriefApproval(brief.id, entry, nextStatus))
+        ?? (supabase() ? null : { ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] });
+      if (fresh) onBriefChange?.(fresh);
+    } finally { setBusy(false); }
+    if (!fresh) {
+      toastError(`แคมเปญนี้เป็นสถานะ "${nextStatus}" อยู่แล้ว — ไม่ได้ทำซ้ำ (refresh เพื่อดูข้อมูลล่าสุด)`);
+      return;
+    }
     // Approval-flow steps ping the team on LINE/email.
     if (nextStatus === "Waiting for Approval") notify("approval", `🎯 แคมเปญรออนุมัติ: ${brief.name}`, `โดย ${reviewer} → รอ ${brief.approver || DEFAULT_APPROVER}`, workLink.campaign(detail.row.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
     else if (nextStatus === "Approved") {
-      notify("approved", `✅ แคมเปญอนุมัติแล้ว: ${brief.name}`, `โดย ${reviewer}`, workLink.campaign(detail.row.id), { to: [brief.plannerOwner || detail.row.owner] });
       // CMO approval is the gate: only now do content posts, graphic requests,
       // KOL rows and tasks materialise into their modules (idempotent).
-      const made = await saveCampaignBrief(next).catch((error) => {
-        toastError(`อนุมัติแล้ว แต่สร้างงานเข้าโมดูลไม่สำเร็จ: ${error?.message || "Unknown error"}`);
-        return null;
-      });
-      if (made) {
-        const c = made.created;
-        notify("newTask", `📦 แตกงานจากแคมเปญ: ${brief.name}`, `Content ${c.content} · Graphic ${c.graphics} · KOL ${c.kols} · Task ${c.tasks} — เข้า Content Plan / Graphic Request แล้ว`, workLink.campaign(detail.row.id), { to: [brief.plannerOwner || detail.row.owner] });
-      }
-      // Approved budget flows straight into Finance as Draft expense requests —
-      // one per funded bucket — so the finance team never re-keys the plan.
-      const drafts = await createBudgetExpenseDrafts(detail.row, next)
-        .catch((error) => {
-          toastError(`สร้าง Draft เบิกงบจาก Campaign ไม่สำเร็จ: ${error?.message || "Unknown error"}`);
-          return 0;
-        });
-      if (drafts > 0) notify("approval", `💰 เปิด Draft เบิกงบ ${drafts} รายการจากงบแคมเปญ: ${brief.name}`, `ตามงบที่อนุมัติ — ตรวจและกดส่งอนุมัติได้ในโมดูล Expenses`, "/expenses");
+      await materialiseApproved(detail.row, fresh, reviewer);
     }
     else if (nextStatus === "Need Revision") {
       // Bounce the whole campaign back to the planner's My Tasks to fix + resubmit.

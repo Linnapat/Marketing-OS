@@ -107,7 +107,20 @@ export async function upsertKolRequirement(reqKol: Kol, existingRows: Kol[]): Pr
   const key = reqKol.sourceKolRequirementId;
   const existing = key ? existingRows.find((k) => k.sourceKolRequirementId === key) : undefined;
   if (!existing) {
-    await createKol(reqKol);
+    try {
+      await createKol(reqKol);
+    } catch (error) {
+      // A sibling fan-out can insert this requirement page after existingRows
+      // was read — the insert then dies on kols_source_uniq although the row it
+      // wanted exists. Re-check and fall through to "already there".
+      const now = key && reqKol.campaignId
+        ? await fetchKolsForCampaign(reqKol.campaignId).catch(() => [] as Kol[])
+        : [];
+      const race = key ? now.find((k) => k.sourceKolRequirementId === key) : undefined;
+      if (!race) throw error;
+      existingRows.push(race);
+      return { created: false };
+    }
     existingRows.push(reqKol);
     return { created: true };
   }
