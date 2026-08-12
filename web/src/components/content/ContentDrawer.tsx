@@ -27,7 +27,7 @@ import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption } from "@/lib/roleGates";
+import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -567,17 +567,24 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                   ["Owner (คนเขียนแคปชั่น)", canAssign
                     ? (
                       // The one control that turns "งานเขียนแคปชั่นไหลเข้า Content
-                      // creator" into something the app actually does. Scoped to
-                      // the Planner team, which is where memberTeam() puts
-                      // Content Creator. Shows the content planner while nobody
-                      // has been assigned — that is who owns the words until
-                      // Creative takes them, not "ยังไม่มอบหมาย".
+                      // creator" into something the app actually does. Shows the
+                      // content planner while nobody has been assigned — that is
+                      // who owns the words until Creative takes them, not
+                      // "ยังไม่มอบหมาย" — and offers the people the work may be
+                      // handed on to (CAPTION_WRITER_ROLES). Scoped to "all"
+                      // rather than a team on purpose: the two writer roles live
+                      // in different teams, so filtering by team first would
+                      // leave nobody to pick. Clearing the slot hands the post
+                      // back to its planner; whoever holds it now stays listed
+                      // even when their role is not a writer's.
                       <OwnerSelect
                         key="o"
                         value={captionOwner(item)}
                         onChange={assignOwner}
-                        team="Planner"
+                        team="all"
+                        roleMatch={CAPTION_WRITER_ROLES}
                         placeholder="ยังไม่มอบหมาย"
+                        emptyLabel="ยังไม่มีใครถูกตั้งเป็น Content Creator / Creative Leader — ตั้ง role ที่ Settings › Members ก่อน"
                         className="text-[13px]"
                       />
                     )
