@@ -479,6 +479,38 @@ export function briefChangeAudience(g: Pick<Graphic, "acceptedAt" | "acceptedBy"
   return firstRealName(g.acceptedBy, g.designer);
 }
 
+/** The blocker Creative sets when it hands a brief back. One spelling, in one
+ *  place — three surfaces were comparing against this string by hand. */
+export const BRIEF_REVISION_BLOCKER = "Brief revision requested";
+
+/** Is this request still waiting on a brief revision Creative asked for?
+ *
+ *  Only Creative approving the brief clears it, which is right — they asked,
+ *  they judge. What was missing is the step in between: the requester fixes the
+ *  brief and nothing puts the request back in front of Creative, so it sits
+ *  looking unfinished. Three requests on production had a complete brief and a
+ *  card still reading "บรีฟยังไม่ครบ", the oldest for two weeks. */
+export function underBriefRevision(g: Pick<Graphic, "blocker">): boolean {
+  return (g.blocker ?? "") === BRIEF_REVISION_BLOCKER;
+}
+
+/** Who asked for the revision, and therefore who re-checks it.
+ *
+ *  Read from the history rather than the designer slot: the person who sent it
+ *  back is the one holding the question, and on this database that is often
+ *  the Creative Leader reviewing for someone else — Pichayaporn raised 9 of the
+ *  12 open revisions, on requests assigned to four different designers.
+ *  Falls back to whoever holds the job when the history predates the trail. */
+export function briefRevisionReviewer(
+  g: Pick<Graphic, "history" | "acceptedBy" | "designer">,
+): string | null {
+  const asked = [...(g.history ?? [])]
+    .filter((h) => h.type === "brief_revision_requested" && (h.by ?? "").trim())
+    .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""))
+    .pop();
+  return firstRealName(asked?.by, g.acceptedBy, g.designer);
+}
+
 /** Who drew the storyboard — the person a decision on it is about.
  *
  *  Whoever actually submitted it, before whoever was nominated to: the owner
