@@ -63,14 +63,15 @@ export async function addCampaignType(name: string): Promise<void> {
   assertDbOk(error, "Could not save campaign type");
 }
 
-/** Does this error mean the database simply doesn't have one of these columns
- *  yet? Postgres says 42703; PostgREST answers from its schema cache with
- *  PGRST204 and names the column in the message. Anything else is a real
- *  failure and must not be swallowed. */
-function isUnknownColumn(error: { code?: string; message?: string }, ...columns: string[]): boolean {
-  if (error.code !== "42703" && error.code !== "PGRST204") return false;
-  const message = error.message ?? "";
-  return columns.some((column) => message.includes(column));
+/** Does this error mean the database simply doesn't have a column we sent?
+ *  Postgres says 42703; PostgREST answers from its own schema cache with
+ *  PGRST204. Deliberately keyed on the code ALONE and not on the column name in
+ *  the message: this is the branch production takes for the whole window
+ *  between a deploy and someone running the migration, and matching prose is
+ *  too fragile a thing to hang campaign saving on. Retrying cannot hide a real
+ *  problem — if the retry fails too, that error is the one that surfaces. */
+function isUnknownColumn(error: { code?: string }): boolean {
+  return error.code === "42703" || error.code === "PGRST204";
 }
 
 /** Insert a new campaign; returns it. */
@@ -99,7 +100,7 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   // that ordering, so an unknown column means write what this database HAS —
   // `dates` still carries the flight, and the migration backfills the columns
   // from the brief blob whenever it does run.
-  if (error && isUnknownColumn(error, "start_date", "end_date")) {
+  if (error && isUnknownColumn(error)) {
     ({ data: written, error } = await save(base));
   }
   assertDbOk(error, "Could not save campaign");
