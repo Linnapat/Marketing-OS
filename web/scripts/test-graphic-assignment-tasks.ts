@@ -10,7 +10,7 @@
  * rows are keyed on it) and the three jobs must never collide, or re-assigning
  * a shooter would overwrite the designer's task. Run with: npm test */
 
-import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, Graphic } from "../src/lib/data/graphic";
+import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -97,6 +97,29 @@ is("id 13 หลัก: สาม slot ได้คนละเลข", new Set(
 is("id 16 หลัก เกินช่วงที่นับแม่น", Number.isSafeInteger(graphicTaskId(1786515010324000, "01")), false);
 is("id 16 หลัก: สาม slot ปัดเป็นเลขเดียวกัน", new Set(["01","02","03"].map((s) => graphicTaskId(1786515010324000, s))).size, 1);
 is("แต่ slot ยังแยกกันได้", new Set(graphicAssignmentTasks(req({ id: 1786515010324000, storyboardOwner: "Pichayaporn", requiresShooting: true, shooter: "Jeeno" })).map((t) => t.graphicSlot)).size, 3);
+
+console.log("\n— บรีฟที่ถูกส่งกลับแก้: ใครต้องตรวจซ้ำ —");
+// Creative ส่งกลับ → ผู้ขอแก้ → ต้องเด้งกลับไปหา "คนที่ส่งกลับ" ไม่ใช่ดีไซเนอร์
+// เพราะคนที่ตั้งคำถามคือคนเดียวที่ปลดป้ายได้ (Pichayaporn ส่งกลับ 9 ใน 12 ใบจริง
+// บนใบงานของดีไซเนอร์ 4 คน)
+const revised = (over: Partial<Graphic> = {}) => req({
+  blocker: BRIEF_REVISION_BLOCKER,
+  acceptedBy: "Pichayaporn", acceptedAt: "2026-08-01T00:00:00.000Z",
+  history: [
+    { type: "requested", at: "2026-07-01T00:00:00.000Z", by: "Pupay", note: "" },
+    { type: "brief_revision_requested", at: "2026-08-02T00:00:00.000Z", by: "Jungjing", note: "ยังไม่มีลิงก์บรีฟ" },
+    { type: "brief_revision_requested", at: "2026-08-10T00:00:00.000Z", by: "Pichayaporn", note: "ยังไม่มีลิงก์บรีฟ" },
+  ],
+  ...over,
+} as Partial<Graphic>);
+is("อยู่ระหว่างส่งกลับแก้", underBriefRevision(revised()), true);
+is("ไม่มี blocker = ไม่ได้อยู่ระหว่างแก้", underBriefRevision(req()), false);
+is("blocker อื่นไม่นับ", underBriefRevision(req({ blocker: "Brief incomplete" })), false);
+is("คนตรวจ = คนที่ส่งกลับล่าสุด", briefRevisionReviewer(revised()), "Pichayaporn");
+is("ไม่ใช่ดีไซเนอร์ที่ถือใบงาน", briefRevisionReviewer(revised()) === "Four", false);
+is("ไม่มีประวัติ = ถอยไปหาคนรับงาน", briefRevisionReviewer(req({ acceptedBy: "Pichayaporn", designer: "Four" })), "Pichayaporn");
+is("ไม่มีทั้งคู่ = ดีไซเนอร์", briefRevisionReviewer(req({ designer: "Four" })), "Four");
+is("Unassigned ไม่ใช่ชื่อคน", briefRevisionReviewer(req({ designer: "Unassigned" })), null);
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
