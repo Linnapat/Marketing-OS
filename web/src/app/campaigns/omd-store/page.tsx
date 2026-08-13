@@ -16,7 +16,7 @@ import { fetchAllBriefs } from "@/lib/db/brief";
 import type { CampaignBrief } from "@/lib/data/brief";
 import { toastError } from "@/lib/toast";
 import { BRAND_ORDER, brandName, brandColor, type BrandId } from "@/lib/brands";
-import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowDate, MONTHS } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowRange, MONTHS } from "@/components/ui/DateFilterBar";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
 
@@ -84,9 +84,10 @@ function isoDate(d: Date | null): string | undefined {
 function campaignToStorePromotion(campaign: CampaignRow, storePromotion: string): OmdStorePromotion {
   // Real campaign dates ("Jul 1 – Jul 31") — the period filter and the printed
   // Period column must reflect the actual flight, not a fixed placeholder.
-  const [startRaw, endRaw] = (campaign.dates ?? "").split(/[–—-]/).map((s) => s.trim());
-  const start = parseRowDate(startRaw);
-  const end = parseRowDate(endRaw) ?? start;
+  // parseRowRange, not two parseRowDate calls: a flight that crosses New Year
+  // ("Oct 1 – Jan 31") would otherwise end before it starts and print an empty
+  // period.
+  const { start, end } = parseRowRange(campaign.dates);
   return {
     id: `campaign-${campaign.id}`,
     brand: campaign.b,

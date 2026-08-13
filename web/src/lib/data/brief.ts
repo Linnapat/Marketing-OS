@@ -329,6 +329,26 @@ export function emptyBudget(): BriefBudget {
   return { total: 0, ads: 0, kol: 0, graphic: 0, printing: 0, crm: 0, other: 0, adsByPlatform: [{ platform: ADS_PLATFORMS[0], amount: 0 }], monthly: [] };
 }
 
+const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The campaign's flight as the label every list shows — and reads back to
+ *  filter by period (see parseRowRange in DateFilterBar).
+ *
+ *  It used to drop the year always, which is fine inside one year and wrong
+ *  across New Year: "Oct 1 – Jan 31" reads as a range that ENDS before it
+ *  starts, so the campaign overlapped no month and disappeared from every list
+ *  that filters by period while still sitting in the database. A range that
+ *  crosses years therefore carries both years. */
+export function fmtRange(startIso: string, endIso: string): string {
+  const one = (iso: string, withYear: boolean) => {
+    const [y, m, d] = (iso || "").split("-").map(Number);
+    return m ? `${MON_SHORT[m - 1]} ${d}${withYear && y ? ` ${y}` : ""}` : "";
+  };
+  const crossesYear = !!startIso && !!endIso && startIso.slice(0, 4) !== endIso.slice(0, 4);
+  const a = one(startIso, crossesYear), b = one(endIso, crossesYear);
+  return a && b ? `${a} – ${b}` : a || b || "TBD";
+}
+
 export function campaignMonthKeys(startIso: string, endIso: string): string[] {
   const start = /^\d{4}-\d{2}/.exec(startIso)?.[0];
   const end = /^\d{4}-\d{2}/.exec(endIso)?.[0];

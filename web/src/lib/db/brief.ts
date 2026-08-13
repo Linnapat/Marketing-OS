@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
@@ -31,11 +31,6 @@ import { noteBriefVersion, forgetBriefVersion, briefVersionOf, adoptBriefVersion
 export { noteBriefVersion, forgetBriefVersion } from "./briefVersion";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function fmtRange(startIso: string, endIso: string): string {
-  const one = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
-  const a = one(startIso), b = one(endIso);
-  return a && b ? `${a} – ${b}` : a || b || "TBD";
-}
 
 export interface BriefSaveResult {
   campaign: CampaignRow;
