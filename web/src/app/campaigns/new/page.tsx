@@ -15,6 +15,7 @@ import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { useCanCreateCampaign } from "@/lib/usePermGates";
+import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BRANDS, BrandId, brandName, emptyBrandTotals } from "@/lib/brands";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -460,7 +461,12 @@ export default function NewCampaignPage() {
 
   // Campaign creation follows Settings → Permissions (Campaign ≥ Edit) — the
   // button hides on the list, and this guards the direct URL.
-  if (!allowedToCreate) {
+  // The owner of an existing campaign may edit it even without create rights —
+  // otherwise the Edit button on the list leads straight to "No access", which
+  // is an instruction pointing at nothing. Creating is still gated: a new
+  // campaign has no owner to appeal to.
+  const editingOwnCampaign = !!editingId && isSamePerson(brief.plannerOwner, personKeys(memberRef(member)));
+  if (!allowedToCreate && !editingOwnCampaign) {
     return (
       <div className="py-24 flex flex-col items-center gap-3 text-center">
         <div className="text-[15px] font-bold text-ink">No access to Campaign Builder</div>
