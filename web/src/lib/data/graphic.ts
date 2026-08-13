@@ -6,6 +6,8 @@ import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { RushStatus } from "@/lib/data/briefDeadline";
 import { Task } from "@/lib/data/tasks";
+// todayIso only — data/brief imports nothing from here, so this cannot cycle.
+import { todayIso } from "@/lib/data/brief";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 
 export interface GraphicEvent {
@@ -97,6 +99,12 @@ export interface Graphic {
   rushBreaches?: string[];
   /** Why it could not wait — the requester's own words. */
   rushReason?: string;
+  /** Who was asked to decide the rush, recorded when it is raised.
+   *
+   *  A name, not a role: the task and the notification both need somebody to
+   *  address, and resolving "Creative Leader" to a person at read time would
+   *  mean the request quietly changes hands when the team list does. */
+  rushApprover?: string;
   rushDecidedBy?: string;
   rushDecidedAt?: string;
   rushDecisionNote?: string;
@@ -212,7 +220,7 @@ export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink"
 /** The numeric suffix each job's task id has always used. Kept because the 52
  *  live artwork rows carry `<graphicId>01` and the sync still recognises them
  *  by it — but the id is no longer what identifies a row. See Task.graphicSlot. */
-export const GRAPHIC_TASK_SLOT = { artwork: "01", shoot: "02", storyboard: "03" } as const;
+export const GRAPHIC_TASK_SLOT = { artwork: "01", shoot: "02", storyboard: "03", rush: "04" } as const;
 
 /** The preferred My Tasks id for one job of one request. A starting point, not
  *  an identity: upsertGraphicTask moves off it if the number is already taken. */
@@ -329,6 +337,36 @@ export function graphicAssignmentTasks(g: Graphic): Task[] {
             ? `ถ่าย ${dueLabel(g.shootDate)} แล้วขึ้นงานต่อได้เลย`
             : `ถ่าย ${dueLabel(g.shootDate)} แล้วส่งไฟล์ให้ ${designer !== "Unassigned" ? designer : "ดีไซเนอร์"}`,
       checklist: ["ดู storyboard / บรีฟก่อนวันถ่าย", "ถ่ายตามคิว", "ส่งไฟล์ให้ดีไซเนอร์"],
+    });
+  }
+
+  // The rush decision. Raised as Pending, it blocks everything else on the
+  // request — "รอ Creative Leader หรือ CMO ตัดสิน — ระหว่างนี้ยังไม่เริ่มงาน" —
+  // and nothing told either of them, so the job waited on a decision nobody
+  // knew was theirs. Due today, because a rush that waits is not a rush.
+  //
+  // Decided (either way) it closes itself, so the next save clears it rather
+  // than leaving an answered question in somebody's list.
+  if (g.rushApprover?.trim() && g.rushStatus) {
+    const decided = g.rushStatus !== "Pending";
+    tasks.push({
+      ...base,
+      id: graphicTaskId(g.id, GRAPHIC_TASK_SLOT.rush),
+      graphicSlot: "rush",
+      title: `อนุมัติงานเร่งด่วน — ${g.title}`,
+      moduleIcon: "⚡",
+      type: "Rush",
+      assignee: g.rushApprover.trim(),
+      priority: "High",
+      status: decided ? "Done" : "Todo",
+      group: decided ? "done" : "doFirst",
+      due: dueLabel(todayIso()) || g.due || "TBD",
+      dueIso: todayIso(),
+      pendingApprover: g.requester || null,
+      nextAction: decided
+        ? `ตัดสินแล้ว: ${g.rushStatus}${g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}`
+        : `${g.requester || "ผู้ขอ"} ขอเร่ง: ${g.rushReason || "ไม่ได้ให้เหตุผล"}`,
+      checklist: ["อ่านเหตุผลที่ขอเร่ง", "อนุมัติให้เร่ง หรือให้เข้ารอบปกติ"],
     });
   }
 

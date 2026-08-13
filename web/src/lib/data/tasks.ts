@@ -42,7 +42,7 @@ export interface Task {
    *  on a shoot slot: task 246 ("kOL_AUG_LIST", Pupay's) holds 178515553116402,
    *  which is graphic 1785155531164 slot 02. Matching on that number would have
    *  overwritten a KOL task with a shoot assignment. */
-  graphicSlot?: "artwork" | "shoot" | "storyboard";
+  graphicSlot?: "artwork" | "shoot" | "storyboard" | "rush";
   relatedCampaignId?: string;
   /** KOL proposal approvals link the task back to the campaign KOL row. */
   relatedKolId?: number;
