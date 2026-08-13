@@ -2,7 +2,7 @@
 
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
-import { fetchMembers } from "@/lib/db/settings";
+import { fetchMembers, fetchJsonSetting } from "@/lib/db/settings";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
@@ -32,7 +32,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset } from "@/lib/roleGates";
+import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -201,8 +201,18 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       if (!alive) return;
       const m = ms.find((x) => /marketing manager|bgl|brand lead/i.test(x.role));
       if (m) setBglApprover(m.name);
-      const lead = ms.find((x) => /creative leader/i.test(x.role));
-      if (lead) setCreativeLeader(lead.name);
+      // Same trap as the rush decision: two people hold "Creative Leader" and
+      // members arrive ordered by email, so `find` returned the QA account and
+      // every brief top-up request went there. Ask Settings → Teams who leads.
+      const holders = roleHolders(ms, ["Creative Leader"]);
+      if (holders[0]) setCreativeLeader(holders[0]);
+      fetchJsonSetting<{ name?: string; lead?: string }[]>("teams_config")
+        .then((teams) => {
+          if (!alive) return;
+          const best = leadFirst(holders, ms, creativeTeamLeadEmail(teams))[0];
+          if (best) setCreativeLeader(best);
+        })
+        .catch(() => {});
     }).catch(() => {});
     return () => { alive = false; };
   }, []);

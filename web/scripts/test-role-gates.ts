@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES} from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -393,6 +393,26 @@ console.log("\n— roleHolders: กฎ → ตัวคน —");
   is("ไม่มีใครถือ role นั้น", roleHolders(team, ["Marketing Manager / BGL"]).length, 0);
   is("ทีมว่าง", roleHolders([], [...RUSH_DECIDER_ROLES]).length, 0);
   is("ชื่อไม่ซ้ำแม้ถือหลาย role", roleHolders([{ name: "Gik", role: "CMO", status: "Active" }], ["CMO", "CMO"]).join(","), "Gik");
+
+  // ทีมจริงมีคนถือ "Creative Leader" สองคน และ fetchMembers เรียงตาม email
+  // → Marketing-crm@ มาก่อน Pichayaporn.l@ ทุกครั้ง งานเลยวิ่งไปหาบัญชี QA
+  const real = [
+    { name: "QA Test Marketing", email: "Marketing-crm@teppenthailand.co.th", role: "Creative Leader", status: "Active" },
+    { name: "Pichayaporn", email: "Pichayaporn.l@teppenthailand.co.th", role: "Creative Leader", status: "Active" },
+    { name: "Gik", email: "Linnapat.d@teppenthailand.co.th", role: "CMO", status: "Active" },
+  ];
+  const byEmail = roleHolders(real, [...RUSH_DECIDER_ROLES]);
+  is("ลำดับดิบหยิบบัญชี QA มาก่อน (นี่คือบั๊ก)", byEmail[0], "QA Test Marketing");
+  const teams = [{ name: "Creative Team", lead: "Pichayaporn.l@teppenthailand.co.th" }];
+  is("หัวหน้าทีมที่ตั้งไว้ต้องมาก่อน", leadFirst(byEmail, real, creativeTeamLeadEmail(teams))[0], "Pichayaporn");
+  is("คนอื่นยังอยู่ครบ ไม่ได้ถูกตัดทิ้ง", leadFirst(byEmail, real, creativeTeamLeadEmail(teams)).length, 3);
+  is("อ่าน lead ของทีม Creative ได้", creativeTeamLeadEmail(teams), "Pichayaporn.l@teppenthailand.co.th");
+  is("ไม่มี teams config = ลำดับเดิม", leadFirst(byEmail, real, "").join(","), byEmail.join(","));
+  is("ไม่มีทีม Creative ในคอนฟิก", creativeTeamLeadEmail([{ name: "CRM Team", lead: "x@y.z" }]), "");
+  // หัวหน้าที่ไม่ได้ถือ role นั้น ต้องไม่ถูกดันเข้ามาทางลัด
+  is("lead ที่ไม่มีสิทธิ์ ไม่ถูกยัดเข้ามา",
+    leadFirst(byEmail, [...real, { name: "Four", email: "kittinan.k@teppenthailand.co.th", role: "VDO Editor", status: "Active" }], "kittinan.k@teppenthailand.co.th").join(","),
+    byEmail.join(","));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
