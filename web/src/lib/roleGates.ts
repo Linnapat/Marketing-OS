@@ -274,6 +274,36 @@ export function canApproveRushBrief(role: string): boolean {
   return role === "Creative Leader" || role === "CMO";
 }
 
+/** The people who actually hold a role-gated power, by name.
+ *
+ *  Every gate here answers "may THIS role do it", which is the right question
+ *  when a button is on screen and the wrong one when something has to be sent
+ *  to whoever can act. A rush brief asked for a decision from "Creative Leader
+ *  หรือ CMO" and told neither of them, because nothing could turn the rule into
+ *  a person.
+ *
+ *  Active members only — an invited account has nobody reading its inbox yet,
+ *  and addressing a decision to it is the same as addressing it to no one.
+ *  Ordered by the gate's own preference: pass the roles in the order you want
+ *  them asked, and the first name back is the one to put on the task. */
+export function roleHolders(
+  members: { name?: string; role?: string; status?: string }[],
+  order: string[],
+): string[] {
+  const active = members.filter((m) => (m.status ?? "").toLowerCase() === "active" && (m.name ?? "").trim());
+  const out: string[] = [];
+  for (const role of order) {
+    for (const m of active) {
+      const name = (m.name ?? "").trim();
+      if ((m.role ?? "").trim() === role && !out.includes(name)) out.push(name);
+    }
+  }
+  return out;
+}
+
+/** Who decides whether a rush brief may jump the queue, best first. */
+export const RUSH_DECIDER_ROLES = ["Creative Leader", "CMO"] as const;
+
 // ── Campaign creation: driven by the Settings → Permissions matrix ─────────
 // The source of truth the QA verified against. A role may create campaigns
 // when its Campaign module level is Edit or higher; "View" means exactly that.

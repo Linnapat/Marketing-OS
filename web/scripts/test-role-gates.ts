@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix } from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -375,6 +375,24 @@ console.log("\n— กู้คืน fan-out ที่ล้ม: ใครก�
     is(`${role}: ตรงกับ canCreateCampaign (RLS เงื่อนไขเดียวกัน)`,
       canMakeApprovedPlan(role, live), canCreateCampaign(role, live));
   }
+}
+
+console.log("\n— roleHolders: กฎ → ตัวคน —");
+{
+  const team = [
+    { name: "Pichayaporn", role: "Creative Leader", status: "Active" },
+    { name: "Gik", role: "CMO", status: "Active" },
+    { name: "Four", role: "VDO Editor", status: "Active" },
+    { name: "GID", role: "Creative Leader", status: "Invited" },
+  ];
+  // เรียงตามลำดับที่ส่งเข้าไป — ชื่อแรกคือคนที่จะถูกใส่ในงาน
+  is("Creative Leader มาก่อน CMO", roleHolders(team, [...RUSH_DECIDER_ROLES]).join(","), "Pichayaporn,Gik");
+  is("สลับลำดับ = สลับคนแรก", roleHolders(team, ["CMO", "Creative Leader"]).join(","), "Gik,Pichayaporn");
+  // คนที่ยังไม่เคยเข้าระบบไม่มีใครอ่านกล่องให้ ส่งไปก็เท่ากับไม่ได้ส่ง
+  is("Invited ไม่นับ", roleHolders(team, ["Creative Leader"]).join(","), "Pichayaporn");
+  is("ไม่มีใครถือ role นั้น", roleHolders(team, ["Marketing Manager / BGL"]).length, 0);
+  is("ทีมว่าง", roleHolders([], [...RUSH_DECIDER_ROLES]).length, 0);
+  is("ชื่อไม่ซ้ำแม้ถือหลาย role", roleHolders([{ name: "Gik", role: "CMO", status: "Active" }], ["CMO", "CMO"]).join(","), "Gik");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

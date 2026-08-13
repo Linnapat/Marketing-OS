@@ -29,6 +29,7 @@ import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/li
 import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { notify } from "@/lib/notify";
+import { graphicTeam } from "@/lib/notifyRouting";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -47,7 +48,7 @@ import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, g
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
-import { canApproveRushBrief, canSendGraphicBrief, worksOwnQueueOnly } from "@/lib/roleGates";
+import { canApproveRushBrief, canSendGraphicBrief, worksOwnQueueOnly, roleHolders, RUSH_DECIDER_ROLES } from "@/lib/roleGates";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -174,6 +175,7 @@ function GraphicPageInner() {
   // left over from the mock, so filtering by a real designer was impossible and
   // every option found nothing.
   const [designerOpts, setDesignerOpts] = useState<string[]>([]);
+  const [rushDeciders, setRushDeciders] = useState<string[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -187,6 +189,7 @@ function GraphicPageInner() {
           .map((m) => m.name)
           .sort(),
       );
+      setRushDeciders(roleHolders(ms, [...RUSH_DECIDER_ROLES]));
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -224,6 +227,16 @@ function GraphicPageInner() {
         await updateContent({ ...linkedPost, graphicRequestId: String(g.id), assetStatus: "Waiting Design" });
       }
       if (briefItem && campaign && campaign !== "—") await appendBriefItem(campaign, briefItem);
+      // A rush brief stops itself until somebody clears it, and until now it
+      // told nobody: the card said "รอ Creative Leader หรือ CMO ตัดสิน" while
+      // neither of them had any way to learn there was anything to decide.
+      // The task is created by the pipeline sync (slot "rush", closes itself on
+      // the decision); this is the nudge that says it just landed.
+      if (g.rushStatus === "Pending" && rushDeciders.length) {
+        notify("approval", `⚡ งานเร่งด่วนรออนุมัติ: ${g.title}`,
+          `${brandName(g.b)} · ${campaign} · ${g.requester} ขอเร่ง: ${g.rushReason || "ไม่ได้ให้เหตุผล"}`,
+          workLink.graphic(g.id), { team: graphicTeam(g), to: rushDeciders });
+      }
       setGraphics((gs) => [g, ...gs]);
       setReqOpen(false);
     } catch (error) {
@@ -496,6 +509,7 @@ function GraphicPageInner() {
           graphics={graphics}
           prefillPost={briefForPost}
           onClose={closeRequestModal}
+          rushDeciders={rushDeciders}
           onCreate={addGraphic}
         />
       )}
@@ -1357,12 +1371,14 @@ function GraphicListRow({ g, codeOf, onOpen, onQuickApprove }: { g: Graphic; cod
   );
 }
 
-function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
+function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, onCreate }: {
   nextId: number;
   graphics: Graphic[];
   /** Post this brief was raised for (arrived via ?briefFor=<id>). */
   prefillPost?: ContentItem | null;
   onClose: () => void;
+  /** Who may clear a rush, best first — see RUSH_DECIDER_ROLES. */
+  rushDeciders: string[];
   onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string, linkedPost: ContentItem | null) => void;
 }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
@@ -1543,6 +1559,10 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
       rushStatus: isRush ? "Pending" : "",
       rushBreaches: isRush ? breaches.map((b) => b.label) : undefined,
       rushReason: isRush ? rushReason.trim() : undefined,
+      // Named now, while the team list is in hand. The task and the message
+      // both need somebody to address; "Creative Leader หรือ CMO" is a rule,
+      // not a person, and a rule cannot be sent anything.
+      rushApprover: isRush ? rushDeciders[0] : undefined,
       // Video work starts at the storyboard, not the artwork. Raising a Reel
       // therefore lands on Creative Content first — "ถ้ามีการคลิกสร้าง reel ให้
       // เด้งมาที่ตำแหน่ง creative content" — and the request says so from the

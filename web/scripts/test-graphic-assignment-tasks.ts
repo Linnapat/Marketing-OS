@@ -121,6 +121,22 @@ is("ไม่มีประวัติ = ถอยไปหาคนรับ�
 is("ไม่มีทั้งคู่ = ดีไซเนอร์", briefRevisionReviewer(req({ designer: "Four" })), "Four");
 is("Unassigned ไม่ใช่ชื่อคน", briefRevisionReviewer(req({ designer: "Unassigned" })), null);
 
+console.log("\n— งานเร่งด่วน: ต้องมีคนถือการตัดสิน —");
+// การ์ดบอกว่า "รอ Creative Leader หรือ CMO ตัดสิน" แต่ไม่เคยมีใครถูกแจ้ง
+// งานเลยค้างรอการตัดสินที่ไม่มีใครรู้ว่าเป็นของตัวเอง
+const rush = (over: Partial<Graphic> = {}) => req({ rushStatus: "Pending", rushApprover: "Pichayaporn", rushReason: "ลูกค้าขอด่วน", ...over } as Partial<Graphic>);
+is("งานเร่งรออนุมัติ = มี Task เพิ่ม", byType(rush()).includes("Rush:Pichayaporn"), true);
+is("มอบให้คนที่ถูกขอให้ตัดสิน", find(rush(), "Rush")!.assignee, "Pichayaporn");
+is("ครบกำหนดวันนี้ — งานเร่งที่รอได้ไม่ใช่งานเร่ง", find(rush(), "Rush")!.dueIso, new Date().toISOString().slice(0, 10));
+is("ขึ้น Do First และ High", (() => { const t = find(rush(), "Rush")!; return [t.group, t.priority]; })(), ["doFirst", "High"]);
+is("บอกเหตุผลที่ขอเร่ง", find(rush(), "Rush")!.nextAction, "Pupay ขอเร่ง: ลูกค้าขอด่วน");
+// ตัดสินแล้วต้องปิดตัวเอง ไม่ค้างเป็นคำถามที่ตอบไปแล้ว
+is("อนุมัติแล้ว = Done", (() => { const t = find(rush({ rushStatus: "Approved", rushDecidedBy: "Gik" }), "Rush")!; return [t.status, t.group]; })(), ["Done", "done"]);
+is("ไม่อนุมัติก็ Done", find(rush({ rushStatus: "Rejected" }), "Rush")!.status, "Done");
+is("ไม่ใช่งานเร่ง = ไม่มี Task นี้", byType(req()).some((t) => t.startsWith("Rush:")), false);
+is("เร่งแต่ยังไม่รู้ว่าใครตัดสิน = ไม่สร้างงานลอย", byType(req({ rushStatus: "Pending" } as Partial<Graphic>)).some((t) => t.startsWith("Rush:")), false);
+is("slot rush ไม่ชนกับสามอันเดิม", new Set(graphicAssignmentTasks(rush({ storyboardOwner: "Pichayaporn", requiresShooting: true, shooter: "Jeeno" } as Partial<Graphic>)).map((t) => t.graphicSlot)).size, 4);
+
 console.log("\n— ลิงก์บรีฟบนใบงาน: หาให้เจอไม่ว่าเก็บไว้ตรงไหน —");
 const BRIEF = "https://docs.google.com/presentation/d/brief";
 is("อยู่ใน briefLink", creativeBriefLink(req({ briefLink: BRIEF })), BRIEF);
