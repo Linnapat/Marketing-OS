@@ -154,19 +154,37 @@ export const reassignDb = (id: number, to: string) => {
   return updateTaskDb(id, { assignee: to });
 };
 
-/** The preferred id if it is free, otherwise a random one.
+/** An id no other task is using.
  *
- *  Task ids have to be unique because updateTaskDb and every deep link find a
- *  task by `data->>id`. The slot ids are readable and stable, which is worth
- *  keeping — but a number is not worth colliding over, and one of them already
- *  belongs to a KOL task (see Task.graphicSlot). Identity lives in the slot;
- *  this only has to be unused. */
+ *  Task ids have to be unique: updateTaskDb and every deep link find a task by
+ *  `data->>id`. The readable `<graphicId><slot>` number is worth keeping when it
+ *  works, but it is only a preference — identity is the slot (see
+ *  Task.graphicSlot), so anything unused will do.
+ *
+ *  Two ways the preferred number fails, both live on this database:
+ *
+ *  1. Taken by another module. Task 246 ("kOL_AUG_LIST") holds 178515553116402,
+ *     which is graphic 1785155531164 slot 02.
+ *  2. Not exactly representable. Request ids run to 16 digits (1786515010324000,
+ *     the OMD_2609_007 series), so `${id}01` is 18 digits — past 2^53, where
+ *     doubles are spaced 32 apart. All three slots round to the SAME number, and
+ *     the three jobs would fight over one id. Eight live requests are like this.
+ *
+ *  The generated fallback stays inside the exact range: Date.now() is ~1.79e15,
+ *  well under 2^53, where adding the jitter still changes the value. The earlier
+ *  `Date.now() * 1000` did not — at 1.79e18 the spacing is 256, so the jitter
+ *  vanished and two tasks made in the same millisecond could collide. */
 async function freeTaskId(preferred: number): Promise<number> {
   const db = supabase();
   if (!db) return preferred;
-  const { data } = await db.from("tasks").select("id").eq("data->>id", String(preferred)).maybeSingle();
-  if (!data) return preferred;
-  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const taken = async (id: number) =>
+    !!(await db.from("tasks").select("id").eq("data->>id", String(id)).maybeSingle()).data;
+  if (Number.isSafeInteger(preferred) && !(await taken(preferred))) return preferred;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = Date.now() + Math.floor(Math.random() * 1_000_000);
+    if (!(await taken(candidate))) return candidate;
+  }
+  return Date.now() + Math.floor(Math.random() * 1_000_000);
 }
 
 /** Create or update ONE My Tasks row for one job of a Graphic request —

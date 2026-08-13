@@ -88,8 +88,15 @@ console.log("\n— ทุกงานผูกกลับไปที่ใบ�
 is("relatedGraphicId ครบทุกงาน", graphicAssignmentTasks(sb).every((t) => t.relatedGraphicId === "1785155501760"), true);
 is("แบรนด์ครบทุกงาน", new Set(graphicAssignmentTasks(sb).map((t) => t.brand)).size, 1);
 is("graphicTaskId ประกอบ slot ถูก", [graphicTaskId(12, GRAPHIC_TASK_SLOT.artwork), graphicTaskId(12, GRAPHIC_TASK_SLOT.shoot), graphicTaskId(12, GRAPHIC_TASK_SLOT.storyboard)], [1201, 1202, 1203]);
-// id ต้องอยู่ในช่วงที่ JS นับได้แม่น — id ใบงานจริงเป็น timestamp 13 หลัก
-is("id ใบงานจริงยังไม่เกิน MAX_SAFE_INTEGER", Number.isSafeInteger(graphicTaskId(1785155501760, "03")), true);
+// id ใบงาน 13 หลัก: ประกอบ slot แล้วยังอยู่ในช่วงที่ JS นับแม่น slot จึงไม่ชนกัน
+is("id 13 หลัก ยังไม่เกิน MAX_SAFE_INTEGER", Number.isSafeInteger(graphicTaskId(1785155501760, "03")), true);
+is("id 13 หลัก: สาม slot ได้คนละเลข", new Set(["01","02","03"].map((s) => graphicTaskId(1785155501760, s))).size, 3);
+// id ใบงาน 16 หลัก (ชุด OMD_2609_007 ที่มีอยู่จริง 8 ใบ): `${id}01` ยาว 18 หลัก
+// เกิน 2^53 ทั้งสาม slot จึงปัดลงเป็นเลขเดียวกัน — เลขใช้เป็นตัวระบุตัวตนไม่ได้
+// ต้องพึ่ง graphicSlot อย่างเดียว และ freeTaskId ฝั่ง db จะออกเลขใหม่ให้
+is("id 16 หลัก เกินช่วงที่นับแม่น", Number.isSafeInteger(graphicTaskId(1786515010324000, "01")), false);
+is("id 16 หลัก: สาม slot ปัดเป็นเลขเดียวกัน", new Set(["01","02","03"].map((s) => graphicTaskId(1786515010324000, s))).size, 1);
+is("แต่ slot ยังแยกกันได้", new Set(graphicAssignmentTasks(req({ id: 1786515010324000, storyboardOwner: "Pichayaporn", requiresShooting: true, shooter: "Jeeno" })).map((t) => t.graphicSlot)).size, 3);
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
