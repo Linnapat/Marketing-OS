@@ -10,7 +10,7 @@
  * rows are keyed on it) and the three jobs must never collide, or re-assigning
  * a shooter would overwrite the designer's task. Run with: npm test */
 
-import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, Graphic } from "../src/lib/data/graphic";
+import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -120,6 +120,18 @@ is("ไม่ใช่ดีไซเนอร์ที่ถือใบงา�
 is("ไม่มีประวัติ = ถอยไปหาคนรับงาน", briefRevisionReviewer(req({ acceptedBy: "Pichayaporn", designer: "Four" })), "Pichayaporn");
 is("ไม่มีทั้งคู่ = ดีไซเนอร์", briefRevisionReviewer(req({ designer: "Four" })), "Four");
 is("Unassigned ไม่ใช่ชื่อคน", briefRevisionReviewer(req({ designer: "Unassigned" })), null);
+
+console.log("\n— ลิงก์บรีฟบนใบงาน: หาให้เจอไม่ว่าเก็บไว้ตรงไหน —");
+const BRIEF = "https://docs.google.com/presentation/d/brief";
+is("อยู่ใน briefLink", creativeBriefLink(req({ briefLink: BRIEF })), BRIEF);
+// ใบงาน adhoc ที่สร้างก่อน 13 ส.ค. เก็บลิงก์ไว้ที่ deliverable อย่างเดียว
+// (TPN_2609_002-A01 เป็นเคสจริง) — Overview ต้องยังหาเจอ
+is("เหลือแต่ใน deliverable (เคส TPN_2609_002-A01)",
+  creativeBriefLink(req({ deliverables: [{ platform: "In-store", size: "A5", refLink: BRIEF, assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] }] } as Partial<Graphic>)),
+  BRIEF);
+is("ช่องที่เลิกใช้ก็ยังอ่าน", creativeBriefLink(req({ driveLink: BRIEF } as Partial<Graphic>)), BRIEF);
+is("ไม่มีเลย = ค่าว่าง (Overview จะบอกว่ายังไม่มีบรีฟ)", creativeBriefLink(req()), "");
+is("briefLink ชนะ deliverable", creativeBriefLink(req({ briefLink: BRIEF, deliverables: [{ platform: "x", size: "y", refLink: "https://other", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] }] } as Partial<Graphic>)), BRIEF);
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

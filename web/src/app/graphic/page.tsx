@@ -1518,6 +1518,25 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
       stage: "New Request",
       size: pairs.map((a) => a.size).filter(Boolean).join(" · ") || "—",
       deliverables,
+      // The brief the requester just typed, carried onto the REQUEST — not only
+      // onto its deliverables.
+      //
+      // This form and the campaign fan-out raise the same kind of job from the
+      // same kind of item, and only the fan-out was copying the words across.
+      // A request raised here therefore arrived with an empty Brief tab: the
+      // link went to deliverables[].refLink alone, and the message, the
+      // mandatory text and the direction went nowhere at all — so Creative
+      // opened a job whose brief the requester could see they had filled in.
+      // Reported on TPN_2609_002-A01, where the link was attached before
+      // submitting and the receiving view showed none.
+      //
+      // Same five fields, same order of preference as db/brief's fan-out; when
+      // one of them changes there, change it here too.
+      briefLink: contentBriefLink(item),
+      keyMessage: item.mainMessage || "",
+      moodDirection: item.captionDirection || "",
+      captionCopy: item.captionDirection || "",
+      extraDetails: item.doDont || item.mandatoryText || "",
       // Breaches are stamped, not recomputed later: the cap on a given day
       // moves as other briefs land, and the decision has to be judged against
       // what was true when it was asked for.
