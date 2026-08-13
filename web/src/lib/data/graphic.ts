@@ -206,6 +206,58 @@ export function isVideoWork(g: Pick<Graphic, "type" | "requiredVideo">): boolean
   return kind === "vdo" || kind === "vdo_shoot";
 }
 
+/* ── วัสดุตั้งต้น: designer มีอะไรให้เริ่มงานหรือยัง ────────────────────────
+ *
+ * กติกาที่ตกลงกัน (14 ส.ค.): ไม่มี footage หรือรูปภาพ = ทำงานต่อไม่ได้
+ *
+ * ตอนนี้ยังเป็น "เตือน" ไม่ใช่ "ล็อก" โดยตั้งใจ — ถ้าล็อกทันทีจะหยุดงาน 35 ใบ
+ * จาก 60 ใบที่เปิดอยู่ ให้ทีมเคลียร์ก่อนแล้วค่อยสับสวิตช์
+ *
+ * วิธีสับเป็นล็อกจริง: ย้าย materialNote() เข้าไปใน productionBlockers()
+ * บรรทัดเดียว — ที่เหลือ (ปุ่ม Submit, ข้อความบอกเหตุผล) ต่อสายไว้แล้ว
+ */
+
+/** งานที่ดีไซเนอร์สร้างขึ้นเองจากบรีฟ ไม่ได้เริ่มจากภาพถ่าย จึงไม่ต้องมีวัสดุตั้งต้น.
+ *  แยกเป็นรายการชัด ๆ ไม่ใช่เดาจากชื่อ — เพิ่ม/ลดได้เมื่อทีมเห็นต่าง. */
+export const MATERIAL_EXEMPT_TYPES: readonly string[] = [
+  "Poster", "POSM", "Menu Insert", "Menu book", "LINE Rich Message",
+  "Artwork", "Mock up", "Packaging",
+];
+
+export type MaterialState =
+  | "not_needed"        // งานประเภทที่วาดเองจากบรีฟ
+  | "ready"             // มี footage หรือมีลิงก์รูปแล้ว
+  | "waiting_footage"   // ต้องถ่าย แต่ยังไม่ส่งไฟล์  (อันนี้ล็อกอยู่แล้ววันนี้)
+  | "no_material"       // ตัดสินว่าไม่ต้องถ่าย แต่ไม่มีลิงก์รูปให้เลย
+  | "undecided";        // ยังไม่มีใครตัดสินว่าต้องถ่ายไหม
+
+/** งานนี้มีของให้ designer เริ่มหรือยัง. */
+export function materialState(
+  g: Pick<Graphic, "type" | "requiredVideo" | "requiresShooting" | "footageLink" | "designerPhotosLink">,
+): MaterialState {
+  if (MATERIAL_EXEMPT_TYPES.includes((g.type ?? "").trim())) return "not_needed";
+  if (g.requiresShooting === true) return g.footageLink?.trim() ? "ready" : "waiting_footage";
+  if (g.designerPhotosLink?.trim()) return "ready";
+  // false กับ undefined ต่างกันตรงนี้: "ไม่ต้องถ่าย" คือคำตอบที่ยังไม่ครบ
+  // ส่วน "ยังไม่ตัดสิน" คือยังไม่มีคำตอบ — designer รอหรือเริ่มดีก็ไม่รู้
+  return g.requiresShooting === false ? "no_material" : "undecided";
+}
+
+/** สิ่งที่ยังขาดก่อนเริ่มงานได้ ในถ้อยคำที่เจ้าของงานเอาไปทำต่อได้ทันที.
+ *  ค่าว่าง = ไม่มีอะไรขาด. */
+export function materialNote(
+  g: Pick<Graphic, "type" | "requiredVideo" | "requiresShooting" | "footageLink" | "designerPhotosLink" | "shooter">,
+): string {
+  switch (materialState(g)) {
+    case "no_material":
+      return "ระบุว่าไม่ต้องถ่าย แต่ยังไม่มีลิงก์รูป/ไฟล์ให้ designer";
+    case "undecided":
+      return "ยังไม่ได้ตัดสินว่าต้องถ่ายใหม่ไหม — designer ไม่รู้ว่าจะรอภาพหรือเริ่มได้เลย";
+    default:
+      return "";
+  }
+}
+
 /** Has the shooter handed the footage over? */
 export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink">): boolean {
   return !g.requiresShooting || !!g.footageLink?.trim();
@@ -752,6 +804,10 @@ export function productionSteps(g: Graphic): ProductionStep[] {
     });
   }
   const blocked = productionBlockers(g).length > 0;
+  // Not a blocker yet — see the material notes above. Shown on the step that
+  // cannot really start without it, so the team can clear the backlog before
+  // this becomes a hard gate.
+  const material = materialNote(g);
   steps.push({
     key: "asset",
     // Named for what the person does, not for the file that comes out: on video
@@ -761,7 +817,11 @@ export function productionSteps(g: Graphic): ProductionStep[] {
     role: isVideoWork(g) ? "คนตัดต่อ" : "Designer",
     owner: g.designer && g.designer !== "Unassigned" ? g.designer : "ยังไม่มี designer",
     state: deliverableProgress(g).ready ? "done" : blocked ? "waiting" : "active",
-    detail: blocked ? productionBlockers(g)[0] : `${deliverableProgress(g).approved}/${deliverableProgress(g).total} ชิ้นอนุมัติแล้ว`,
+    detail: blocked
+      ? productionBlockers(g)[0]
+      : material
+        ? `⚠ ${material}`
+        : `${deliverableProgress(g).approved}/${deliverableProgress(g).total} ชิ้นอนุมัติแล้ว`,
   });
   return steps;
 }
