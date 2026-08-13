@@ -11,6 +11,7 @@
  * a shooter would overwrite the designer's task. Run with: npm test */
 
 import { todayIso } from "../src/lib/data/brief";
+import { productionSteps } from "../src/lib/data/graphic";
 import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
@@ -141,6 +142,27 @@ is("ไม่ใช่ดีไซเนอร์ที่ถือใบงา�
 is("ไม่มีประวัติ = ถอยไปหาคนรับงาน", briefRevisionReviewer(req({ acceptedBy: "Pichayaporn", designer: "Four" })), "Pichayaporn");
 is("ไม่มีทั้งคู่ = ดีไซเนอร์", briefRevisionReviewer(req({ designer: "Four" })), "Four");
 is("Unassigned ไม่ใช่ชื่อคน", briefRevisionReviewer(req({ designer: "Unassigned" })), null);
+
+console.log("\n— Flow 4 ขั้น: บรีฟ → Storyboard → ถ่าย → ตัดต่อ —");
+const flow = (g: Graphic) => productionSteps(g).map((s2) => `${s2.label}/${s2.role}`);
+const vdo = req({
+  briefLink: "https://docs/brief", keyMessage: "Sit Done",
+  storyboardOwner: "Pichayaporn", requiresShooting: true, shooter: "Jeeno", designer: "Four",
+} as Partial<Graphic>);
+is("งานวิดีโอได้ครบสี่ขั้นตามลำดับ", flow(vdo),
+  ["บรีฟ/Marketing", "Storyboard/Creative", "ถ่าย Footage/คนถ่าย", "ตัดต่อ/คนตัดต่อ"]);
+// งานภาพนิ่งไม่ต้องมี storyboard และขั้นสุดท้ายคือทำอาร์ตเวิร์ก ไม่ใช่ตัดต่อ
+is("งานภาพไม่มี storyboard และเรียกว่าอาร์ตเวิร์ก",
+  flow(req({ type: "Photo", briefLink: "https://x", keyMessage: "k", requiresShooting: true, shooter: "Jeeno" } as Partial<Graphic>)),
+  ["บรีฟ/Marketing", "ถ่าย Footage/คนถ่าย", "ทำอาร์ตเวิร์ก/Designer"]);
+is("ไม่ต้องถ่าย = ข้ามขั้นถ่าย", flow(req({ type: "Photo", briefLink: "https://x", keyMessage: "k" } as Partial<Graphic>)).length, 2);
+// ขั้นบรีฟคือของใหม่ — เดิมไม่เคยแสดง ทำให้ใบที่บรีฟไม่ครบดู "active" ที่ storyboard
+is("บรีฟครบ = ขั้นแรกผ่าน", productionSteps(vdo)[0].state, "done");
+is("ขาดลิงก์บรีฟ = ขั้นแรกยังไม่ผ่าน และบอกว่าขาดอะไร",
+  (() => { const s3 = productionSteps(req({ keyMessage: "k" } as Partial<Graphic>))[0]; return [s3.state, s3.detail]; })(),
+  ["active", "ยังขาด ลิงก์บรีฟ"]);
+is("ขาดทั้งสองอย่างบอกทั้งคู่", productionSteps(req())[0].detail, "ยังขาด ลิงก์บรีฟ · key message");
+is("เจ้าของขั้นบรีฟคือผู้ขอ", productionSteps(req())[0].owner, "Pupay");
 
 console.log("\n— งานเร่งด่วน: ต้องมีคนถือการตัดสิน —");
 // การ์ดบอกว่า "รอ Creative Leader หรือ CMO ตัดสิน" แต่ไม่เคยมีใครถูกแจ้ง

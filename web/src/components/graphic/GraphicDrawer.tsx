@@ -771,7 +771,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                       <li key={step.key} className="flex items-start gap-2 text-[11.5px]">
                         <span style={{ color }} className="font-bold w-[12px]">{mark}</span>
                         <span className="font-bold" style={{ color }}>{step.label}</span>
-                        <span className="text-faint">· {step.owner}</span>
+                        <span className="text-faint">· {step.role} · {step.owner}</span>
                         <span className="text-faint ml-auto text-right">{step.detail}</span>
                       </li>
                     );

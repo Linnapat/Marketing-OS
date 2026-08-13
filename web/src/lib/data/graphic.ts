@@ -195,6 +195,13 @@ export type StoryboardStatus = "" | "Waiting" | "Submitted" | "Approved" | "Revi
  *  Reel / Short / video work does. Matches workKind's own video test rather
  *  than inventing a second definition of "is this a video". */
 export function needsStoryboard(g: Pick<Graphic, "type" | "requiredVideo">): boolean {
+  return isVideoWork(g);
+}
+
+/** Is the finished piece a video? Decides whether the last step is an edit or
+ *  an artwork, and whether a storyboard is required at all — one test so the
+ *  two can never answer differently for the same request. */
+export function isVideoWork(g: Pick<Graphic, "type" | "requiredVideo">): boolean {
   const kind = workKind(g.type, g.requiredVideo);
   return kind === "vdo" || kind === "vdo_shoot";
 }
@@ -678,8 +685,14 @@ export function productionBlockers(g: Graphic): string[] {
 }
 
 export interface ProductionStep {
-  key: "storyboard" | "shoot" | "asset";
+  key: "brief" | "storyboard" | "shoot" | "asset";
   label: string;
+  /** The role that owns this step in the agreed flow — บรีฟ → Storyboard →
+   *  ถ่าย → ตัดต่อ. Printed beside the person so the sequence reads even on a
+   *  request where the slots are not filled in yet, and so it is obvious when
+   *  one person is standing in two places (the shooter editing their own
+   *  footage, which is how Creative ends up unable to review its own work). */
+  role: string;
   /** Who this step is waiting on, when it is not done. */
   owner: string;
   state: "done" | "active" | "waiting" | "skipped";
@@ -690,12 +703,30 @@ export interface ProductionStep {
  *  is "active" — the thing the request is actually waiting on right now. */
 export function productionSteps(g: Graphic): ProductionStep[] {
   const steps: ProductionStep[] = [];
+
+  // The brief is step one of the flow and was the one step the pipeline never
+  // showed — so a request could sit "active" at storyboard while the thing the
+  // storyboard is drawn FROM was still missing. 22 live requests have no brief
+  // link anywhere, and nothing on the request said so in sequence.
+  const briefLink = creativeBriefLink(g);
+  const keyMessage = (g.keyMessage ?? "").trim();
+  const briefMissing = [!briefLink ? "ลิงก์บรีฟ" : "", !keyMessage ? "key message" : ""].filter(Boolean);
+  steps.push({
+    key: "brief",
+    label: "บรีฟ",
+    role: "Marketing",
+    owner: g.requester?.trim() || "ผู้ขอเปิดงาน",
+    state: briefMissing.length ? "active" : "done",
+    detail: briefMissing.length ? `ยังขาด ${briefMissing.join(" · ")}` : "บรีฟครบแล้ว",
+  });
+
   const sbNeeded = needsStoryboard(g);
   const sbDone = g.storyboardStatus === "Approved";
   if (sbNeeded) {
     steps.push({
       key: "storyboard",
       label: "Storyboard",
+      role: "Creative",
       owner: g.storyboardOwner?.trim() || "Creative Content",
       state: sbDone ? "done" : "active",
       detail: sbDone
@@ -709,7 +740,8 @@ export function productionSteps(g: Graphic): ProductionStep[] {
     const shotDone = !!g.footageLink?.trim();
     steps.push({
       key: "shoot",
-      label: "ถ่ายงาน",
+      label: "ถ่าย Footage",
+      role: "คนถ่าย",
       owner: g.shooter?.trim() || "ยังไม่ระบุคนถ่าย",
       // A shoot cannot start before the storyboard is signed off, so it is
       // "waiting", not "active", while that is outstanding.
@@ -722,7 +754,11 @@ export function productionSteps(g: Graphic): ProductionStep[] {
   const blocked = productionBlockers(g).length > 0;
   steps.push({
     key: "asset",
-    label: "ส่งงาน (asset)",
+    // Named for what the person does, not for the file that comes out: on video
+    // work this step is the edit, and calling it "asset" made the flow read as
+    // if the shoot produced the finished piece.
+    label: isVideoWork(g) ? "ตัดต่อ" : "ทำอาร์ตเวิร์ก",
+    role: isVideoWork(g) ? "คนตัดต่อ" : "Designer",
     owner: g.designer && g.designer !== "Unassigned" ? g.designer : "ยังไม่มี designer",
     state: deliverableProgress(g).ready ? "done" : blocked ? "waiting" : "active",
     detail: blocked ? productionBlockers(g)[0] : `${deliverableProgress(g).approved}/${deliverableProgress(g).total} ชิ้นอนุมัติแล้ว`,
