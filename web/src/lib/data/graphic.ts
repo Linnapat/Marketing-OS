@@ -494,21 +494,20 @@ export function underBriefRevision(g: Pick<Graphic, "blocker">): boolean {
   return (g.blocker ?? "") === BRIEF_REVISION_BLOCKER;
 }
 
-/** Who asked for the revision, and therefore who re-checks it.
+/** Who re-checks a brief that has just been fixed.
  *
- *  Read from the history rather than the designer slot: the person who sent it
- *  back is the one holding the question, and on this database that is often
- *  the Creative Leader reviewing for someone else — Pichayaporn raised 9 of the
- *  12 open revisions, on requests assigned to four different designers.
- *  Falls back to whoever holds the job when the history predates the trail. */
+ *  briefFixRequestedBy answers the hard half — the most recent ask, counting
+ *  both ways of asking — and this adds the one thing a REVIEWER needs that a
+ *  notification recipient does not: somebody has to hold the task even when the
+ *  trail is too old to name an asker, so it falls back to whoever holds the job.
+ *
+ *  Deliberately delegating rather than repeating the search: two functions
+ *  hunting the same history for the same person is how they end up disagreeing
+ *  about who is waiting. */
 export function briefRevisionReviewer(
-  g: Pick<Graphic, "history" | "acceptedBy" | "designer">,
+  g: Pick<Graphic, "history" | "briefUnlock" | "acceptedBy" | "designer">,
 ): string | null {
-  const asked = [...(g.history ?? [])]
-    .filter((h) => h.type === "brief_revision_requested" && (h.by ?? "").trim())
-    .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""))
-    .pop();
-  return firstRealName(asked?.by, g.acceptedBy, g.designer);
+  return briefFixRequestedBy(g) ?? firstRealName(g.acceptedBy, g.designer);
 }
 
 /** Who drew the storyboard — the person a decision on it is about.
@@ -538,6 +537,61 @@ export function revisionAssignee(
   d?: Pick<GraphicDeliverable, "submittedBy">,
 ): string | null {
   return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
+}
+
+/** Who handed this job to whoever is doing it.
+ *
+ *  Not the person who fixes a revision — that is revisionAssignee — but the one
+ *  who has to know it came back: they are balancing the queue and carrying the
+ *  deadline, and a piece bouncing changes both. The Creative Leader assigns
+ *  nearly everything here, and her bell read "ไม่มีอะไรค้างอยู่" through a whole
+ *  round of revisions because every revision notice went to the designer and
+ *  the requester and stopped (3/8/26).
+ *
+ *  Read from the history rather than a role lookup: the record says who
+ *  actually assigned this one, so the CMO covering for the leader hears about
+ *  the jobs they handed out and not about the ones they did not. Latest wins —
+ *  work gets reassigned, and it is the current owner's handler who is on the
+ *  hook. Null when nobody ever assigned it (self-claimed work). */
+export function assignedBy(g: Pick<Graphic, "history">): string | null {
+  const handed = (g.history ?? []).filter((e) => e.type === "assigned");
+  return firstRealName(handed.at(-1)?.by);
+}
+
+/** Who asked for this brief to be fixed, and is still waiting to hear that it
+ *  was.
+ *
+ *  Creative sends a brief back ("บรีฟไม่สมบูรณ์") or asks to top it up, the
+ *  requester edits it — and the notice of the edit went to whoever is producing
+ *  the work, which is not the same person and may be nobody yet. So the one who
+ *  raised the question was the only one not told the answer: "Peach ไม่ได้รับ
+ *  Noti เรื่องการปรับแก้บรีฟตาม Request ไป".
+ *
+ *  Both ways of asking count — sending the brief back and asking for a top-up —
+ *  and the most recent asker wins, because that is whose question the edit is
+ *  answering. */
+export function briefFixRequestedBy(
+  g: Pick<Graphic, "history" | "briefUnlock">,
+): string | null {
+  const sentBack = (g.history ?? []).filter((e) => e.type === "brief_revision_requested").at(-1);
+  const unlock = g.briefUnlock;
+  // Whichever ask came last. An undated entry sorts first so a dated one wins.
+  const asks: { at: string; by?: string }[] = [
+    ...(sentBack ? [{ at: sentBack.at ?? "", by: sentBack.by }] : []),
+    ...(unlock?.requestedBy ? [{ at: unlock.requestedAt ?? "", by: unlock.requestedBy }] : []),
+  ];
+  const latest = asks.sort((a, b) => (a.at || "").localeCompare(b.at || "")).at(-1);
+  return firstRealName(latest?.by);
+}
+
+/** A brief top-up asked for and not yet decided — the Creative Leader's to-do.
+ *
+ *  Only the Creative Leader may release one (canReleaseBriefEdit), and the ask
+ *  reached them nowhere: the notification named them in its text but was sent
+ *  to the designer, and no queue listed it. So requests sat Pending until
+ *  somebody happened to reopen the drawer. */
+export function awaitsBriefUnlockDecision(g: Pick<Graphic, "briefUnlock">): boolean {
+  return briefUnlockState(g) === "pending";
 }
 
 /** First name in the list that is a real person. "Unassigned" is the app's own

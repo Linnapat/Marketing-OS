@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionOwner, realName } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -13,6 +13,7 @@ import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
+import type { NotifyTeam } from "@/lib/notifyRouting";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { ExpandableTextarea } from "@/components/ui/ExpandableTextarea";
 import { WorkCode } from "@/components/ui/CampaignCode";
@@ -35,6 +36,26 @@ type DTab = (typeof TABS)[number][0];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** Where caption sign-off is allowed to go: to people, never to a room.
+ *
+ *  These notifications carry no `team`, so they were routed off their link —
+ *  /content resolves to the Graphic team, which has a room. And the approval
+ *  named nobody to DM (the writer is `inform`, a bell entry by design), so the
+ *  route's "nobody to DM → tell the room instead" fallback sent every single
+ *  one to #05_marketing_graphic. Approving ten captions in a sitting posted ten
+ *  messages, which is what the team saw on 5 Aug 2026 at 14:01 and asked to
+ *  stop: "ในส่วนของ Caption อนุมัติ ยังไม่ต้องส่งเข้า Slack".
+ *
+ *  "general" is the app's DM-only audience (notifyRouting.CHANNEL_TEAMS), so
+ *  this holds even when nobody resolves to DM — a room post cannot happen by
+ *  accident again. The writer still gets the bell, the DM and the revision
+ *  task; only the channel goes quiet.
+ *
+ *  Named rather than inlined three times because it is meant to be reversible:
+ *  "ยังไม่ต้อง" is not "never", and putting captions back in a room is one edit
+ *  here rather than three scattered ones. */
+const CAPTION_NOTIFY_TEAM: NotifyTeam = "general";
+
 /** The saved-set picker under a caption field. Footers carry branch details and
  *  run long, so each chip truncates and keeps the full text in its tooltip. */
 function TemplateChips({ values, bg, fg, onPick, onRemove }: {
@@ -48,7 +69,11 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
     <>
       {values.map((v) => (
         <span key={v} className="inline-flex items-center gap-[5px] rounded-pill px-[10px] py-1 text-[11px] font-bold" style={{ background: bg, color: fg }}>
-          <button onClick={() => onPick(v)} title={v} className="max-w-[170px] truncate">{v}</button>
+          {/* Saved sets are multi-line now that Footer/CTA are. A newline inside
+              a pill collapses to nothing visible, so the label flattens the
+              breaks to " · " — picking it still restores the real text, and the
+              tooltip shows it as it will actually be written. */}
+          <button onClick={() => onPick(v)} title={v} className="max-w-[170px] truncate">{v.replace(/\s*\n+\s*/g, " · ")}</button>
           <button onClick={() => onRemove(v)} aria-label={`ลบชุดนี้: ${v}`} title="ลบชุดนี้" className="opacity-45 hover:opacity-100">
             <X size={11} />
           </button>
@@ -376,17 +401,31 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // Save caption/hashtags/cta; "Mark Ready" flips captionStatus and, if the post
   // is now fully ready, advanceApprovalState pushes it into My Approval.
   const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer }));
-  const markCaptionReady = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
+  // Handing the words over is a handoff like any other, and it was the one with
+  // no message attached: the writer pressed Mark Ready and the person who has
+  // to accept it found out by opening the drawer. Addressed to the requester of
+  // the post — see captionReviewer — so it reaches the person who asked for it
+  // rather than every planner in the company.
+  const markCaptionReady = () => {
+    void persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
+    const owed = captionReviewer(item);
+    notify("approval", `📝 caption รออนุมัติ: ${item.title}`,
+      `${brandName(item.b)} · ${item.campaign} · เขียนโดย ${reviewer}${owed ? ` → รอ ${owed}` : ""}`,
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [owed] });
+  };
 
   // ── Caption sign-off ─────────────────────────────────────────────────
   // Step 4 of the agreed flow: the words get accepted (or sent back) on their
   // own, before production, instead of riding along with the whole post.
   const [captionReason, setCaptionReason] = useState("");
-  // The writer is whoever owns the caption — the content planner while nobody
-  // has been assigned. Read straight from `owner`, the self-review guard let a
-  // planner sign off their own words on any post still marked "Unassigned".
+  // Two different people, and the caption gate needs both. The WRITER may not
+  // sign off their own words — captionOwner, not `owner`, because on a post
+  // still marked "Unassigned" the planner is the writer and reading the raw
+  // field let them approve themselves. The REVIEWER is who it was addressed to,
+  // and they decide whatever their role.
   const writer = captionOwner(item);
-  const canDecideCap = canDecideCaption(role, { me: reviewer, writer });
+  const captionOwedTo = captionReviewer(item);
+  const canDecideCap = canDecideCaption(role, { me: reviewer, writer, reviewer: captionOwedTo });
   // Told apart from "not on the planning side" so the reason on screen is the
   // true one — being the writer is a different refusal from being Creative.
   const isSameCaptionWriter =
@@ -401,12 +440,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     void persist(next, decision === "approve" ? "อนุมัติ caption แล้ว" : "ส่ง caption กลับไปแก้แล้ว");
     if (decision === "approve") {
       notify("approved", `✅ อนุมัติ caption: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`,
-        workLink.post(item.id), { inform: writer ? [writer] : [] });
+        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, inform: writer ? [writer] : [] });
       return;
     }
     // The writer is the one who has to act, so this is a DM, not a bell entry.
+    // Still DM-only even when the post has no writer yet, which used to fall
+    // through to the room — see CAPTION_NOTIFY_TEAM.
     notify("rejected", `✏️ caption ถูกส่งกลับแก้: ${item.title}`, `${captionReason.trim()} · โดย ${reviewer}`,
-      workLink.post(item.id), { to: writer ? [writer] : [] });
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: writer ? [writer] : [] });
     if (writer) {
       createRevisionTask({
         module: "Content", title: `แก้ caption — ${item.title}`, assignee: writer,
@@ -843,7 +884,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Call to Action</label>
-                <input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="e.g. Reserve now via link in bio" className={field} />
+                {/* Multi-line: a real CTA is two or three lines with a link
+                    under them, and a single-line input let the team type it but
+                    never see it — the text scrolled sideways out of the box and
+                    Enter did nothing (3/8/26). The composed caption joins the
+                    blocks with a blank line and leaves what is inside each one
+                    alone, so the breaks typed here survive to the post. */}
+                <textarea value={cta} onChange={(e) => setCta(e.target.value)} rows={2}
+                  placeholder="e.g. Reserve now via link in bio" className={`${field} resize-y leading-[1.5]`} />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button onClick={() => saveTemplate("ctas", cta)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save CTA</button>
                   <TemplateChips values={templates.ctas} bg="#EEF4EE" fg="#4E7A4E" onPick={setCta} onRemove={(v) => removeTemplate("ctas", v)} />
@@ -851,7 +899,11 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               </div>
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Footer</label>
-                <input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="เช่น เงื่อนไข / สาขา / เวลาทำการ" className={field} />
+                {/* Same reason as the CTA above, more so: a footer is a stack of
+                    branch lines ("📍LUNCH TIME at … / 📍DELIVERY Grab / Line …")
+                    that has to break, not run on. */}
+                <textarea value={footer} onChange={(e) => setFooter(e.target.value)} rows={3}
+                  placeholder="เช่น เงื่อนไข / สาขา / เวลาทำการ" className={`${field} resize-y leading-[1.5]`} />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button onClick={() => saveTemplate("footers", footer)} className="rounded-pill border border-line2 bg-surface px-3 py-1 text-[11px] font-bold text-muted">Save footer</button>
                   <TemplateChips values={templates.footers} bg="#FFF6E8" fg="#C68A1E" onPick={setFooter} onRemove={(v) => removeTemplate("footers", v)} />

@@ -27,7 +27,23 @@ export function memberTeam(role: string): OwnerTeam {
   return "Planner";
 }
 
-const isActive = (m: Member) => (m.status || "").toLowerCase() === "active";
+const isActive = (m: Pick<Member, "status">) => (m.status || "").toLowerCase() === "active";
+const isInvited = (m: Pick<Member, "status">) => (m.status || "").toLowerCase() === "invited";
+
+/** Who may be handed work.
+ *
+ *  "Invited" counts. It flips to Active on first sign-in (lib/auth), which is
+ *  fine for staff — they log in on day one — but an outside agency has no
+ *  reason to open the app until there is a job waiting for them, so the two
+ *  agencies invited on 2026-07-30 were still Invited a week later and appeared
+ *  in no picker at all: "หน้า assign ยังไม่ขึ้นชื่อของ Agency ทั้งสอง" (4/8/26).
+ *  Assigning the work is what makes them come and accept.
+ *
+ *  Suspended and Inactive stay out — those are people deliberately taken off
+ *  the board, which is the opposite of not-yet-arrived. */
+export const isAssignableMember = (m: Pick<Member, "status">) => isActive(m) || isInvited(m);
+const isAssignable = isAssignableMember;
+
 type TeamCfg = { icon: string; name: string; lead: string; scope: string; members: string[] };
 
 function memberToken(m: Member): string {
@@ -48,6 +64,10 @@ function teamPattern(team: OwnerTeam): RegExp | null {
   return null;
 }
 
+/** Members of a configured team, in config order. `members` is already filtered
+ *  by the caller — the picker passes everyone assignable, useDefaultOwner passes
+ *  only Active, because auto-landing work on someone who has never signed in is
+ *  a different thing from choosing them on purpose. */
 function teamMembers(team: OwnerTeam, members: Member[], teams: TeamCfg[]): Member[] {
   const pattern = teamPattern(team);
   if (team === "all" || !pattern) return [];
@@ -57,7 +77,7 @@ function teamMembers(team: OwnerTeam, members: Member[], teams: TeamCfg[]): Memb
   const seen = new Set<string>();
   return tokens
     .map((token) => members.find((m) => memberMatchesToken(m, token)))
-    .filter((m): m is Member => !!m && isActive(m))
+    .filter((m): m is Member => !!m)
     .filter((m) => {
       const key = memberToken(m);
       if (seen.has(key)) return false;
@@ -105,7 +125,7 @@ export function OwnerSelect({
     return () => { alive = false; };
   }, []);
 
-  const active = members.filter(isActive);
+  const active = members.filter(isAssignable);
   const configured = teamMembers(team, active, teams);
   const fallback = active.filter((m) => team === "all" || memberTeam(m.role) === team);
   // UNION, not either/or: a half-filled Settings → Teams used to SHADOW the
@@ -132,7 +152,11 @@ export function OwnerSelect({
       className={`w-full text-[13.5px] px-[12px] py-[10px] rounded-[10px] border ${border} bg-ivory outline-none disabled:opacity-50 ${className ?? ""}`}>
       <option value="">{list.length ? placeholder : (emptyLabel ?? "No active members")}</option>
       {list.map((m) => (
-        <option key={m.email || m.name} value={m.name}>{m.name} — {m.role}</option>
+        // Invited is flagged rather than hidden: whoever assigns the job should
+        // know the person has not opened the app yet, and chase the invite.
+        <option key={m.email || m.name} value={m.name}>
+          {m.name} — {m.role}{isInvited(m) ? " · ยังไม่เข้าระบบ" : ""}
+        </option>
       ))}
     </select>
   );

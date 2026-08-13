@@ -35,8 +35,8 @@ import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchContent } from "@/lib/db/content";
-import { ContentItem, captionAwaitsApproval, captionOwner } from "@/lib/data/content";
-import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { ContentItem, captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
+import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, awaitsBriefUnlockDecision, canReleaseBriefEdit, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -75,12 +75,15 @@ type ExpenseBudgetInfo = { budget: number; committed: number; left: number; camp
  *  can raise two at once (a reel whose storyboard is still pending while an
  *  earlier cut sits in review), which is why this is a row per decision rather
  *  than a flag on the request. */
-type GraphicApproval = { g: Graphic; kind: "storyboard" | "artwork" };
+type GraphicApproval = { g: Graphic; kind: "storyboard" | "artwork" | "briefUnlock" };
 const GRAPHIC_APPROVAL_COPY = {
   storyboard: { badge: "Storyboard รออนุมัติ", cta: "อนุมัติ storyboard →", tab: "overview" as GTab, bg: "#F2EEFF", fg: "#6C5CE7" },
   // Artwork keeps landing on the brief, the way it always has — the review is
   // "does this match what I asked for", and the brief is that question.
   artwork: { badge: "Waiting review", cta: "Review artwork →", tab: "brief" as GTab, bg: "#FBF8EE", fg: "#C68A1E" },
+  // The brief is where the top-up would be typed, so that is where the decision
+  // is made — same tab the Release button lives on.
+  briefUnlock: { badge: "ขอเติมบรีฟ", cta: "ปล่อยให้เติมบรีฟ →", tab: "brief" as GTab, bg: "#FBF1E9", fg: "#B3641E" },
 } as const;
 
 
@@ -320,27 +323,49 @@ function MyTasksPageInner() {
   // requester's own screen to tell them, and production stalled behind a
   // decision nobody knew was theirs. Both now land here, tagged so the card
   // says which of the two it is.
+  //
+  // A third thing waits on somebody else entirely: a brief top-up, which only
+  // the Creative Leader may release. That one is role-gated rather than keyed
+  // to the requester, so it is collected in the same pass but under its own
+  // rule — asked for by the requester, decided by the leader.
   const approvalGraphics = useMemo(
     () => graphics
-      .filter((g) => isSamePerson(g.requester, myKeys) && brandVisibility.isVisible(g.b))
-      .flatMap((g) => [
-        ...(awaitsStoryboardDecision(g) ? [{ g, kind: "storyboard" as const }] : []),
-        ...(awaitsArtworkReview(g) ? [{ g, kind: "artwork" as const }] : []),
-      ]),
-    [graphics, myKeys, brandVisibility],
+      .filter((g) => brandVisibility.isVisible(g.b))
+      .flatMap((g) => {
+        const mine = isSamePerson(g.requester, myKeys);
+        return [
+          ...(mine && awaitsStoryboardDecision(g) ? [{ g, kind: "storyboard" as const }] : []),
+          ...(mine && awaitsArtworkReview(g) ? [{ g, kind: "artwork" as const }] : []),
+          // Not shown to the person who asked — they are waiting on the answer,
+          // not holding it.
+          ...(canReleaseBriefEdit(authRole) && awaitsBriefUnlockDecision(g)
+            && !isSamePerson(g.briefUnlock?.requestedBy ?? "", myKeys)
+            ? [{ g, kind: "briefUnlock" as const }] : []),
+        ];
+      }),
+    [graphics, myKeys, brandVisibility, authRole],
   );
   // Captions waiting on the planning side. Same lesson as the storyboard: the
   // buttons existed on the post and nothing told the person holding them, so
   // the words sat "Ready" until somebody happened to open that drawer.
+  //
+  // Addressed to the person who asked for the post, not broadcast to everyone
+  // who could act on it: a caption named for its requester goes to them alone,
+  // and only an unaddressed one (no requester on the row) still falls back to
+  // the planning side, so nothing gets stranded with no queue at all.
   const approvalCaptions = useMemo(
-    () => (canEditContentPlan(authRole)
-      ? posts.filter((p) => captionAwaitsApproval(p)
-          && brandVisibility.isVisible(p.b)
-          // Nobody approves their own words — including on a post still marked
-          // "Unassigned", where the planner is the writer by default.
-          && captionOwner(p).toLowerCase() !== (member?.name ?? "").trim().toLowerCase())
-      : []),
-    [posts, authRole, brandVisibility, member],
+    () => posts.filter((p) => {
+      if (!captionAwaitsApproval(p) || !brandVisibility.isVisible(p.b)) return false;
+      // Nobody signs off their own words. captionOwner, not p.owner: on a post
+      // still marked "Unassigned" the planner IS the writer, and reading the
+      // raw field let them approve themselves.
+      if (captionOwner(p).toLowerCase() === (member?.name ?? "").trim().toLowerCase()) return false;
+      // Addressed to someone in particular → only they see it; otherwise it is
+      // the planning side's to pick up.
+      const reviewer = captionReviewer(p);
+      return reviewer ? isSamePerson(reviewer, myKeys) : canEditContentPlan(authRole);
+    }),
+    [posts, authRole, brandVisibility, member, myKeys],
   );
   const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length + approvalCaptions.length;
   // Budget context for an expense request: the campaign's budget, what's already
@@ -740,7 +765,9 @@ function MyApprovalView({ captions, graphics, campaigns, requests, expenses, tas
                     <span className="text-[11.5px] text-muted">
                       {kind === "storyboard"
                         ? `Storyboard ${g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}`
-                        : `Designer ${g.designer}`}
+                        : kind === "briefUnlock"
+                          ? `ขอโดย ${g.briefUnlock?.requestedBy || g.requester}${g.briefUnlock?.reason ? ` · ${g.briefUnlock.reason}` : ""}`
+                          : `Designer ${g.designer}`}
                     </span>
                     <span className="text-[11.5px] font-bold text-accent">{copy.cta}</span>
                   </div>

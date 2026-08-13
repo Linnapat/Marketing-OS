@@ -651,7 +651,9 @@ function BrandChip({ brand }: { brand: BrandId }) {
 /** Print preview — the shoot sheet exactly as it will print (A4 landscape).
  *  `window.print()` alone gave no in-app preview, so the leader could not see
  *  what the crew would get before hitting print. */
-function ShootSheetPreview({ rows, printedAt, onClose }: { rows: ShootRow[]; printedAt: string; onClose: () => void }) {
+function ShootSheetPreview({ rows, brandLabel, printedAt, onClose }: {
+  rows: ShootRow[]; brandLabel?: string; printedAt: string; onClose: () => void;
+}) {
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", esc);
@@ -675,8 +677,11 @@ function ShootSheetPreview({ rows, printedAt, onClose }: { rows: ShootRow[]; pri
       <div className="shoot-sheet w-full max-w-[1100px] bg-white rounded-[10px] p-6 shadow-soft">
         <div className="flex items-end justify-between border-b-[2px] border-ink pb-2 mb-3">
           <div>
-            <div className="text-[19px] font-extrabold text-ink">🎬 Shoot Schedule — Creative</div>
-            <div className="text-[11px] text-faint">ใบนัดถ่าย · {sorted.length} คิว</div>
+            {/* The brand goes in the title, not just the filter: a printed
+                sheet leaves the screen behind, and a one-brand sheet that does
+                not say so reads as "these are all the shoots". */}
+            <div className="text-[19px] font-extrabold text-ink">🎬 Shoot Schedule — Creative{brandLabel ? ` · ${brandLabel}` : ""}</div>
+            <div className="text-[11px] text-faint">ใบนัดถ่าย · {sorted.length} คิว{brandLabel ? ` · เฉพาะแบรนด์ ${brandLabel}` : ""}</div>
           </div>
           <div className="text-[11px] text-faint">พิมพ์เมื่อ {printedAt}</div>
         </div>
@@ -752,6 +757,10 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
   const [contentByBrand, setContentByBrand] = useState<Record<BrandId, { title: string; label: string }[]>>({});
   const [castOpts, setCastOpts] = useState<string[]>([]);
   const [preview, setPreview] = useState(false);
+  // One brand's shoots at a time, when asked for. The crew that turns up for a
+  // Mainichi day should not be handed four brands' worth of queue to read past
+  // — "ขอเพิ่มฟิลเตอร์แบรนด์ก่อนสั่งปริ้นด้วย" (3/8/26). Empty = every brand.
+  const [brandFilter, setBrandFilter] = useState<BrandId | "">("");
 
   useEffect(() => {
     let alive = true;
@@ -869,6 +878,24 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
     () => new Map(assigned.map((a) => [reqRowId(a.graphicId), { storyboard: a.storyboardLink, brief: a.briefLink }])),
     [assigned],
   );
+  // What the table and the printed sheet actually show. Filtering here, not in
+  // `merged`, keeps editRow's seed lookup able to find a row the filter hides.
+  const visible = useMemo(
+    () => (brandFilter ? merged.filter((r) => r.brand === brandFilter) : merged),
+    [merged, brandFilter],
+  );
+  // Only offer brands that have a shoot — a filter listing brands with nothing
+  // behind them is a menu of dead ends.
+  const brandsWithShoots = useMemo(
+    () => BRAND_ORDER.filter((id) => merged.some((r) => r.brand === id)),
+    [merged],
+  );
+  // A brand deleted from Settings, or filtered then emptied, must not strand the
+  // sheet on a selection it can no longer offer.
+  useEffect(() => {
+    if (brandFilter && !brandsWithShoots.includes(brandFilter)) setBrandFilter("");
+  }, [brandFilter, brandsWithShoots]);
+
   const importAuto = (a: ShootRow) => persist([...rows, { ...a, id: `shoot-${Date.now()}`, cast: me, source: "manual" }]);
 
   // Brand is what scopes Location + Content, so drop values that don't belong to
@@ -911,12 +938,33 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
         }
       `}</style>
 
-      {preview && <ShootSheetPreview rows={merged} printedAt={printedAt} onClose={() => setPreview(false)} />}
+      {preview && (
+        <ShootSheetPreview
+          rows={visible}
+          brandLabel={brandFilter ? brandName(brandFilter) : ""}
+          printedAt={printedAt}
+          onClose={() => setPreview(false)}
+        />
+      )}
 
       <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
         <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-3 no-print">
           <div className="text-[13px] font-bold text-ink">🎬 Shoot Schedule <span className="text-[10.5px] text-faint font-normal">· ตารางขอถ่ายงาน — Creative Leader แก้ได้ทุกช่อง · ปริ้นเป็นใบนัดถ่ายได้</span></div>
           <div className="flex items-center gap-2">
+            {/* Sits next to the print button on purpose: what you filter is
+                exactly what prints, so the crew gets their brand's day only. */}
+            <select
+              value={brandFilter}
+              onChange={(e) => setBrandFilter(e.target.value)}
+              className="text-[12px] font-semibold text-ink border border-line2 rounded-[9px] px-3 py-[7px] bg-white outline-none"
+              style={brandFilter ? { color: brandColor(brandFilter) } : undefined}
+              aria-label="กรองตามแบรนด์"
+            >
+              <option value="">ทุกแบรนด์ ({merged.length})</option>
+              {brandsWithShoots.map((id) => (
+                <option key={id} value={id}>{brandName(id)} ({merged.filter((r) => r.brand === id).length})</option>
+              ))}
+            </select>
             <button onClick={addRow} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px]">+ เพิ่มคิวถ่าย</button>
             <button onClick={() => setPreview(true)} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">🖨 Preview & ปริ้น</button>
           </div>
@@ -929,10 +977,14 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
               <th className={th}>Cast</th><th className={th}>หมายเหตุ</th><th className={`${th} no-print`}></th>
             </tr></thead>
             <tbody>
-              {merged.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-center text-[12px] text-faint">ยังไม่มีคิวถ่าย — มอบหมายคนถ่าย + วันถ่ายในใบงาน แล้วจะขึ้นที่นี่เอง · หรือกด &quot;เพิ่มคิวถ่าย&quot;</td></tr>
+              {visible.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-[12px] text-faint">
+                  {brandFilter
+                    ? `ยังไม่มีคิวถ่ายของ ${brandName(brandFilter)} — เลือก "ทุกแบรนด์" เพื่อดูคิวที่เหลือ`
+                    : "ยังไม่มีคิวถ่าย — มอบหมายคนถ่าย + วันถ่ายในใบงาน แล้วจะขึ้นที่นี่เอง · หรือกด \"เพิ่มคิวถ่าย\""}
+                </td></tr>
               )}
-              {merged.map((r) => {
+              {visible.map((r) => {
                 // A request-backed row is a view of the request, not a copy of
                 // it: the columns the request owns are shown, not edited, so
                 // the sheet and the request can never say different things
