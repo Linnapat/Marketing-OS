@@ -394,9 +394,10 @@ console.log("\n— the labels the form itself shows —");
 
 console.log("\n— the links a plan carries per content item —");
 {
-  // The Graphic Request shows ONE briefLink, fed from these four first-non-empty
-  // (Drive → brief → image → competitor). None could come from a sheet before,
-  // so a plan that named its Drive folder still reached the designer blank.
+  // Four columns in the template, ONE field in the app. The form was cut back to
+  // Reference Brief Link alone (four boxes all fed one link, so the labels were
+  // a promise the system did not keep), and the importer follows: whichever
+  // column a planner filled lands in referenceBriefLink, brief first.
   const { patch } = briefFromSheet({
     overview: [["Field", "Value"], ["Campaign Name", "X"]],
     content: [
@@ -408,10 +409,10 @@ console.log("\n— the links a plan carries per content item —");
     kol: null, budget: null,
   }, resolve);
   const item = patch.content![0];
-  is("Reference Brief Link", item.referenceBriefLink, "https://docs/brief");
-  is("Reference Image Link", item.referenceImageLink, "https://drive/ref.jpg");
-  is("Google Drive Link", item.driveLink, "https://drive/folder");
-  is("Competitor / Inspiration Link", item.competitorLink, "https://ig.com/rival");
+  is("ทุกคอลัมน์ลงช่องเดียว — brief มาก่อน", item.referenceBriefLink, "https://docs/brief");
+  is("ไม่เขียน referenceImageLink อีก", item.referenceImageLink, undefined);
+  is("ไม่เขียน driveLink อีก", item.driveLink, undefined);
+  is("ไม่เขียน competitorLink อีก", item.competitorLink, undefined);
 }
 {
   const { patch } = briefFromSheet({
@@ -420,7 +421,7 @@ console.log("\n— the links a plan carries per content item —");
     kol: null, budget: null,
   }, resolve);
   is("short header 'Brief Link'", patch.content![0].referenceBriefLink, "https://b");
-  is("short header 'Drive Link'", patch.content![0].driveLink, "https://d");
+  is("short header 'Drive Link' ก็ลงช่องเดียวกัน", patch.content![0].driveLink, undefined);
 }
 
 console.log("\n— the KOL tab as that sheet actually writes it —");

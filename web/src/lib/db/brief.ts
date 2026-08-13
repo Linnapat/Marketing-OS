@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
@@ -163,7 +163,7 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
       // Brief guide for the caption writer.
       subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
       productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,
-      driveLink: ci.driveLink || undefined,
+      driveLink: contentBriefLink(ci) || undefined,
       mandatoryText: ci.mandatoryText || undefined, doDont: ci.doDont || undefined,
       captionStatus: "Missing", assetStatus: needsCreative ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
@@ -190,7 +190,7 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
       const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
       // Artwork numbers are assigned HERE, from the sizes the planner picked —
       // same size across platforms = one artwork; no hand-numbering later.
-      const deliverables = autoNumberDeliverables(pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", ci.referenceBriefLink || "")));
+      const deliverables = autoNumberDeliverables(pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", contentBriefLink(ci))));
       const g: Graphic = {
         ...buildGraphic({
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
@@ -208,11 +208,9 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
         moodDirection: normalizedBrief.kvDirection || ci.captionDirection || "",
         captionCopy: ci.captionDirection || "",
         extraDetails: ci.doDont || ci.mandatoryText || "",
-        // One link on the request, fed from whichever campaign box was used.
-        // The campaign form still has four (Drive / brief / reference image /
-        // competitor) and the team fills Drive most, so first-non-empty wins
-        // rather than picking one and dropping the rest on the floor.
-        briefLink: ci.driveLink || ci.referenceBriefLink || ci.referenceImageLink || ci.competitorLink || "",
+        // One link on the request, from the one box the form now offers —
+        // contentBriefLink still reads the three retired ones for older items.
+        briefLink: contentBriefLink(ci),
         // Video items start at the storyboard, exactly as they do when raised
         // by hand — otherwise a Reel materialised from an approved campaign
         // would skip straight to artwork and lose the step.

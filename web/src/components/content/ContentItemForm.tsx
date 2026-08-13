@@ -5,7 +5,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import {
   BriefContentItem, CONTENT_TYPES, CONTENT_PLATFORMS, assetSizesFor, PRIORITIES,
   isGraphicDueDateAllowed, minGraphicDueDate, todayIso,
-  graphicDueRangeImpossible, finalArtworkDue,
+  graphicDueRangeImpossible, finalArtworkDue, contentBriefLink,
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
 import { Combobox } from "@/components/ui/Combobox";
@@ -260,10 +260,16 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         <div><label className={label}>Product / Menu Highlight</label><input value={item.productHighlight} onChange={(e) => onChange({ productHighlight: e.target.value })} className={field} /></div>
         <div><label className={label}>Mandatory Text</label><input value={item.mandatoryText} onChange={(e) => onChange({ mandatoryText: e.target.value })} className={field} placeholder="ข้อความบังคับ เช่น เงื่อนไขโปร" /></div>
         <div className="md:col-span-2"><label className={label}>Do / Don&apos;t</label><input value={item.doDont} onChange={(e) => onChange({ doDont: e.target.value })} className={field} /></div>
-        <div><label className={label}>Reference Brief Link <span className="text-faint font-normal">· optional</span></label><input value={item.referenceBriefLink} onChange={(e) => onChange({ referenceBriefLink: e.target.value })} className={field} placeholder="https://… (ใส่ทีหลังได้)" /></div>
-        <div><label className={label}>Reference Image Link</label><input value={item.referenceImageLink} onChange={(e) => onChange({ referenceImageLink: e.target.value })} className={field} placeholder="https://…" /></div>
-        <div><label className={label}>Google Drive Link</label><input value={item.driveLink} onChange={(e) => onChange({ driveLink: e.target.value })} className={field} placeholder="https://drive…" /></div>
-        <div><label className={label}>Competitor / Inspiration Link</label><input value={item.competitorLink} onChange={(e) => onChange({ competitorLink: e.target.value })} className={field} placeholder="https://…" /></div>
+        {/* One link box, not four.
+            Reference Brief Link / Reference Image Link / Google Drive Link /
+            Competitor · Inspiration Link all fed the SAME single link on the
+            Graphic Request, so the labels were a promise the system did not
+            keep: a competitor link typed here was handed to the designer as
+            the brief. Four boxes also meant four places to look and four ways
+            to leave it blank — 27 items had a Drive link, 42 a brief link, and
+            15 of those were the same URL typed twice.
+            Old values still read back through contentBriefLink(). */}
+        <div className="md:col-span-2"><label className={label}>Reference Brief Link <span className="text-faint font-normal">· optional · บรีฟ / ภาพอ้างอิง / โฟลเดอร์ Drive ใส่ลิงก์เดียวตรงนี้</span></label><input value={contentBriefLink(item)} onChange={(e) => onChange({ referenceBriefLink: e.target.value, referenceImageLink: "", driveLink: "", competitorLink: "" })} className={field} placeholder="https://… (ใส่ทีหลังได้)" /></div>
         <div className="md:col-span-2"><label className={label}>Note</label><input value={item.note} onChange={(e) => onChange({ note: e.target.value })} className={field} /></div>
       </div>
     </div>
