@@ -262,6 +262,9 @@ export function graphicAssignmentTasks(g: Graphic): Task[] {
     blocker: null, isQuickWin: false,
     relatedGraphicId: String(g.id),
   };
+  // Storyboard not signed off, footage not handed over — the things that stop
+  // the artwork regardless of who holds it.
+  const artworkBlockers = productionBlockers(g);
   const tasks: Task[] = [{
     ...base,
     id: graphicTaskId(g.id, GRAPHIC_TASK_SLOT.artwork),
@@ -270,11 +273,23 @@ export function graphicAssignmentTasks(g: Graphic): Task[] {
     type: "Graphic",
     assignee: designer,
     status: "Todo",
-    group: designer !== "Unassigned" ? "doFirst" : "quickWins",
     due: g.due || "TBD",
     dueIso: g.dueIso,
     pendingApprover: g.requester || null,
-    nextAction: designer !== "Unassigned" ? `${designer} to start design` : "Creative leader to assign designer",
+    // What the artwork is ACTUALLY waiting for. It always read "<designer> to
+    // start design", even on a reel whose footage had not been shot yet — so
+    // Jeeno's own card told him to start designing a video he was still booked
+    // to film five days later, on a request whose own Overview said "รอ
+    // footage/ภาพจาก Jeeno". productionBlockers already knows; the card just
+    // never asked it.
+    nextAction: designer === "Unassigned"
+      ? "Creative leader to assign designer"
+      : artworkBlockers.length
+        ? artworkBlockers.join(" · ")
+        : `${designer} to start design`,
+    // …and it stops sitting in Do First while it is genuinely blocked, so the
+    // list ranks what can be picked up now above what cannot.
+    group: designer === "Unassigned" ? "quickWins" : artworkBlockers.length ? "waitingMe" : "doFirst",
     checklist: ["Review brief", "Create first draft", "Upload artwork for review"],
   }];
 

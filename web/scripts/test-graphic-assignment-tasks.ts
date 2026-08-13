@@ -10,6 +10,7 @@
  * rows are keyed on it) and the three jobs must never collide, or re-assigning
  * a shooter would overwrite the designer's task. Run with: npm test */
 
+import { todayIso } from "../src/lib/data/brief";
 import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
@@ -39,6 +40,26 @@ is("ใบงานเปล่า ๆ ได้แค่งานดีไซ�
 is("slot 01 ยังเป็นอาร์ตเวิร์ก (ห้ามเปลี่ยน — 52 แถวใช้อยู่)", find(req(), "Graphic")!.id, 178515550176001);
 is("ไม่มีดีไซเนอร์ = Unassigned + quickWins", (() => { const t = find(req({ designer: "" }), "Graphic")!; return [t.assignee, t.group]; })(), ["Unassigned", "quickWins"]);
 is("due ของอาร์ตเวิร์กคือเดดไลน์งาน", (() => { const t = find(req(), "Graphic")!; return [t.due, t.dueIso]; })(), ["Aug 25", "2026-08-25"]);
+
+console.log("\n— การ์ดอาร์ตเวิร์กต้องบอกสิ่งที่ติดจริง ไม่ใช่ 'start design' เสมอ —");
+// เคสจริง OMD_2609_007-C03-A01: Jeeno เป็นทั้งคนถ่ายและดีไซเนอร์ นัดถ่าย 18 ส.ค.
+// แต่การ์ดใน My Task บอกว่า "Jeeno to start design" ทั้งที่ยังไม่มีฟุตเทจ
+// storyboard อนุมัติแล้ว เหลือแค่การถ่าย — ตรงกับใบจริงเป๊ะ
+const shot = (over: Partial<Graphic> = {}) => req({
+  storyboardOwner: "Pichayaporn", storyboardStatus: "Approved",
+  requiresShooting: true, shooter: "Jeeno", shootDate: "2026-08-18", designer: "Jeeno",
+  ...over,
+} as Partial<Graphic>);
+is("ยังไม่มีฟุตเทจ = บอกว่ารอฟุตเทจ", find(shot(), "Graphic")!.nextAction, "รอ footage/ภาพจาก Jeeno");
+is("ติดอยู่ = ไม่ควรอยู่ Do First", find(shot(), "Graphic")!.group, "waitingMe");
+is("ส่งฟุตเทจแล้ว = เริ่มออกแบบได้", find(shot({ footageLink: "https://drive/f" }), "Graphic")!.nextAction, "Jeeno to start design");
+is("ส่งฟุตเทจแล้ว = กลับมา Do First", find(shot({ footageLink: "https://drive/f" }), "Graphic")!.group, "doFirst");
+// storyboard ก็เป็นตัวขวางเหมือนกัน และขวางก่อนการถ่าย
+is("รอ storyboard ก็บอก", find(req({ storyboardOwner: "Pichayaporn", storyboardStatus: "Submitted" }), "Graphic")!.nextAction, "รอเจ้าของงานอนุมัติ storyboard");
+is("ติดสองอย่างบอกทั้งคู่", find(req({ storyboardOwner: "Pichayaporn", requiresShooting: true, shooter: "Jeeno" }), "Graphic")!.nextAction.includes(" · "), true);
+// งาน Photo ไม่ต้องมี storyboard ไม่ต้องถ่าย = ไม่มีอะไรขวาง
+is("งานที่ไม่ติดอะไร ยังพูดเหมือนเดิม", find(req({ type: "Photo" }), "Graphic")!.nextAction, "Four to start design");
+is("ยังไม่มีดีไซเนอร์ ยังบอกให้ไปหาคนก่อน", find(req({ designer: "" }), "Graphic")!.nextAction, "Creative leader to assign designer");
 
 console.log("\n— คนถ่าย: เคสที่หายไปทั้งหมด —");
 const shoot = req({ requiresShooting: true, shooter: "Jeeno", shootDate: "2026-08-20" });
@@ -127,7 +148,8 @@ console.log("\n— งานเร่งด่วน: ต้องมีคน�
 const rush = (over: Partial<Graphic> = {}) => req({ rushStatus: "Pending", rushApprover: "Pichayaporn", rushReason: "ลูกค้าขอด่วน", ...over } as Partial<Graphic>);
 is("งานเร่งรออนุมัติ = มี Task เพิ่ม", byType(rush()).includes("Rush:Pichayaporn"), true);
 is("มอบให้คนที่ถูกขอให้ตัดสิน", find(rush(), "Rush")!.assignee, "Pichayaporn");
-is("ครบกำหนดวันนี้ — งานเร่งที่รอได้ไม่ใช่งานเร่ง", find(rush(), "Rush")!.dueIso, new Date().toISOString().slice(0, 10));
+// todayIso ใช้เวลาท้องถิ่น ไม่ใช่ UTC — ช่วงเช้ามืดที่กรุงเทพสองอันนี้คนละวัน
+is("ครบกำหนดวันนี้ — งานเร่งที่รอได้ไม่ใช่งานเร่ง", find(rush(), "Rush")!.dueIso, todayIso());
 is("ขึ้น Do First และ High", (() => { const t = find(rush(), "Rush")!; return [t.group, t.priority]; })(), ["doFirst", "High"]);
 is("บอกเหตุผลที่ขอเร่ง", find(rush(), "Rush")!.nextAction, "Pupay ขอเร่ง: ลูกค้าขอด่วน");
 // ตัดสินแล้วต้องปิดตัวเอง ไม่ค้างเป็นคำถามที่ตอบไปแล้ว
