@@ -11,7 +11,7 @@ import { workLink } from "@/lib/deepLink";
 import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, creativeBriefLink, artworkUnits,
-  isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
+  isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth, materialNote,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
@@ -899,9 +899,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                             className="text-[11.5px] font-bold text-accent whitespace-nowrap">เปิด ↗</a>
                         )}
                       </div>
-                      {shootingDecision(g) === "not_required" && !g.designerPhotosLink?.trim() && (
+                      {/* One rule, one wording — materialNote decides, so this
+                          hint and the step list cannot disagree about whether
+                          the designer has anything to start from. Exempt work
+                          (Poster / POSM / Artwork …) says nothing at all. */}
+                      {materialNote(g) && (
                         <div className="text-[10.5px] mt-[4px]" style={{ color: "#C68A1E" }}>
-                          ไม่ต้องถ่าย แต่ยังไม่มีลิงก์รูป — ถ้างานนี้ต้องใช้ภาพ ใส่ลิงก์ให้ Designer ด้วย
+                          ⚠ {materialNote(g)} · <span className="font-bold">ยังส่งงานได้อยู่</span> แต่กำลังจะกลายเป็นเงื่อนไขบังคับ
                         </div>
                       )}
                     </div>

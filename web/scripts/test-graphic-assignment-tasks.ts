@@ -11,7 +11,7 @@
  * a shooter would overwrite the designer's task. Run with: npm test */
 
 import { todayIso } from "../src/lib/data/brief";
-import { productionSteps } from "../src/lib/data/graphic";
+import { productionSteps, materialState, materialNote, MATERIAL_EXEMPT_TYPES, productionBlockers } from "../src/lib/data/graphic";
 import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
@@ -142,6 +142,32 @@ is("ไม่ใช่ดีไซเนอร์ที่ถือใบงา�
 is("ไม่มีประวัติ = ถอยไปหาคนรับงาน", briefRevisionReviewer(req({ acceptedBy: "Pichayaporn", designer: "Four" })), "Pichayaporn");
 is("ไม่มีทั้งคู่ = ดีไซเนอร์", briefRevisionReviewer(req({ designer: "Four" })), "Four");
 is("Unassigned ไม่ใช่ชื่อคน", briefRevisionReviewer(req({ designer: "Unassigned" })), null);
+
+console.log("\n— วัสดุตั้งต้น: designer มีอะไรให้เริ่มไหม —");
+const mat = (over: Partial<Graphic>) => materialState(req(over as Partial<Graphic>));
+is("ต้องถ่าย + มี footage = พร้อม", mat({ requiresShooting: true, footageLink: "https://f" } as Partial<Graphic>), "ready");
+is("ต้องถ่าย + ยังไม่มี footage", mat({ requiresShooting: true } as Partial<Graphic>), "waiting_footage");
+is("ไม่ต้องถ่าย + มีลิงก์รูป = พร้อม", mat({ requiresShooting: false, designerPhotosLink: "https://p" } as Partial<Graphic>), "ready");
+is("ไม่ต้องถ่าย + ไม่มีรูปเลย", mat({ requiresShooting: false } as Partial<Graphic>), "no_material");
+// สามค่าของ requiresShooting ต้องต่างกันจริง — undefined ไม่ใช่ "ไม่ต้องถ่าย"
+is("ยังไม่ตัดสิน ≠ ไม่ต้องถ่าย", mat({}), "undecided");
+is("งานที่วาดเองจากบรีฟ ไม่ต้องมีวัสดุ", mat({ type: "Poster" } as Partial<Graphic>), "not_needed");
+is("POSM ก็ยกเว้น", mat({ type: "POSM" } as Partial<Graphic>), "not_needed");
+is("แต่ Photo ไม่ยกเว้น", mat({ type: "Photo" } as Partial<Graphic>), "undecided");
+is("รายการยกเว้นครอบคลุม Artwork และ LINE Rich Message",
+  MATERIAL_EXEMPT_TYPES.includes("Artwork") && MATERIAL_EXEMPT_TYPES.includes("LINE Rich Message"), true);
+
+console.log("\n— ยังเป็นคำเตือน ยังไม่ล็อก (ทาง C) —");
+// กันสับสวิตช์โดยไม่ตั้งใจ: ถ้าเผลอเอา materialNote ไปใส่ productionBlockers
+// งาน 35 ใบจาก 60 ใบจะถูกล็อกทันทีตั้งแต่เช้าวันรุ่งขึ้น
+is("ไม่มีรูป + ไม่ต้องถ่าย → ยังไม่บล็อก", productionBlockers(req({ type: "Photo", requiresShooting: false } as Partial<Graphic>)).length, 0);
+is("ยังไม่ตัดสิน → ยังไม่บล็อก", productionBlockers(req({ type: "Photo" } as Partial<Graphic>)).length, 0);
+is("แต่ 'ต้องถ่ายแล้วไม่มี footage' ต้องบล็อกเหมือนเดิม",
+  productionBlockers(req({ type: "Photo", requiresShooting: true, shooter: "Jeeno" } as Partial<Graphic>)).length, 1);
+is("คำเตือนโผล่ในลำดับขั้น",
+  productionSteps(req({ type: "Photo", requiresShooting: false, briefLink: "https://b", keyMessage: "k" } as Partial<Graphic>))
+    .find((s2) => s2.key === "asset")!.detail.startsWith("⚠"), true);
+is("งานยกเว้นไม่ขึ้นคำเตือน", materialNote(req({ type: "Poster" } as Partial<Graphic>)), "");
 
 console.log("\n— Flow 4 ขั้น: บรีฟ → Storyboard → ถ่าย → ตัดต่อ —");
 const flow = (g: Graphic) => productionSteps(g).map((s2) => `${s2.label}/${s2.role}`);
