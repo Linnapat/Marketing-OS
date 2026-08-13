@@ -9,6 +9,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
 import { useRole } from "@/lib/role";
+import { canEditCampaignBrief } from "@/lib/roleGates";
+import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 import { useAuth } from "@/lib/auth";
 import { useCanCreateCampaign } from "@/lib/usePermGates";
 import { baht, num } from "@/lib/format";
@@ -63,7 +65,11 @@ export default function CampaignsPage() {
   // editing the brief is campaign-management work — CMO or the Marketing
   // Manager/BGL who runs it. Creative/VDO roles keep full read access.
   const canDeleteCampaign = role === "CMO";
-  const canEditCampaign = role === "CMO" || role === "Marketing Manager / BGL";
+  // Edit is per-row now: the owner may fix their own campaign whatever their
+  // role. Approving is still not editing — an owner's edit of an approved
+  // campaign revokes the approval and goes back to the CMO with a diff.
+  const myKeys = personKeys(memberRef(member));
+  const canEditRow = (c: CampaignRow) => canEditCampaignBrief(role, { isOwner: isSamePerson(c.owner, myKeys) });
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
@@ -435,7 +441,7 @@ export default function CampaignsPage() {
                             <StatusBadge tone={campaignTone(c.status)}>{c.status}</StatusBadge>
                           </span>
                         )}
-                        {canEditCampaign && (
+                        {canEditRow(c) && (
                           <Link
                             href={`/campaigns/new?edit=${c.id}`}
                             className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"

@@ -274,6 +274,26 @@ export function canApproveRushBrief(role: string): boolean {
   return role === "Creative Leader" || role === "CMO";
 }
 
+/** May this person edit a campaign's brief?
+ *
+ *  Campaign management is CMO / Marketing Manager work, and that stays. What
+ *  is added is the person whose campaign it IS: the owner may fix their own,
+ *  whatever their role — 3 of the 30 live campaigns are owned by a Creative
+ *  Leader or a Co-ordinator, neither of whom could open the builder at all, so
+ *  the only route to correcting their own plan was to ask someone else.
+ *
+ *  Editing is not approving, and the difference is already enforced elsewhere:
+ *  a non-CMO edit of an APPROVED campaign revokes the approval and queues it
+ *  back to the CMO with a diff attached (see the Campaign Builder's save).
+ *  So this opens who may type, not who may decide.
+ *
+ *  Creating is deliberately NOT widened — that is the Permissions matrix's
+ *  call (useCanCreateCampaign) and a new campaign has no owner to appeal to. */
+export function canEditCampaignBrief(role: string, opts: { isOwner: boolean }): boolean {
+  const r = (role || "").trim();
+  return r === "CMO" || r === "Marketing Manager / BGL" || opts.isOwner;
+}
+
 /** The people who actually hold a role-gated power, by name.
  *
  *  Every gate here answers "may THIS role do it", which is the right question

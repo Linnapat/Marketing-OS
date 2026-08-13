@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail} from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -376,6 +376,21 @@ console.log("\n— กู้คืน fan-out ที่ล้ม: ใครก�
       canMakeApprovedPlan(role, live), canCreateCampaign(role, live));
   }
 }
+
+console.log("\n— แก้แคมเปญ: เจ้าของแก้ของตัวเองได้ —");
+const edit = (role: string, isOwner: boolean) => canEditCampaignBrief(role, { isOwner });
+is("CMO แก้ได้ทุกใบ", [edit("CMO", false), edit("CMO", true)].join(","), "true,true");
+is("Marketing Manager แก้ได้ทุกใบ", edit("Marketing Manager / BGL", false), true);
+// 3 ใน 30 แคมเปญเป็นของ Creative Leader / Co-ordinator ซึ่งเปิด builder ไม่ได้เลย
+is("Creative Leader แก้ของตัวเองได้", edit("Creative Leader", true), true);
+is("Co-ordinator แก้ของตัวเองได้", edit("Co-ordinator", true), true);
+// แต่ไม่ใช่ของคนอื่น — เปิดสิทธิ์ให้เจ้าของ ไม่ได้เปิดให้ทุกคน
+is("Creative Leader แก้ของคนอื่นไม่ได้", edit("Creative Leader", false), false);
+is("VDO Editor แก้ของคนอื่นไม่ได้", edit("VDO Editor", false), false);
+is("Agency แก้ของคนอื่นไม่ได้", edit("Agency (External)", false), false);
+// "แก้ได้" ไม่เท่ากับ "อนุมัติได้": การเปลี่ยนสถานะยังกั้นที่หน้า Campaigns
+// ด้วย role === "CMO" ตรง ๆ และการแก้ใบที่อนุมัติแล้วจะถอนอนุมัติกลับไปหา CMO
+is("เจ้าของที่ไม่มีสิทธิ์สร้าง ก็ยังแก้ของตัวเองได้", edit("KOL Specialist", true), true);
 
 console.log("\n— roleHolders: กฎ → ตัวคน —");
 {
