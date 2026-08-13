@@ -12,6 +12,7 @@
  * the fix still resolve. Run with: npm test */
 
 import { fmtRange } from "../src/lib/data/brief";
+import { campaignPeriod } from "../src/lib/data/campaigns";
 import { parseRowRange, rangeInFilter, rangeOverlapFraction, DateFilter } from "../src/components/ui/DateFilterBar";
 
 let pass = 0, fail = 0;
@@ -71,6 +72,23 @@ is("ม.ค. ปีหน้าได้สัดส่วน ไม่ใช่
 is("ทั้งปีที่เริ่ม ได้ไม่เกิน 1", rangeOverlapFraction(year(), party) <= 1, true);
 is("เดือนนอกช่วง ได้ 0", rangeOverlapFraction(month(8), party), 0);
 is("อยู่ในเดือนเดียวได้เต็ม 1", rangeOverlapFraction(month(9), "Oct 1 – Oct 31"), 1);
+
+console.log("\n— campaignPeriod(): วันที่ที่เก็บไว้ต้องชนะป้าย —");
+// The label is deliberately WRONG here (a year-less cross-year range, the exact
+// shape that caused the bug). Stored dates must win, so the label never gets a
+// chance to be parsed — no guessing, right answer.
+const stored = { dates: "Oct 1 – Jan 31", startDate: "2026-10-01", endDate: "2027-01-31" };
+is("มีคอลัมน์วันที่ = ใช้คอลัมน์", campaignPeriod(stored), { start: "2026-10-01", end: "2027-01-31" });
+is("ไม่มีคอลัมน์ = ถอยไปอ่านป้าย", campaignPeriod({ dates: "Oct 1 – Oct 31" }), "Oct 1 – Oct 31");
+is("มีแค่ข้างเดียว = ยังถอยไปอ่านป้าย", campaignPeriod({ dates: "Oct 1 – Oct 31", startDate: "2026-10-01" }), "Oct 1 – Oct 31");
+is("อ่านช่วงจากคอลัมน์ได้ถูก", iso(parseRowRange(campaignPeriod(stored)).end), "2027-01-31");
+is("ต.ค. 2026 เห็น", rangeInFilter(month(9, 2026), campaignPeriod(stored)), true);
+is("ม.ค. 2027 เห็น", rangeInFilter(month(0, 2027), campaignPeriod(stored)), true);
+is("ก.พ. 2027 ไม่เห็น", rangeInFilter(month(1, 2027), campaignPeriod(stored)), false);
+// Whatever year it is when this runs, stored dates give the same answer —
+// the year-less label cannot promise that, which is the point of the columns.
+is("ผลไม่ขึ้นกับปีปัจจุบัน", rangeInFilter(month(9, 2026), campaignPeriod(stored)), rangeInFilter(month(9, 2026), { start: "2026-10-01", end: "2027-01-31" }));
+is("แคมเปญไม่มีวันที่เลย ยังเห็นเสมอ", rangeInFilter(month(0), campaignPeriod({ dates: "TBD" })), true);
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} date-range: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

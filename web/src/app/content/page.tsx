@@ -14,6 +14,7 @@ import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
   CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
 import { useStickyView } from "@/lib/useStickyView";
@@ -248,20 +249,24 @@ function ContentPageInner() {
   const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
 
   const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  // Brand scope is permission, not a filter: those posts stay out of the counts
+  // because no button on this page can bring them back.
   const scoped = useMemo(
-    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b) && (brand === "all" || c.b === brand)),
-    [posts, brand, brandVisibility],
+    () => posts.filter((c) => brandVisibility.visibleBrands.includes(c.b)),
+    [posts, brandVisibility],
   );
-  const items = useMemo(
-    () => scoped.filter((c) => inDateFilter(date, contentDateIso(c)) && matchesQuery(c, terms)),
-    [scoped, date, terms],
+  const outcome = useMemo(
+    () => filterWithReasons(scoped, [
+      { label: "นอกช่วงเวลา", pass: (c) => inDateFilter(date, contentDateIso(c)) },
+      { label: "คนละแบรนด์", pass: (c) => brand === "all" || c.b === brand },
+      { label: "ไม่ตรงคำค้น", pass: (c) => matchesQuery(c, terms) },
+    ]),
+    [scoped, date, brand, terms],
   );
-  // Hits the period filter hides. A calendar can only draw one month, so instead
-  // of letting the post look non-existent, offer to widen the window.
-  const hiddenByDate = useMemo(
-    () => (terms.length === 0 ? 0 : scoped.filter((c) => matchesQuery(c, terms) && !inDateFilter(date, contentDateIso(c))).length),
-    [scoped, date, terms],
-  );
+  const items = outcome.rows;
+  // Posts the period filter hides. This used to be counted only while a search
+  // was running, so browsing — the common case — still hid work in silence.
+  const hiddenByDate = outcome.hidden.find((r) => r.label === "นอกช่วงเวลา")?.count ?? 0;
   // Widening the window is only half the answer: a month grid draws one month
   // whatever the filter says, so "ค้นทุกช่วงเวลา" pressed from Month left the
   // count reading "พบ 3 โพสต์" above a calendar with nothing on it. Land on the
@@ -270,6 +275,10 @@ function ContentPageInner() {
     setDate({ ...date, mode: "range", start: "", end: "" });
     if (view === "month") setView("list");
   };
+  // What ล้างตัวกรอง does here: everything searchEverywhere does, plus the two
+  // other filters that can hide a post. Same reason for the view switch — a
+  // month grid draws one month however wide the window is.
+  const showEverything = () => { setBrand("all"); setQuery(""); searchEverywhere(); };
   // The KOL layer obeys the same brand scope and date filter as the content it
   // sits beside — a hidden brand must not leak in through a different module.
   // The search box is the same argument: a KOL chip left on the calendar while
@@ -410,15 +419,9 @@ function ContentPageInner() {
                 <span className="text-[12px] font-semibold text-faint">
                   {terms.length > 0 ? `พบ ${items.length} โพสต์` : `${items.length} posts in view`}
                 </span>
-                {hiddenByDate > 0 && (
-                  <button
-                    onClick={searchEverywhere}
-                    className="text-[11.5px] font-bold rounded-pill px-3 py-[7px]"
-                    style={{ background: "#FBF8EE", color: "#C68A1E", border: "1px solid #EFE2C4" }}
-                  >
-                    อีก {hiddenByDate} โพสต์อยู่นอกช่วงวันที่ · ค้นทุกช่วงเวลา →
-                  </button>
-                )}
+                {/* The count and the way out now live in <FilterSummary> below,
+                    next to the list they describe — and it reports every filter
+                    that hid something, not just the period. */}
                 {(view === "month" || view === "week") && (
                   <button
                     onClick={() => setShowKol(!showKol)}
@@ -541,6 +544,10 @@ function ContentPageInner() {
         <DeadlineStrip forMonth={ymKey} />
       </div>
 
+      <div className="mt-4">
+        <FilterSummary outcome={outcome} onClear={showEverything} noun="โพสต์" />
+      </div>
+
       {/* A search with no hits replaces the views outright — an empty calendar
           under an empty table reads as two different problems. */}
       {terms.length > 0 && items.length === 0 ? (
@@ -548,7 +555,7 @@ function ContentPageInner() {
           <div className="text-[14px] font-bold text-ink">ไม่พบ content หรือ campaign ที่ตรงกับ “{query.trim()}”</div>
           <div className="text-[12px] text-faint mt-1">
             {hiddenByDate > 0
-              ? `มี ${hiddenByDate} โพสต์ที่ตรงกันอยู่นอกช่วงวันที่ที่เลือก — กด “ค้นทุกช่วงเวลา” ด้านบน`
+              ? `มี ${hiddenByDate} โพสต์ที่ตรงกันอยู่นอกช่วงวันที่ที่เลือก — กด “ล้างตัวกรอง” ด้านบน`
               : "ลองคำสั้นลง หรือเช็คตัวกรองแบรนด์ / ช่วงวันที่"}
           </div>
         </div>

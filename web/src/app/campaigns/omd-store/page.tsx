@@ -8,7 +8,7 @@ import {
   type OmdStorePromotion,
   type OmdStorePromotionCategory,
 } from "@/lib/data/omdStorePromotions";
-import { CAMPAIGNS, type CampaignRow } from "@/lib/data/campaigns";
+import { CAMPAIGNS, campaignPeriod, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
 import { fetchBrandConfigs } from "@/lib/db/settings";
@@ -87,7 +87,7 @@ function campaignToStorePromotion(campaign: CampaignRow, storePromotion: string)
   // parseRowRange, not two parseRowDate calls: a flight that crosses New Year
   // ("Oct 1 – Jan 31") would otherwise end before it starts and print an empty
   // period.
-  const { start, end } = parseRowRange(campaign.dates);
+  const { start, end } = parseRowRange(campaignPeriod(campaign));
   return {
     id: `campaign-${campaign.id}`,
     brand: campaign.b,

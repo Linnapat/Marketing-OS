@@ -35,7 +35,7 @@ import {
   PERF_MIRROR_TAB, PERF_MIRROR_HEADERS, PERF_MIRROR_BRANDS_KEY,
   perfMirrorRow, mirrorableRows, parseMirrorBrands, shouldMirrorBrand, splitDates,
 } from "@/lib/data/perfMirror";
-import { CampaignRow } from "@/lib/data/campaigns";
+import { CampaignRow, campaignPeriod } from "@/lib/data/campaigns";
 import { useAuth } from "@/lib/auth";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchKols } from "@/lib/db/kol";
@@ -205,7 +205,11 @@ export default function PlatformsPage() {
 
   const brandOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.b])) as Record<string, BrandId>, [campaigns]);
   const nameOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.name])), [campaigns]);
+  // Two maps on purpose. `datesOf` is the label people read in the table; the
+  // period below is what the date filter does arithmetic on. Keeping them apart
+  // is the whole lesson of the cross-year bug — a display string is not data.
   const datesOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.dates])), [campaigns]);
+  const periodOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, campaignPeriod(c)])), [campaigns]);
 
   useEffect(() => {
     let live = true;
@@ -227,9 +231,9 @@ export default function PlatformsPage() {
       const b = brandOf[r.campaignId];
       return visibleBrands.includes(b) &&
         (brand === "all" || b === brand) &&
-        rangeInFilter(date, datesOf[r.campaignId]);
+        rangeInFilter(date, periodOf[r.campaignId]);
     }),
-    [rows, visibleBrands, brand, brandOf, date, datesOf],
+    [rows, visibleBrands, brand, brandOf, date, periodOf],
   );
   const groupDim: GroupDim = dim === "entry" ? "campaign" : dim;
   const groupsAll = useMemo(() => aggregateBy(filtered, groupDim, nameOf), [filtered, groupDim, nameOf]);
@@ -277,7 +281,7 @@ export default function PlatformsPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const monthCampaigns = useMemo(
     () => !monthKey ? [] : campaigns.filter((c) =>
-      visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && rangeInFilter(date, c.dates)),
+      visibleBrands.includes(c.b) && (brand === "all" || c.b === brand) && rangeInFilter(date, campaignPeriod(c))),
     [campaigns, visibleBrands, brand, date, monthKey],
   );
   useEffect(() => {
@@ -290,7 +294,7 @@ export default function PlatformsPage() {
     const reach = goalNum(brief?.successGoals?.["Reach"]);
     const visits = goalNum(brief?.successGoals?.["Visit"]);
     const monthlyRow = monthKey ? brief?.budget.monthly?.find((m) => m.month === monthKey) : undefined;
-    const budget = monthlyRow?.amount ?? Math.round((brief?.budget.total || c.budget || 0) * rangeOverlapFraction(date, c.dates));
+    const budget = monthlyRow?.amount ?? Math.round((brief?.budget.total || c.budget || 0) * rangeOverlapFraction(date, campaignPeriod(c)));
     return { reach, visits, budget };
   };
   const applyFromCampaigns = () => {
