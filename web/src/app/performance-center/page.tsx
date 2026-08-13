@@ -23,7 +23,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { BrandFilterValue, BrandId, brandColor, brandName } from "@/lib/brands";
-import { CampaignRow } from "@/lib/data/campaigns";
+import { CampaignRow, campaignPeriod } from "@/lib/data/campaigns";
 import {
   CampaignResultRow,
   GroupAgg,
@@ -215,15 +215,17 @@ export default function PerformanceCenterPage() {
 
   const brandOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.b])) as Record<string, BrandId>, [campaigns]);
   const nameOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.name])), [campaigns]);
-  const datesOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c.dates])), [campaigns]);
+  // campaignPeriod, not c.dates: the date filter needs the stored flight, not
+  // the label written for people to read.
+  const periodOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, campaignPeriod(c)])), [campaigns]);
   const campaignOf = useMemo(() => Object.fromEntries(campaigns.map((c) => [c.id, c])) as Record<string, CampaignRow>, [campaigns]);
 
   const filtered = useMemo(() => rows.filter((row) => {
     const b = brandOf[row.campaignId];
     return b && visibleBrands.includes(b) &&
       (brand === "all" || b === brand) &&
-      rangeInFilter(date, datesOf[row.campaignId]);
-  }), [rows, brandOf, visibleBrands, brand, date, datesOf]);
+      rangeInFilter(date, periodOf[row.campaignId]);
+  }), [rows, brandOf, visibleBrands, brand, date, periodOf]);
 
   const totalPlan = sum(filtered, (r) => r.budget);
   const totalActual = sum(filtered, (r) => r.budgetActual);

@@ -9,6 +9,7 @@
 import { BrandId, brandColor, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import { Tone } from "@/lib/status";
+import type { RowPeriod } from "@/components/ui/DateFilterBar";
 
 export type Readiness = "ready" | "needs_attention" | "blocked";
 
@@ -31,7 +32,15 @@ export interface CampaignRow {
   budget: number;
   spend: number;
   roi: number;
+  /** The flight as people read it: "Oct 1 – Oct 31", "Oct 1 2026 – Jan 31 2027".
+   *  A rendering of startDate/endDate — display only. To filter or compare, use
+   *  campaignPeriod(c), never this. */
   dates: string;
+  /** The flight as the database holds it (ISO yyyy-mm-dd), from the start_date /
+   *  end_date columns. Undefined on rows written before campaign_flight_dates.sql,
+   *  which is why campaignPeriod() still knows how to read the label. */
+  startDate?: string;
+  endDate?: string;
   status: string;
   campType: string;
   readiness: Readiness;
@@ -54,6 +63,18 @@ export const CAMPAIGNS: CampaignRow[] = RAW.map((c, i) => ({
 
 export function getCampaign(id: string): CampaignRow | undefined {
   return CAMPAIGNS.find((c) => c.id === id);
+}
+
+/** A campaign's flight, in the form the period helpers want.
+ *
+ *  Stored dates win. The label is the fallback for rows written before the
+ *  start_date/end_date columns existed — it is a display string, and reading a
+ *  display string as data is what made three campaigns disappear for ten days.
+ *
+ *  Every date comparison involving a campaign goes through here. Reaching for
+ *  `c.dates` directly is the bug, not the shortcut. */
+export function campaignPeriod(c: Pick<CampaignRow, "dates" | "startDate" | "endDate">): RowPeriod {
+  return c.startDate && c.endDate ? { start: c.startDate, end: c.endDate } : c.dates;
 }
 
 export const READINESS_META: Record<Readiness, { label: string; tone: Tone }> = {

@@ -35,6 +35,7 @@ import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { Segmented } from "@/components/ui/Segmented";
 import { BriefKolItem, emptyKolItem, fmtPct, KOL_PLATFORMS } from "@/lib/data/brief";
@@ -218,7 +219,18 @@ export default function KolPage() {
     syncBriefKolFromRows(next).catch((error) => toastError(`sync KOL กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
-  const filtered = kols.filter((k) => brandVisibility.visibleBrands.includes(k.b) && (brand === "all" || k.b === brand) && (campaign === "all" || k.campaign === campaign) && inDateFilter(date, k.postDueDate ?? k.postingDate));
+  // Brand scope is permission and stays out of the counts; the three below are
+  // controls on this page, so a booking they hide gets reported, not swallowed.
+  const outcome = filterWithReasons(
+    kols.filter((k) => brandVisibility.visibleBrands.includes(k.b)),
+    [
+      { label: "นอกช่วงเวลา", pass: (k) => inDateFilter(date, k.postDueDate ?? k.postingDate) },
+      { label: "คนละแบรนด์", pass: (k) => brand === "all" || k.b === brand },
+      { label: "คนละแคมเปญ", pass: (k) => campaign === "all" || k.campaign === campaign },
+    ],
+  );
+  const filtered = outcome.rows;
+  const clearFilters = () => { setDate({ ...ALL_TIME_FILTER }); setBrand("all"); setCampaign("all"); };
   const kpi = kolKpis(filtered);
   const alerts = kolAlerts(filtered);
 
@@ -271,6 +283,8 @@ export default function KolPage() {
             <DateFilterBar value={date} onChange={setDate} />
           </div>
         </CampaignCommandBar>
+
+        <FilterSummary outcome={outcome} onClear={clearFilters} noun="KOL" />
 
         <ModuleSummaryCard
           title="KOL Summary"

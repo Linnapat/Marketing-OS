@@ -2,7 +2,7 @@
 // requests, tasks, KOLs) instead of standalone mock constants — so both pages
 // reflect actual data and are empty on a freshly-cleared database.
 
-import { CampaignRow } from "@/lib/data/campaigns";
+import { CampaignRow, campaignPeriod } from "@/lib/data/campaigns";
 import { BudgetBrand, PnlRow, RequestRow } from "@/lib/data/finance";
 import { Kpi } from "@/components/ui/KpiCard";
 import { collapseTaskWorkItems, Task } from "@/lib/data/tasks";
@@ -39,7 +39,7 @@ const isSpentReq = (status: string) => /approved|paid/i.test(status);
  *  `reqs` already filtered to the same period. */
 export function financeFromDb(campaigns: CampaignRow[], reqs: RequestRow[], period?: DateFilter): FinanceView {
   const inPeriod = campaigns
-    .map((c) => ({ c, f: period ? rangeOverlapFraction(period, c.dates) : 1 }))
+    .map((c) => ({ c, f: period ? rangeOverlapFraction(period, campaignPeriod(c)) : 1 }))
     .filter((x) => x.f > 0);
 
   const totalPlan = inPeriod.reduce((s, x) => s + Math.round((x.c.budget || 0) * x.f), 0);

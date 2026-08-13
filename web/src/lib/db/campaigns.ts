@@ -13,6 +13,8 @@ import { adoptBriefVersion, forgetBriefVersion } from "@/lib/db/briefVersion";
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
   budget: number; spend: number; roi: number; dates: string; status: string;
+  // Nullable: rows written before campaign_flight_dates.sql have only `dates`.
+  start_date: string | null; end_date: string | null;
   camp_type: string; readiness: string;
   task_blocked: number; task_waiting: number; task_overdue: number;
   task_total: number; task_done: number; task_in_progress: number;
@@ -24,6 +26,7 @@ const toCampaign = (r: Row): CampaignRow => ({
   id: r.id, code: r.data?.code, legacyCode: r.data?.legacyCode, previousCode: r.data?.previousCode,
   name: r.name, b: r.brand, branch: r.branch, owner: r.owner,
   budget: Number(r.budget), spend: Number(r.spend), roi: Number(r.roi), dates: r.dates,
+  startDate: r.start_date ?? undefined, endDate: r.end_date ?? undefined,
   status: r.status, campType: r.camp_type, readiness: (r.readiness as Readiness) ?? "ready",
   taskBlocked: r.task_blocked, taskWaiting: r.task_waiting, taskOverdue: r.task_overdue,
   taskTotal: r.task_total, taskDone: r.task_done, taskInProgress: r.task_in_progress,
@@ -60,6 +63,16 @@ export async function addCampaignType(name: string): Promise<void> {
   assertDbOk(error, "Could not save campaign type");
 }
 
+/** Does this error mean the database simply doesn't have one of these columns
+ *  yet? Postgres says 42703; PostgREST answers from its schema cache with
+ *  PGRST204 and names the column in the message. Anything else is a real
+ *  failure and must not be swallowed. */
+function isUnknownColumn(error: { code?: string; message?: string }, ...columns: string[]): boolean {
+  if (error.code !== "42703" && error.code !== "PGRST204") return false;
+  const message = error.message ?? "";
+  return columns.some((column) => message.includes(column));
+}
+
 /** Insert a new campaign; returns it. */
 export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   const db = supabase();
@@ -68,13 +81,27 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   // and saveCampaignBrief writes the brief blob straight after it. Adopting the
   // version here is what stops our own row-write from reading as somebody else's
   // edit two lines later (see db/briefVersion).
-  const { data: written, error } = await db.from("campaigns").upsert({
+  const base = {
     id: c.id, name: c.name, brand: c.b, branch: c.branch, owner: c.owner, budget: c.budget, spend: c.spend,
     roi: c.roi, dates: c.dates, status: c.status, camp_type: c.campType, readiness: c.readiness,
     task_blocked: c.taskBlocked, task_waiting: c.taskWaiting, task_overdue: c.taskOverdue,
     task_total: c.taskTotal, task_done: c.taskDone, task_in_progress: c.taskInProgress,
     bottleneck_team: c.bottleneckTeam, next_approval: c.nextApproval,
-  }, { onConflict: "id" }).select("id, updated_at");
+  };
+  const save = (payload: Record<string, unknown>) =>
+    db.from("campaigns").upsert(payload, { onConflict: "id" }).select("id, updated_at");
+
+  let { data: written, error } = await save({
+    ...base, start_date: c.startDate ?? null, end_date: c.endDate ?? null,
+  });
+  // The flight columns arrive with campaign_flight_dates.sql, and a deploy can
+  // land before someone runs it. Saving a campaign is not allowed to depend on
+  // that ordering, so an unknown column means write what this database HAS —
+  // `dates` still carries the flight, and the migration backfills the columns
+  // from the brief blob whenever it does run.
+  if (error && isUnknownColumn(error, "start_date", "end_date")) {
+    ({ data: written, error } = await save(base));
+  }
   assertDbOk(error, "Could not save campaign");
   adoptBriefVersion(c.id, written as { updated_at?: string }[] | null);
   mirrorCampaignToSheet(c);
@@ -92,9 +119,13 @@ export const CAMPAIGN_SHEET_HEADERS = [
 ];
 
 function mirrorCampaignToSheet(c: CampaignRow): void {
-  // `dates` is a formatted range ("start – end") — split it back out; KPI/notes
+  // Prefer the stored dates — the sheet gets real ISO ends instead of a label
+  // it would have to parse. Falling back to splitting `dates` keeps campaigns
+  // written before those columns mirroring exactly as they used to. KPI/notes
   // aren't tracked at campaign level, so they're left blank for the team.
-  const [start, end] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
+  const [labelStart, labelEnd] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
+  const start = c.startDate ?? labelStart;
+  const end = c.endDate ?? labelEnd;
   mirrorRowToSheet("Campaigns", CAMPAIGN_SHEET_HEADERS, [
     c.id, c.name, brandName(c.b), c.branch, "", start || c.dates || "", end || "", c.budget, "",
   ], c.b);

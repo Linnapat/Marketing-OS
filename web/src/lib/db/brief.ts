@@ -79,6 +79,9 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
     id: normalizedBrief.id, name: normalizedBrief.name, b: normalizedBrief.b, branch: normalizedBrief.branch,
     // spend seeds Finance "Committed" — the amount allocated across buckets at plan time.
     owner: normalizedBrief.plannerOwner || "Unassigned", budget: normalizedBrief.budget.total, spend: budgetSummary(normalizedBrief).allocated, roi: 0,
+    // The flight goes to the columns as dates and to `dates` as the label the
+    // team reads. Same two values, so the label can never drift from the data.
+    startDate: normalizedBrief.startDate || undefined, endDate: normalizedBrief.endDate || undefined,
     dates: fmtRange(normalizedBrief.startDate, normalizedBrief.endDate), status: normalizedBrief.status,
     campType: normalizedBrief.campaignType || normalizedBrief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
