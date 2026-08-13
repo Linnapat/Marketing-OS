@@ -43,7 +43,7 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, graphicDueRangeImpossible, minGraphicDueDate, todayIso } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, graphicDueRangeImpossible, minGraphicDueDate, todayIso, contentBriefLink } from "@/lib/data/brief";
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
@@ -1453,7 +1453,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
     const needsStoryboardFor = needsStoryboard({ type: item.type, requiredVideo: item.requiredVideo });
     const plats = item.platforms;
     const pairs = item.assets.length ? item.assets : plats.map((p) => ({ platform: p, size: "" }));
-    const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", item.referenceBriefLink || ""));
+    const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", contentBriefLink(item)));
     const approverName = approver.trim() || requester;
     const g: Graphic = {
       ...buildGraphic({

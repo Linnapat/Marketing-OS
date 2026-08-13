@@ -171,11 +171,34 @@ export interface BriefContentItem {
   productHighlight: string;
   mandatoryText: string;
   doDont: string;
+  /** THE link on a content item — the one the form asks for and the one the
+   *  designer opens. */
   referenceBriefLink: string;
-  referenceImageLink: string;
-  driveLink: string;
-  competitorLink: string;
+  /** Retired boxes. The form had four link fields that all fed one link on the
+   *  Graphic Request, so "Competitor / Inspiration Link" quietly became the
+   *  brief the designer was sent. Only referenceBriefLink can be typed now;
+   *  these stay on the type so rows written before that still read back — see
+   *  contentBriefLink(). Do not add inputs for them again. */
+  referenceImageLink?: string;
+  driveLink?: string;
+  competitorLink?: string;
   note: string;
+}
+
+/** The one link a content item carries, wherever it was typed.
+ *
+ *  referenceBriefLink FIRST. The old order put driveLink ahead of it, which was
+ *  right while Drive was the box the team actually filled — and becomes a trap
+ *  the moment it is the only box left: a legacy driveLink would outrank the link
+ *  someone just typed, and the form would show one link while the designer got
+ *  another. */
+export function contentBriefLink(
+  item: Pick<BriefContentItem, "referenceBriefLink" | "referenceImageLink" | "driveLink" | "competitorLink">,
+): string {
+  const first = [item.referenceBriefLink, item.driveLink, item.referenceImageLink, item.competitorLink]
+    .map((v) => (v ?? "").trim())
+    .find(Boolean);
+  return first ?? "";
 }
 
 export interface BriefKolItem {
@@ -311,8 +334,10 @@ export function emptyContentItem(seq: number): BriefContentItem {
     assets: [], publishDate: "", graphicDueDate: "", requiredGraphic: true,
     requiredVideo: false, priority: "Med", status: "Planned",
     captionDirection: "", mainMessage: "", cta: "", productHighlight: "",
-    mandatoryText: "", doDont: "", referenceBriefLink: "", referenceImageLink: "",
-    driveLink: "", competitorLink: "", note: "",
+    // The three retired link boxes are deliberately absent: a new item has one
+    // link field, and seeding empty keys for them would put them straight back
+    // into every blob written from here on.
+    mandatoryText: "", doDont: "", referenceBriefLink: "", note: "",
   };
 }
 

@@ -20,7 +20,7 @@ import {
   emptyBrief, emptyContentItem, emptyKolItem, emptyBudget,
   OBJECTIVES, CAMPAIGN_TYPES, PRIORITIES, CHANNELS, SUCCESS_METRICS,
   CONTENT_TYPES, CONTENT_PLATFORMS, KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT,
-  ADS_PLATFORMS, assetSizesFor, needsAssetSize, AssetTarget,
+  ADS_PLATFORMS, assetSizesFor, needsAssetSize, AssetTarget, contentBriefLink,
 } from "@/lib/data/brief";
 
 /** The tab names the template ships with. Addressed by name, not gid, so a
@@ -427,10 +427,9 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
   const cHighlight = col("Product Highlight", "Highlight");
   const cMandatory = col("Mandatory Text");
   const cDoDont = col("Do / Don't", "Do Dont", "Do/Don't");
-  // The four links the content-item form carries. None of them could arrive
-  // from a sheet before, so a plan that named its Drive folder still reached
-  // the designer blank — and the Graphic Request's single briefLink is fed from
-  // exactly these, first non-empty (driveLink → brief → image → competitor).
+  // Four columns in the template, one field in the app. The form was cut down
+  // to Reference Brief Link alone, so whichever column a planner filled is
+  // funnelled there, brief first.
   const cBriefLink = col("Reference Brief Link", "Brief Link", "Link Brief", "ลิงก์บรีฟ");
   const cImageLink = col("Reference Image Link", "Image Link");
   const cDriveLink = col("Google Drive Link", "Drive Link", "Drive");
@@ -471,10 +470,16 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
       productHighlight: cHighlight(row),
       mandatoryText: cMandatory(row),
       doDont: cDoDont(row),
-      referenceBriefLink: cBriefLink(row),
-      referenceImageLink: cImageLink(row),
-      driveLink: cDriveLink(row),
-      competitorLink: cCompetitorLink(row),
+      // The template still has four link columns and sheets in the wild are
+      // filled inconsistently, so all four are read — but they land in the ONE
+      // field the form shows. Importing into driveLink now would put the link
+      // somewhere nobody can see or edit.
+      referenceBriefLink: contentBriefLink({
+        referenceBriefLink: cBriefLink(row),
+        driveLink: cDriveLink(row),
+        referenceImageLink: cImageLink(row),
+        competitorLink: cCompetitorLink(row),
+      }),
       note: cNote(row),
     });
   });
