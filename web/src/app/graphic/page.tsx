@@ -48,7 +48,7 @@ import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, g
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
-import { canApproveRushBrief, canSendGraphicBrief, worksOwnQueueOnly, roleHolders, RUSH_DECIDER_ROLES } from "@/lib/roleGates";
+import { canApproveRushBrief, canSendGraphicBrief, worksOwnQueueOnly, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   CampaignCommandBar,
@@ -189,7 +189,14 @@ function GraphicPageInner() {
           .map((m) => m.name)
           .sort(),
       );
-      setRushDeciders(roleHolders(ms, [...RUSH_DECIDER_ROLES]));
+      // Ordered by the team's own choice of lead, not by whoever sorts first
+      // by email — see leadFirst. Best-effort: no teams config just leaves the
+      // role order alone.
+      const holders = roleHolders(ms, [...RUSH_DECIDER_ROLES]);
+      setRushDeciders(holders);
+      fetchJsonSetting<{ name?: string; lead?: string }[]>("teams_config")
+        .then((teams) => { if (alive) setRushDeciders(leadFirst(holders, ms, creativeTeamLeadEmail(teams))); })
+        .catch(() => {});
     }).catch(() => {});
     return () => { alive = false; };
   }, []);

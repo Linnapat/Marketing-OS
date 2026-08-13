@@ -304,6 +304,36 @@ export function roleHolders(
 /** Who decides whether a rush brief may jump the queue, best first. */
 export const RUSH_DECIDER_ROLES = ["Creative Leader", "CMO"] as const;
 
+/** The lead a team has NAMED, promoted ahead of everyone else holding the role.
+ *
+ *  Role order alone is not enough to pick a person once two people hold the
+ *  same role. Two do here — Pichayaporn and the "QA Test Marketing" account —
+ *  and members are fetched ordered by email, so `Marketing-crm@` sorted first
+ *  and every "route this to the Creative Leader" landed on the test account.
+ *  Silently: the message was addressed to a real member row, so nothing looked
+ *  wrong from the code's side.
+ *
+ *  Settings → Teams already records who actually leads each team, which is a
+ *  decision the team maintains rather than an accident of alphabetical order.
+ *  It only reorders: a lead who does not hold the role is not smuggled in, and
+ *  with no config at all the answer is exactly what it was before. */
+export function leadFirst(
+  holders: string[],
+  members: { name?: string; email?: string }[],
+  leadEmail?: string | null,
+): string[] {
+  const email = (leadEmail ?? "").trim().toLowerCase();
+  if (!email) return holders;
+  const lead = members.find((m) => (m.email ?? "").trim().toLowerCase() === email)?.name?.trim();
+  if (!lead || !holders.includes(lead)) return holders;
+  return [lead, ...holders.filter((n) => n !== lead)];
+}
+
+/** The Creative Team's lead email out of Settings → Teams, if it names one. */
+export function creativeTeamLeadEmail(teams: { name?: string; lead?: string }[] | null | undefined): string {
+  return (teams ?? []).find((t) => /creative/i.test(t.name ?? ""))?.lead?.trim() ?? "";
+}
+
 // ── Campaign creation: driven by the Settings → Permissions matrix ─────────
 // The source of truth the QA verified against. A role may create campaigns
 // when its Campaign module level is Edit or higher; "View" means exactly that.
