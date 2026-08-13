@@ -103,7 +103,7 @@ export function TaskGraphicBrief({ g, onOpenFull }: { g: Graphic; onOpenFull: ()
                   <span className="text-[11px] font-bold flex-shrink-0 w-[12px]" style={{ color: mark.color }}>{mark.icon}</span>
                   <div className="min-w-0">
                     <span className="text-[11.5px] font-bold text-ink">{s.label}</span>
-                    <span className="text-[11px] text-faint"> · {s.owner}</span>
+                    <span className="text-[11px] text-faint"> · {s.role} · {s.owner}</span>
                     <div className="text-[11px] text-muted">{s.detail}</div>
                   </div>
                 </div>

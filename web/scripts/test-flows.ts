@@ -467,23 +467,27 @@ console.log("Artwork counting — by pixels, platform collapsed");
   check("ติดทั้ง storyboard และ footage = 2 เหตุผล", productionBlockers(g({ type: "Reel", requiresShooting: true, shooter: "Four" })).length === 2);
 
   // ลำดับขั้น
+  // อ้างด้วย key ไม่ใช่ตำแหน่ง — เพิ่มขั้นตอนใหม่ข้างหน้าแล้วเทสต์ต้องไม่พังยกชุด
+  // (เพิ่มขั้น "บรีฟ" เมื่อ 14 ส.ค. ทำให้ index เลื่อนทั้งหมด)
+  const stepOf = (steps: ReturnType<typeof productionSteps>, key: string) => steps.find((s2) => s2.key === key);
   {
     const steps = productionSteps(g({ type: "Reel", requiredVideo: true, requiresShooting: true, shooter: "Four", storyboardStatus: "" }));
-    check("Reel + ถ่าย = 3 ขั้น", steps.length === 3);
-    check("ขั้นแรกคือ storyboard", steps[0].key === "storyboard" && steps[0].state === "active");
+    check("Reel + ถ่าย = 4 ขั้น (บรีฟ → storyboard → ถ่าย → ตัดต่อ)", steps.length === 4);
+    check("เรียงตาม flow ที่ตกลงกัน", steps.map((s2) => s2.key).join(">") === "brief>storyboard>shoot>asset");
+    check("ขั้น storyboard active", stepOf(steps, "storyboard")?.state === "active");
     // ถ่ายก่อน storyboard เสร็จไม่ได้ ต้องเป็น waiting ไม่ใช่ active
-    check("ถ่ายยังรอ storyboard อยู่", steps[1].key === "shoot" && steps[1].state === "waiting");
-    check("ส่ง asset ยังรอ", steps[2].key === "asset" && steps[2].state === "waiting");
+    check("ถ่ายยังรอ storyboard อยู่", stepOf(steps, "shoot")?.state === "waiting");
+    check("ส่ง asset ยังรอ", stepOf(steps, "asset")?.state === "waiting");
   }
   {
     const steps = productionSteps(g({ type: "Reel", requiredVideo: true, requiresShooting: true, shooter: "Four", storyboardStatus: "Approved" }));
-    check("storyboard ผ่านแล้ว ถ่ายกลายเป็น active", steps[1].state === "active");
-    check("storyboard แสดงว่าเสร็จ", steps[0].state === "done");
+    check("storyboard ผ่านแล้ว ถ่ายกลายเป็น active", stepOf(steps, "shoot")?.state === "active");
+    check("storyboard แสดงว่าเสร็จ", stepOf(steps, "storyboard")?.state === "done");
   }
   {
     const steps = productionSteps(g({ type: "Poster", requiredVideo: false, requiresShooting: false }));
-    check("Poster มีขั้นเดียว", steps.length === 1 && steps[0].key === "asset");
-    check("Poster ส่ง asset ได้เลย", steps[0].state === "active");
+    check("Poster = บรีฟ + อาร์ตเวิร์ก", steps.map((s2) => s2.key).join(">") === "brief>asset");
+    check("Poster ส่ง asset ได้เลย", stepOf(steps, "asset")?.state === "active");
   }
 
   // บรีฟที่ editor/คนถ่ายเห็นใน My Task ต้องมีลิงก์ storyboard ให้กดเปิดได้
