@@ -10,7 +10,7 @@ import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
-  deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, artworkUnits,
+  deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, creativeBriefLink, artworkUnits,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
@@ -209,6 +209,11 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefDetails = creativeBriefDetails(g);
+  // One resolver for the link, so Overview and the Brief tab can never disagree
+  // about whether this job has a brief. Reads the retired boxes and the
+  // deliverables too — an adhoc request raised before 13 Aug carries its link
+  // only on deliverables[].refLink.
+  const briefHref = creativeBriefLink(g);
   const briefPct = Math.round((brief.filter((b) => b.ok).length / brief.length) * 100);
   const canDeliver = g.stage === "Approved";
   const deliverables = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
@@ -642,6 +647,37 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   )}
                 </div>
               )}
+
+              {/* The brief itself, on the tab the job is picked up from.
+                  It was only ever on the Brief tab, one click away with nothing
+                  to say it was there — so a designer opening a request they had
+                  just been handed saw no brief and asked for one that had been
+                  attached before the request was even submitted. Absent is worth
+                  saying out loud too: "no brief" is a fact worth knowing before
+                  starting, not a blank space. */}
+              <div className="rounded-[12px] border px-4 py-[10px] flex items-center gap-2 flex-wrap"
+                style={briefHref
+                  ? { background: "#F6F4FF", borderColor: "#DCD6F7" }
+                  : { background: "#FBF1E9", borderColor: "#F0D5BC" }}>
+                <span className="text-[11.5px] font-bold" style={{ color: briefHref ? "#5B4FD8" : "#B3641E" }}>
+                  {briefHref ? "📄 บรีฟงาน" : "📄 ยังไม่มีลิงก์บรีฟ"}
+                </span>
+                {briefHref ? (
+                  <a href={briefHref} target="_blank" rel="noreferrer"
+                    className="text-[12px] font-bold text-accent underline underline-offset-2 break-all">
+                    เปิดบรีฟ ↗
+                  </a>
+                ) : (
+                  <span className="text-[11.5px]" style={{ color: "#8A5418" }}>
+                    ขอลิงก์บรีฟจาก {g.requester || "ผู้ขอ"} ก่อนเริ่มงาน
+                  </span>
+                )}
+                <button type="button" onClick={() => setTab("brief")}
+                  className="ml-auto text-[11px] font-bold rounded-[8px] px-2.5 py-[4px] border bg-white"
+                  style={{ borderColor: "#DCD6F7", color: "#5B4FD8" }}>
+                  ดูบรีฟเต็ม →
+                </button>
+              </div>
 
               {/* Notices from the planning side — the post this request serves
                   was moved or rescheduled. Shown here, on the work itself,
