@@ -14,15 +14,16 @@ import { useCanCreateCampaign } from "@/lib/usePermGates";
 import { baht, num } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
-  STATUS_ORDER, READINESS_META, CampaignRow,
+  STATUS_ORDER, READINESS_META, CampaignRow, campaignPeriod,
 } from "@/lib/data/campaigns";
-import { CampaignBrief, visitGoalOf } from "@/lib/data/brief";
+import { BRIEF_STATUSES, CampaignBrief, visitGoalOf } from "@/lib/data/brief";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief } from "@/lib/db/brief";
 import { fetchCampaigns, deleteCampaign, updateCampaignStatus } from "@/lib/db/campaigns";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, rangeInFilter, parseRowDate } from "@/components/ui/DateFilterBar";
+import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { CampaignCode } from "@/components/ui/CampaignCode";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -31,7 +32,11 @@ import {
   CampaignPageHeaderSection,
 } from "@/components/campaign/CampaignHeadController";
 
-const ACTION_STATUSES = ["Draft", "Waiting Approval", "Approved", "Active", "Paused", "Inactive", "Completed", "Cancelled"];
+// The dropdown offers exactly the statuses the brief pipeline knows — see
+// BRIEF_STATUSES. A campaign already parked on a legacy value still shows it
+// (statusOptions prepends the current one), so nothing reads as renamed; it
+// just can't be set again.
+const ACTION_STATUSES: readonly string[] = BRIEF_STATUSES;
 
 // Campaign · Brand·Branch · Owner · Budget · Visit · Ready · Actions.
 // Actions has a hard floor rather than a bare fr: it holds the status select,
@@ -143,16 +148,25 @@ export default function CampaignsPage() {
 
   const configuredBrandName = (id: BrandId) => brandConfigs.find((item) => item.key === id)?.name ?? brandName(id);
 
-  const filtered = campaigns.filter((c) =>
-    // Brand-scope first: a member only ever sees campaigns of brands they manage.
-    brandVisibility.visibleBrands.includes(c.b) &&
-    (brand === "all" || c.b === brand) &&
+  // Brand-scope first, and OUTSIDE the counted filters: a campaign belonging to
+  // a brand you don't manage is not something ล้างตัวกรอง can bring back, so it
+  // is not part of the "showing 8 of 11" the summary reports.
+  const scoped = campaigns.filter((c) => brandVisibility.visibleBrands.includes(c.b));
+  const outcome = filterWithReasons(scoped, [
+    // Period first: it is the filter every list defaults to and the one people
+    // forget is on — the reason three campaigns read as deleted for ten days.
+    { label: "นอกช่วงเวลา", pass: (c) => rangeInFilter(date, campaignPeriod(c)) },
+    { label: "คนละแบรนด์", pass: (c) => brand === "all" || c.b === brand },
     // Searchable by code as well as name — the current code is what the team now
     // quotes to each other, and both retired numbers (the CPN one from the Ads
     // sheet, the year-scoped one from before 31 Jul) still circulate.
-    (!search.trim() || [c.name, c.code, c.legacyCode, c.previousCode].some((s) => s?.toLowerCase().includes(search.trim().toLowerCase()))) &&
-    rangeInFilter(date, c.dates),
-  );
+    {
+      label: "ไม่ตรงคำค้น",
+      pass: (c) => !search.trim() || [c.name, c.code, c.legacyCode, c.previousCode].some((s) => s?.toLowerCase().includes(search.trim().toLowerCase())),
+    },
+  ]);
+  const filtered = outcome.rows;
+  const clearFilters = () => { setBrand("all"); setSearch(""); setDate({ ...ALL_TIME_FILTER }); };
   // Campaigns read in date order — the team plans and reviews by calendar, so a
   // brand's list should run the way the months do. Rows whose range cannot be
   // parsed sink to the bottom rather than jumping to the front on NaN, and the
@@ -210,7 +224,9 @@ export default function CampaignsPage() {
         };
         await saveCampaignBrief({ ...brief, status: nextStatus as CampaignBrief["status"], approvalLog: [...(brief.approvalLog ?? []), entry] });
       } else {
-        await updateCampaignStatus(id, nextStatus);
+        // No brief to route through (or its read just failed) — the status still
+        // has to reach the blob if one is there, so pass who did it.
+        await updateCampaignStatus(id, nextStatus, member?.name || role || "");
       }
     } catch (error) {
       if (previous) setCampaigns((rows) => rows.map((row) => row.id === id ? previous : row));
@@ -310,6 +326,7 @@ export default function CampaignsPage() {
 
       {/* Status-grouped collapsible list */}
       <div className="mt-4 flex flex-col gap-3">
+        <FilterSummary outcome={outcome} onClear={clearFilters} noun="แคมเปญ" />
         {groups.map((g) => {
           const isCollapsed = collapsed[g.key];
           const totalBudget = g.rows.reduce((sum, c) => sum + (c.budget || 0), 0);

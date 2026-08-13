@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionReviewer } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -28,7 +28,7 @@ import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption } from "@/lib/roleGates";
+import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -347,7 +347,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     persist(released
       ? { ...item, releaseStatus: "", releasedBy: undefined, releasedAt: undefined }
       : { ...item, releaseStatus: "Released", releasedBy: reviewer, releasedAt: new Date().toISOString(), mediaLink: mediaLink.trim() || item.mediaLink });
-    if (!released) notify("launch", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
+    if (!released) notify("published", `🎬 Creative ปล่อยงานแล้ว: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
   };
   const basicsDirty = editTitle !== item.title || (editDate ?? null) !== (item.dateIso ?? null) || editTime !== (item.time || "10:00");
   // Warn against the date being EDITED, not the saved one — the point is to
@@ -418,12 +418,18 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // Step 4 of the agreed flow: the words get accepted (or sent back) on their
   // own, before production, instead of riding along with the whole post.
   const [captionReason, setCaptionReason] = useState("");
+  // Two different people, and the caption gate needs both. The WRITER may not
+  // sign off their own words — captionOwner, not `owner`, because on a post
+  // still marked "Unassigned" the planner is the writer and reading the raw
+  // field let them approve themselves. The REVIEWER is who it was addressed to,
+  // and they decide whatever their role.
+  const writer = captionOwner(item);
   const captionOwedTo = captionReviewer(item);
-  const canDecideCap = canDecideCaption(role, { me: reviewer, writer: item.owner, reviewer: captionOwedTo });
+  const canDecideCap = canDecideCaption(role, { me: reviewer, writer, reviewer: captionOwedTo });
   // Told apart from "not on the planning side" so the reason on screen is the
   // true one — being the writer is a different refusal from being Creative.
   const isSameCaptionWriter =
-    (reviewer ?? "").trim().toLowerCase() === (item.owner ?? "").trim().toLowerCase();
+    !!writer && (reviewer ?? "").trim().toLowerCase() === writer.trim().toLowerCase();
   const decideCaption = (decision: "approve" | "revise") => {
     const next = applyCaptionDecision(item, decision, reviewer, captionReason);
     if (next === item) {
@@ -434,17 +440,17 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     void persist(next, decision === "approve" ? "อนุมัติ caption แล้ว" : "ส่ง caption กลับไปแก้แล้ว");
     if (decision === "approve") {
       notify("approved", `✅ อนุมัติ caption: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`,
-        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, inform: [item.owner] });
+        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, inform: writer ? [writer] : [] });
       return;
     }
     // The writer is the one who has to act, so this is a DM, not a bell entry.
     // Still DM-only even when the post has no writer yet, which used to fall
     // through to the room — see CAPTION_NOTIFY_TEAM.
     notify("rejected", `✏️ caption ถูกส่งกลับแก้: ${item.title}`, `${captionReason.trim()} · โดย ${reviewer}`,
-      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [item.owner] });
-    if (item.owner && item.owner !== "Unassigned") {
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: writer ? [writer] : [] });
+    if (writer) {
       createRevisionTask({
-        module: "Content", title: `แก้ caption — ${item.title}`, assignee: item.owner,
+        module: "Content", title: `แก้ caption — ${item.title}`, assignee: writer,
         brand: brandName(item.b), campaign: item.campaign, reason: captionReason.trim(), by: reviewer,
       }).catch(() => {});
     }
@@ -476,15 +482,15 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       ...(captionNeedsWork ? { captionStatus: captionStatusAfterRevision(item) } : {}),
       feedback: [...(item.feedback ?? []), { round, reason: r, by: reviewer, at: new Date().toISOString() }],
     });
-    // Bounce it back into the fixer's My Tasks (creator, else requester).
-    const fixer = item.owner && item.owner !== "Unassigned" ? item.owner : (item.requester || item.designer || "");
+    // Bounce it back into the fixer's My Tasks (caption owner, else the designer).
+    const fixer = captionOwner(item) || realName(item.designer);
     if (fixer) {
       createRevisionTask({
         module: "Content", title: `แก้ Content — ${item.title}`, assignee: fixer,
         brand: brandName(item.b), campaign: item.campaign, reason: r, by: reviewer,
       }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
-    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "graphic", to: [fixer] });
+    notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "content", to: [fixer] });
     setReason(""); setRevising(false); setCaptionNeedsWork(false);
   };
 
@@ -495,7 +501,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await publishContent(item, reviewer);
       if (!res.ok) { toastError("ยัง Publish ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("launch", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
+      notify("published", `🚀 โพสต์ถูก publish: ${item.title}`, `${brandName(item.b)} · ${item.campaign} · โดย ${reviewer}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -511,7 +517,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await scheduleContentToMeta(item, reviewer, scheduledFor, selectedChannels);
       if (!res.ok) { toastError("ยัง Queue ไป Meta ไม่ได้:\n• " + res.reasons.join("\n• ")); return; }
       onUpdate?.(res.post);
-      notify("launch", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
+      notify("published", `📌 Scheduled to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Queue ไป Meta ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -522,7 +528,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       const res = await publishContentToMeta(item, reviewer, selectedChannels, metaAccount);
       if (!res.ok) { toastError("Meta publish ไม่สำเร็จ:\n• " + res.reasons.join("\n• ")); onUpdate?.(res.post); return; }
       onUpdate?.(res.post);
-      notify("launch", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
+      notify("published", `🚀 Published to Meta: ${item.title}`, `${brandName(item.b)} · ${selectedChannels.join(", ")}`, workLink.post(item.id));
     } catch (error) {
       toastError(`Meta publish ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
@@ -602,19 +608,28 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                   ["Owner (คนเขียนแคปชั่น)", canAssign
                     ? (
                       // The one control that turns "งานเขียนแคปชั่นไหลเข้า Content
-                      // creator" into something the app actually does. Scoped to
-                      // the Planner team, which is where memberTeam() puts
-                      // Content Creator.
+                      // creator" into something the app actually does. Shows the
+                      // content planner while nobody has been assigned — that is
+                      // who owns the words until Creative takes them, not
+                      // "ยังไม่มอบหมาย" — and offers the people the work may be
+                      // handed on to (CAPTION_WRITER_ROLES). Scoped to "all"
+                      // rather than a team on purpose: the two writer roles live
+                      // in different teams, so filtering by team first would
+                      // leave nobody to pick. Clearing the slot hands the post
+                      // back to its planner; whoever holds it now stays listed
+                      // even when their role is not a writer's.
                       <OwnerSelect
                         key="o"
-                        value={item.owner === "Unassigned" ? "" : item.owner}
+                        value={captionOwner(item)}
                         onChange={assignOwner}
-                        team="Planner"
+                        team="all"
+                        roleMatch={CAPTION_WRITER_ROLES}
                         placeholder="ยังไม่มอบหมาย"
+                        emptyLabel="ยังไม่มีใครถูกตั้งเป็น Content Creator / Creative Leader — ตั้ง role ที่ Settings › Members ก่อน"
                         className="text-[13px]"
                       />
                     )
-                    : <span key="o" className="text-[13.5px] font-semibold">{item.owner}</span>],
+                    : <span key="o" className="text-[13.5px] font-semibold">{captionOwner(item) || "ยังไม่มอบหมาย"}</span>],
                   ["Asset", <StatusBadge key="a" tone={contentTone(item.assetStatus)}>{item.assetStatus}</StatusBadge>],
                   ["Caption", <StatusBadge key="c" tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>]].map(([label, node], i) => (
                   <div key={i} className="rounded-[12px] px-[14px] py-3" style={{ background: "#F7F4EE" }}>
@@ -905,7 +920,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 <button onClick={saveCaption} disabled={busy} className="flex-1 text-[13.5px] font-bold py-[11px] rounded-[10px] bg-panel text-white disabled:opacity-40">{busy ? "Saving…" : "Save Caption"}</button>
                 <button onClick={markCaptionReady} disabled={busy || !caption.trim()} className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted disabled:opacity-40">Mark Ready</button>
               </div>
-              <div className="text-[11.5px] text-faint">Last edited by {item.owner}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
+              <div className="text-[11.5px] text-faint">Last edited by {captionOwner(item) || "—"}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
 
               {/* What the writer was told last time — kept in front of them
                   while they rewrite, not buried in a notification. */}

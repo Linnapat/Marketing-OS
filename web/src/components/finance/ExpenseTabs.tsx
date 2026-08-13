@@ -159,9 +159,15 @@ export function ExpenseRequestTab({ brand, date, highlightRef }: {
       };
       await createRequest(queueRow);
       // ปิดช่องว่าง "แจ้งกลุ่ม LINE เอง" — ระบบแจ้งผู้อนุมัติให้ทันที
+      //
+      // The link points at the approval queue, which routes to `general` — a
+      // team with no room and, without names, no one at all: this notification
+      // reached nobody on Slack until 10 ส.ค. 2569. `finance` is the honest
+      // team for it (money, no room), and it names the requester so the person
+      // who asked gets the same confirmation the approver does.
       notify("approval", `📥 คำขอเบิกงบใหม่ ${ref} · ${catKey || "Expense"}`,
         `${baht(amt)} (${reimburseType})${vendor ? ` · ${vendor}` : ""} · โดย ${requesterName} → รอ ${route} อนุมัติ`,
-        workLink.approvals());
+        workLink.approvals(), { team: "finance", to: [requesterName] });
       setSubmitted(ref);
     } catch (error) {
       toastError(`บันทึก Expense Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);

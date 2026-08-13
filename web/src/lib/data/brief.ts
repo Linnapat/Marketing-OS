@@ -77,9 +77,16 @@ export const ADS_PLATFORMS = ["Facebook / Instagram", "TikTok", "Google", "LINE 
 
 export const PRIORITIES = ["High", "Med", "Low"] as const;
 
+// Every status a campaign can be in — and the ONLY list any status picker may
+// offer. The Campaigns list used to carry its own set ("Active", "Paused",
+// "Inactive", "Waiting Approval" — one word short of the real thing), so a CMO
+// could park a campaign on a value nothing else in the app recognises: not
+// past-approval, so its plan never became work, and not waiting either, so no
+// approval queue ever showed it. "Unlimited Side Dish" sat on "Active" with 3
+// planned items and 0 posts because of it.
 export const BRIEF_STATUSES = [
   "Draft", "Ready for Review", "Waiting for Approval",
-  "Approved", "Need Revision", "In Progress", "Completed",
+  "Approved", "Need Revision", "In Progress", "Completed", "Cancelled",
 ] as const;
 export type BriefStatus = (typeof BRIEF_STATUSES)[number];
 
@@ -164,11 +171,34 @@ export interface BriefContentItem {
   productHighlight: string;
   mandatoryText: string;
   doDont: string;
+  /** THE link on a content item — the one the form asks for and the one the
+   *  designer opens. */
   referenceBriefLink: string;
-  referenceImageLink: string;
-  driveLink: string;
-  competitorLink: string;
+  /** Retired boxes. The form had four link fields that all fed one link on the
+   *  Graphic Request, so "Competitor / Inspiration Link" quietly became the
+   *  brief the designer was sent. Only referenceBriefLink can be typed now;
+   *  these stay on the type so rows written before that still read back — see
+   *  contentBriefLink(). Do not add inputs for them again. */
+  referenceImageLink?: string;
+  driveLink?: string;
+  competitorLink?: string;
   note: string;
+}
+
+/** The one link a content item carries, wherever it was typed.
+ *
+ *  referenceBriefLink FIRST. The old order put driveLink ahead of it, which was
+ *  right while Drive was the box the team actually filled — and becomes a trap
+ *  the moment it is the only box left: a legacy driveLink would outrank the link
+ *  someone just typed, and the form would show one link while the designer got
+ *  another. */
+export function contentBriefLink(
+  item: Pick<BriefContentItem, "referenceBriefLink" | "referenceImageLink" | "driveLink" | "competitorLink">,
+): string {
+  const first = [item.referenceBriefLink, item.driveLink, item.referenceImageLink, item.competitorLink]
+    .map((v) => (v ?? "").trim())
+    .find(Boolean);
+  return first ?? "";
 }
 
 export interface BriefKolItem {
@@ -304,8 +334,10 @@ export function emptyContentItem(seq: number): BriefContentItem {
     assets: [], publishDate: "", graphicDueDate: "", requiredGraphic: true,
     requiredVideo: false, priority: "Med", status: "Planned",
     captionDirection: "", mainMessage: "", cta: "", productHighlight: "",
-    mandatoryText: "", doDont: "", referenceBriefLink: "", referenceImageLink: "",
-    driveLink: "", competitorLink: "", note: "",
+    // The three retired link boxes are deliberately absent: a new item has one
+    // link field, and seeding empty keys for them would put them straight back
+    // into every blob written from here on.
+    mandatoryText: "", doDont: "", referenceBriefLink: "", note: "",
   };
 }
 
@@ -320,6 +352,26 @@ export function emptyKolItem(seq: number): BriefKolItem {
 
 export function emptyBudget(): BriefBudget {
   return { total: 0, ads: 0, kol: 0, graphic: 0, printing: 0, crm: 0, other: 0, adsByPlatform: [{ platform: ADS_PLATFORMS[0], amount: 0 }], monthly: [] };
+}
+
+const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The campaign's flight as the label every list shows — and reads back to
+ *  filter by period (see parseRowRange in DateFilterBar).
+ *
+ *  It used to drop the year always, which is fine inside one year and wrong
+ *  across New Year: "Oct 1 – Jan 31" reads as a range that ENDS before it
+ *  starts, so the campaign overlapped no month and disappeared from every list
+ *  that filters by period while still sitting in the database. A range that
+ *  crosses years therefore carries both years. */
+export function fmtRange(startIso: string, endIso: string): string {
+  const one = (iso: string, withYear: boolean) => {
+    const [y, m, d] = (iso || "").split("-").map(Number);
+    return m ? `${MON_SHORT[m - 1]} ${d}${withYear && y ? ` ${y}` : ""}` : "";
+  };
+  const crossesYear = !!startIso && !!endIso && startIso.slice(0, 4) !== endIso.slice(0, 4);
+  const a = one(startIso, crossesYear), b = one(endIso, crossesYear);
+  return a && b ? `${a} – ${b}` : a || b || "TBD";
 }
 
 export function campaignMonthKeys(startIso: string, endIso: string): string[] {

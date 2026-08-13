@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
@@ -31,19 +31,35 @@ import { noteBriefVersion, forgetBriefVersion, briefVersionOf, adoptBriefVersion
 export { noteBriefVersion, forgetBriefVersion } from "./briefVersion";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function fmtRange(startIso: string, endIso: string): string {
-  const one = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
-  const a = one(startIso), b = one(endIso);
-  return a && b ? `${a} – ${b}` : a || b || "TBD";
-}
 
 export interface BriefSaveResult {
   campaign: CampaignRow;
   created: { content: number; graphics: number; kols: number; tasks: number };
 }
 
+// One fan-out per campaign at a time, chained not joined: the detail page has
+// more than one control that ends in saveCampaignBrief (Approve on the header,
+// Approve on the Approval tab, the campaigns-list status dropdown), and two of
+// them fired within seconds have raced each other in production — the second
+// run's idempotency read happened mid-flight through the first run's inserts,
+// so it re-inserted a post the first run had just written and died on
+// content_posts_source_uniq. Queueing the second run behind the first keeps
+// every read after every prior write; each caller still writes its own brief.
+const briefSaveQueue = new Map<string, Promise<unknown>>();
+
 /** The row types this expands into (kept in one place for the preview + save). */
 export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResult> {
+  const prior = briefSaveQueue.get(brief.id) ?? Promise.resolve();
+  const run = prior.catch(() => {}).then(() => doSaveCampaignBrief(brief));
+  briefSaveQueue.set(brief.id, run);
+  try {
+    return await run;
+  } finally {
+    if (briefSaveQueue.get(brief.id) === run) briefSaveQueue.delete(brief.id);
+  }
+}
+
+async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResult> {
   const normalizedBrief: CampaignBrief = {
     ...brief,
     content: brief.content.map((ci) => {
@@ -63,6 +79,9 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
     id: normalizedBrief.id, name: normalizedBrief.name, b: normalizedBrief.b, branch: normalizedBrief.branch,
     // spend seeds Finance "Committed" — the amount allocated across buckets at plan time.
     owner: normalizedBrief.plannerOwner || "Unassigned", budget: normalizedBrief.budget.total, spend: budgetSummary(normalizedBrief).allocated, roi: 0,
+    // The flight goes to the columns as dates and to `dates` as the label the
+    // team reads. Same two values, so the label can never drift from the data.
+    startDate: normalizedBrief.startDate || undefined, endDate: normalizedBrief.endDate || undefined,
     dates: fmtRange(normalizedBrief.startDate, normalizedBrief.endDate), status: normalizedBrief.status,
     campType: normalizedBrief.campaignType || normalizedBrief.objective, readiness: "needs_attention",
     taskBlocked: 0, taskWaiting: 0, taskOverdue: 0, taskTotal: 0, taskDone: 0, taskInProgress: 0,
@@ -144,7 +163,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       // Brief guide for the caption writer.
       subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
       productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,
-      driveLink: ci.driveLink || undefined,
+      driveLink: contentBriefLink(ci) || undefined,
       mandatoryText: ci.mandatoryText || undefined, doDont: ci.doDont || undefined,
       captionStatus: "Missing", assetStatus: needsCreative ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
@@ -171,7 +190,7 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       const pairs = ci.assets.length ? ci.assets : plats.map((p) => ({ platform: p, size: "" }));
       // Artwork numbers are assigned HERE, from the sizes the planner picked —
       // same size across platforms = one artwork; no hand-numbering later.
-      const deliverables = autoNumberDeliverables(pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", ci.referenceBriefLink || "")));
+      const deliverables = autoNumberDeliverables(pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", contentBriefLink(ci))));
       const g: Graphic = {
         ...buildGraphic({
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
@@ -189,11 +208,9 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
         moodDirection: normalizedBrief.kvDirection || ci.captionDirection || "",
         captionCopy: ci.captionDirection || "",
         extraDetails: ci.doDont || ci.mandatoryText || "",
-        // One link on the request, fed from whichever campaign box was used.
-        // The campaign form still has four (Drive / brief / reference image /
-        // competitor) and the team fills Drive most, so first-non-empty wins
-        // rather than picking one and dropping the rest on the floor.
-        briefLink: ci.driveLink || ci.referenceBriefLink || ci.referenceImageLink || ci.competitorLink || "",
+        // One link on the request, from the one box the form now offers —
+        // contentBriefLink still reads the three retired ones for older items.
+        briefLink: contentBriefLink(ci),
         // Video items start at the storyboard, exactly as they do when raised
         // by hand — otherwise a Reel materialised from an approved campaign
         // would skip straight to artwork and lose the step.
@@ -204,9 +221,11 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
       const madeGraphic = await createGraphicIfNew(g, graphicSeen);
       // Already there: push the brief detail down instead of skipping the row
       // entirely, which is how a request ended up blank while its campaign
-      // carried the link. Blanks only, never on an accepted request.
+      // carried the link. Blanks only, never on an accepted request. Aimed at
+      // the request that exists — `gid` is this run's fresh number, which on a
+      // re-run names no row (every top-up landed on "ไม่พบใบงานนี้" until now).
       if (!madeGraphic.created) {
-        await topUpGraphicBrief(gid, {
+        await topUpGraphicBrief(madeGraphic.existingId ?? gid, {
           briefLink: g.briefLink, objective: g.objective, keyMessage: g.keyMessage,
           moodDirection: g.moodDirection, captionCopy: g.captionCopy, extraDetails: g.extraDetails,
         });
@@ -538,12 +557,20 @@ export async function appendBriefKolItem(campaignName: string, item: BriefKolIte
   adoptBriefVersion(camp.id, written as { updated_at?: string }[] | null);
 }
 
-/** Append an approval-log entry + status change to a saved brief. */
-export async function logBriefApproval(id: string, entry: ApprovalLogEntry, status: string): Promise<void> {
+/** Append an approval-log entry + status change to a saved brief.
+ *
+ *  Returns the brief AS WRITTEN so the caller can hand that same object to
+ *  saveCampaignBrief — the caller's own copy may predate other people's (or
+ *  other buttons') writes, and persisting it verbatim has silently erased
+ *  approval-log entries in production. Returns null without writing when the
+ *  brief is missing OR already in `status`: the second of two Approve clicks
+ *  must become a no-op, not a second fan-out. */
+export async function logBriefApproval(id: string, entry: ApprovalLogEntry, status: string): Promise<CampaignBrief | null> {
   const db = supabase();
-  if (!db) return;
+  if (!db) return null;
   const brief = await fetchCampaignBrief(id);
-  if (!brief) return;
+  if (!brief) return null;
+  if (brief.status === status) return null;
   brief.approvalLog = [...(brief.approvalLog ?? []), entry];
   brief.status = status as CampaignBrief["status"];
   const nextApproval = status === "Waiting for Approval" ? (brief.approver || DEFAULT_APPROVER) : "None";
@@ -558,4 +585,5 @@ export async function logBriefApproval(id: string, entry: ApprovalLogEntry, stat
   logAudit(`Brief ${brief.name || id}: ${entry.action}`, "Campaign", {
     after: status, actorName: entry.by, meta: { campaignId: id, comment: entry.comment },
   });
+  return brief;
 }

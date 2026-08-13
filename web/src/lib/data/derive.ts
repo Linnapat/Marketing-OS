@@ -2,13 +2,13 @@
 // requests, tasks, KOLs) instead of standalone mock constants — so both pages
 // reflect actual data and are empty on a freshly-cleared database.
 
-import { CampaignRow } from "@/lib/data/campaigns";
+import { CampaignRow, campaignPeriod } from "@/lib/data/campaigns";
 import { BudgetBrand, PnlRow, RequestRow } from "@/lib/data/finance";
 import { Kpi } from "@/components/ui/KpiCard";
 import { collapseTaskWorkItems, Task } from "@/lib/data/tasks";
 import { Kol } from "@/lib/data/kol";
 import type { Member } from "@/lib/db/settings";
-import { ContentItem } from "@/lib/data/content";
+import { ContentItem, captionOwner } from "@/lib/data/content";
 import { GRAPHIC_OPEN_PARAM, Graphic, artworkUnits } from "@/lib/data/graphic";
 import { BRAND_ORDER, brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
@@ -39,7 +39,7 @@ const isSpentReq = (status: string) => /approved|paid/i.test(status);
  *  `reqs` already filtered to the same period. */
 export function financeFromDb(campaigns: CampaignRow[], reqs: RequestRow[], period?: DateFilter): FinanceView {
   const inPeriod = campaigns
-    .map((c) => ({ c, f: period ? rangeOverlapFraction(period, c.dates) : 1 }))
+    .map((c) => ({ c, f: period ? rangeOverlapFraction(period, campaignPeriod(c)) : 1 }))
     .filter((x) => x.f > 0);
 
   const totalPlan = inPeriod.reduce((s, x) => s + Math.round((x.c.budget || 0) * x.f), 0);
@@ -330,7 +330,7 @@ export function teamFromDb(
 
   const view: TeamMemberView[] = members.map((m) => ({
     name: m.name, role: m.role, color: m.color, avatarUrl: m.avatarUrl, presence: m.presence, statusNote: m.statusNote,
-    ...bucket(tasks.filter((t) => t.assignee === m.name), posts.filter((p) => p.owner === m.name)),
+    ...bucket(tasks.filter((t) => t.assignee === m.name), posts.filter((p) => captionOwner(p) === m.name)),
   }));
 
   // Work assigned to nobody — or to a name that isn't a real member — is still
@@ -338,7 +338,7 @@ export function teamFromDb(
   // vanish from the summary.
   const known = new Set(members.map((m) => m.name));
   const orphans = tasks.filter((t) => !known.has(t.assignee));
-  const orphanPosts = posts.filter((p) => !known.has(p.owner)).filter(isPostOpenWork);
+  const orphanPosts = posts.filter((p) => !known.has(captionOwner(p))).filter(isPostOpenWork);
   if (orphans.length || orphanPosts.length) {
     view.push({
       name: "Unassigned", role: "งานที่ยังไม่มีเจ้าของจริงในระบบ — ต้องมีคนรับ", color: "#9A9387",

@@ -13,6 +13,8 @@ import { adoptBriefVersion, forgetBriefVersion } from "@/lib/db/briefVersion";
 type Row = {
   id: string; name: string; brand: BrandId; branch: string; owner: string;
   budget: number; spend: number; roi: number; dates: string; status: string;
+  // Nullable: rows written before campaign_flight_dates.sql have only `dates`.
+  start_date: string | null; end_date: string | null;
   camp_type: string; readiness: string;
   task_blocked: number; task_waiting: number; task_overdue: number;
   task_total: number; task_done: number; task_in_progress: number;
@@ -24,6 +26,7 @@ const toCampaign = (r: Row): CampaignRow => ({
   id: r.id, code: r.data?.code, legacyCode: r.data?.legacyCode, previousCode: r.data?.previousCode,
   name: r.name, b: r.brand, branch: r.branch, owner: r.owner,
   budget: Number(r.budget), spend: Number(r.spend), roi: Number(r.roi), dates: r.dates,
+  startDate: r.start_date ?? undefined, endDate: r.end_date ?? undefined,
   status: r.status, campType: r.camp_type, readiness: (r.readiness as Readiness) ?? "ready",
   taskBlocked: r.task_blocked, taskWaiting: r.task_waiting, taskOverdue: r.task_overdue,
   taskTotal: r.task_total, taskDone: r.task_done, taskInProgress: r.task_in_progress,
@@ -60,6 +63,17 @@ export async function addCampaignType(name: string): Promise<void> {
   assertDbOk(error, "Could not save campaign type");
 }
 
+/** Does this error mean the database simply doesn't have a column we sent?
+ *  Postgres says 42703; PostgREST answers from its own schema cache with
+ *  PGRST204. Deliberately keyed on the code ALONE and not on the column name in
+ *  the message: this is the branch production takes for the whole window
+ *  between a deploy and someone running the migration, and matching prose is
+ *  too fragile a thing to hang campaign saving on. Retrying cannot hide a real
+ *  problem — if the retry fails too, that error is the one that surfaces. */
+function isUnknownColumn(error: { code?: string }): boolean {
+  return error.code === "42703" || error.code === "PGRST204";
+}
+
 /** Insert a new campaign; returns it. */
 export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   const db = supabase();
@@ -68,13 +82,27 @@ export async function createCampaign(c: CampaignRow): Promise<CampaignRow> {
   // and saveCampaignBrief writes the brief blob straight after it. Adopting the
   // version here is what stops our own row-write from reading as somebody else's
   // edit two lines later (see db/briefVersion).
-  const { data: written, error } = await db.from("campaigns").upsert({
+  const base = {
     id: c.id, name: c.name, brand: c.b, branch: c.branch, owner: c.owner, budget: c.budget, spend: c.spend,
     roi: c.roi, dates: c.dates, status: c.status, camp_type: c.campType, readiness: c.readiness,
     task_blocked: c.taskBlocked, task_waiting: c.taskWaiting, task_overdue: c.taskOverdue,
     task_total: c.taskTotal, task_done: c.taskDone, task_in_progress: c.taskInProgress,
     bottleneck_team: c.bottleneckTeam, next_approval: c.nextApproval,
-  }, { onConflict: "id" }).select("id, updated_at");
+  };
+  const save = (payload: Record<string, unknown>) =>
+    db.from("campaigns").upsert(payload, { onConflict: "id" }).select("id, updated_at");
+
+  let { data: written, error } = await save({
+    ...base, start_date: c.startDate ?? null, end_date: c.endDate ?? null,
+  });
+  // The flight columns arrive with campaign_flight_dates.sql, and a deploy can
+  // land before someone runs it. Saving a campaign is not allowed to depend on
+  // that ordering, so an unknown column means write what this database HAS —
+  // `dates` still carries the flight, and the migration backfills the columns
+  // from the brief blob whenever it does run.
+  if (error && isUnknownColumn(error)) {
+    ({ data: written, error } = await save(base));
+  }
   assertDbOk(error, "Could not save campaign");
   adoptBriefVersion(c.id, written as { updated_at?: string }[] | null);
   mirrorCampaignToSheet(c);
@@ -92,25 +120,176 @@ export const CAMPAIGN_SHEET_HEADERS = [
 ];
 
 function mirrorCampaignToSheet(c: CampaignRow): void {
-  // `dates` is a formatted range ("start – end") — split it back out; KPI/notes
+  // Prefer the stored dates — the sheet gets real ISO ends instead of a label
+  // it would have to parse. Falling back to splitting `dates` keeps campaigns
+  // written before those columns mirroring exactly as they used to. KPI/notes
   // aren't tracked at campaign level, so they're left blank for the team.
-  const [start, end] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
+  const [labelStart, labelEnd] = (c.dates || "").split(/[–—-]/).map((s) => s.trim());
+  const start = c.startDate ?? labelStart;
+  const end = c.endDate ?? labelEnd;
   mirrorRowToSheet("Campaigns", CAMPAIGN_SHEET_HEADERS, [
     c.id, c.name, brandName(c.b), c.branch, "", start || c.dates || "", end || "", c.budget, "",
   ], c.b);
 }
 
-/** Update a campaign's status (used by the temporary approve/reject action while
- *  the dedicated Approval Queue module is still coming soon). */
-export async function updateCampaignStatus(id: string, status: string): Promise<void> {
+/** The blob half of a campaigns row: the brief, as stored. Typed loosely here on
+ *  purpose — db/brief imports THIS module, so importing the brief types back
+ *  would close an import cycle. Only the two fields these patches touch are
+ *  named; everything else rides along untouched. */
+export type BriefBlob = Record<string, unknown> & {
+  status?: string;
+  budget?: Record<string, unknown> & { total?: number };
+  approvalLog?: unknown[];
+};
+
+/** Append to the brief's approval log without assuming it is there — briefs
+ *  written before the log existed have no array, and one bad blob must not make
+ *  a status change throw. */
+function withLogEntry(blob: BriefBlob, entry: Record<string, unknown>): unknown[] {
+  return [...(Array.isArray(blob.approvalLog) ? blob.approvalLog : []), entry];
+}
+
+/** The brief as it should read after a status change, or null when the brief
+ *  already says that — an approval log full of "Status changed to Approved"
+ *  repeated by every retry is noise, and rewriting an identical blob would bump
+ *  the row version under whoever else is editing. Pure, so the sequencing is
+ *  testable without a database. */
+export function briefStatusPatch(blob: BriefBlob, status: string, by: string, at: string): BriefBlob | null {
+  if (blob.status === status) return null;
+  return {
+    ...blob,
+    status,
+    approvalLog: withLogEntry(blob, {
+      action: `Status changed to ${status}`, by: by || "—", at, from: blob.status ?? "", to: status,
+    }),
+  };
+}
+
+/** The brief as it should read after a CMO-approved budget revision, or null
+ *  when the plan already carries that cap. The rest of `budget` (per-bucket
+ *  allocation, monthly split, ads-by-platform) is deliberately left as it is:
+ *  re-allocating is the planner's decision, and the Builder already warns when
+ *  the parts no longer add up to the total. */
+export function briefBudgetPatch(blob: BriefBlob, budget: number, by: string, at: string): BriefBlob | null {
+  const before = Number(blob.budget?.total ?? 0);
+  if (before === budget) return null;
+  return {
+    ...blob,
+    budget: { ...(blob.budget ?? {}), total: budget },
+    approvalLog: withLogEntry(blob, {
+      action: "Budget revised", by: by || "—", at,
+      comment: `Total budget ${before.toLocaleString("en-US")} → ${budget.toLocaleString("en-US")} บาท`,
+    }),
+  };
+}
+
+/** Read a campaign's brief blob together with the row version it was read at.
+ *
+ *  Tolerant of a database that never ran campaign_concurrency.sql: no
+ *  `updated_at` column simply means no version, and the caller writes
+ *  unconditionally as it did before. */
+async function readCampaignBlob(id: string): Promise<{ found: boolean; blob: BriefBlob | null; seen?: string }> {
+  const db = supabase();
+  if (!db) return { found: false, blob: null };
+  const { data, error } = await db.from("campaigns").select("data, updated_at").eq("id", id).maybeSingle();
+  if (!error) return { found: !!data, blob: (data?.data as BriefBlob) ?? null, seen: (data as { updated_at?: string } | null)?.updated_at };
+  const fallback = await db.from("campaigns").select("data").eq("id", id).maybeSingle();
+  assertDbOk(fallback.error, "อ่านข้อมูลแคมเปญไม่สำเร็จ");
+  return { found: !!fallback.data, blob: (fallback.data?.data as BriefBlob) ?? null };
+}
+
+export interface CampaignRowIO {
+  /** The row as it is now, with the version it was read at. */
+  read(): Promise<{ found: boolean; blob: BriefBlob | null; seen?: string }>;
+  /** Write it back; `guard` is the version the write must still match. Returns
+   *  the rows it actually changed — empty means the guard did not match. */
+  write(payload: Record<string, unknown>, guard?: string): Promise<{ updated_at?: string }[] | null>;
+}
+
+/** The retry loop itself, over an injectable row reader/writer so the sequence
+ *  it protects can be tested without a database. Returns the written rows, for
+ *  the caller to adopt as the version its own write produced. */
+export async function patchCampaignRowIO(
+  io: CampaignRowIO,
+  rowPatch: Record<string, unknown>,
+  patch: (blob: BriefBlob) => BriefBlob | null,
+  failure: string,
+  attempts = 3,
+): Promise<{ updated_at?: string }[] | null> {
+  const gone = `${failure} — ไม่พบแคมเปญนี้ (อาจถูกลบ หรือคุณไม่มีสิทธิ์แก้)`;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    // Re-read every attempt: the patch must be rebuilt on top of whatever the
+    // other writer left, never on the copy we first loaded.
+    const { found, blob, seen } = await io.read();
+    if (!found) throw new Error(gone);
+    const nextBlob = blob ? patch(blob) : null;
+    // Guard only the blob rewrite. A column-only write has nothing to clobber,
+    // and guarding it would fail saves on databases with no version column.
+    const written = await io.write(nextBlob ? { ...rowPatch, data: nextBlob } : rowPatch, nextBlob ? seen : undefined);
+    if (written?.length) return written;
+    // Zero rows with no guard in play means the row is gone or hidden by RLS —
+    // retrying that forever would just hide the real reason.
+    if (!seen || !nextBlob) throw new Error(gone);
+  }
+  throw new Error(`${failure} — มีคนแก้แคมเปญนี้อยู่พร้อมกัน ลองใหม่อีกครั้ง`);
+}
+
+/** Patch a campaign row AND the brief it carries, in ONE write.
+ *
+ *  The row's columns (status, budget) and the same facts inside the brief blob
+ *  are two copies of one thing, and every writer that moved only the column left
+ *  them disagreeing. That is not cosmetic: the Campaign Builder loads the BLOB,
+ *  so the next Save writes the blob's stale value back over the column and the
+ *  change quietly reverts — an approval or a CMO-approved budget revision undone
+ *  by someone else opening Edit. Mother's Day (approved 17 ก.ค. on the row, still
+ *  "Waiting for Approval" in its brief and no entry in its approval log) is what
+ *  that looks like weeks later.
+ *
+ *  Compare-and-set, not read-then-write: the blob is rewritten whole, so writing
+ *  it back against a row that moved in between would swallow the other person's
+ *  edit entirely. If the version moved we re-read and rebuild the patch on top of
+ *  what they wrote, and only give up — loudly — if that keeps happening.
+ *
+ *  `patch` returns the new blob, or null to leave the blob alone (a campaign
+ *  created outside the wizard has none; the columns still move). */
+async function patchCampaignAndBrief(
+  id: string,
+  rowPatch: Record<string, unknown>,
+  patch: (blob: BriefBlob) => BriefBlob | null,
+  failure: string,
+): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const written = await patchCampaignRowIO({
+    read: () => readCampaignBlob(id),
+    write: async (payload, guard) => {
+      let q = db.from("campaigns").update(payload).eq("id", id);
+      if (guard) q = q.eq("updated_at", guard);
+      const { data, error } = await q.select("id, updated_at");
+      assertDbOk(error, failure);
+      return data as { updated_at?: string }[] | null;
+    },
+  }, rowPatch, patch, failure);
+  adoptBriefVersion(id, written);
+}
+
+/** Update a campaign's status — on the row AND in the brief it carries.
+ *
+ *  The UI reaches this only when a campaign has no brief to route through (the
+ *  list dropdown and the detail page both save the brief when there is one, so
+ *  approving there also materialises the plan). It still patches a blob when it
+ *  finds one, because "no brief" here can also mean the read failed a moment
+ *  ago — and a status written to the column alone is exactly the drift above.
+ *  Materialising an approved plan is not this path's job: a plan that never
+ *  became work is recoverable from the campaign's Content tab. */
+export async function updateCampaignStatus(id: string, status: string, by = ""): Promise<void> {
   const db = supabase();
   if (!db) return;
   const nextApproval = status === "Waiting Approval" || status === "Waiting for Approval" ? DEFAULT_APPROVER : "None";
-  const { data: written, error } = await db.from("campaigns")
-    .update({ status, next_approval: nextApproval }).eq("id", id).select("id, updated_at");
-  assertDbOk(error, "Could not update campaign status");
-  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
-  logAudit(`เปลี่ยนสถานะแคมเปญ ${id}`, "Campaign", { after: status, meta: { campaignId: id, nextApproval } });
+  const at = new Date().toISOString();
+  await patchCampaignAndBrief(id, { status, next_approval: nextApproval },
+    (blob) => briefStatusPatch(blob, status, by, at), "เปลี่ยนสถานะแคมเปญไม่สำเร็จ");
+  logAudit(`เปลี่ยนสถานะแคมเปญ ${id}`, "Campaign", { after: status, actorName: by || undefined, meta: { campaignId: id, nextApproval } });
 }
 
 /** Delete a campaign and the records Marketing OS generated from its brief so
@@ -173,18 +352,25 @@ export async function updateCampaignRoas(id: string, roas: number): Promise<void
 }
 
 /** CMO-approved budget revision. Spend stays untouched; only the campaign plan
- *  cap changes so Finance / Dashboard recalculate from the same source. */
-export async function updateCampaignBudget(id: string, budget: number): Promise<void> {
+ *  cap changes so Finance / Dashboard recalculate from the same source.
+ *
+ *  The brief's own `budget.total` is the same number and moves with it. Writing
+ *  only the column made the revision temporary: the Campaign Builder reads the
+ *  brief, so the next Save pushed the pre-revision cap back onto the row and the
+ *  approval was gone with nothing to show it ever happened (Seasonal menu: row
+ *  ฿6,000, plan still ฿12,000). The revision is recorded in the approval log for
+ *  the same reason — a budget that changes with no trace is a governance hole. */
+export async function updateCampaignBudget(id: string, budget: number, by = ""): Promise<void> {
   const db = supabase();
   if (!db) {
     const c = CAMPAIGNS.find((x) => x.id === id);
     if (c) c.budget = budget;
     return;
   }
-  const { data: written, error } = await db.from("campaigns")
-    .update({ budget }).eq("id", id).select("id, updated_at");
-  assertDbOk(error, "Could not update campaign budget");
-  adoptBriefVersion(id, written as { updated_at?: string }[] | null);
+  const at = new Date().toISOString();
+  await patchCampaignAndBrief(id, { budget },
+    (blob) => briefBudgetPatch(blob, budget, by, at), "ปรับ Budget แคมเปญไม่สำเร็จ");
+  logAudit(`ปรับ Budget แคมเปญ ${id}`, "Campaign", { after: String(budget), actorName: by || undefined, meta: { campaignId: id, budget } });
 }
 
 /** A single campaign by id — for the detail page. */

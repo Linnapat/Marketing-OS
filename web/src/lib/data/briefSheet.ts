@@ -20,7 +20,7 @@ import {
   emptyBrief, emptyContentItem, emptyKolItem, emptyBudget,
   OBJECTIVES, CAMPAIGN_TYPES, PRIORITIES, CHANNELS, SUCCESS_METRICS,
   CONTENT_TYPES, CONTENT_PLATFORMS, KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT,
-  ADS_PLATFORMS, assetSizesFor, AssetTarget,
+  ADS_PLATFORMS, assetSizesFor, needsAssetSize, AssetTarget, contentBriefLink,
 } from "@/lib/data/brief";
 
 /** The tab names the template ships with. Addressed by name, not gid, so a
@@ -213,8 +213,46 @@ export function looksLikeCollapsedFieldTab(grid: string[][]): boolean {
 /** True for a row that carries text in its first column and nothing anywhere
  *  else — a footnote or a leftover heading, never a real record. Both the
  *  Content and KOL tabs end with such a line in the shipped template. */
+/** How a note announces itself in the first column. Real sheets label the row
+ *  rather than leaving it bare — "Note | ทุกดีลต้องระบุสิทธิ์…" is the shape the
+ *  KOL tab actually uses, and reading only the bare form let that one through
+ *  as a creator. */
+const NOTE_LABEL = /^(note|notes|หมายเหตุ|remark|remarks|เพิ่มเติม)$/i;
+
 function isNoteRow(row: string[]): boolean {
-  return row.slice(1).every((cell) => !norm(cell));
+  // A note written in the first column with nothing beside it…
+  if (row.slice(1).every((cell) => !norm(cell))) return true;
+  // …or one that says up front that it is a note.
+  return NOTE_LABEL.test(norm(row[0] ?? ""));
+}
+
+/** Column labels this tab does not have, so the caller can say what it could
+ *  not read instead of importing a row that quietly means something else. */
+function missingColumns(grid: string[][], wanted: Record<string, string[]>): string[] {
+  const header = (grid[0] ?? []).map((h) => key(h));
+  return Object.entries(wanted)
+    .filter(([, names]) => !names.some((n) => header.includes(key(n))))
+    .map(([label]) => label);
+}
+
+/** Does this row carry nothing but words — no counts, budgets, dates, handles?
+ *
+ *  `carriers` names the columns whose text is the prose itself, so they are not
+ *  counted as evidence of a real row. Everything else is: a requirement that
+ *  means anything says how many, how much, when, or where. */
+function isProseOnlyRow(row: string[], carriers: ((row: string[]) => string)[]): boolean {
+  const carried = new Set(carriers.map((c) => norm(c(row))).filter(Boolean));
+  return row.every((cell) => {
+    const v = norm(cell);
+    return !v || carried.has(v);
+  });
+}
+
+/** Shorten a sheet cell for a message — a pasted paragraph must not become the
+ *  whole warning. */
+function clip(value: string, max = 60): string {
+  const v = norm(value);
+  return v.length > max ? `${v.slice(0, max)}…` : v;
 }
 
 /** A header-row tab → column resolver by any of several accepted names. */
@@ -272,14 +310,19 @@ function readOverview(grid: string[][], resolveBrand: BrandResolver, warn: strin
     if (d) (patch[field] as string) = d;
   }
 
+  // Field names are matched whole, not by prefix, so every label someone might
+  // reasonably write has to be listed. The FORM'S OWN LABEL is the one people
+  // copy — a planner filling the sheet reads "Campaign Concept" off the screen
+  // and types that — and until it was listed here the row was read as nothing
+  // and the field arrived empty, with no warning to say so.
   const texts: [keyof CampaignBrief, string[]][] = [
     ["audience", ["Target Audience", "Audience", "กลุ่มเป้าหมาย"]],
     ["mainMessage", ["Key Message", "Main Message", "Message"]],
     ["offer", ["Main Offer", "Offer", "โปรโมชั่น"]],
-    ["storePromotion", ["Store Promotion", "โปรหน้าร้าน"]],
-    ["concept", ["Concept"]],
-    ["kvDirection", ["KV Direction", "KV"]],
-    ["proposalLink", ["Proposal Link", "Deck Link"]],
+    ["storePromotion", ["Store Promotion", "Promotion หน้าร้าน", "โปรหน้าร้าน"]],
+    ["concept", ["Campaign Concept", "Concept", "คอนเซ็ปต์"]],
+    ["kvDirection", ["Key Visual Direction", "KV Direction", "KV"]],
+    ["proposalLink", ["Campaign Proposal Link", "Proposal Link", "Deck Link"]],
   ];
   for (const [field, names] of texts) {
     const v = get(...names);
@@ -321,23 +364,46 @@ function readOverview(grid: string[][], resolveBrand: BrandResolver, warn: strin
  *  prefix is enough, so "1:1" finds "1:1 (1080×1080)" for that platform. */
 function readAssets(cell: string, platforms: string[], title: string, warn: string[]): AssetTarget[] {
   const out: AssetTarget[] = [];
+  // Platforms with no size list at all (Delivery today, deliberately — see
+  // needsAssetSize). Anything written under one of those is a production spec,
+  // not a size, and telling the planner to "เลือกในฟอร์มเอง" points at a
+  // dropdown that is empty by design. Collected per platform so a row carrying
+  // five specs says so once, naming all five, instead of five identical lines.
+  const specless = new Map<string, string[]>();
   const add = (platform: string, sizeRaw: string) => {
+    if (!needsAssetSize(platform)) {
+      const v = norm(sizeRaw);
+      if (v) specless.set(platform, [...(specless.get(platform) ?? []), v]);
+      return;
+    }
     const sizes = assetSizesFor(platform);
     const k = key(sizeRaw);
     const hit = sizes.find((s) => key(s) === k) ?? sizes.find((s) => key(s).startsWith(k));
-    if (!hit) { warn.push(`Content “${title}”: ${platform} ไม่มี asset size “${sizeRaw}” — เลือกในฟอร์มเอง`); return; }
+    if (!hit) { warn.push(`Content “${title}”: ${platform} ไม่มี asset size “${norm(sizeRaw)}” — เลือกในฟอร์มเอง (สเปกไฟล์ให้ใส่ช่อง Mandatory Text / Do–Don't)`); return; }
     if (!out.some((a) => a.platform === platform && a.size === hit)) out.push({ platform, size: hit });
   };
   for (const part of list(cell)) {
-    const [left, right] = part.includes(":") && !/^\d+:\d+$/.test(part) ? [part.slice(0, part.indexOf(":")), part.slice(part.indexOf(":") + 1)] : ["", part];
-    if (left) {
-      const platform = matchOption(left, CONTENT_PLATFORMS);
-      if (!platform) { warn.push(`Content “${title}”: ไม่รู้จัก platform “${left}” ในช่อง Asset Sizes — ข้ามไป`); continue; }
-      add(platform, right);
+    // "Facebook: 4:5" is a platform and a size; "1200 × 1200 px (1:1)" is ONE
+    // size whose ratio happens to contain a colon. Splitting on the first colon
+    // regardless turned the second into platform "1200 × 1200 px (1", which was
+    // then dropped as unknown — the size never arrived and the message blamed a
+    // platform nobody had typed. A platform name carries no digits, which is
+    // what tells the two apart (and what makes a bare "9:16" a size, not a
+    // platform called "9").
+    const colon = part.indexOf(":");
+    const head = colon > 0 ? part.slice(0, colon) : "";
+    const namesPlatform = !!head && !/\d/.test(head);
+    if (namesPlatform) {
+      const platform = matchOption(head, CONTENT_PLATFORMS);
+      if (!platform) { warn.push(`Content “${title}”: ไม่รู้จัก platform “${norm(head)}” ในช่อง Asset Sizes — ข้ามไป`); continue; }
+      add(platform, part.slice(colon + 1));
     } else {
       // Bare size: apply to every platform the row targets.
-      for (const p of platforms) add(p, right);
+      for (const p of platforms) add(p, part);
     }
+  }
+  for (const [platform, values] of specless) {
+    warn.push(`Content “${title}”: ${platform} ไม่ต้องระบุ asset size — ย้าย “${values.join(" · ")}” ไปช่อง Mandatory Text / Do–Don't`);
   }
   return out;
 }
@@ -361,6 +427,13 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
   const cHighlight = col("Product Highlight", "Highlight");
   const cMandatory = col("Mandatory Text");
   const cDoDont = col("Do / Don't", "Do Dont", "Do/Don't");
+  // Four columns in the template, one field in the app. The form was cut down
+  // to Reference Brief Link alone, so whichever column a planner filled is
+  // funnelled there, brief first.
+  const cBriefLink = col("Reference Brief Link", "Brief Link", "Link Brief", "ลิงก์บรีฟ");
+  const cImageLink = col("Reference Image Link", "Image Link");
+  const cDriveLink = col("Google Drive Link", "Drive Link", "Drive");
+  const cCompetitorLink = col("Competitor / Inspiration Link", "Competitor Link", "Inspiration Link");
   const cNote = col("Note", "Notes");
 
   const items: BriefContentItem[] = [];
@@ -397,6 +470,16 @@ function readContent(grid: string[][], warn: string[]): BriefContentItem[] {
       productHighlight: cHighlight(row),
       mandatoryText: cMandatory(row),
       doDont: cDoDont(row),
+      // The template still has four link columns and sheets in the wild are
+      // filled inconsistently, so all four are read — but they land in the ONE
+      // field the form shows. Importing into driveLink now would put the link
+      // somewhere nobody can see or edit.
+      referenceBriefLink: contentBriefLink({
+        referenceBriefLink: cBriefLink(row),
+        driveLink: cDriveLink(row),
+        referenceImageLink: cImageLink(row),
+        competitorLink: cCompetitorLink(row),
+      }),
       note: cNote(row),
     });
   });
@@ -422,6 +505,18 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
   const cOwner = col("Owner");
   const cNote = col("Note", "Notes");
 
+  // A KOL tab written to a different schema still imports its rows — the type
+  // is usually readable — while the numbers behind them silently do not: a
+  // requirement of 2 pages at 4,956 บาท arrived as 1 page at 0 because the tab
+  // called them "Quantity" and "Budget / Status". A brief that understates the
+  // KOL budget is worse than one that fails to import, because it looks fine.
+  const unread = missingColumns(grid, {
+    Name: ["Name", "KOL", "Display Name"],
+    Count: ["Count", "Pages", "จำนวน"],
+    Budget: ["Budget"],
+    "Posting Start": ["Posting Start", "Start"],
+  });
+
   const items: BriefKolItem[] = [];
   grid.slice(1).forEach((row) => {
     const name = cName(row);
@@ -430,6 +525,16 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
     // starts as "3 foodie micro pages, not chosen yet".
     if (!name && !typeRaw) return;
     if (isNoteRow(row)) return; // the tab's trailing footnote, not a creator
+    // …but isNoteRow only catches a note written in the FIRST column. The KOL
+    // tab's house rules get typed into whichever column they fit, and one in
+    // the Type column ("ทุกดีลต้องระบุสิทธิ์นำคลิปมา Repost ในสัญญา") arrived as
+    // a real requirement with type Foodie — which on approval fans out into an
+    // actual KOL request carrying budget. A requirement always brings something
+    // countable with it; a house rule brings prose and nothing else.
+    if (!name && !matchOption(typeRaw, KOL_TYPES) && isProseOnlyRow(row, [cType])) {
+      warn.push(`KOL: ข้าม “${clip(typeRaw)}” — อ่านว่าเป็นหมายเหตุ ไม่ใช่รายการ KOL (ถ้าตั้งใจให้เป็นรายการ ใส่ชื่อเพจหรือ KOL Type ที่ระบบรู้จัก)`);
+      return;
+    }
     const seq = items.length + 1;
     const base = emptyKolItem(seq);
     const kolType = typeRaw ? matchOption(typeRaw, KOL_TYPES) : null;
@@ -453,6 +558,11 @@ function readKols(grid: string[][], warn: string[]): BriefKolItem[] {
       note: cNote(row),
     });
   });
+  // Said once for the tab, and only when rows actually came through — a tab
+  // nobody filled in has nothing to lose.
+  if (items.length && unread.length) {
+    warn.push(`KOL: แท็บนี้ไม่มีคอลัมน์ ${unread.join(" / ")} ตาม template — ค่าพวกนี้ไม่ได้ถูกอ่านเข้ามา (${items.length} รายการจึงได้ค่าเริ่มต้น เช่น จำนวน 1 งบ 0) ต้องกรอกในฟอร์มเอง หรือแก้ชื่อคอลัมน์ในชีตให้ตรง template`);
+  }
   return items;
 }
 
@@ -524,7 +634,17 @@ export function briefFromSheet(grids: BriefSheetGrids, resolveBrand: BrandResolv
 }
 
 /** Shape returned by /api/campaign-brief-sheet — the patch travels as JSON. */
-export interface BriefSheetResponse extends BriefSheetImport {}
+export interface BriefSheetResponse extends BriefSheetImport {
+  /** Which build answered — the short commit the running server was built from.
+   *
+   *  Added after an afternoon spent arguing with the wrong evidence: fields the
+   *  sheet clearly held were arriving empty, and neither side could tell whether
+   *  the server had the code that reads them. The client bundle cannot answer it
+   *  (the mapping is server-only and tree-shaken out), and grepping the deployed
+   *  assets for a "new" string proved nothing when that string turned out to
+   *  predate the change. So the server says so itself, in the import summary. */
+  build?: string;
+}
 
 /** Merge an imported patch onto the brief the form currently holds. Keeps the
  *  identity fields the sheet has no business setting (id, code, status, planner,

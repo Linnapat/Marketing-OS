@@ -98,6 +98,21 @@ export function canAssignCaption(role: string): boolean {
   return r === "Creative Leader" || r === "CMO";
 }
 
+/** Whose name may be put in the caption-writer slot (CMO, 2026-08-12).
+ *
+ *  Handing the words to someone is a different question from who holds them by
+ *  default: an unassigned post belongs to its content planner (captionOwner),
+ *  and clearing the slot hands it straight back to them. This names the people
+ *  the work may be handed ON to.
+ *
+ *  Anchored, so it matches a whole role rather than any role containing the
+ *  word — "Senior Graphic Designer" and "VDO Editor" produce the artwork, they
+ *  do not write. Note that these two roles sit in DIFFERENT functional teams
+ *  (memberTeam puts Content Creator in Planner and Creative Leader in
+ *  Creative), so a picker using this must be scoped to "all" — narrowing by
+ *  team first leaves the intersection empty and the dropdown dead. */
+export const CAPTION_WRITER_ROLES = /^(content creator|creative leader)$/i;
+
 /**
  * May this person SET UP the production pipeline — pick who draws the
  * storyboard, submit it, decide whether the job needs a shoot, name the

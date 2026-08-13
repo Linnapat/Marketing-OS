@@ -35,7 +35,7 @@ import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchContent } from "@/lib/db/content";
-import { ContentItem, captionAwaitsApproval, captionReviewer } from "@/lib/data/content";
+import { ContentItem, captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
 import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, awaitsBriefUnlockDecision, canReleaseBriefEdit, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
@@ -356,8 +356,12 @@ function MyTasksPageInner() {
   const approvalCaptions = useMemo(
     () => posts.filter((p) => {
       if (!captionAwaitsApproval(p) || !brandVisibility.isVisible(p.b)) return false;
-      // Nobody signs off their own words — the same rule canDecideCaption applies.
-      if ((p.owner ?? "").trim().toLowerCase() === (member?.name ?? "").trim().toLowerCase()) return false;
+      // Nobody signs off their own words. captionOwner, not p.owner: on a post
+      // still marked "Unassigned" the planner IS the writer, and reading the
+      // raw field let them approve themselves.
+      if (captionOwner(p).toLowerCase() === (member?.name ?? "").trim().toLowerCase()) return false;
+      // Addressed to someone in particular → only they see it; otherwise it is
+      // the planning side's to pick up.
       const reviewer = captionReviewer(p);
       return reviewer ? isSamePerson(reviewer, myKeys) : canEditContentPlan(authRole);
     }),
@@ -429,7 +433,7 @@ function MyTasksPageInner() {
         .catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
-      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget).catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget, member?.name || user?.email || "").catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
       setCampaigns((cs) => cs.map((c) => c.id === task.relatedCampaignId ? { ...c, budget: task.requestedBudget! } : c));
     }
     setDoneIds((s) => new Set(s).add(id));
@@ -727,7 +731,7 @@ function MyApprovalView({ captions, graphics, campaigns, requests, expenses, tas
                   {(p.caption ?? "").trim() || "— ไม่มีข้อความ —"}
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">เขียนโดย {p.owner || "—"}</span>
+                  <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(p) || "—"}</span>
                   <span className="text-[11.5px] font-bold text-accent">อ่านและอนุมัติ →</span>
                 </div>
               </Link>

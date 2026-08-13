@@ -356,14 +356,14 @@ export default function NewCampaignPage() {
   // sheet can't bypass validation, the CMO approval flow, or the budget guard.
   const [sheetUrl, setSheetUrl] = useState("");
   const [importing, setImporting] = useState(false);
-  const [importReport, setImportReport] = useState<{ counts: { content: number; kols: number }; warnings: string[] } | null>(null);
+  const [importReport, setImportReport] = useState<{ counts: { content: number; kols: number }; warnings: string[]; build?: string } | null>(null);
 
   const runSheetImport = async () => {
     if (!sheetUrl.trim() || importing) return;
     setImporting(true);
     setImportReport(null);
     try {
-      const { patch, warnings, counts } = await fetchBriefFromSheet(sheetUrl);
+      const { patch, warnings, counts, build } = await fetchBriefFromSheet(sheetUrl);
       const notes = [...warnings];
 
       // The sheet may name a brand this planner isn't allowed to plan for —
@@ -378,7 +378,7 @@ export default function NewCampaignPage() {
       setBrief(merged);
       seqRef.current = nextSeqFromItems(merged.content, merged.kols);
       setTriedNext(false);
-      setImportReport({ counts, warnings: [...notes, ...mergeWarnings] });
+      setImportReport({ counts, warnings: [...notes, ...mergeWarnings], build });
     } catch (error) {
       toastError(error instanceof Error ? error.message : "อ่าน sheet ไม่สำเร็จ");
     } finally {
@@ -577,7 +577,7 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
 // path shouldn't push the actual form below the fold.
 function SheetImport({ url, setUrl, busy, onImport, report }: {
   url: string; setUrl: (v: string) => void; busy: boolean; onImport: () => void;
-  report: { counts: { content: number; kols: number }; warnings: string[] } | null;
+  report: { counts: { content: number; kols: number }; warnings: string[]; build?: string } | null;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -606,8 +606,16 @@ function SheetImport({ url, setUrl, busy, onImport, report }: {
           </div>
           {report && (
             <div className="mt-3 rounded-[10px] border p-3" style={{ background: "#F7FAF7", borderColor: "#CFE4C2" }}>
-              <div className="text-[12.5px] font-bold" style={{ color: "#4E7A4E" }}>
-                ✓ กรอกฟอร์มจาก sheet แล้ว — content {report.counts.content} รายการ · KOL {report.counts.kols} รายการ
+              <div className="text-[12.5px] font-bold flex items-baseline gap-2 flex-wrap" style={{ color: "#4E7A4E" }}>
+                <span>✓ กรอกฟอร์มจาก sheet แล้ว — content {report.counts.content} รายการ · KOL {report.counts.kols} รายการ</span>
+                {/* Which server code read the sheet. Only ever matters when a
+                    field the sheet clearly holds arrives empty: this says
+                    whether the running build is one that knows how to read it. */}
+                {report.build && (
+                  <span className="font-mono text-[10.5px] font-normal text-faint" title="เวอร์ชันโค้ดที่อ่าน sheet ให้ (commit)">
+                    build {report.build}
+                  </span>
+                )}
               </div>
               {report.warnings.length > 0 && (
                 <ul className="mt-2 space-y-1">

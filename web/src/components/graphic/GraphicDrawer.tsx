@@ -18,6 +18,7 @@ import { GRAPHIC_OPEN_PARAM,
   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
+  underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
   MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
@@ -438,7 +439,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       briefComplete: true,
       briefApprovedBy: currentUser,
       briefApprovedAt: at,
-      blocker: g.blocker === "Brief incomplete" || g.blocker === "Brief revision requested" ? null : g.blocker,
+      blocker: g.blocker === "Brief incomplete" || underBriefRevision(g) ? null : g.blocker,
       nextAction: g.designer === "Unassigned" ? "Creative leader to assign designer" : `${g.designer} to start production`,
       history: [...(g.history ?? []), { type: "brief_approved", at, by: currentUser }],
     };
@@ -464,7 +465,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       briefComplete: false,
       briefApprovedBy: undefined,
       briefApprovedAt: undefined,
-      blocker: "Brief revision requested",
+      blocker: BRIEF_REVISION_BLOCKER,
       nextAction: `${g.requester} to revise brief — ${comment}`,
       history: [...(g.history ?? []), { type: "brief_revision_requested", at, by: currentUser, note: comment }],
     }, currentUser, comment);
@@ -1297,19 +1298,55 @@ const BRIEF_FIELDS: { key: RequesterBriefField; label: string; placeholder: stri
  *  Best-effort throughout: the brief is already saved by the time this runs,
  *  and a message that fails to send must not look like a save that failed. */
 function announceBriefEdit(g: Graphic, by: string, fields: RequesterBriefField[]): void {
+  if (!fields.length) return;
   const worker = briefChangeAudience(g);
   // Whoever sent the brief back or asked to top it up is waiting on this edit
   // specifically — they get told even when no one is producing the work yet,
   // which is exactly when a brief comes back for fixing. Without them the only
   // person guaranteed to miss the answer was the one who asked the question.
   const asker = briefFixRequestedBy(g);
-  if ((!worker && !asker) || !fields.length) return;
   const labels = fields
     .map((key) => BRIEF_FIELDS.find((f) => f.key === key)?.label ?? key)
     .join(" · ");
+
+  // The brief was handed back and has now been fixed — put it back in front of
+  // the person who asked, because only they can clear the flag.
+  //
+  // This is the step the round trip was missing. Creative sends a brief back,
+  // the requester fixes it, and then nothing happens: the flag only lifts when
+  // Creative approves the brief again, and nothing tells them there is anything
+  // to approve. Three requests sat with a complete brief and a card reading
+  // "บรีฟยังไม่ครบ", the oldest for two weeks.
+  //
+  // A task, not only a bell: everything learned today says a step that lives
+  // solely in a notification is a step that gets missed.
+  const reviewer = underBriefRevision(g) ? briefRevisionReviewer(g) : null;
+  if (reviewer) {
+    const due = new Date(); due.setDate(due.getDate() + 1);
+    createTaskDb({
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      title: `ตรวจบรีฟที่แก้แล้ว — ${g.title}`,
+      module: "Graphic", moduleIcon: "🎨", moduleColor: "#C2691E", type: "Graphic",
+      assignee: reviewer, brand: brandName(g.b), campaign: g.campaign,
+      status: "Todo", priority: "High", group: "doFirst",
+      due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+      dueIso: due.toISOString().slice(0, 10),
+      blocker: null, pendingApprover: null, isQuickWin: false,
+      nextAction: `${by} แก้ ${labels} แล้ว — อนุมัติบรีฟหรือส่งกลับอีกรอบ`,
+      checklist: ["เปิดบรีฟที่แก้", "อนุมัติ หรือส่งกลับพร้อมเหตุผล"],
+      relatedGraphicId: String(g.id),
+    }).catch(() => { /* the brief is saved; a task that fails must not read as a failed save */ });
+  }
+
   // On the request as well as in the bell: the notice is the durable trail the
   // history table does not keep, and it is there next time anyone opens this.
-  updateGraphic(withNotice(g, by, `แก้บรีฟ: ${labels}`)).catch(() => {});
+  // nextAction moves with it, so the card stops asking the requester for work
+  // they have already done.
+  const noticed = withNotice(g, by, `แก้บรีฟ: ${labels}`);
+  updateGraphic(reviewer ? { ...noticed, nextAction: `รอ ${reviewer} ตรวจบรีฟที่แก้แล้ว` } : noticed).catch(() => {});
+
+  // Nobody to tell — the notice above is still on the request either way.
+  if (!worker && !asker) return;
   // The asker is a `to:` and not an `inform:`: they stopped work over this and
   // have to decide whether the answer is good enough to carry on.
   notify("feedback", `📝 บรีฟถูกแก้: ${g.title}`,

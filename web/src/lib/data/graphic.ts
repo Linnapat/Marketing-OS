@@ -5,6 +5,7 @@
 import { BrandId, brandName } from "@/lib/brands";
 import { Tone } from "@/lib/status";
 import { RushStatus } from "@/lib/data/briefDeadline";
+import { Task } from "@/lib/data/tasks";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 
 export interface GraphicEvent {
@@ -195,6 +196,145 @@ export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink"
   return !g.requiresShooting || !!g.footageLink?.trim();
 }
 
+/* ── The pipeline's three jobs, as three My Tasks rows ─────────────────────
+ *
+ * The request models storyboard → shoot → artwork, but only the artwork ever
+ * reached My Tasks: one task, always assigned to `designer`. So a Creative
+ * Leader could name a shooter and a shoot date and the shooter's task list
+ * stayed empty — the assignment existed on the request and nowhere the person
+ * looks. On 13 Aug that was 22 shoots assigned to Jeeno with no task between
+ * them, and every storyboard Pichayaporn owned.
+ *
+ * One slot per job, so re-assigning a shooter updates that person's task
+ * instead of colliding with the designer's. Slot "01" is the artwork and must
+ * stay "01" — 52 live task rows are keyed on it.
+ */
+/** The numeric suffix each job's task id has always used. Kept because the 52
+ *  live artwork rows carry `<graphicId>01` and the sync still recognises them
+ *  by it — but the id is no longer what identifies a row. See Task.graphicSlot. */
+export const GRAPHIC_TASK_SLOT = { artwork: "01", shoot: "02", storyboard: "03" } as const;
+
+/** The preferred My Tasks id for one job of one request. A starting point, not
+ *  an identity: upsertGraphicTask moves off it if the number is already taken. */
+export function graphicTaskId(graphicId: number | string, slot: string): number {
+  return Number(`${graphicId}${slot}`);
+}
+
+const TASK_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-08-20" → "Aug 20", the format the task rows already carry. */
+function dueLabel(iso?: string): string {
+  const [, m, d] = (iso || "").split("-").map(Number);
+  return m && d ? `${TASK_MON[m - 1]} ${d}` : "";
+}
+
+/** Is this request's shoot step live — someone named, footage still to come? */
+export function shootOutstanding(g: Pick<Graphic, "requiresShooting" | "footageLink" | "shooter">): boolean {
+  return !!g.requiresShooting && !!g.shooter?.trim() && !footageReady(g);
+}
+
+/** Is this request's storyboard step live — someone named, not signed off yet? */
+export function storyboardOutstanding(
+  g: Pick<Graphic, "type" | "requiredVideo" | "storyboardOwner" | "storyboardStatus">,
+): boolean {
+  return needsStoryboard(g) && !!g.storyboardOwner?.trim() && g.storyboardStatus !== "Approved";
+}
+
+/** Every My Tasks row this request should have, one per job with a person on it.
+ *
+ *  A finished job still returns its task, marked Done: the row has to be closed
+ *  rather than abandoned, or handing over footage would leave "ถ่ายงาน …" sitting
+ *  in the shooter's list for good. The upsert skips Done tasks it has never seen,
+ *  so a request whose shoot finished long ago does not gain one retroactively. */
+export function graphicAssignmentTasks(g: Graphic): Task[] {
+  const brand = brandName(g.b);
+  const designer = g.designer?.trim() || "Unassigned";
+  const base = {
+    module: "Graphic", moduleIcon: "🎨", moduleColor: "#C2691E",
+    brand, campaign: g.campaign, priority: g.priority,
+    blocker: null, isQuickWin: false,
+    relatedGraphicId: String(g.id),
+  };
+  const tasks: Task[] = [{
+    ...base,
+    id: graphicTaskId(g.id, GRAPHIC_TASK_SLOT.artwork),
+    graphicSlot: "artwork",
+    title: g.title,
+    type: "Graphic",
+    assignee: designer,
+    status: "Todo",
+    group: designer !== "Unassigned" ? "doFirst" : "quickWins",
+    due: g.due || "TBD",
+    dueIso: g.dueIso,
+    pendingApprover: g.requester || null,
+    nextAction: designer !== "Unassigned" ? `${designer} to start design` : "Creative leader to assign designer",
+    checklist: ["Review brief", "Create first draft", "Upload artwork for review"],
+  }];
+
+  // Storyboard comes first in the pipeline, so it comes first in the list.
+  if (g.storyboardOwner?.trim() && needsStoryboard(g)) {
+    const owner = g.storyboardOwner.trim();
+    const done = !storyboardOutstanding(g);
+    const waiting = g.storyboardStatus === "Submitted";
+    tasks.push({
+      ...base,
+      id: graphicTaskId(g.id, GRAPHIC_TASK_SLOT.storyboard),
+      graphicSlot: "storyboard",
+      title: `Storyboard: ${g.title}`,
+      moduleIcon: "🎬",
+      type: "Storyboard",
+      assignee: owner,
+      status: done ? "Done" : "Todo",
+      // Submitted means the ball is with the approver, not the owner — the task
+      // stays theirs (they answer for it) but stops shouting from Do First.
+      group: done ? "done" : waiting ? "waitingMe" : "doFirst",
+      due: dueLabel(g.shootDate) || g.due || "TBD",
+      dueIso: g.shootDate || g.dueIso,
+      pendingApprover: g.requester || null,
+      nextAction: done
+        ? "Storyboard อนุมัติแล้ว"
+        : g.storyboardStatus === "Revision"
+          ? `แก้ storyboard ตามที่ ${g.requester || "ผู้ขอ"} ตีกลับ`
+          : waiting
+            ? `รอ ${g.requester || "ผู้ขอ"} อนุมัติ storyboard`
+            : `ร่าง storyboard แล้วส่งให้ ${g.requester || "ผู้ขอ"} อนุมัติ`,
+      checklist: ["อ่านบรีฟ", "ร่าง storyboard", "ส่งให้ผู้ขออนุมัติ"],
+    });
+  }
+
+  // The shoot. Due on the SHOOT DAY, not the artwork deadline — a shooter who
+  // turns up on the artwork due date has missed the job by a week.
+  if (g.shooter?.trim() && g.requiresShooting) {
+    const shooter = g.shooter.trim();
+    const done = !shootOutstanding(g);
+    tasks.push({
+      ...base,
+      id: graphicTaskId(g.id, GRAPHIC_TASK_SLOT.shoot),
+      graphicSlot: "shoot",
+      title: `ถ่ายงาน: ${g.title}`,
+      moduleIcon: "📸",
+      type: "Shoot",
+      assignee: shooter,
+      status: done ? "Done" : "Todo",
+      group: done ? "done" : "doFirst",
+      due: dueLabel(g.shootDate) || g.due || "TBD",
+      dueIso: g.shootDate || g.dueIso,
+      pendingApprover: designer !== "Unassigned" ? designer : g.requester || null,
+      nextAction: done
+        ? "ส่งไฟล์ให้ทีมแล้ว"
+        : !g.shootDate
+          ? `ยังไม่ได้นัดวันถ่าย — คุยกับ ${g.requester || "ผู้ขอ"}`
+          // Jeeno shoots 11 of the requests he also designs. "ส่งไฟล์ให้ Jeeno"
+          // on Jeeno's own task reads as a mistake and hides what to do next.
+          : shooter === designer
+            ? `ถ่าย ${dueLabel(g.shootDate)} แล้วขึ้นงานต่อได้เลย`
+            : `ถ่าย ${dueLabel(g.shootDate)} แล้วส่งไฟล์ให้ ${designer !== "Unassigned" ? designer : "ดีไซเนอร์"}`,
+      checklist: ["ดู storyboard / บรีฟก่อนวันถ่าย", "ถ่ายตามคิว", "ส่งไฟล์ให้ดีไซเนอร์"],
+    });
+  }
+
+  return tasks;
+}
+
 /** A shoot that has been assigned on a request, as the shoot schedule needs it.
  *
  *  Assigning a shooter and a date on a Graphic Request settled the question on
@@ -337,6 +477,37 @@ export function awaitsArtworkReview(g: Graphic): boolean {
 export function briefChangeAudience(g: Pick<Graphic, "acceptedAt" | "acceptedBy" | "designer">): string | null {
   if (!isAccepted(g)) return null;
   return firstRealName(g.acceptedBy, g.designer);
+}
+
+/** The blocker Creative sets when it hands a brief back. One spelling, in one
+ *  place — three surfaces were comparing against this string by hand. */
+export const BRIEF_REVISION_BLOCKER = "Brief revision requested";
+
+/** Is this request still waiting on a brief revision Creative asked for?
+ *
+ *  Only Creative approving the brief clears it, which is right — they asked,
+ *  they judge. What was missing is the step in between: the requester fixes the
+ *  brief and nothing puts the request back in front of Creative, so it sits
+ *  looking unfinished. Three requests on production had a complete brief and a
+ *  card still reading "บรีฟยังไม่ครบ", the oldest for two weeks. */
+export function underBriefRevision(g: Pick<Graphic, "blocker">): boolean {
+  return (g.blocker ?? "") === BRIEF_REVISION_BLOCKER;
+}
+
+/** Who re-checks a brief that has just been fixed.
+ *
+ *  briefFixRequestedBy answers the hard half — the most recent ask, counting
+ *  both ways of asking — and this adds the one thing a REVIEWER needs that a
+ *  notification recipient does not: somebody has to hold the task even when the
+ *  trail is too old to name an asker, so it falls back to whoever holds the job.
+ *
+ *  Deliberately delegating rather than repeating the search: two functions
+ *  hunting the same history for the same person is how they end up disagreeing
+ *  about who is waiting. */
+export function briefRevisionReviewer(
+  g: Pick<Graphic, "history" | "briefUnlock" | "acceptedBy" | "designer">,
+): string | null {
+  return briefFixRequestedBy(g) ?? firstRealName(g.acceptedBy, g.designer);
 }
 
 /** Who drew the storyboard — the person a decision on it is about.

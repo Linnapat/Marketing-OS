@@ -6,25 +6,31 @@ import { workKind } from "@/lib/data/graphic";
 //
 //   KOL work      → #04_marketing_kol
 //   VDO work      → #06_marketing_vdo      (งานตัด and งานถ่าย both)
-//   Graphic work  → #05_marketing_graphic  (Content posts live here too)
+//   Graphic work  → #05_marketing_graphic
+//   Content work  → #07_marketing_content  (posts, captions, publishing)
 //   Everything else — campaigns, tasks, asking for help — goes to the people
 //   involved as a DM and to no channel at all.
 //   Money never reaches a channel: it is DM'd to one person (SLACK_FINANCE_DM).
 //
-// So "team" is really "which audience", and only three of them are rooms.
+// So "team" is really "which audience", and only four of them are rooms.
+//
+// Content used to share #05 with graphic work. It stopped being one audience
+// once caption sign-off became its own step: a designer scrolling for the piece
+// they were asked to fix had to read past every caption someone approved.
 
-export type NotifyTeam = "kol" | "vdo" | "graphic" | "general" | "finance";
+export type NotifyTeam = "kol" | "vdo" | "graphic" | "content" | "general" | "finance";
 
-export const NOTIFY_TEAMS: NotifyTeam[] = ["graphic", "kol", "vdo", "general", "finance"];
+export const NOTIFY_TEAMS: NotifyTeam[] = ["graphic", "content", "kol", "vdo", "general", "finance"];
 
 /** The audiences that have a Slack channel. The rest are DM-only by design. */
-export const CHANNEL_TEAMS: NotifyTeam[] = ["graphic", "kol", "vdo"];
+export const CHANNEL_TEAMS: NotifyTeam[] = ["graphic", "content", "kol", "vdo"];
 
 export const hasChannel = (team: NotifyTeam): boolean =>
   (CHANNEL_TEAMS as string[]).includes(team);
 
 export const TEAM_LABELS: Record<NotifyTeam, string> = {
-  graphic: "Graphic + Content",
+  graphic: "Graphic",
+  content: "Content (โพสต์ + แคปชั่น)",
   kol: "KOL",
   vdo: "VDO",
   general: "งานทั่วไป (DM เท่านั้น)",
@@ -35,6 +41,7 @@ export const TEAM_LABELS: Record<NotifyTeam, string> = {
  *  webhook URL itself never says which room it points at. */
 export const TEAM_CHANNEL: Partial<Record<NotifyTeam, string>> = {
   graphic: "#05_marketing_graphic",
+  content: "#07_marketing_content",
   kol: "#04_marketing_kol",
   vdo: "#06_marketing_vdo",
 };
@@ -42,8 +49,20 @@ export const TEAM_CHANNEL: Partial<Record<NotifyTeam, string>> = {
 /** Env var holding each channel team's incoming webhook. */
 export const TEAM_ENV: Partial<Record<NotifyTeam, string>> = {
   graphic: "SLACK_WEBHOOK_URL_GRAPHIC",
+  content: "SLACK_WEBHOOK_URL_CONTENT",
   kol: "SLACK_WEBHOOK_URL_KOL",
   vdo: "SLACK_WEBHOOK_URL_VDO",
+};
+
+/** A room to borrow when a team's own is not wired yet. Only Content has one,
+ *  and only because #05 is where its messages already went: if the room it was
+ *  given ever stops working, caption sign-off falls back to the room the team
+ *  was already reading instead of going silent until someone notices. Every
+ *  other team stays quiet rather than post to a room it does not belong in —
+ *  the rule this bends is "wrong room is worse than no room", and the room
+ *  Content came from is not the wrong room. */
+export const TEAM_FALLBACK: Partial<Record<NotifyTeam, NotifyTeam>> = {
+  content: "graphic",
 };
 
 /** Fallback routing from the page a notification links to. Graphic requests
@@ -53,7 +72,8 @@ export function teamFromLink(link: string | undefined): NotifyTeam {
   const path = (link || "").split(/[?#]/)[0].toLowerCase();
   if (path.startsWith("/finance") || path.startsWith("/expenses")) return "finance";
   if (path.startsWith("/kol")) return "kol";
-  if (path.startsWith("/graphic") || path.startsWith("/content")) return "graphic";
+  if (path.startsWith("/content")) return "content";
+  if (path.startsWith("/graphic")) return "graphic";
   return "general";
 }
 
@@ -61,6 +81,30 @@ export function teamFromLink(link: string | undefined): NotifyTeam {
 export function resolveTeam(team: string | undefined, link: string | undefined): NotifyTeam {
   if (team && (NOTIFY_TEAMS as string[]).includes(team)) return team as NotifyTeam;
   return teamFromLink(link);
+}
+
+/** Who gets DM'd, once the room question is settled.
+ *
+ *  Money reaches one standing recipient (SLACK_FINANCE_DM) and no room. That
+ *  rule used to REPLACE the names an event carried, which quietly made the two
+ *  sides of a budget request unreachable: the person who asked for it heard
+ *  nothing back, and a call site that named nobody reached nobody at all. So
+ *  the standing recipient is added to the named people rather than swapped for
+ *  them — the room stays out of it either way, which is the part that matters.
+ *
+ *  Deduped case-insensitively so naming the finance person explicitly does not
+ *  DM them the same message twice. */
+export function dmTargetsFor(team: NotifyTeam, recipients: string[], financeDm: string): string[] {
+  const all = team === "finance" ? [financeDm, ...recipients] : recipients;
+  const seen = new Set<string>();
+  return all.reduce<string[]>((keep, raw) => {
+    const name = (raw ?? "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return keep;
+    seen.add(key);
+    keep.push(name);
+    return keep;
+  }, []);
 }
 
 // ── In-app inbox ───────────────────────────────────────────────────────────
@@ -86,6 +130,11 @@ const EVENT_TO_INBOX: Record<string, InboxKind> = {
   feedback: "revision",
   approved: "approved",
   rejected: "revision",
+  // Two events, one shelf in the bell: "this went out" reads the same to the
+  // person reading it whether a post published or a campaign went live. They
+  // are separate events because they are separately mutable in Settings, not
+  // because the inbox needs to tell them apart.
+  published: "launch",
   launch: "launch",
 };
 

@@ -175,8 +175,12 @@ export async function submitExpenseDraft(req: ExpenseReq): Promise<void> {
     .select("id");
   assertDbOk(error, "Could not submit expense draft");
   if (!claimed || claimed.length === 0) return; // already submitted elsewhere — no-op
+  // Same as the Expenses form: the queue link routes to `general`, which has no
+  // room and no names, so this went out to nobody. Money's own team plus the
+  // requester — the approver hears it through SLACK_FINANCE_DM.
   notify("approval", `📥 คำขอเบิกงบจากงบแคมเปญ · ${req.category}`,
-    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, workLink.approvals());
+    `${baht(req.requested)} · ${req.campaign} → รออนุมัติ`, workLink.approvals(),
+    { team: "finance", to: [req.requester] });
 }
 
 /** Insert a new expense request; extended columns go in a second update so the
@@ -187,7 +191,7 @@ export async function createExpenseRequest(r: RequestRow & { campaignId?: string
 }): Promise<void> {
   const db = supabase();
   if (!db) return;
-  const { data, error } = await db.from("expense_requests").insert({
+  const base = {
     category: r.category, brand: r.b, campaign: r.campaign === "—" ? null : r.campaign,
     // The link, not just the name. Without it every new request landed unlinked
     // and only the 26 Jul backfill's rows were joinable — Finance could not roll
@@ -195,7 +199,17 @@ export async function createExpenseRequest(r: RequestRow & { campaignId?: string
     // name nothing answers to.
     campaign_id: r.campaignId ?? null,
     requested: r.requested, approved: r.approved, due: r.due, status: r.status,
-  }).select("id").single();
+  };
+  // requester must be IN the insert, not the follow-up update: RLS (p12/p18)
+  // judges ownership at insert time, and a row born with requester NULL fails
+  // `requester = jwt_member_name()` before the second write can ever run.
+  let ins = await db.from("expense_requests")
+    .insert({ ...base, requester: extra?.requester ?? null }).select("id").single();
+  if (ins.error && /column .*requester.* does not exist/i.test(ins.error.message)) {
+    // Pre-expenses_p1 database — no requester column; keep the old two-step shape.
+    ins = await db.from("expense_requests").insert(base).select("id").single();
+  }
+  const { data, error } = ins;
   const row = assertDbData(data, error, "Could not save expense request");
   if (extra && row.id !== undefined) {
     await softColumnUpdate(

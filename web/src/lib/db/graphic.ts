@@ -2,12 +2,11 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField, consumeBriefUnlock } from "@/lib/data/graphic";
-import { BrandId, brandName } from "@/lib/brands";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
+import { BrandId } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
-import { Task } from "@/lib/data/tasks";
 import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, seedMockIds } from "@/lib/db/mockGuard";
@@ -62,28 +61,51 @@ export async function createGraphic(input: Graphic): Promise<void> {
   await syncGraphicAssignmentTask(g);
 }
 
-/** Source content-item ids that already have a graphic for a campaign — the
- *  idempotency set that stops duplicate graphic requests on re-Submit. */
-export async function fetchGraphicSourceIds(campaignId: string): Promise<Set<string>> {
+/** Source content-item ids that already have a graphic for a campaign, mapped
+ *  to that request's blob id — the idempotency read that stops duplicate
+ *  requests on re-Submit, and the lookup that lets a skipped item top up the
+ *  request that ACTUALLY exists (the fan-out used to aim topUpGraphicBrief at
+ *  the fresh gid it had just minted, which matches no row on any re-run). */
+export async function fetchGraphicSourceIds(campaignId: string): Promise<Map<string, string | number>> {
   const db = supabase();
-  if (!db) return new Set();
+  if (!db) return new Map();
   const { data, error } = await db.from("graphic_requests").select("data").eq("campaign_id", campaignId);
-  if (error || !data) return new Set();
-  const ids = new Set<string>();
-  for (const r of data) { const s = (r.data as Graphic)?.sourceContentItemId; if (s) ids.add(s); }
+  // A failed read must abort the fan-out, not report "nothing exists yet".
+  if (error) throw new Error(`เช็คใบงานเดิมของแคมเปญไม่สำเร็จ (${error.message}) — ยังไม่ได้สร้างอะไรเพิ่ม ลองใหม่อีกครั้ง`);
+  if (!data) return new Map();
+  const ids = new Map<string, string | number>();
+  for (const r of data) {
+    const g = r.data as Graphic | null;
+    if (g?.sourceContentItemId) ids.set(g.sourceContentItemId, g.id);
+  }
   return ids;
 }
 
-/** Create a graphic request only if its (campaignId, sourceContentItemId) isn't present. */
-export async function createGraphicIfNew(g: Graphic, existing?: Set<string>): Promise<{ created: boolean }> {
+/** Create a graphic request only if its (campaignId, sourceContentItemId) isn't
+ *  present; when it is, `existingId` names the row that already serves the item. */
+export async function createGraphicIfNew(
+  g: Graphic, existing?: Map<string, string | number>,
+): Promise<{ created: boolean; existingId?: string | number }> {
   const key = g.sourceContentItemId;
   if (key) {
-    const set = existing ?? (g.campaignId ? await fetchGraphicSourceIds(g.campaignId) : new Set());
-    if (set.has(key)) return { created: false };
-    set.add(key);
+    const seen = existing ?? (g.campaignId ? await fetchGraphicSourceIds(g.campaignId) : new Map());
+    if (seen.has(key)) return { created: false, existingId: seen.get(key) };
+    seen.set(key, g.id);
   }
-  await createGraphic(g);
-  return { created: true };
+  try {
+    await createGraphic(g);
+    return { created: true };
+  } catch (error) {
+    // A sibling Approve racing this one may have inserted the same
+    // (campaignId, sourceContentItemId) after our read — the request exists,
+    // which is the outcome this function promises. Re-check before failing.
+    if (key && g.campaignId) {
+      const now = await fetchGraphicSourceIds(g.campaignId).catch(() => new Map<string, string | number>());
+      const hit = now.get(key);
+      if (hit !== undefined) return { created: false, existingId: hit };
+    }
+    throw error;
+  }
 }
 
 /** Persist edits to a graphic (submitted work, stage moves, approvals). The full
@@ -213,31 +235,15 @@ export function buildGraphic(input: {
   };
 }
 
-function graphicTaskFromRequest(g: Graphic): Task {
-  return {
-    id: Number(`${g.id}01`),
-    title: g.title,
-    module: "Graphic",
-    moduleIcon: "🎨",
-    moduleColor: "#C2691E",
-    type: "Graphic",
-    assignee: g.designer || "Unassigned",
-    brand: brandName(g.b),
-    campaign: g.campaign,
-    priority: g.priority,
-    status: g.designer && g.designer !== "Unassigned" ? "Todo" : "Todo",
-    group: g.designer && g.designer !== "Unassigned" ? "doFirst" : "quickWins",
-    due: g.due || "TBD",
-    dueIso: g.dueIso,
-    blocker: null,
-    pendingApprover: g.requester || null,
-    isQuickWin: false,
-    nextAction: g.designer && g.designer !== "Unassigned" ? `${g.designer} to start design` : "Creative leader to assign designer",
-    checklist: ["Review brief", "Create first draft", "Upload artwork for review"],
-    relatedGraphicId: String(g.id),
-  };
-}
-
+/** One My Tasks row per job the request has a person on — storyboard, shoot and
+ *  artwork. The rule itself lives in lib/data/graphic (pure, tested) so the
+ *  drawer and this sync can never disagree about who owes what.
+ *
+ *  Sequential, not Promise.all: the three upserts each read-then-write the
+ *  tasks table, and firing them together made three round trips race for the
+ *  same connection for no gain — there are at most three. */
 async function syncGraphicAssignmentTask(g: Graphic): Promise<void> {
-  await upsertGraphicTask(graphicTaskFromRequest(g));
+  for (const task of graphicAssignmentTasks(g)) {
+    await upsertGraphicTask(task);
+  }
 }

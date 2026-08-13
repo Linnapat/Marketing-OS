@@ -75,13 +75,51 @@ export function filterWindow(f: DateFilter): [number, number] {
   ];
 }
 
+/** A row's flight, however the row happens to carry it.
+ *
+ *  Prefer the object form: two ISO dates read straight off `start_date` /
+ *  `end_date` are the truth and need no parsing at all. The string form is the
+ *  legacy display label, kept working for rows written before those columns
+ *  existed — see parseRowRange for why it needs a rescue. */
+export type RowPeriod = string | { start?: string | null; end?: string | null } | null | undefined;
+
+/** Split a row's flight into its two ends.
+ *
+ *  Given ISO dates, it just reads them. Given a label string ("Oct 1 – Jan 31",
+ *  "Oct 1 2026 – Jan 31 2027") it has to parse, and parsing is where the guess
+ *  lives:
+ *
+ *  A range whose end reads EARLIER than its start is one that crossed New Year
+ *  with the year left off the label: parseRowDate assumes the current year for
+ *  both ends, so "Oct 1 – Jan 31" came back as Oct 1 → Jan 31 of the same year.
+ *  That range is empty, so the row overlapped no month at all and vanished from
+ *  every month view (campaigns list, Platforms, Performance Center) while still
+ *  sitting in the database. Roll the end forward a year instead — but only when
+ *  the label never said which year, since an explicit year is data, not a guess.
+ *  Rows with no parseable start return nulls; callers keep those visible. */
+export function parseRowRange(range?: RowPeriod): { start: Date | null; end: Date | null } {
+  // Stored dates: no label, no parsing, no guessing. Both ends or neither —
+  // the same both-or-neither rule the database now enforces.
+  if (range && typeof range === "object") {
+    const start = parseRowDate(range.start);
+    if (!start) return { start: null, end: null };
+    return { start, end: parseRowDate(range.end) ?? start };
+  }
+  const [startV, endV] = (range ?? "").split(/[–—-]/).map((s) => s.trim());
+  const start = parseRowDate(startV);
+  if (!start) return { start: null, end: null };
+  let end = parseRowDate(endV) ?? start;
+  if (end.getTime() < start.getTime() && !/\d{4}/.test(endV ?? "")) {
+    end = new Date(end.getFullYear() + 1, end.getMonth(), end.getDate());
+  }
+  return { start, end };
+}
+
 /** Whether a date-range row (e.g. a campaign "Jul 1 – Jul 31") overlaps the
  *  selected period. Rows with no parseable start stay visible. */
-export function rangeInFilter(f: DateFilter, range?: string | null): boolean {
-  const [startV, endV] = (range ?? "").split(/[–—-]/).map((s) => s.trim());
-  const s = parseRowDate(startV);
-  if (!s) return true;
-  const e = parseRowDate(endV) ?? s;
+export function rangeInFilter(f: DateFilter, range?: RowPeriod): boolean {
+  const { start: s, end: e } = parseRowRange(range);
+  if (!s || !e) return true;
   const [ws, we] = filterWindow(f);
   return s.getTime() <= we && e.getTime() >= ws;
 }
@@ -90,11 +128,9 @@ export function rangeInFilter(f: DateFilter, range?: string | null): boolean {
  *  period — for pro-rating a fixed campaign budget into a month/year/range
  *  (e.g. "Jun 1 – Jul 15" → July gets 15/45 of the budget). Rows with no
  *  parseable start count in full so budgets never silently vanish. */
-export function rangeOverlapFraction(f: DateFilter, range?: string | null): number {
-  const [startV, endV] = (range ?? "").split(/[–—-]/).map((s) => s.trim());
-  const s = parseRowDate(startV);
-  if (!s) return 1;
-  const e = parseRowDate(endV) ?? s;
+export function rangeOverlapFraction(f: DateFilter, range?: RowPeriod): number {
+  const { start: s, end: e } = parseRowRange(range);
+  if (!s || !e) return 1;
   const day = 86400000;
   const s0 = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
   const e0 = new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime();

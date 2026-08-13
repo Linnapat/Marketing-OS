@@ -154,30 +154,86 @@ export const reassignDb = (id: number, to: string) => {
   return updateTaskDb(id, { assignee: to });
 };
 
-/** Create or update the single My Tasks row that represents a Graphic request
- *  assignment. Keyed by relatedGraphicId so re-assign updates the same task. */
+/** An id no other task is using.
+ *
+ *  Task ids have to be unique: updateTaskDb and every deep link find a task by
+ *  `data->>id`. The readable `<graphicId><slot>` number is worth keeping when it
+ *  works, but it is only a preference — identity is the slot (see
+ *  Task.graphicSlot), so anything unused will do.
+ *
+ *  Two ways the preferred number fails, both live on this database:
+ *
+ *  1. Taken by another module. Task 246 ("kOL_AUG_LIST") holds 178515553116402,
+ *     which is graphic 1785155531164 slot 02.
+ *  2. Not exactly representable. Request ids run to 16 digits (1786515010324000,
+ *     the OMD_2609_007 series), so `${id}01` is 18 digits — past 2^53, where
+ *     doubles are spaced 32 apart. All three slots round to the SAME number, and
+ *     the three jobs would fight over one id. Eight live requests are like this.
+ *
+ *  The generated fallback stays inside the exact range: Date.now() is ~1.79e15,
+ *  well under 2^53, where adding the jitter still changes the value. The earlier
+ *  `Date.now() * 1000` did not — at 1.79e18 the spacing is 256, so the jitter
+ *  vanished and two tasks made in the same millisecond could collide. */
+async function freeTaskId(preferred: number): Promise<number> {
+  const db = supabase();
+  if (!db) return preferred;
+  const taken = async (id: number) =>
+    !!(await db.from("tasks").select("id").eq("data->>id", String(id)).maybeSingle()).data;
+  if (Number.isSafeInteger(preferred) && !(await taken(preferred))) return preferred;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = Date.now() + Math.floor(Math.random() * 1_000_000);
+    if (!(await taken(candidate))) return candidate;
+  }
+  return Date.now() + Math.floor(Math.random() * 1_000_000);
+}
+
+/** Create or update ONE My Tasks row for one job of a Graphic request —
+ *  storyboard, shoot or artwork. Keyed by the task's deterministic slot id so
+ *  re-assigning a shooter updates the shooter's row and leaves the designer's
+ *  alone. See graphicAssignmentTasks for which jobs produce a row. */
 export async function upsertGraphicTask(task: Task): Promise<void> {
   const db = supabase();
-  if (!db || !task.relatedGraphicId) return;
+  if (!db || !task.relatedGraphicId || !task.graphicSlot) return;
 
-  // Match the ONE assignment task by its deterministic id (`${graphicId}01`),
-  // not by relatedGraphicId — revision tasks now also carry relatedGraphicId,
-  // so a relatedGraphicId lookup returns multiple rows and .maybeSingle throws
-  // ("JSON object requested, multiple (or no) rows returned").
-  const { data, error } = await db.from("tasks")
+  // Identity is (relatedGraphicId, graphicSlot) — the request and which of its
+  // jobs this is. NOT the numeric id: other modules mint ids from Date.now() in
+  // the same range and one already collides with a shoot slot, so an id lookup
+  // could return a KOL task and this function would overwrite it.
+  //
+  // Revision tasks also carry relatedGraphicId, which is why the slot is part
+  // of the match and not just a filter on the request.
+  const found = await db.from("tasks")
     .select("id, data")
-    .eq("data->>id", String(task.id))
+    .eq("data->>relatedGraphicId", String(task.relatedGraphicId))
+    .eq("data->>graphicSlot", task.graphicSlot)
     .maybeSingle();
-  assertDbOk(error, "Could not check existing graphic task");
+  assertDbOk(found.error, "Could not check existing graphic task");
+
+  // Artwork rows written before slots existed have no graphicSlot to match on,
+  // so fall back to the id they were created with. The update below stamps the
+  // slot, and they are found the modern way from then on.
+  let data = found.data;
+  if (!data && task.graphicSlot === "artwork") {
+    const legacy = await db.from("tasks").select("id, data").eq("data->>id", String(task.id)).maybeSingle();
+    assertDbOk(legacy.error, "Could not check existing graphic task");
+    data = legacy.data;
+  }
 
   if (!data) {
     if (task.assignee === "Unassigned") return;
-    return createTaskDb(task);
+    // A job that is already finished does not need a row inventing for it.
+    // Without this, syncing an old request would drop "ถ่ายงาน …" into the
+    // shooter's list — already ticked — for a shoot they wrapped weeks ago.
+    if (task.status === "Done") return;
+    return createTaskDb({ ...task, id: await freeTaskId(task.id) });
   }
 
   const current = data.data as Task;
   const patch: Partial<Task> = {
     title: task.title,
+    // Stamps the slot on rows that predate it, so the id fallback above is
+    // needed exactly once per row.
+    graphicSlot: task.graphicSlot,
     assignee: task.assignee,
     brand: task.brand,
     campaign: task.campaign,

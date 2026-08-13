@@ -30,6 +30,7 @@ import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApproved
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { notify } from "@/lib/notify";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
@@ -42,7 +43,7 @@ import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { ContentItem } from "@/lib/data/content";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
-import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, graphicDueRangeImpossible, minGraphicDueDate, todayIso } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, CampaignBrief, CONTENT_PLATFORMS, graphicDueRangeImpossible, minGraphicDueDate, todayIso, contentBriefLink } from "@/lib/data/brief";
 import { OwnerSelect, memberTeam } from "@/components/ui/OwnerSelect";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { useAuth } from "@/lib/auth";
@@ -277,7 +278,19 @@ function GraphicPageInner() {
     const sb = (g.storyboardOwner ?? "").trim().toLowerCase();
     return holder === myName || sb === myName || !holder || holder === "unassigned";
   };
-  const items = graphics.filter((g) => brandVisibility.visibleBrands.includes(g.b) && inMyQueue(g) && (brand === "all" || g.b === brand) && (designer === "all" || g.designer === designer) && inDateFilter(date, g.due));
+  // Outside the counted filters: brand scope and the own-queue rule are both
+  // fixed by the viewer's role, and no button on this page can undo either — a
+  // "ล้างตัวกรอง" that promised to bring those rows back would be lying.
+  const outcome = filterWithReasons(
+    graphics.filter((g) => brandVisibility.visibleBrands.includes(g.b) && inMyQueue(g)),
+    [
+      { label: "นอกช่วงเวลา", pass: (g) => inDateFilter(date, g.due) },
+      { label: "คนละแบรนด์", pass: (g) => brand === "all" || g.b === brand },
+      { label: "คนละดีไซเนอร์", pass: (g) => designer === "all" || g.designer === designer },
+    ],
+  );
+  const items = outcome.rows;
+  const clearFilters = () => { setDate({ ...ALL_TIME_FILTER }); setBrand("all"); setDesigner("all"); };
   const kpi = graphicKpis(items);
 
   const KPIS: { label: string; value: number; tone?: string; dark?: boolean }[] = [
@@ -371,6 +384,8 @@ function GraphicPageInner() {
             </div>
           </div>
         </CampaignCommandBar>
+
+        <FilterSummary outcome={outcome} onClear={clearFilters} noun="ใบงาน" />
 
         <ModuleSummaryCard
           // Two counts sit 60px apart on this page — this one follows the
@@ -1490,7 +1505,7 @@ function RequestModal({ nextId, graphics, prefillPost, onClose, onCreate }: {
     const needsStoryboardFor = needsStoryboard({ type: item.type, requiredVideo: item.requiredVideo });
     const plats = item.platforms;
     const pairs = item.assets.length ? item.assets : plats.map((p) => ({ platform: p, size: "" }));
-    const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", item.referenceBriefLink || ""));
+    const deliverables = pairs.map((a) => emptyDeliverable(a.platform, a.size || "—", contentBriefLink(item)));
     const approverName = approver.trim() || requester;
     const g: Graphic = {
       ...buildGraphic({

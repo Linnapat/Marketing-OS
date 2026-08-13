@@ -91,7 +91,7 @@ let _cache: Member[] | null = null;
 let _teamCache: TeamCfg[] | null = null;
 
 export function OwnerSelect({
-  value, onChange, team = "all", roleMatch, placeholder = "Select owner", disabled, invalid, className,
+  value, onChange, team = "all", roleMatch, placeholder = "Select owner", emptyLabel, disabled, invalid, className,
 }: {
   value: string;
   onChange: (name: string) => void;
@@ -99,6 +99,10 @@ export function OwnerSelect({
   /** Optional role-name filter (e.g. /cmo|admin/i for the CMO-only approver). */
   roleMatch?: RegExp;
   placeholder?: string;
+  /** What an empty picker says. The default blames the member list, which is
+   *  wrong whenever a roleMatch is what emptied it — there are active members,
+   *  none of them hold the role. Callers that filter should say which role. */
+  emptyLabel?: string;
   disabled?: boolean;
   invalid?: boolean;
   className?: string;
@@ -146,7 +150,7 @@ export function OwnerSelect({
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
       className={`w-full text-[13.5px] px-[12px] py-[10px] rounded-[10px] border ${border} bg-ivory outline-none disabled:opacity-50 ${className ?? ""}`}>
-      <option value="">{list.length ? placeholder : "No active members"}</option>
+      <option value="">{list.length ? placeholder : (emptyLabel ?? "No active members")}</option>
       {list.map((m) => (
         // Invited is flagged rather than hidden: whoever assigns the job should
         // know the person has not opened the app yet, and chase the invite.
