@@ -2,12 +2,11 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField, consumeBriefUnlock } from "@/lib/data/graphic";
-import { BrandId, brandName } from "@/lib/brands";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
+import { BrandId } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
-import { Task } from "@/lib/data/tasks";
 import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, seedMockIds } from "@/lib/db/mockGuard";
@@ -236,31 +235,15 @@ export function buildGraphic(input: {
   };
 }
 
-function graphicTaskFromRequest(g: Graphic): Task {
-  return {
-    id: Number(`${g.id}01`),
-    title: g.title,
-    module: "Graphic",
-    moduleIcon: "🎨",
-    moduleColor: "#C2691E",
-    type: "Graphic",
-    assignee: g.designer || "Unassigned",
-    brand: brandName(g.b),
-    campaign: g.campaign,
-    priority: g.priority,
-    status: g.designer && g.designer !== "Unassigned" ? "Todo" : "Todo",
-    group: g.designer && g.designer !== "Unassigned" ? "doFirst" : "quickWins",
-    due: g.due || "TBD",
-    dueIso: g.dueIso,
-    blocker: null,
-    pendingApprover: g.requester || null,
-    isQuickWin: false,
-    nextAction: g.designer && g.designer !== "Unassigned" ? `${g.designer} to start design` : "Creative leader to assign designer",
-    checklist: ["Review brief", "Create first draft", "Upload artwork for review"],
-    relatedGraphicId: String(g.id),
-  };
-}
-
+/** One My Tasks row per job the request has a person on — storyboard, shoot and
+ *  artwork. The rule itself lives in lib/data/graphic (pure, tested) so the
+ *  drawer and this sync can never disagree about who owes what.
+ *
+ *  Sequential, not Promise.all: the three upserts each read-then-write the
+ *  tasks table, and firing them together made three round trips race for the
+ *  same connection for no gain — there are at most three. */
 async function syncGraphicAssignmentTask(g: Graphic): Promise<void> {
-  await upsertGraphicTask(graphicTaskFromRequest(g));
+  for (const task of graphicAssignmentTasks(g)) {
+    await upsertGraphicTask(task);
+  }
 }

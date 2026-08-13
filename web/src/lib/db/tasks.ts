@@ -154,30 +154,68 @@ export const reassignDb = (id: number, to: string) => {
   return updateTaskDb(id, { assignee: to });
 };
 
-/** Create or update the single My Tasks row that represents a Graphic request
- *  assignment. Keyed by relatedGraphicId so re-assign updates the same task. */
+/** The preferred id if it is free, otherwise a random one.
+ *
+ *  Task ids have to be unique because updateTaskDb and every deep link find a
+ *  task by `data->>id`. The slot ids are readable and stable, which is worth
+ *  keeping — but a number is not worth colliding over, and one of them already
+ *  belongs to a KOL task (see Task.graphicSlot). Identity lives in the slot;
+ *  this only has to be unused. */
+async function freeTaskId(preferred: number): Promise<number> {
+  const db = supabase();
+  if (!db) return preferred;
+  const { data } = await db.from("tasks").select("id").eq("data->>id", String(preferred)).maybeSingle();
+  if (!data) return preferred;
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
+
+/** Create or update ONE My Tasks row for one job of a Graphic request —
+ *  storyboard, shoot or artwork. Keyed by the task's deterministic slot id so
+ *  re-assigning a shooter updates the shooter's row and leaves the designer's
+ *  alone. See graphicAssignmentTasks for which jobs produce a row. */
 export async function upsertGraphicTask(task: Task): Promise<void> {
   const db = supabase();
-  if (!db || !task.relatedGraphicId) return;
+  if (!db || !task.relatedGraphicId || !task.graphicSlot) return;
 
-  // Match the ONE assignment task by its deterministic id (`${graphicId}01`),
-  // not by relatedGraphicId — revision tasks now also carry relatedGraphicId,
-  // so a relatedGraphicId lookup returns multiple rows and .maybeSingle throws
-  // ("JSON object requested, multiple (or no) rows returned").
-  const { data, error } = await db.from("tasks")
+  // Identity is (relatedGraphicId, graphicSlot) — the request and which of its
+  // jobs this is. NOT the numeric id: other modules mint ids from Date.now() in
+  // the same range and one already collides with a shoot slot, so an id lookup
+  // could return a KOL task and this function would overwrite it.
+  //
+  // Revision tasks also carry relatedGraphicId, which is why the slot is part
+  // of the match and not just a filter on the request.
+  const found = await db.from("tasks")
     .select("id, data")
-    .eq("data->>id", String(task.id))
+    .eq("data->>relatedGraphicId", String(task.relatedGraphicId))
+    .eq("data->>graphicSlot", task.graphicSlot)
     .maybeSingle();
-  assertDbOk(error, "Could not check existing graphic task");
+  assertDbOk(found.error, "Could not check existing graphic task");
+
+  // Artwork rows written before slots existed have no graphicSlot to match on,
+  // so fall back to the id they were created with. The update below stamps the
+  // slot, and they are found the modern way from then on.
+  let data = found.data;
+  if (!data && task.graphicSlot === "artwork") {
+    const legacy = await db.from("tasks").select("id, data").eq("data->>id", String(task.id)).maybeSingle();
+    assertDbOk(legacy.error, "Could not check existing graphic task");
+    data = legacy.data;
+  }
 
   if (!data) {
     if (task.assignee === "Unassigned") return;
-    return createTaskDb(task);
+    // A job that is already finished does not need a row inventing for it.
+    // Without this, syncing an old request would drop "ถ่ายงาน …" into the
+    // shooter's list — already ticked — for a shoot they wrapped weeks ago.
+    if (task.status === "Done") return;
+    return createTaskDb({ ...task, id: await freeTaskId(task.id) });
   }
 
   const current = data.data as Task;
   const patch: Partial<Task> = {
     title: task.title,
+    // Stamps the slot on rows that predate it, so the id fallback above is
+    // needed exactly once per row.
+    graphicSlot: task.graphicSlot,
     assignee: task.assignee,
     brand: task.brand,
     campaign: task.campaign,

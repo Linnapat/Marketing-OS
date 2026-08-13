@@ -33,6 +33,16 @@ export interface Task {
   /** Stable identity for re-saving/editing a brief without duplicating work. */
   briefTaskKey?: string;
   relatedGraphicId?: string;
+  /** Which job of a Graphic Request this row is: the artwork, the shoot, or the
+   *  storyboard. Together with relatedGraphicId it IDENTIFIES the row — the
+   *  sync matches on the pair, never on the numeric id.
+   *
+   *  The id used to carry this, as `<graphicId><slot>`. Other modules mint ids
+   *  from Date.now() in the same 15-digit range, and one already landed exactly
+   *  on a shoot slot: task 246 ("kOL_AUG_LIST", Pupay's) holds 178515553116402,
+   *  which is graphic 1785155531164 slot 02. Matching on that number would have
+   *  overwritten a KOL task with a shoot assignment. */
+  graphicSlot?: "artwork" | "shoot" | "storyboard";
   relatedCampaignId?: string;
   /** KOL proposal approvals link the task back to the campaign KOL row. */
   relatedKolId?: number;
