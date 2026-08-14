@@ -10,7 +10,7 @@ import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds } from "./content";
 import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic, topUpGraphicBrief } from "./graphic";
-import { needsStoryboard } from "@/lib/data/graphic";
+import { needsStoryboard, initialNextAction } from "@/lib/data/graphic";
 import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
 import { Kol } from "@/lib/data/kol";
@@ -215,7 +215,9 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
         // by hand — otherwise a Reel materialised from an approved campaign
         // would skip straight to artwork and lose the step.
         storyboardStatus: needsStoryboard({ type: ci.type, requiredVideo: ci.requiredVideo }) ? "Waiting" as const : undefined,
-        nextAction: `KV: ${normalizedBrief.kvDirection || "—"} · Msg: ${ci.mainMessage || normalizedBrief.mainMessage || "—"}`,
+        // What to DO, not what to read — the brief content is two fields up and
+        // the Brief tab prints it. See initialNextAction.
+        nextAction: initialNextAction({ type: ci.type, requiredVideo: ci.requiredVideo, designer: "Unassigned" }),
         contentItem: ci.title || "—",
       };
       const madeGraphic = await createGraphicIfNew(g, graphicSeen);

@@ -12,7 +12,7 @@
 
 import { todayIso } from "../src/lib/data/brief";
 import { productionSteps, materialState, materialNote, MATERIAL_EXEMPT_TYPES, productionBlockers } from "../src/lib/data/graphic";
-import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, Graphic } from "../src/lib/data/graphic";
+import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, initialNextAction, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -218,6 +218,16 @@ is("เหลือแต่ใน deliverable (เคส TPN_2609_002-A01)",
 is("ช่องที่เลิกใช้ก็ยังอ่าน", creativeBriefLink(req({ driveLink: BRIEF } as Partial<Graphic>)), BRIEF);
 is("ไม่มีเลย = ค่าว่าง (Overview จะบอกว่ายังไม่มีบรีฟ)", creativeBriefLink(req()), "");
 is("briefLink ชนะ deliverable", creativeBriefLink(req({ briefLink: BRIEF, deliverables: [{ platform: "x", size: "y", refLink: "https://other", assetLink: "", sourceLink: "", status: "Not submitted", version: 0, submittedBy: "", submittedAt: "", feedback: [] }] } as Partial<Graphic>)), BRIEF);
+
+console.log("\n— Next action ของใบงานใหม่: ต้องเป็นสิ่งที่ต้องทำ ไม่ใช่เนื้อบรีฟ —");
+// เคสจริง 14 ส.ค.: fan-out เขียน `KV: <kvDirection> · Msg: <mainMessage>` ลง
+// nextAction — แคมเปญหนึ่งใส่ playbook 2,626 ตัวอักษรไว้ในช่อง KV Direction
+// ช่อง "Next action" เลยพ่น playbook ทั้งก้อนแทนที่จะบอกว่าต้องทำอะไร
+is("Reel = ไปตั้งต้นที่ storyboard", initialNextAction({ type: "Reel", designer: "Unassigned" } as Graphic), "Creative Content ทำ storyboard แล้วส่งให้เจ้าของงานอนุมัติ");
+is("งานภาพนิ่งยังไม่มีคนทำ = ให้ Creative Leader จ่ายงาน", initialNextAction({ type: "Photo", designer: "Unassigned" } as Graphic), "Creative leader to assign in-house or outsource designer");
+is("มีคนทำแล้ว = เรียกชื่อคนนั้น", initialNextAction({ type: "Photo", designer: "Four" } as Graphic), "Four to start design");
+is("งานเร่งรออนุมัติมาก่อนทุกอย่าง", initialNextAction({ type: "Reel", rushStatus: "Pending", designer: "Four" } as Graphic), "รอ Creative Leader อนุมัติงานเร่งด่วน");
+is("ไม่มีทางออกเป็นเนื้อบรีฟยาว ๆ", ["Reel", "Photo", "Static"].every((type) => initialNextAction({ type, designer: "Four" } as Graphic).length <= 80), true);
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
