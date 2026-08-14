@@ -8,6 +8,12 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 // Restrict self sign-up to the company domain (first-time account creation).
 const ALLOWED_DOMAIN = "teppenthailand.co.th";
 
+// On the real instance signups are closed server-side (invite-only). The page
+// kept offering "Create an account" anyway, so the only door it showed a new
+// joiner was the one bricked shut — they pressed it and got "Signups not
+// allowed for this instance", which names a policy and no way forward.
+const SIGNUP_OPEN = process.env.NEXT_PUBLIC_REQUIRE_AUTH !== "true";
+
 type Mode = "in" | "up" | "forgot" | "reset";
 
 export default function LoginPage() {
@@ -28,6 +34,20 @@ export default function LoginPage() {
       if (event === "PASSWORD_RECOVERY") { setMode("reset"); setMsg("Enter a new password below."); setErr(false); }
     });
     return () => data.subscription.unsubscribe();
+  }, []);
+
+  // Arriving from an invite mail. Supabase signs the person in off the link but
+  // fires SIGNED_IN, not PASSWORD_RECOVERY — so without this they saw the app
+  // and were never asked to choose a password, and were locked out the moment
+  // that first session ended. The invite route sends them here with ?invite=1.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const invited = new URLSearchParams(window.location.search).get("invite") === "1"
+      || /(?:^|&)type=invite(?:&|$)/.test(window.location.hash.replace(/^#/, ""));
+    if (!invited) return;
+    setMode("reset");
+    setMsg("ยินดีต้อนรับ — ตั้งรหัสผ่านของคุณเพื่อเข้าใช้งาน");
+    setErr(false);
   }, []);
 
   const say = (m: string, isErr = false) => { setMsg(m); setErr(isErr); };
@@ -59,7 +79,12 @@ export default function LoginPage() {
         setTimeout(() => router.replace("/"), 900);
       }
     } catch (e) {
-      say((e as Error).message, true);
+      const raw = (e as Error).message;
+      // An invite/reset link that has expired (Supabase: 24h) leaves no session,
+      // so updateUser fails with "Auth session missing!" — true, and useless to
+      // the person holding a dead link. Say what to do instead.
+      const dead = mode === "reset" && /session (missing|not found)|expired|invalid/i.test(raw);
+      say(dead ? "ลิงก์นี้หมดอายุแล้ว — กด “Forgot password?” เพื่อขอลิงก์ใหม่ หรือให้แอดมินส่งคำเชิญอีกครั้ง" : raw, true);
     } finally {
       setBusy(false);
     }
@@ -126,7 +151,9 @@ export default function LoginPage() {
         {msg && <div className="mt-4 text-[12px]" style={{ color: err ? "#B33A2E" : "#6b6258" }}>{msg}</div>}
 
         <div className="mt-5 text-[12px] text-faint text-center">
-          {mode === "in" && <>First time? <button onClick={() => { setMode("up"); setMsg(null); setErr(false); }} className="font-bold text-accent">Create an account</button></>}
+          {mode === "in" && (SIGNUP_OPEN
+            ? <>First time? <button onClick={() => { setMode("up"); setMsg(null); setErr(false); }} className="font-bold text-accent">Create an account</button></>
+            : <>เข้าใช้ครั้งแรก? เปิดลิงก์คำเชิญในอีเมลเพื่อตั้งรหัสผ่าน — ถ้ายังไม่ได้รับ ให้แจ้งแอดมิน (CMO) ส่งคำเชิญใหม่</>)}
           {mode === "up" && <>Have an account? <button onClick={() => { setMode("in"); setMsg(null); setErr(false); }} className="font-bold text-accent">Sign in</button></>}
           {(mode === "forgot" || mode === "reset") && <button onClick={() => { setMode("in"); setMsg(null); setErr(false); }} className="font-bold text-accent">← Back to sign in</button>}
         </div>

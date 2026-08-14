@@ -51,7 +51,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "อีเมลนี้ยังไม่อยู่ในรายชื่อสมาชิก — เพิ่มสมาชิกใน Settings ก่อน" }, { status: 404 });
   }
 
-  const redirectTo = process.env.NEXT_PUBLIC_APP_URL || undefined;
+  // Land the invitee on the one screen that can take a password.
+  //
+  // This used to point at the app root. Supabase happily consumed the token
+  // there — email confirmed, session created, last_sign_in_at stamped — and
+  // then showed the dashboard. Nothing ever asked for a password, so the
+  // invitee had an account they could never sign back into once that first
+  // session ended, and the login page answered "Signups not allowed for this
+  // instance" when they tried to make one. Narawich sat exactly there on 14 Aug.
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/+$/, "");
+  const redirectTo = appUrl ? `${appUrl}/login?invite=1` : undefined;
   const invite = () => admin.auth.admin.inviteUserByEmail(email, redirectTo ? { redirectTo } : undefined);
 
   const { error } = await invite();
