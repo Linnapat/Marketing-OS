@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CampaignDetail, deriveDetail } from "@/lib/data/campaigns";
-import { fetchCampaign } from "@/lib/db/campaigns";
+import { fetchCampaign, fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchCampaignHub, CampaignHub } from "@/lib/db/campaignHub";
 import { fetchCampaignBrief } from "@/lib/db/brief";
 import { CampaignBrief } from "@/lib/data/brief";
@@ -25,7 +25,17 @@ export function CampaignDetailClient({ id, initialDetail }: { id: string; initia
       if (c) setDetail(deriveDetail(c));
     }).catch(() => {});
     fetchCampaignBrief(id).then(setBrief).catch(() => {});
-    if (name) fetchCampaignHub(name).then(setHub).catch(() => {});
+    // The id is what links the records; the name only reaches rows written
+    // before the modules carried one, and only when no other campaign answers
+    // to it. Two live campaigns are both "Brand Awareness".
+    if (name) {
+      fetchCampaigns()
+        .then((all) => all.filter((c) => c.name === name).length <= 1)
+        .catch(() => false)                       // unknown → do not trust the name
+        .then((nameIsUnique) => fetchCampaignHub(name, { id, nameIsUnique }))
+        .then(setHub)
+        .catch(() => {});
+    }
   }, [id, name]);
 
   useEffect(() => {
