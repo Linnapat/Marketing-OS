@@ -69,7 +69,19 @@ export default function CampaignsPage() {
   // role. Approving is still not editing — an owner's edit of an approved
   // campaign revokes the approval and goes back to the CMO with a diff.
   const myKeys = personKeys(memberRef(member));
-  const canEditRow = (c: CampaignRow) => canEditCampaignBrief(role, { isOwner: isSamePerson(c.owner, myKeys) });
+  const isMine = (c: CampaignRow) => isSamePerson(c.owner, myKeys);
+  const canEditRow = (c: CampaignRow) => canEditCampaignBrief(role, { isOwner: isMine(c) });
+  // Your own campaign opens in the thing you built it with. There are two UIs
+  // for one campaign — the read-only summary with nine tabs, and the six-step
+  // Builder — and the person who wrote the plan was being shown the summary
+  // first, then having to find Edit to change the very fields they had just
+  // been reading. One campaign, one surface, for its owner.
+  //
+  // Only the owner: everyone else still lands on the summary, which is what
+  // that page is for. And the summary stays one click away (see the row's
+  // "ดูสรุป") — this changes which door is in front of you, not which rooms
+  // exist.
+  const openHref = (c: CampaignRow) => (isMine(c) && canEditRow(c) ? `/campaigns/new?edit=${c.id}` : `/campaigns/${c.id}`);
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const permittedBrandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
@@ -386,7 +398,7 @@ export default function CampaignsPage() {
                       className="grid grid-cols-1 gap-y-2 px-5 py-[13px] items-center border-b border-line4 last:border-0 transition hover:shadow-[inset_0_0_0_9999px_rgba(23,23,42,0.035)] md:[grid-template-columns:var(--cols)]"
                     >
                       <div>
-                        <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
+                        <Link href={openHref(c)} className="text-[13.5px] font-bold text-ink hover:text-accent transition">
                           {c.name}
                         </Link>
                         <div className="text-[11px] text-faint mt-[1px] flex items-center gap-[6px] flex-wrap">
@@ -441,14 +453,28 @@ export default function CampaignsPage() {
                             <StatusBadge tone={campaignTone(c.status)}>{c.status}</StatusBadge>
                           </span>
                         )}
+                        {/* For the owner the NAME already opens the editor, so a
+                            second Edit button would be the same door twice —
+                            what they lose that way is the summary, so that is
+                            what this becomes. Everyone else keeps Edit. */}
                         {canEditRow(c) && (
-                          <Link
-                            href={`/campaigns/new?edit=${c.id}`}
-                            className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
-                            style={{ borderColor: "#DCD6F7" }}
-                          >
-                            Edit
-                          </Link>
+                          isMine(c) ? (
+                            <Link
+                              href={`/campaigns/${c.id}`}
+                              className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
+                              style={{ borderColor: "#DCD6F7" }}
+                            >
+                              ดูสรุป
+                            </Link>
+                          ) : (
+                            <Link
+                              href={`/campaigns/new?edit=${c.id}`}
+                              className="text-[11.5px] font-bold rounded-[10px] px-3 py-[7px] border bg-white text-[#5B4FD8] shrink-0 whitespace-nowrap"
+                              style={{ borderColor: "#DCD6F7" }}
+                            >
+                              Edit
+                            </Link>
+                          )
                         )}
                         {canDeleteCampaign && (
                           <button
