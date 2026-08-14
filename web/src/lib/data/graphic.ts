@@ -258,6 +258,28 @@ export function materialNote(
   }
 }
 
+/** What a brand-new request is waiting on, in one line.
+ *
+ *  One rule for both doors. A request raised by hand said "Creative leader to
+ *  assign …"; the same request materialised from an approved campaign said
+ *  `KV: <the campaign's Key Visual Direction> · Msg: <main message>` instead —
+ *  a field labelled "Next action" carrying no action at all. On this database
+ *  one campaign's KV Direction is a 2,626-character playbook, so the card that
+ *  is supposed to say what to do next printed the whole thing.
+ *
+ *  The words were not lost by fixing it: keyMessage and moodDirection already
+ *  carry them, and the Brief tab already prints both. Next action was a second,
+ *  worse copy. */
+export function initialNextAction(
+  g: Pick<Graphic, "type" | "requiredVideo" | "rushStatus" | "designer">,
+): string {
+  if (g.rushStatus === "Pending") return "รอ Creative Leader อนุมัติงานเร่งด่วน";
+  if (isVideoWork(g)) return "Creative Content ทำ storyboard แล้วส่งให้เจ้าของงานอนุมัติ";
+  return g.designer && g.designer !== "Unassigned"
+    ? `${g.designer} to start design`
+    : "Creative leader to assign in-house or outsource designer";
+}
+
 /** Has the shooter handed the footage over? */
 export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink">): boolean {
   return !g.requiresShooting || !!g.footageLink?.trim();
