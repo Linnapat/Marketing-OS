@@ -1,7 +1,19 @@
-// Cross-module campaign hub: reads every record linked to a campaign (by name)
-// from the same source of truth the child modules write to, and can generate the
-// Planner's starter tasks. This is what makes the Campaign detail tabs, counters,
-// and readiness widgets reflect real data.
+// Cross-module campaign hub: reads every record linked to a campaign from the
+// same source of truth the child modules write to, and can generate the
+// Planner's starter tasks. This is what makes the Campaign detail tabs,
+// counters, and readiness widgets reflect real data.
+//
+// Linked BY ID, with the name only as a fallback for rows written before the
+// modules carried campaignId. It used to match on the name alone, and campaign
+// names are not unique: two live campaigns are both called "Brand Awareness"
+// (Teppen and Omakase Don, same owner). Opening the Teppen one showed the
+// Omakase one\'s 7 posts and 7 graphic requests — a different brand\'s work,
+// under her campaign, with no sign anything was wrong.
+//
+// It also hid the way out. The Teppen campaign is approved with nothing ever
+// created, and the "สร้างงานจากแผนนี้" banner only appears when the hub reports
+// zero content — the leaked 7 made it look done, so the one button that would
+// have built her plan never rendered.
 
 import { fetchContent, createContent } from "./content";
 import { fetchKols, createKol, buildKol } from "./kol";
@@ -26,18 +38,50 @@ export interface CampaignHub {
   expenses: RequestRow[];
 }
 
-/** Everything linked to one campaign, pulled from the live tables. */
-export async function fetchCampaignHub(name: string): Promise<CampaignHub> {
+/** Does this row belong to the campaign we are looking at?
+ *
+ *  An id on the row is the answer, whatever it says — a row stamped with
+ *  ANOTHER campaign\'s id is not ours even if the names match, which is exactly
+ *  the case that leaked. Only a row with no id at all falls back to the name,
+ *  and then only when the name is unambiguous; when two campaigns share it,
+ *  guessing would put someone else\'s work on the page, so an unstamped row is
+ *  left out instead. Undercounting is visible and fixable; showing another
+ *  brand\'s work as yours is neither.
+ *
+ *  Pass `nameIsUnique: false` and legacy rows simply stop appearing on the
+ *  duplicated name — which is what makes the "nothing was made" banner work
+ *  again for the campaign that genuinely has nothing. */
+export function belongsToCampaign(
+  row: { campaignId?: string; campaign?: string },
+  campaign: { id: string; name: string; nameIsUnique: boolean },
+): boolean {
+  const rowId = (row.campaignId ?? "").trim();
+  if (rowId) return rowId === campaign.id;
+  const rowName = (row.campaign ?? "").trim();
+  const target = campaign.name.trim();
+  return campaign.nameIsUnique && !!target && rowName === target;
+}
+
+/** Everything linked to one campaign, pulled from the live tables.
+ *
+ *  `id` is what identifies it; `name` only reaches rows written before the
+ *  modules carried an id, and `nameIsUnique` says whether trusting the name is
+ *  safe at all. Callers that know the whole campaign list should compute it;
+ *  the default is the cautious one. */
+export async function fetchCampaignHub(
+  name: string,
+  opts: { id: string; nameIsUnique?: boolean },
+): Promise<CampaignHub> {
   const [content, kols, graphics, t, expenses] = await Promise.all([
     fetchContent(), fetchKols(), fetchGraphics(), fetchTasks(), fetchExpenseRequests(),
   ]);
-  const eq = (x?: string) => (x ?? "") === name;
+  const target = { id: opts.id, name, nameIsUnique: opts.nameIsUnique !== false };
   return {
-    content: content.filter((c) => eq(c.campaign)),
-    kols: kols.filter((k) => eq(k.campaign)),
-    graphics: graphics.filter((g) => eq(g.campaign)),
-    tasks: t.tasks.filter((x) => eq(x.campaign)),
-    expenses: expenses.filter((e) => eq(e.campaign)),
+    content: content.filter((c) => belongsToCampaign(c, target)),
+    kols: kols.filter((k) => belongsToCampaign(k, target)),
+    graphics: graphics.filter((g) => belongsToCampaign(g, target)),
+    tasks: t.tasks.filter((x) => belongsToCampaign(x, target)),
+    expenses: expenses.filter((e) => belongsToCampaign(e as { campaignId?: string; campaign?: string }, target)),
   };
 }
 
