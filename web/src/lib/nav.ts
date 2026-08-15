@@ -1,7 +1,7 @@
 import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
-  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2,
+  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -15,6 +15,9 @@ export interface NavItem {
   /** Deep-links to a tab within `href`. Permissions and accent colours still
    *  resolve from the plain href, so a tabbed page stays one module. */
   tab?: string;
+  /** Only the campaign approver sees it on their rail. Tidying, not security —
+   *  the page itself decides who may act (see roleGates.canApproveCampaign). */
+  cmoOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -35,6 +38,10 @@ export const NAV: NavGroup[] = [
     label: "QA",
     items: [
       { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
+      // The weekly pass over edits made to campaigns that were already approved.
+      // Nobody is blocked by what is in here, so it sits with the QA screens
+      // rather than in front of the planning work.
+      { href: "/campaigns/approvals", label: "Approvals", icon: ClipboardCheck, ready: true, cmoOnly: true },
       { href: "/platforms", label: "Platform Performance", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: true },
       // Lives under Performance Center as a route, but it is the monthly people
