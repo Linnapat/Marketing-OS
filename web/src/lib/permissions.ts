@@ -78,13 +78,6 @@ const ROUTE_MODULE: [prefix: string, module: string][] = [
   ["/requests", "Campaign"],
   ["/ads", "Campaign"],
   ["/content", "Content"],
-  // Work Tracker's spine is the content plan — a post card exists whether or
-  // not a graphic request hangs off it, so Content is what the route needs.
-  // The job tracks inside each card are gated separately in the page, the same
-  // per-lane way /status does it: Content Creator has Content=Edit and
-  // Graphic="—", and locking them out of "is my post's artwork ready?" over
-  // the second module would be the wrong trade.
-  ["/tracker", "Content"],
   ["/graphic", "Graphic"],
   ["/assets", "Graphic"],
   ["/kol", "KOL"],

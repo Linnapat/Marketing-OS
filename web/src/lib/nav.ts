@@ -1,7 +1,7 @@
 import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
-  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck, Route,
+  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,10 +38,6 @@ export const NAV: NavGroup[] = [
     label: "QA",
     items: [
       { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
-      // Sits beside the Status Board rather than under Plan & Produce: both
-      // answer "where does everything stand", the board across modules and this
-      // one down a single post's production chain.
-      { href: "/tracker", label: "Work Tracker", icon: Route, ready: true },
       // The weekly pass over edits made to campaigns that were already approved.
       // Nobody is blocked by what is in here, so it sits with the QA screens
       // rather than in front of the planning work.

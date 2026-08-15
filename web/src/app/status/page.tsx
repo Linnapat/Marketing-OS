@@ -19,12 +19,29 @@ import {
   storyboardItems, shootingItems,
   withUrgency, summarise, groupByOwner, URGENCY_META, NO_OWNER, DUE_SOON_DAYS, type Urgency, type OwnerLoad,
 } from "@/lib/data/statusBoard";
+import {
+  TrackerCampaign, buildTracker, filterMonth,
+  summarise as summariseTracker, UNASSIGNED as TRACKER_UNASSIGNED,
+} from "@/lib/data/tracker";
+import { CampaignSection, Kpi } from "@/components/tracker/TrackerCards";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchContent } from "@/lib/db/content";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchKols } from "@/lib/db/kol";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchExpenseRequests } from "@/lib/db/finance";
+
+/** เดือนที่เลือกได้ในมุม "ตามโพสต์": เดือนนี้ ±3 */
+function monthOptions(todayIso: string) {
+  const [y, m] = todayIso.split("-").map(Number);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.UTC(y, m - 1 - 2 + i, 1));
+    return {
+      value: d.toISOString().slice(0, 7),
+      label: d.toLocaleDateString("th-TH", { month: "short", year: "2-digit", timeZone: "UTC" }),
+    };
+  });
+}
 
 const ALL_MODULES: ModuleKey[] = ["content", "graphic", "storyboard", "shooting", "kol", "task", "expense"];
 
@@ -60,8 +77,17 @@ export default function StatusDashboardPage() {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<CampaignGroup[]>([]);
-  const [groupBy, setGroupBy] = useState<"campaign" | "owner">("campaign");
+  // "post" คือมุมที่ตอบว่า "โพสต์นี้ อาร์ตเวิร์ก/วิดีโอถึงไหนแล้ว" — สองมุมแรก
+  // ตอบไม่ได้เพราะวาง Content กับ Graphic ไว้คนละแถว ไม่มีอะไรผูกกันบนจอ
+  const [groupBy, setGroupBy] = useState<"campaign" | "owner" | "post">("campaign");
   const [urgency, setUrgency] = useState<Urgency | "all">("all");
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const months = useMemo(() => monthOptions(today), [today]);
+  // มุมโพสต์เท่านั้นที่กรองตามเดือน อีกสองมุมยังแสดงทุกอย่างเหมือนเดิม —
+  // ใส่ตัวกรองวันที่ให้ทั้งหน้าคือการทำให้แถวหายไปจากบอร์ดที่คนใช้อยู่ทุกวัน
+  const [month, setMonth] = useState(today.slice(0, 7));
+  const [tracker, setTracker] = useState<TrackerCampaign[]>([]);
+  const [trackerLate, setTrackerLate] = useState(false);
 
   // Only the lanes this role may see are fetched. Filtering after the fetch
   // would still ship every expense and KOL row to a browser whose role has no
@@ -113,10 +139,12 @@ export default function StatusDashboardPage() {
       // Urgency is stamped once here, at the edge, so "today" is read from one
       // clock rather than by each adapter.
       const dated = withUrgency(items, today);
-      setGroups(groupByCampaign(
-        campaigns.map((c) => ({ id: c.id, name: c.name, b: c.b, status: c.status })),
-        dated,
-      ));
+      const seeds = campaigns.map((c) => ({ id: c.id, name: c.name, b: c.b, status: c.status }));
+      setGroups(groupByCampaign(seeds, dated));
+      // มุม "ตามโพสต์" ใช้แถวชุดเดียวกับที่ดึงมาแล้ว ไม่ยิงเพิ่ม — และสร้างจาก
+      // โพสต์ทุกเดือน แล้วค่อยกรองเดือนตอนแสดง ถ้ากรองก่อน ใบงานที่ผูกกับโพสต์
+      // เดือนอื่นจะจับคู่ไม่เจอ แล้วไปโผล่เป็นใบลอยทั้งที่มีโพสต์อยู่
+      setTracker(want.has("content") ? buildTracker(seeds, content, graphics, today) : []);
       setLoading(false);
     }).catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -146,6 +174,27 @@ export default function StatusDashboardPage() {
       });
   }, [groups, modules, health, urgency, brand, brandVisibility, allowedModules.length]);
 
+  // มุมโพสต์: กรองด้วยเดือน แบรนด์ สถานะ และ "เฉพาะที่สาย" ใช้ตัวกรองแถวบน
+  // ร่วมกับอีกสองมุม ยกเว้นชิปโมดูลที่ไม่มีความหมายกับการ์ด (การ์ดหนึ่งใบคือ
+  // Content + Graphic ต่อกันอยู่แล้ว) จึงซ่อนไปในมุมนี้
+  const visibleTracker = useMemo(() => {
+    return filterMonth(tracker, month)
+      .map((g) => ({
+        ...g,
+        posts: g.posts.filter((p) =>
+          (brand === "all" || p.brand === brand)
+          && brandVisibility.isVisible(p.brand)
+          && (health === "all" || p.health === health)
+          && (urgency === "all" || p.urgency === urgency)
+          && (!trackerLate || p.urgency === "overdue" || p.jobsOverdue > 0)),
+        looseJobs: (brand === "all" && health === "all" && urgency === "all" && !trackerLate) ? g.looseJobs : [],
+      }))
+      .filter((g) => g.posts.length > 0 || g.looseJobs.length > 0)
+      .filter((g) => g.campaignId === TRACKER_UNASSIGNED || !g.brand || brandVisibility.isVisible(g.brand));
+  }, [tracker, month, brand, health, urgency, trackerLate, brandVisibility]);
+
+  const trackerSummary = useMemo(() => summariseTracker(visibleTracker), [visibleTracker]);
+
   const totals = useMemo(() => {
     const t = { blocked: 0, waiting: 0, active: 0, notStarted: 0, done: 0 } as Record<Health, number>;
     visible.forEach((g) => g.items.forEach((i) => { t[i.health] += 1; }));
@@ -166,8 +215,10 @@ export default function StatusDashboardPage() {
       <PageHeader
         eyebrow="QA"
         title="Status Dashboard"
-        subtitle="ทุกงานในระบบ จัดกลุ่มตามแคมเปญ — Content, Graphic, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว"
-        right={loading ? "กำลังโหลด…" : `${totalItems} งาน · ${visible.length} แคมเปญ`}
+        subtitle="ทุกงานในระบบ — Content, Graphic, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว · ดูตามแคมเปญ ตามคน หรือตามโพสต์ว่างานผลิตถึงไหนแล้ว"
+        right={loading ? "กำลังโหลด…"
+          : groupBy === "post" ? `${trackerSummary.posts} โพสต์ · ${trackerSummary.jobs} ใบงาน`
+            : `${totalItems} งาน · ${visible.length} แคมเปญ`}
       />
 
       <div className="bg-surface border border-line rounded-cardLg p-4 mb-3">
@@ -183,14 +234,18 @@ export default function StatusDashboardPage() {
           />
           <Segmented
             value={groupBy}
-            onChange={(v) => setGroupBy(v as "campaign" | "owner")}
+            onChange={(v) => setGroupBy(v as "campaign" | "owner" | "post")}
             options={[
               { value: "campaign", label: "ตามแคมเปญ" },
               { value: "owner", label: "ตามคน" },
+              ...(allowedModules.includes("content") ? [{ value: "post" as const, label: "ตามโพสต์" }] : []),
             ]}
           />
+          {groupBy === "post" && <Segmented value={month} onChange={setMonth} options={months} />}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* ชิปโมดูลไม่มีความหมายในมุมโพสต์ — การ์ดหนึ่งใบคือ Content บวก Graphic
+            ต่อกันอยู่แล้ว ปิด lane ใดก็เท่ากับทำให้การ์ดพูดไม่ครบ */}
+        <div className={clsx("mt-3 flex-wrap items-center gap-2", groupBy === "post" ? "hidden" : "flex")}>
           <span className="text-[11px] font-bold text-faint uppercase tracking-[0.08em]">โมดูล</span>
           {allowedModules.map((m) => (
             <button
@@ -212,7 +267,23 @@ export default function StatusDashboardPage() {
       {/* What needs someone today, before any scrolling. Health alone could not
           say it: nearly every item in the system maps to "not started", so the
           pile was one colour and the late work was invisible inside it. */}
-      {!loading && (
+      {/* มุมโพสต์นับคนละหน่วย (โพสต์และใบงาน ไม่ใช่ work item) จึงมีชุดตัวเลข
+          ของตัวเอง — โดยเฉพาะ "ใบงานเลยกำหนด" ที่ปฏิทินโพสต์มองไม่เห็น */}
+      {!loading && groupBy === "post" && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          <Kpi
+            label="ใบงานเลยกำหนด" value={trackerSummary.jobsOverdue}
+            fg="#B33A2E" bg="#FFF5F4" border="#F5C8C4"
+            hint="ใบงานเลย due แล้ว แม้โพสต์ยังไม่ถึงวันลง"
+            active={trackerLate} onClick={() => setTrackerLate((v) => !v)}
+          />
+          <Kpi label="โพสต์เลยวันลง" value={trackerSummary.overdue} fg="#B3641E" bg="#FFF7ED" border="#F0C89B" hint="ถึงวันลงแล้วแต่ยังไม่เสร็จ" />
+          <Kpi label="ยังไม่มีใบงาน" value={trackerSummary.noJob} fg="#8A6D1E" bg="#FBF6EC" border="#EADBC1" hint="โพสต์ที่ยังไม่มีใครเปิดงานให้" />
+          <Kpi label="ยังไม่มีคนถือ" value={trackerSummary.unassigned} fg="#6F6A86" bg="#F4F2F8" border="#E6E1EF" hint="มีใบงานแล้วแต่ยังไม่ระบุ designer" />
+        </div>
+      )}
+
+      {!loading && groupBy !== "post" && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
           {([
             ["overdue", "เลยกำหนดแล้ว", summary.overdue, "#B33A2E", "#FFF5F4", "#F5C8C4"],
@@ -258,6 +329,28 @@ export default function StatusDashboardPage() {
         <div className="bg-surface border border-line rounded-cardLg py-16 text-center text-[13px] text-faint">
           กำลังรวมงานจากทุกโมดูล…
         </div>
+      ) : groupBy === "post" ? (
+        // แยกสาขาก่อนเช็ค visible.length เพราะมุมนี้นับคนละกอง — โพสต์ในเดือน
+        // ที่เลือก ไม่ใช่ work item ทั้งระบบ ถ้าใช้ตัวเช็คร่วมกันจะขึ้น "ไม่มีงาน"
+        // ทั้งที่มีการ์ดอยู่ หรือกลับกัน
+        visibleTracker.length === 0 ? (
+          <div className="bg-surface border border-line rounded-cardLg py-16 text-center">
+            <div className="text-[15px] font-bold text-ink">ไม่มีโพสต์ตรงกับตัวกรอง</div>
+            <div className="text-[13px] text-faint mt-1">ลองเปลี่ยนเดือน หรือเอาตัวกรองสถานะออก</div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {visibleTracker.map((g) => (
+              <CampaignSection
+                key={`post:${g.campaignId}`}
+                group={g}
+                showJobs={allowedModules.includes("graphic")}
+                collapsed={open[`post:${g.campaignId}`] === false}
+                onToggle={() => setOpen((p) => ({ ...p, [`post:${g.campaignId}`]: p[`post:${g.campaignId}`] === false }))}
+              />
+            ))}
+          </div>
+        )
       ) : visible.length === 0 ? (
         <div className="bg-surface border border-line rounded-cardLg py-16 text-center">
           <div className="text-[15px] font-bold text-ink">ไม่มีงานตรงกับตัวกรอง</div>
