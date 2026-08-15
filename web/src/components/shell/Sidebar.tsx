@@ -23,6 +23,7 @@ const NAV_ACCENTS: Record<string, { bg: string; fg: string }> = {
   "/platforms": { bg: "#E3F7F5", fg: "#0EA5A0" },
   "/performance-center": { bg: "#E3F7F5", fg: "#0EA5A0" },
   "/status": { bg: "#E3F7F5", fg: "#0EA5A0" },
+  "/tracker": { bg: "#E3F7F5", fg: "#0EA5A0" },
   "/content": { bg: "#F0F8D8", fg: "#5D9E35" },
   "/graphic": { bg: "#FDEBF3", fg: "#D876AA" },
   "/kol": { bg: "#FFF3E5", fg: "#E08A34" },
