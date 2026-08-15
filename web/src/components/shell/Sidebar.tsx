@@ -11,7 +11,7 @@ import { RoleSwitcher } from "./RoleSwitcher";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { moduleForPath } from "@/lib/permissions";
-import { isNavHiddenFor } from "@/lib/roleGates";
+import { isNavHiddenFor, canApproveCampaign } from "@/lib/roleGates";
 import { MEMBER_PRESENCE_OPTIONS } from "@/lib/data/settings";
 import { saveMemberProfile, updateMember } from "@/lib/db/settings";
 import { toastError } from "@/lib/toast";
@@ -86,6 +86,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
       ...g,
       items: g.items.filter((it) => {
         if (isNavHiddenFor(role, it.href)) return false;
+        if (it.cmoOnly && !canApproveCampaign(role)) return false;
         const m = moduleForPath(it.href);
         return !m || can(m);
       }),

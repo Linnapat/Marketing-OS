@@ -259,6 +259,30 @@ export interface ApprovalLogEntry {
   action: string; by: string; at: string; comment?: string; from?: string; to?: string;
 }
 
+/** One tier-A edit made to an already-approved campaign, waiting for the CMO to
+ *  wave it through.
+ *
+ *  The edit is ALREADY LIVE — the campaign kept its status and the fan-out ran,
+ *  so nobody's work is blocked while this sits here. What the entry buys is
+ *  that the change cannot pass unseen: it stays in the queue until the CMO
+ *  clears it (Settings → Approvals), and a weekly Slack reminder counts what is
+ *  still open. Resolved entries leave the array and land in `approvalLog`, so
+ *  the queue only ever holds outstanding work and the audit trail stays in the
+ *  one place people already read it. */
+export interface RetroApprovalEntry {
+  /** Unique within the campaign — the save timestamp, which is also `at`. */
+  id: string;
+  at: string;
+  by: string;
+  /** Tier-A lines: what actually needs the sign-off. Never empty. */
+  changes: string[];
+  /** Tier-B lines from the same save, kept for context so the CMO reads one
+   *  entry per edit rather than a change with half its story missing. */
+  minor?: string[];
+  /** The status the campaign was in (and kept) when the edit landed. */
+  status: string;
+}
+
 export interface CampaignBrief {
   id: string;
   /** Human-friendly campaign number — `BRAND_YYMM_NNN`, e.g. "OMD_2609_001". */
@@ -306,6 +330,9 @@ export interface CampaignBrief {
   budget: BriefBudget;
   status: BriefStatus;
   approvalLog: ApprovalLogEntry[];
+  /** Tier-A edits made after approval that the CMO has not cleared yet. Absent
+   *  or empty means nothing is outstanding. */
+  pendingApprovals?: RetroApprovalEntry[];
   /** When this plan first turned into real posts/requests/tasks. Absent means
    *  it never did — see approvedButNothingMade. Stamped by saveCampaignBrief on
    *  the fan-out that actually creates something, so a re-save of an already

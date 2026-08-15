@@ -26,13 +26,14 @@ import {
   budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
   kolBudgetTotal, kolMonthlyTotals, withSyncedKolBudget,
   campaignMonthKeys, todayIso,
-  BriefContentItem, BriefKolItem, GuidelineItem,
+  BriefContentItem, BriefKolItem, GuidelineItem, RetroApprovalEntry,
 } from "@/lib/data/brief";
 import { LineOaConfig, lineConfigFor, notionalCost, quotaUsage } from "@/lib/data/lineQuota";
 import { fetchAllBriefs, fetchCampaignBrief, saveCampaignBrief, StaleBriefError } from "@/lib/db/brief";
 import { fetchBriefFromSheet } from "@/lib/db/briefSheet";
 import { fetchContentSourceIds } from "@/lib/db/content";
-import { briefDiffSummary } from "@/lib/data/briefDiff";
+import { briefDiffSummary, splitBriefChanges, summariseChanges } from "@/lib/data/briefDiff";
+import { retroEntryFor } from "@/lib/db/retroApproval";
 import { applyBriefPatch } from "@/lib/data/briefSheet";
 import { fetchBrandConfigs, fetchCampaignTypeConfigs, fetchMembers, fetchJsonSetting } from "@/lib/db/settings";
 import { BudgetSheetRow, fetchBudgetSheetRows } from "@/lib/db/budgetSheet";
@@ -307,8 +308,79 @@ export default function NewCampaignPage() {
     setStep((s) => Math.min(STEPS.length - 1, s + 1));
   };
 
-  const finalize = (status: CampaignBrief["status"], log: CampaignBrief["approvalLog"], now: string): CampaignBrief =>
-    withSyncedKolBudget({ ...brief, branch: brief.branches.join(", "), status, approvalLog: log, createdAt: now });
+  const finalize = (
+    status: CampaignBrief["status"],
+    log: CampaignBrief["approvalLog"],
+    now: string,
+    pending?: RetroApprovalEntry[],
+  ): CampaignBrief =>
+    withSyncedKolBudget({
+      ...brief, branch: brief.branches.join(", "), status, approvalLog: log, createdAt: now,
+      ...(pending ? { pendingApprovals: pending } : {}),
+    });
+
+  // ── Editing a campaign that is already live ────────────────────────────────
+  // Until Aug 2026 any edit by a non-CMO revoked the approval and sent the whole
+  // campaign back to the queue — which stopped the fan-out on a campaign the
+  // team was already producing, and had the CMO approving several times a week
+  // for things like a caption typo.
+  //
+  // Now the campaign KEEPS its status (nobody is blocked) and the edit is
+  // classified: money/scope/timing/KOL changes ("major", see data/briefDiff)
+  // join a retro-approval queue the CMO clears in one weekly pass; everything
+  // else is logged and notified only. The CMO editing their own approved
+  // campaign queues nothing — they are the approver.
+  const APPROVED_STATES = ["Approved", "In Progress", "Completed"];
+  /** The status a live campaign must keep through any save. Null when the
+   *  campaign is not live, and "Draft" is then the right answer as before.
+   *
+   *  This is also the fix for an older hazard: Save Draft used to write "Draft"
+   *  onto whatever it was editing, so the CMO tweaking a running campaign
+   *  demoted it out of the fan-out — no posts, no requests, and nothing said so. */
+  const liveStatus = (): string | null =>
+    editingId && originalBrief && APPROVED_STATES.includes(originalBrief.status) ? originalBrief.status : null;
+
+  const liveEdit = (): { status: string; major: string[]; minor: string[]; queue: boolean } | null => {
+    const status = liveStatus();
+    if (!status || !originalBrief) return null;
+    const { major, minor } = splitBriefChanges(originalBrief, brief);
+    if (!major.length && !minor.length) return null;
+    // The approver editing their own approved campaign has nothing to queue —
+    // they would only be sending themselves a note.
+    return { status, major, minor, queue: role !== "CMO" };
+  };
+
+  /** Save an edit to a live campaign, queueing the parts the CMO must see.
+   *  Returns whether anything was queued, so the caller can word its own toast. */
+  const saveLiveEdit = async (edit: NonNullable<ReturnType<typeof liveEdit>>, now: string): Promise<boolean> => {
+    const by = brief.plannerOwner || "Planner";
+    const entry = edit.queue
+      ? retroEntryFor({ at: now, by, status: edit.status, major: edit.major, minor: edit.minor })
+      : null;
+    const all = [...edit.major, ...edit.minor];
+    const changes = summariseChanges(all);
+    const log = [...brief.approvalLog, {
+      action: entry ? "Edited — รออนุมัติย้อนหลัง (งานเดินต่อ)"
+        : edit.queue ? "Edited — รายละเอียด ไม่ต้องอนุมัติใหม่"
+          : "Edited by approver — อนุมัติในตัว",
+      by, at: now, comment: changes, from: edit.status, to: edit.status,
+    }];
+    const pending = entry ? [...(brief.pendingApprovals ?? []), entry] : (brief.pendingApprovals ?? []);
+    await saveCampaignBrief(finalize(edit.status as CampaignBrief["status"], log, now, pending));
+    // One notification per save either way — the CMO's inbox does not get
+    // noisier than it was, it just stops demanding a click for small things.
+    if (entry) {
+      notify("approval", `✏️ แก้แคมเปญที่อนุมัติแล้ว: ${brief.name}`,
+        `โดย ${by} · งานไม่ถูกบล็อก แต่ต้องอนุมัติย้อนหลัง · สิ่งที่แก้: ${summariseChanges(edit.major)}`,
+        workLink.campaign(editingId ?? brief.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
+    } else if (edit.queue) {
+      // `inform`, not `to`: the bell, no DM. Nothing here is the CMO's to act
+      // on, and a ping for a caption fix is the noise this change is removing.
+      notify("approval", `✏️ แก้รายละเอียด: ${brief.name}`, `โดย ${by} · ไม่ต้องอนุมัติใหม่ · ${changes}`,
+        workLink.campaign(editingId ?? brief.id, "approval"), { inform: [brief.approver || DEFAULT_APPROVER] });
+    }
+    return !!entry;
+  };
 
   // Top-right Save Draft: saves the work-in-progress WITHOUT leaving the
   // page, so stepping away mid-build never loses anything. The final-step
@@ -322,21 +394,19 @@ export default function NewCampaignPage() {
     }
     setBusy(true);
     try {
-      // Same rule as Submit: a non-CMO edit of an approved campaign cannot stay
-      // "Draft-saved" outside the approval flow — it revokes the approval and
-      // queues for the CMO, diff attached.
-      const APPROVED_STATES = ["Approved", "In Progress", "Completed"];
-      const mustReapprove = !!editingId && role !== "CMO" && APPROVED_STATES.includes(originalBrief?.status ?? "");
+      // Same rule as Submit: a live campaign never drops back to "Draft" behind
+      // the team's back. It keeps running; the edit is queued or just logged.
       const now = new Date().toISOString();
-      if (mustReapprove && originalBrief) {
-        const changes = briefDiffSummary(originalBrief, brief);
-        const entry = { action: "Edited — approval revoked, sent back to CMO", by: brief.plannerOwner || "Planner", at: now, comment: changes || "ไม่มีการเปลี่ยนแปลงที่ตรวจพบ", from: originalBrief.status, to: "Waiting for Approval" };
-        await saveCampaignBrief(finalize("Waiting for Approval", [...brief.approvalLog, entry], now));
-        notify("approval", `✏️ แคมเปญแก้ไขแล้วรออนุมัติ: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"}${changes ? ` · สิ่งที่แก้: ${changes}` : ""}`,
-          workLink.campaign(editingId ?? brief.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
-        toast("แคมเปญนี้เคยอนุมัติแล้ว — การแก้ไขถูกส่งให้ CMO อนุมัติใหม่", "info");
+      const edit = liveEdit();
+      if (edit) {
+        const queued = await saveLiveEdit(edit, now);
+        toast(queued
+          ? "แคมเปญเดินต่อตามปกติ — การแก้ไขเข้าคิว “รออนุมัติย้อนหลัง” ให้ CMO เคลียร์"
+          : "บันทึกแล้ว — เป็นการแก้รายละเอียด ไม่ต้องขออนุมัติใหม่", "info");
       } else {
-        await saveCampaignBrief(finalize("Draft", brief.approvalLog, now));
+        // A live campaign keeps its status even on a no-op save; only a genuine
+        // draft is written as "Draft".
+        await saveCampaignBrief(finalize((liveStatus() ?? "Draft") as CampaignBrief["status"], brief.approvalLog, now));
       }
       setDraftSaved(true);
       toastSuccess("บันทึก Draft เรียบร้อย");
@@ -413,27 +483,34 @@ export default function NewCampaignPage() {
     if (asDraft && !brief.name.trim()) { setStep(0); return; }
     setBusy(true);
     const now = new Date().toISOString();
-    // Editing an already-approved campaign REVOKES the approval for everyone
-    // but the CMO: even "Save Draft" cannot quietly keep (or drop) the approved
-    // state — the edit goes back into the CMO's queue, with a field-level diff
-    // of what changed in the approval log and the notification.
-    const APPROVED_STATES = ["Approved", "In Progress", "Completed"];
-    const mustReapprove = !!editingId && role !== "CMO" && APPROVED_STATES.includes(originalBrief?.status ?? "");
-    const status = asDraft ? (mustReapprove ? "Waiting for Approval" : "Draft") : "Waiting for Approval";
+    // A campaign that is already live does not go back into the approval queue,
+    // whichever button was pressed: the team keeps working and the CMO clears
+    // the material parts of the edit later (see liveEdit / saveLiveEdit).
+    const edit = liveEdit();
+    // A live campaign keeps its status whichever button was pressed — including
+    // a save that changed nothing, which must not re-queue a running campaign.
+    const status = liveStatus() ?? (asDraft ? "Draft" : "Waiting for Approval");
     const changes = editingId && originalBrief ? briefDiffSummary(originalBrief, brief) : "";
     const logEntry = {
-      action: editingId ? (mustReapprove && asDraft ? "Edited — approval revoked, sent back to CMO" : "Edited and resubmitted for approval") : "Submitted for approval",
+      action: editingId ? "Edited and resubmitted for approval" : "Submitted for approval",
       by: brief.plannerOwner || "Planner", at: now,
       ...(editingId ? { comment: changes || "ไม่มีการเปลี่ยนแปลงที่ตรวจพบ", from: originalBrief?.status, to: status } : {}),
     };
-    const log = asDraft && !mustReapprove ? brief.approvalLog : [...brief.approvalLog, logEntry];
+    const log = asDraft ? brief.approvalLog : [...brief.approvalLog, logEntry];
     try {
-      await saveCampaignBrief(finalize(status, log, now));
-      toastSuccess(status === "Waiting for Approval"
-        ? `ส่ง “${brief.name}” ให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติแล้ว`
-        : `บันทึก “${brief.name}” เรียบร้อย`);
-      if (status === "Waiting for Approval") notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติ${editingId && changes ? ` · สิ่งที่แก้: ${changes}` : ""}`,
-        workLink.campaign(editingId ?? brief.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
+      if (edit) {
+        const queued = await saveLiveEdit(edit, now);
+        toastSuccess(queued
+          ? `บันทึก “${brief.name}” แล้ว — งานเดินต่อ · ส่งให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติย้อนหลัง`
+          : `บันทึก “${brief.name}” แล้ว — ไม่ต้องขออนุมัติใหม่`);
+      } else {
+        await saveCampaignBrief(finalize(status as CampaignBrief["status"], log, now));
+        toastSuccess(status === "Waiting for Approval"
+          ? `ส่ง “${brief.name}” ให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติแล้ว`
+          : `บันทึก “${brief.name}” เรียบร้อย`);
+        if (status === "Waiting for Approval") notify("approval", `${editingId ? "✏️ แคมเปญแก้ไขแล้วรออนุมัติ" : "🎯 แคมเปญใหม่รออนุมัติ"}: ${brief.name}`, `โดย ${brief.plannerOwner || "Planner"} → รอ ${brief.approver || DEFAULT_APPROVER} อนุมัติ${editingId && changes ? ` · สิ่งที่แก้: ${changes}` : ""}`,
+          workLink.campaign(editingId ?? brief.id, "approval"), { to: [brief.approver || DEFAULT_APPROVER] });
+      }
       // Land on the list so the new campaign is visible in context immediately.
       router.push("/campaigns");
     } catch (error) {
