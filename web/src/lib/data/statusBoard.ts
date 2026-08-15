@@ -121,8 +121,12 @@ const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
 /* ── per-module status → health ──────────────────────────────────────── */
 
 /** Words that mean the same thing wherever they appear. Checked before the
- *  per-module tables so a shared word can't drift between modules. */
-function commonHealth(status: string): Health | null {
+ *  per-module tables so a shared word can't drift between modules.
+ *
+ *  Exported for the Work Tracker, which scores a post's caption / approval /
+ *  publish axes with this same table. A second copy of the vocabulary is how
+ *  the two pages would end up disagreeing about the same row. */
+export function commonHealth(status: string): Health | null {
   const s = norm(status);
   if (!s) return null;
   // "approved" counts as done for the lane that owns it. A content post is not
