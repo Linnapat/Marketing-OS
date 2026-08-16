@@ -673,6 +673,22 @@ export function revisionAssignee(
   return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
 }
 
+/** Who is holding this request right now — for display, not for routing one
+ *  deliverable's revision (that is revisionAssignee, which knows which piece).
+ *
+ *  Same precedence, and it exists for the same reason: `designer` is who the
+ *  request was RAISED against, and it stays "Unassigned" on a request someone
+ *  has already picked up. Live data has requests sitting In Progress with an
+ *  `acceptedBy` and no designer — reading `designer` alone prints
+ *  "ยังไม่มีคนถือ" over work that has a person on it, and counts it as
+ *  unassigned in the roll-ups. */
+export function jobHolder(
+  g: Pick<Graphic, "acceptedBy" | "designer" | "deliverables">,
+): string | null {
+  const submitters = (g.deliverables ?? []).map((d) => d.submittedBy);
+  return firstRealName(...submitters, g.acceptedBy, g.designer);
+}
+
 /** Who handed this job to whoever is doing it.
  *
  *  Not the person who fixes a revision — that is revisionAssignee — but the one
@@ -837,7 +853,9 @@ export function productionSteps(g: Graphic): ProductionStep[] {
     // if the shoot produced the finished piece.
     label: isVideoWork(g) ? "ตัดต่อ" : "ทำอาร์ตเวิร์ก",
     role: isVideoWork(g) ? "คนตัดต่อ" : "Designer",
-    owner: g.designer && g.designer !== "Unassigned" ? g.designer : "ยังไม่มี designer",
+    // Whoever actually has it, not whoever the request was raised against —
+    // a request picked up by someone else still read "ยังไม่มี designer" here.
+    owner: jobHolder(g) ?? "ยังไม่มี designer",
     state: deliverableProgress(g).ready ? "done" : blocked ? "waiting" : "active",
     detail: blocked
       ? productionBlockers(g)[0]
