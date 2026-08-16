@@ -3,6 +3,7 @@
 import { CSSProperties, ReactNode, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Graphic } from "@/lib/data/graphic";
+import { byDueThenPriority } from "@/lib/data/tasks";
 import { graphicBriefTeaser } from "@/components/graphic/TaskGraphicBrief";
 
 /* The My Tasks look, in one place.
@@ -110,26 +111,9 @@ export const dueColorOf = (w: Pick<WorkItem, "due" | "dueIso">) => {
   return n === null ? "#6b6258" : n <= 0 ? "#B33A2E" : n <= 2 ? "#C68A1E" : "#6b6258";
 };
 
-const PRIORITY_RANK: Record<string, number> = { High: 0, Med: 1, Low: 2 };
-
-/** Soonest first — the order a work list is actually read in.
- *
- *  The list arrived in whatever order the page happened to build it, so a
- *  designer's Todo group ran Aug 7 · Jul 28 · Aug 7 · Aug 8 · Aug 20 · Aug 10 …
- *  and the overdue rows were scattered through it. Nothing on the page put the
- *  next thing to do at the top.
- *
- *  Undated work sorts last rather than first: a row with no date is not urgent,
- *  it is unplanned, and letting it head the list buries the work that has a
- *  real deadline. Ties break on priority then title so the order is stable
- *  between renders instead of shifting with whatever the fetch returned. */
-export function byDueDate(a: WorkItem, b: WorkItem): number {
-  const da = workDueDate(a), db = workDueDate(b);
-  if (da && db && da.getTime() !== db.getTime()) return da.getTime() - db.getTime();
-  if (!da !== !db) return da ? -1 : 1;
-  const pa = PRIORITY_RANK[a.priority] ?? 1, pb = PRIORITY_RANK[b.priority] ?? 1;
-  return pa - pb || a.title.localeCompare(b.title);
-}
+/** ลำดับของงาน — กฎกลางจาก data/tasks ตัวเดียวกับที่มุม Cards ใช้
+ *  ไม่เขียนซ้ำที่นี่ เพราะสองมุมบนหน้าเดียวกันที่เรียงคนละแบบคือบั๊กที่มองไม่เห็น */
+export const byDueDate = byDueThenPriority;
 
 export function StatMini({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
   return (
@@ -276,6 +260,10 @@ export function WorkCalendarView({ items, month, year, onNavigate, onOpen, onOpe
     const list = byDay.get(d.getDate());
     if (list) list.push(item); else byDay.set(d.getDate(), [item]);
   }
+  // ในช่องวันเดียวกัน วันที่เท่ากันหมด ตัวตัดสินจึงเป็น priority แล้วชื่อ —
+  // กฎเดียวกับอีกสองมุม และทำให้ลำดับในช่องไม่สลับไปมาทุกครั้งที่โหลด
+  for (const list of byDay.values()) list.sort(byDueThenPriority);
+  undated.sort(byDueThenPriority);
 
   const step = (delta: number) => {
     if (!onNavigate) return;

@@ -81,6 +81,38 @@ export function daysUntilDue(t: Pick<Task, "due" | "dueIso">): number | null {
   return Math.round((day(d) - day(new Date())) / 86400000);
 }
 
+/* ── ลำดับของงานในทุกลิสต์ ────────────────────────────────────────────────
+ *
+ * กฎเดียว ที่เดียว เพราะหน้าเดียวกันแสดงงานได้สามมุม (Cards / List / Calendar)
+ * และงานชุดเดียวกันยังไปโผล่ที่ Agency Portal อีก ถ้าต่างมุมเรียงคนละแบบ
+ * คนก็จะเห็น "งานถัดไป" ไม่ตรงกันแล้วแต่ว่าเปิดมุมไหนอยู่ */
+
+/** อะไรก็ตามที่มีวันครบกำหนดและระดับความสำคัญ — Task และ WorkItem เข้ากันได้ทั้งคู่ */
+export interface DueOrdered {
+  due: string;
+  dueIso?: string;
+  priority?: string;
+  title: string;
+}
+
+const PRIORITY_RANK: Record<string, number> = { High: 0, Med: 1, Low: 2 };
+
+/** ใกล้ครบกำหนดที่สุดก่อน
+ *
+ *  งานที่ไม่มีกำหนดไปท้าย ไม่ใช่ขึ้นหัว — ไม่มีวันที่ไม่ได้แปลว่าด่วน แต่แปลว่า
+ *  ยังไม่ได้วางแผน ปล่อยขึ้นหัวลิสต์คือการเอามันไปทับงานที่มีเดดไลน์จริง
+ *
+ *  วันเดียวกันตัดสินด้วย priority แล้วชื่อ ไม่ใช่เพื่อความสวย แต่เพื่อให้ลำดับ
+ *  คงที่: คิวของ designer มีสี่ใบครบกำหนดวันเดียวกัน ถ้าไม่มีตัวตัดสิน
+ *  ลำดับจะมาจากผลลัพธ์ fetch แล้วสลับไปมาได้ทุกครั้งที่โหลดหน้า */
+export function byDueThenPriority(a: DueOrdered, b: DueOrdered): number {
+  const da = dueDate(a), db = dueDate(b);
+  if (da && db && da.getTime() !== db.getTime()) return da.getTime() - db.getTime();
+  if (!da !== !db) return da ? -1 : 1;
+  const pa = PRIORITY_RANK[a.priority ?? ""] ?? 1, pb = PRIORITY_RANK[b.priority ?? ""] ?? 1;
+  return pa - pb || a.title.localeCompare(b.title);
+}
+
 export const isDueToday = (t: Pick<Task, "due" | "dueIso">) => daysUntilDue(t) === 0;
 export const isDueThisWeek = (t: Pick<Task, "due" | "dueIso">) => {
   const n = daysUntilDue(t);

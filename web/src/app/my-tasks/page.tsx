@@ -5,7 +5,7 @@ import { DEFAULT_APPROVER } from "@/lib/approval";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek } from "@/lib/data/tasks";
+import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek, byDueThenPriority } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
@@ -639,7 +639,9 @@ function MyTasksPageInner() {
                is the only reason to look at this screen. */
             <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
               {GROUP_DEFS.map((g) => {
-                const groupTasks = visibleTasks.filter((t) => getGroup(t) === g.id);
+                // ลำดับเดียวกับมุม List — คนหนึ่งเปิด Cards อีกคนเปิด List
+                // แล้วเห็น "งานถัดไป" คนละใบ คือความสับสนที่ไม่มีใครเดาถูก
+                const groupTasks = visibleTasks.filter((t) => getGroup(t) === g.id).sort(byDueThenPriority);
                 if (groupTasks.length === 0) return null;
                 return (
                   <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>

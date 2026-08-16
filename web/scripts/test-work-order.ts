@@ -7,6 +7,7 @@
  * Run: node --import tsx scripts/test-work-order.ts */
 
 import { byDueDate, workDueDate, type WorkItem } from "../src/components/work/WorkViews";
+import { byDueThenPriority } from "../src/lib/data/tasks";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -74,6 +75,39 @@ console.log("\n— เคสจริงจากหน้าจอ designer (�
   is("ทั้งลิสต์เรียงจากน้อยไปมากจริง",
     order(todo).map((t) => todo.find((x) => x.title === t)!.dueIso),
     [`${y}-07-28`, `${y}-08-07`, `${y}-08-07`, `${y}-08-08`, `${y}-08-10`, `${y}-08-20`, `${y}-09-01`, `${y}-09-04`, `${y}-09-16`]);
+}
+
+console.log("\n— ทุกคน ไม่ใช่เฉพาะคนเดียว —");
+{
+  // กฎเรียงอยู่ที่ "ลิสต์" ไม่ได้อยู่ที่ "คน" ใครถูกส่งเข้ามาก็เรียงเหมือนกันหมด
+  const p = (title: string, assignee: string, dueIso: string): WorkItem => ({ ...w(title, dueIso), assignee });
+  const mixed = [
+    p("ของ Pupay", "Pupay", "2026-09-10"),
+    p("ของ Jeeno", "Jeeno", "2026-07-30"),
+    p("ของ Jungjing", "Jungjing", "2026-08-15"),
+    p("ของ Teerapat", "Teerapat.trairabiab", "2026-08-01"),
+  ];
+  is("คิวรวมหลายคนก็เรียงตามวันเหมือนกัน",
+    order(mixed), ["ของ Jeeno", "ของ Teerapat", "ของ Jungjing", "ของ Pupay"]);
+
+  // และแยกดูรายคน ลำดับภายในของแต่ละคนก็ถูกด้วย
+  for (const who of ["Pupay", "Jeeno", "Jungjing"]) {
+    const mine = [p("ช้า", who, "2026-12-01"), p("เร็ว", who, "2026-01-05"), p("กลาง", who, "2026-06-01")];
+    is(`คิวของ ${who} เรียงถูก`, order(mine), ["เร็ว", "กลาง", "ช้า"]);
+  }
+}
+
+console.log("\n— ทุกมุมใช้กฎเดียวกัน —");
+{
+  // Cards (Task) กับ List/Calendar (WorkItem) เป็นคนละ type แต่ต้องเรียงเหมือนกัน
+  // ไม่งั้นคนที่เปิด Cards กับคนที่เปิด List จะเห็น "งานถัดไป" คนละใบ
+  const asTask = [
+    { title: "ช้า", due: "", dueIso: "2026-09-16", priority: "Med" },
+    { title: "เร็ว", due: "", dueIso: "2026-07-28", priority: "Med" },
+  ];
+  is("comparator ตัวเดียวกันใช้กับ Task ได้",
+    asTask.slice().sort(byDueThenPriority).map((x) => x.title), ["เร็ว", "ช้า"]);
+  is("byDueDate ของ WorkViews คือตัวเดียวกับ byDueThenPriority", byDueDate === byDueThenPriority, true);
 }
 
 console.log("\n— ไม่แก้ของเดิม —");
