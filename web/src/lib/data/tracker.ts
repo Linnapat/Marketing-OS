@@ -333,15 +333,85 @@ export function summarise(groups: TrackerCampaign[]): TrackerSummary {
 
 const isFinishedPost = (p: TrackerPost) => p.health === "done";
 
-/** กรองตามเดือน (YYYY-MM) ของวันโพสต์ ใบงานลอยใช้ due ของตัวเอง
- *  แคมเปญที่ไม่เหลืออะไรหลังกรองถูกตัดทิ้ง — กล่องเปล่าไม่ได้บอกอะไร */
-export function filterMonth(groups: TrackerCampaign[], month: string): TrackerCampaign[] {
-  if (!month) return groups;
+/* ── ค้นหา ───────────────────────────────────────────────────────────────
+ *
+ * กติกาเดียวกับช่องค้นหาในหน้า Content: ทุกคำต้องเจอที่ไหนสักแห่งในแถวนั้น
+ * ("kani reel" = โพสต์ Kani ที่มีงาน Reel) เขียนกฎซ้ำแบบอื่นแปลว่าพิมพ์คำ
+ * เดียวกันสองหน้าแล้วได้ผลไม่เท่ากัน */
+
+/** ทุกอย่างที่ช่องค้นหาอ่านของโพสต์หนึ่งใบ
+ *
+ *  `code` (OMD_2609_001-C01) สำคัญเป็นพิเศษ — เป็นสิ่งที่คนก๊อปจากแชตมาหา และ
+ *  เพราะขึ้นต้นด้วยรหัสแคมเปญ พิมพ์แค่ OMD_2609_001 ก็ได้ทุกโพสต์ใต้แคมเปญนั้น
+ *
+ *  รวมชื่อคนที่ถือใบงานด้วย เพราะคำถามที่ถามบ่อยพอ ๆ กับ "แคมเปญนี้ถึงไหน"
+ *  คือ "คิวของ Jeeno มีอะไรบ้าง" และการ์ดก็แสดงชื่อนั้นอยู่แล้ว */
+export function postSearchText(p: TrackerPost, campaignName: string): string {
+  return [
+    p.title, p.code, campaignName,
+    p.platforms.join(" "),
+    p.captionOwner,
+    p.captionStatus, p.approvalStatus, p.publishStatus,
+    p.dateIso,
+    ...p.jobs.flatMap((j) => [j.title, j.code, j.kindLabel, j.type, j.designer, j.stage, j.current?.label]),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+export function jobSearchText(j: TrackerJob, campaignName: string): string {
+  return [j.title, j.code, campaignName, j.kindLabel, j.type, j.designer, j.stage, j.dueIso]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+
+/** แยกคำค้นเป็นคำ ๆ — ช่องว่างคือ AND ไม่ใช่วลีเดียว */
+export function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+const matches = (hay: string, terms: string[]) => terms.every((t) => hay.includes(t));
+
+/* ── ตัวกรองรวมของมุม "ตามโพสต์" ───────────────────────────────────────── */
+
+export interface TrackerFilter {
+  /** วันโพสต์อยู่ในช่วงที่เลือกไหม — ตัวตัดสินมาจาก DateFilterBar ไม่ใช่จากที่นี่
+   *  ใบงานลอยไม่มีโพสต์ให้ยึด จึงวัดด้วย due ของตัวเอง
+   *  ไม่ส่งมา = ไม่กรองเวลา */
+  inPeriod?: (iso: string) => boolean;
+  terms?: string[];
+  brand?: string;
+  isBrandVisible?: (b: BrandId) => boolean;
+  health?: Health | "all";
+  urgency?: Urgency | "all";
+  /** เฉพาะที่สาย — นับทั้งโพสต์เลยวันลง และใบงานที่เลย due ของตัวเอง */
+  lateOnly?: boolean;
+}
+
+/** กรองต้นไม้ทั้งก้อนด้วยตัวกรองแถวบนของบอร์ด
+ *
+ *  แคมเปญที่ไม่เหลืออะไรหลังกรองถูกตัดทิ้ง — กล่องเปล่าไม่ได้บอกอะไร
+ *  ยกเว้นตอนไม่ได้กรองอะไรเลย ซึ่งแคมเปญว่างเป็นข้อมูลในตัวมันเอง */
+export function filterTracker(groups: TrackerCampaign[], f: TrackerFilter): TrackerCampaign[] {
+  const terms = f.terms ?? [];
+  const period = f.inPeriod;
+  const visible = f.isBrandVisible ?? (() => true);
   return groups
     .map((g) => ({
       ...g,
-      posts: g.posts.filter((p) => p.dateIso.startsWith(month)),
-      looseJobs: g.looseJobs.filter((j) => (j.dueIso ?? "").startsWith(month)),
+      posts: g.posts.filter((p) =>
+        (!period || period(p.dateIso))
+        && (!f.brand || f.brand === "all" || p.brand === f.brand)
+        && visible(p.brand)
+        && (!f.health || f.health === "all" || p.health === f.health)
+        && (!f.urgency || f.urgency === "all" || p.urgency === f.urgency)
+        && (!f.lateOnly || p.urgency === "overdue" || p.jobsOverdue > 0)
+        && matches(postSearchText(p, g.name), terms)),
+      // ใบลอยไม่มีแบรนด์/สถานะของโพสต์ให้เทียบ จึงกรองได้แค่เวลากับคำค้น และ
+      // ซ่อนไปเมื่อมีตัวกรองที่มันตอบไม่ได้ — โผล่ค้างอยู่ใบเดียวใต้ตัวกรอง
+      // "ติดปัญหา" อ่านเหมือนมันติดปัญหาด้วย
+      looseJobs: (f.health && f.health !== "all") || (f.urgency && f.urgency !== "all") || f.lateOnly
+        ? []
+        : g.looseJobs.filter((j) =>
+          (!period || period(j.dueIso ?? "")) && matches(jobSearchText(j, g.name), terms)),
     }))
+    .filter((g) => g.campaignId === UNASSIGNED || !g.brand || visible(g.brand))
     .filter((g) => g.posts.length > 0 || g.looseJobs.length > 0);
 }
