@@ -9,8 +9,8 @@
 import type { ContentItem } from "../src/lib/data/content";
 import type { Graphic } from "../src/lib/data/graphic";
 import {
-  UNASSIGNED, buildTracker, filterMonth, hasDesigner, leadJob, postHealth,
-  summarise, toJob, toPost,
+  UNASSIGNED, buildTracker, filterTracker, hasDesigner, leadJob, postHealth,
+  searchTerms, summarise, toJob, toPost,
 } from "../src/lib/data/tracker";
 
 let pass = 0, fail = 0;
@@ -148,14 +148,53 @@ console.log("\n— 8. \"Unassigned\" คือช่องว่าง ไม่
   is("โพสต์ที่ทุกใบยังไม่มีคนถือ ถูกนับไว้", summarise(groups).unassigned, 1);
 }
 
-console.log("\n— 9. กรองตามเดือน —");
+console.log("\n— 9. กรองตามช่วงเวลา —");
 {
   const sep = c({ id: "c-sep", dateIso: "2026-09-10" });
   const oct = c({ id: "c-oct", dateIso: "2026-10-10", title: "เดือนหน้า" });
   const groups = buildTracker(CAMPAIGNS, [sep, oct], [], TODAY);
-  is("ก.ย. เหลือโพสต์เดียว", filterMonth(groups, "2026-09").flatMap((x) => x.posts).length, 1);
-  is("แคมเปญที่ไม่เหลืออะไรถูกตัดทิ้ง", filterMonth(groups, "2026-11").length, 0);
-  is("ไม่ใส่เดือน = ไม่กรอง", filterMonth(groups, "").flatMap((x) => x.posts).length, 2);
+  const inMonth = (m: string) => (iso: string) => iso.startsWith(m);
+  const posts = (gs: ReturnType<typeof buildTracker>) => gs.flatMap((x) => x.posts);
+  is("ก.ย. เหลือโพสต์เดียว", posts(filterTracker(groups, { inPeriod: inMonth("2026-09") })).length, 1);
+  is("แคมเปญที่ไม่เหลืออะไรถูกตัดทิ้ง", filterTracker(groups, { inPeriod: inMonth("2026-11") }).length, 0);
+  is("ไม่ใส่ตัวกรองเวลา = ไม่กรอง", posts(filterTracker(groups, {})).length, 2);
+  // ช่วงวันที่คร่อมสองเดือน — โหมด Range ของ DateFilterBar ส่ง predicate แบบนี้มา
+  const between = (a: string, b: string) => (iso: string) => iso >= a && iso <= b;
+  is("ช่วง 5 ก.ย. – 15 ต.ค. ได้ทั้งสองโพสต์", posts(filterTracker(groups, { inPeriod: between("2026-09-05", "2026-10-15") })).length, 2);
+  is("ช่วงวันเดียว 10 ก.ย. ได้โพสต์เดียว", posts(filterTracker(groups, { inPeriod: between("2026-09-10", "2026-09-10") })).length, 1);
+}
+
+console.log("\n— 9b. ค้นหา —");
+{
+  const kani = c({ id: "c-k", title: "Kani Last Chance", code: "OMD_2609_003-C02", campaignId: "CAM-2026-4856", campaign: "Kani Seasonal" });
+  const hero = c({ id: "c-h", title: "Hero Don + Comfort Set", code: "OMD_2609_001-C02" });
+  const groups = buildTracker(CAMPAIGNS, [kani, hero], [g({ contentPostId: "c-h", designer: "Jungjing", type: "Reel" })], TODAY);
+  const found = (q: string) => filterTracker(groups, { terms: searchTerms(q) }).flatMap((x) => x.posts).map((p) => p.id);
+
+  is("หาด้วยชื่อโพสต์", found("hero"), ["c-h"]);
+  is("หาด้วยชื่อแคมเปญ", found("kani seasonal"), ["c-k"]);
+  is("หาด้วยเลขงานเต็ม", found("OMD_2609_003-C02"), ["c-k"]);
+  // รหัสแคมเปญเป็นคำนำหน้าของเลขงาน พิมพ์แค่รหัสแคมเปญจึงได้ทุกโพสต์ใต้มัน
+  is("หาด้วยรหัสแคมเปญอย่างเดียว", found("OMD_2609_001").length, 1);
+  is("หาด้วยชื่อคนที่ถือใบงาน", found("jungjing"), ["c-h"]);
+  is("หาด้วยชนิดงาน", found("reel"), ["c-h"]);
+  // ช่องว่าง = AND ทุกคำต้องเจอ ไม่ใช่วลีเดียว
+  is("สองคำต้องเจอทั้งคู่", found("hero jungjing"), ["c-h"]);
+  is("คำที่ไม่มีในแถวเดียวกัน = ไม่เจอ", found("hero kani"), []);
+  is("ไม่พิมพ์อะไร = ไม่กรอง", found("").length, 2);
+  is("หาไม่เจอ = ตัดแคมเปญทิ้งหมด", filterTracker(groups, { terms: searchTerms("zzz") }).length, 0);
+}
+
+console.log("\n— 9c. ใบงานลอยกับตัวกรองที่มันตอบไม่ได้ —");
+{
+  // ใบลอยไม่มีสถานะของโพสต์ให้เทียบ ถ้าปล่อยค้างใต้ตัวกรอง "ติดปัญหา"
+  // มันจะอ่านเหมือนติดปัญหาไปด้วย
+  const orphan = g({ id: 63, title: "ไม่ตรงกับโพสต์ไหน", contentItem: "ไม่ตรงกับโพสต์ไหน", dueIso: "2026-09-05" });
+  const groups = buildTracker(CAMPAIGNS, [c()], [orphan], TODAY);
+  is("ไม่กรองสถานะ = ใบลอยอยู่", filterTracker(groups, {})[0]?.looseJobs.length, 1);
+  is("กรองสถานะ = ใบลอยถูกซ่อน", filterTracker(groups, { health: "blocked" }).flatMap((x) => x.looseJobs).length, 0);
+  is("ใบลอยกรองด้วยคำค้นได้", filterTracker(groups, { terms: searchTerms("ไม่ตรงกับโพสต์") })[0]?.looseJobs.length, 1);
+  is("ใบลอยกรองด้วยเวลาของตัวเอง", filterTracker(groups, { inPeriod: (iso) => iso.startsWith("2026-10") }).flatMap((x) => x.looseJobs).length, 0);
 }
 
 console.log("\n— 10. แคมเปญที่มีของสายขึ้นก่อน —");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -20,28 +20,19 @@ import {
   withUrgency, summarise, groupByOwner, URGENCY_META, NO_OWNER, DUE_SOON_DAYS, type Urgency, type OwnerLoad,
 } from "@/lib/data/statusBoard";
 import {
-  TrackerCampaign, buildTracker, filterMonth,
-  summarise as summariseTracker, UNASSIGNED as TRACKER_UNASSIGNED,
+  TrackerCampaign, buildTracker, filterTracker, searchTerms,
+  summarise as summariseTracker,
 } from "@/lib/data/tracker";
 import { CampaignSection, Kpi } from "@/components/tracker/TrackerCards";
+import {
+  DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, type DateFilter,
+} from "@/components/ui/DateFilterBar";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchContent } from "@/lib/db/content";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchKols } from "@/lib/db/kol";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchExpenseRequests } from "@/lib/db/finance";
-
-/** เดือนที่เลือกได้ในมุม "ตามโพสต์": เดือนนี้ ±3 */
-function monthOptions(todayIso: string) {
-  const [y, m] = todayIso.split("-").map(Number);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(Date.UTC(y, m - 1 - 2 + i, 1));
-    return {
-      value: d.toISOString().slice(0, 7),
-      label: d.toLocaleDateString("th-TH", { month: "short", year: "2-digit", timeZone: "UTC" }),
-    };
-  });
-}
 
 const ALL_MODULES: ModuleKey[] = ["content", "graphic", "storyboard", "shooting", "kol", "task", "expense"];
 
@@ -81,11 +72,15 @@ export default function StatusDashboardPage() {
   // ตอบไม่ได้เพราะวาง Content กับ Graphic ไว้คนละแถว ไม่มีอะไรผูกกันบนจอ
   const [groupBy, setGroupBy] = useState<"campaign" | "owner" | "post">("campaign");
   const [urgency, setUrgency] = useState<Urgency | "all">("all");
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const months = useMemo(() => monthOptions(today), [today]);
-  // มุมโพสต์เท่านั้นที่กรองตามเดือน อีกสองมุมยังแสดงทุกอย่างเหมือนเดิม —
+  // มุมโพสต์เท่านั้นที่กรองตามช่วงเวลา อีกสองมุมยังแสดงทุกอย่างเหมือนเดิม —
   // ใส่ตัวกรองวันที่ให้ทั้งหน้าคือการทำให้แถวหายไปจากบอร์ดที่คนใช้อยู่ทุกวัน
-  const [month, setMonth] = useState(today.slice(0, 7));
+  //
+  // ใช้ DateFilterBar ตัวเดียวกับ Finance / Campaigns / KOL แทน Segmented
+  // รายเดือนที่เขียนเอง: ได้ Month/Year/Range ครบ เลือกเป็นช่วงวันที่ก็ได้
+  // และหน้าตากับพฤติกรรมตรงกับที่คนคุ้นอยู่แล้ว
+  const [period, setPeriod] = useState<DateFilter>(DEFAULT_DATE_FILTER);
+  const [query, setQuery] = useState("");
+  const terms = useMemo(() => searchTerms(query), [query]);
   const [tracker, setTracker] = useState<TrackerCampaign[]>([]);
   const [trackerLate, setTrackerLate] = useState(false);
 
@@ -177,21 +172,17 @@ export default function StatusDashboardPage() {
   // มุมโพสต์: กรองด้วยเดือน แบรนด์ สถานะ และ "เฉพาะที่สาย" ใช้ตัวกรองแถวบน
   // ร่วมกับอีกสองมุม ยกเว้นชิปโมดูลที่ไม่มีความหมายกับการ์ด (การ์ดหนึ่งใบคือ
   // Content + Graphic ต่อกันอยู่แล้ว) จึงซ่อนไปในมุมนี้
-  const visibleTracker = useMemo(() => {
-    return filterMonth(tracker, month)
-      .map((g) => ({
-        ...g,
-        posts: g.posts.filter((p) =>
-          (brand === "all" || p.brand === brand)
-          && brandVisibility.isVisible(p.brand)
-          && (health === "all" || p.health === health)
-          && (urgency === "all" || p.urgency === urgency)
-          && (!trackerLate || p.urgency === "overdue" || p.jobsOverdue > 0)),
-        looseJobs: (brand === "all" && health === "all" && urgency === "all" && !trackerLate) ? g.looseJobs : [],
-      }))
-      .filter((g) => g.posts.length > 0 || g.looseJobs.length > 0)
-      .filter((g) => g.campaignId === TRACKER_UNASSIGNED || !g.brand || brandVisibility.isVisible(g.brand));
-  }, [tracker, month, brand, health, urgency, trackerLate, brandVisibility]);
+  const visibleTracker = useMemo(() => filterTracker(tracker, {
+    // แถวที่ไม่มีวันที่ยังอยู่ (inDateFilter คืน true) — ของที่ยังไม่ลงวัน
+    // ไม่ควรหายไปเพราะเลือกเดือน
+    inPeriod: (iso) => inDateFilter(period, iso),
+    terms,
+    brand,
+    isBrandVisible: brandVisibility.isVisible,
+    health,
+    urgency,
+    lateOnly: trackerLate,
+  }), [tracker, period, terms, brand, health, urgency, trackerLate, brandVisibility]);
 
   const trackerSummary = useMemo(() => summariseTracker(visibleTracker), [visibleTracker]);
 
@@ -223,6 +214,28 @@ export default function StatusDashboardPage() {
 
       <div className="bg-surface border border-line rounded-cardLg p-4 mb-3">
         <div className="flex flex-wrap items-center gap-3">
+          {/* ช่องค้นหาวางซ้ายสุดแบบเดียวกับ Content Plan / Assets / KOL —
+              มุมโพสต์เท่านั้นที่มี เพราะอีกสองมุมยังไม่มีอะไรรองรับคำค้น */}
+          {groupBy === "post" && (
+            <div className="relative">
+              <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-[12px] text-faint pointer-events-none">🔍</span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นหาแคมเปญ / โพสต์ / เลขงาน / คน…"
+                className="w-[250px] text-[12px] rounded-pill border border-line2 bg-white pl-[30px] pr-[28px] py-[8px] outline-none focus:border-[#6C5CE7]"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery("")}
+                  title="ล้างคำค้น"
+                  className="absolute right-[9px] top-1/2 -translate-y-1/2 text-faint hover:text-ink"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          )}
           <BrandFilter value={brand} onChange={setBrand} />
           <Segmented
             value={health}
@@ -241,8 +254,16 @@ export default function StatusDashboardPage() {
               ...(allowedModules.includes("content") ? [{ value: "post" as const, label: "ตามโพสต์" }] : []),
             ]}
           />
-          {groupBy === "post" && <Segmented value={month} onChange={setMonth} options={months} />}
         </div>
+        {groupBy === "post" && (
+          <div className="mt-3">
+            <DateFilterBar
+              value={period}
+              onChange={setPeriod}
+              trailing={<span>{trackerSummary.posts} โพสต์ · {trackerSummary.jobs} ใบงาน</span>}
+            />
+          </div>
+        )}
         {/* ชิปโมดูลไม่มีความหมายในมุมโพสต์ — การ์ดหนึ่งใบคือ Content บวก Graphic
             ต่อกันอยู่แล้ว ปิด lane ใดก็เท่ากับทำให้การ์ดพูดไม่ครบ */}
         <div className={clsx("mt-3 flex-wrap items-center gap-2", groupBy === "post" ? "hidden" : "flex")}>
