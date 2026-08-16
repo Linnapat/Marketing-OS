@@ -476,7 +476,12 @@ function CampaignRow({ group, open, onToggle }: { group: CampaignGroup; open: bo
                 </div>
               </div>
               <span className="text-[11.5px] text-faint truncate hidden md:block w-[110px] shrink-0">{i.owner || "—"}</span>
-              <span className="text-[11px] text-muted truncate hidden sm:block w-[130px] shrink-0 text-right">{i.rawStatus}</span>
+              {/* 130px fitted the bare stage word. Now that a graphic row also
+                  carries the count that explains its badge, the longest of them
+                  ("Waiting Feedback · ส่งแล้ว 1/2") was cut back to
+                  "Waiting Feedback · ส่งแ…" — losing exactly the part that was
+                  added to stop the row contradicting itself. */}
+              <span className="text-[11px] text-muted truncate hidden sm:block w-[196px] shrink-0 text-right" title={i.rawStatus}>{i.rawStatus}</span>
               <span className="shrink-0 flex justify-end">
                 <StatusBadge tone={HEALTH_META[i.health].tone}>{HEALTH_META[i.health].label}</StatusBadge>
               </span>
