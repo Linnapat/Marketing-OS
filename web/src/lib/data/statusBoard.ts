@@ -11,7 +11,7 @@
 
 import { BrandId } from "@/lib/brands";
 import { ContentItem, contentDateIso, captionOwner } from "@/lib/data/content";
-import { Graphic, needsStoryboard } from "@/lib/data/graphic";
+import { Graphic, jobHolder, needsStoryboard } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { Tone } from "@/lib/status";
 
@@ -167,6 +167,24 @@ export function graphicHealth(g: Pick<Graphic, "deliverables" | "stage">): Healt
   if (!dels.length) return commonHealth(g.stage) ?? "notStarted";
   const healths = dels.map((d) => commonHealth(d.status) ?? "active");
   return worstHealth(healths);
+}
+
+/** What the board prints beside the badge for a graphic request.
+ *
+ *  The stage alone contradicted the badge on 20 live rows: a request sits at
+ *  "In Progress" from the moment someone accepts it, while every deliverable
+ *  starts at "Not submitted" — and the badge scores the deliverables, on
+ *  purpose, so that work nobody has handed anything in for stays visible as
+ *  risk (see HEALTH_ORDER). Both statements were true and the row read as if
+ *  one of them were a lie.
+ *
+ *  Printing the count alongside turns the contradiction into an explanation:
+ *  "In Progress · ส่งแล้ว 0/3" beside "ยังไม่เริ่ม" says exactly why. */
+export function graphicRowStatus(g: Pick<Graphic, "deliverables" | "stage">): string {
+  const dels = g.deliverables ?? [];
+  if (!dels.length) return g.stage;
+  const submitted = dels.filter((d) => d.status !== "Not submitted").length;
+  return `${g.stage} · ส่งแล้ว ${submitted}/${dels.length}`;
 }
 
 /** Content posts carry four independent axes. The CMO asked for one rolled-up
@@ -382,7 +400,8 @@ export function graphicItems(rows: Graphic[]): WorkItem[] {
   return rows.map((g) => ({
     id: `graphic:${g.id}`, module: "graphic" as const, title: g.title,
     campaignId: g.campaignId ?? "", brand: g.b, health: graphicHealth(g),
-    rawStatus: g.stage, owner: g.designer, dueIso: g.dueIso, urgency: "none",
+    rawStatus: graphicRowStatus(g), owner: jobHolder(g) ?? g.designer,
+    dueIso: g.dueIso, urgency: "none",
   }));
 }
 

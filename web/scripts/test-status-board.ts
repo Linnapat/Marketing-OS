@@ -8,6 +8,7 @@ import {
   contentHealth,
   expenseHealth,
   graphicHealth,
+  graphicRowStatus,
   groupByCampaign,
   kolHealth,
   taskHealth,
@@ -80,6 +81,25 @@ is(
   graphicHealth({ stage: "Producing", deliverables: [del("Approved"), del("Approved")] } as never),
   "done",
 );
+
+console.log("\n— graphic: ข้อความบนแถวต้องอธิบายป้าย ไม่ใช่ค้านกับป้าย —");
+{
+  // 20 แถวจริงเคยขึ้น "In Progress" คู่กับป้าย "ยังไม่เริ่ม" — ทั้งคู่จริง
+  // (stage ขยับตั้งแต่มีคนรับงาน / ป้ายให้คะแนนจากชิ้นงานที่ส่ง) แต่วางคู่กัน
+  // เฉย ๆ แล้วอ่านเหมือนมีอันหนึ่งโกหก ตัวเลขที่เติมเข้าไปคือคำอธิบาย
+  const g = (stage: string, dels: string[]) => ({ stage, deliverables: dels.map(del) }) as never;
+  is("มีชิ้นงาน → ต่อท้ายด้วยจำนวนที่ส่งแล้ว",
+    graphicRowStatus(g("In Progress", ["Not submitted", "Not submitted", "Not submitted"])),
+    "In Progress · ส่งแล้ว 0/3");
+  is("ส่งบางชิ้นแล้ว", graphicRowStatus(g("In Progress", ["Approved", "Not submitted"])), "In Progress · ส่งแล้ว 1/2");
+  is("ส่งครบ", graphicRowStatus(g("Waiting Feedback", ["Waiting review"])), "Waiting Feedback · ส่งแล้ว 1/1");
+  // ใบที่ยังไม่มีชิ้นงานเลย ไม่มีอะไรให้เติม และป้ายก็อ่านจาก stage ตรง ๆ อยู่แล้ว
+  is("ไม่มีชิ้นงาน → stage เปล่า ๆ", graphicRowStatus({ stage: "New Request" } as never), "New Request");
+  // กันการกลับไปขัดกันอีก: ป้ายว่ายังไม่เริ่ม ข้อความต้องมีเหตุผลกำกับเสมอ
+  const dels = ["Not submitted", "Not submitted"];
+  is("ป้ายยังคงเป็นยังไม่เริ่ม", graphicHealth(g("In Progress", dels)), "notStarted");
+  is("และข้อความบอกว่าทำไม", graphicRowStatus(g("In Progress", dels)).includes("0/2"), true);
+}
 is(
   "มีชิ้นรอรีวิว → รออนุมัติ",
   graphicHealth({ stage: "Producing", deliverables: [del("Approved"), del("Waiting review")] } as never),

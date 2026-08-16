@@ -1319,7 +1319,16 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
  *  grid, that floor widens one row's column and leaves it out of step with the
  *  header and with every other row. minmax(0, …) makes the split purely
  *  proportional, so all rows resolve to the same widths whatever is in them. */
-const LIST_COLS = "minmax(0,1.9fr) minmax(0,1.25fr) minmax(0,0.95fr) minmax(0,0.7fr) minmax(0,0.8fr) minmax(0,0.5fr) minmax(0,1.15fr)";
+/* The campaign-code column carries a pill that cannot wrap or usefully be cut
+ * ("#TPN_2609_005" means nothing as "#TPN_260…"), so it gets a pixel floor
+ * rather than a share of the row. On minmax(0,0.95fr) the cell was allowed to
+ * shrink below the pill and the pill spilled into the next column — live rows
+ * read "#TPN_2609_005Reel", with the code painted underneath the type.
+ *
+ * The space comes from Request, which grew instead: it holds the title, the one
+ * thing that says what the job IS, and at 1.9fr it was cutting them to
+ * "0901_YOUR NIG…". */
+const LIST_COLS = "minmax(0,2.15fr) minmax(0,1.1fr) minmax(116px,0.8fr) minmax(0,0.65fr) minmax(0,0.75fr) minmax(0,0.5fr) minmax(0,1.05fr)";
 
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
@@ -1333,7 +1342,9 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
           on. A column that looks live but isn't is worse than no column. */}
       <div className="hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: LIST_COLS }}>
-        <div>Request</div><div>Campaign</div><div>รหัสแคมเปญ</div><div>Type task</div><div>Designer</div><div>Due</div><div>Stage</div>
+        {/* หัวตารางแถวเดียวเคยมีไทยแทรกอยู่คำเดียว ("รหัสแคมเปญ") กลางหัวอังกฤษ
+            หกคำ — สลับภาษากลางแถวทำให้ต้องอ่านสองรอบ */}
+        <div>Request</div><div>Campaign</div><div>Campaign code</div><div>Type task</div><div>Designer</div><div>Due</div><div>Stage</div>
       </div>
       {active.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
       {/* Delivered and approved work, folded under what is still moving. */}
@@ -1366,7 +1377,9 @@ function GraphicListRow({ g, codeOf, onOpen, onQuickApprove }: { g: Graphic; cod
           <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={g.b} size={6} />{brandName(g.b)}</div>
         </div>
         <span className="text-[12px] text-muted truncate min-w-0">{g.campaign}</span>
-        <span className="min-w-0"><CampaignCode code={codeOf(g.campaignId, g.campaign)} /></span>
+        {/* overflow-hidden กันไว้อีกชั้น: ถ้าวันหนึ่งรหัสยาวกว่าที่คอลัมน์รับได้
+            ให้มันถูกตัดอยู่ในช่องตัวเอง ดีกว่าไปทับคอลัมน์ข้าง ๆ */}
+        <span className="min-w-0 overflow-hidden"><CampaignCode code={codeOf(g.campaignId, g.campaign)} /></span>
         <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
         <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
         <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
