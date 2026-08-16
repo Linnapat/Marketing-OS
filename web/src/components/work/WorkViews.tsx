@@ -110,6 +110,27 @@ export const dueColorOf = (w: Pick<WorkItem, "due" | "dueIso">) => {
   return n === null ? "#6b6258" : n <= 0 ? "#B33A2E" : n <= 2 ? "#C68A1E" : "#6b6258";
 };
 
+const PRIORITY_RANK: Record<string, number> = { High: 0, Med: 1, Low: 2 };
+
+/** Soonest first — the order a work list is actually read in.
+ *
+ *  The list arrived in whatever order the page happened to build it, so a
+ *  designer's Todo group ran Aug 7 · Jul 28 · Aug 7 · Aug 8 · Aug 20 · Aug 10 …
+ *  and the overdue rows were scattered through it. Nothing on the page put the
+ *  next thing to do at the top.
+ *
+ *  Undated work sorts last rather than first: a row with no date is not urgent,
+ *  it is unplanned, and letting it head the list buries the work that has a
+ *  real deadline. Ties break on priority then title so the order is stable
+ *  between renders instead of shifting with whatever the fetch returned. */
+export function byDueDate(a: WorkItem, b: WorkItem): number {
+  const da = workDueDate(a), db = workDueDate(b);
+  if (da && db && da.getTime() !== db.getTime()) return da.getTime() - db.getTime();
+  if (!da !== !db) return da ? -1 : 1;
+  const pa = PRIORITY_RANK[a.priority] ?? 1, pb = PRIORITY_RANK[b.priority] ?? 1;
+  return pa - pb || a.title.localeCompare(b.title);
+}
+
 export function StatMini({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
   return (
     <div className="rounded-[13px] px-[14px] py-[13px]" style={{ background: bg }}>
@@ -390,8 +411,15 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
       const arr = by.get(key);
       if (arr) arr.push(it); else by.set(key, [it]);
     }
-    return [...by.entries()].sort((a, b) => statusRank(a[0]) - statusRank(b[0]) || a[0].localeCompare(b[0]));
+    return [...by.entries()]
+      .map(([status, rows]) => [status, rows.slice().sort(byDueDate)] as [string, WorkItem[]])
+      .sort((a, b) => statusRank(a[0]) - statusRank(b[0]) || a[0].localeCompare(b[0]));
   }, [items]);
+
+  // The ungrouped list (Agency Portal) gets the same order — it had no order of
+  // its own to preserve, both call sites hand the rows over exactly as their
+  // source produced them.
+  const flat = useMemo(() => items.slice().sort(byDueDate), [items]);
 
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -417,7 +445,7 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
           </div>
         );
       })}
-      {!groupByStatus && items.map(renderRow)}
+      {!groupByStatus && flat.map(renderRow)}
     </div>
   );
 
