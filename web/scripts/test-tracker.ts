@@ -148,6 +148,30 @@ console.log("\n— 8. \"Unassigned\" คือช่องว่าง ไม่
   is("โพสต์ที่ทุกใบยังไม่มีคนถือ ถูกนับไว้", summarise(groups).unassigned, 1);
 }
 
+console.log("\n— 8b. คนถืองาน ≠ ช่อง designer —");
+{
+  // เจอจริงใน production: OMD_2609_001-C02-A01 stage=In Progress
+  // designer="Unassigned" แต่ acceptedBy="Pichayaporn" — อ่าน designer ตรง ๆ
+  // การ์ดจะขึ้น "ยังไม่มีคนถือ" ทับงานที่ Pichayaporn รับไปทำแล้ว
+  const accepted = toJob(g({ designer: "Unassigned", acceptedBy: "Pichayaporn", stage: "In Progress" } as Partial<Graphic>), TODAY);
+  is("รับงานไปแล้ว → มีคนถือ", hasDesigner(accepted), true);
+  is("และชื่อที่โชว์คือคนที่รับไป", accepted.holder, "Pichayaporn");
+
+  // คนส่งงานชนะทุกชื่อ: ใบงานที่ assign คนหนึ่งแต่อีกคนส่งงานเข้ามา
+  const submitted = toJob(g({
+    designer: "Jeeno", acceptedBy: "Pichayaporn",
+    deliverables: [{ platform: "FB", size: "1:1", status: "Waiting review", submittedBy: "Jungjing" }],
+  } as Partial<Graphic>), TODAY);
+  is("คนส่งงานมาก่อน acceptedBy และ designer", submitted.holder, "Jungjing");
+
+  const nobody = toJob(g({ designer: "Unassigned", acceptedBy: "" } as Partial<Graphic>), TODAY);
+  is("ไม่มีใครเลย → holder ว่าง", nobody.holder, undefined);
+
+  // และตัวเลข "ยังไม่มีคนถือ" ต้องไม่นับใบที่มีคนรับไปแล้ว
+  const groups = buildTracker(CAMPAIGNS, [c()], [g({ designer: "Unassigned", acceptedBy: "Pichayaporn" } as Partial<Graphic>)], TODAY);
+  is("ใบที่มีคนรับแล้ว ไม่ถูกนับว่าไม่มีคนถือ", summarise(groups).unassigned, 0);
+}
+
 console.log("\n— 9. กรองตามช่วงเวลา —");
 {
   const sep = c({ id: "c-sep", dateIso: "2026-09-10" });

@@ -24,8 +24,8 @@ import {
 } from "@/lib/data/content";
 import {
   Graphic, LinkablePost, ProductionStep, WORK_KIND_LABEL,
-  deliverableProgress, findLinkedPost, isGraphicFinished, productionBlockers,
-  productionSteps, workKind,
+  deliverableProgress, findLinkedPost, isGraphicFinished, jobHolder,
+  productionBlockers, productionSteps, workKind,
 } from "@/lib/data/graphic";
 import {
   Health, Urgency, commonHealth, graphicHealth, urgencyOf, worstHealth,
@@ -45,7 +45,10 @@ export interface TrackerJob {
   kindLabel: string;
   type: string;
   stage: string;
+  /** ช่อง designer ดิบของใบงาน = คนที่ถูกตั้งไว้ตอนเปิดงาน ไม่ใช่คนที่ถืออยู่จริง */
   designer?: string;
+  /** คนที่ถืองานใบนี้อยู่จริง null = ยังไม่มีใครถือ (ดู jobHolder) */
+  holder?: string;
   health: Health;
   dueIso?: string;
   urgency: Urgency;
@@ -74,6 +77,7 @@ export function toJob(g: Graphic, todayIso: string): TrackerJob {
     type: g.type,
     stage: g.stage,
     designer: g.designer,
+    holder: jobHolder(g) ?? undefined,
     health,
     dueIso: g.dueIso,
     urgency: urgencyOf(g.dueIso, health, todayIso),
@@ -310,10 +314,14 @@ export interface TrackerSummary {
   unassigned: number;
 }
 
-/** designer ที่ยังว่างอยู่จริง "Unassigned" เป็นคำแทนช่องว่างของแอป ไม่ใช่ชื่อคน */
+/** มีคนถืองานใบนี้อยู่จริงไหม
+ *
+ *  อ่านจาก holder ไม่ใช่ designer: ใบงานที่คนอื่นรับไปทำแล้ว (acceptedBy) หรือ
+ *  ส่งงานเข้ามาแล้ว (submittedBy) ยังมี designer เป็น "Unassigned" ได้ — อ่าน
+ *  ช่องนั้นตรง ๆ จะขึ้นว่าไม่มีคนถือทับงานที่มีคนทำอยู่ และนับเข้าตัวเลข
+ *  "ยังไม่มีคนถือ" ทั้งที่ไม่ใช่ (เจอจริง 1 ใบ: OMD_2609_001-C02-A01) */
 export function hasDesigner(j: TrackerJob): boolean {
-  const d = (j.designer ?? "").trim();
-  return !!d && d.toLowerCase() !== "unassigned";
+  return !!(j.holder ?? "").trim();
 }
 
 export function summarise(groups: TrackerCampaign[]): TrackerSummary {
@@ -353,12 +361,13 @@ export function postSearchText(p: TrackerPost, campaignName: string): string {
     p.captionOwner,
     p.captionStatus, p.approvalStatus, p.publishStatus,
     p.dateIso,
-    ...p.jobs.flatMap((j) => [j.title, j.code, j.kindLabel, j.type, j.designer, j.stage, j.current?.label]),
+    // ทั้ง designer ที่ตั้งไว้และคนที่ถือจริง — ค้นด้วยชื่อไหนก็ต้องเจอ
+    ...p.jobs.flatMap((j) => [j.title, j.code, j.kindLabel, j.type, j.designer, j.holder, j.stage, j.current?.label]),
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
 export function jobSearchText(j: TrackerJob, campaignName: string): string {
-  return [j.title, j.code, campaignName, j.kindLabel, j.type, j.designer, j.stage, j.dueIso]
+  return [j.title, j.code, campaignName, j.kindLabel, j.type, j.designer, j.holder, j.stage, j.dueIso]
     .filter(Boolean).join(" ").toLowerCase();
 }
 

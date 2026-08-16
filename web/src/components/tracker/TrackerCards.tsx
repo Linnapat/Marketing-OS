@@ -210,7 +210,7 @@ export function JobTrack({ job }: { job: TrackerJob }) {
 
       <div className="mt-2 flex items-center justify-between gap-2 text-[10.5px]">
         <span className="truncate" style={{ color: hasDesigner(job) ? "#6F6A86" : "#B3641E", fontWeight: hasDesigner(job) ? 500 : 700 }}>
-          {hasDesigner(job) ? job.designer : "ยังไม่มีคนถือ"}
+          {hasDesigner(job) ? job.holder : "ยังไม่มีคนถือ"}
         </span>
         <span className="text-faint shrink-0">
           {job.progress.total > 0 ? `${job.progress.approved}/${job.progress.total} อนุมัติ` : job.stage}
