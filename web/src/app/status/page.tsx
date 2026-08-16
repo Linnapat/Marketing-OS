@@ -237,23 +237,30 @@ export default function StatusDashboardPage() {
             </div>
           )}
           <BrandFilter value={brand} onChange={setBrand} />
-          <Segmented
-            value={health}
-            onChange={(v) => setHealth(v as Health | "all")}
-            options={[
-              { value: "all", label: "ทั้งหมด" },
-              ...HEALTH_ORDER.map((h) => ({ value: h, label: HEALTH_META[h].label })),
-            ]}
-          />
-          <Segmented
-            value={groupBy}
-            onChange={(v) => setGroupBy(v as "campaign" | "owner" | "post")}
-            options={[
-              { value: "campaign", label: "ตามแคมเปญ" },
-              { value: "owner", label: "ตามคน" },
-              ...(allowedModules.includes("content") ? [{ value: "post" as const, label: "ตามโพสต์" }] : []),
-            ]}
-          />
+          {/* กลุ่มปุ่มสองกลุ่มนี้เคยเรียงติดกัน หน้าตาเหมือนกันเป๊ะ ไม่มีป้ายกำกับ —
+              9 ปุ่มในแถวเดียวที่ 6 อันแรกคือ "กรอง" และ 3 อันหลังคือ "เปลี่ยนมุมมอง"
+              อ่านเป็นชุดเดียวกัน ทั้งที่ BrandFilter ข้าง ๆ มีป้ายของมันอยู่แล้ว */}
+          <FilterGroup label="สถานะ">
+            <Segmented
+              value={health}
+              onChange={(v) => setHealth(v as Health | "all")}
+              options={[
+                { value: "all", label: "ทั้งหมด" },
+                ...HEALTH_ORDER.map((h) => ({ value: h, label: HEALTH_META[h].label })),
+              ]}
+            />
+          </FilterGroup>
+          <FilterGroup label="มุมมอง">
+            <Segmented
+              value={groupBy}
+              onChange={(v) => setGroupBy(v as "campaign" | "owner" | "post")}
+              options={[
+                { value: "campaign", label: "ตามแคมเปญ" },
+                { value: "owner", label: "ตามคน" },
+                ...(allowedModules.includes("content") ? [{ value: "post" as const, label: "ตามโพสต์" }] : []),
+              ]}
+            />
+          </FilterGroup>
         </div>
         {groupBy === "post" && (
           <div className="mt-3">
@@ -304,22 +311,21 @@ export default function StatusDashboardPage() {
         </div>
       )}
 
+      {/* เหลือแค่สองใบที่วัด "เวลา" — ติดปัญหา/รออนุมัติ เคยอยู่ตรงนี้ด้วย แล้วไป
+          ซ้ำกับแถวนับสถานะข้างล่างที่กดกรองได้เหมือนกันเป๊ะ เลขเดียวกันสองใบ
+          คนละกรอบคนละสี อ่านเหมือนเป็นคนละเรื่อง แถวล่างเป็นชุดที่ครบกว่า
+          (5 สถานะ) จึงเก็บไว้ แล้วให้แถวบนพูดเรื่องเวลาอย่างเดียว */}
       {!loading && groupBy !== "post" && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           {([
             ["overdue", "เลยกำหนดแล้ว", summary.overdue, "#B33A2E", "#FFF5F4", "#F5C8C4"],
             ["dueSoon", `ครบกำหนดใน ${DUE_SOON_DAYS} วัน`, summary.dueSoon, "#B3641E", "#FFF7ED", "#F0C89B"],
-            ["all", "ติดปัญหา", summary.blocked, "#B33A2E", "#FBF3F1", "#E8C5BC"],
-            ["all", "รออนุมัติ", summary.waiting, "#8A6D1E", "#FBF6EC", "#EADBC1"],
           ] as const).map(([key, label, value, fg, bg, border], i) => (
             <button
               key={i}
-              onClick={() => {
-                if (key === "all") { setHealth(label === "ติดปัญหา" ? "blocked" : "waiting"); setUrgency("all"); }
-                else { setUrgency(urgency === key ? "all" : key); setHealth("all"); }
-              }}
+              onClick={() => { setUrgency(urgency === key ? "all" : key); setHealth("all"); }}
               className="rounded-card px-4 py-3 text-left border transition"
-              style={{ background: bg, borderColor: border }}
+              style={{ background: bg, borderColor: urgency === key ? fg : border, borderWidth: urgency === key ? 2 : 1 }}
             >
               <div className="text-[22px] font-extrabold leading-none" style={{ color: fg }}>{value}</div>
               <div className="mt-1 text-[11.5px] font-bold" style={{ color: fg }}>{label}</div>
@@ -328,7 +334,10 @@ export default function StatusDashboardPage() {
         </div>
       )}
 
-      {!loading && groupBy === "campaign" && (
+      {/* แถวนับสถานะ 5 ใบ — ที่เดียวในหน้าที่บอกจำนวนต่อสถานะ ตั้งแต่เอาใบซ้ำ
+          ออกจากแถวบน จึงต้องโผล่ในมุม "ตามคน" ด้วย ไม่งั้นมุมนั้นจะไม่เหลือ
+          ตัวเลข blocked/waiting ให้ดูเลย */}
+      {!loading && groupBy !== "post" && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
           {HEALTH_ORDER.map((h) => (
             <button
@@ -403,6 +412,16 @@ export default function StatusDashboardPage() {
         </div>
       )}
     </>
+  );
+}
+
+/** ป้ายเล็ก ๆ หน้ากลุ่มปุ่ม สไตล์เดียวกับที่ BrandFilter ใช้อยู่ ("BRAND") */
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-bold text-faint uppercase tracking-[0.08em] whitespace-nowrap">{label}</span>
+      {children}
+    </div>
   );
 }
 
