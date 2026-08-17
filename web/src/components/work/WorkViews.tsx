@@ -3,6 +3,7 @@
 import { CSSProperties, ReactNode, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Graphic } from "@/lib/data/graphic";
+import { byDueThenPriority } from "@/lib/data/tasks";
 import { graphicBriefTeaser } from "@/components/graphic/TaskGraphicBrief";
 
 /* The My Tasks look, in one place.
@@ -109,6 +110,10 @@ export const dueColorOf = (w: Pick<WorkItem, "due" | "dueIso">) => {
   const n = workDaysUntilDue(w);
   return n === null ? "#6b6258" : n <= 0 ? "#B33A2E" : n <= 2 ? "#C68A1E" : "#6b6258";
 };
+
+/** ลำดับของงาน — กฎกลางจาก data/tasks ตัวเดียวกับที่มุม Cards ใช้
+ *  ไม่เขียนซ้ำที่นี่ เพราะสองมุมบนหน้าเดียวกันที่เรียงคนละแบบคือบั๊กที่มองไม่เห็น */
+export const byDueDate = byDueThenPriority;
 
 export function StatMini({ label, val, fg, bg }: { label: string; val: number; fg: string; bg: string }) {
   return (
@@ -255,6 +260,10 @@ export function WorkCalendarView({ items, month, year, onNavigate, onOpen, onOpe
     const list = byDay.get(d.getDate());
     if (list) list.push(item); else byDay.set(d.getDate(), [item]);
   }
+  // ในช่องวันเดียวกัน วันที่เท่ากันหมด ตัวตัดสินจึงเป็น priority แล้วชื่อ —
+  // กฎเดียวกับอีกสองมุม และทำให้ลำดับในช่องไม่สลับไปมาทุกครั้งที่โหลด
+  for (const list of byDay.values()) list.sort(byDueThenPriority);
+  undated.sort(byDueThenPriority);
 
   const step = (delta: number) => {
     if (!onNavigate) return;
@@ -390,8 +399,15 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
       const arr = by.get(key);
       if (arr) arr.push(it); else by.set(key, [it]);
     }
-    return [...by.entries()].sort((a, b) => statusRank(a[0]) - statusRank(b[0]) || a[0].localeCompare(b[0]));
+    return [...by.entries()]
+      .map(([status, rows]) => [status, rows.slice().sort(byDueDate)] as [string, WorkItem[]])
+      .sort((a, b) => statusRank(a[0]) - statusRank(b[0]) || a[0].localeCompare(b[0]));
   }, [items]);
+
+  // The ungrouped list (Agency Portal) gets the same order — it had no order of
+  // its own to preserve, both call sites hand the rows over exactly as their
+  // source produced them.
+  const flat = useMemo(() => items.slice().sort(byDueDate), [items]);
 
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
@@ -417,7 +433,7 @@ export function WorkListView({ items, viewerColorOf, onOpen, onOpenGraphic, assi
           </div>
         );
       })}
-      {!groupByStatus && items.map(renderRow)}
+      {!groupByStatus && flat.map(renderRow)}
     </div>
   );
 
