@@ -1607,6 +1607,11 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
         status: "Draft", campaign: campaign.trim(), owner: requester, caption: "", hashtags: "", cta: "",
         captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
         campaignId: selectedCampaign?.id,
+        // Both ends, at creation. Linking to an EXISTING post already stamped
+        // this (see addGraphic); a post minted here did not, so the link only
+        // ever existed on the request — and the Content drawer, which reads the
+        // post, showed "ขอกราฟฟิกสำหรับโพสต์นี้" over work already briefed.
+        graphicRequestId: String(nextId),
       };
       g.contentPostId = postId;
     }
