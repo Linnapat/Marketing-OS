@@ -13,7 +13,7 @@ import { brandName, BrandFilterValue, BrandId } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   AGENCY_TASKS, AGENCY_EDITABLE_STATUSES,
-  AGENCY_TYPES, AgencyStatus, AgencyTask,
+  AGENCY_TYPES, AgencyStatus, AgencyTask, portalBrandAllowed,
 } from "@/lib/data/agency";
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 import { fetchGraphics, updateGraphic } from "@/lib/db/graphic";
@@ -247,11 +247,14 @@ export default function AgencyPortalPage() {
     return true;
   };
 
+  // Why an agency user is NOT brand-gated here: see portalBrandAllowed.
+  const brandAllowed = (b: BrandId) => portalBrandAllowed(isAgency, visibility.isVisible(b));
+
   const rows = allTasks.filter((t) =>
     matchScope(t) &&
     (brand === "all" || t.b === brand) &&
     (type === "all" || t.type === type) &&
-    visibility.isVisible(t.b) &&
+    brandAllowed(t.b) &&
     inDateFilter(date, t.due),
   );
 

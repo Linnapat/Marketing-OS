@@ -19,6 +19,27 @@ export const AGENCY_STATUS_TONE: Record<AgencyStatus, [string, string]> = {
   "Approved": ["#4E7A4E", "#EEF4EE"],
 };
 
+/** May the portal show a row of brand `b` to this viewer?
+ *
+ *  An agency user's `brandAccess` is "External only", which resolves to NO
+ *  internal brands at all — deliberately, so /campaigns and every other
+ *  internal screen stays shut to them. Feeding that same answer into the
+ *  portal's own row filter emptied the one page they are meant to live on:
+ *  six live requests assigned to GID, and a board reading "ไม่มีงานในมุมนี้".
+ *
+ *  The portal does not need a brand gate. Its rows are already scoped by
+ *  OWNERSHIP, twice: RLS (owns_designer_slot / agency_email) will not serve
+ *  another supplier's work, and the page matches the signed-in person by name
+ *  before a row is built at all. Brand is a filter the viewer picks here, not
+ *  a second wall.
+ *
+ *  Internal staff opening the portal are still scoped normally — they read it
+ *  as one more internal screen, and their brand access means what it always
+ *  does. */
+export function portalBrandAllowed(isAgency: boolean, brandVisible: boolean): boolean {
+  return isAgency || brandVisible;
+}
+
 export const AGENCY_TYPES = ["Graphic", "Video", "Content", "Photo", "Print"];
 
 export interface AgencyTask {

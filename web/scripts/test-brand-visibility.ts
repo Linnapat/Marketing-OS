@@ -5,6 +5,7 @@
 
 import { visibleBrandsFromScope, canSeeAllBrands, isBrandVisible, firstVisibleBrand } from "../src/lib/brandVisibility";
 import { BRANDS_DATA, BrandCfg } from "../src/lib/data/settings";
+import { portalBrandAllowed } from "../src/lib/data/agency";
 import { BRAND_ORDER, applyBrandOverrides } from "../src/lib/brands";
 
 let pass = 0, fail = 0;
@@ -129,6 +130,22 @@ console.log("\n— แบรนด์ที่ทีมเพิ่มเอง 
     visibleBrandsFromScope("Touka", added), ["touka"]);
   is("External only ยังปิดหมดแม้มีแบรนด์ใหม่",
     visibleBrandsFromScope("External only", added), []);
+}
+
+console.log("\n— Agency Portal ต้องไม่เอาสโคปแบรนด์ภายในมากรองงานของ agency —");
+{
+  // "External only" = ไม่เห็นแบรนด์ภายในเลย (ตั้งใจ เพื่อปิด /campaigns ฯลฯ)
+  // แต่ถ้าเอาคำตอบเดียวกันมากรองใน portal ด้วย หน้าที่เขาต้องใช้จะว่างเปล่า —
+  // GID มีงานจริง 6 ใบแต่บอร์ดขึ้น "ไม่มีงานในมุมนี้"
+  is("ยืนยันต้นตอ: External only = ไม่เห็นแบรนด์ใดเลย", visibleBrandsFromScope("External only"), []);
+  const externalBrandVisible = visibleBrandsFromScope("External only").includes("mainichi");
+  is("แบรนด์ของงานจริงไม่อยู่ในสโคป", externalBrandVisible, false);
+
+  is("agency เห็นงานตัวเองแม้แบรนด์ไม่อยู่ในสโคป", portalBrandAllowed(true, externalBrandVisible), true);
+  is("agency เห็นได้ทุกแบรนด์ที่มีงานของตัวเอง", portalBrandAllowed(true, false), true);
+  // คนภายในเปิด portal ยังถูกกรองตามสิทธิ์แบรนด์ตามปกติ ไม่หลุด
+  is("คนภายในยังถูกกรองตามแบรนด์ (นอกสโคป = ไม่เห็น)", portalBrandAllowed(false, false), false);
+  is("คนภายในเห็นแบรนด์ที่ตัวเองดูแล", portalBrandAllowed(false, true), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
