@@ -23,7 +23,7 @@ import {
   CampaignBrief, emptyBrief, emptyContentItem, emptyKolItem, nextCampaignCode, nextSeqFromItems,
   OBJECTIVES, CAMPAIGN_TYPES, SUCCESS_METRICS,
   CHANNELS, ADS_PLATFORMS, PRIORITIES,
-  budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
+  branchRequired, budgetSummary, guidelineChecklist, taskPreview, validateSubmit,
   kolBudgetTotal, kolMonthlyTotals, withSyncedKolBudget,
   campaignMonthKeys, todayIso,
   BriefContentItem, BriefKolItem, GuidelineItem, RetroApprovalEntry,
@@ -63,10 +63,11 @@ function newCampaignId(): string {
 }
 
 // Step-1 (Overview) required-field check → { fieldKey: message }, in visual order.
-function overviewErrors(b: CampaignBrief): Record<string, string> {
+function overviewErrors(b: CampaignBrief, branchOptions?: string[]): Record<string, string> {
   const e: Record<string, string> = {};
   if (!b.name.trim()) e.name = "กรุณากรอกชื่อแคมเปญ";
-  if (b.branches.length === 0) e.branches = "กรุณาเลือกอย่างน้อย 1 สาขา";
+  // Only a brand that HAS branches can be asked for one — see branchRequired().
+  if (branchRequired(branchOptions) && b.branches.length === 0) e.branches = "กรุณาเลือกอย่างน้อย 1 สาขา";
   if (!b.startDate) e.startDate = "กรุณาเลือก Start Date";
   if (!b.endDate) e.endDate = "กรุณาเลือก End Date";
   else if (b.startDate && b.endDate < b.startDate) e.endDate = "End Date ต้องไม่ก่อน Start Date";
@@ -278,9 +279,15 @@ export default function NewCampaignPage() {
     setBrief((b) => (b.branches.length ? b : { ...b, branches: [...branches], branch: branches.join(", ") }));
   }, [branches, editingId, brandConfigsLoaded]);
   const bs = useMemo(() => budgetSummary(brief), [brief]);
-  const checklist = useMemo(() => guidelineChecklist(brief), [brief]);
+  // What the validators are told about this brand's branches. `undefined` while
+  // the config is still loading, never [] — `brandConfigs` starts as SEED data,
+  // which does not list the brands added in Settings, so an early [] would read
+  // as "this brand has no branches" and drop the requirement for every brand
+  // for a frame. Waiting keeps the rule strict until the truth arrives.
+  const branchOptions = brandConfigsLoaded ? branches : undefined;
+  const checklist = useMemo(() => guidelineChecklist(brief, branchOptions), [brief, branchOptions]);
   const preview = useMemo(() => taskPreview(brief), [brief]);
-  const errors = useMemo(() => validateSubmit(brief), [brief]);
+  const errors = useMemo(() => validateSubmit(brief, branchOptions), [brief, branchOptions]);
   const budgetGuardWarning = useMemo(() => monthlyBudgetWarning(brief, savedBriefs, budgetSheetRows), [brief, savedBriefs, budgetSheetRows]);
 
   const outOfRange = (iso: string) => iso && brief.startDate && brief.endDate && (iso < brief.startDate || iso > brief.endDate);
@@ -292,7 +299,7 @@ export default function NewCampaignPage() {
   }, [brief]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allWarnings = [...bs.warnings, ...rangeWarnings, ...(budgetGuardWarning ? [budgetGuardWarning] : [])];
-  const ovErrors = triedNext ? overviewErrors(brief) : {};
+  const ovErrors = triedNext ? overviewErrors(brief, branchOptions) : {};
   // Submit is blocked by hard errors, by over-PL-budget guards, and by other
   // unresolved warnings unless acknowledged.
   const canSubmit = errors.length === 0 && !budgetGuardWarning && (allWarnings.length === 0 || ackWarn);
@@ -301,7 +308,7 @@ export default function NewCampaignPage() {
   const goNext = () => {
     if (step === 0) {
       setTriedNext(true);
-      const e = overviewErrors(brief);
+      const e = overviewErrors(brief, branchOptions);
       const first = Object.keys(e)[0];
       if (first) { setTimeout(() => document.getElementById(`ov-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); return; }
     }
@@ -464,7 +471,7 @@ export default function NewCampaignPage() {
       // Submitting from the header can happen on any step, so land on the step
       // that actually needs work (Overview / Content / Budget) instead of the
       // checklist at the end, and say what's missing.
-      const overview = overviewErrors(brief);
+      const overview = overviewErrors(brief, branchOptions);
       const firstOverview = Object.keys(overview)[0];
       if (firstOverview) {
         setTriedNext(true);
@@ -603,11 +610,11 @@ export default function NewCampaignPage() {
             {role === "CMO" && (
               <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} />
             )}
-            <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
+            <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} branchOptions={branchOptions} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
           </>
         )}
         {step === 1 && <ContentPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} outOfRange={outOfRange} materialized={materializedIds} />}
-        {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} lineOaConfigs={lineOaConfigs} />}
+        {step === 2 && <Budget brief={brief} setBrief={setBrief} bs={bs} budgetGuardWarning={budgetGuardWarning} savedBriefs={savedBriefs} budgetSheetRows={budgetSheetRows} onEditKol={() => setStep(3)} branchOptions={branchOptions} lineOaConfigs={lineOaConfigs} />}
         {step === 3 && <KolPlan brief={brief} setBrief={setBrief} nextSeq={nextSeq} branches={branches} outOfRange={outOfRange} />}
         {step === 4 && <Preview preview={preview} warnings={allWarnings} />}
         {step === 5 && <Guideline checklist={checklist} />}
@@ -816,9 +823,12 @@ function AutoGrowTextarea({ value, onChange, className, placeholder }: {
   );
 }
 
-function Overview({ brief, set, setBrief, branches, planner, errors, brandOptions, brandConfigs, campaignTypes }: {
+function Overview({ brief, set, setBrief, branches, branchOptions, planner, errors, brandOptions, brandConfigs, campaignTypes }: {
   brief: CampaignBrief; set: <K extends keyof CampaignBrief>(k: K, v: CampaignBrief[K]) => void;
-  setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[]; planner: string;
+  setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>; branches: string[];
+  /** The same value the validators get — undefined until the brand config
+   *  lands, so the field cannot advertise "optional" before the rule agrees. */
+  branchOptions: string[] | undefined; planner: string;
   errors: Record<string, string>; brandOptions: BrandId[]; brandConfigs: BrandCfg[]; campaignTypes: string[];
 }) {
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
@@ -865,15 +875,27 @@ function Overview({ brief, set, setBrief, branches, planner, errors, brandOption
             {brandOptions.map((id) => <option key={id} value={id}>{brandConfigs.find((brand) => brand.key === id)?.name ?? BRANDS[id].name}</option>)}
           </select>
         </div>
-        {/* Branch — directly under Brand */}
+        {/* Branch — directly under Brand. A brand with no branches configured
+            (personal branding, no shops) shows neither the required star nor a
+            red error: both pointed at a dropdown with nothing in it, which is a
+            dead end, not a thing to fix. It says where branches come from
+            instead, so a brand that is merely unconfigured still gets a nudge. */}
         <div id="ov-branches">
-          <label className={label}>Branch <span className="text-status-red">*</span> <span className="text-faint font-normal">· หลายสาขา ({brief.branches.length})</span></label>
+          <label className={label}>
+            Branch {branchRequired(branchOptions) && <span className="text-status-red">*</span>}
+            <span className="text-faint font-normal"> · หลายสาขา ({brief.branches.length})</span>
+          </label>
           {errors.branches && <p className={errText + " mb-1"}>{errors.branches}</p>}
           <MultiSelectDropdown
             options={branches}
             selected={brief.branches}
             onChange={(next) => setBrief((b) => ({ ...b, branches: next, branch: next.join(", ") }))}
           />
+          {!branchRequired(branchOptions) && (
+            <p className="text-[11.5px] text-faint mt-1">
+              แบรนด์นี้ยังไม่มีสาขาใน Settings — ข้ามช่องนี้ได้เลย · ถ้าต้องมีสาขา เพิ่มได้ที่ Settings → Brands
+            </p>
+          )}
         </div>
         <div>
           <label className={label}>Campaign Type</label>
@@ -1215,7 +1237,7 @@ function KolPlan({ brief, setBrief, nextSeq, branches, outOfRange }: {
 }
 
 // ── Step 5 ──────────────────────────────────────────────────────────────────
-function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSheetRows, onEditKol, lineOaConfigs = [] }: {
+function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSheetRows, onEditKol, branchOptions, lineOaConfigs = [] }: {
   brief: CampaignBrief;
   setBrief: React.Dispatch<React.SetStateAction<CampaignBrief>>;
   bs: ReturnType<typeof budgetSummary>;
@@ -1224,6 +1246,7 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
   lineOaConfigs?: LineOaConfig[];
   budgetSheetRows: Awaited<ReturnType<typeof fetchBudgetSheetRows>>;
   onEditKol: () => void;
+  branchOptions: string[] | undefined;
 }) {
   const [budgetContextOpen, setBudgetContextOpen] = useState(true);
   const num = (v: string) => parseInt(v.replace(/\D/g, "")) || 0;
@@ -1302,7 +1325,11 @@ function Budget({ brief, setBrief, bs, budgetGuardWarning, savedBriefs, budgetSh
       .filter((b) => campaignMonthKeys(b.startDate, b.endDate).some((m) => mine.has(m)))
       .reduce((sum, b) => sum + (b.budget?.lineMessages ?? 0), 0);
   }, [savedBriefs, brief.b, brief.id, brief.startDate, brief.endDate]);
-  const branchScope = brief.branches.length ? brief.branches.join(", ") : "ยังไม่ได้เลือกสาขา";
+  // "ยังไม่ได้เลือกสาขา" reads as an unfinished step. For a brand that has no
+  // branches to choose from it is not a step at all, so the scope is the brand.
+  const branchScope = brief.branches.length
+    ? brief.branches.join(", ")
+    : branchRequired(branchOptions) ? "ยังไม่ได้เลือกสาขา" : "ทั้งแบรนด์";
   const overTotal = (brief.budget.total || 0) > 0 && bs.allocated > (brief.budget.total || 0);
 
   return (

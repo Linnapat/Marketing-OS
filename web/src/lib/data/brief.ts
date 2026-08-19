@@ -720,14 +720,32 @@ export function budgetSummary(brief: CampaignBrief): BudgetSummary {
 /** must = blocks Submit (mirrors validateSubmit); !must = nice-to-have, warn only. */
 export interface GuidelineItem { key: string; label: string; done: boolean; must: boolean }
 
-export function guidelineChecklist(brief: CampaignBrief): GuidelineItem[] {
+/** Does this brand have branches to pick from at all?
+ *
+ *  Three brands in production carry an empty branchList on purpose — personal
+ *  branding, no shops. Asking them for "at least one branch" is a required
+ *  field with an empty dropdown behind it: the campaign could never be
+ *  submitted, and nothing on screen said why. So the rule follows the brand's
+ *  own config rather than being universal.
+ *
+ *  `undefined` means the caller has not loaded the brand config yet and cannot
+ *  tell — that keeps the old behaviour (required) rather than letting a
+ *  branched brand slip through while the list is still loading. */
+export function branchRequired(branchOptions?: string[]): boolean {
+  return branchOptions === undefined || branchOptions.length > 0;
+}
+
+export function guidelineChecklist(brief: CampaignBrief, branchOptions?: string[]): GuidelineItem[] {
   const b = brief;
+  const needsBranch = branchRequired(branchOptions);
   return [
     { key: "objective", label: "Campaign objective ชัดเจนหรือยัง", done: !!b.objective, must: true },
     { key: "audience", label: "Target audience คือใคร", done: !!b.audience.trim(), must: true },
     { key: "message", label: "Main message คืออะไร", done: !!b.mainMessage.trim(), must: true },
     { key: "offer", label: "Offer / Promotion มีหรือไม่", done: !!b.offer.trim(), must: true },
-    { key: "branch", label: "Branch ที่ใช้ campaign (อย่างน้อย 1 สาขา)", done: b.branches.length > 0, must: true },
+    needsBranch
+      ? { key: "branch", label: "Branch ที่ใช้ campaign (อย่างน้อย 1 สาขา)", done: b.branches.length > 0, must: true }
+      : { key: "branch", label: "Branch — แบรนด์นี้ยังไม่มีสาขาใน Settings จึงข้ามได้", done: true, must: false },
     // Not must-have: some campaigns genuinely spend nothing (e.g. a Mainichi
     // free-message-quota campaign) — Budget stays a reminder, never a blocker.
     { key: "budget", label: "Budget รวมเท่าไร", done: b.budget.total > 0, must: false },
@@ -745,13 +763,13 @@ export function guidelineChecklist(brief: CampaignBrief): GuidelineItem[] {
 
 // ── Submit validation (Save Draft is exempt) ──────────────────────────────
 /** Returns the list of blocking messages. Empty ⇒ OK to submit. */
-export function validateSubmit(brief: CampaignBrief): string[] {
+export function validateSubmit(brief: CampaignBrief, branchOptions?: string[]): string[] {
   const e: string[] = [];
   if (!brief.name.trim()) e.push("Please enter a Campaign Name");
   if (!brief.objective) e.push("Please select an Objective");
   if (!brief.campaignType) e.push("Please select a Campaign Type");
   if (!brief.b) e.push("Please select a Brand");
-  if (brief.branches.length === 0) e.push("Please select at least one branch under this brand");
+  if (branchRequired(branchOptions) && brief.branches.length === 0) e.push("Please select at least one branch under this brand");
   if (!brief.startDate || !brief.endDate) e.push("Please select the Campaign Period (start and end date)");
   if (brief.startDate && brief.endDate && brief.endDate < brief.startDate) e.push("End Date must not be before Start Date");
   if (!brief.launchDate) e.push("Please select a Launch Date");
