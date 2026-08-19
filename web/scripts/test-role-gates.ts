@@ -6,8 +6,8 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
-import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief} from "../src/lib/roleGates";
+import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, isOwnQueueJob, hasShootOnRecord, shootContradiction, type Graphic } from "../src/lib/data/graphic";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -428,6 +428,55 @@ console.log("\n— roleHolders: กฎ → ตัวคน —");
   is("lead ที่ไม่มีสิทธิ์ ไม่ถูกยัดเข้ามา",
     leadFirst(byEmail, [...real, { name: "Four", email: "kittinan.k@teppenthailand.co.th", role: "VDO Editor", status: "Active" }], "kittinan.k@teppenthailand.co.th").join(","),
     byEmail.join(","));
+}
+
+console.log("\n— คิวงานของตัวเอง: คนถ่ายต้องเห็นใบงานที่ตัวเองถูกสั่งให้ถ่าย —");
+{
+  // เคสจริง: Jeeno (VDO Editor) ถูกตั้งเป็นคนถ่ายในใบที่ Pichayaporn รับไปแล้ว
+  // ใบนั้นจึงไม่ใช่ "งานของเขา" และไม่ใช่ "งานว่าง" → หายไปจากบอร์ดทั้งใบ
+  // ทำให้ส่ง footage ที่ทั้งคิวตัดต่อรออยู่ไม่ได้เลย
+  const job = (over: Partial<Graphic>) =>
+    ({ designer: "Pichayaporn", storyboardOwner: "", shooter: "", acceptedBy: "", ...over }) as Graphic;
+
+  is("VDO Editor ยังทำงานเฉพาะคิวตัวเอง", worksOwnQueueOnly("VDO Editor"), true);
+  is("คนถ่ายเห็นใบที่ตัวเองต้องถ่าย", isOwnQueueJob(job({ shooter: "Jeeno" }), "Jeeno"), true);
+  is("designer เห็นใบตัวเอง", isOwnQueueJob(job({}), "Pichayaporn"), true);
+  is("คนทำ storyboard เห็นใบตัวเอง", isOwnQueueJob(job({ storyboardOwner: "Jeeno" }), "Jeeno"), true);
+  is("คนที่กดรับงานเห็นใบตัวเอง แม้ designer เป็นคนอื่น", isOwnQueueJob(job({ acceptedBy: "Jeeno" }), "Jeeno"), true);
+  is("คนนอกใบงานยังไม่เห็น", isOwnQueueJob(job({ shooter: "Pupay" }), "Jeeno"), false);
+
+  // งานที่ยังไม่มีใครถือต้องเห็นได้ ไม่งั้นกดรับงานไม่ได้เลย
+  is("งานว่างยังเห็นได้", isOwnQueueJob(job({ designer: "Unassigned" }), "Jeeno"), true);
+  is("งานว่าง (ค่าว่าง) ยังเห็นได้", isOwnQueueJob(job({ designer: "" }), "Jeeno"), true);
+
+  // fail closed: ไม่รู้ว่าเป็นใคร = ไม่เห็นอะไรเลย ไม่ใช่เห็นทั้งบอร์ด
+  is("ไม่รู้ชื่อผู้ใช้ = ไม่เห็นใบที่มีคนถือ", isOwnQueueJob(job({ shooter: "Jeeno" }), ""), false);
+  is("ไม่รู้ชื่อผู้ใช้ = ไม่เห็นแม้แต่งานว่าง", isOwnQueueJob(job({ designer: "Unassigned" }), "  "), false);
+
+  // ชื่อเขียนไม่ตรงเป๊ะ (อีเมล vs ชื่อ) ต้องเป็นคนเดียวกัน — ใช้ sameName เหมือนที่อื่น
+  is("อีเมลกับชื่อคือคนเดียวกัน", isOwnQueueJob(job({ shooter: "jeeno@teppenthailand.co.th" }), "jeeno"), true);
+  is("ตัวพิมพ์เล็กใหญ่ไม่เกี่ยว", isOwnQueueJob(job({ shooter: "JEENO" }), "jeeno"), true);
+}
+
+console.log("\n— งานถ่ายที่บันทึกไว้แล้ว ต้องไม่หายไปเพราะสวิตช์ —");
+{
+  // 6 ใบบน production ตั้ง "ไม่ต้องถ่าย" ทั้งที่มีคนถ่าย/วันถ่ายค้างอยู่ —
+  // เดิม drawer ซ่อนทั้งบล็อก รวมช่องส่ง footage ด้วย = ไม่มีใครส่งได้เลย
+  const sh = (over: Partial<Graphic>) => over as Graphic;
+
+  is("ต้องถ่าย = แสดง", hasShootOnRecord(sh({ requiresShooting: true })), true);
+  is("ไม่ต้องถ่าย แต่มีคนถ่าย = ยังแสดง", hasShootOnRecord(sh({ requiresShooting: false, shooter: "Jeeno" })), true);
+  is("ไม่ต้องถ่าย แต่มีวันถ่าย = ยังแสดง", hasShootOnRecord(sh({ requiresShooting: false, shootDate: "2026-08-10" })), true);
+  is("ไม่ต้องถ่าย แต่ส่ง footage แล้ว = ยังแสดง", hasShootOnRecord(sh({ requiresShooting: false, footageLink: "http://x" })), true);
+  is("ไม่ต้องถ่ายและไม่มีอะไรเลย = ไม่แสดง", hasShootOnRecord(sh({ requiresShooting: false })), false);
+  is("ยังไม่ตัดสินใจและไม่มีอะไรเลย = ไม่แสดง", hasShootOnRecord(sh({})), false);
+
+  // เตือนเมื่อสวิตช์กับข้อมูลขัดกัน — ไม่ใช่แค่แอบแสดงเฉย ๆ
+  check("ขัดกัน = ขึ้นเตือน พร้อมชื่อคนถ่าย",
+    (shootContradiction(sh({ requiresShooting: false, shooter: "Jeeno", shootDate: "2026-08-10" })) ?? "").includes("Jeeno"));
+  is("ต้องถ่ายอยู่แล้ว = ไม่เตือน", shootContradiction(sh({ requiresShooting: true, shooter: "Jeeno" })), null);
+  is("ยังไม่ตัดสินใจ = ไม่เตือน", shootContradiction(sh({ shooter: "Jeeno" })), null);
+  is("ไม่ต้องถ่ายและไม่มีอะไรค้าง = ไม่เตือน", shootContradiction(sh({ requiresShooting: false })), null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

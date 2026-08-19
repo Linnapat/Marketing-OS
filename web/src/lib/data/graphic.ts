@@ -9,6 +9,7 @@ import { Task } from "@/lib/data/tasks";
 // todayIso only — data/brief imports nothing from here, so this cannot cycle.
 import { todayIso } from "@/lib/data/brief";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
+import { sameName } from "@/lib/identity";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
@@ -314,6 +315,33 @@ const TASK_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
 function dueLabel(iso?: string): string {
   const [, m, d] = (iso || "").split("-").map(Number);
   return m && d ? `${TASK_MON[m - 1]} ${d}` : "";
+}
+
+/** Is there a shoot ON RECORD here — a shooter named, a day booked, or footage
+ *  already handed in — regardless of what the ต้องถ่าย / ไม่ต้องถ่าย switch
+ *  currently says?
+ *
+ *  The drawer showed the whole shoot block only while `requiresShooting` was
+ *  true, so flipping the switch to "ไม่ต้องถ่าย" hid a named shooter, a booked
+ *  day AND the box footage is handed in through — for everyone, with no trace
+ *  that any of it existed. Six live requests are in exactly that state. The
+ *  switch may be wrong; the work already recorded against it is not something
+ *  to make invisible. */
+export function hasShootOnRecord(
+  g: Pick<Graphic, "requiresShooting" | "shooter" | "shootDate" | "footageLink">,
+): boolean {
+  return !!g.requiresShooting || !!g.shooter?.trim() || !!g.shootDate?.trim() || !!g.footageLink?.trim();
+}
+
+/** A shoot is recorded while the switch says there is none — the two disagree,
+ *  and somebody has to decide which is right. Null when they agree. */
+export function shootContradiction(
+  g: Pick<Graphic, "requiresShooting" | "shooter" | "shootDate" | "footageLink">,
+): string | null {
+  if (g.requiresShooting !== false || !hasShootOnRecord(g)) return null;
+  const who = g.shooter?.trim();
+  const day = g.shootDate?.trim();
+  return `ตั้งไว้ว่า "ไม่ต้องถ่าย" แต่ยังมี${who ? `คนถ่าย (${who})` : "ข้อมูลการถ่าย"}${day ? ` · วันถ่าย ${day}` : ""} ค้างอยู่`;
 }
 
 /** Is this request's shoot step live — someone named, footage still to come? */
@@ -671,6 +699,31 @@ export function revisionAssignee(
   d?: Pick<GraphicDeliverable, "submittedBy">,
 ): string | null {
   return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
+}
+
+/** Is this request inside `me`'s own queue — the scope worksOwnQueueOnly()
+ *  puts VDO Editors and outside studios on?
+ *
+ *  EVERY name the request carries counts, not just the designer. A shoot is a
+ *  named step like any other: a VDO Editor set as the shooter on a request a
+ *  colleague had already claimed found it was neither "his" nor unclaimed, so
+ *  it vanished from his board — and the footage the whole edit was waiting on
+ *  had nowhere to be handed in. `acceptedBy` for the same reason: whoever
+ *  picked the job up is holding it even while `designer` still reads
+ *  Unassigned.
+ *
+ *  Unclaimed work stays visible on purpose — รับงาน is how this role gets work
+ *  at all. Matching goes through sameName so "jeeno" and "jeeno@…" are one
+ *  person; an empty `me` returns false, because unknown identity must see
+ *  nothing rather than everything. */
+export function isOwnQueueJob(
+  g: Pick<Graphic, "designer" | "storyboardOwner" | "shooter" | "acceptedBy">,
+  me: string,
+): boolean {
+  if (!me.trim()) return false;
+  const holder = (g.designer ?? "").trim();
+  if (!holder || /^unassigned$/i.test(holder)) return true;
+  return [holder, g.storyboardOwner, g.shooter, g.acceptedBy].some((n) => sameName(n, me));
 }
 
 /** Who is holding this request right now — for display, not for routing one
