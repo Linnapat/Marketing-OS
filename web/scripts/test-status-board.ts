@@ -18,10 +18,11 @@ import {
   withUrgency,
   summarise,
   groupByOwner,
+  recount,
   NO_OWNER,
   type Health,
   type WorkItem,
-  storyboardHealth, shootingHealth, storyboardItems, shootingItems, MODULE_LABEL,
+  storyboardHealth, shootingHealth, storyboardItems, shootingItems, graphicItems, MODULE_LABEL,
 } from "../src/lib/data/statusBoard";
 import type { Task } from "../src/lib/data/tasks";
 import { GRAPHICS, type Graphic } from "../src/lib/data/graphic";
@@ -311,6 +312,55 @@ console.log("\n— Story board / Shooting บน Status Board —");
   is("ไม่มีปฏิทินก็ถอยไปใช้ due เดิม", storyboardItems(rows, () => undefined)[0].dueIso, rows[0].dueIso);
 
   is("มีป้ายชื่อโมดูลครบ", [MODULE_LABEL.storyboard, MODULE_LABEL.shooting], ["Story board", "Shooting"]);
+}
+
+console.log("\n— แยกเลน Graphic / VDO ตัดต่อ —");
+{
+  const g = (over: Partial<Graphic>): Graphic => ({ ...(GRAPHICS[0] as Graphic), campaignId: "CAM-1", ...over });
+  const laneOf = (over: Partial<Graphic>) => graphicItems([g(over)])[0].module;
+
+  // งานอาร์ตเวิร์กอยู่เลน graphic เหมือนเดิม
+  is("Poster = graphic", laneOf({ id: 1, type: "Poster" }), "graphic");
+  is("Artwork = graphic", laneOf({ id: 2, type: "Artwork" }), "graphic");
+  // Photo shoot ปิดจบที่รูป ไม่ใช่งานตัด — ยังเป็นเลน graphic (ขั้นถ่ายมีเลน Shooting ของตัวเองอยู่แล้ว)
+  is("Photo shoot = graphic", laneOf({ id: 3, type: "Photo shoot" }), "graphic");
+
+  // งานที่ชิ้นสุดท้ายเป็นวิดีโอ = เลน vdo
+  is("Reel = vdo", laneOf({ id: 4, type: "Reel" }), "vdo");
+  is("Short Video = vdo", laneOf({ id: 5, type: "Short Video" }), "vdo");
+  is("VDO shooting = vdo (ถ่ายแล้วต้องตัด)", laneOf({ id: 6, type: "VDO shooting" }), "vdo");
+  // ธงจาก Content Plan ชนะชื่อ type — โพสต์ที่ติ๊กว่าต้องมีวิดีโอคืองานตัด
+  is("requiredVideo ชนะชื่อ type", laneOf({ id: 7, type: "Photo", requiredVideo: true }), "vdo");
+
+  // ต้องตอบตรงกับ isVideoWork ที่ Slack routing / มุมโพสต์ ใช้ — ไม่งั้นชิปกับห้องแจ้งเตือนขัดกัน
+  const rows = [g({ id: 8, type: "Poster" }), g({ id: 9, type: "Reel" })];
+  is("ใบเดียวขึ้นเลนเดียว ไม่นับซ้ำ", graphicItems(rows).length, 2);
+  is("id ยังเป็น graphic: เหมือนเดิม (ลิงก์เดิมไม่พัง)", graphicItems(rows)[1].id, "graphic:9");
+  is("ป้ายเลน VDO", MODULE_LABEL.vdo, "VDO ตัดต่อ");
+}
+
+console.log("\n— ตัวเลขหัวแคมเปญต้องตรงกับรายการที่เห็น —");
+{
+  // บอร์ดกรอง items ของกลุ่ม "หลัง" จัดกลุ่มไปแล้ว ถ้าไม่นับใหม่ หัวแถวจะยังโชว์
+  // ตัวเลขของงานที่เพิ่งถูกซ่อนไป — กรองเหลือเลน VDO แล้วหัวแถวยังนับงาน Graphic
+  const it = (id: string, health: Health, urgency: WorkItem["urgency"] = "none"): WorkItem => ({
+    id, module: "graphic", title: id, campaignId: "CAM-1", health,
+    rawStatus: "", urgency,
+  });
+  const all = [it("a", "done"), it("b", "blocked", "overdue"), it("c", "notStarted", "dueSoon")];
+  const full = recount({ items: all });
+  is("นับครบเมื่อยังไม่กรอง", [full.counts.done, full.counts.blocked, full.openCount], [1, 1, 2]);
+  is("สายกับใกล้ครบนับแยก", [full.overdueCount, full.dueSoonCount], [1, 1]);
+  is("สุขภาพกลุ่ม = แย่สุด", full.health, "blocked");
+
+  const filtered = recount({ items: all.filter((i) => i.id === "a") });
+  is("กรองแล้วตัวเลขลดตาม", [filtered.counts.done, filtered.counts.blocked, filtered.openCount], [1, 0, 0]);
+  is("กรองแล้วงานสายหายไปด้วย", filtered.overdueCount, 0);
+  is("เหลือแต่งานเสร็จ = กลุ่มเสร็จ", filtered.health, "done");
+
+  // groupByCampaign ต้องใช้ตัวเดียวกัน ไม่งั้นสองที่นับไม่ตรงกัน
+  const grouped = groupByCampaign([{ id: "CAM-1", name: "C1" }], all)[0];
+  is("groupByCampaign ใช้ recount ตัวเดียวกัน", [grouped.counts, grouped.health, grouped.openCount], [full.counts, full.health, full.openCount]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

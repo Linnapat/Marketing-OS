@@ -17,7 +17,7 @@ import {
   UNASSIGNED, WorkItem,
   contentItems, expenseItems, graphicItems, groupByCampaign, kolItems, taskItems,
   storyboardItems, shootingItems,
-  withUrgency, summarise, groupByOwner, URGENCY_META, NO_OWNER, DUE_SOON_DAYS, type Urgency, type OwnerLoad,
+  withUrgency, summarise, groupByOwner, recount, URGENCY_META, NO_OWNER, DUE_SOON_DAYS, type Urgency, type OwnerLoad,
 } from "@/lib/data/statusBoard";
 import {
   TrackerCampaign, buildTracker, filterTracker, searchTerms,
@@ -34,16 +34,16 @@ import { fetchKols } from "@/lib/db/kol";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchExpenseRequests } from "@/lib/db/finance";
 
-const ALL_MODULES: ModuleKey[] = ["content", "graphic", "storyboard", "shooting", "kol", "task", "expense"];
+const ALL_MODULES: ModuleKey[] = ["content", "graphic", "vdo", "storyboard", "shooting", "kol", "task", "expense"];
 
 /** Which Settings → Permissions module each lane belongs to. The route itself
  *  is ungated (it spans every module), so the gate is applied per lane instead:
  *  a role with no Finance access must not read expense rows here that it can't
  *  open in Expenses. Tasks are cross-cutting and ungated, same as /my-tasks. */
 const MODULE_MATRIX: Partial<Record<ModuleKey, string>> = {
-  // Storyboard and Shooting are steps of a graphic request, so they follow
+  // VDO, Storyboard and Shooting all come off a graphic request, so they follow
   // the Graphic module's permission — seeing them IS seeing that request.
-  content: "Content", graphic: "Graphic", storyboard: "Graphic", shooting: "Graphic",
+  content: "Content", graphic: "Graphic", vdo: "Graphic", storyboard: "Graphic", shooting: "Graphic",
   kol: "KOL", expense: "Finance",
 };
 
@@ -106,8 +106,9 @@ export default function StatusDashboardPage() {
     Promise.all([
       fetchCampaigns(),
       want.has("content") ? fetchContent() : none([]),
-      // One fetch feeds three lanes — the two steps live on the same rows.
-      (want.has("graphic") || want.has("storyboard") || want.has("shooting")) ? fetchGraphics() : none([]),
+      // One fetch feeds four lanes — artwork, video edits and the two steps all
+      // live on the same rows.
+      (want.has("graphic") || want.has("vdo") || want.has("storyboard") || want.has("shooting")) ? fetchGraphics() : none([]),
       want.has("kol") ? fetchKols() : none([]),
       want.has("task") ? fetchTasks() : none({ tasks: [], doneIds: [] }),
       want.has("expense") ? fetchExpenseRequests() : none([]),
@@ -116,7 +117,10 @@ export default function StatusDashboardPage() {
       const today = new Date().toISOString().slice(0, 10);
       const items: WorkItem[] = [
         ...(want.has("content") ? contentItems(content) : []),
-        ...(want.has("graphic") ? graphicItems(graphics) : []),
+        // graphicItems splits itself into the graphic and vdo lanes, so it is
+        // called once and its rows are dropped per lane rather than filtered
+        // twice on a rule that lives in the adapter.
+        ...graphicItems(graphics).filter((i) => want.has(i.module)),
         // The storyboard's deadline is the Team Calendar's, for the month this
         // request serves — the same date the drawer shows. Falls back to the
         // request's own due date when the calendar says nothing.
@@ -157,7 +161,10 @@ export default function StatusDashboardPage() {
           && (urgency === "all" || i.urgency === urgency)
           && (brand === "all" || i.brand === brand || (!i.brand && g.brand === brand))
           && (i.brand ? brandVisibility.isVisible(i.brand) : true));
-        return { ...g, items };
+        // Counts are re-derived, not carried over: the header pills and the
+        // list under them describe the same rows, so filtering to one lane no
+        // longer leaves a row totalling the work it just hid.
+        return { ...g, items, ...recount({ items }) };
       })
       .filter((g) => {
         if (g.campaignId !== UNASSIGNED && !brandVisibility.isVisible(g.brand as BrandId)) return false;
@@ -206,7 +213,7 @@ export default function StatusDashboardPage() {
       <PageHeader
         eyebrow="QA"
         title="Status Dashboard"
-        subtitle="ทุกงานในระบบ — Content, Graphic, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว · ดูตามแคมเปญ ตามคน หรือตามโพสต์ว่างานผลิตถึงไหนแล้ว"
+        subtitle="ทุกงานในระบบ — Content, Graphic, VDO ตัดต่อ, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว · ดูตามแคมเปญ ตามคน หรือตามโพสต์ว่างานผลิตถึงไหนแล้ว"
         right={loading ? "กำลังโหลด…"
           : groupBy === "post" ? `${trackerSummary.posts} โพสต์ · ${trackerSummary.jobs} ใบงาน`
             : `${totalItems} งาน · ${visible.length} แคมเปญ`}
