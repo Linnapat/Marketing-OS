@@ -16,7 +16,7 @@ import { FinishedFold } from "@/components/ui/FinishedFold";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
   graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, type ReviewLens,
-  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard,
+  DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard, isOwnQueueJob,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
   resolveOpenTarget, isGraphicFinished,
@@ -291,13 +291,9 @@ function GraphicPageInner() {
   // resolves a beat after the session does, so the whole board — every brand,
   // every supplier — flashed up before the filter engaged, and an account with
   // no member row would have kept it. Unknown identity sees nothing.
-  const inMyQueue = (g: Graphic) => {
-    if (!ownQueueOnly) return true;
-    if (!myName) return false;
-    const holder = (g.designer ?? "").trim().toLowerCase();
-    const sb = (g.storyboardOwner ?? "").trim().toLowerCase();
-    return holder === myName || sb === myName || !holder || holder === "unassigned";
-  };
+  // The rule itself lives in isOwnQueueJob — it has to answer for the shooter
+  // and whoever accepted the job too, not just the designer.
+  const inMyQueue = (g: Graphic) => !ownQueueOnly || isOwnQueueJob(g, myName);
   // Outside the counted filters: brand scope and the own-queue rule are both
   // fixed by the viewer's role, and no button on this page can undo either — a
   // "ล้างตัวกรอง" that promised to bring those rows back would be lying.

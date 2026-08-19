@@ -12,6 +12,7 @@ import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, creativeBriefLink, artworkUnits,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth, materialNote,
+  hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
@@ -36,6 +37,7 @@ import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProdu
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
+import { sameName } from "@/lib/identity";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { useDeadlines } from "@/lib/useDeadlines";
@@ -393,6 +395,23 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`,
       approved ? `โดย ${currentUser} — เริ่มถ่าย/ผลิตงานได้` : `${sbNote.trim()} · โดย ${currentUser}`,
       workLink.graphic(g.id), { team: graphicTeam(g), to: [storyboardAuthor(g)] });
+  };
+
+  /** Naming a shooter is a hand-over, so it has to reach them. The field saved
+   *  in silence: the only trace was a name inside a drawer the shooter had no
+   *  reason to open — and, until isOwnQueueJob counted the shooter, could not
+   *  reach from their own board at all. Same rule as every other step here:
+   *  whoever the work just became is the person told. */
+  const assignShooter = (name: string) => {
+    if (!canRunPipeline) return;
+    const before = (g.shooter ?? "").trim();
+    setShooting({ shooter: name });
+    const next = name.trim();
+    // Clearing the field, or re-picking the same person, is not a hand-over.
+    if (!next || sameName(next, before)) return;
+    notify("newTask", `📷 ให้ถ่ายงาน: ${g.title}`,
+      `โดย ${currentUser} · ${g.shootDate ? `วันถ่าย ${g.shootDate}` : "ยังไม่กำหนดวันถ่าย"} — ถ่ายเสร็จส่ง footage ในใบงานนี้`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [next] });
   };
 
   const submitFootage = () => {
@@ -910,12 +929,21 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                       )}
                     </div>
                   )}
-                  {g.requiresShooting && (
+                  {/* Shown whenever a shoot is on record, not only while the
+                      switch says ต้องถ่าย: flipping it to ไม่ต้องถ่าย used to
+                      hide the named shooter, the booked day and the box footage
+                      is handed in through, all at once and for everybody. */}
+                  {hasShootOnRecord(g) && (
                     <div className="flex flex-col gap-2">
+                      {shootContradiction(g) && (
+                        <div className="rounded-[8px] px-2.5 py-[7px] text-[11px] font-semibold" style={{ background: "#FFF7ED", color: "#B3641E" }}>
+                          ⚠ {shootContradiction(g)} — เลือกให้ตรงกันก่อน ไม่งั้นงานถ่ายจะไม่ขึ้นบนบอร์ด
+                        </div>
+                      )}
                       <div className="grid md:grid-cols-2 gap-2">
                         <div>
                           <div className="text-[10.5px] font-bold text-faint mb-[4px]">คนถ่าย</div>
-                          <OwnerSelect value={g.shooter ?? ""} onChange={(name) => setShooting({ shooter: name })} team="Creative" placeholder="ยังไม่ระบุ" disabled={!canRunPipeline} />
+                          <OwnerSelect value={g.shooter ?? ""} onChange={assignShooter} team="Creative" placeholder="ยังไม่ระบุ" disabled={!canRunPipeline} />
                         </div>
                         <div>
                           <div className="text-[10.5px] font-bold text-faint mb-[4px]">วันถ่าย · เลื่อนได้</div>
