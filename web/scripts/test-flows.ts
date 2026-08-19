@@ -9,7 +9,7 @@ import {
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
 import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
-import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
@@ -224,6 +224,42 @@ console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-mess
   check("no budget-related blocker when total is 0", !validateSubmit(b).some((e) => /budget/i.test(e)));
   check("guideline checklist no longer treats budget as must-have",
     guidelineChecklist(b).find((i) => i.key === "budget")?.must === false);
+}
+
+console.log("Branch — required only for brands that actually have branches");
+{
+  // สามแบรนด์บน production (Linnapat / ABCDB / Takao) เป็น personal branding
+  // ไม่มีสาขา — บังคับ "อย่างน้อย 1 สาขา" ทำให้ส่งแคมเปญไม่ได้ตลอดกาล
+  // เพราะ dropdown ว่างเปล่า ไม่มีอะไรให้กด
+  const b = emptyBrief("branch-test");
+  b.name = "N"; b.objective = "Awareness"; b.campaignType = "Always-on";
+  b.startDate = "2026-08-01"; b.endDate = "2026-08-31"; b.launchDate = "2026-08-01";
+  b.audience = "A"; b.mainMessage = "M"; b.offer = "O"; b.approver = "CMO";
+  b.content = [{
+    ...emptyContentItem(1), id: "c1", title: "T", subHead: "S", platforms: ["Instagram"],
+    assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], graphicDueDate: "2026-07-31", publishDate: "2026-08-01",
+  }];
+  const blocks = (opts?: string[]) => validateSubmit(b, opts).some((e) => /at least one branch/.test(e));
+
+  check("แบรนด์ที่มีสาขา แต่ยังไม่เลือก = บล็อกเหมือนเดิม", blocks(["Central World", "EmQuartier"]));
+  check("แบรนด์ที่ไม่มีสาขาเลย = ไม่บล็อก", !blocks([]));
+  // undefined = config ยังโหลดไม่เสร็จ ต้องเข้มไว้ก่อน ไม่ใช่ปล่อยผ่าน
+  check("ยังไม่รู้ว่าแบรนด์มีสาขาไหม = บล็อกไว้ก่อน", blocks(undefined));
+  check("เรียกแบบเดิมไม่ส่ง argument = พฤติกรรมเดิม", blocks());
+  check("branchRequired ตรงกับกฎที่ validateSubmit ใช้",
+    branchRequired(["A"]) === true && branchRequired([]) === false && branchRequired(undefined) === true);
+
+  // เลือกสาขาแล้วก็ต้องผ่านทั้งสองแบบ
+  b.branches = ["Central World"];
+  check("เลือกสาขาแล้วผ่าน", !blocks(["Central World", "EmQuartier"]));
+
+  // checklist ต้องไม่ค้างเป็นข้อ must สีแดงที่ติ๊กไม่ได้
+  const noBranch = { ...b, branches: [] };
+  const item = (opts?: string[]) => guidelineChecklist(noBranch, opts).find((i) => i.key === "branch");
+  check("checklist: แบรนด์มีสาขา ยังเป็น must และยังไม่ผ่าน",
+    item(["Central World"])?.must === true && item(["Central World"])?.done === false);
+  check("checklist: แบรนด์ไม่มีสาขา = ไม่ใช่ must และนับว่าผ่าน",
+    item([])?.must === false && item([])?.done === true);
 }
 
 console.log("Campaign code — BRAND_YYMM_NNN, numbered per brand per month");
