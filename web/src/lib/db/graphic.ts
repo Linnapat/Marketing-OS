@@ -2,7 +2,7 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, findLinkedGraphics, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
 import { BrandId } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
@@ -35,6 +35,43 @@ export async function fetchGraphicById(id: string | number): Promise<Graphic | n
   ).maybeSingle();
   if (error || !data?.data) return null;
   return withLiveGraphicOverdue({ ...(data.data as Graphic), createdAt: (data as { created_at?: string }).created_at });
+}
+
+/** The request(s) a post is waiting on, read from EITHER end of the link.
+ *
+ *  The link is written on whichever side happened to be created second, and one
+ *  path never wrote it back: a brief that mints its own post stamps
+ *  `graphic.contentPostId` and leaves `post.graphicRequestId` empty. Eight live
+ *  posts are in that state, and the Content drawer — which only ever looked at
+ *  `post.graphicRequestId` — offered "ขอกราฟฟิกสำหรับโพสต์นี้" over work that
+ *  had already been briefed, assigned and accepted. Whoever was writing the
+ *  caption had to open Graphic Request and match it up by eye.
+ *
+ *  Ordered by id, so a post that somehow carries two requests reads oldest
+ *  first and the caller can say how many there are instead of silently
+ *  dropping the rest. */
+export async function fetchGraphicsForPost(
+  post: { id: string; graphicRequestId?: string | number | null },
+): Promise<Graphic[]> {
+  const named = String(post.graphicRequestId ?? "").trim();
+  if (named) {
+    const one = await fetchGraphicById(named);
+    if (one) return [one];
+  }
+  const postId = String(post.id ?? "").trim();
+  if (!postId) return [];
+  const db = supabase();
+  // Demo mode runs the SAME rule the pure layer states, rather than a second
+  // hand-rolled copy of "what counts as linked".
+  if (!db) return findLinkedGraphics({ id: postId, graphicRequestId: named || undefined }, GRAPHICS);
+  const { data, error } = await liveOnly(
+    db.from("graphic_requests").select("id, data, created_at").eq("data->>contentPostId", postId),
+    await trashReady(),
+  ).order("id");
+  if (error || !data) return [];
+  return data
+    .filter((r) => r.data)
+    .map((r) => withLiveGraphicOverdue({ ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at }));
 }
 
 export async function createGraphic(input: Graphic): Promise<void> {

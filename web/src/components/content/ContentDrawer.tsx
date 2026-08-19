@@ -23,8 +23,8 @@ import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, t
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
-import { GRAPHIC_BRIEF_FOR_PARAM, GRAPHIC_OPEN_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice } from "@/lib/data/graphic";
-import { fetchGraphicById, updateGraphic } from "@/lib/db/graphic";
+import { GRAPHIC_BRIEF_FOR_PARAM, GRAPHIC_OPEN_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice, creativeBriefLink } from "@/lib/data/graphic";
+import { fetchGraphicsForPost, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -83,12 +83,46 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
   );
 }
 
+/** The one strip that says WHAT this post is: the kind of work, its type, and
+ *  the link to the brief itself.
+ *
+ *  Whoever writes the caption had only the content title to go on — nothing said
+ *  whether they were writing for an artwork or a video edit, and the brief deck
+ *  the words are supposed to follow was not reachable from here at all. The only
+ *  way to check was to open Graphic Request and find the row by eye. Rendered
+ *  wherever the caption is written, so the pop-out carries it too. */
+function LinkedGraphicStrip({ graphic, extra = 0 }: { graphic: Graphic | null; extra?: number }) {
+  if (!graphic) return null;
+  const kind = workKind(graphic.type, graphic.requiredVideo);
+  const brief = creativeBriefLink(graphic);
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <StatusBadge tone={kind === "graphic" ? "orange" : "blue"}>{WORK_KIND_LABEL[kind]}</StatusBadge>
+      {graphic.type && <span className="text-[11.5px] font-bold text-muted">{graphic.type}</span>}
+      {brief ? (
+        <a href={brief} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent">📄 เปิดบรีฟ ↗</a>
+      ) : (
+        <span className="text-[11.5px] text-faint">ยังไม่มีลิงก์บรีฟในใบงาน</span>
+      )}
+      <a
+        href={`/graphic?${GRAPHIC_OPEN_PARAM}=${encodeURIComponent(String(graphic.id))}`}
+        className="text-[11px] text-faint hover:text-ink"
+      >
+        ใบงาน #{graphic.id}{graphic.code ? ` · ${graphic.code}` : ""} ↗
+      </a>
+      {extra > 0 && (
+        <span className="text-[11px] font-bold" style={{ color: "#B3641E" }}>+ อีก {extra} ใบผูกกับโพสต์นี้</span>
+      )}
+    </div>
+  );
+}
+
 /** The Content Plan brief, as the caption writer needs to read it.
  *
  *  Its own component because it is now rendered twice — under the field in the
  *  drawer, and beside it when the field is popped out — and two copies of this
  *  list would drift the moment a brief field is added. */
-function CaptionBriefGuide({ item }: { item: ContentItem }) {
+function CaptionBriefGuide({ item, graphic, extraGraphics = 0 }: { item: ContentItem; graphic?: Graphic | null; extraGraphics?: number }) {
   const guide: [string, string | undefined][] = [
     ["Main head", item.title],
     ["Sub head", item.subHead],
@@ -103,6 +137,11 @@ function CaptionBriefGuide({ item }: { item: ContentItem }) {
   return (
     <div className="rounded-[14px] border p-3" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
       <div className="text-[11.5px] font-extrabold text-[#5B4FB2] mb-2">📋 Brief guide · เขียน caption ตามนี้</div>
+      {graphic && (
+        <div className="mb-2 pb-2 border-b" style={{ borderColor: "#DDD1FF" }}>
+          <LinkedGraphicStrip graphic={graphic} extra={extraGraphics} />
+        </div>
+      )}
       {rows.length ? (
         <div className="flex flex-col gap-[7px]">
           {rows.map(([label, v]) => (
@@ -171,6 +210,10 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // at graphic ids that were hard-deleted before Trash existed, and those sat
   // on "กำลังโหลด…" forever — a spinner that never resolves reads as a hang.
   const [graphicLookup, setGraphicLookup] = useState<"idle" | "loading" | "missing" | "found">("idle");
+  // How many requests name this post, when it is somehow more than one. Shown
+  // rather than dropped — a caption written against the wrong one of two is the
+  // failure this whole block exists to prevent.
+  const [extraGraphics, setExtraGraphics] = useState(0);
   // A planner stops once Creative has taken the job on — the brief they are
   // working to must not change under them.
   const lock = contentEditLock(linkedGraphic);
@@ -190,14 +233,25 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
     return () => { alive = false; };
   }, [item.b]);
   useEffect(() => {
-    if (!item.graphicRequestId) { setLinkedGraphic(null); setGraphicLookup("idle"); return; }
     let alive = true;
     setGraphicLookup("loading");
-    fetchGraphicById(item.graphicRequestId)
-      .then((g) => { if (!alive) return; setLinkedGraphic(g); setGraphicLookup(g ? "found" : "missing"); })
-      .catch(() => { if (alive) setGraphicLookup("missing"); })
+    // Looked up from BOTH ends of the link. Reading post.graphicRequestId alone
+    // missed every post a brief had minted for itself — those carry the link on
+    // the request instead — so this panel offered to raise a brief for work that
+    // was already in production.
+    fetchGraphicsForPost({ id: item.id, graphicRequestId: item.graphicRequestId })
+      .then((gs) => {
+        if (!alive) return;
+        setLinkedGraphic(gs[0] ?? null);
+        setExtraGraphics(Math.max(0, gs.length - 1));
+        // "named a request that no longer exists" is a real error worth showing;
+        // "never had one" is just an unbriefed post, and idle keeps the
+        // ขอกราฟฟิก prompt on screen for it.
+        setGraphicLookup(gs.length ? "found" : item.graphicRequestId ? "missing" : "idle");
+      })
+      .catch(() => { if (alive) setGraphicLookup(item.graphicRequestId ? "missing" : "idle"); });
     return () => { alive = false; };
-  }, [item.graphicRequestId]);
+  }, [item.id, item.graphicRequestId]);
   useEffect(() => {
     let alive = true;
     fetchCaptionTemplates()
@@ -735,14 +789,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               <div className="rounded-[14px] border border-line2 bg-ivory p-4">
                 {/* Raising the brief is a separate step from planning the post;
                     this is the link that keeps them tied by post id. */}
-                {!item.graphicRequestId && (
+                {!item.graphicRequestId && !linkedGraphic && graphicLookup !== "loading" && (
                   <a href={`/graphic?${GRAPHIC_BRIEF_FOR_PARAM}=${encodeURIComponent(item.id)}`}
                     className="mb-3 flex items-center justify-between gap-2 rounded-[10px] border border-[#DDD1FF] bg-[#F7F2FF] px-3 py-[9px]">
                     <span className="text-[12px] font-bold text-[#2C2553]">🎨 ขอกราฟฟิกสำหรับโพสต์นี้</span>
                     <span className="text-[11px] font-bold text-[#6C5CE7]">เปิดฟอร์ม ↗</span>
                   </a>
                 )}
-                {item.graphicRequestId && (
+                {(item.graphicRequestId || linkedGraphic) && (
                   <div className="mb-3">
                     {/* What KIND of artwork this post is waiting on. "ผูกกับ
                         Graphic Request #12" alone never said whether that was a
@@ -753,10 +807,10 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                     <div className="flex items-center gap-2 flex-wrap">
                       {linkedGraphic ? (
                         <>
-                          <StatusBadge tone={linkedGraphic.requiredVideo || /vdo|video/i.test(WORK_KIND_LABEL[workKind(linkedGraphic.type, linkedGraphic.requiredVideo)]) ? "blue" : "orange"}>
-                            {WORK_KIND_LABEL[workKind(linkedGraphic.type, linkedGraphic.requiredVideo)]}
-                          </StatusBadge>
-                          {linkedGraphic.type && <span className="text-[11.5px] font-bold text-muted">{linkedGraphic.type}</span>}
+                          {/* Kind · type · brief link — the same strip the
+                              caption writer gets, so both screens answer "what
+                              am I looking at" identically. */}
+                          <LinkedGraphicStrip graphic={linkedGraphic} extra={extraGraphics} />
                           <StatusBadge tone={linkedGraphic.stage === "Approved" || linkedGraphic.stage === "Delivered" ? "green" : "gold"}>{linkedGraphic.stage}</StatusBadge>
                         </>
                       ) : graphicLookup === "missing" ? (
@@ -767,17 +821,15 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                         <span className="text-[11px] text-faint">กำลังโหลดรายละเอียดใบงาน…</span>
                       )}
                     </div>
-                    {/* Jump straight to the request this post is linked to.
-                        This used to be a bare /graphic link, which dropped you
-                        on the whole list to go hunting for #N by eye. */}
-                    <a
-                      href={`/graphic?${GRAPHIC_OPEN_PARAM}=${encodeURIComponent(String(item.graphicRequestId))}`}
-                      className="mt-1 inline-block text-[11px] text-faint hover:text-ink"
-                    >
-                      ผูกกับ Graphic Request #{item.graphicRequestId}
-                      {linkedGraphic?.size ? ` · ${linkedGraphic.size}` : ""}
-                      {linkedGraphic?.designer && linkedGraphic.designer !== "Unassigned" ? ` · ${linkedGraphic.designer}` : ""} ↗
-                    </a>
+                    {/* Size and designer, under the strip. The request id comes
+                        from the row we actually resolved — reading it off the
+                        post alone produced a "#undefined" link on every post
+                        whose link is stored on the request instead. */}
+                    {linkedGraphic && (linkedGraphic.size || (linkedGraphic.designer && linkedGraphic.designer !== "Unassigned")) && (
+                      <div className="mt-1 text-[11px] text-faint">
+                        {[linkedGraphic.size, linkedGraphic.designer !== "Unassigned" ? linkedGraphic.designer : ""].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-2 mb-3">
@@ -864,13 +916,13 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                   className={field}
                   title={`Caption · ${item.title}`}
                   asideTitle="บรีฟของโพสต์นี้"
-                  aside={<CaptionBriefGuide item={item} />}
+                  aside={<CaptionBriefGuide item={item} graphic={linkedGraphic} extraGraphics={extraGraphics} />}
                 />
                 <div className="text-[11px] text-faint mt-1 text-right">{caption.length} chars</div>
               </div>
 
               {/* Brief guide — reference from the Content Plan for writing the caption */}
-              <CaptionBriefGuide item={item} />
+              <CaptionBriefGuide item={item} graphic={linkedGraphic} extraGraphics={extraGraphics} />
               <div>
                 <label className="block text-[11.5px] font-bold text-muted mb-[6px]">Hashtags</label>
                 <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="#wagyu #bangkok #teppen" className={field} />

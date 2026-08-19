@@ -217,5 +217,30 @@ console.log("\n— 5. งานที่ไม่มีโพสต์ (POSM / �
     footageReady({ requiresShooting: true, footageLink: "https://x" }), true);
 }
 
+console.log("\n— โพสต์ที่บรีฟสร้างให้เอง: ลิงก์อยู่ฝั่งใบงานฝั่งเดียว —");
+{
+  // เคสจริงบน production 8 โพสต์ (id ลงท้าย -gfx): ตอนตั้งบรีฟแล้วเลือก
+  // "สร้างโพสต์ใหม่ให้ด้วย" ระบบเขียน g.contentPostId แต่ไม่เคยเขียน
+  // post.graphicRequestId กลับ — ContentDrawer อ่านแต่ฝั่งโพสต์ เลยขึ้น
+  // "ขอกราฟฟิกสำหรับโพสต์นี้" ทับงานที่บรีฟ/รับงานไปแล้ว
+  const gr = (id: number, over: Partial<Graphic> = {}) => ({ ...g(over), id });
+  const oneWay = gr(144, { contentPostId: "c1786707824655003-gfx", type: "Artwork" });
+  const post = { id: "c1786707824655003-gfx" };
+
+  is("ลิงก์ฝั่งใบงานฝั่งเดียวก็ต้องหาเจอ",
+    findLinkedGraphics(post, [oneWay]).map((x) => x.id).join(","), "144");
+  is("โพสต์อื่นไม่โดนลาก",
+    findLinkedGraphics({ id: "c-other" }, [oneWay]).length, 0);
+
+  // ผูกครบสองทาง (ทางที่ addGraphic เขียนอยู่แล้ว) ต้องไม่นับซ้ำเป็น 2 ใบ
+  const twoWay = gr(200, { contentPostId: "c-200" });
+  is("ผูกสองทางยังนับเป็นใบเดียว",
+    findLinkedGraphics({ id: "c-200", graphicRequestId: "200" }, [twoWay]).length, 1);
+
+  // โพสต์ที่ยังไม่เคยตั้งบรีฟ = ไม่เจอ (ต้องขึ้นปุ่ม "ขอกราฟฟิก" ตามเดิม)
+  is("โพสต์ที่ยังไม่มีใบงาน = ไม่เจอ",
+    findLinkedGraphics({ id: "c-new" }, [oneWay, twoWay]).length, 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
