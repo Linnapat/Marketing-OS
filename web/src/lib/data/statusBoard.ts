@@ -11,7 +11,7 @@
 
 import { BrandId } from "@/lib/brands";
 import { ContentItem, contentDateIso, captionOwner } from "@/lib/data/content";
-import { Graphic, jobHolder, needsStoryboard } from "@/lib/data/graphic";
+import { Graphic, isVideoWork, jobHolder, needsStoryboard } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 import { Tone } from "@/lib/status";
 
@@ -37,11 +37,19 @@ export const HEALTH_META: Record<Health, { label: string; tone: Tone }> = {
  *  after a campaign is renamed. */
 export const UNASSIGNED = "__unassigned__";
 
-export type ModuleKey = "content" | "graphic" | "storyboard" | "shooting" | "kol" | "task" | "expense";
+export type ModuleKey = "content" | "graphic" | "vdo" | "storyboard" | "shooting" | "kol" | "task" | "expense";
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
   content: "Content",
   graphic: "Graphic",
+  // Artwork and video editing are raised on the same request form, so the board
+  // read them as one "Graphic" lane — but a designer's queue and an editor's
+  // queue are different people, different rates and different deadlines, and
+  // filtering to one of them was impossible. Split on isVideoWork(), the app's
+  // single answer to "is the finished piece a video", so this lane can never
+  // disagree with the Slack room the same request notifies or the kind the post
+  // view prints on the same job.
+  vdo: "VDO ตัดต่อ",
   // Storyboard and Shooting are STEPS of a graphic request, not separate
   // records — but they are separately owned (Creative Content draws, a shooter
   // shoots) and separately late, and rolled into "Graphic" the board could not
@@ -289,7 +297,7 @@ export function groupByOwner(items: WorkItem[]): OwnerLoad[] {
     if (!load) {
       load = {
         owner: key, total: 0, overdue: 0, dueSoon: 0, blocked: 0, waiting: 0,
-        byModule: { content: 0, graphic: 0, storyboard: 0, shooting: 0, kol: 0, task: 0, expense: 0 },
+        byModule: { content: 0, graphic: 0, vdo: 0, storyboard: 0, shooting: 0, kol: 0, task: 0, expense: 0 },
         items: [],
       };
       byOwner.set(key, load);
@@ -314,6 +322,24 @@ export function groupByOwner(items: WorkItem[]): OwnerLoad[] {
   });
 }
 
+/** Every number a campaign row prints, derived from the items it currently
+ *  holds. Exported because the board filters a group's items after grouping —
+ *  and a row keeping counts from before the filter is a row arguing with the
+ *  list underneath it: filter to VDO and the header still totalled the artwork.
+ *  One derivation, so grouping and filtering can never disagree. */
+export function recount(g: Pick<CampaignGroup, "items">): Pick<CampaignGroup, "counts" | "health" | "openCount" | "overdueCount" | "dueSoonCount"> {
+  const counts = emptyCounts();
+  for (const i of g.items) counts[i.health] += 1;
+  const open = g.items.filter((i) => i.health !== "done");
+  return {
+    counts,
+    health: worstHealth(g.items.map((i) => i.health)),
+    openCount: g.items.length - counts.done,
+    overdueCount: open.filter((i) => i.urgency === "overdue").length,
+    dueSoonCount: open.filter((i) => i.urgency === "dueSoon").length,
+  };
+}
+
 /** Buckets work items under their campaign. Campaigns with no work still get a
  *  row (an empty campaign is a real signal), and items whose campaignId matches
  *  no campaign land in the UNASSIGNED group instead of vanishing. */
@@ -336,16 +362,9 @@ export function groupByCampaign(
       groups.set(UNASSIGNED, g);
     }
     g.items.push(item);
-    g.counts[item.health] += 1;
   }
 
-  for (const g of groups.values()) {
-    g.health = worstHealth(g.items.map((i) => i.health));
-    g.openCount = g.items.length - g.counts.done;
-    const open = g.items.filter((i) => i.health !== "done");
-    g.overdueCount = open.filter((i) => i.urgency === "overdue").length;
-    g.dueSoonCount = open.filter((i) => i.urgency === "dueSoon").length;
-  }
+  for (const g of groups.values()) Object.assign(g, recount(g));
 
   // Worst first, then most open work, then by name — so whatever needs the
   // CMO's attention is at the top without any filtering. Two buckets are
@@ -396,9 +415,13 @@ function statusOfStage(c: ContentItem, stage: string): string {
   return c.captionStatus;
 }
 
+/** Rows for every graphic request — artwork lands in "graphic", video edits in
+ *  "vdo". One adapter over one fetch on purpose: the lane is a property of the
+ *  row, and two adapters filtering the same array is how two answers to "is
+ *  this a video" get to exist. */
 export function graphicItems(rows: Graphic[]): WorkItem[] {
   return rows.map((g) => ({
-    id: `graphic:${g.id}`, module: "graphic" as const, title: g.title,
+    id: `graphic:${g.id}`, module: isVideoWork(g) ? ("vdo" as const) : ("graphic" as const), title: g.title,
     campaignId: g.campaignId ?? "", brand: g.b, health: graphicHealth(g),
     rawStatus: graphicRowStatus(g), owner: jobHolder(g) ?? g.designer,
     dueIso: g.dueIso, urgency: "none",
