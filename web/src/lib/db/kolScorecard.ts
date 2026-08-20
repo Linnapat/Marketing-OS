@@ -7,6 +7,7 @@
 // follower count — which only exist once engagements are recorded.
 
 import { supabase } from "@/lib/supabase";
+import { kolSearchNeedle } from "@/lib/data/kolSearch";
 import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
 import { baht } from "@/lib/format";
@@ -187,16 +188,51 @@ function normalise(r: Record<string, unknown>): KolScorecardRow {
 export async function fetchKolScorecards(q = "", limit = 400): Promise<KolScorecardRow[]> {
   const db = supabase();
   if (!db) return [];
-  let query = db
+  const needle = kolSearchNeedle(q);
+  const base = () => db
     .from("kol_scorecard_view")
     .select("*")
     .order("times_used", { ascending: false })
     .order("total_followers", { ascending: false, nullsFirst: false })
     .limit(limit);
-  if (q.trim()) query = query.ilike("display_name", `%${q.trim()}%`);
+
+  // Names in this library are written in Thai, English or both, so matching on
+  // the name alone means guessing the spelling whoever imported it used. A
+  // pasted profile link is unambiguous, and 483 of the channels carry one — so
+  // the link is searched too, and the ids it finds are merged in.
+  const byUrlIds = await kolIdsByChannelLink(db, needle);
+
+  let query = base();
+  if (needle.text) query = query.ilike("display_name", `%${needle.text}%`);
   const { data, error } = await query;
+  if (error) return [];
+  const rows = (data ?? []) as Record<string, unknown>[];
+
+  const missing = byUrlIds.filter((id) => !rows.some((r) => r.kol_id === id));
+  if (missing.length) {
+    const { data: extra } = await base().in("kol_id", missing);
+    // Link matches lead: someone who pasted a URL is asking for that profile,
+    // not for every creator whose name happens to contain the same word.
+    return [...((extra ?? []) as Record<string, unknown>[]), ...rows].map(normalise);
+  }
+  return rows.map(normalise);
+}
+
+/** kol_ids whose stored channel link matches a pasted URL or @handle. Empty for
+ *  a plain-text query — a name is not a link, and matching it against URLs
+ *  would pull in every creator whose handle merely contains the word. */
+async function kolIdsByChannelLink(
+  db: NonNullable<ReturnType<typeof supabase>>, needle: ReturnType<typeof kolSearchNeedle>,
+): Promise<string[]> {
+  const terms = [needle.url, needle.handle].filter((t) => t && t.length >= 3);
+  if (!terms.length) return [];
+  const { data, error } = await db
+    .from("kol_channels")
+    .select("kol_id, handle_url")
+    .or(terms.map((t) => `handle_url.ilike.%${t}%`).join(","))
+    .limit(200);
   if (error || !data) return [];
-  return (data as Record<string, unknown>[]).map(normalise);
+  return [...new Set((data as { kol_id: string }[]).map((r) => r.kol_id).filter(Boolean))];
 }
 
 export async function fetchKolScorecard(kolId: string): Promise<KolScorecardRow | null> {
@@ -331,6 +367,92 @@ export async function deleteKolNote(noteId: string): Promise<boolean> {
   if (!db) return false;
   const { error } = await db.from("kol_notes").delete().eq("note_id", noteId);
   return !error;
+}
+
+/** Everything the library lets a person correct after the fact.
+ *
+ *  Until now the only editable thing on a saved profile was a follower count —
+ *  every other field arrived from the sheet import and was frozen. A new phone
+ *  number, a rate that went up, a channel the creator opened last month: none
+ *  of it could be recorded here, so it lived in someone's chat instead. */
+export interface KolProfileEdit {
+  kol_type?: string | null;
+  tier?: string | null;
+  status?: string | null;
+  contact_agency?: string | null;
+  notes?: string | null;
+  brand_fit?: string[];
+  /** Current package price. Writes a NEW rate-card row and retires the old one,
+   *  so what we paid last year stays readable — a rate card is a history, not a
+   *  single number to overwrite. */
+  rate_thb?: number | null;
+}
+
+export async function updateKolProfile(kolId: string, patch: KolProfileEdit): Promise<boolean> {
+  const db = supabase();
+  if (!db || !kolId) return false;
+
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.kol_type !== undefined) row.kol_type = patch.kol_type || null;
+  if (patch.tier !== undefined) row.tier = patch.tier || null;
+  if (patch.status !== undefined) row.status = patch.status || null;
+  if (patch.contact_agency !== undefined) row.contact_agency = patch.contact_agency || null;
+  if (patch.notes !== undefined) row.notes = patch.notes || null;
+
+  // The JSONB blob is READ-MODIFY-WRITE, never replaced: it also carries
+  // followers, source and created_in_app, and writing a fresh object would
+  // drop whichever of those this form does not know about.
+  if (patch.brand_fit !== undefined || patch.rate_thb !== undefined) {
+    const { data: current } = await db.from("kol_profiles").select("data").eq("kol_id", kolId).maybeSingle();
+    const blob = { ...((current as { data?: Record<string, unknown> } | null)?.data ?? {}) };
+    if (patch.brand_fit !== undefined) blob.brand_fit = patch.brand_fit;
+    if (patch.rate_thb !== undefined) blob.rate_thb_min = patch.rate_thb ?? null;
+    row.data = blob;
+  }
+
+  const { error } = await db.from("kol_profiles").update(row).eq("kol_id", kolId);
+  if (error) return false;
+
+  if (patch.rate_thb !== undefined && patch.rate_thb != null) {
+    await db.from("kol_rate_cards").update({ is_current: false }).eq("kol_id", kolId).eq("is_current", true);
+    await db.from("kol_rate_cards").insert({
+      kol_id: kolId, deliverable: "Package", price_thb: patch.rate_thb, is_current: true,
+      data: { source: "manual-edit" },
+    });
+  }
+  await db.rpc("recompute_kol_rank", { p_kol: kolId });
+  return true;
+}
+
+/** A channel the creator has that we had not recorded — a link on an existing
+ *  platform, or a platform they only opened this month. Matched on platform so
+ *  saving twice corrects the link instead of stacking duplicate rows. */
+export async function saveKolChannel(
+  kolId: string,
+  channel: { channel_id?: string; platform: string; url?: string; followers?: number },
+  by?: string,
+): Promise<boolean> {
+  const db = supabase();
+  if (!db || !kolId || !channel.platform.trim()) return false;
+  const row: Record<string, unknown> = {
+    kol_id: kolId,
+    platform: channel.platform.trim(),
+    handle_url: channel.url?.trim() || null,
+  };
+  // A follower number is only stamped when one was actually typed — writing
+  // last_synced_at for an untouched field would date a number nobody checked,
+  // which is exactly the lie the freshness badge exists to prevent.
+  if (channel.followers != null) {
+    row.followers = channel.followers;
+    row.last_synced_at = new Date().toISOString();
+    row.synced_by = by ?? null;
+  }
+  const { error } = channel.channel_id
+    ? await db.from("kol_channels").update(row).eq("channel_id", channel.channel_id)
+    : await db.from("kol_channels").insert(row);
+  if (error) return false;
+  await db.rpc("recompute_kol_rank", { p_kol: kolId });
+  return true;
 }
 
 /** Add a creator to the library by hand, with as many channels as we know. */
