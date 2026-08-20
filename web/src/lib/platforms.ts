@@ -14,6 +14,15 @@ export const PLATFORM_ICON: Record<string, PlatformIcon> = {
   Lemon8: { icon: "L8", bg: "#C08A1E", fg: "#fff" },
 };
 
+/** The platforms a creator's CHANNELS are on, in the order the Library shows
+ *  them. Narrower than PLATFORM_ICON on purpose — that map also carries LINE OA
+ *  and Google Map, which are our own channels, not a KOL's.
+ *
+ *  Not the same list as brief.ts's KOL_PLATFORMS, and deliberately named apart:
+ *  that one is what a campaign PLAN may book (…LINE VOOM), this is what a
+ *  profile in the Library actually has an account on (…Lemon8). */
+export const KOL_CHANNEL_PLATFORMS = ["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"] as const;
+
 export function platformIcon(name: string): PlatformIcon {
   // Readable grey rather than #ccc: the fallback is also used as a text colour.
   return PLATFORM_ICON[name] ?? { icon: "??", bg: "#8b8378", fg: "#fff" };

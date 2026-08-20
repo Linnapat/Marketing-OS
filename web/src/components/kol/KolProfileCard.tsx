@@ -12,14 +12,16 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { baht } from "@/lib/format";
 import { VAT_RATE, WHT_PRESETS, grossUpFromNet, rateLabel } from "@/lib/data/expenseTax";
 import { brandName, brandColor } from "@/lib/brands";
-import { platformIcon } from "@/lib/platforms";
+import { platformIcon, KOL_CHANNEL_PLATFORMS } from "@/lib/platforms";
 import { initials, fmtFollow } from "@/lib/data/kol";
-import { tierTone, categoryTone, PARTNER_TONE } from "@/lib/kolTier";
+import { tierTone, categoryTone, categoryOptions, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
+import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
   fetchKolNotes, addKolNote, deleteKolNote, setKolPartner, confirmChannelFollowers,
   setAgreedPostDate, attributeDelay, createKolExpenseRequest, updateKolCosts, costTotal,
+  updateKolProfile, saveKolChannel,
   followerFreshness, daysLate,
   FOLLOWER_STALE_DAYS, DELAY_REASONS,
   KolScorecardRow, KolEngagementRow, KolTierBenchmark, KolNote, KolChannel, DelayReason,
@@ -107,6 +109,156 @@ function ChannelChip({ channel, author }: { channel: KolChannel; author: string 
       <button onClick={() => { setValue(followers != null ? String(followers) : ""); setEditing(true); }}
         className="text-[10.5px] font-bold text-accent hover:underline">อัปเดต</button>
     </span>
+  );
+}
+
+/** Correct anything the sheet import got wrong, or never had.
+ *
+ *  Before this, a saved profile was frozen except for its follower counts: a new
+ *  phone number, a rate that went up, a channel the creator opened last month —
+ *  none of it could be recorded, so it lived in someone's chat and the library
+ *  slowly stopped describing reality.
+ *
+ *  Deliberately NOT editable here: display_name (it is how every campaign row
+ *  and every sheet import matches this person — renaming from a side panel
+ *  would orphan the history) and the follower numbers (those have their own
+ *  confirm-and-stamp flow, which is what makes them datable). */
+function KolEditForm({ row, author, onSaved, onCancel }: {
+  row: KolScorecardRow; author: string; onSaved: () => void; onCancel: () => void;
+}) {
+  const field = "w-full text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none";
+  const label = "block text-[11px] font-bold text-faint mb-[5px]";
+  const brandVisibility = useBrandVisibility();
+  const [category, setCategory] = useState(row.kol_type ?? "");
+  const [tier, setTier] = useState(row.tier ?? "");
+  const [contact, setContact] = useState(row.contact_agency ?? "");
+  const [rate, setRate] = useState(row.rate_min_thb != null ? String(row.rate_min_thb) : "");
+  const [brandFit, setBrandFit] = useState<string[]>(row.brand_fit ?? []);
+  const [busy, setBusy] = useState(false);
+  // Existing channels plus one blank row, so "add the TikTok they just opened"
+  // needs no extra click to discover.
+  const [channels, setChannels] = useState(() => [
+    ...(row.channels ?? []).filter((c) => c.platform).map((c) => ({
+      channel_id: c.channel_id, platform: c.platform ?? "", url: c.url ?? "",
+    })),
+    { channel_id: undefined as string | undefined, platform: "", url: "" },
+  ]);
+  const setCh = (i: number, patch: Partial<{ platform: string; url: string }>) =>
+    setChannels((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+
+  const rateNumber = rate.trim() ? Number(rate.replace(/[^0-9.]/g, "")) : null;
+  const rateInvalid = rate.trim() !== "" && (rateNumber == null || !Number.isFinite(rateNumber));
+
+  const save = async () => {
+    if (busy || rateInvalid) return;
+    setBusy(true);
+    try {
+      const ok = await updateKolProfile(row.kol_id, {
+        kol_type: category.trim() || null,
+        tier: tier || null,
+        contact_agency: contact.trim() || null,
+        brand_fit: brandFit,
+        // Only touched when something was typed — clearing the box would
+        // otherwise wipe a rate nobody meant to remove.
+        ...(rate.trim() ? { rate_thb: rateNumber } : {}),
+      });
+      if (!ok) { toastError("บันทึกโปรไฟล์ไม่สำเร็จ — ลองใหม่อีกครั้ง"); return; }
+
+      // Channels are saved one by one so a single bad row cannot lose the rest.
+      const touched = channels.filter((c) => c.platform.trim() && (c.channel_id || c.url.trim()));
+      const failed = (await Promise.all(touched.map((c) =>
+        saveKolChannel(row.kol_id, { channel_id: c.channel_id, platform: c.platform, url: c.url }, author),
+      ))).filter((v) => !v).length;
+      if (failed) toastError(`บันทึกช่องทางไม่สำเร็จ ${failed} รายการ — ที่เหลือบันทึกแล้ว`);
+      else toastSuccess("บันทึกโปรไฟล์แล้ว");
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[14px] border border-line2 bg-ivory p-4 flex flex-col gap-3">
+      <div className="text-[12px] font-extrabold text-ink">✏️ แก้ไขโปรไฟล์</div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <div>
+          <label className={label}>Category</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className={field}>
+            <option value="">— ยังไม่ระบุ —</option>
+            {categoryOptions(row.kol_type).map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>Tier</label>
+          <select value={tier} onChange={(e) => setTier(e.target.value)} className={field}>
+            <option value="">— คิดจากยอด follower —</option>
+            {KOL_TIERS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>ช่องทางติดต่อ · เอเจนซี่</label>
+          <input value={contact} onChange={(e) => setContact(e.target.value)} className={field} placeholder="Line / เบอร์ / อีเมล / เอเจนซี่" />
+        </div>
+        <div>
+          <label className={label}>Rate card (บาท)</label>
+          <input value={rate} onChange={(e) => setRate(e.target.value)} inputMode="numeric" className={field}
+            style={rateInvalid ? { borderColor: "#B33A2E", background: "#FFF7F6" } : undefined} placeholder="14,000" />
+          <div className="text-[10.5px] text-faint mt-[4px]">
+            {rateInvalid ? <span className="text-status-red font-bold">กรอกเป็นตัวเลข</span> : "เรตเดิมถูกเก็บเป็นประวัติ ไม่ได้ถูกทับ"}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className={label}>เหมาะกับแบรนด์</label>
+        <div className="flex gap-2 flex-wrap">
+          {brandVisibility.visibleBrands.map((b) => {
+            const on = brandFit.includes(brandName(b));
+            return (
+              <button key={b} type="button"
+                onClick={() => setBrandFit((f) => (on ? f.filter((x) => x !== brandName(b)) : [...f, brandName(b)]))}
+                className="text-[11.5px] font-bold px-[11px] py-[5px] rounded-pill border"
+                style={on
+                  ? { background: brandColor(b), borderColor: brandColor(b), color: "#fff" }
+                  : { background: "#fff", borderColor: "#E5DECF", color: "#6b6258" }}>
+                {brandName(b)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label className={label}>ลิงก์ช่องทาง · เพิ่มช่องทางใหม่ได้ที่แถวว่าง</label>
+        <div className="flex flex-col gap-2">
+          {channels.map((c, i) => (
+            <div key={c.channel_id ?? `new-${i}`} className="flex gap-2 flex-wrap">
+              <select value={c.platform} onChange={(e) => setCh(i, { platform: e.target.value })}
+                className="text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none w-[130px]">
+                <option value="">— เลือก —</option>
+                {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input value={c.url} onChange={(e) => setCh(i, { url: e.target.value })}
+                placeholder="https://… ลิงก์โปรไฟล์"
+                className="flex-1 min-w-[200px] text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none" />
+            </div>
+          ))}
+          <button type="button" onClick={() => setChannels((cs) => [...cs, { channel_id: undefined, platform: "", url: "" }])}
+            className="self-start text-[11.5px] font-bold text-accent">+ อีกช่องทาง</button>
+        </div>
+        <div className="text-[10.5px] text-faint mt-[5px]">
+          ยอด follower แก้ที่ชิปด้านบน (กด &quot;อัปเดต&quot;) — ตรงนั้นจะประทับวันที่ยืนยันให้ด้วย
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={save} disabled={busy || rateInvalid}
+          className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-5 py-[9px] disabled:opacity-40">
+          {busy ? "กำลังบันทึก…" : "บันทึก"}
+        </button>
+        <button onClick={onCancel} className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[9px] bg-white">ยกเลิก</button>
+      </div>
+    </div>
   );
 }
 
@@ -483,6 +635,10 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
   const [bench, setBench] = useState<KolTierBenchmark[]>([]);
   const [partner, setPartner] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  // Bumped after a save so the card re-reads what was just written rather than
+  // patching its own copy — the rank and the tier are recomputed server-side.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -494,7 +650,7 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
       })
       .catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [kolId]);
+  }, [kolId, reloadKey]);
 
   if (loading) return <div className="px-5 py-10 text-center text-[13px] text-faint">Loading…</div>;
   if (!row) return <div className="px-5 py-10 text-center text-[13px] text-faint">ไม่พบ KOL รายนี้</div>;
@@ -548,6 +704,15 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
             </span>
           )}
           <button
+            onClick={() => setEditing((v) => !v)}
+            title="แก้ไข category / tier / ช่องทางติดต่อ / rate card / ลิงก์ช่องทาง"
+            className="text-[11px] font-bold px-[10px] py-[4px] rounded-pill"
+            style={editing
+              ? { background: "#211F1C", border: "1px solid #211F1C", color: "#fff" }
+              : { background: "#fff", border: "1px solid #E5DECF", color: "#6b6258" }}>
+            ✏️ แก้ไข
+          </button>
+          <button
             onClick={async () => {
               const next = !partner;
               setPartner(next);
@@ -562,6 +727,15 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
           </button>
         </div>
       </div>
+
+      {editing && (
+        <KolEditForm
+          row={row}
+          author={author}
+          onSaved={() => { setEditing(false); setReloadKey((k) => k + 1); }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
 
       {/* Channels — open the real profile, and confirm the number while you are
           looking at it. Ten seconds each, and the count stops being undateable. */}

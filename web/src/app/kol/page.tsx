@@ -11,7 +11,7 @@ import { KolDrawer } from "@/components/kol/KolDrawer";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
 import { BrandFilterValue, BrandId, brandName, brandColor } from "@/lib/brands";
-import { platformIcon, channelUrl } from "@/lib/platforms";
+import { platformIcon, channelUrl, KOL_CHANNEL_PLATFORMS } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { baht } from "@/lib/format";
 import { notify } from "@/lib/notify";
@@ -25,7 +25,7 @@ import { resolveKolAssignment } from "@/lib/db/assignments";
 import { fetchKolScorecards, createKolWithChannels, followerFreshness, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
 import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
-import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
+import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS, KOL_CATEGORIES } from "@/lib/kolTier";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -802,7 +802,7 @@ function KolDatabase() {
     for (const r of rows) for (const c of r.channels ?? []) {
       if (c.platform && (c.followers ?? 0) > 0) count.set(c.platform, (count.get(c.platform) ?? 0) + 1);
     }
-    const order = ["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"];
+    const order: string[] = [...KOL_CHANNEL_PLATFORMS];
     return order.filter((p) => count.has(p)).concat([...count.keys()].filter((p) => !order.includes(p)));
   }, [rows]);
   // Trailing metrics get their own breathing room — "ใช้ไป" and "Cost/Reach"
@@ -864,7 +864,11 @@ function KolDatabase() {
         )}
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ KOL หรือ @handle…"
+        {/* Pasting the profile link is the reliable way in: these names are
+            written in Thai, in English or in both, so finding one by typing it
+            means guessing the spelling whoever imported it used. */}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ · @handle · หรือวางลิงก์โปรไฟล์…"
+          title="วางลิงก์โปรไฟล์ IG / TikTok / Facebook / YouTube ได้เลย — ระบบเทียบกับลิงก์ที่บันทึกไว้"
           className="flex-1 min-w-[220px] text-[13px] px-[13px] py-[9px] rounded-[10px] border border-line2 bg-ivory outline-none" />
         <span className="text-[12px] text-faint">{rows.length} profile{rows.length === 1 ? "" : "s"}</span>
         {unverifiedCount > 0 && (
@@ -1059,8 +1063,14 @@ function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             <input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="เช่น orn the table" />
           </div>
           <div>
+            {/* A picker, not a text box. Typed by hand the same idea arrived as
+                "Food", "Foodie" and "Food Review" — three colours, three sort
+                positions, and no way to filter them as one category. */}
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Category</label>
-            <input value={category} onChange={(e) => setCategory(e.target.value)} className={field} placeholder="Food Review / Lifestyle …" />
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className={field} style={SELECT_STYLE}>
+              <option value="">— ยังไม่ระบุ —</option>
+              {KOL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Tier</label>
@@ -1103,7 +1113,7 @@ function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             {channels.map((c, i) => (
               <div key={i} className="grid gap-2" style={{ gridTemplateColumns: "1fr 0.9fr 1.6fr auto" }}>
                 <select value={c.platform} onChange={(e) => setCh(i, { platform: e.target.value })} className={field} style={SELECT_STYLE}>
-                  {["Instagram", "TikTok", "Facebook", "YouTube", "Lemon8"].map((p) => <option key={p} value={p}>{p}</option>)}
+                  {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
                 <input value={c.followers} onChange={(e) => setCh(i, { followers: e.target.value })} className={field} inputMode="numeric" placeholder="Followers" />
                 <input value={c.url} onChange={(e) => setCh(i, { url: e.target.value })} className={field} placeholder="https://…" />
