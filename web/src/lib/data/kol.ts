@@ -71,6 +71,22 @@ export interface Kol {
   saves: string;
   shares: string;
   postLink: string | null;
+  /* ── เอกสารการจ่ายเงิน ──────────────────────────────────────────────
+   *
+   * Links, not uploads — the same way every other document in this app is
+   * attached (brief decks, artwork, footage all live in Drive/Dropbox and the
+   * app stores the URL). Finance already works from those folders, so an
+   * upload here would create a second place to look for the same PDF.
+   *
+   * `paidAt` is the day the money actually left, typed by whoever paid it. Not
+   * derived from paymentStatus: "Paid" says it happened, never when. */
+  invoiceLink?: string;
+  receiptLink?: string;
+  /** The food/beverage bill from the visit — a real receipt for a real meal,
+   *  separate from the creator's own invoice and often the only paperwork on a
+   *  barter deal where the fee is ฿0. */
+  foodBillLink?: string;
+  paidAt?: string;
   /** The day the creator comes to the branch, and whether they turned up.
    *
    *  Not the posting date and not `visits` (which counts customers the post

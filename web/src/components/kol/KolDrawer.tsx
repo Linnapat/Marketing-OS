@@ -788,6 +788,8 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
   };
   const saveProposalBudget = () => saveMoney({ fee: Math.max(0, proposalBudget || 0) });
   const saveFoodSupport = () => saveMoney({ foodCost: Math.max(0, foodSupport || 0) });
+  const paidAt = kol.paidAt ?? "";
+  const savePaid = (v: string) => { if (v !== paidAt) void set({ paidAt: v || undefined }); };
   const quotationState = quotationStateFor(kol);
   const selCls = "text-[12px] font-semibold px-[10px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none";
   return (
@@ -884,6 +886,52 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
         </div>
       </div>
       <Field label="Payment Due" value={kol.paymentDue} />
+
+      {/* Paperwork. Links rather than uploads, because that is how every other
+          document in this app is attached and Finance already works out of
+          those folders — an upload here would be a second place to look for
+          the same PDF. */}
+      <div className="rounded-card border border-line bg-surface p-3 flex flex-col gap-3">
+        <div className="text-[12px] font-extrabold text-ink">📎 เอกสารการจ่ายเงิน</div>
+        <div>
+          <label className="block text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">วันที่จ่ายจริง</label>
+          <DatePicker value={paidAt || null} onChange={(v) => savePaid(v || "")} />
+          <div className="text-[10.5px] text-faint mt-[4px]">
+            {/* "Paid" says it happened, never when — which is the half Finance
+                needs for a payment run. */}
+            สถานะ Payment มาจาก Finance · ช่องนี้คือวันที่เงินออกจริง
+          </div>
+        </div>
+        {([
+          ["invoiceLink", "Invoice (PDF)", "ลิงก์ใบแจ้งหนี้จาก KOL / เอเจนซี่"],
+          ["receiptLink", "ใบเสร็จ", "ใบเสร็จ / หลักฐานการโอน"],
+          ["foodBillLink", "Bill Food cost", "บิลค่าอาหารตอนไปร้าน — ดีลแลกของมักมีแค่ใบนี้"],
+        ] as const).map(([key, label, hint]) => (
+          <div key={key}>
+            <label className="block text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">
+              {label} <span className="normal-case font-normal">· {hint}</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                defaultValue={kol[key] ?? ""}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v !== (kol[key] ?? "").trim()) set({ [key]: v || undefined }); }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                placeholder="https://… Drive / Dropbox"
+                className="flex-1 min-w-0 text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none"
+              />
+              {kol[key]?.trim() && (
+                <a href={kol[key]} target="_blank" rel="noreferrer" className="text-[11.5px] font-bold text-accent whitespace-nowrap">เปิด ↗</a>
+              )}
+            </div>
+          </div>
+        ))}
+        {/* Money paid with no paperwork behind it is the state worth naming. */}
+        {isPaid && !kol.receiptLink?.trim() && (
+          <div className="rounded-[8px] px-2.5 py-[7px] text-[11px] font-semibold" style={{ background: "#FFF7ED", color: "#8A5418" }}>
+            ⚠ จ่ายแล้วแต่ยังไม่แนบใบเสร็จ
+          </div>
+        )}
+      </div>
       {!embedded && (
         <a href="/expenses" className="text-[12.5px] font-bold text-white bg-panel rounded-[10px] px-4 py-[10px] text-center">
           {isPaid ? "ดูรายการใน Finance / Expenses →" : "เปิดคำขอเบิก/ชำระเงินใน Finance / Expenses →"}

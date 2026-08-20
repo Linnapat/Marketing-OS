@@ -625,6 +625,179 @@ function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandF
   );
 }
 
+/** The whole view in one line of numbers.
+ *
+ *  The page had campaign totals and nothing above them: with four campaigns on
+ *  screen, "how did KOL do this month" meant adding four rows up by hand, and
+ *  the number that actually decides anything — what we paid per reach — was
+ *  nowhere at all.
+ *
+ *  It counts the SAME rows the filters left on screen, so it can never disagree
+ *  with the tables under it. And it says how many posts are still blank rather
+ *  than presenting a part-filled month as a finished one — 17 of 23 posts
+ *  reported is a different fact from a low reach. */
+function PerformanceSummary({ list }: { list: Kol[] }) {
+  const t = useMemo(() => {
+    let expected = 0, reach = 0, eng = 0, fee = 0, food = 0, revenue = 0;
+    let posts = 0, reported = 0, creatorsWithResult = 0;
+    for (const k of list) {
+      expected += k.expectedReach || 0;
+      fee += k.fee || 0;
+      food += k.foodCost || 0;
+      revenue += k.revenue || 0;
+      const ps = kolPosts(k);
+      const totals = postsTotals(ps);
+      reach += totals.reach;
+      eng += totals.engagement;
+      posts += ps.length;
+      reported += ps.filter((p) => (p.reach || 0) > 0 || (p.engagement || 0) > 0).length;
+      if (totals.reach > 0) creatorsWithResult += 1;
+    }
+    const spend = fee + food;
+    return {
+      expected, reach, eng, fee, spend, revenue, posts, reported, creatorsWithResult,
+      rate: reach ? (eng / reach) * 100 : 0,
+      // What a reach actually cost. The one number that compares a ฿2,000 nano
+      // to a ฿60,000 macro, and the page never showed it.
+      costPerReach: reach ? spend / reach : 0,
+      // Against the reach that was promised at proposal time.
+      vsExpected: expected ? (reach / expected) * 100 : 0,
+      roas: spend ? revenue / spend : 0,
+    };
+  }, [list]);
+
+  const cell = (label: string, value: string, hint?: string, fg?: string) => (
+    <div key={label} className="bg-surface border border-line rounded-card px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.05em] text-faint font-bold">{label}</div>
+      <div className="text-[18px] font-extrabold mt-[2px]" style={{ color: fg ?? "#211F1C" }}>{value}</div>
+      {hint && <div className="text-[10.5px] text-faint mt-[2px]">{hint}</div>}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[13px] font-extrabold text-ink">สรุปรวมทั้งหมดที่เห็นอยู่</span>
+        <span className="text-[11.5px] text-faint">· {list.length} creator · {t.posts} post · ตามตัวกรองด้านบน</span>
+        {t.posts > t.reported && (
+          <span className="text-[11px] font-bold rounded-pill px-2.5 py-[3px]"
+            style={{ background: "#FFF7ED", border: "1px solid #F0C89B", color: "#8A5418" }}
+            title="ตัวเลขรวมนับเฉพาะโพสต์ที่กรอกผลแล้ว">
+            ⚠ ยังไม่กรอกผล {t.posts - t.reported} จาก {t.posts} โพสต์
+          </span>
+        )}
+      </div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+        {cell("Reach รวม", fmtFollow(t.reach),
+          t.expected ? `${Math.round(t.vsExpected)}% ของที่คาด ${fmtFollow(t.expected)}` : undefined,
+          t.expected && t.vsExpected >= 100 ? "#3F6A34" : undefined)}
+        {cell("Engagement รวม", fmtFollow(t.eng), `Eng. rate ${fmtPct(t.rate)}`)}
+        {cell("ใช้ไปจริง", baht(t.spend, { compact: true }), `ค่าตัว ${baht(t.fee, { compact: true })} + อาหาร ${baht(t.spend - t.fee, { compact: true })}`)}
+        {cell("Cost / reach", t.costPerReach ? `฿${t.costPerReach.toFixed(3)}` : "—", "ยิ่งต่ำยิ่งคุ้ม")}
+        {cell("ROAS", t.roas ? `${t.roas.toFixed(1)}×` : "—",
+          t.revenue ? `รายได้ ${baht(t.revenue, { compact: true })}` : "ยังไม่ได้กรอกรายได้",
+          t.roas >= 1 ? "#3F6A34" : undefined)}
+        {cell("กรอกผลแล้ว", `${t.reported}/${t.posts}`, `${t.creatorsWithResult} creator มีผลแล้ว`)}
+      </div>
+    </div>
+  );
+}
+
+/** One post's numbers, with a save you can see.
+ *
+ *  This row used to write on blur and say nothing. Mechanically that works, but
+ *  nobody could tell: type a reach, look at the screen, and there is no button
+ *  to press and no sign anything happened — so the number gets retyped, or the
+ *  tab gets closed on the assumption it did not take. Pressing Enter did
+ *  nothing either.
+ *
+ *  Now the row holds its own draft. Dirty shows a บันทึก button, saving shows
+ *  it saving, saved shows a tick that fades. Enter saves. Blur still saves, so
+ *  nobody who learned the old habit loses anything. */
+function PostResultRow({ kol, post, index, cols, numCls, onSaved }: {
+  kol: Kol; post: KolPost; index: number; cols: string; numCls: string;
+  onSaved: (next: Kol) => void;
+}) {
+  const [platform, setPlatform] = useState(post.platform);
+  const [link, setLink] = useState(post.link ?? "");
+  const [reach, setReach] = useState(post.reach || 0);
+  const [engagement, setEngagement] = useState(post.engagement || 0);
+  const [state, setState] = useState<"clean" | "dirty" | "saving" | "saved">("clean");
+
+  // A row re-rendered from fresh server data drops a draft nobody has typed
+  // into; one mid-edit keeps it.
+  useEffect(() => {
+    if (state !== "clean" && state !== "saved") return;
+    setPlatform(post.platform); setLink(post.link ?? "");
+    setReach(post.reach || 0); setEngagement(post.engagement || 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.platform, post.link, post.reach, post.engagement]);
+
+  const touch = () => setState("dirty");
+  const rate = reach ? (engagement / reach) * 100 : 0;
+
+  const save = async () => {
+    if (state !== "dirty") return;
+    setState("saving");
+    const posts = kolPosts(kol).map((p, j) => {
+      if (j !== index) return p;
+      const merged: KolPost = { ...p, platform, link, reach, engagement };
+      // Auto-stamp the submit date the moment a result is first entered.
+      const hasResult = (merged.reach || 0) > 0 || (merged.engagement || 0) > 0 || !!merged.link?.trim();
+      if (hasResult && !merged.submittedAt) merged.submittedAt = new Date().toISOString().slice(0, 10);
+      return merged;
+    });
+    const totals = postsTotals(posts);
+    // Totals are the SUM OF POSTS, always — a creator's actualReach is not a
+    // number anyone types, it is what their posts add up to.
+    const next: Kol = { ...kol, posts, actualReach: totals.reach, actualEngagement: totals.engagement };
+    try {
+      await updateKol(next);
+      onSaved(next);
+      setState("saved");
+      setTimeout(() => setState((s) => (s === "saved" ? "clean" : s)), 2500);
+    } catch (error) {
+      setState("dirty");
+      toastError(`บันทึกผลโพสต์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+  const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter") void save(); };
+
+  return (
+    <div className="grid gap-y-1 px-5 py-2 items-center bg-ivory/40" style={{ gridTemplateColumns: cols }}>
+      <span className="flex items-center gap-2 text-[11.5px] text-muted min-w-0 pl-6">
+        <select value={platform} onChange={(e) => { setPlatform(e.target.value); touch(); }} onBlur={save}
+          className="text-[11px] font-semibold px-1.5 py-[3px] rounded-[6px] border border-line2 bg-white outline-none">
+          {(KOL_PLATFORMS as readonly string[]).includes(platform) ? null : <option value={platform}>{platform}</option>}
+          {KOL_PLATFORMS.map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+        </select>
+        {post.link && state === "clean"
+          ? <a href={post.link.startsWith("http") ? post.link : `https://${post.link}`} target="_blank" rel="noreferrer" className="text-accent truncate hover:underline">{post.link} ↗</a>
+          : <input value={link} placeholder="วางลิงก์โพสต์…"
+              onChange={(e) => { setLink(e.target.value); touch(); }} onBlur={save} onKeyDown={onKey}
+              className="flex-1 min-w-0 text-[11.5px] px-2 py-[4px] rounded-[7px] border border-line2 bg-white outline-none" />}
+      </span>
+      <span></span>
+      <input type="number" value={reach || ""} placeholder="0" className={numCls}
+        onChange={(e) => { setReach(Number(e.target.value) || 0); touch(); }} onBlur={save} onKeyDown={onKey} />
+      <input type="number" value={engagement || ""} placeholder="0" className={numCls}
+        onChange={(e) => { setEngagement(Number(e.target.value) || 0); touch(); }} onBlur={save} onKeyDown={onKey} />
+      <span className="text-[11.5px] text-faint text-right">{fmtPct(rate)}</span>
+      <span className="text-[10.5px] text-right col-span-2 flex items-center justify-end gap-2">
+        {state === "dirty" && (
+          <button onMouseDown={(e) => e.preventDefault()} onClick={save}
+            className="text-[10.5px] font-bold text-white bg-panel rounded-[7px] px-2.5 py-[3px]">บันทึกผล</button>
+        )}
+        {state === "saving" && <span className="text-faint">กำลังบันทึก…</span>}
+        {state === "saved" && <span className="font-bold" style={{ color: "#3F6A34" }}>✓ บันทึกแล้ว</span>}
+        {state === "clean" && post.submittedAt && (
+          <span className="text-faint" title="วันที่กรอกผล (อัตโนมัติ)">submit {labelDate(post.submittedAt)}</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 // Per-post performance grouped by campaign: enter Reach + Engagement per post
 // link, roll up to each creator, then to a campaign total.
 function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: Kol) => void; onUpdate: (k: Kol) => void }) {
@@ -634,20 +807,6 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [list]);
 
-  // Update one post's result numbers (state only, so typing is smooth); the DB
-  // write happens on blur. Keeps top-level actuals = sum of posts.
-  const editPostResult = (k: Kol, idx: number, patch: Partial<KolPost>) => {
-    const posts = kolPosts(k).map((p, j) => {
-      if (j !== idx) return p;
-      const merged = { ...p, ...patch };
-      // Auto-stamp the submit date the moment a result is first entered.
-      const hasResult = (merged.reach || 0) > 0 || (merged.engagement || 0) > 0 || !!merged.link?.trim();
-      if (hasResult && !merged.submittedAt) merged.submittedAt = new Date().toISOString().slice(0, 10);
-      return merged;
-    });
-    const totals = postsTotals(posts);
-    onUpdate({ ...k, posts, actualReach: totals.reach, actualEngagement: totals.engagement });
-  };
   // Inline first-post entry — results can be typed right here, no drawer needed.
   const addPost = (k: Kol) => {
     const next = { ...k, posts: [...kolPosts(k), { platform: k.plat || "Instagram", link: "", reach: 0, engagement: 0 }] };
@@ -668,6 +827,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
   );
   return (
     <div className="flex flex-col gap-4">
+      <PerformanceSummary list={list} />
       {groups.map(([campaign, ks]) => {
         const cExpReach = ks.reduce((s, k) => s + (k.expectedReach || 0), 0);
         const cReach = ks.reduce((s, k) => s + postsTotals(kolPosts(k)).reach, 0);
@@ -706,29 +866,8 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
                   </button>
                   {/* One editable row per post link */}
                   {posts.map((p, pi2) => (
-                    <div key={pi2} className="grid gap-y-1 px-5 py-2 items-center bg-ivory/40" style={{ gridTemplateColumns: cols }}>
-                      <span className="flex items-center gap-2 text-[11.5px] text-muted min-w-0 pl-6">
-                        {/* Platform now editable per post */}
-                        <select value={p.platform}
-                          onChange={(e) => { editPostResult(k, pi2, { platform: e.target.value }); }}
-                          onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก platform ไม่สำเร็จ: ${error?.message || "Unknown error"}`))}
-                          className="text-[11px] font-semibold px-1.5 py-[3px] rounded-[6px] border border-line2 bg-white outline-none">
-                          {(KOL_PLATFORMS as readonly string[]).includes(p.platform) ? null : <option value={p.platform}>{p.platform}</option>}
-                          {KOL_PLATFORMS.map((pl) => <option key={pl} value={pl}>{pl}</option>)}
-                        </select>
-                        {p.link
-                          ? <a href={p.link.startsWith("http") ? p.link : `https://${p.link}`} target="_blank" rel="noreferrer" className="text-accent truncate hover:underline">{p.link} ↗</a>
-                          : <input value={p.link} placeholder="วางลิงก์โพสต์…"
-                              onChange={(e) => editPostResult(k, pi2, { link: e.target.value })}
-                              onBlur={() => updateKol(k).catch((error) => toastError(`บันทึกลิงก์ไม่สำเร็จ: ${error?.message || "Unknown error"}`))}
-                              className="flex-1 min-w-0 text-[11.5px] px-2 py-[4px] rounded-[7px] border border-line2 bg-white outline-none" />}
-                      </span>
-                      <span></span>
-                      <input type="number" value={p.reach || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { reach: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Reach ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
-                      <input type="number" value={p.engagement || ""} placeholder="0" onChange={(e) => editPostResult(k, pi2, { engagement: Number(e.target.value) || 0 })} onBlur={() => updateKol(k).catch((error) => toastError(`บันทึก KOL Engagement ไม่สำเร็จ: ${error?.message || "Unknown error"}`))} className={numCls} />
-                      <span className="text-[11.5px] text-faint text-right">{fmtPct(rate(p.reach || 0, p.engagement || 0))}</span>
-                      <span className="text-[10.5px] text-faint text-right col-span-2" title="วันที่กรอกผล (อัตโนมัติ)">{p.submittedAt ? `submit ${labelDate(p.submittedAt)}` : ""}</span>
-                    </div>
+                    <PostResultRow key={pi2} kol={k} post={p} index={pi2} cols={cols} numCls={numCls}
+                      onSaved={(next) => onUpdate(next)} />
                   ))}
                   <div className="px-5 py-2 pl-11 bg-ivory/40">
                     <button onClick={() => addPost(k)}
