@@ -18,6 +18,7 @@ function isoToLabel(iso: string): string {
 }
 import { KOL_PLATFORMS } from "@/lib/data/brief";
 import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults, committedAmount, approvalCoversAmount, quotationStateFor } from "@/lib/kolFlow";
+import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
@@ -331,6 +332,8 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [name, setName] = useState(kol.name);
   const [handle, setHandle] = useState(kol.h);
+  // A row is not a duplicate of the profile it is already linked to.
+  const duplicates = useDuplicateLink(handle, kol.masterKolId);
   const [kolType, setKolType] = useState(kol.kolType);
   const [followers, setFollowers] = useState(kol.followers || 0);
   const [avgReach, setAvgReach] = useState(kol.expectedReach || 0);
@@ -521,7 +524,13 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div><label className={lbl}>KOL / Page Name</label><input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="e.g. Tokyo Tom" /></div>
-        <div><label className={lbl}>Page / Handle</label><input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or URL" /></div>
+        <div>
+          <label className={lbl}>Page / Handle</label>
+          <input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle or URL" />
+          {/* Asked of the link the moment it is typed, not after saving —
+              the library already holds ten creators twice over. */}
+          <DuplicateLinkWarning matches={duplicates} className="mt-[6px]" />
+        </div>
         <div className="col-span-2 -mx-1">
           <StageBar kol={kol} onUpdate={onUpdate} />
         </div>

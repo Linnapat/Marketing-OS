@@ -16,6 +16,7 @@ import { platformIcon, KOL_CHANNEL_PLATFORMS } from "@/lib/platforms";
 import { initials, fmtFollow } from "@/lib/data/kol";
 import { tierTone, categoryTone, categoryOptions, PARTNER_TONE, KOL_TIERS } from "@/lib/kolTier";
 import { useBrandVisibility } from "@/lib/brandVisibility";
+import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
 import { useAuth } from "@/lib/auth";
 import {
   fetchKolScorecard, fetchKolEngagements, fetchKolTierBenchmarks,
@@ -109,6 +110,33 @@ function ChannelChip({ channel, author }: { channel: KolChannel; author: string 
       <button onClick={() => { setValue(followers != null ? String(followers) : ""); setEditing(true); }}
         className="text-[10.5px] font-bold text-accent hover:underline">อัปเดต</button>
     </span>
+  );
+}
+
+/** One channel row of the edit form. Pasting a link that already belongs to a
+ *  DIFFERENT profile is how two rows end up describing one creator, so the
+ *  check runs here too — excluding this profile, which is not its own
+ *  duplicate. */
+function EditChannelRow({ channel, excludeKolId, onChange }: {
+  channel: { platform: string; url: string };
+  excludeKolId: string;
+  onChange: (patch: Partial<{ platform: string; url: string }>) => void;
+}) {
+  const duplicates = useDuplicateLink(channel.url, excludeKolId);
+  return (
+    <div>
+      <div className="flex gap-2 flex-wrap">
+        <select value={channel.platform} onChange={(e) => onChange({ platform: e.target.value })}
+          className="text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none w-[130px]">
+          <option value="">— เลือก —</option>
+          {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <input value={channel.url} onChange={(e) => onChange({ url: e.target.value })}
+          placeholder="https://… ลิงก์โปรไฟล์"
+          className="flex-1 min-w-[200px] text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none" />
+      </div>
+      <DuplicateLinkWarning matches={duplicates} className="mt-[6px]" />
+    </div>
   );
 }
 
@@ -232,16 +260,10 @@ function KolEditForm({ row, author, onSaved, onCancel }: {
         <label className={label}>ลิงก์ช่องทาง · เพิ่มช่องทางใหม่ได้ที่แถวว่าง</label>
         <div className="flex flex-col gap-2">
           {channels.map((c, i) => (
-            <div key={c.channel_id ?? `new-${i}`} className="flex gap-2 flex-wrap">
-              <select value={c.platform} onChange={(e) => setCh(i, { platform: e.target.value })}
-                className="text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none w-[130px]">
-                <option value="">— เลือก —</option>
-                {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <input value={c.url} onChange={(e) => setCh(i, { url: e.target.value })}
-                placeholder="https://… ลิงก์โปรไฟล์"
-                className="flex-1 min-w-[200px] text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none" />
-            </div>
+            <EditChannelRow
+              key={c.channel_id ?? `new-${i}`} channel={c} excludeKolId={row.kol_id}
+              onChange={(patch) => setCh(i, patch)}
+            />
           ))}
           <button type="button" onClick={() => setChannels((cs) => [...cs, { channel_id: undefined, platform: "", url: "" }])}
             className="self-start text-[11.5px] font-bold text-accent">+ อีกช่องทาง</button>

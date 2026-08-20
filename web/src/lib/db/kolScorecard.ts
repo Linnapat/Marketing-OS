@@ -7,7 +7,7 @@
 // follower count — which only exist once engagements are recorded.
 
 import { supabase } from "@/lib/supabase";
-import { kolSearchNeedle } from "@/lib/data/kolSearch";
+import { kolSearchNeedle, profileLinkKey } from "@/lib/data/kolSearch";
 import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
 import { baht } from "@/lib/format";
@@ -367,6 +367,56 @@ export async function deleteKolNote(noteId: string): Promise<boolean> {
   if (!db) return false;
   const { error } = await db.from("kol_notes").delete().eq("note_id", noteId);
   return !error;
+}
+
+/** One creator already in the library whose channel link points at the same
+ *  account as the one being typed. */
+export interface KolDuplicate {
+  kol_id: string;
+  display_name: string;
+  platform: string | null;
+  url: string | null;
+}
+
+/** Is this profile link already in the library?
+ *
+ *  The library holds ten pairs of the same creator saved twice, under two
+ *  spellings of their name — "dear.rari" and "เดียราริ" are one person on three
+ *  rows. Nobody was warned, because the only check available was reading a list
+ *  of names, one of which may be in a language the previous person did not use.
+ *  The link is the identity, so the link is what gets checked.
+ *
+ *  `excludeKolId` is the profile being edited — a row is not a duplicate of
+ *  itself. Empty result for a link with no recognisable account (a bare domain,
+ *  a Thai name typed into the box): silence is right there, not a false alarm. */
+export async function findKolByProfileLink(link: string, excludeKolId?: string): Promise<KolDuplicate[]> {
+  const key = profileLinkKey(link);
+  if (!key || key.length < 3) return [];
+  const db = supabase();
+  if (!db) return [];
+  // The stored link is matched loosely (the key is a substring of it) and then
+  // confirmed exactly with the same pure rule the caller used — ilike alone
+  // would call "orn" a match for "orn_the.table".
+  const needle = key.startsWith("fb:") ? `id=${key.slice(3)}` : key;
+  const { data, error } = await db
+    .from("kol_channels")
+    .select("kol_id, platform, handle_url, kol_profiles(display_name)")
+    .ilike("handle_url", `%${needle}%`)
+    .limit(50);
+  if (error || !data) return [];
+  const seen = new Set<string>();
+  const out: KolDuplicate[] = [];
+  for (const r of data as unknown as {
+    kol_id: string; platform: string | null; handle_url: string | null;
+    kol_profiles: { display_name: string } | { display_name: string }[] | null;
+  }[]) {
+    if (!r.kol_id || r.kol_id === excludeKolId || seen.has(r.kol_id)) continue;
+    if (profileLinkKey(r.handle_url ?? "") !== key) continue;
+    seen.add(r.kol_id);
+    const prof = Array.isArray(r.kol_profiles) ? r.kol_profiles[0] : r.kol_profiles;
+    out.push({ kol_id: r.kol_id, display_name: prof?.display_name ?? "(ไม่มีชื่อ)", platform: r.platform, url: r.handle_url });
+  }
+  return out;
 }
 
 /** Everything the library lets a person correct after the fact.
