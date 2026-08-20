@@ -27,6 +27,7 @@ import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
 import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
 import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS, KOL_CATEGORIES } from "@/lib/kolTier";
 import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
+import { VISIT_META, visitStateOf, visitOverdue, visitSummary } from "@/lib/data/kolVisit";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -400,12 +401,17 @@ export default function KolPage() {
  *  `2fr` is minmax(auto, 2fr), so a long creator handle or campaign name sets a
  *  min-content floor that widens that one row and knocks it out of step with
  *  the header (each row is its own grid). */
-const CREATOR_COLS = "minmax(0,2fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.9fr) minmax(0,1.4fr)";
+// Visit sits between Campaign and Followers: it is a date the branch has to act
+// on, and at the far right nobody scanning the list would reach it.
+const CREATOR_COLS = "minmax(0,1.9fr) minmax(0,1.3fr) minmax(0,1.15fr) minmax(0,0.8fr) minmax(0,0.85fr) minmax(0,0.85fr) minmax(0,1.3fr)";
 
 function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
   const pi = platformIcon(kol.plat);
   const { idx } = stageProgress(kol.status);
   const url = channelUrl(kol.plat, kol.h);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const visitState = visitStateOf(kol);
+  const visitTone = visitOverdue(kol, todayIso) ? VISIT_META.no_show.tone : VISIT_META[visitState].tone;
   return (
     <div className="border-b border-line4 last:border-0">
       <div onClick={() => onOpen(kol)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--creator-cols)] gap-y-2 px-5 py-[13px] items-center text-left cursor-pointer hover:bg-ivory/60 transition"
@@ -423,6 +429,16 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
           </div>
         </div>
         <div className="text-[12px] text-muted">{kol.campaign}<div className="text-[10.5px] text-faint">Due {kol.postDueDate}</div></div>
+        {/* The visit, as a state rather than a raw date — a booked day that has
+            passed with nobody saying what happened is the case worth seeing. */}
+        <div className="min-w-0">
+          <span className="text-[10.5px] font-bold px-[8px] py-[3px] rounded-pill inline-block truncate max-w-full"
+            style={{ background: visitTone.bg, border: `1px solid ${visitTone.border}`, color: visitTone.fg }}
+            title={visitSummary(kol, todayIso)}>
+            {visitOverdue(kol, todayIso) ? "⚠ ค้างสรุป" : VISIT_META[visitState].label}
+          </span>
+          {kol.visitDate && <div className="text-[10.5px] text-faint truncate">{kol.visitDate.slice(0, 10)}</div>}
+        </div>
         <div className="text-[12.5px] text-muted">{fmtFollow(kol.followers)}<div className="text-[10.5px] text-faint">followers</div></div>
         <div className="text-[12px]" style={{ color: kol.postedDate ? "#4E7A4E" : "#9A9387", fontWeight: kol.postedDate ? 600 : 400 }}>{kol.postedDate ?? "—"}</div>
         <div className="text-[13px] font-semibold text-ink">{baht(kol.fee, { compact: true })}</div>
@@ -500,7 +516,7 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: CREATOR_COLS }}>
-        <div>Creator</div><div>Campaign</div><div>Followers</div><div>Actual Post</div><div>Fee</div><div>Stage</div>
+        <div>Creator</div><div>Campaign</div><div title="วันที่ KOL ไปร้าน — คนละวันกับวันโพสต์">Visit</div><div>Followers</div><div>Actual Post</div><div>Fee</div><div>Stage</div>
       </div>
       {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}
       {list.length === 0 && (

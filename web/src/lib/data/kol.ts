@@ -5,7 +5,7 @@
 import { BrandId } from "@/lib/brands";
 
 export interface KolEvent {
-  type: "requested" | "owner_assigned" | "proposal_submitted" | "stage_changed" | "revision_requested" | "approved" | "posted";
+  type: "requested" | "owner_assigned" | "proposal_submitted" | "stage_changed" | "revision_requested" | "approved" | "posted" | "creator_replaced" | "visit_updated";
   at: string;
   by: string;
   from?: string;
@@ -14,6 +14,14 @@ export interface KolEvent {
 }
 
 export interface KolStage { l: string; d: string; done: boolean; cur: boolean; }
+
+/* ── Did the creator actually come to the branch? ─────────────────────────
+ *
+ * Stored as a key, never as the Thai label: the label is a wording decision and
+ * gets reworded, the stored value is what every filter and roll-up matches on.
+ * "unscheduled" is not a state anyone sets — it is the absence of a date. */
+export const VISIT_STATUSES = ["scheduled", "visited", "no_show", "cancelled"] as const;
+export type VisitStatus = (typeof VISIT_STATUSES)[number];
 
 export interface Kol {
   id: number;
@@ -63,6 +71,16 @@ export interface Kol {
   saves: string;
   shares: string;
   postLink: string | null;
+  /** The day the creator comes to the branch, and whether they turned up.
+   *
+   *  Not the posting date and not `visits` (which counts customers the post
+   *  brought in). For an F&B deal the visit is its own appointment days or
+   *  weeks before the post, the branch has to staff it, and until now it lived
+   *  in LINE — so "who is coming this week" was unanswerable from the system.
+   *  ISO, so it sorts and joins the plan calendar without label parsing. */
+  visitDate?: string;
+  visitStatus?: VisitStatus;
+  visitNote?: string;
   /** Optional planning/result fields captured in the request + results stages. */
   expectedEngagement?: number;
   actualEngagement?: number;

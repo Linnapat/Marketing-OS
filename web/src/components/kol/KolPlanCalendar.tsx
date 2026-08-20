@@ -20,6 +20,7 @@ import { brandColor, brandName } from "@/lib/brands";
 import { platformIcon } from "@/lib/platforms";
 import { baht } from "@/lib/format";
 import { Kol } from "@/lib/data/kol";
+import { VISIT_META, visitStateOf, visitOverdue, visitSummary } from "@/lib/data/kolVisit";
 
 const DOW = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"];
 const MON_TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -82,6 +83,7 @@ function planRange(k: Kol): { start: Date; end: Date } | null {
 }
 
 const actualDay = (k: Kol): Date | null => toDay(k.postedDate);
+const visitDay = (k: Kol): Date | null => (k.visitStatus === "cancelled" ? null : toDay(k.visitDate));
 
 /** Monday-first: the posting week the team actually plans in. */
 function startOfWeek(d: Date): Date {
@@ -101,6 +103,10 @@ interface Band {
   start: Date;
   end: Date;
   posted: Date | null;
+  /** The day the creator comes to the branch. A different question from the
+   *  post window — the branch staffs that day — and it is what the team was
+   *  keeping in LINE because the plan had nowhere to show it. */
+  visit: Date | null;
   lane: number;
 }
 
@@ -157,11 +163,15 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
       const r = planRange(k);
       if (!r) continue;                                   // TBD / on hold — no date to draw
       const posted = actualDay(k);
-      // A post that landed outside its own window still belongs on the grid.
-      const from = posted && +posted < +r.start ? posted : r.start;
-      const to = posted && +posted > +r.end ? posted : r.end;
+      const visit = visitDay(k);
+      // A post that landed outside its own window still belongs on the grid —
+      // and so does a visit, which is normally BEFORE the window opens.
+      let from = posted && +posted < +r.start ? posted : r.start;
+      let to = posted && +posted > +r.end ? posted : r.end;
+      if (visit && +visit < +from) from = visit;
+      if (visit && +visit > +to) to = visit;
       if (+to < +gridFrom || +from > +gridTo) continue;
-      out.push({ k, start: r.start, end: r.end, posted });
+      out.push({ k, start: r.start, end: r.end, posted, visit });
     }
     return packLanes(out);
   }, [kols, gridFrom, gridTo]);
@@ -193,12 +203,16 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
         <button onClick={() => { const d = new Date(); d.setHours(0, 0, 0, 0); setAnchor(d); }}
           className="text-[11.5px] font-bold text-muted border border-line2 rounded-[8px] px-3 py-[5px] bg-white hover:border-line">วันนี้</button>
 
-        {/* The two marks mean different things and the difference is the point,
-            so it is stated rather than left to be inferred from the styling. */}
+        {/* The three marks mean different things and the difference is the
+            point, so it is stated rather than inferred from the styling. */}
         <span className="flex items-center gap-3 text-[10.5px] text-faint ml-2">
           <span className="flex items-center gap-[5px]">
             <span className="w-[16px] h-[9px] rounded-[3px]" style={{ background: "#6C5CE71F", borderLeft: "3px solid #6C5CE7" }} />
             ช่วงที่วางแผนโพสต์
+          </span>
+          <span className="flex items-center gap-[5px]">
+            <span className="w-[8px] h-[8px] rounded-[2px]" style={{ background: VISIT_META.scheduled.tone.fg }} />
+            วันไปร้าน
           </span>
           <span className="flex items-center gap-[5px]">
             <span className="w-[9px] h-[9px] rounded-full" style={{ background: "#3F6A34" }} />
@@ -296,6 +310,25 @@ export function KolPlanCalendar({ kols, mode, onOpen }: {
                         <span className="text-[9.5px] text-faint truncate">· {b.k.campaign}</span>
                       )}
                     </button>
+                  </div>
+                );
+              })}
+
+              {/* The visit day. A square, not a dot, because it is a different
+                  kind of event from a post and the two sit on the same lane —
+                  same shape in two colours reads as one thing gone wrong. */}
+              {shown.filter((b) => b.visit && +b.visit! >= +wFrom && +b.visit! <= +wTo).map((b) => {
+                const col = Math.round((+b.visit! - +wFrom) / DAY);
+                const state = visitStateOf(b.k);
+                const late = visitOverdue(b.k, todayIso);
+                return (
+                  <div key={`visit-${b.k.id}-${wi}`} className="grid pointer-events-none absolute left-0 right-0"
+                    style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))", top: b.lane * laneH }}>
+                    <span className="flex items-center justify-start pl-[7px]" style={{ gridColumn: `${col + 1} / span 1`, height: laneH - 4 }}>
+                      <span className="w-[8px] h-[8px] rounded-[2px] flex-shrink-0"
+                        title={`ไปร้าน · ${visitSummary(b.k, todayIso)}`}
+                        style={{ background: late ? "#B33A2E" : VISIT_META[state].tone.fg, boxShadow: "0 0 0 2px #fff" }} />
+                    </span>
                   </div>
                 );
               })}
