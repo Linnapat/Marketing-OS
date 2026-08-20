@@ -21,9 +21,66 @@ export function hasOwner(k: Kol): boolean {
 }
 
 const contractSigned = (k: Kol) => /signed/i.test(k.contractStatus || "");
-const quotationApproved = (k: Kol) => /approved/i.test(k.quotationStatus || "");
+/** Reads the DERIVED status, not the stored word: a row whose stored status was
+ *  overwritten by a re-submit is still approved, and one whose money moved past
+ *  its approval is not — whatever the column says. */
+const quotationApproved = (k: Kol) => /approved/i.test(quotationStateFor(k).status);
 /** Approval passed = the KOL has reached (or moved past) the Approved stage. */
 const approvalPassed = (k: Kol) => idx(k.status) >= idx("Approved");
+
+/* ── The proposal approval is an approval OF AN AMOUNT ────────────────────
+ *
+ * Three live proposals sat on "Pending Approval" while carrying a full record
+ * of having been approved — one of them approved three separate times, by name,
+ * with the figure. What happened each time: someone pressed "Submit Profile &
+ * Proposal" again after the approval (to fix a handle, a post date, a contact),
+ * and that button unconditionally wrote quotationStatus back to "Pending
+ * Approval". Worse, the task it would have raised is created only when there
+ * ISN'T one already — so the second submit re-opened the approval and asked
+ * nobody, and the deal could never come back on its own.
+ *
+ * The opposite hole ran alongside it: editing the budget of an APPROVED
+ * proposal left it approved, with approvedAmount still on the old figure. A yes
+ * for ฿15,414 quietly covering whatever number was typed next.
+ *
+ * Both come from treating "approved" as a flag on a row. It is not — it is a
+ * yes to a NUMBER, and it survives exactly as long as that number does. */
+
+/** What the deal commits today: fee + food support. totalCost is what the row
+ *  stores, but older rows may not carry it, hence the sum as fallback. */
+export function committedAmount(k: Pick<Kol, "totalCost" | "fee" | "foodCost">): number {
+  return k.totalCost || (k.fee || 0) + (k.foodCost || 0);
+}
+
+/** Has anyone ever approved this proposal? Read from the evidence, not from the
+ *  status word — the status is the thing that keeps getting overwritten. */
+export function hasApprovalOnRecord(k: Pick<Kol, "approvedAt" | "approvedAmount">): boolean {
+  return !!k.approvedAt || k.approvedAmount != null;
+}
+
+/** Does the recorded approval still cover what the deal now commits?
+ *
+ *  False when the money has moved since the yes — which is a real re-approval,
+ *  not a formatting change. An approval with no amount recorded (older rows)
+ *  counts as covering, because there is nothing to compare and inventing a
+ *  mismatch would re-open deals nobody changed. */
+export function approvalCoversAmount(k: Pick<Kol, "approvedAt" | "approvedAmount" | "totalCost" | "fee" | "foodCost">): boolean {
+  if (!hasApprovalOnRecord(k)) return false;
+  if (k.approvedAmount == null) return true;
+  return committedAmount(k) === k.approvedAmount;
+}
+
+/** The quotation status a row should be showing, and whether the approval it
+ *  carries has been outgrown. One rule, so the drawer, the re-submit and the
+ *  budget box cannot each decide differently. */
+export function quotationStateFor(
+  k: Pick<Kol, "quotationStatus" | "approvedAt" | "approvedAmount" | "totalCost" | "fee" | "foodCost">,
+): { status: string; needsReapproval: boolean } {
+  if (!hasApprovalOnRecord(k)) return { status: k.quotationStatus || "Pending", needsReapproval: false };
+  return approvalCoversAmount(k)
+    ? { status: "Approved", needsReapproval: false }
+    : { status: "Pending Approval", needsReapproval: true };
+}
 
 /** Unmet prerequisites for ENTERING a given stage. Empty = ready. */
 export function prerequisitesFor(stage: string, k: Kol): string[] {
