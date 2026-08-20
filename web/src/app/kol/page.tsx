@@ -26,6 +26,7 @@ import { fetchKolScorecards, createKolWithChannels, followerFreshness, KolScorec
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
 import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
 import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS, KOL_CATEGORIES } from "@/lib/kolTier";
+import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -1002,6 +1003,39 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
   );
 }
 
+/** One channel row in the add form, with its own "already in the library?"
+ *  check. A component rather than inline JSX because the check is a hook and
+ *  the number of rows changes as people add channels. */
+function AddChannelRow({ channel, field, onChange, onRemove, onDuplicates }: {
+  channel: { platform: string; url: string; followers: string };
+  field: string;
+  onChange: (patch: Partial<{ platform: string; url: string; followers: string }>) => void;
+  onRemove: () => void;
+  onDuplicates: (names: string[]) => void;
+}) {
+  const duplicates = useDuplicateLink(channel.url);
+  const names = duplicates.map((d) => d.display_name).join("|");
+  useEffect(() => {
+    onDuplicates(names ? names.split("|") : []);
+    // Reported by VALUE, not by array identity — findKolByProfileLink returns a
+    // fresh array every run and depending on it would loop forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [names]);
+  return (
+    <div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 0.9fr 1.6fr auto" }}>
+        <select value={channel.platform} onChange={(e) => onChange({ platform: e.target.value })} className={field} style={SELECT_STYLE}>
+          {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <input value={channel.followers} onChange={(e) => onChange({ followers: e.target.value })} className={field} inputMode="numeric" placeholder="Followers" />
+        <input value={channel.url} onChange={(e) => onChange({ url: e.target.value })} className={field} placeholder="https://…" />
+        <button type="button" onClick={onRemove} className="text-faint hover:text-ink px-1" aria-label="ลบช่องทาง"><X size={15} /></button>
+      </div>
+      <DuplicateLinkWarning matches={duplicates} className="mt-[6px]" />
+    </div>
+  );
+}
+
 /** Add a creator by hand. The library grew from a sheet import, but the team
  *  meets new pages every week and should not have to go back to the sheet. */
 function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
@@ -1019,6 +1053,12 @@ function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     { platform: "TikTok", url: "", followers: "" },
   ]);
   const [busy, setBusy] = useState(false);
+  // Names of creators already in the library whose link matches one being typed,
+  // per channel row. Kept here so Submit can say so once, rather than each row
+  // warning quietly and the save going through anyway.
+  const [dupNames, setDupNames] = useState<Record<number, string[]>>({});
+  const [dupAcknowledged, setDupAcknowledged] = useState(false);
+  const duplicateNames = [...new Set(Object.values(dupNames).flat())];
 
   const setCh = (i: number, patch: Partial<{ platform: string; url: string; followers: string }>) =>
     setChannels((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
@@ -1026,6 +1066,14 @@ function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   const submit = async () => {
     if (!name.trim() || busy) return;
+    // A warning, not a block: the team does keep two rows on purpose sometimes
+    // (an agency page and a personal one). It has to be acknowledged once, so
+    // saving a duplicate is a decision rather than an accident.
+    if (duplicateNames.length && !dupAcknowledged) {
+      setDupAcknowledged(true);
+      toastError(`ลิงก์ซ้ำกับ ${duplicateNames.join(", ")} — กด "บันทึกเข้า Library" อีกครั้งถ้าตั้งใจเพิ่มแยกแถว`);
+      return;
+    }
     setBusy(true);
     try {
       const id = await createKolWithChannels({
@@ -1111,15 +1159,12 @@ function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <label className="block text-[11.5px] font-bold text-faint mb-[6px]">ช่องทาง · follower · ลิงก์โปรไฟล์</label>
           <div className="flex flex-col gap-2">
             {channels.map((c, i) => (
-              <div key={i} className="grid gap-2" style={{ gridTemplateColumns: "1fr 0.9fr 1.6fr auto" }}>
-                <select value={c.platform} onChange={(e) => setCh(i, { platform: e.target.value })} className={field} style={SELECT_STYLE}>
-                  {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <input value={c.followers} onChange={(e) => setCh(i, { followers: e.target.value })} className={field} inputMode="numeric" placeholder="Followers" />
-                <input value={c.url} onChange={(e) => setCh(i, { url: e.target.value })} className={field} placeholder="https://…" />
-                <button type="button" onClick={() => setChannels((cs) => cs.filter((_, idx) => idx !== i))}
-                  className="text-faint hover:text-ink px-1" aria-label="ลบช่องทาง"><X size={15} /></button>
-              </div>
+              <AddChannelRow
+                key={i} channel={c} field={field}
+                onChange={(patch) => setCh(i, patch)}
+                onRemove={() => setChannels((cs) => cs.filter((_, idx) => idx !== i))}
+                onDuplicates={(names) => setDupNames((d) => ({ ...d, [i]: names }))}
+              />
             ))}
           </div>
           <button type="button" onClick={() => setChannels((cs) => [...cs, { platform: "Facebook", url: "", followers: "" }])}

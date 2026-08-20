@@ -2,7 +2,7 @@
  * ให้ตรงกับที่คนอิมพอร์ตสะกดไว้แทบไม่ได้ แต่ลิงก์ไม่กำกวม
  * Run: node --import tsx scripts/test-kol-search.ts */
 
-import { kolSearchNeedle, handleFromUrl, normaliseProfileUrl } from "../src/lib/data/kolSearch";
+import { kolSearchNeedle, handleFromUrl, normaliseProfileUrl, profileLinkKey, sameProfileLink } from "../src/lib/data/kolSearch";
 import { KOL_CATEGORIES, categoryOptions, categoryTone } from "../src/lib/kolTier";
 
 let pass = 0, fail = 0;
@@ -71,6 +71,40 @@ console.log("\n— Category เป็น dropdown: ต้องไม่ทำ�
   is("หมวดใหม่ Family มีสีเฉพาะ", categoryTone("Family").fg !== grey.fg, true);
   is("หมวดใหม่ Coaching มีสีเฉพาะ", categoryTone("Coaching").fg !== grey.fg, true);
   is("หมวดใหม่ Inter Kol มีสีเฉพาะ", categoryTone("Inter Kol").fg !== grey.fg, true);
+}
+
+console.log("\n— กันบันทึกซ้ำ: ลิงก์คือตัวตน ไม่ใช่ชื่อ —");
+{
+  // ในทะเบียนจริงมีคนเดียวกันถูกบันทึกซ้ำ 10 คู่ เพราะสะกดชื่อคนละภาษา
+  // เช่น "dear.rari" / "dearari7 เดียราริ" / "เดียราริ" = คนเดียวกัน 3 แถว
+  is("ลิงก์เดียวกันคนละรูปแบบ = คนเดียวกัน",
+    sameProfileLink("https://www.tiktok.com/@dearari7", "tiktok.com/@dearari7/video/123"), true);
+  is("มี query/ท้ายสแลชต่างกัน ก็ยังคนเดียวกัน",
+    sameProfileLink("https://instagram.com/dear.rari/?hl=th", "https://www.instagram.com/dear.rari/"), true);
+  is("ตัวพิมพ์ใหญ่เล็กไม่เกี่ยว (henmuntookdee vs Henmuntookdee)",
+    sameProfileLink("instagram.com/Henmuntookdee", "instagram.com/henmuntookdee"), true);
+  is("คนละคน = ไม่ซ้ำ", sameProfileLink("instagram.com/dear.rari", "instagram.com/orn_the.table"), false);
+  is("ลิงก์ IG กับ TikTok ของ handle เดียวกัน ถือว่าชี้คนเดียวกัน",
+    sameProfileLink("instagram.com/nhaireview", "tiktok.com/@nhaireview"), true);
+
+  // Facebook profile.php — ตัวตนอยู่ใน query string ซึ่ง normalise ตัดทิ้ง
+  // ถ้าไม่อ่านก่อน 9 โปรไฟล์ที่ใช้รูปแบบนี้จะกลายเป็นคนเดียวกันหมด
+  is("profile.php คนละ id = คนละคน",
+    sameProfileLink("https://www.facebook.com/profile.php?id=61550000001", "https://www.facebook.com/profile.php?id=61550000002"), false);
+  is("profile.php id เดียวกัน = คนเดียวกัน",
+    sameProfileLink("facebook.com/profile.php?id=61550000001", "https://www.facebook.com/profile.php?id=61550000001&sk=about"), true);
+  is("profile.php ไม่ถูกอ่านเป็น handle", profileLinkKey("https://www.facebook.com/profile.php?id=615500001"), "fb:615500001");
+
+  // พิมพ์ @handle เปล่า ๆ ก็เป็นตัวตนได้ (ช่อง Page / Handle ในฟอร์ม)
+  is("@handle เปล่า ๆ ใช้เทียบได้", profileLinkKey("@dearari7"), "dearari7");
+  is("@handle ตรงกับลิงก์", sameProfileLink("@dearari7", "https://www.tiktok.com/@dearari7"), true);
+
+  // สิ่งที่ไม่ควรนับว่าเป็นตัวตน — ไม่งั้นเตือนซ้ำมั่วไปหมด
+  is("ค่าว่าง", profileLinkKey("   "), "");
+  is("ตัวอักษรเดียว สั้นเกินกว่าจะเป็น handle", profileLinkKey("@a"), "");
+  is("ชื่อไทยเปล่า ๆ ไม่ใช่ handle", profileLinkKey("แก้วใบใหญ่กินอะไรวันนี้"), "");
+  is("โดเมนเปล่า", profileLinkKey("https://www.instagram.com"), "");
+  is("เทียบกับค่าว่าง = ไม่ซ้ำ", sameProfileLink("", "instagram.com/dear.rari"), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

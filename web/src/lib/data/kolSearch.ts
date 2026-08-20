@@ -82,3 +82,42 @@ export function kolSearchNeedle(query: string): KolSearchNeedle {
   }
   return { text: q, handle: "", url: "" };
 }
+
+/* ── Is this creator already in the library? ──────────────────────────────
+ *
+ * The library has the same person saved twice under two spellings of their
+ * name — "dear.rari", "dearari7 เดียราริ" and "เดียราริ" are one creator on
+ * three rows; "henmuntookdee" and "Henmuntookdee" are two rows differing by a
+ * capital letter. Ten such pairs exist today. Nothing warned whoever saved the
+ * second one, because the check people can actually do — "have we got them?" —
+ * was being done by eye, against a name written in a language the previous
+ * person may not have used.
+ *
+ * The link is the identity. Two rows are the same creator when a channel link
+ * points at the same account. */
+
+/** A comparable identity for one profile link, or "" when the link carries no
+ *  account we can recognise.
+ *
+ *  Facebook's `profile.php?id=123` is the awkward one and it is not rare — nine
+ *  profiles use it. The account is in the QUERY STRING, which normalisation
+ *  throws away, so it is read before that happens. Without this every one of
+ *  those nine reads as "profile.php" and they all look like the same person. */
+export function profileLinkKey(raw: string): string {
+  const value = (raw || "").trim();
+  if (!value) return "";
+  const fbId = /profile\.php\?(?:.*&)?id=(\d+)/i.exec(value);
+  if (fbId) return `fb:${fbId[1]}`;
+  const handle = handleFromUrl(value);
+  if (handle) return handle;
+  // A bare "@name" typed into a handle box is an identity too, even though it
+  // is not a link.
+  const bare = value.replace(/^@/, "").trim().toLowerCase();
+  return /^[a-z0-9._-]{2,}$/.test(bare) ? bare : "";
+}
+
+/** Do these two profile links point at the same account? */
+export function sameProfileLink(a: string, b: string): boolean {
+  const ka = profileLinkKey(a);
+  return !!ka && ka === profileLinkKey(b);
+}
