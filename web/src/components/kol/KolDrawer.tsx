@@ -17,7 +17,7 @@ function isoToLabel(iso: string): string {
   return m ? `${MON_SHORT[m - 1]} ${d}` : iso;
 }
 import { KOL_PLATFORMS } from "@/lib/data/brief";
-import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults } from "@/lib/kolFlow";
+import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults, committedAmount, approvalCoversAmount, quotationStateFor } from "@/lib/kolFlow";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
@@ -386,7 +386,18 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     // One final submit: save profile + proposal, then route it back to the
     // original requester in My Approval. Repeated clicks reuse the same task id.
     const masterKolId = await ensureKolProfile({ masterKolId: selectedMasterId, name, handle, kolType, followers, platform: kol.plat }).catch(() => selectedMasterId);
-    const taskId = kol.proposalApprovalTaskId ?? Date.now();
+    // An approval already given still stands, as long as it still covers the
+    // money. This button edits the PROFILE — a handle, a post date, a contact —
+    // and used to write "Pending Approval" unconditionally, throwing away a yes
+    // that had nothing to do with what changed. Three live proposals ended up
+    // stuck that way (one of them approved three separate times), because the
+    // task below is only raised when there is not one already: the second
+    // submit re-opened the approval and asked nobody.
+    const stillApproved = approvalCoversAmount(kol);
+    // Reuse the existing task only while the approval is genuinely still open.
+    // Once it has been decided, its task is closed, and pointing at it again is
+    // how a re-opened approval reaches no one.
+    const taskId = (!stillApproved && kol.proposalApprovalTaskId) || Date.now();
     const requester = (kol.requester || kol.pendingApprover || "").trim();
     const next: Kol = {
       ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType,
@@ -395,14 +406,18 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       // Status view + lists track the proposal's post date.
       postingDate: postDate || kol.postingDate,
       postDueDate: postDate ? isoToLabel(postDate) : kol.postDueDate,
-      quotationStatus: "Pending Approval",
+      quotationStatus: stillApproved ? kol.quotationStatus : "Pending Approval",
       proposalApprovalTaskId: taskId,
       proposalSubmittedAt: new Date().toISOString(),
       history: [...(kol.history ?? []), { type: "proposal_submitted", at: new Date().toISOString(), by: kol.owner || "System", note: name.trim() || kol.name }],
     };
     try {
       await updateKol(next);
-      if (!kol.proposalApprovalTaskId && requester && requester !== "Unassigned" && requester !== "—") {
+      // Ask someone whenever this really is waiting on an approval — not only
+      // the first time. `taskId` is a fresh id after a decided approval, so the
+      // request lands in My Approval again instead of on a ticked-off task.
+      const needsApproval = !stillApproved;
+      if (needsApproval && taskId !== kol.proposalApprovalTaskId && requester && requester !== "Unassigned" && requester !== "—") {
         const due = new Date(); due.setDate(due.getDate() + 3);
         const task: Task = {
           id: taskId, title: `Approve KOL proposal — ${next.name}`,
@@ -612,14 +627,33 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
       toastError(`บันทึก KOL Finance ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setBusy(false); }
   };
-  const saveProposalBudget = async () => {
-    const fee = Math.max(0, proposalBudget || 0);
-    await set({ fee, totalCost: fee + Math.max(0, foodSupport || 0) });
+  /** Save the money, and re-open the approval if the money moved past what was
+   *  approved. Editing the budget of an approved proposal used to leave it
+   *  approved with approvedAmount on the OLD figure — a yes for ฿15,414 quietly
+   *  covering whatever was typed next. */
+  const saveMoney = async (patch: { fee?: number; foodCost?: number }) => {
+    const fee = patch.fee ?? Math.max(0, proposalBudget || 0);
+    const foodCost = patch.foodCost ?? Math.max(0, foodSupport || 0);
+    const money: Partial<Kol> = { fee, foodCost, totalCost: fee + foodCost };
+    const after = { ...kol, ...money } as Kol;
+    if (!approvalCoversAmount(after) && quotationStateFor(after).needsReapproval) {
+      // The old yes is cleared, not just re-labelled: leaving approvedBy on the
+      // row is what let a proposal read "Pending Approval · อนุมัติไว้ ฿15K โดย
+      // Pupay" at the same time.
+      Object.assign(money, {
+        quotationStatus: "Pending Approval",
+        approvedAmount: undefined, approvedAt: undefined, approvedBy: undefined,
+        // Cleared so the next submit raises a REAL approval task instead of
+        // reusing the id of the one that was already ticked off.
+        proposalApprovalTaskId: undefined,
+      });
+      toastError(`ยอดเปลี่ยนจากที่อนุมัติไว้ (${baht(kol.approvedAmount ?? 0, { compact: true })}) — ต้องส่งขออนุมัติใหม่`);
+    }
+    await set(money);
   };
-  const saveFoodSupport = async () => {
-    const foodCost = Math.max(0, foodSupport || 0);
-    await set({ foodCost, totalCost: Math.max(0, proposalBudget || 0) + foodCost });
-  };
+  const saveProposalBudget = () => saveMoney({ fee: Math.max(0, proposalBudget || 0) });
+  const saveFoodSupport = () => saveMoney({ foodCost: Math.max(0, foodSupport || 0) });
+  const quotationState = quotationStateFor(kol);
   const selCls = "text-[12px] font-semibold px-[10px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none";
   return (
     <div className="flex flex-col gap-4">
@@ -638,11 +672,22 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
         <span className="text-[11px]">
           = ค่าตัว {baht(Math.max(0, proposalBudget || 0), { compact: true })} + ค่าอาหาร {baht(Math.max(0, foodSupport || 0), { compact: true })}
         </span>
+        {/* Only claims an approval that still covers what the deal commits.
+            "Pending Approval" next to "อนุมัติไว้ ฿15K · โดย Pupay" is the
+            contradiction that started this — the row was telling the truth
+            twice, about two different moments. */}
         {kol.approvedAmount != null && (
-          <span className="ml-auto text-[11px] font-semibold">
-            อนุมัติไว้ {baht(kol.approvedAmount, { compact: true })}
-            {kol.approvedBy ? ` · โดย ${kol.approvedBy}` : ""}
-          </span>
+          approvalCoversAmount(kol) ? (
+            <span className="ml-auto text-[11px] font-semibold">
+              อนุมัติไว้ {baht(kol.approvedAmount, { compact: true })}
+              {kol.approvedBy ? ` · โดย ${kol.approvedBy}` : ""}
+            </span>
+          ) : (
+            <span className="ml-auto text-[11px] font-bold" style={{ color: "#B3641E" }}>
+              ⚠ ยอดเปลี่ยนหลังอนุมัติ — เคยอนุมัติ {baht(kol.approvedAmount, { compact: true })}
+              {kol.approvedBy ? ` โดย ${kol.approvedBy}` : ""} · ตอนนี้ {baht(committedAmount(kol), { compact: true })} ต้องขออนุมัติใหม่
+            </span>
+          )
         )}
       </div>
 
@@ -656,8 +701,11 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
         </div>
         <div className="flex items-center justify-between bg-surface border border-line rounded-card px-4 py-[10px]">
           <div><div className="text-[13px] text-ink font-semibold">Rate Card / Proposal</div><div className="text-[10.5px] text-faint">ต้องเป็น Approved เพื่อไป Contract Signed</div></div>
-          <select value={kol.quotationStatus} disabled={busy} onChange={(e) => set({ quotationStatus: e.target.value })} className={selCls}>
-            {[...new Set([kol.quotationStatus, ...RATECARD_OPTS])].map((o) => <option key={o} value={o}>{o}</option>)}
+          {/* The DERIVED status, so rows whose stored word a re-submit already
+              overwrote read as approved again without anyone editing them —
+              three live proposals are in exactly that state. */}
+          <select value={quotationState.status} disabled={busy} onChange={(e) => set({ quotationStatus: e.target.value })} className={selCls}>
+            {[...new Set([quotationState.status, ...RATECARD_OPTS])].map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
         </div>
       </div>
