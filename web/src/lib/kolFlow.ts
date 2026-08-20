@@ -82,6 +82,69 @@ export function quotationStateFor(
     : { status: "Pending Approval", needsReapproval: true };
 }
 
+/* ── The creator cancelled; someone else takes the slot ───────────────────
+ *
+ * A deal that is approved and signed can still fall over: the creator pulls out
+ * and the team puts another page in the same slot, with the same budget, for
+ * the same campaign. Until now the only ways to record that were to overwrite
+ * the name — losing who was originally booked and why the deal moved — or to
+ * abandon the row and raise a new one, losing the campaign link and the budget
+ * it was counted against.
+ *
+ * The slot survives; the person in it does not. And an approval does not
+ * transfer: a yes to ฿15,000 for one creator is not a yes to ฿15,000 for a
+ * different one — same money, different reach, different audience, different
+ * risk. The person who approved has to see the new name. */
+
+export interface CreatorReplacement {
+  name: string;
+  handle?: string;
+  platform?: string;
+  followers?: number;
+  masterKolId?: string;
+  /** Why the original fell through — kept on the row, not just in someone's chat. */
+  reason?: string;
+}
+
+/** The row after the swap: new creator in the slot, approval re-opened, the
+ *  previous booking written into history, and every result cleared.
+ *
+ *  Results are cleared because they belonged to the person who left — a post
+ *  link and a reach number carried onto the replacement would be somebody
+ *  else's work counted as theirs. Money, campaign, brand and branch stay: the
+ *  slot is what was budgeted, and that has not changed. */
+export function replaceCreator(k: Kol, next: CreatorReplacement, by: string, at: string): Kol {
+  const wasName = k.name;
+  return {
+    ...k,
+    name: next.name.trim() || k.name,
+    h: next.handle?.trim() || "@tbd",
+    plat: next.platform || k.plat,
+    followers: next.followers ?? 0,
+    masterKolId: next.masterKolId,
+    // Whatever the previous creator produced is not the new one's.
+    postLink: null, posts: [], postedDate: null,
+    actualReach: 0, actualEngagement: 0, engagement: "—", saves: "—", shares: "—",
+    // The visit was an appointment with the person who left.
+    visitDate: undefined, visitStatus: undefined, visitNote: undefined,
+    // The approval was for the previous creator. Cleared, not relabelled — a
+    // row that still reads "อนุมัติไว้ ฿15K โดย …" under a different name is the
+    // same contradiction the proposal statuses just stopped telling.
+    quotationStatus: "Pending Approval",
+    approvedAmount: undefined, approvedAt: undefined, approvedBy: undefined,
+    // A fresh id, so the re-approval reaches someone instead of pointing at a
+    // task that was already ticked off for the previous creator.
+    proposalApprovalTaskId: undefined,
+    // Contract follows the person too — the signed one was with the other page.
+    contractStatus: "Pending",
+    currentBlocker: null,
+    history: [...(k.history ?? []), {
+      type: "creator_replaced" as const, at, by, from: wasName, to: next.name.trim(),
+      note: next.reason?.trim() || "",
+    }],
+  };
+}
+
 /** Unmet prerequisites for ENTERING a given stage. Empty = ready. */
 export function prerequisitesFor(stage: string, k: Kol): string[] {
   const s = normalizeStage(stage);

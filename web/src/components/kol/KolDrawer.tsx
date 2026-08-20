@@ -1,13 +1,15 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import {
   Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals, kolRoas,
+  VISIT_STATUSES, type VisitStatus,
 } from "@/lib/data/kol";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { useAuth } from "@/lib/auth";
 import { fetchKolComments, resolveKolComment } from "@/lib/db/feedback";
 
 const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -17,8 +19,10 @@ function isoToLabel(iso: string): string {
   return m ? `${MON_SHORT[m - 1]} ${d}` : iso;
 }
 import { KOL_PLATFORMS } from "@/lib/data/brief";
-import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults, committedAmount, approvalCoversAmount, quotationStateFor } from "@/lib/kolFlow";
+import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults, committedAmount, approvalCoversAmount, quotationStateFor, replaceCreator } from "@/lib/kolFlow";
+import { KOL_CHANNEL_PLATFORMS } from "@/lib/platforms";
 import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
+import { VISIT_META, visitStateOf, visitOverdue } from "@/lib/data/kolVisit";
 import { brandName, brandColor } from "@/lib/brands";
 import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
@@ -332,6 +336,12 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }) {
   const [name, setName] = useState(kol.name);
   const [handle, setHandle] = useState(kol.h);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const { member, user } = useAuth();
+  const currentUser = member?.name || user?.email?.split("@")[0] || "System";
+  const [visitDate, setVisitDate] = useState(kol.visitDate ?? "");
+  const [visitStatus, setVisitStatus] = useState<VisitStatus | "">(kol.visitStatus ?? "");
+  const todayIso = new Date().toISOString().slice(0, 10);
   // A row is not a duplicate of the profile it is already linked to.
   const duplicates = useDuplicateLink(handle, kol.masterKolId);
   const [kolType, setKolType] = useState(kol.kolType);
@@ -409,6 +419,8 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       // Status view + lists track the proposal's post date.
       postingDate: postDate || kol.postingDate,
       postDueDate: postDate ? isoToLabel(postDate) : kol.postDueDate,
+      visitDate: visitDate || undefined,
+      visitStatus: visitStatus || undefined,
       quotationStatus: stillApproved ? kol.quotationStatus : "Pending Approval",
       proposalApprovalTaskId: taskId,
       proposalSubmittedAt: new Date().toISOString(),
@@ -538,6 +550,28 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         <div><label className={lbl}>Followers</label><input type="number" value={followers || ""} onChange={(e) => setFollowers(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
         <div><label className={lbl}>Avg Reach</label><input type="number" value={avgReach || ""} onChange={(e) => setAvgReach(parseInt(e.target.value) || 0)} className={field} placeholder="0" /></div>
         <div><label className={lbl}>Post Date <span className="text-faint font-normal normal-case">· วันโพสต์ตาม proposal</span></label><DatePicker value={postDate || null} onChange={(v) => setPostDate(v)} /></div>
+        {/* The visit is its own appointment — the creator comes to the branch
+            days or weeks before the post, and the branch has to staff it. It
+            used to live in LINE, so "who is coming this week" could not be
+            answered from here at all. */}
+        <div>
+          <label className={lbl}>Visit Date <span className="text-faint font-normal normal-case">· วันที่ KOL ไปร้าน (คนละวันกับวันโพสต์)</span></label>
+          <DatePicker value={visitDate || null} onChange={(v) => setVisitDate(v || "")} />
+        </div>
+        <div>
+          <label className={lbl}>Visited Status</label>
+          <select value={visitStatus} onChange={(e) => setVisitStatus(e.target.value as VisitStatus | "")} className={field}>
+            {/* Blank is not a state anyone sets — it derives to "ยังไม่นัดวันไป",
+                or to "นัดแล้ว" the moment a date exists. */}
+            <option value="">{VISIT_META[visitStateOf({ visitDate, visitStatus: undefined })].label} (อัตโนมัติ)</option>
+            {VISIT_STATUSES.map((v) => <option key={v} value={v}>{VISIT_META[v].label}</option>)}
+          </select>
+          {visitOverdue({ visitDate, visitStatus: visitStatus || undefined }, todayIso) && (
+            <div className="mt-[5px] text-[10.5px] font-bold" style={{ color: "#B33A2E" }}>
+              ⚠ เลยวันนัดแล้ว ยังไม่ได้ระบุว่ามาไหม
+            </div>
+          )}
+        </div>
         <div><label className={lbl}>Audience Fit</label><select value={audienceFit} onChange={(e) => setAudienceFit(e.target.value)} className={field}>{audienceOptions.map((a) => <option key={a}>{a}</option>)}</select></div>
       </div>
       <div><label className={lbl}>Content Style</label><input value={contentStyle} onChange={(e) => setContentStyle(e.target.value)} className={field} placeholder="e.g. Food photography + short video" /></div>
@@ -551,7 +585,23 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
         <button onClick={save} disabled={busy} className="text-[13px] font-bold text-white bg-panel rounded-[10px] px-5 py-[10px] disabled:opacity-50">{busy ? "Submitting…" : "Submit Profile & Proposal"}</button>
         {saved && <span className="text-[12.5px] font-semibold text-status-green">✓ ส่งไป My Approval แล้ว</span>}
         {!kol.requester && <span className="text-[11px] text-status-red">ไม่พบ Requester — ระบบจะใช้ Approver ที่กำหนดไว้แทน</span>}
+        {/* The deal can fall over after it is approved and signed. Overwriting
+            the name loses who was booked and why it moved; abandoning the row
+            loses the campaign link and the budget it was counted against. */}
+        <button onClick={() => setSwapOpen(true)}
+          className="ml-auto text-[12px] font-bold rounded-[10px] px-4 py-[9px] border border-line2 bg-white"
+          style={{ color: "#B3641E" }}>
+          ↔ KOL ยกเลิก — เปลี่ยนเพจแทน
+        </button>
       </div>
+      {swapOpen && (
+        <ReplaceCreatorForm
+          kol={kol}
+          by={currentUser}
+          onClose={() => setSwapOpen(false)}
+          onDone={(next) => { setSwapOpen(false); onUpdate?.(next); }}
+        />
+      )}
     </div>
   );
 }
@@ -616,6 +666,82 @@ function BriefTab({ kol }: { kol: Kol }) {
 // Contract + Quotation are the KOL team's to set (they gate Contract Signed).
 // Invoice + Payment mirror Finance — read-only here, actioned via the CTA.
 const CONTRACT_OPTS = ["Pending", "Sent", "Signed"];
+/** Put another page into a slot the original creator walked away from.
+ *
+ *  The slot — its campaign, brand, branch and budget — is what was planned and
+ *  it survives. The person in it does not, and neither does their approval: a
+ *  yes to ฿15,000 for one creator is not a yes for a different one at the same
+ *  price. See replaceCreator() for exactly what is kept and what is cleared. */
+function ReplaceCreatorForm({ kol, by, onClose, onDone }: {
+  kol: Kol; by: string; onClose: () => void; onDone: (next: Kol) => void;
+}) {
+  const field = "w-full text-[13px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-white outline-none";
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [platform, setPlatform] = useState(kol.plat);
+  const [followers, setFollowers] = useState(0);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const duplicates = useDuplicateLink(handle);
+
+  const submit = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    const next = replaceCreator(kol, {
+      name, handle, platform, followers: followers || undefined, reason,
+    }, by, new Date().toISOString());
+    try {
+      await updateKol(next);
+      toastSuccess(`เปลี่ยนเป็น ${next.name} แล้ว — ต้องขออนุมัติใหม่เพราะเป็นคนละคน`);
+      onDone(next);
+    } catch (error) {
+      toastError(`เปลี่ยน KOL ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-[14px] border p-4 flex flex-col gap-3" style={{ background: "#FFF7ED", borderColor: "#F0C89B" }}>
+      <div className="text-[12.5px] font-extrabold" style={{ color: "#8A5418" }}>↔ เปลี่ยนเพจในสล็อตนี้</div>
+      <div className="text-[11.5px]" style={{ color: "#8A5418" }}>
+        งบ · แคมเปญ · สาขา อยู่เหมือนเดิม — <b>{kol.name}</b> จะถูกบันทึกไว้ในประวัติว่าถูกเปลี่ยนตัว ·
+        ผลงาน วันนัดไปร้าน สัญญา และการอนุมัติของคนเดิมถูกล้าง เพราะเป็นของคนละคน
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">KOL / Page ใหม่ *</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="ชื่อเพจที่มาแทน" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">Handle / ลิงก์</label>
+          <input value={handle} onChange={(e) => setHandle(e.target.value)} className={field} placeholder="@handle หรือ URL" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">Platform</label>
+          <select value={platform} onChange={(e) => setPlatform(e.target.value)} className={field}>
+            {KOL_CHANNEL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold text-faint mb-[5px]">Followers</label>
+          <input type="number" value={followers || ""} onChange={(e) => setFollowers(parseInt(e.target.value) || 0)} className={field} placeholder="0" />
+        </div>
+      </div>
+      <DuplicateLinkWarning matches={duplicates} />
+      <div>
+        <label className="block text-[11px] font-bold text-faint mb-[5px]">เหตุผลที่คนเดิมยกเลิก</label>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} className={field} placeholder="เช่น ติดคิวงานอื่น / ขอเลื่อนไม่มีกำหนด" />
+      </div>
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={!name.trim() || busy}
+          className="text-[12.5px] font-bold text-white rounded-[10px] px-5 py-[9px] disabled:opacity-40" style={{ background: "#B3641E" }}>
+          {busy ? "กำลังเปลี่ยน…" : "เปลี่ยนเป็นคนนี้"}
+        </button>
+        <button onClick={onClose} className="text-[12.5px] font-semibold text-muted border border-line2 rounded-[10px] px-5 py-[9px] bg-white">ยกเลิก</button>
+      </div>
+    </div>
+  );
+}
+
 // KOL deals use a rate card / proposal rather than a formal vendor quotation.
 const RATECARD_OPTS = ["Pending", "Received", "Approved"];
 function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?: (k: Kol) => void; embedded?: boolean }) {
