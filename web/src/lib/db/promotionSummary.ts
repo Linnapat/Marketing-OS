@@ -19,6 +19,7 @@ type Row = {
   end_date: string | null;
   status: OmdStorePromotionStatus;
   source: "manual" | "campaign" | "seed";
+  hidden: boolean | null;
 };
 
 const toPromotion = (row: Row): OmdStorePromotion => ({
@@ -33,6 +34,7 @@ const toPromotion = (row: Row): OmdStorePromotion => ({
   endDate: row.end_date ?? undefined,
   status: row.status,
   source: row.source,
+  hidden: row.hidden ?? false,
 });
 
 const toRow = (item: OmdStorePromotion): Row => ({
@@ -47,6 +49,7 @@ const toRow = (item: OmdStorePromotion): Row => ({
   end_date: item.endDate ?? null,
   status: item.status,
   source: item.source ?? "manual",
+  hidden: item.hidden ?? false,
 });
 
 export async function fetchPromotionSummaryItems(): Promise<OmdStorePromotion[]> {
