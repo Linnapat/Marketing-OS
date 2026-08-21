@@ -28,6 +28,7 @@ import { KolPlanCalendar } from "@/components/kol/KolPlanCalendar";
 import { tierTone, categoryTone, PARTNER_TONE, KOL_TIERS, KOL_CATEGORIES } from "@/lib/kolTier";
 import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
 import { VISIT_META, visitStateOf, visitOverdue, visitSummary } from "@/lib/data/kolVisit";
+import { buildKolSummary, DEFAULT_TARGETS, type SummaryTargets } from "@/lib/data/kolSummary";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
@@ -119,6 +120,12 @@ export default function KolPage() {
   const [requestOpen, setRequestOpen] = useState(false);
   const date = sticky.date;
   const setDate = (d: typeof DEFAULT_DATE_FILTER) => setSticky({ ...sticky, date: d });
+  // Which month the summary's targets belong to. A year or a custom range is
+  // not a month — those keep one bucket rather than silently writing the
+  // targets of whichever month happens to be first in the range.
+  const summaryMonth = date.mode === "month"
+    ? `${date.year}-${String(date.month + 1).padStart(2, "0")}`
+    : date.mode === "year" ? String(date.year) : "range";
   const [kols, setKols] = useState<Kol[]>(KOLS);
 
   // Campaign briefs — the KOL envelope from Budget Allocation / KOL Plan, so
@@ -373,7 +380,7 @@ export default function KolPage() {
           <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />
         )}
         {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />}
-        {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} />}
+        {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} brand={String(brand)} month={summaryMonth} />}
         {tab === "database" && <KolDatabase />}
       </div>
 
@@ -625,46 +632,44 @@ function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandF
   );
 }
 
-/** The whole view in one line of numbers.
+/** The monthly report, in the shape the team already reads it in.
  *
- *  The page had campaign totals and nothing above them: with four campaigns on
- *  screen, "how did KOL do this month" meant adding four rows up by hand, and
- *  the number that actually decides anything — what we paid per reach — was
- *  nowhere at all.
+ *  This lived in a Google Sheet: a KPI panel, a per-branch table, and one line
+ *  per creator. Every number in it except five was already in the app — so the
+ *  report was being rebuilt by hand each month out of data the app holds. The
+ *  five that were missing (the KPI, how many pages were planned, the requested
+ *  budget, the visit rate and ARPU) are typed here and saved per brand+month.
  *
- *  It counts the SAME rows the filters left on screen, so it can never disagree
- *  with the tables under it. And it says how many posts are still blank rather
- *  than presenting a part-filled month as a finished one — 17 of 23 posts
- *  reported is a different fact from a low reach. */
-function PerformanceSummary({ list }: { list: Kol[] }) {
-  const t = useMemo(() => {
-    let expected = 0, reach = 0, eng = 0, fee = 0, food = 0, revenue = 0;
-    let posts = 0, reported = 0, creatorsWithResult = 0;
-    for (const k of list) {
-      expected += k.expectedReach || 0;
-      fee += k.fee || 0;
-      food += k.foodCost || 0;
-      revenue += k.revenue || 0;
-      const ps = kolPosts(k);
-      const totals = postsTotals(ps);
-      reach += totals.reach;
-      eng += totals.engagement;
-      posts += ps.length;
-      reported += ps.filter((p) => (p.reach || 0) > 0 || (p.engagement || 0) > 0).length;
-      if (totals.reach > 0) creatorsWithResult += 1;
-    }
-    const spend = fee + food;
-    return {
-      expected, reach, eng, fee, spend, revenue, posts, reported, creatorsWithResult,
-      rate: reach ? (eng / reach) * 100 : 0,
-      // What a reach actually cost. The one number that compares a ฿2,000 nano
-      // to a ฿60,000 macro, and the page never showed it.
-      costPerReach: reach ? spend / reach : 0,
-      // Against the reach that was promised at proposal time.
-      vsExpected: expected ? (reach / expected) * 100 : 0,
-      roas: spend ? revenue / spend : 0,
-    };
-  }, [list]);
+ *  Counts the SAME rows the filters left on screen, so it cannot disagree with
+ *  the tables under it — and pins its arithmetic to the real July Phuket report
+ *  in scripts/test-kol-summary.ts, because a summary that does not match the
+ *  sheet sends everyone back to the sheet.
+ *
+ *  One number is deliberately NOT copied: the sheet's top block prints Engage
+ *  Rate 1033.2% where the figures give 9.68%, and its own per-month block gets
+ *  the same calculation right. The app computes it correctly. */
+function PerformanceSummary({ list, brand, month }: { list: Kol[]; brand: string; month: string }) {
+  const key = `kol_summary_targets_${brand}_${month}`;
+  const [targets, setTargets] = useState<SummaryTargets>(DEFAULT_TARGETS);
+  const [open, setOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setTargets(DEFAULT_TARGETS);
+    getAppSetting(key)
+      .then((raw) => { if (alive && raw) setTargets({ ...DEFAULT_TARGETS, ...JSON.parse(raw) }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [key]);
+
+  const saveTargets = (next: SummaryTargets) => {
+    setTargets(next);
+    setAppSetting(key, JSON.stringify(next)).catch((error) => toastError(`บันทึกเป้าหมายไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  };
+
+  const s = useMemo(() => buildKolSummary(list, targets), [list, targets]);
+  const pctText = (v: number) => `${v.toFixed(1)}%`;
 
   const cell = (label: string, value: string, hint?: string, fg?: string) => (
     <div key={label} className="bg-surface border border-line rounded-card px-4 py-3">
@@ -673,32 +678,158 @@ function PerformanceSummary({ list }: { list: Kol[] }) {
       {hint && <div className="text-[10.5px] text-faint mt-[2px]">{hint}</div>}
     </div>
   );
+  const numField = (label: string, value: number, onChange: (v: number) => void, step = 1) => (
+    <div key={label}>
+      <label className="block text-[10.5px] font-bold text-faint mb-[4px]">{label}</label>
+      <input type="number" step={step} value={value || ""} onChange={(e) => onChange(Number(e.target.value) || 0)}
+        className="w-full text-[12.5px] px-[10px] py-[7px] rounded-[8px] border border-line2 bg-white outline-none" />
+    </div>
+  );
+  const th = "px-3 py-2 text-[10px] uppercase tracking-[0.05em] font-bold";
+  const td = "px-3 py-2 text-[11.5px] whitespace-nowrap";
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[13px] font-extrabold text-ink">สรุปรวมทั้งหมดที่เห็นอยู่</span>
-        <span className="text-[11.5px] text-faint">· {list.length} creator · {t.posts} post · ตามตัวกรองด้านบน</span>
-        {t.posts > t.reported && (
+        <span className="text-[13px] font-extrabold text-ink">สรุปผล KOL · ตามรูปแบบรายงานเดิม</span>
+        <span className="text-[11.5px] text-faint">· {s.kolUsed} creator · {s.posts} post · ตามตัวกรองด้านบน</span>
+        {s.posts > s.postsReported && (
           <span className="text-[11px] font-bold rounded-pill px-2.5 py-[3px]"
             style={{ background: "#FFF7ED", border: "1px solid #F0C89B", color: "#8A5418" }}
             title="ตัวเลขรวมนับเฉพาะโพสต์ที่กรอกผลแล้ว">
-            ⚠ ยังไม่กรอกผล {t.posts - t.reported} จาก {t.posts} โพสต์
+            ⚠ ยังไม่กรอกผล {s.posts - s.postsReported} จาก {s.posts} โพสต์
           </span>
         )}
+        <button onClick={() => setOpen((v) => !v)} className="ml-auto text-[11.5px] font-bold text-accent">
+          {open ? "ซ่อนเป้าหมาย" : "ตั้งเป้าหมาย / งบที่ขอ"}
+        </button>
       </div>
+
+      {open && (
+        <div className="bg-surface border border-line rounded-cardLg p-4">
+          <div className="text-[11.5px] text-faint mb-3">
+            ห้าค่านี้เดิมอยู่หัวชีต ระบบไม่เคยมี — เก็บแยกตามแบรนด์และเดือนที่เลือก ({brand === "all" ? "ทุกแบรนด์" : brand} · {month})
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+            {numField("KPI (Reach เป้า)", targets.kpiReach, (v) => saveTargets({ ...targets, kpiReach: v }), 1000)}
+            {numField("จำนวนเพจที่ต้องใช้", targets.pagesNeeded, (v) => saveTargets({ ...targets, pagesNeeded: v }))}
+            {numField("งบที่ขอ (Summary Budget)", targets.budget, (v) => saveTargets({ ...targets, budget: v }), 1000)}
+            {numField("Visit Rate", targets.visitRate, (v) => saveTargets({ ...targets, visitRate: v }), 0.0001)}
+            {numField("ARPU (บาท/หัว)", targets.arpu, (v) => saveTargets({ ...targets, arpu: v }), 10)}
+          </div>
+        </div>
+      )}
+
+      {/* KPI panel — the sheet's blue + cream header block */}
       <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        {cell("Reach รวม", fmtFollow(t.reach),
-          t.expected ? `${Math.round(t.vsExpected)}% ของที่คาด ${fmtFollow(t.expected)}` : undefined,
-          t.expected && t.vsExpected >= 100 ? "#3F6A34" : undefined)}
-        {cell("Engagement รวม", fmtFollow(t.eng), `Eng. rate ${fmtPct(t.rate)}`)}
-        {cell("ใช้ไปจริง", baht(t.spend, { compact: true }), `ค่าตัว ${baht(t.fee, { compact: true })} + อาหาร ${baht(t.spend - t.fee, { compact: true })}`)}
-        {cell("Cost / reach", t.costPerReach ? `฿${t.costPerReach.toFixed(3)}` : "—", "ยิ่งต่ำยิ่งคุ้ม")}
-        {cell("ROAS", t.roas ? `${t.roas.toFixed(1)}×` : "—",
-          t.revenue ? `รายได้ ${baht(t.revenue, { compact: true })}` : "ยังไม่ได้กรอกรายได้",
-          t.roas >= 1 ? "#3F6A34" : undefined)}
-        {cell("กรอกผลแล้ว", `${t.reported}/${t.posts}`, `${t.creatorsWithResult} creator มีผลแล้ว`)}
+        {cell("KPI (เดือนที่เลือก)", targets.kpiReach ? fmtFollow(targets.kpiReach) : "—",
+          targets.kpiReach ? `ทำได้ ${pctText(s.kpiPct)}` : "ยังไม่ได้ตั้งเป้า",
+          targets.kpiReach && s.kpiPct >= 100 ? "#3F6A34" : undefined)}
+        {cell("เพจที่ใช้ / ที่ต้องใช้", targets.pagesNeeded ? `${s.kolUsed} / ${targets.pagesNeeded}` : String(s.kolUsed),
+          targets.pagesNeeded ? pctText(s.pagesPct) : "ยังไม่ได้ตั้งจำนวน")}
+        {cell("งบที่ขอ", targets.budget ? baht(targets.budget, { compact: true }) : "—",
+          targets.budget ? `ใช้ไป ${pctText(s.budgetUsedPct)}` : "ยังไม่ได้ตั้งงบ",
+          targets.budget && s.budgetUsedPct > 100 ? "#B33A2E" : undefined)}
+        {cell("Total Cost", baht(s.cost, { compact: true }), `ค่าตัว ${baht(s.paidCost, { compact: true })} + อาหาร ${baht(s.foodCost, { compact: true })}`)}
+        {cell("Total Reach", fmtFollow(s.reach), `Reach/Follower ${s.reachPerFollower.toFixed(2)}×`)}
+        {cell("Total Engage", fmtFollow(s.engage), `Engage Rate ${pctText(s.engageRate)}`)}
+        {cell("Cost / Reach", s.costPerReach ? `฿${s.costPerReach.toFixed(4)}` : "—", "ยิ่งต่ำยิ่งคุ้ม")}
+        {cell("ROAS (est.)", s.roasEst ? `${s.roasEst.toFixed(1)}×` : "—",
+          `reach × ${targets.visitRate} × ฿${targets.arpu}${s.roasActual ? ` · จริง ${s.roasActual.toFixed(1)}×` : ""}`,
+          s.roasEst >= 1 ? "#3F6A34" : undefined)}
       </div>
+
+      {/* Per-branch table */}
+      {s.branches.length > 0 && (
+        <div className="bg-surface border border-line rounded-cardLg overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-panel text-white">
+                <th className={`${th} text-left`}>Branch</th>
+                <th className={`${th} text-right`}>KOL Used</th>
+                <th className={`${th} text-right`}>Total Reach</th>
+                <th className={`${th} text-right`}>Total Engage</th>
+                <th className={`${th} text-right`}>Total Cost</th>
+                <th className={`${th} text-right`}>Cost/Reach</th>
+                <th className={`${th} text-right`}>Engage Rate</th>
+                <th className={`${th} text-right`}>Sum Follower</th>
+                <th className={`${th} text-right`}>Reach/Follow</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.branches.map((b) => (
+                <tr key={b.branch} className="border-b border-line4 last:border-0">
+                  <td className={`${td} font-bold text-ink`}>{b.branch}</td>
+                  <td className={`${td} text-right text-muted`}>{b.kolUsed}</td>
+                  <td className={`${td} text-right font-semibold text-ink`}>{b.reach.toLocaleString()}</td>
+                  <td className={`${td} text-right text-muted`}>{b.engage.toLocaleString()}</td>
+                  <td className={`${td} text-right text-muted`}>{baht(b.cost)}</td>
+                  <td className={`${td} text-right text-muted`}>{b.costPerReach ? b.costPerReach.toFixed(4) : "—"}</td>
+                  <td className={`${td} text-right text-muted`}>{pctText(b.engageRate)}</td>
+                  <td className={`${td} text-right text-muted`}>{b.followers.toLocaleString()}</td>
+                  <td className={`${td} text-right text-muted`}>{b.reachPerFollower.toFixed(2)}</td>
+                </tr>
+              ))}
+              <tr style={{ background: "#FBF8EE" }}>
+                <td className={`${td} font-extrabold text-ink`}>TOTAL (ทุกสาขา)</td>
+                <td className={`${td} text-right font-bold`}>{s.kolUsed}</td>
+                <td className={`${td} text-right font-bold`}>{s.reach.toLocaleString()}</td>
+                <td className={`${td} text-right font-bold`}>{s.engage.toLocaleString()}</td>
+                <td className={`${td} text-right font-bold`}>{baht(s.cost)}</td>
+                <td className={`${td} text-right font-bold`}>{s.costPerReach ? s.costPerReach.toFixed(4) : "—"}</td>
+                <td className={`${td} text-right font-bold`}>{pctText(s.engageRate)}</td>
+                <td className={`${td} text-right font-bold`}>{s.followers.toLocaleString()}</td>
+                <td className={`${td} text-right font-bold`}>{s.reachPerFollower.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Campaign detail — one line per creator, the sheet's bottom table */}
+      {s.details.length > 0 && (
+        <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+          <button onClick={() => setDetailOpen((v) => !v)} className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-ivory/60">
+            <span className="text-faint text-[13px]">{detailOpen ? "▾" : "▸"}</span>
+            <span className="text-[12.5px] font-extrabold text-ink">Campaign Detail — KOL ที่ใช้ทั้งหมด</span>
+            <span className="text-[11.5px] text-faint">· {s.details.length} ราย · เรียงตามแคมเปญ</span>
+          </button>
+          {detailOpen && (
+            <div className="overflow-x-auto border-t border-line4">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-panel text-white">
+                    {["Campaign", "Branch", "KOL", "Category", "Followers", "Status", "วันไปร้าน", "วันโพสต์",
+                      "Total Reach", "Total Engage", "Food Cost", "Paid Cost", "Total Cost", "Cost/Reach", "Engage Rate"]
+                      .map((h, i) => <th key={h} className={`${th} ${i < 6 ? "text-left" : "text-right"}`}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.details.map((d) => (
+                    <tr key={d.id} className="border-b border-line4 last:border-0">
+                      <td className={`${td} text-muted`}>{d.campaign}</td>
+                      <td className={`${td} text-muted`}>{d.branch}</td>
+                      <td className={`${td} font-bold text-ink`}>{d.name}<span className="text-faint font-normal"> {d.handle}</span></td>
+                      <td className={`${td} text-muted`}>{d.category || "—"}</td>
+                      <td className={`${td} text-right text-muted`}>{d.followers.toLocaleString()}</td>
+                      <td className={`${td} text-muted`}>{d.status}</td>
+                      <td className={`${td} text-right text-muted`}>{d.visitDate || "—"}</td>
+                      <td className={`${td} text-right text-muted`}>{d.postDate || "—"}</td>
+                      <td className={`${td} text-right font-semibold text-ink`}>{d.reach.toLocaleString()}</td>
+                      <td className={`${td} text-right text-muted`}>{d.engage.toLocaleString()}</td>
+                      <td className={`${td} text-right text-muted`}>{baht(d.foodCost)}</td>
+                      <td className={`${td} text-right text-muted`}>{baht(d.paidCost)}</td>
+                      <td className={`${td} text-right font-semibold text-ink`}>{baht(d.totalCost)}</td>
+                      <td className={`${td} text-right text-muted`}>{d.costPerReach ? d.costPerReach.toFixed(4) : "—"}</td>
+                      <td className={`${td} text-right text-muted`}>{pctText(d.engageRate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -800,7 +931,7 @@ function PostResultRow({ kol, post, index, cols, numCls, onSaved }: {
 
 // Per-post performance grouped by campaign: enter Reach + Engagement per post
 // link, roll up to each creator, then to a campaign total.
-function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: Kol) => void; onUpdate: (k: Kol) => void }) {
+function KolPerformance({ list, onOpen, onUpdate, brand, month }: { list: Kol[]; onOpen: (k: Kol) => void; onUpdate: (k: Kol) => void; brand: string; month: string }) {
   const groups = useMemo(() => {
     const m = new Map<string, Kol[]>();
     for (const k of list) { const c = k.campaign || "—"; const arr = m.get(c); if (arr) arr.push(k); else m.set(c, [k]); }
@@ -827,7 +958,7 @@ function KolPerformance({ list, onOpen, onUpdate }: { list: Kol[]; onOpen: (k: K
   );
   return (
     <div className="flex flex-col gap-4">
-      <PerformanceSummary list={list} />
+      <PerformanceSummary list={list} brand={brand} month={month} />
       {groups.map(([campaign, ks]) => {
         const cExpReach = ks.reduce((s, k) => s + (k.expectedReach || 0), 0);
         const cReach = ks.reduce((s, k) => s + postsTotals(kolPosts(k)).reach, 0);
