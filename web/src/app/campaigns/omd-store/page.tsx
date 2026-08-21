@@ -1,20 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Printer, RefreshCw, Search } from "lucide-react";
+import { Download, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import {
   OMD_STORE_CATEGORY_META,
   OMD_STORE_SYNC_CONTRACT,
   type OmdStorePromotion,
   type OmdStorePromotionCategory,
+  type OmdStorePromotionStatus,
 } from "@/lib/data/omdStorePromotions";
 import { CAMPAIGNS, campaignPeriod, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
-import { fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
+import { deletePromotionSummaryItem, fetchPromotionSummaryItems, savePromotionSummaryItem } from "@/lib/db/promotionSummary";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import type { CampaignBrief } from "@/lib/data/brief";
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
+import { Modal } from "@/components/ui/Modal";
+import { DatePicker } from "@/components/ui/DatePicker";
+import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { BRAND_ORDER, brandName, brandColor, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowRange, MONTHS } from "@/components/ui/DateFilterBar";
 
@@ -108,6 +112,156 @@ function campaignToStorePromotion(campaign: CampaignRow, storePromotion: string)
   };
 }
 
+/** Status is a fact about the dates, not a separate thing to type: a promotion
+ *  with no end date runs open-ended, one that hasn't started yet is upcoming,
+ *  and one whose end has passed is over. Campaign rows already derive theirs. */
+function deriveStatus(startDate: string, endDate: string): OmdStorePromotionStatus {
+  const today = isoDate(new Date())!;
+  if (endDate && endDate < today) return "ended";
+  if (startDate && startDate > today) return "upcoming";
+  if (!endDate) return "open_end";
+  return "active";
+}
+
+const emptyDraft = {
+  brand: BRAND_ORDER[0] as BrandId,
+  category: "promotion" as OmdStorePromotionCategory,
+  title: "",
+  description: "",
+  posName: "",
+  branches: [] as string[],
+  startDate: "",
+  endDate: "",
+};
+
+/** Add a promotion that isn't a campaign — a Must Eat push, a bank promotion,
+ *  a Big Cleaning notice. The sheet used to print campaigns only, so anything
+ *  the shop floor needed that never became a campaign had to be written by hand
+ *  on the printout. */
+function PromotionEditor({
+  open, onClose, onSave, brandBranches,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (item: OmdStorePromotion) => Promise<void>;
+  brandBranches: Record<string, string[]>;
+}) {
+  const [draft, setDraft] = useState(emptyDraft);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // A fresh form every time it opens — a half-typed promotion left over from a
+  // cancelled edit is how the wrong thing gets printed.
+  useEffect(() => { if (open) { setDraft(emptyDraft); setError(""); } }, [open]);
+
+  const branchOptions = brandBranches[draft.brand] ?? [];
+  const set = <K extends keyof typeof emptyDraft>(key: K, value: (typeof emptyDraft)[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }));
+
+  const submit = async () => {
+    if (!draft.title.trim()) return setError("ใส่ชื่อโปรโมชั่นก่อน");
+    if (!draft.startDate) return setError("เลือกวันเริ่มก่อน");
+    if (draft.endDate && draft.endDate < draft.startDate) return setError("วันจบต้องไม่มาก่อนวันเริ่ม");
+    setSaving(true);
+    try {
+      await onSave({
+        id: `manual-${crypto.randomUUID()}`,
+        brand: draft.brand,
+        category: draft.category,
+        title: draft.title.trim(),
+        description: draft.description.trim(),
+        posName: draft.posName.trim(),
+        // No branch picked = the promotion runs everywhere, which is what the
+        // Branch column already prints as "All branches".
+        branches: draft.branches.length ? draft.branches : ["All Branch"],
+        startDate: draft.startDate,
+        endDate: draft.endDate || undefined,
+        status: deriveStatus(draft.startDate, draft.endDate),
+        source: "manual",
+        hidden: false,
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const label = "text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]";
+  const field = "h-10 w-full rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12.5px] font-semibold text-[#17172A] outline-none focus:border-[#6C5CE7]";
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="เพิ่มโปรโมชั่นลงใบพิมพ์"
+      maxWidth="2xl"
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="h-10 rounded-[12px] border border-[#ECEAF2] px-4 text-[12px] font-bold text-[#3E3E55]">ยกเลิก</button>
+          <button type="button" onClick={submit} disabled={saving} className="h-10 rounded-[12px] bg-[#17172A] px-4 text-[12px] font-bold text-white disabled:opacity-50">
+            {saving ? "กำลังบันทึก…" : "เพิ่มลงใบพิมพ์"}
+          </button>
+        </>
+      }
+    >
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>Brand</span>
+          <select value={draft.brand} onChange={(e) => set("brand", e.target.value as BrandId)} className={field}>
+            {BRAND_ORDER.map((id) => <option key={id} value={id}>{brandName(id)}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>Category</span>
+          <select value={draft.category} onChange={(e) => set("category", e.target.value as OmdStorePromotionCategory)} className={field}>
+            {categoryOrder.map((key) => <option key={key} value={key}>{OMD_STORE_CATEGORY_META[key].label}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>วันเริ่ม</span>
+          <DatePicker value={draft.startDate} onChange={(v) => set("startDate", v)} placeholder="เลือกวันเริ่ม" />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>วันจบ (เว้นว่าง = ไม่ระบุวันจบ)</span>
+          <DatePicker value={draft.endDate} onChange={(v) => set("endDate", v)} min={draft.startDate || undefined} placeholder="เลือกวันจบ" />
+        </label>
+        <label className="flex flex-col gap-1.5 md:col-span-2">
+          <span className={label}>ชื่อโปรโมชั่น</span>
+          <input value={draft.title} onChange={(e) => set("title", e.target.value)} placeholder="เช่น Must Eat — Salmon Don" className={field} />
+        </label>
+        <label className="flex flex-col gap-1.5 md:col-span-2">
+          <span className={label}>รายละเอียดที่หน้าร้านต้องรู้</span>
+          <textarea
+            value={draft.description}
+            onChange={(e) => set("description", e.target.value)}
+            rows={3}
+            placeholder="เงื่อนไข ราคา เมนูที่ร่วมรายการ…"
+            className="w-full rounded-[12px] border border-[#ECEAF2] bg-white px-3 py-2 text-[12.5px] font-medium leading-relaxed text-[#17172A] outline-none focus:border-[#6C5CE7]"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>POS Name</span>
+          <input value={draft.posName} onChange={(e) => set("posName", e.target.value)} placeholder="ชื่อที่กดในระบบ POS" className={field} />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>Branch</span>
+          <MultiSelectDropdown
+            options={branchOptions}
+            selected={draft.branches}
+            onChange={(next) => set("branches", next)}
+            allLabel="ทุกสาขา"
+            placeholder="ไม่เลือก = ทุกสาขา"
+            emptyLabel="แบรนด์นี้ยังไม่ได้ตั้งสาขา — จะพิมพ์ว่าทุกสาขา"
+          />
+        </label>
+      </div>
+      {error && <div className="mt-3 rounded-[12px] bg-[#FFF0F0] px-3 py-2 text-[12px] font-bold text-[#D95454]">{error}</div>}
+    </Modal>
+  );
+}
+
 function toCsv(items: OmdStorePromotion[]) {
   const header = ["Source", "Brand", "Category", "Title", "Detail", "POS", "Branch", "Start", "End", "Status"];
   const rows = items.map((item) => [
@@ -142,6 +296,12 @@ export default function OmdStoreCampaignPage() {
   // promotion that runs everywhere into "All branches".
   const [brandBranches, setBrandBranches] = useState<Record<string, string[]>>({});
   const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+  // Promotions the team typed in here, not derived from a campaign.
+  const [manualItems, setManualItems] = useState<OmdStorePromotion[]>([]);
+  // Campaign rows the team took off the sheet. Hidden, not deleted: the campaign
+  // belongs to another module, and "I didn't mean that one" has to be undoable.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [editorOpen, setEditorOpen] = useState(false);
 
   useEffect(() => {
     refreshFromSupabase();
@@ -168,12 +328,58 @@ export default function OmdStoreCampaignPage() {
     setBriefs(await fetchAllBriefs().catch(() => ({})));
     const saved = await fetchPromotionSummaryItems().catch(() => []);
     setPosOverrides(Object.fromEntries(saved.filter((s) => s.posName).map((s) => [s.id, s.posName])));
+    setManualItems(saved.filter((s) => s.source === "manual" && !s.hidden));
+    setHiddenIds(new Set(saved.filter((s) => s.hidden).map((s) => s.id)));
   };
 
   const setPosName = (id: string, value: string) => setPosOverrides((m) => ({ ...m, [id]: value }));
   const savePosName = (item: OmdStorePromotion) => {
     savePromotionSummaryItem({ ...item, posName: posOverrides[item.id] ?? "" })
       .catch((error) => toastError(`บันทึก POS name ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+  };
+
+  const addManualItem = async (item: OmdStorePromotion) => {
+    await savePromotionSummaryItem(item);
+    setManualItems((list) => [item, ...list]);
+    toastSuccess(`เพิ่ม “${item.title}” ลงใบพิมพ์แล้ว`);
+  };
+
+  /** Manual rows are ours, so they go for good. Campaign rows can only be hidden
+   *  — deleting one here would have to mean deleting a campaign, which this sheet
+   *  has no business doing. */
+  const removeItem = async (item: OmdStorePromotion) => {
+    if (item.source === "manual") {
+      if (!window.confirm(`ลบ “${item.title}” ออกจากใบพิมพ์ถาวร?`)) return;
+      const before = manualItems;
+      setManualItems((list) => list.filter((x) => x.id !== item.id));
+      try {
+        await deletePromotionSummaryItem(item.id);
+        toastSuccess("ลบโปรโมชั่นแล้ว");
+      } catch (error) {
+        setManualItems(before);
+        toastError(`ลบไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+      return;
+    }
+    if (!window.confirm(`เอา “${item.title}” ออกจากใบพิมพ์?\nแคมเปญยังอยู่ตามเดิม และกดเอากลับมาได้ทีหลัง`)) return;
+    setHiddenIds((prev) => new Set(prev).add(item.id));
+    try {
+      await savePromotionSummaryItem({ ...item, hidden: true });
+      toastSuccess("เอาออกจากใบพิมพ์แล้ว");
+    } catch (error) {
+      setHiddenIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
+      toastError(`เอาออกไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  const restoreItem = async (item: OmdStorePromotion) => {
+    setHiddenIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
+    try {
+      await savePromotionSummaryItem({ ...item, hidden: false });
+    } catch (error) {
+      setHiddenIds((prev) => new Set(prev).add(item.id));
+      toastError(`เอากลับไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   // Only campaigns the planner gave a store-facing promotion reach the printout —
@@ -189,7 +395,15 @@ export default function OmdStoreCampaignPage() {
       .map((it) => ({ ...it, posName: posOverrides[it.id] ?? it.posName })),
     [liveCampaigns, briefs, posOverrides],
   );
-  const allPromotions = campaignItems;
+  const printedCampaignItems = campaignItems.filter((item) => !hiddenIds.has(item.id));
+  // Only campaigns still on the roster can be brought back — a campaign that was
+  // hidden and later deleted leaves a row nobody can act on.
+  const hiddenCampaignItems = campaignItems.filter((item) => hiddenIds.has(item.id));
+  const allPromotions = useMemo(
+    () => [...printedCampaignItems, ...manualItems.map((it) => ({ ...it, posName: posOverrides[it.id] ?? it.posName }))],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [campaignItems, hiddenIds, manualItems, posOverrides],
+  );
 
   const branches = useMemo(() => {
     return Array.from(new Set(allPromotions.flatMap((item) => item.branches))).sort();
@@ -389,6 +603,14 @@ export default function OmdStoreCampaignPage() {
             <div className="no-print flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => setEditorOpen(true)}
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#CFC7FF] bg-[#EEE9FF] px-3 text-[12px] font-bold text-[#5B4FD8]"
+              >
+                <Plus size={15} />
+                เพิ่มโปรโมชั่น
+              </button>
+              <button
+                type="button"
                 onClick={async () => {
                   await refreshFromSupabase();
                   setSyncState("synced");
@@ -474,10 +696,33 @@ export default function OmdStoreCampaignPage() {
               <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-[#C8EA6A]">{OMD_STORE_SYNC_CONTRACT.mode}</span>
             </div>
             <div className="mt-3 text-[12px] font-medium leading-relaxed text-white/58">
-              ดึงจาก Campaign {campaignItems.length} รายการเท่านั้น ไม่มี seed list หรือ manual entry ปนในหน้านี้.
+              จาก Campaign {printedCampaignItems.length} รายการ · เพิ่มเอง {manualItems.length} รายการ
+              {hiddenCampaignItems.length > 0 && <> · เอาออกจากใบพิมพ์ {hiddenCampaignItems.length} รายการ</>}
             </div>
           </div>
         </section>
+
+        {hiddenCampaignItems.length > 0 && (
+          <section className="no-print mt-3 rounded-[18px] border border-[#ECEAF2] bg-white px-4 py-3">
+            <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">
+              เอาออกจากใบพิมพ์ ({hiddenCampaignItems.length})
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {hiddenCampaignItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => restoreItem(item)}
+                  title="เอากลับขึ้นใบพิมพ์"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[#ECEAF2] bg-[#FBFAF7] px-3 py-1.5 text-[11.5px] font-bold text-[#706A84] hover:border-[#CFC7FF] hover:text-[#5B4FD8]"
+                >
+                  <RotateCcw size={13} />
+                  {item.title}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="omd-print-summary mt-3 grid gap-3 md:grid-cols-3">
           <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
@@ -570,7 +815,20 @@ export default function OmdStoreCampaignPage() {
                         {formatDate(item.startDate)}<br />
                         <span className="text-[#8A879A]">to {formatDate(item.endDate)}</span>
                       </div>
-                      <div className="omd-print-card-meta text-[12px] font-extrabold" style={{ color: item.status === "ended" ? "#8A879A" : meta.fg }}>{statusLabel(item)}</div>
+                      <div className="omd-print-card-meta flex items-start justify-between gap-2 text-[12px] font-extrabold" style={{ color: item.status === "ended" ? "#8A879A" : meta.fg }}>
+                        <span>{statusLabel(item)}</span>
+                        {/* Screen only — a printout has no buttons. Manual rows are
+                            deleted, campaign rows are taken off the sheet. */}
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item)}
+                          title={item.source === "manual" ? "ลบโปรโมชั่นนี้" : "เอาออกจากใบพิมพ์ (แคมเปญยังอยู่)"}
+                          aria-label={item.source === "manual" ? `ลบ ${item.title}` : `เอา ${item.title} ออกจากใบพิมพ์`}
+                          className="no-print shrink-0 rounded-[8px] border border-[#ECEAF2] bg-white p-1.5 text-[#9D96AC] hover:border-[#F4B6B6] hover:text-[#D95454]"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -587,7 +845,7 @@ export default function OmdStoreCampaignPage() {
               <div className="text-[14px] font-extrabold text-[#8A6930]">ไม่มีโปรโมชั่นให้พิมพ์</div>
               <div className="mt-1 text-[12px] leading-relaxed text-[#9A7A47]">
                 {allPromotions.length === 0 ? (
-                  <>ยังไม่มีแคมเปญไหนกรอก <b>Promotion หน้าร้าน</b> — เปิดแคมเปญที่มีโปรฯ แล้วกด Edit เพื่อกรอกช่องนี้ แล้วมันจะขึ้นที่นี่</>
+                  <>ยังไม่มีแคมเปญไหนกรอก <b>Promotion หน้าร้าน</b> — เปิดแคมเปญที่มีโปรฯ แล้วกด Edit เพื่อกรอกช่องนี้ แล้วมันจะขึ้นที่นี่ · หรือกด <b>เพิ่มโปรโมชั่น</b> ถ้าเป็นโปรฯ ที่ไม่ได้มาจากแคมเปญ</>
                 ) : (
                   <>มี {allPromotions.length} โปรฯ อยู่ แต่ไม่ตรงกับตัวกรองที่เลือก — ลองขยาย Period หรือเปลี่ยน Brand / Branch</>
                 )}
@@ -596,6 +854,13 @@ export default function OmdStoreCampaignPage() {
           )}
         </section>
       </div>
+
+      <PromotionEditor
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        onSave={addManualItem}
+        brandBranches={brandBranches}
+      />
     </main>
   );
 }

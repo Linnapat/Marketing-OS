@@ -25,6 +25,10 @@ export interface OmdStorePromotion {
   periodDays?: number;
   status: OmdStorePromotionStatus;
   source?: "campaign" | "manual" | "seed";
+  /** Kept out of the printout. A campaign row can only be hidden, never deleted —
+   *  the campaign belongs to another module — so "remove from the sheet" is
+   *  stored as this flag and can be undone. */
+  hidden?: boolean;
 }
 
 export const OMD_STORE_CATEGORY_META: Record<OmdStorePromotionCategory, {
