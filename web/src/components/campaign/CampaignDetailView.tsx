@@ -25,7 +25,10 @@ import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/li
 import { CampaignBrief, BriefContentItem, budgetSummary, materialised, approvedButNothingMade, plannedItems } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
 import { createRevisionTask } from "@/lib/db/tasks";
-import { fetchMembers } from "@/lib/db/settings";
+import { fetchMembers, fetchBrandConfigs } from "@/lib/db/settings";
+import { resolveBrandLead } from "@/lib/db/assignments";
+import { BrandCfg } from "@/lib/data/settings";
+import { sameName } from "@/lib/identity";
 import { brandName } from "@/lib/brands";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
 import { useCanMakeApprovedPlan } from "@/lib/usePermGates";
@@ -844,26 +847,33 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
   const [revising, setRevising] = useState(false);
   const [reason, setReason] = useState("");
   // Real approver names from Settings for the fallback chain (no hardcoded people).
-  const [bglName, setBglName] = useState("—");
+  // The brand lead is resolved for THIS campaign's brand — the old `find()` took
+  // whichever member held Marketing Manager / BGL first by email, so a brand with
+  // no manager of its own (Omakase Don) borrowed another brand's. null = nobody
+  // scoped to the brand, and the row is dropped rather than filled with "—".
+  const [brandLead, setBrandLead] = useState<string | null>(null);
   const [cmoName, setCmoName] = useState("CMO");
   useEffect(() => {
     let alive = true;
-    fetchMembers().then((ms) => {
+    Promise.all([fetchMembers(), fetchBrandConfigs().catch(() => [] as BrandCfg[])]).then(([ms, configs]) => {
       if (!alive) return;
-      const bgl = ms.find((m) => /marketing manager|bgl|brand lead/i.test(m.role));
       const cmo = ms.find((m) => /cmo/i.test(m.role) || m.access === "Admin");
-      if (bgl) setBglName(bgl.name);
+      setBrandLead(resolveBrandLead(detail.row.b, ms, configs.length ? configs : undefined));
       if (cmo) setCmoName(cmo.name);
     }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [detail.row.b]);
 
   // Only campaigns created through the Brief builder carry a brief; older ones
   // fall back to the static chain view below.
   if (!brief) {
     const chain = [
       { role: "Marketing Executive", person: detail.row.owner, status: "Submitted", tone: "green" as const },
-      { role: "Marketing Manager / BGL", person: bglName, status: "Reviewed", tone: "green" as const },
+      // Same rule as the graphic ladder: no brand lead, or the lead is the person
+      // who submitted it, and the step is not a step — it goes straight to CMO.
+      ...(brandLead && !sameName(brandLead, detail.row.owner)
+        ? [{ role: "Brand lead", person: brandLead, status: "Reviewed", tone: "green" as const }]
+        : []),
       { role: "CMO", person: cmoName, status: detail.row.nextApproval === "CMO" ? "Pending" : "Approved", tone: detail.row.nextApproval === "CMO" ? "gold" as const : "green" as const },
     ];
     return (

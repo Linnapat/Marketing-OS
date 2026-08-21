@@ -6,7 +6,9 @@
 
 import { fetchMembers, fetchJsonSetting, Member } from "./settings";
 import { fetchApprovalMatrix, ModuleRule } from "./settings";
-import { TEAMS_DATA, APPROVAL_RULES } from "@/lib/data/settings";
+import { TEAMS_DATA, APPROVAL_RULES, BrandCfg } from "@/lib/data/settings";
+import { visibleBrandsFromScope } from "@/lib/brandVisibility";
+import { BrandId } from "@/lib/brands";
 
 export const UNASSIGNED = "Unassigned";
 
@@ -69,4 +71,31 @@ export async function resolveApprover(moduleName: string): Promise<string> {
 export async function resolveKolAssignment(): Promise<{ owner: string; approver: string }> {
   const [owner, approver] = await Promise.all([resolveKolOwner(), resolveApprover("KOL / Creator")]);
   return { owner, approver };
+}
+
+// ── Who signs off work for one brand ──────────────────────────────────────
+// The graphic approval ladder and the campaign chain both used to read "the
+// first member whose role matches Marketing Manager / BGL", found with a bare
+// `find()` over members ordered by email. That is not brand-aware, and the
+// team has no MM/BGL per brand: Omakase Don has none at all, so every OMD job
+// printed the Teppen · Mainichi manager as its approver — someone whose brand
+// scope will not even let them open the request.
+//
+// The step belongs to whoever is answerable for THAT brand, whatever their
+// title: a manager scoped to the brand first, else the brand's Marketing
+// Executive. Nobody scoped to it returns null, and callers drop the step
+// rather than name an approver who cannot act.
+const BRAND_LEAD_ROLES = [/marketing manager|bgl|brand lead/i, /marketing executive/i];
+
+export function resolveBrandLead(brand: BrandId, members: Member[], configs?: BrandCfg[]): string | null {
+  const scoped = members.filter((m) =>
+    (m.status || "").toLowerCase() === "active"
+    && m.brandAccess !== "External only"
+    && !/agency/i.test(m.role || "")
+    && visibleBrandsFromScope(m.brandAccess, configs).includes(brand));
+  for (const rx of BRAND_LEAD_ROLES) {
+    const hit = scoped.find((m) => rx.test(m.role || ""));
+    if (hit) return hit.name;
+  }
+  return null;
 }
