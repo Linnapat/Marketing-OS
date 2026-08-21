@@ -56,7 +56,7 @@ export const workLink = {
    *  its own to open — landing on the queue that holds the Approve button still
    *  beats landing on someone's personal task board and asking them to find the
    *  tab. */
-  approvals: () => `/my-tasks?${OPEN_PARAM.tab}=approval`,
+  approvals: () => "/my-approvals",
 };
 
 /** What a page should do about an `?open=`-style param this render.

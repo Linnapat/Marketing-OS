@@ -2,6 +2,7 @@ import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
   CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
+  Stamp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,7 +42,7 @@ export const NAV: NavGroup[] = [
       // The weekly pass over edits made to campaigns that were already approved.
       // Nobody is blocked by what is in here, so it sits with the QA screens
       // rather than in front of the planning work.
-      { href: "/campaigns/approvals", label: "Approvals", icon: ClipboardCheck, ready: true, cmoOnly: true },
+      { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
       { href: "/platforms", label: "Platform Performance", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: true },
       // Lives under Performance Center as a route, but it is the monthly people
@@ -75,6 +76,11 @@ export const NAV: NavGroup[] = [
   {
     label: "Team",
     items: [
+      // Above My Tasks on purpose: the approvals inbox lived inside that board
+      // as a filter chip, and nobody opens a task board looking for it. Same
+      // list, same rules — just a door of its own. (Path is /my-approvals, not
+      // /approvals: that one is a permanent redirect, see next.config.mjs.)
+      { href: "/my-approvals", label: "Approvals", icon: Stamp, ready: true },
       { href: "/my-tasks", label: "My Tasks", icon: CheckSquare, ready: true },
       { href: "/team", label: "Team", icon: Users, ready: true },
       { href: "/trash", label: "Trash", icon: Trash2, ready: true },

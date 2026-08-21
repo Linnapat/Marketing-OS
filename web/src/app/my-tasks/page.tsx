@@ -13,30 +13,28 @@ import { OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
-import { CampaignCode, campaignLabel } from "@/components/ui/CampaignCode";
-import { useCampaignCodes } from "@/lib/useCampaignCodes";
-import { CampaignRow, campaignAwaitsMe } from "@/lib/data/campaigns";
+import { CampaignRow } from "@/lib/data/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
 import { RequestRow } from "@/lib/data/requests";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
-import { baht } from "@/lib/format";
-import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 import { notifMeta, pushNotifications } from "@/lib/db/notifications";
 import { useNotifications } from "@/lib/useNotifications";
-import { useCanApproveExpense } from "@/lib/usePermGates";
-import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
+
+
 import { optimistic } from "@/lib/optimistic";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
-import { daysWaiting } from "@/components/finance/ExpenseTabs";
 import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchContent } from "@/lib/db/content";
-import { ContentItem, captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
-import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, awaitsBriefUnlockDecision, canReleaseBriefEdit, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { ContentItem } from "@/lib/data/content";
+import { Graphic, Feedback, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { expenseBudgetOf } from "@/lib/data/approvals";
+import { useApprovalRows } from "@/lib/useApprovalRows";
+import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -50,8 +48,6 @@ import {
   CampaignPageHeaderSection,
 } from "@/components/campaign/CampaignHeadController";
 
-// Stages / statuses that still need someone in the approval tier to act.
-const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
 // (PENDING_CAMPAIGN lived here — a flat set of both pending statuses. It is
 // gone because the two are not interchangeable: they wait on different people,
 // and approvalCampaigns now asks that question per status.)
@@ -65,26 +61,7 @@ const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
 interface Person { name: string; role: string; color: string }
 const BENTO_MESSAGES = ["You're almost there", "Small wins count ✓", "One task at a time", "Let's clear this gently", "Nearly done — just a few more"];
 
-// created_at is a full timestamp — fmtShort only reads a plain YYYY-MM-DD.
-const fmtThaiDate = (iso: string) => fmtShort(iso.slice(0, 10)) || iso.slice(0, 10);
 
-/** Campaign budget context shown to the approver on an expense request. */
-type ExpenseBudgetInfo = { budget: number; committed: number; left: number; campaignId: string };
-
-/** One thing on a graphic request that is waiting on its requester. A request
- *  can raise two at once (a reel whose storyboard is still pending while an
- *  earlier cut sits in review), which is why this is a row per decision rather
- *  than a flag on the request. */
-type GraphicApproval = { g: Graphic; kind: "storyboard" | "artwork" | "briefUnlock" };
-const GRAPHIC_APPROVAL_COPY = {
-  storyboard: { badge: "Storyboard รออนุมัติ", cta: "อนุมัติ storyboard →", tab: "overview" as GTab, bg: "#F2EEFF", fg: "#6C5CE7" },
-  // Artwork keeps landing on the brief, the way it always has — the review is
-  // "does this match what I asked for", and the brief is that question.
-  artwork: { badge: "Waiting review", cta: "Review artwork →", tab: "brief" as GTab, bg: "#FBF8EE", fg: "#C68A1E" },
-  // The brief is where the top-up would be typed, so that is where the decision
-  // is made — same tab the Release button lives on.
-  briefUnlock: { badge: "ขอเติมบรีฟ", cta: "ปล่อยให้เติมบรีฟ →", tab: "brief" as GTab, bg: "#FBF1E9", fg: "#B3641E" },
-} as const;
 
 
 const GROUP_DEFS = [
@@ -135,21 +112,12 @@ function MyTasksPageInner() {
   const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
   const [graphics, setGraphics] = useState<Graphic[]>([]);
   const [posts, setPosts] = useState<ContentItem[]>([]);
-  // Expense approvals are a role gate, not a person filter. Read it from the
-  // same permissions matrix the database checks (Finance >= Approve) rather
-  // than string-matching "CMO" here, so this queue and
-  // supabase/security_p12_expense_approval.sql can never disagree about who
-  // may decide a request.
-  const canApproveExpense = useCanApproveExpense();
   // Same idea for campaign briefs — one gate, shared with the page that holds
   // the Approve button, so this inbox can never offer what that page refuses.
   //
-  // From useAuth, NOT useRole: useRole is the sidebar's "Viewing as" switcher,
-  // which anyone can set to CMO. The Approve button on the campaign page reads
-  // useAuth().role, so trusting the switcher here put Waiting-for-Approval
-  // cards back in a designer's inbox — the exact dead end this queue was
-  // narrowed to remove, just reachable by a dropdown instead of by default.
-  const { member, user, role: authRole } = useAuth();
+  // The role gates that used to live here moved into useApprovalRows with the
+  // queue they served — including the useAuth-not-useRole rule they turn on.
+  const { member, user } = useAuth();
   // Who counts as me. One string was never enough: the same person is filed
   // under a display name, a nickname and an email across these tables, and an
   // exact match on the member name silently hid two thirds of one manager's
@@ -162,7 +130,6 @@ function MyTasksPageInner() {
     const keys = personKeys(memberRef(member), user);
     return keys.size ? keys : personKeys({ name: viewAs });
   }, [member, user, viewAs]);
-  const canApproveCampaignBrief = canApproveCampaign(authRole);
   const [viewMode, setViewMode] = useState<"cards" | "list" | "calendar">("cards");
   // Which month the calendar grid is showing. Seeded from the period filter and
   // re-synced whenever that moves, so switching to Calendar lands on the month
@@ -216,6 +183,11 @@ function MyTasksPageInner() {
   // to know which tab the request was hiding behind.
   const wantsApprovals = searchParams.get(OPEN_PARAM.tab) === "approval";
   const [tasksLoaded, setTasksLoaded] = useState(false);
+  // The instant every "waiting N days" on the queue is measured from. Zero
+  // until mount on purpose — Date.now() during render gives the server and the
+  // client two different answers, which React reports as a hydration mismatch.
+  const [now, setNow] = useState(0);
+  useEffect(() => { setNow(Date.now()); }, []);
   const openedRef = useRef<string | null>(null);
 
 
@@ -285,105 +257,19 @@ function MyTasksPageInner() {
     return brandOptions.some((id) => raw.includes(id) || raw.includes(BRANDS[id].name.toLowerCase().replace(/[^a-z0-9]+/g, "")));
   };
 
-  // Campaigns waiting on ME, not every campaign in flight. This queue used to
-  // filter on status + brand alone, so a Designer with all-brand access opened
-  // "My approvals" onto a dozen campaign briefs they cannot act on — the
-  // approve button is CMO-only (CampaignDetailView's canApprove), and a
-  // Waiting-for-Approval card offered to anyone else is a dead end that also
-  // inflates the badge everyone is meant to work down to zero.
-  //
-  // The two pending statuses are waiting on different people:
-  //   Waiting for Approval → the CMO decides
-  //   Ready for Review     → nobody approves it; its owner still has to submit
-  const approvalCampaigns = useMemo(
-    () => campaigns.filter((c) =>
-      brandVisibility.isVisible(c.b) && campaignAwaitsMe(c, { canApprove: canApproveCampaignBrief, me: viewAs })),
-    [campaigns, brandVisibility, canApproveCampaignBrief, viewAs],
-  );
-  const approvalRequests = useMemo(
-    // Budget cards are excluded — they're shown as actionable expense requests below.
-    () => requests.filter((r) => PENDING_REQ_STAGES.has(r.stage) && isSamePerson(r.approver, myKeys) && r.type !== "Budget" && brandVisibility.isVisible(r.b)),
-    [requests, myKeys, brandVisibility],
-  );
-  const approvalExpenses = useMemo(
-    () => (canApproveExpense ? expenseReqs.filter((r) => r.status === "Waiting Approval" && brandVisibility.isVisible(r.b)) : []),
-    [expenseReqs, canApproveExpense, brandVisibility],
-  );
-  const approvalTasks = useMemo(
-    () => tasks.filter((t) => isSamePerson(t.assignee, myKeys) && !doneIds.has(t.id) && t.status === "Need Approval" && canSeeBrandLabel(t.brand)),
-    // canSeeBrandLabel derives only from brandVisibility/brandOptions, already deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, myKeys, doneIds, brandOptions, brandVisibility],
-  );
-  // Two different things wait on the requester of a graphic request, and this
-  // queue only knew about the second one:
-  //   storyboard Submitted → accept the plan before anyone shoots or cuts
-  //   deliverable Waiting review → accept the finished artwork
-  // A reel's storyboard therefore sat in "ส่งแล้ว รออนุมัติ" with nothing on the
-  // requester's own screen to tell them, and production stalled behind a
-  // decision nobody knew was theirs. Both now land here, tagged so the card
-  // says which of the two it is.
-  //
-  // A third thing waits on somebody else entirely: a brief top-up, which only
-  // the Creative Leader may release. That one is role-gated rather than keyed
-  // to the requester, so it is collected in the same pass but under its own
-  // rule — asked for by the requester, decided by the leader.
-  const approvalGraphics = useMemo(
-    () => graphics
-      .filter((g) => brandVisibility.isVisible(g.b))
-      .flatMap((g) => {
-        const mine = isSamePerson(g.requester, myKeys);
-        return [
-          ...(mine && awaitsStoryboardDecision(g) ? [{ g, kind: "storyboard" as const }] : []),
-          ...(mine && awaitsArtworkReview(g) ? [{ g, kind: "artwork" as const }] : []),
-          // Not shown to the person who asked — they are waiting on the answer,
-          // not holding it.
-          ...(canReleaseBriefEdit(authRole) && awaitsBriefUnlockDecision(g)
-            && !isSamePerson(g.briefUnlock?.requestedBy ?? "", myKeys)
-            ? [{ g, kind: "briefUnlock" as const }] : []),
-        ];
-      }),
-    [graphics, myKeys, brandVisibility, authRole],
-  );
-  // Captions waiting on the planning side. Same lesson as the storyboard: the
-  // buttons existed on the post and nothing told the person holding them, so
-  // the words sat "Ready" until somebody happened to open that drawer.
-  //
-  // Addressed to the person who asked for the post, not broadcast to everyone
-  // who could act on it: a caption named for its requester goes to them alone,
-  // and only an unaddressed one (no requester on the row) still falls back to
-  // the planning side, so nothing gets stranded with no queue at all.
-  const approvalCaptions = useMemo(
-    () => posts.filter((p) => {
-      if (!captionAwaitsApproval(p) || !brandVisibility.isVisible(p.b)) return false;
-      // Nobody signs off their own words. captionOwner, not p.owner: on a post
-      // still marked "Unassigned" the planner IS the writer, and reading the
-      // raw field let them approve themselves.
-      if (captionOwner(p).toLowerCase() === (member?.name ?? "").trim().toLowerCase()) return false;
-      // Addressed to someone in particular → only they see it; otherwise it is
-      // the planning side's to pick up.
-      const reviewer = captionReviewer(p);
-      return reviewer ? isSamePerson(reviewer, myKeys) : canEditContentPlan(authRole);
-    }),
-    [posts, authRole, brandVisibility, member, myKeys],
-  );
-  const approvalCount = approvalCampaigns.length + approvalRequests.length + approvalExpenses.length + approvalTasks.length + approvalGraphics.length + approvalCaptions.length;
+  // Everything waiting on this person, from every module — one shared hook so
+  // this board and /my-approvals can never disagree about what is open. The
+  // data is passed in rather than fetched inside, because this page already
+  // holds all six lists for its own views.
+  const approvalRows = useApprovalRows({
+    campaigns, requests, expenseReqs, graphics, posts, tasks, doneIds, viewAs,
+  });
+  const approvalCount = approvalRows.length;
   // Budget context for an expense request: the campaign's budget, what's already
   // been approved against it, and what's left if this one goes through. Matches
   // on campaign_id when the row has it (a rename breaks name matching), else on
   // brand + name — never on name alone, since names repeat across brands.
-  const budgetOf = useMemo(() => {
-    const sameCampaign = (a: ExpenseReq, b: ExpenseReq) =>
-      a.campaignId && b.campaignId ? a.campaignId === b.campaignId : a.b === b.b && a.campaign === b.campaign;
-    return (r: ExpenseReq): ExpenseBudgetInfo | null => {
-      const c = campaigns.find((x) => (r.campaignId ? x.id === r.campaignId : x.b === r.b && x.name === r.campaign));
-      if (!c || !c.budget) return null;
-      const committed = expenseReqs
-        .filter((x) => x !== r && x.status === "Approved" && sameCampaign(x, r))
-        .reduce((s, x) => s + (x.approved || 0), 0);
-      return { budget: c.budget, committed, left: c.budget - committed - r.requested, campaignId: c.id };
-    };
-  }, [campaigns, expenseReqs]);
+  const budgetOf = useMemo(() => expenseBudgetOf(campaigns, expenseReqs), [campaigns, expenseReqs]);
   // Approve / reject inline — sync the row locally so the card updates at once.
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
   const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? "#9A9387";
@@ -667,7 +553,7 @@ function MyTasksPageInner() {
           )}
         </div>
       ) : (
-        <MyApprovalView captions={approvalCaptions} graphics={approvalGraphics} campaigns={approvalCampaigns} requests={approvalRequests} expenses={approvalExpenses} tasks={approvalTasks} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
+        <ApprovalQueue rows={approvalRows} now={now} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
@@ -691,309 +577,6 @@ function MyTasksPageInner() {
     </div>
   );
 }
-
-function MyApprovalView({ captions, graphics, campaigns, requests, expenses, tasks, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }: {
-  captions: ContentItem[];
-  graphics: GraphicApproval[]; campaigns: CampaignRow[]; requests: RequestRow[]; expenses: ExpenseReq[]; tasks: Task[];
-  budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
-  onOpenTask: (id: number) => void; onOpenGraphic: (id: number, tab?: GTab) => void;
-  onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
-}) {
-  const codeOf = useCampaignCodes();
-  const total = captions.length + graphics.length + campaigns.length + requests.length + expenses.length + tasks.length;
-  if (total === 0) {
-    return (
-      <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
-        <div>
-          <div className="text-[15px] font-bold text-ink">ไม่มีงานรออนุมัติ 🎉</div>
-          <div className="text-[12.5px] text-faint mt-1">แคมเปญ คำขอ และการเบิกงบที่รอคุณอนุมัติจะมาโผล่ที่นี่</div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-5">
-      {captions.length > 0 && (
-        <div>
-          <div className="flex items-center gap-[10px] mb-3">
-            <span className="text-[17px]">📝</span>
-            <span className="text-[13.5px] font-bold">Caption รออนุมัติ</span>
-            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>{captions.length}</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {captions.map((p) => (
-              <Link key={p.id} href={`${workLink.post(p.id)}`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13.5px] font-bold text-ink truncate">{p.title}</span>
-                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#F2EEFF", color: "#6C5CE7" }}>Caption รออนุมัติ</span>
-                </div>
-                <div className="text-[11.5px] text-faint mb-2">{brandCampaignLine(brandName(p.b), p.campaign)}</div>
-                {/* The words themselves, so an easy yes needs no click. */}
-                <div className="text-[12px] text-muted leading-[1.5] mb-3" style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                  {(p.caption ?? "").trim() || "— ไม่มีข้อความ —"}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(p) || "—"}</span>
-                  <span className="text-[11.5px] font-bold text-accent">อ่านและอนุมัติ →</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-      {graphics.length > 0 && (
-        <div>
-          <div className="flex items-center gap-[10px] mb-3">
-            <span className="text-[17px]">🎨</span>
-            <span className="text-[13.5px] font-bold">Graphic work waiting for your approval</span>
-            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{graphics.length}</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {graphics.map(({ g, kind }) => {
-              const copy = GRAPHIC_APPROVAL_COPY[kind];
-              return (
-                <button key={`${g.id}-${kind}`} onClick={() => onOpenGraphic(g.id, copy.tab)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{g.title}</span>
-                    <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: copy.bg, color: copy.fg }}>{copy.badge}</span>
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                    <span>{brandName(g.b)} · {g.campaign} · {g.type}</span>
-                    <CampaignCode code={codeOf(g.campaignId, g.campaign)} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    {/* Whose work is waiting on you — the storyboard is the
-                        Creative Content person's, not the designer's. */}
-                    <span className="text-[11.5px] text-muted">
-                      {kind === "storyboard"
-                        ? `Storyboard ${g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}`
-                        : kind === "briefUnlock"
-                          ? `ขอโดย ${g.briefUnlock?.requestedBy || g.requester}${g.briefUnlock?.reason ? ` · ${g.briefUnlock.reason}` : ""}`
-                          : `Designer ${g.designer}`}
-                    </span>
-                    <span className="text-[11.5px] font-bold text-accent">{copy.cta}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {tasks.length > 0 && (
-        <div>
-          <div className="flex items-center gap-[10px] mb-3">
-            <span className="text-[17px]">🌟</span>
-            <span className="text-[13.5px] font-bold">KOL proposals waiting for approval</span>
-            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#F0F7F0", color: "#4E7A4E" }}>{tasks.length}</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {tasks.map((t) => (
-              <button key={t.id} onClick={() => onOpenTask(t.id)} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition text-left">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13.5px] font-bold text-ink truncate">{t.title}</span>
-                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#F0F7F0", color: "#4E7A4E" }}>Need Approval</span>
-                </div>
-                <div className="text-[11.5px] text-faint mb-3">{brandCampaignLine(t.brand, t.campaign)}</div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">Requested for {t.assignee}</span>
-                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {expenses.length > 0 && (
-        <div>
-          <div className="flex items-center gap-[10px] mb-3">
-            <span className="text-[17px]">฿</span>
-            <span className="text-[13.5px] font-bold">Expense requests waiting for approval</span>
-            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>{expenses.length}</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {expenses.map((r) => <ExpenseApprovalCard key={r._id ?? r.ref ?? r.category} r={r} budget={budgetOf(r)} onApprove={onApprove} onReject={onReject} />)}
-          </div>
-        </div>
-      )}
-      {campaigns.length > 0 && (
-        <div>
-          <div className="flex items-center gap-[10px] mb-3">
-            <span className="text-[17px]">🎯</span>
-            <span className="text-[13.5px] font-bold">Campaigns waiting on you</span>
-            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#FBF1E9", color: "#C2691E" }}>{campaigns.length}</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {campaigns.map((c) => (
-              <Link key={c.id} href={`/campaigns/${c.id}?tab=approval`} className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13.5px] font-bold text-ink truncate">{c.name}</span>
-                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>{c.status}</span>
-                </div>
-                <div className="text-[11.5px] text-faint mb-3">{brandName(c.b)} · {c.branch || "—"} · {c.campType}</div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">Owner {c.owner}</span>
-                  {/* Name the actual ask. "Review →" on a Ready-for-Review card
-                      sent its owner looking for an approve button that is not
-                      theirs to press — the campaign is waiting to be SUBMITTED. */}
-                  <span className="text-[11.5px] font-bold text-accent">
-                    {c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-      {requests.length > 0 && (
-        <div>
-          <div className="flex items-center gap-[10px] mb-3">
-            <span className="text-[17px]">📋</span>
-            <span className="text-[13.5px] font-bold">Requests waiting for approval</span>
-            <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#EEF1F8", color: "#3E5C9A" }}>{requests.length}</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {requests.map((r) => (
-              <Link key={r.id} href="/status" className="bg-surface border border-line rounded-card p-4 hover:border-accent transition block">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13.5px] font-bold text-ink truncate">{r.typeIcon} {r.title}</span>
-                  <span className="text-[10px] font-bold px-[7px] py-[2px] rounded-pill flex-shrink-0" style={{ background: "#FBF8EE", color: "#C68A1E" }}>{r.stage}</span>
-                </div>
-                <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                  <span>{brandName(r.b)} · {r.campaign} · {r.type}</span>
-                  {/* Requests carry only the campaign name, so this resolves by
-                      name and stays blank when two campaigns share one. */}
-                  <CampaignCode code={codeOf(undefined, r.campaign)} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted">{r.requester} → {r.approver}</span>
-                  <span className="text-[11.5px] font-bold text-accent">Review →</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One label→value line inside the expense detail panel. */
-function DetailRow({ label, children, strong, danger }: { label: string; children: React.ReactNode; strong?: boolean; danger?: boolean }) {
-  return (
-    <div className="flex items-start justify-between gap-3 py-[3px]">
-      <span className="text-[11px] text-faint flex-shrink-0">{label}</span>
-      <span className={`text-[11.5px] text-right ${strong ? "font-bold" : ""}`} style={danger ? { color: "#B33A2E" } : strong ? { color: "#211F1C" } : undefined}>{children}</span>
-    </div>
-  );
-}
-
-/** Inline expense-request approval card — approve or send back with a reason,
- *  right from My Tasks (the CMO's daily surface) instead of a separate queue.
- *  "ดูรายละเอียด" opens the full request (ref, tax breakdown, net payable and
- *  the campaign's remaining budget) so the approver never has to leave the page
- *  to know what they're signing off. */
-function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
-  r: ExpenseReq; budget: ExpenseBudgetInfo | null;
-  onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
-}) {
-  const codeOf = useCampaignCodes();
-  const [rejecting, setRejecting] = useState(false);
-  const [reason, setReason] = useState("");
-  const [open, setOpen] = useState(false);
-  // Latches on the first Approve/Reject click so a rapid second click can't fire
-  // a duplicate approval before the card is removed from the queue.
-  const [acted, setActed] = useState(false);
-  const wait = daysWaiting(r.createdAt);
-  const vat = r.vatAmt ?? 0;
-  const wht = r.whtAmt ?? 0;
-  const net = r.requested + vat - wht;
-  const overBudget = budget !== null && budget.left < 0;
-  return (
-    <div className="bg-surface border border-line rounded-card p-4">
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-[13.5px] font-bold text-ink truncate">฿ {r.category}</span>
-        <span className="text-[15px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
-      </div>
-      <div className="text-[11.5px] text-faint mb-2">
-        {brandName(r.b)} · {r.campaign}
-        <CampaignCode code={codeOf(r.campaignId, r.campaign)} className="ml-[5px] align-middle" />
-        {r.requester ? <> · โดย {r.requester}</> : null}
-        {r.vendor ? <> · {r.vendor}</> : null}
-        {wait !== null && <> · <b style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอมา {wait} วัน</b></>}
-      </div>
-      {/* Over-budget is the one thing the approver must see without opening anything. */}
-      {overBudget && (
-        <div className="text-[11px] font-bold rounded-[8px] px-[9px] py-[6px] mb-2" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
-          ⚠ เกินงบแคมเปญ {baht(Math.abs(budget!.left))}
-        </div>
-      )}
-      <button onClick={() => setOpen((o) => !o)} className="text-[11.5px] font-bold text-accent mb-2 hover:underline">
-        {open ? "ซ่อนรายละเอียด ▴" : "ดูรายละเอียด ▾"}
-      </button>
-      {open && (
-        <div className="rounded-[10px] px-[11px] py-[9px] mb-3" style={{ background: "#FAF8F4", border: "1px solid #ECE6DA" }}>
-          {r.ref && <DetailRow label="เลขที่คำขอ">{r.ref}</DetailRow>}
-          <DetailRow label="หมวดค่าใช้จ่าย">{r.category}</DetailRow>
-          <DetailRow label="แบรนด์ · แคมเปญ">{campaignLabel(codeOf(r.campaignId, r.campaign), `${brandName(r.b)} · ${r.campaign}`)}</DetailRow>
-          {r.requester && <DetailRow label="ผู้ขอเบิก">{r.requester}</DetailRow>}
-          {r.vendor && <DetailRow label="ผู้รับเงิน / Vendor">{r.vendor}</DetailRow>}
-          {r.reimburseType && <DetailRow label="ประเภทการเบิก">{r.reimburseType}</DetailRow>}
-          {r.createdAt && <DetailRow label="ส่งคำขอเมื่อ">{fmtThaiDate(r.createdAt)}{wait !== null ? ` (รอมา ${wait} วัน)` : ""}</DetailRow>}
-          {r.due && r.due !== "—" && <DetailRow label="กำหนดจ่าย">{r.due}</DetailRow>}
-
-          <div className="h-px my-[7px]" style={{ background: "#ECE6DA" }} />
-          <DetailRow label="ยอดขอเบิก">{baht(r.requested)}</DetailRow>
-          {vat > 0 && <DetailRow label="VAT 7%">+{baht(vat)}</DetailRow>}
-          {/* The rate the request was actually withheld at — the card said 3%
-              on every one of them, including the 2% advertising ones. */}
-          {wht > 0 && <DetailRow label={`หัก ณ ที่จ่าย ${rateLabel(r.whtRate || inferWhtRate(wht, r.requested))}`}>−{baht(wht)}</DetailRow>}
-          <DetailRow label="ยอดจ่ายสุทธิ" strong>{baht(net)}</DetailRow>
-
-          {budget && (
-            <>
-              <div className="h-px my-[7px]" style={{ background: "#ECE6DA" }} />
-              <DetailRow label="งบแคมเปญ">{baht(budget.budget)}</DetailRow>
-              <DetailRow label="อนุมัติไปแล้ว">{baht(budget.committed)}</DetailRow>
-              <DetailRow label="ถ้าอนุมัติจะเหลือ" strong danger={budget.left < 0}>
-                {baht(budget.left)}
-              </DetailRow>
-            </>
-          )}
-          {budget?.campaignId && (
-            <Link href={`/campaigns/${budget.campaignId}`} className="block text-[11.5px] font-bold text-accent mt-[7px] hover:underline">
-              เปิดแคมเปญ →
-            </Link>
-          )}
-        </div>
-      )}
-      {rejecting ? (
-        <div className="flex flex-col gap-2">
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น)" autoFocus
-            className="w-full text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />
-          <div className="flex gap-2">
-            <button onClick={() => { if (reason.trim() && !acted) { setActed(true); onReject(r, reason.trim()); } }} disabled={!reason.trim() || acted}
-              className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px] disabled:opacity-40" style={{ background: "#B33A2E" }}>
-              Reject &amp; Send back
-            </button>
-            <button onClick={() => setRejecting(false)} className="text-[12px] font-semibold px-3 rounded-[9px] border border-line2 text-muted bg-white">Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <button onClick={() => { if (!acted) { setActed(true); onApprove(r); } }} disabled={acted}
-            className="flex-1 text-[12px] font-bold text-white rounded-[9px] py-[8px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
-            {acted ? "Approving…" : "Approve ✓"}
-          </button>
-          <button onClick={() => setRejecting(true)} className="text-[12px] font-bold px-3 rounded-[9px]" style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>
-            ✕ Reject
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
 
 /** A Task as the shared card renders it. The mapping is the only Task-shaped
  *  code left in the card path — everything visual comes from WorkViews, so a
