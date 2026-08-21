@@ -133,7 +133,7 @@ function MyApprovalsPageInner() {
       <CampaignPageHeaderSection
         eyebrow="APPROVALS"
         title="รออนุมัติของคุณ"
-        description="ทุกอย่างที่รอคุณตัดสินใจ — แคปชั่น อาร์ตเวิร์ก VDO สตอรี่บอร์ด แคมเปญ และการเบิกงบ เรียงตามงานที่รอนานที่สุด"
+        description="ทุกอย่างที่ยังรออนุมัติ — แคปชั่น อาร์ตเวิร์ก VDO สตอรี่บอร์ด แคมเปญ และการเบิกงบ เรียงตามงานที่รอนานที่สุด · เห็นทั้งทีมได้ กดได้เฉพาะที่เป็นของคุณ"
         right={<NotificationBell tone="light" />}
       />
 
@@ -151,7 +151,7 @@ function MyApprovalsPageInner() {
                 and Visual CI. Each card says which one is yours, and a piece
                 only leaves the queue once both are in. */}
             อาร์ตเวิร์กและ VDO ต้องผ่านการตรวจ 2 ด้าน (ข้อมูล + Visual CI) โดยคนละคน —
-            การ์ดจะบอกว่ารอบนี้คุณตรวจด้านไหน
+            การ์ดจะบอกว่ารอบนี้คุณตรวจด้านไหน · สลับ “ทั้งทีม” เพื่อดูว่างานที่ยังไม่ขยับค้างอยู่ที่ใคร
           </div>
         </CampaignCommandBar>
 

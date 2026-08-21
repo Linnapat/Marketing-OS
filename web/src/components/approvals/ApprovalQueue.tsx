@@ -1,12 +1,22 @@
 "use client";
 
-// The approval inbox — every decision waiting on one person, as one queue.
+// The approval inbox — every decision the team has open, as one queue.
 //
-// It used to be six stacked sections inside /my-tasks. The sections are gone
-// because they answered the wrong question: with four items open you scrolled
-// past five headings to find them, and with forty you could not tell which had
-// been waiting a week. This is one list ordered by how long each decision has
-// been outstanding, with chips to narrow it to a kind when you want to batch.
+// It used to be six stacked sections inside /my-tasks, holding only work
+// addressed to the reader. Both of those changed:
+//
+//  - Sections became one list ordered by how long each decision has waited,
+//    with chips to narrow to a kind when you want to batch. Six headings meant
+//    you scrolled past five to find four items, and could not see which of the
+//    forty had been sitting a week.
+//
+//  - The list holds the whole team's open decisions, brand-scoped, so a piece
+//    stuck on somebody else is visible instead of invisible. "ของฉัน" is the
+//    default view and the badge; "ทั้งทีม" is one click away.
+//
+// Seeing is not deciding. A row that is not yours renders with no buttons and
+// says who is holding it — the rules for who may act did not move (and the
+// database enforces its own half regardless).
 //
 // Rendering is per-kind (an artwork card and an expense card are not the same
 // card), but the ORDER is global — see buildApprovalRows.
@@ -65,6 +75,19 @@ function AgePill({ iso, now }: { iso: string; now: number }) {
   );
 }
 
+/** The right-hand end of a card: the thing to do, or the person to chase.
+ *  Never both, and never an action word on a row whose buttons are not there —
+ *  "Review →" on somebody else's decision is how you teach people that the
+ *  arrow means nothing. */
+function Cta({ row, action }: { row: ApprovalRow; action: string }) {
+  if (row.mine) return <span className="text-[11.5px] font-bold text-accent flex-shrink-0">{action}</span>;
+  return (
+    <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>
+      รอ {row.waitingOn}
+    </span>
+  );
+}
+
 function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
   const m = APPROVAL_META[kind];
   return (
@@ -91,7 +114,13 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
 }) {
   const codeOf = useCampaignCodes();
   const [kind, setKind] = useState<ApprovalKind | "all">("all");
-  const counts = useMemo(() => countByKind(rows), [rows]);
+  // Yours by default. The team view is the answer to "why is this late", not
+  // the daily working set — opening onto forty rows, thirty-six of which you
+  // cannot act on, is how a queue stops being read at all.
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+  const mineRows = useMemo(() => rows.filter((r) => r.mine), [rows]);
+  const scoped = scope === "mine" ? mineRows : rows;
+  const counts = useMemo(() => countByKind(scoped), [scoped]);
   // A chip for a kind with nothing in it is a dead button; only draw the ones
   // that have work. "all" always shows so there is a way back.
   const chips = useMemo(
@@ -102,17 +131,36 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
   // an empty list under a chip that no longer exists.
   const active = kind !== "all" && counts[kind] === 0 ? "all" : kind;
   const visible = useMemo(
-    () => (active === "all" ? rows : rows.filter((r) => r.kind === active)),
-    [rows, active],
+    () => (active === "all" ? scoped : scoped.filter((r) => r.kind === active)),
+    [scoped, active],
   );
 
-  if (rows.length === 0) {
+  const scopeToggle = (
+    <div className="flex items-center gap-[3px] p-[3px] rounded-pill flex-shrink-0" style={{ background: "#F2EFE9" }}>
+      <ScopeTab label="ของฉัน" count={mineRows.length} on={scope === "mine"} onClick={() => setScope("mine")} />
+      <ScopeTab label="ทั้งทีม" count={rows.length} on={scope === "all"} onClick={() => setScope("all")} />
+    </div>
+  );
+
+  if (scoped.length === 0) {
     return (
-      <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
-        <div>
-          <div className="text-[15px] font-bold text-ink">ไม่มีงานรออนุมัติ 🎉</div>
-          <div className="text-[12.5px] text-faint mt-1">
-            {emptyHint ?? "แคปชั่น อาร์ตเวิร์ก VDO แคมเปญ และการเบิกงบที่รอคุณอนุมัติจะมาโผล่ที่นี่"}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-end">{scopeToggle}</div>
+        <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
+          <div>
+            <div className="text-[15px] font-bold text-ink">
+              {scope === "mine" ? "ไม่มีงานรอคุณอนุมัติ 🎉" : "ไม่มีงานค้างอนุมัติในทีม 🎉"}
+            </div>
+            <div className="text-[12.5px] text-faint mt-1">
+              {emptyHint ?? "แคปชั่น อาร์ตเวิร์ก VDO แคมเปญ และการเบิกงบที่รอคุณอนุมัติจะมาโผล่ที่นี่"}
+            </div>
+            {/* Clear on your side but the team still has work stuck: say so
+                here rather than let an empty screen read as "all done". */}
+            {scope === "mine" && rows.length > 0 && (
+              <button onClick={() => setScope("all")} className="text-[12.5px] font-bold text-accent mt-3 hover:underline">
+                ทีมยังมีค้างอยู่ {rows.length} รายการ — ดูทั้งทีม →
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -121,12 +169,15 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-[7px] flex-wrap">
-        <Chip label="ทั้งหมด" count={rows.length} on={active === "all"} onClick={() => setKind("all")} />
-        {chips.map((k) => (
-          <Chip key={k} label={`${APPROVAL_META[k].icon} ${APPROVAL_META[k].label}`} count={counts[k]}
-            on={active === k} onClick={() => setKind(k)} />
-        ))}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-[7px] flex-wrap">
+          <Chip label="ทั้งหมด" count={scoped.length} on={active === "all"} onClick={() => setKind("all")} />
+          {chips.map((k) => (
+            <Chip key={k} label={`${APPROVAL_META[k].icon} ${APPROVAL_META[k].label}`} count={counts[k]}
+              on={active === k} onClick={() => setKind(k)} />
+          ))}
+        </div>
+        {scopeToggle}
       </div>
 
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
@@ -150,7 +201,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(row.post) || "—"}</span>
-                    <span className="text-[11.5px] font-bold text-accent">อ่านและอนุมัติ →</span>
+                    <Cta row={row} action="อ่านและอนุมัติ →" />
                   </div>
                 </Link>
               );
@@ -187,7 +238,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                     <span className="text-[11.5px] text-muted truncate">
                       ส่งโดย {row.deliverable.submittedBy || row.g.designer || "—"}
                     </span>
-                    <span className="text-[11.5px] font-bold text-accent flex-shrink-0">เปิดตรวจ →</span>
+                    <Cta row={row} action="เปิดตรวจ →" />
                   </div>
                 </button>
               );
@@ -211,7 +262,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                     <span className="text-[11.5px] text-muted truncate">
                       Storyboard {row.g.storyboardSubmittedBy || row.g.storyboardOwner || "Creative"}
                     </span>
-                    <span className="text-[11.5px] font-bold text-accent flex-shrink-0">อนุมัติ storyboard →</span>
+                    <Cta row={row} action="อนุมัติ storyboard →" />
                   </div>
                 </button>
               );
@@ -232,13 +283,13 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                       ขอโดย {row.g.briefUnlock?.requestedBy || row.g.requester}
                       {row.g.briefUnlock?.reason ? ` · ${row.g.briefUnlock.reason}` : ""}
                     </span>
-                    <span className="text-[11.5px] font-bold text-accent flex-shrink-0">ปล่อยให้เติมบรีฟ →</span>
+                    <Cta row={row} action="ปล่อยให้เติมบรีฟ →" />
                   </div>
                 </button>
               );
 
             case "expense":
-              return <ExpenseApprovalCard key={row.key} r={row.r} budget={budgetOf(row.r)} onApprove={onApprove} onReject={onReject} />;
+              return <ExpenseApprovalCard key={row.key} row={row} budget={budgetOf(row.r)} onApprove={onApprove} onReject={onReject} />;
 
             case "campaign":
               return (
@@ -253,9 +304,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                     {/* Name the actual ask. "Review →" on a Ready-for-Review card
                         sent its owner looking for an approve button that is not
                         theirs to press — the campaign is waiting to be SUBMITTED. */}
-                    <span className="text-[11.5px] font-bold text-accent">
-                      {row.c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"}
-                    </span>
+                    <Cta row={row} action={row.c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"} />
                   </div>
                 </Link>
               );
@@ -275,7 +324,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[11.5px] text-muted">{row.r.requester} → {row.r.approver}</span>
-                    <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                    <Cta row={row} action="Review →" />
                   </div>
                 </Link>
               );
@@ -290,7 +339,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
                   <div className="text-[11.5px] text-faint mb-3">{brandCampaignLine(row.t.brand, row.t.campaign)}</div>
                   <div className="flex items-center justify-between">
                     <span className="text-[11.5px] text-muted">Requested for {row.t.assignee}</span>
-                    <span className="text-[11.5px] font-bold text-accent">Review →</span>
+                    <Cta row={row} action="Review →" />
                   </div>
                 </button>
               );
@@ -298,6 +347,18 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
         })}
       </div>
     </div>
+  );
+}
+
+/** ของฉัน / ทั้งทีม. A segmented pair rather than a checkbox: the two are
+ *  different readings of the same queue, and neither is a setting you turn on. */
+function ScopeTab({ label, count, on, onClick }: { label: string; count: number; on: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`text-[12px] font-bold px-[12px] py-[6px] rounded-pill transition ${on ? "bg-white text-ink shadow-sm" : "text-muted"}`}>
+      {label}
+      <span className="ml-[6px] text-[11px] font-extrabold" style={{ opacity: 0.6 }}>{count}</span>
+    </button>
   );
 }
 
@@ -325,11 +386,18 @@ function DetailRow({ label, children, strong, danger }: { label: string; childre
 /** Inline expense-request approval card — approve or send back with a reason,
  *  right in the inbox instead of a separate queue. "ดูรายละเอียด" opens the full
  *  request (ref, tax breakdown, net payable and the campaign's remaining budget)
- *  so the approver never has to leave the page to know what they're signing off. */
-function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
-  r: ExpenseReq; budget: ExpenseBudgetInfo | null;
+ *  so the approver never has to leave the page to know what they're signing off.
+ *
+ *  Everyone who can READ a request sees the card, because "the money has been
+ *  sitting for nine days" is exactly the thing a queue should make visible. The
+ *  buttons are another matter: money is CMO-only and the database says so too
+ *  (supabase/security_p12_expense_approval.sql), so a row that is not yours
+ *  renders the numbers and who is holding it, and nothing to click. */
+function ExpenseApprovalCard({ row, budget, onApprove, onReject }: {
+  row: Extract<ApprovalRow, { kind: "expense" }>; budget: ExpenseBudgetInfo | null;
   onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
 }) {
+  const r = row.r;
   const codeOf = useCampaignCodes();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -400,7 +468,12 @@ function ExpenseApprovalCard({ r, budget, onApprove, onReject }: {
           )}
         </div>
       )}
-      {rejecting ? (
+      {!row.mine ? (
+        <div className="text-[11.5px] font-semibold text-center rounded-[9px] py-[8px]"
+          style={{ background: "#F7F4EE", color: "#8A8175" }}>
+          รอ {row.waitingOn} อนุมัติ
+        </div>
+      ) : rejecting ? (
         <div className="flex flex-col gap-2">
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (จำเป็น)" autoFocus
             className="w-full text-[12.5px] px-[11px] py-[8px] rounded-[9px] border border-line2 bg-ivory outline-none" />

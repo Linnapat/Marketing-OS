@@ -1,15 +1,22 @@
-/* Runtime tests for the approvals inbox selector (lib/data/approvals).
+/* Runtime tests for the approvals inbox (lib/data/approvals).
  *
- * The bug this suite exists to keep fixed: artwork was collected with
- * "am I the requester", which is the rule from BEFORE sign-off became two
- * checks. Visual CI belongs to the Creative Leader, who is never the
- * requester — so the person holding half the artwork decisions in the company
- * had no queue at all, and pieces sat in Waiting review with nobody told.
+ * Two things this suite exists to keep true:
+ *
+ *  1. The queue holds the WHOLE team's open decisions, brand-scoped — you can
+ *     see that an artwork has sat for two weeks even when it is not yours.
+ *     Whether you may act is a flag on the row (`mine`), never the reason a row
+ *     is missing.
+ *
+ *  2. `mine` still answers with the real rules. The bug that started this:
+ *     artwork was collected with "am I the requester", which is the rule from
+ *     BEFORE sign-off became two checks. Visual CI belongs to the Creative
+ *     Leader, who is never the requester, so the person holding half the
+ *     artwork decisions in the company had no queue at all.
  * Run with:  npm test */
 
 import {
-  selectGraphicApprovals, buildApprovalRows, countByKind, byWaitingLongest, waitingDays,
-  expenseBudgetOf, type ApprovalRow,
+  buildApprovalRows, selectGraphicApprovals, countByKind, byWaitingLongest, waitingDays,
+  expenseBudgetOf, type ApprovalCtx, type ApprovalRow,
 } from "../src/lib/data/approvals";
 import { emptyDeliverable, type Graphic, type GraphicDeliverable } from "../src/lib/data/graphic";
 import { personKeys } from "../src/lib/identity";
@@ -37,78 +44,131 @@ const req = (over: Partial<Graphic> = {}): Graphic => ({
   contentItem: "—", deliverables: [submitted()], ...over,
 });
 
-const ctx = (role: string, me: string) => ({
-  myKeys: personKeys({ name: me }), me, role, isVisible: () => true,
+const ctx = (role: string, me: string, over: Partial<ApprovalCtx> = {}): ApprovalCtx => ({
+  myKeys: personKeys({ name: me }), me, role,
+  canApproveCampaign: role === "CMO",
+  canApproveExpense: role === "CMO",
+  canEditContentPlan: /CMO|Marketing|Planner/.test(role),
+  isVisible: () => true,
+  canSeeBrandLabel: () => true,
+  doneIds: new Set<number>(),
+  ...over,
 });
 
-console.log("\n— อาร์ตเวิร์กหนึ่งชิ้น เข้าคิวสองคน คนละด้าน —");
+const empty = { captions: [], graphics: [], campaigns: [], requests: [], expenses: [], kol: [] };
+const mineOf = (rows: ApprovalRow[]) => rows.filter((r) => r.mine).length;
+
+console.log("\n— อาร์ตเวิร์กหนึ่งชิ้น ทุกคนเห็นสองแถว แต่กดได้คนละด้าน —");
 {
   const g = req();
   const requester = selectGraphicApprovals([g], ctx("Marketing Manager / BGL", "Ken S."));
-  is("ผู้ขอเปิดงานเห็นด้านข้อมูล 1 แถว", requester.length, 1);
-  is("…และเป็นด้าน info", requester[0].kind === "artwork" ? requester[0].lens : "—", "info");
+  is("เห็นครบทั้งสองด้าน", requester.length, 2);
+  is("ผู้ขอเปิดงานกดได้ 1 ด้าน", mineOf(requester), 1);
+  const mineRow = requester.find((r) => r.mine);
+  is("…ด้านที่กดได้คือ info", mineRow && mineRow.kind === "artwork" ? mineRow.lens : "—", "info");
 
   // นี่คือบั๊กเดิม: Creative Leader ไม่เคยเห็นงานที่ตัวเองต้องเซ็น CI เลย
   const leader = selectGraphicApprovals([g], ctx("Creative Leader", "Boss L."));
-  is("Creative Leader เห็นด้าน CI 1 แถว", leader.length, 1);
-  is("…และเป็นด้าน ci", leader[0].kind === "artwork" ? leader[0].lens : "—", "ci");
+  is("Creative Leader ก็เห็นสองด้าน", leader.length, 2);
+  const leaderRow = leader.find((r) => r.mine);
+  is("…แต่กดได้แค่ CI", leaderRow && leaderRow.kind === "artwork" ? leaderRow.lens : "—", "ci");
 
+  // ดีไซเนอร์เจ้าของงาน "เห็น" ได้ เพื่อจะได้รู้ว่างานตัวเองค้างที่ใคร แต่กดไม่ได้
   const designer = selectGraphicApprovals([g], ctx("Senior Graphic Designer", "Boss"));
-  is("ดีไซเนอร์เจ้าของงานไม่เห็นอะไร", designer.length, 0);
+  is("ดีไซเนอร์เจ้าของงานยังเห็นสถานะได้", designer.length, 2);
+  is("…แต่กดผ่านงานตัวเองไม่ได้", mineOf(designer), 0);
+  is("แถว CI บอกว่ารอใครอยู่", designer.find((r) => r.kind === "artwork" && r.lens === "ci")?.waitingOn, "Creative Leader");
+  is("แถวข้อมูลบอกชื่อคนที่รอ", designer.find((r) => r.kind === "artwork" && r.lens === "info")?.waitingOn, "Ken S.");
 }
 
-console.log("\n— ด้านที่มีคนเซ็นแล้ว หายไปจากคิว —");
+console.log("\n— ด้านที่มีคนเซ็นแล้ว หายไปจากคิวของทุกคน —");
 {
   const g = req({ deliverables: [submitted({ review: { ci: { verdict: "pass", by: "Boss L.", at: "2026-08-02T02:00:00Z" } } })] });
-  is("Creative Leader ที่เซ็น CI ไปแล้ว ไม่เห็นซ้ำ", selectGraphicApprovals([g], ctx("Creative Leader", "Boss L.")).length, 0);
-  is("ผู้ขอเปิดงานยังเห็นด้านข้อมูลอยู่", selectGraphicApprovals([g], ctx("Marketing Manager / BGL", "Ken S.")).length, 1);
-  // CMO คลุมได้ทั้งสองเลน — แต่ห้ามคนเดียวเซ็นครบใบ
-  is("CMO ที่ยังไม่เซ็น เห็นแค่ด้านที่เหลือ", selectGraphicApprovals([g], ctx("CMO", "Aran P.")).length, 1);
+  const rows = selectGraphicApprovals([g], ctx("Creative Leader", "Boss L."));
+  is("เหลือแถวเดียว (ด้านข้อมูล)", rows.length, 1);
+  is("Creative Leader ที่เซ็น CI ไปแล้ว กดด้านข้อมูลไม่ได้", mineOf(rows), 0);
+  is("ผู้ขอเปิดงานกดด้านข้อมูลได้", mineOf(selectGraphicApprovals([g], ctx("Marketing Manager / BGL", "Ken S."))), 1);
+  // CMO คลุมได้ทั้งสองเลน แต่ห้ามคนเดียวเซ็นครบใบ
   const bothByCmo = req({ deliverables: [submitted({ review: { ci: { verdict: "pass", by: "Aran P.", at: "2026-08-02T02:00:00Z" } } })] });
-  is("CMO ที่เซ็น CI เองแล้ว ไม่เห็นด้านข้อมูลต่อ", selectGraphicApprovals([bothByCmo], ctx("CMO", "Aran P.")).length, 0);
+  is("CMO ที่เซ็น CI เองแล้ว กดด้านข้อมูลต่อไม่ได้", mineOf(selectGraphicApprovals([bothByCmo], ctx("CMO", "Aran P."))), 0);
 }
 
 console.log("\n— VDO ถูกแยกออกจาก Artwork —");
 {
   const vdo = req({ id: 2, type: "VDO Editing", requiredVideo: true });
   is("งานตัดต่อขึ้นเป็น kind = vdo", selectGraphicApprovals([vdo], ctx("Creative Leader", "Boss L."))[0]?.kind, "vdo");
-  const shoot = req({ id: 3, type: "Photo Shooting" });
-  is("งานถ่ายภาพขึ้นเป็น kind = photo", selectGraphicApprovals([shoot], ctx("Creative Leader", "Boss L."))[0]?.kind, "photo");
+  is("งานถ่ายภาพขึ้นเป็น kind = photo", selectGraphicApprovals([req({ id: 3, type: "Photo Shooting" })], ctx("Creative Leader", "Boss L."))[0]?.kind, "photo");
   is("งานกราฟิกยังเป็น artwork", selectGraphicApprovals([req()], ctx("Creative Leader", "Boss L."))[0]?.kind, "artwork");
 }
 
-console.log("\n— ชิ้นที่ยังไม่ส่ง ไม่เข้าคิว —");
+console.log("\n— ชิ้นที่ยังไม่ส่ง / ผ่านแล้ว ไม่เข้าคิว —");
 {
   const g = req({ deliverables: [submitted({ status: "Not submitted" }), submitted({ status: "Approved" })] });
-  is("ไม่มีแถวจากชิ้นที่ยังไม่ส่ง/ผ่านแล้ว", selectGraphicApprovals([g], ctx("Creative Leader", "Boss L.")).length, 0);
+  is("ไม่มีแถวเลย", selectGraphicApprovals([g], ctx("Creative Leader", "Boss L.")).length, 0);
 }
 
-console.log("\n— แบรนด์ที่มองไม่เห็น ไม่เข้าคิว —");
+console.log("\n— แบรนด์คือตัวคัดกรองเดียวที่ซ่อนงาน —");
 {
-  const g = req();
-  is("brand ถูกซ่อน = ไม่มีแถว",
-    selectGraphicApprovals([g], { ...ctx("Creative Leader", "Boss L."), isVisible: () => false }).length, 0);
+  is("brand ที่มองไม่เห็น = ไม่มีแถว",
+    selectGraphicApprovals([req()], ctx("Creative Leader", "Boss L.", { isVisible: () => false })).length, 0);
+}
+
+console.log("\n— แคมเปญ: รออนุมัติ vs รอเจ้าของกดส่ง —");
+{
+  const waiting = { id: "CAM-1", name: "A", b: "teppen", owner: "Ken S.", status: "Waiting for Approval" } as never;
+  const ready = { id: "CAM-2", name: "B", b: "teppen", owner: "Ken S.", status: "Ready for Review" } as never;
+  const active = { id: "CAM-3", name: "C", b: "teppen", owner: "Ken S.", status: "Active" } as never;
+  const asCmo = buildApprovalRows({ ...empty, campaigns: [waiting, ready, active] }, ctx("CMO", "Aran P."));
+  is("แคมเปญที่ Active ไม่เข้าคิว", asCmo.length, 2);
+  is("CMO กดอนุมัติใบที่รออนุมัติได้", asCmo.find((r) => r.kind === "campaign" && r.c.id === "CAM-1")?.mine, true);
+  is("แต่ใบที่รอเจ้าของกดส่ง ไม่ใช่ของ CMO", asCmo.find((r) => r.kind === "campaign" && r.c.id === "CAM-2")?.mine, false);
+  is("…และบอกว่ารอเจ้าของอยู่", asCmo.find((r) => r.kind === "campaign" && r.c.id === "CAM-2")?.waitingOn, "Ken S.");
+  const asOwner = buildApprovalRows({ ...empty, campaigns: [waiting, ready] }, ctx("Content Planner", "Ken S."));
+  is("เจ้าของกดส่งใบตัวเองได้", asOwner.find((r) => r.kind === "campaign" && r.c.id === "CAM-2")?.mine, true);
+  is("แต่อนุมัติเองไม่ได้", asOwner.find((r) => r.kind === "campaign" && r.c.id === "CAM-1")?.mine, false);
+}
+
+console.log("\n— แคปชั่น: คนเขียนไม่ได้เซ็นงานตัวเอง —");
+{
+  const post = (over: Record<string, unknown>) => ({
+    id: "c1", day: 1, time: "10:00", title: "T", b: "teppen", plat: "IG", status: "Draft",
+    campaign: "X", owner: "Mei T.", caption: "hi", hashtags: "", cta: "",
+    captionStatus: "Ready", assetStatus: "—", approvalStatus: "—", publishStatus: "—",
+    createdAt: "2026-08-01T00:00:00Z", ...over,
+  }) as never;
+  const addressed = buildApprovalRows({ ...empty, captions: [post({ approver: "Ken S." })] }, ctx("Content Planner", "Ken S."));
+  is("คนที่ถูกระบุให้ตรวจ กดได้", addressed[0]?.mine, true);
+  const other = buildApprovalRows({ ...empty, captions: [post({ approver: "Ken S." })] }, ctx("Content Planner", "Nok W."));
+  is("คนอื่นเห็นแถวแต่กดไม่ได้", other.length === 1 && other[0].mine === false, true);
+  is("…และบอกว่ารอใคร", other[0]?.waitingOn, "Ken S.");
+  const ownWords = buildApprovalRows({ ...empty, captions: [post({ owner: "Mei T." })] }, ctx("Content Planner", "Mei T."));
+  is("คนเขียนเองกดไม่ได้ แม้ไม่มีคนถูกระบุ", ownWords[0]?.mine, false);
+}
+
+console.log("\n— เงิน: กติกาเดิม CMO เท่านั้น —");
+{
+  const exp = { _id: 1, category: "Media", b: "teppen", campaign: "X", requested: 5000, approved: 0, status: "Waiting Approval", due: "—", createdAt: "2026-08-10T00:00:00Z" } as never;
+  is("CMO กดได้", buildApprovalRows({ ...empty, expenses: [exp] }, ctx("CMO", "Aran P."))[0]?.mine, true);
+  const staff = buildApprovalRows({ ...empty, expenses: [exp] }, ctx("Content Planner", "Ken S."));
+  is("คนอื่นเห็นว่ามีใบค้าง", staff.length, 1);
+  is("…แต่กดไม่ได้", staff[0]?.mine, false);
 }
 
 console.log("\n— เรียงตามงานที่รอนานที่สุด —");
 {
-  const rows: ApprovalRow[] = buildApprovalRows({
-    captions: [
-      { id: "c1", day: 1, time: "10:00", title: "ใหม่", b: "teppen", plat: "IG", status: "Draft",
-        campaign: "X", owner: "A", caption: "", hashtags: "", cta: "",
-        captionStatus: "Ready", assetStatus: "—", approvalStatus: "—", publishStatus: "—",
-        createdAt: "2026-08-18T00:00:00Z" },
-      { id: "c2", day: 1, time: "10:00", title: "เก่า", b: "teppen", plat: "IG", status: "Draft",
-        campaign: "X", owner: "A", caption: "", hashtags: "", cta: "",
-        captionStatus: "Ready", assetStatus: "—", approvalStatus: "—", publishStatus: "—",
-        createdAt: "2026-08-01T00:00:00Z" },
-    ],
-    graphics: [], campaigns: [], requests: [], expenses: [], kol: [],
-  });
+  const post = (id: string, title: string, createdAt: string) => ({
+    id, day: 1, time: "10:00", title, b: "teppen", plat: "IG", status: "Draft",
+    campaign: "X", owner: "A", caption: "", hashtags: "", cta: "",
+    captionStatus: "Ready", assetStatus: "—", approvalStatus: "—", publishStatus: "—", createdAt,
+  }) as never;
+  const rows = buildApprovalRows(
+    { ...empty, captions: [post("c1", "ใหม่", "2026-08-18T00:00:00Z"), post("c2", "เก่า", "2026-08-01T00:00:00Z")] },
+    ctx("Content Planner", "Ken S."),
+  );
   is("แถวเก่าสุดมาก่อน", rows[0].kind === "caption" ? rows[0].post.title : "—", "เก่า");
   // แคมเปญไม่มี timestamp ให้นับอายุ — ต้องไปท้ายแถว ไม่ใช่ถูกนับว่าใหม่เอี่ยม
   is("แถวที่ไม่รู้อายุไปอยู่ท้าย", byWaitingLongest(
-    { kind: "campaign", key: "a", b: "teppen", waitingSince: "", c: {} as never },
+    { kind: "campaign", key: "a", b: "teppen", waitingSince: "", mine: false, waitingOn: "CMO", c: {} as never },
     rows[0]) > 0, true);
   is("นับตามชนิดได้", countByKind(rows).caption, 2);
   is("ไม่มี timestamp = ไม่แสดงอายุ", waitingDays("", Date.now()), null);

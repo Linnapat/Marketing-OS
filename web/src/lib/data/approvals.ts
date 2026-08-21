@@ -1,26 +1,30 @@
-// Every decision waiting on one person, in one shape.
+// Every decision waiting on ANYONE, in one shape — and, per row, whether it is
+// yours to make.
 //
-// Before this module the approval inbox lived inline in /my-tasks and asked
-// each source its own question in its own way. Two things went wrong there and
-// both are fixed here:
+// The first version of this module only collected work addressed to the person
+// reading it. That is right for a personal inbox and wrong for a team that has
+// to keep moving: when an artwork sat for two weeks, nobody outside the one
+// person holding it could see that it had, so "why is this late" was a question
+// you had to ask in a channel instead of read off a screen.
 //
-//  1. Artwork was collected with `isSamePerson(g.requester, me)` — the rule
-//     from BEFORE sign-off became two checks. The Visual CI verdict belongs to
-//     the Creative Leader, who is not the requester, so the person holding half
-//     the artwork decisions in the company had no queue at all and had to open
-//     requests one by one to find them. Rows are now emitted PER LENS, and only
-//     for the lens this person may actually pass (canPassLens) — so an artwork
-//     needing both checks shows up on two people's screens, each seeing only
-//     their own half.
+// So a row is emitted for every open decision on a brand you can see, and each
+// carries `mine` and `waitingOn`. Rendering splits on `mine`: your own rows get
+// the button, everyone else's say who is holding them. The rules for who may
+// actually decide did not move an inch — see the per-kind notes below, and note
+// that the database enforces its own half regardless (RLS, p12 for money).
 //
-//  2. VDO work was folded into "Graphic work waiting for your approval". The
-//     app has classified it separately since workKind() existed; the inbox just
-//     never asked. Reels and cut-downs are a different review with a different
-//     rhythm, and burying them under Graphic made them impossible to batch.
+// Two rules that were bugs before and are load-bearing now:
+//
+//  1. Artwork is emitted PER LENS. Sign-off became two checks — content
+//     accuracy and Visual CI, by two different people — and the queue was still
+//     asking the pre-split question ("am I the requester"), so the Creative
+//     Leader who owns every CI verdict had no queue at all.
+//
+//  2. VDO is its own kind. workKind() has classified it since it existed; the
+//     inbox just never asked, and reels stayed buried under "Graphic".
 //
 // Everything here is pure: no fetching, no React. The page owns the data, this
-// owns the rules — so /my-approvals and /my-tasks can never disagree about
-// what is waiting.
+// owns the rules — so /my-approvals and /my-tasks can never disagree.
 
 import type { BrandId } from "@/lib/brands";
 import type { CampaignRow } from "@/lib/data/campaigns";
@@ -33,7 +37,9 @@ import {
   REVIEW_LENSES, awaitsBriefUnlockDecision, awaitsStoryboardDecision,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
+import { captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
 import { isSamePerson } from "@/lib/identity";
+import { DEFAULT_APPROVER } from "@/lib/approval";
 
 /** What a row is, which is also what the filter chips filter by. Artwork, VDO
  *  and Photo are three kinds rather than one "graphic" kind because they are
@@ -51,17 +57,30 @@ const KIND_OF_WORK: Record<WorkKind, "artwork" | "vdo" | "photo"> = {
   photo_shoot: "photo",
 };
 
+interface RowBase {
+  key: string;
+  /** Null only where the source row carries a brand LABEL rather than an id. */
+  b: BrandId | null;
+  waitingSince: string;
+  /** May the person reading this actually decide it? Drives the buttons, the
+   *  "ของฉัน / ทั้งทีม" split and the badge — never whether the row exists. */
+  mine: boolean;
+  /** Who is holding it, for the rows that are not yours. A name where we have
+   *  one, otherwise the role that owns the decision. */
+  waitingOn: string;
+}
+
 export type ApprovalRow =
-  | { kind: "caption"; key: string; b: BrandId; waitingSince: string; post: ContentItem }
-  | {
-      kind: "artwork" | "vdo" | "photo"; key: string; b: BrandId; waitingSince: string;
+  | (RowBase & { kind: "caption"; post: ContentItem })
+  | (RowBase & {
+      kind: "artwork" | "vdo" | "photo";
       g: Graphic; deliverable: GraphicDeliverable; index: number; lens: ReviewLens;
-    }
-  | { kind: "storyboard" | "briefUnlock"; key: string; b: BrandId; waitingSince: string; g: Graphic }
-  | { kind: "campaign"; key: string; b: BrandId; waitingSince: string; c: CampaignRow }
-  | { kind: "request"; key: string; b: BrandId; waitingSince: string; r: RequestRow }
-  | { kind: "expense"; key: string; b: BrandId; waitingSince: string; r: ExpenseReq }
-  | { kind: "kol"; key: string; b: BrandId | null; waitingSince: string; t: Task };
+    })
+  | (RowBase & { kind: "storyboard" | "briefUnlock"; g: Graphic })
+  | (RowBase & { kind: "campaign"; c: CampaignRow })
+  | (RowBase & { kind: "request"; r: RequestRow })
+  | (RowBase & { kind: "expense"; r: ExpenseReq })
+  | (RowBase & { kind: "kol"; t: Task });
 
 /** Chip label, icon and the two colours the badge is drawn in. One table so a
  *  kind added later cannot be styled differently in three places. */
@@ -104,34 +123,44 @@ export function byWaitingLongest(a: ApprovalRow, b: ApprovalRow): number {
   return a.waitingSince.localeCompare(b.waitingSince);
 }
 
-export interface GraphicApprovalCtx {
+const firstName = (...names: (string | null | undefined)[]) =>
+  names.map((n) => (n ?? "").trim()).find(Boolean) ?? "";
+
+export interface ApprovalCtx {
   /** Every string this person is filed under — see lib/identity. */
   myKeys: Set<string>;
   /** Their display name, for the lens rules, which compare names on the row. */
   me: string;
   /** Their real role from useAuth — never the "Viewing as" switcher. */
   role: string;
+  canApproveCampaign: boolean;
+  canApproveExpense: boolean;
+  canEditContentPlan: boolean;
   isVisible: (b: BrandId) => boolean;
+  /** Task rows carry a brand LABEL, not a BrandId, so they need their own test. */
+  canSeeBrandLabel: (label?: string | null) => boolean;
+  doneIds: Set<number>;
 }
 
 /** Graphic-side decisions: storyboards, brief top-ups, and one row per artwork
- *  lens still open to this person.
+ *  lens still open — whoever owns it.
  *
  *  The lens loop is the whole point. `d.review[lens]` already holds a verdict →
- *  that half is done, whoever gave it. canPassLens then answers the rest: right
- *  role for this lens, not the person who gave the other verdict, not the
- *  person who submitted the piece. What survives is exactly the set of
- *  decisions this person can act on right now. */
-export function selectGraphicApprovals(graphics: Graphic[], ctx: GraphicApprovalCtx): ApprovalRow[] {
+ *  that half is done, whoever gave it, and no row is emitted. What is left is
+ *  every open check; canPassLens then answers only whether it is THIS person's
+ *  to give (right role for the lens, not the person who gave the other verdict,
+ *  not the person who submitted the piece). */
+export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): ApprovalRow[] {
   const out: ApprovalRow[] = [];
   for (const g of graphics) {
     if (!ctx.isVisible(g.b)) continue;
     const isRequester = isSamePerson(g.requester, ctx.myKeys);
 
-    if (isRequester && awaitsStoryboardDecision(g)) {
+    if (awaitsStoryboardDecision(g)) {
       out.push({
         kind: "storyboard", key: `g${g.id}:storyboard`, b: g.b, g,
         waitingSince: g.storyboardSubmittedAt || g.createdAt || "",
+        mine: isRequester, waitingOn: firstName(g.requester, "ผู้ขอเปิดงาน"),
       });
     }
 
@@ -140,59 +169,124 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: GraphicApproval
       if (d.status !== "Waiting review") return;
       for (const lens of REVIEW_LENSES) {
         if (d.review?.[lens]) continue;
-        if (!canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d })) continue;
         out.push({
           kind, key: `g${g.id}:d${index}:${lens}`, b: g.b, g, deliverable: d, index, lens,
           waitingSince: d.submittedAt || g.submittedAt || g.createdAt || "",
+          mine: canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d }),
+          // The data check is the requester's by name; Visual CI belongs to the
+          // Creative Leader as a role, and no row names one.
+          waitingOn: lens === "info" ? firstName(g.requester, "สาย Marketing") : "Creative Leader",
         });
       }
     });
 
-    // Not shown to the person who asked — they are waiting on the answer, not
-    // holding it.
-    if (canReleaseBriefEdit(ctx.role) && awaitsBriefUnlockDecision(g)
-      && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys)) {
+    if (awaitsBriefUnlockDecision(g)) {
       out.push({
         kind: "briefUnlock", key: `g${g.id}:briefUnlock`, b: g.b, g,
         waitingSince: g.briefUnlock?.requestedAt || g.createdAt || "",
+        // Not the person who asked — they are waiting on the answer, not
+        // holding it, however senior they are.
+        mine: canReleaseBriefEdit(ctx.role) && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys),
+        waitingOn: "Creative Leader",
       });
     }
   }
   return out;
 }
 
-/** Wrap the already-filtered lists from the page into rows and sort the whole
- *  inbox as one queue. The filtering rules for these five live where they
- *  always have (they are one-line predicates on the page); what this adds is a
- *  single order across all of them, so "what has been waiting longest" is
- *  answerable without reading six separate sections. */
+/** A campaign still waiting on somebody. The two pending statuses wait on
+ *  different people and neither waits on the whole company:
+ *    Waiting for Approval → the CMO decides
+ *    Ready for Review     → nobody approves it; its OWNER still has to submit */
+const campaignPending = (c: CampaignRow) =>
+  ["Waiting for Approval", "Ready for Review"].includes((c.status ?? "").trim());
+
+/** Stages that still need someone in the approval tier to act. */
+const PENDING_REQ_STAGES = new Set(["Submitted", "CMO Review", "Revision"]);
+
+/** The whole inbox: every open decision on a visible brand, oldest first, each
+ *  tagged with whether it is the reader's to make. */
 export function buildApprovalRows(input: {
   captions: ContentItem[];
-  graphics: ApprovalRow[];
+  graphics: Graphic[];
   campaigns: CampaignRow[];
   requests: RequestRow[];
   expenses: ExpenseReq[];
   kol: Task[];
-}): ApprovalRow[] {
-  return [
-    ...input.captions.map((post): ApprovalRow => ({
-      kind: "caption", key: `c:${post.id}`, b: post.b, post, waitingSince: post.createdAt || "",
-    })),
-    ...input.graphics,
-    ...input.campaigns.map((c): ApprovalRow => ({
+}, ctx: ApprovalCtx): ApprovalRow[] {
+  const rows: ApprovalRow[] = [];
+
+  // ── Captions ────────────────────────────────────────────────────────────
+  // Addressed to the person who asked for the post; only an unaddressed one
+  // falls back to the planning side, so nothing is stranded with no owner.
+  for (const post of input.captions) {
+    if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
+    const reviewer = captionReviewer(post);
+    // Nobody signs off their own words. captionOwner, not post.owner: on a post
+    // still marked "Unassigned" the planner IS the writer, and reading the raw
+    // field let them approve themselves.
+    const wroteIt = captionOwner(post).toLowerCase() === ctx.me.trim().toLowerCase();
+    rows.push({
+      kind: "caption", key: `c:${post.id}`, b: post.b, post,
+      waitingSince: post.createdAt || "",
+      mine: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
+      waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),
+    });
+  }
+
+  rows.push(...selectGraphicApprovals(input.graphics, ctx));
+
+  // ── Campaigns ───────────────────────────────────────────────────────────
+  for (const c of input.campaigns) {
+    if (!campaignPending(c) || !ctx.isVisible(c.b)) continue;
+    const forApproval = (c.status ?? "").trim() === "Waiting for Approval";
+    rows.push({
       kind: "campaign", key: `cam:${c.id}`, b: c.b, c, waitingSince: "",
-    })),
-    ...input.requests.map((r): ApprovalRow => ({
+      mine: forApproval
+        ? ctx.canApproveCampaign
+        // Fail-closed on a blank name: while the member row loads, `me` is ""
+        // and an owner-less campaign would match everybody.
+        : !!ctx.me.trim() && (c.owner ?? "").trim() === ctx.me.trim(),
+      waitingOn: forApproval ? DEFAULT_APPROVER : firstName(c.owner, "เจ้าของแคมเปญ"),
+    });
+  }
+
+  // ── Requests ────────────────────────────────────────────────────────────
+  // Budget cards are excluded — they appear as actionable expense rows below.
+  for (const r of input.requests) {
+    if (!PENDING_REQ_STAGES.has(r.stage) || r.type === "Budget" || !ctx.isVisible(r.b)) continue;
+    rows.push({
       kind: "request", key: `req:${r.id}`, b: r.b, r, waitingSince: "",
-    })),
-    ...input.expenses.map((r): ApprovalRow => ({
+      mine: isSamePerson(r.approver, ctx.myKeys), waitingOn: firstName(r.approver, "ผู้อนุมัติ"),
+    });
+  }
+
+  // ── Expenses ────────────────────────────────────────────────────────────
+  // The gate is a role, read from the same permissions matrix the database
+  // checks (Finance >= Approve) — this UI and
+  // supabase/security_p12_expense_approval.sql can never disagree about who
+  // may decide. Rows people cannot READ never arrive here at all: RLS decides
+  // what fetchExpenseRequests returns.
+  for (const r of input.expenses) {
+    if (r.status !== "Waiting Approval" || !ctx.isVisible(r.b)) continue;
+    rows.push({
       kind: "expense", key: `exp:${r._id ?? r.ref ?? `${r.b}-${r.category}`}`, b: r.b, r,
       waitingSince: r.createdAt || "",
-    })),
-    ...input.kol.map((t): ApprovalRow => ({
+      // The expense row carries no approver column — the gate IS the role.
+      mine: ctx.canApproveExpense, waitingOn: DEFAULT_APPROVER,
+    });
+  }
+
+  // ── KOL proposals ───────────────────────────────────────────────────────
+  for (const t of input.kol) {
+    if (t.status !== "Need Approval" || ctx.doneIds.has(t.id) || !ctx.canSeeBrandLabel(t.brand)) continue;
+    rows.push({
       kind: "kol", key: `kol:${t.id}`, b: null, t, waitingSince: "",
-    })),
-  ].sort(byWaitingLongest);
+      mine: isSamePerson(t.assignee, ctx.myKeys), waitingOn: firstName(t.assignee, "ผู้อนุมัติ"),
+    });
+  }
+
+  return rows.sort(byWaitingLongest);
 }
 
 /** Count per kind, for the chip badges. Every kind is present (as 0) so the

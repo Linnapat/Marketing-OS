@@ -264,7 +264,10 @@ function MyTasksPageInner() {
   const approvalRows = useApprovalRows({
     campaigns, requests, expenseReqs, graphics, posts, tasks, doneIds, viewAs,
   });
-  const approvalCount = approvalRows.length;
+  // The badge counts what is YOURS. The queue also holds the team's open
+  // decisions so nothing is invisible, but a number on a tab is a promise that
+  // it can be worked down to zero — and you cannot clear somebody else's.
+  const approvalCount = approvalRows.filter((r) => r.mine).length;
   // Budget context for an expense request: the campaign's budget, what's already
   // been approved against it, and what's left if this one goes through. Matches
   // on campaign_id when the row has it (a rename breaks name matching), else on
