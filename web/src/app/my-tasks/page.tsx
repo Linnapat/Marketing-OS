@@ -1,7 +1,6 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { DEFAULT_APPROVER } from "@/lib/approval";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -9,13 +8,11 @@ import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek, byDueThenPriori
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
-import { OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
+import { APPROVAL_CENTER, OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { fetchRequests } from "@/lib/db/requests";
-import { RequestRow } from "@/lib/data/requests";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
@@ -25,16 +22,10 @@ import { useNotifications } from "@/lib/useNotifications";
 
 
 import { optimistic } from "@/lib/optimistic";
-import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { approveKolProposal } from "@/lib/db/kol";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { fetchContent } from "@/lib/db/content";
-import { ContentItem } from "@/lib/data/content";
 import { Graphic, Feedback, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
-import { expenseBudgetOf } from "@/lib/data/approvals";
-import { useApprovalRows } from "@/lib/useApprovalRows";
-import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -83,7 +74,7 @@ const ALL_GRAPHIC_TABS: readonly GTab[] = [];
 
 const SCOPE_FILTERS = [
   { id: "all", label: "All tasks" }, { id: "today", label: "Today" }, { id: "week", label: "This week" },
-  { id: "approvals", label: "My approvals" }, { id: "stuck", label: "Stuck" },
+  { id: "stuck", label: "Stuck" },
 ];
 // Whether finished work is unfolded on this board. Remembered per browser, the
 // same way FinishedFold remembers a list — the choice is a habit, not a
@@ -103,15 +94,11 @@ export default function MyTasksPage() {
 function MyTasksPageInner() {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
-  const [activeTab, setActiveTab] = useState<"myDay" | "approval">("myDay");
   const [people, setPeople] = useState<Person[]>([]);
   // Personal view only — always the signed-in member (Team view lives in Team mood board).
   const [viewAs, setViewAs] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
-  const [requests, setRequests] = useState<RequestRow[]>([]);
-  const [expenseReqs, setExpenseReqs] = useState<ExpenseReq[]>([]);
   const [graphics, setGraphics] = useState<Graphic[]>([]);
-  const [posts, setPosts] = useState<ContentItem[]>([]);
   // Same idea for campaign briefs — one gate, shared with the page that holds
   // the Approve button, so this inbox can never offer what that page refuses.
   //
@@ -183,11 +170,6 @@ function MyTasksPageInner() {
   // to know which tab the request was hiding behind.
   const wantsApprovals = searchParams.get(OPEN_PARAM.tab) === "approval";
   const [tasksLoaded, setTasksLoaded] = useState(false);
-  // The instant every "waiting N days" on the queue is measured from. Zero
-  // until mount on purpose — Date.now() during render gives the server and the
-  // client two different answers, which React reports as a hydration mismatch.
-  const [now, setNow] = useState(0);
-  useEffect(() => { setNow(Date.now()); }, []);
   const openedRef = useRef<string | null>(null);
 
 
@@ -219,23 +201,19 @@ function MyTasksPageInner() {
       if (internal.length) setPeople(internal.map((m) => ({ name: m.name, role: m.role, color: m.color || "#9A9387" })));
     }).catch(() => {});
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
-    fetchRequests().then((r) => { if (alive) setRequests(r); }).catch(() => {});
-    fetchExpenseRequests().then((r) => { if (alive) setExpenseReqs(r); }).catch(() => {});
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
-    fetchContent().then((c) => { if (alive) setPosts(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   // Open the card the notification was about, once the real list is in. The
   // param is dropped afterwards so closing the drawer does not reopen it, and a
   // task that is gone says so instead of leaving the board looking normal.
-  // The approval queue is a tab, not a row, so it needs no loaded list — switch
-  // as soon as the link says so, then drop the param.
+  // ?tab=approval used to switch to a tab on this page. The queue is its own
+  // module now, so the link forwards there instead of landing on a task board
+  // with nothing to show — old Slack DMs and emails carry this param and will
+  // keep arriving for months.
   useEffect(() => {
-    if (!wantsApprovals) return;
-    setActiveTab("approval");
-    setScopeFilter("approvals");
-    router.replace("/my-tasks");
+    if (wantsApprovals) router.replace(APPROVAL_CENTER);
   }, [wantsApprovals, router]);
 
   useEffect(() => {
@@ -248,8 +226,8 @@ function MyTasksPageInner() {
     router.replace("/my-tasks");
   }, [openTaskId, tasks, tasksLoaded, router]);
 
-  // My Approval inbox — campaigns + requests where the current person is the
-  // approver (available to anyone in an approval tier).
+  // Tasks carry a brand LABEL, not a BrandId, so they need their own
+  // visibility test. "All brands" and a blank label are visible to everyone.
   const canSeeBrandLabel = (value?: string | null) => {
     if (brandVisibility.allowAll) return true;
     const raw = (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -257,24 +235,6 @@ function MyTasksPageInner() {
     return brandOptions.some((id) => raw.includes(id) || raw.includes(BRANDS[id].name.toLowerCase().replace(/[^a-z0-9]+/g, "")));
   };
 
-  // Everything waiting on this person, from every module — one shared hook so
-  // this board and /my-approvals can never disagree about what is open. The
-  // data is passed in rather than fetched inside, because this page already
-  // holds all six lists for its own views.
-  const approvalRows = useApprovalRows({
-    campaigns, requests, expenseReqs, graphics, posts, tasks, doneIds, viewAs,
-  });
-  // The badge counts what is YOURS. The queue also holds the team's open
-  // decisions so nothing is invisible, but a number on a tab is a promise that
-  // it can be worked down to zero — and you cannot clear somebody else's.
-  const approvalCount = approvalRows.filter((r) => r.mine).length;
-  // Budget context for an expense request: the campaign's budget, what's already
-  // been approved against it, and what's left if this one goes through. Matches
-  // on campaign_id when the row has it (a rename breaks name matching), else on
-  // brand + name — never on name alone, since names repeat across brands.
-  const budgetOf = useMemo(() => expenseBudgetOf(campaigns, expenseReqs), [campaigns, expenseReqs]);
-  // Approve / reject inline — sync the row locally so the card updates at once.
-  const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
   const colorOf = (n: string) => people.find((p) => p.name === n)?.color ?? "#9A9387";
 
   // Lock the view to the signed-in member; keep viewAs valid when the member list loads.
@@ -296,22 +256,6 @@ function MyTasksPageInner() {
       () => { if (before) setTasks((ts) => ts.map((t) => (t.id === id ? before : t))); },
       () => updateTaskDb(id, p),
       "บันทึก Task ไม่สำเร็จ",
-    );
-  };
-  const approveExpense = (r: ExpenseReq) => {
-    void optimistic(
-      () => setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Approved", approved: x.requested } : x))),
-      () => setExpenseReqs((xs) => xs.map((x) => (x.ref === r.ref && x._id === r._id ? r : x))),
-      () => approveExpenseRequest(r, r.requested),
-      "อนุมัติ Expense ไม่สำเร็จ",
-    );
-  };
-  const rejectExpense = (r: ExpenseReq, reason: string) => {
-    void optimistic(
-      () => setExpenseReqs((xs) => xs.map((x) => (x === r ? { ...x, status: "Rejected", rejectReason: reason } : x))),
-      () => setExpenseReqs((xs) => xs.map((x) => (x.ref === r.ref && x._id === r._id ? r : x))),
-      () => rejectExpenseRequest(r, reason, approverName),
-      "Reject Expense ไม่สำเร็จ",
     );
   };
 
@@ -362,20 +306,11 @@ function MyTasksPageInner() {
   const myWaiting = myTasks.filter((t) => getStatus(t) === "Waiting").length;
   const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
 
-  const openMyDay = () => {
-    setActiveTab("myDay");
-    if (scopeFilter === "approvals") setScopeFilter("all");
-  };
-  const openMyApprovals = () => {
-    setScopeFilter("approvals");
-    setActiveTab("approval");
-  };
 
   const matchScope = (t: Task) => {
     const st = getStatus(t);
     if (scopeFilter === "today") return (daysUntilDue(t) ?? 1) <= 0 || st === "Stuck";
     if (scopeFilter === "week") return isDueThisWeek(t) || ["In Progress", "Stuck", "Waiting", "Need Approval"].includes(st);
-    if (scopeFilter === "approvals") return st === "Need Approval";
     if (scopeFilter === "stuck") return st === "Stuck";
     return true;
   };
@@ -395,7 +330,7 @@ function MyTasksPageInner() {
       <CampaignPageHeaderSection
         eyebrow="MY TASKS"
         title="My Tasks"
-        description="Personal workspace, approvals, and team workload in one calm command center."
+        description="Personal workspace and team workload in one calm command center. งานที่รออนุมัติย้ายไป Approval Center แล้ว"
         right={<NotificationBell tone="light" />}
       />
 
@@ -406,21 +341,21 @@ function MyTasksPageInner() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-[13px] font-semibold text-faint">
-                Viewing as {viewAs} · approvals, focus work, and team support in one place
+                Viewing as {viewAs} · focus work and team support in one place
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span onClick={openMyDay} style={chip(activeTab === "myDay")}>My Day</span>
-                <span onClick={openMyApprovals} style={chip(activeTab === "approval")} className="relative">
-                  My approvals{approvalCount > 0 && <span className="ml-[6px] text-[10px] font-bold px-[6px] py-[1px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{approvalCount}</span>}
-                </span>
-              </div>
+              {/* Sign-off left this page for Approval Center — a personal task
+                  board and a queue of decisions are two different jobs, and the
+                  queue was invisible as a chip on somebody else's screen. */}
+              <Link href={APPROVAL_CENTER} className="text-[12.5px] font-bold text-accent hover:underline">
+                รออนุมัติ → Approval Center
+              </Link>
             </div>
             <DateFilterBar value={date} onChange={setDate} />
           </div>
         </CampaignCommandBar>
       </div>
 
-      {activeTab === "myDay" ? (
+      {(
         <div className="flex flex-col gap-[18px]">
           {/* The inbox. Comments and sent-back work used to go only to a LINE
               group and an inbox nobody opened, so the person they were for had
@@ -494,7 +429,7 @@ function MyTasksPageInner() {
               {SCOPE_FILTERS.map((f) => (
                 <span
                   key={f.id}
-                  onClick={() => f.id === "approvals" ? openMyApprovals() : setScopeFilter(f.id)}
+                  onClick={() => setScopeFilter(f.id)}
                   style={chip(scopeFilter === f.id)}
                 >
                   {f.label}
@@ -555,8 +490,6 @@ function MyTasksPageInner() {
             <ListView tasks={visibleTasks} getStatus={getStatus} onOpen={setDrawerId} onOpenGraphic={openGraphicAt} colorOf={colorOf} graphicOf={graphicOf} />
           )}
         </div>
-      ) : (
-        <ApprovalQueue rows={approvalRows} now={now} budgetOf={budgetOf} onOpenTask={setDrawerId} onOpenGraphic={openGraphicAt} onApprove={approveExpense} onReject={rejectExpense} />
       )}
 
       {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}

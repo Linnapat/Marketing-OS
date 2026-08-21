@@ -28,6 +28,17 @@ export interface NavGroup {
 
 export const NAV: NavGroup[] = [
   {
+    // Its own heading, above everything: this is where the day starts for
+    // anyone who signs work off, and it was invisible for months as a chip
+    // inside somebody else's task board. (Path is /approval-center, not
+    // /approvals — that one is a permanent redirect, see next.config.mjs.)
+    label: "Approval",
+    items: [
+      { href: "/approval-center", label: "Approval Center", icon: Stamp, ready: true },
+      { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
+    ],
+  },
+  {
     items: [
       // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
       // route now redirects to Campaigns, which is the real front door.
@@ -39,10 +50,6 @@ export const NAV: NavGroup[] = [
     label: "QA",
     items: [
       { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
-      // The weekly pass over edits made to campaigns that were already approved.
-      // Nobody is blocked by what is in here, so it sits with the QA screens
-      // rather than in front of the planning work.
-      { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
       { href: "/platforms", label: "Platform Performance", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: true },
       // Lives under Performance Center as a route, but it is the monthly people
@@ -76,11 +83,6 @@ export const NAV: NavGroup[] = [
   {
     label: "Team",
     items: [
-      // Above My Tasks on purpose: the approvals inbox lived inside that board
-      // as a filter chip, and nobody opens a task board looking for it. Same
-      // list, same rules — just a door of its own. (Path is /my-approvals, not
-      // /approvals: that one is a permanent redirect, see next.config.mjs.)
-      { href: "/my-approvals", label: "Approvals", icon: Stamp, ready: true },
       { href: "/my-tasks", label: "My Tasks", icon: CheckSquare, ready: true },
       { href: "/team", label: "Team", icon: Users, ready: true },
       { href: "/trash", label: "Trash", icon: Trash2, ready: true },

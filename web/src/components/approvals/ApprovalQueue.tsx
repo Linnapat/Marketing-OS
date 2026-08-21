@@ -61,9 +61,13 @@ const GRAPHIC_TAB: Record<string, GTab> = {
   artwork: "assets", vdo: "assets", photo: "assets", storyboard: "overview", briefUnlock: "brief",
 };
 
-/** Red past two days, amber before it — the same line the expense card has
+/** A week is the line. Past it the queue is not slow, it has stopped — and the
+ *  header says so in red rather than leaving it to be noticed row by row. */
+const STALE_DAYS = 7;
+
+/** Red past a week, amber past two days — the same line the expense card has
  *  always drawn, now applied to every kind. */
-const ageColor = (d: number) => (d >= 7 ? "#B33A2E" : d >= 2 ? "#C68A1E" : "#8A8175");
+const ageColor = (d: number) => (d >= STALE_DAYS ? "#B33A2E" : d >= 2 ? "#C68A1E" : "#8A8175");
 
 function AgePill({ iso, now }: { iso: string; now: number }) {
   const d = waitingDays(iso, now);
@@ -121,11 +125,10 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
   const mineRows = useMemo(() => rows.filter((r) => r.mine), [rows]);
   const scoped = scope === "mine" ? mineRows : rows;
   const counts = useMemo(() => countByKind(scoped), [scoped]);
-  // A chip for a kind with nothing in it is a dead button; only draw the ones
-  // that have work. "all" always shows so there is a way back.
-  const chips = useMemo(
-    () => APPROVAL_KIND_ORDER.filter((k) => counts[k] > 0),
-    [counts],
+  // Anything past a week is the queue failing, not the queue working.
+  const stalled = useMemo(
+    () => scoped.filter((r) => (waitingDays(r.waitingSince, now) ?? 0) >= STALE_DAYS).length,
+    [scoped, now],
   );
   // Narrowing to a kind and then clearing the last of it would otherwise leave
   // an empty list under a chip that no longer exists.
@@ -135,6 +138,32 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
     [scoped, active],
   );
 
+  // The oldest thing waiting in each lane. A count alone says how much is open;
+  // this says whether any of it has been abandoned, which is the number a
+  // command centre exists to put in front of someone.
+  const oldestOf = useMemo(() => {
+    const out = {} as Record<ApprovalKind, number | null>;
+    for (const k of APPROVAL_KIND_ORDER) {
+      const ages = scoped.filter((r) => r.kind === k)
+        .map((r) => waitingDays(r.waitingSince, now))
+        .filter((d): d is number => d !== null);
+      out[k] = ages.length ? Math.max(...ages) : null;
+    }
+    return out;
+  }, [scoped, now]);
+
+  // Caption, Artwork and VDO always get a lane, empty or not. VDO spent a long
+  // time folded into "Graphic work" and a tile that disappears on a quiet week
+  // is how it gets folded back in — the lanes are the shape of the work, not a
+  // summary of today's rows. Everything else appears when it has something.
+  const ALWAYS: ApprovalKind[] = ["caption", "artwork", "vdo"];
+  const lanes = useMemo(
+    () => APPROVAL_KIND_ORDER.filter((k) => ALWAYS.includes(k) || counts[k] > 0),
+    // ALWAYS is a module-level constant in spirit — listing it would churn the memo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [counts],
+  );
+
   const scopeToggle = (
     <div className="flex items-center gap-[3px] p-[3px] rounded-pill flex-shrink-0" style={{ background: "#F2EFE9" }}>
       <ScopeTab label="ของฉัน" count={mineRows.length} on={scope === "mine"} onClick={() => setScope("mine")} />
@@ -142,17 +171,39 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
     </div>
   );
 
+  const controls = (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-[13px] font-semibold text-faint">
+          {scope === "mine" ? "รอคุณตัดสินใจ" : "ค้างอยู่ทั้งทีม"} {scoped.length} รายการ
+          {stalled > 0 && (
+            <span className="ml-[8px] font-bold" style={{ color: "#B33A2E" }}>· ค้างเกิน {STALE_DAYS} วัน {stalled} รายการ</span>
+          )}
+        </div>
+        {scopeToggle}
+      </div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(132px,1fr))" }}>
+        <Lane label="ทั้งหมด" icon="🗂" count={scoped.length} oldest={null}
+          on={active === "all"} onClick={() => setKind("all")} />
+        {lanes.map((k) => (
+          <Lane key={k} label={APPROVAL_META[k].label} icon={APPROVAL_META[k].icon} count={counts[k]}
+            oldest={oldestOf[k]} on={active === k} onClick={() => setKind(k)} />
+        ))}
+      </div>
+    </div>
+  );
+
   if (scoped.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-end">{scopeToggle}</div>
+        {controls}
         <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
           <div>
             <div className="text-[15px] font-bold text-ink">
               {scope === "mine" ? "ไม่มีงานรอคุณอนุมัติ 🎉" : "ไม่มีงานค้างอนุมัติในทีม 🎉"}
             </div>
             <div className="text-[12.5px] text-faint mt-1">
-              {emptyHint ?? "แคปชั่น อาร์ตเวิร์ก VDO แคมเปญ และการเบิกงบที่รอคุณอนุมัติจะมาโผล่ที่นี่"}
+              {emptyHint ?? "แคปชั่น อาร์ตเวิร์ก VDO แคมเปญ และการเบิกงบที่รออนุมัติจะมาโผล่ที่นี่"}
             </div>
             {/* Clear on your side but the team still has work stuck: say so
                 here rather than let an empty screen read as "all done". */}
@@ -169,17 +220,7 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-[7px] flex-wrap">
-          <Chip label="ทั้งหมด" count={scoped.length} on={active === "all"} onClick={() => setKind("all")} />
-          {chips.map((k) => (
-            <Chip key={k} label={`${APPROVAL_META[k].icon} ${APPROVAL_META[k].label}`} count={counts[k]}
-              on={active === k} onClick={() => setKind(k)} />
-          ))}
-        </div>
-        {scopeToggle}
-      </div>
-
+      {controls}
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
         {visible.map((row) => {
           switch (row.kind) {
@@ -362,13 +403,29 @@ function ScopeTab({ label, count, on, onClick }: { label: string; count: number;
   );
 }
 
-function Chip({ label, count, on, onClick }: { label: string; count: number; on: boolean; onClick: () => void }) {
+/** One lane of the command centre: how much is open in this kind of work, and
+ *  how long the worst of it has waited. Doubles as the filter — a number you
+ *  cannot click is a number you have to go and act on somewhere else. */
+function Lane({ label, icon, count, oldest, on, onClick }: {
+  label: string; icon: string; count: number; oldest: number | null; on: boolean; onClick: () => void;
+}) {
+  const quiet = count === 0;
   return (
-    <button onClick={onClick}
-      className={`text-[12px] font-bold px-[11px] py-[6px] rounded-pill border transition ${on ? "text-white" : "text-muted bg-white hover:border-accent"}`}
-      style={on ? { background: "#211F1C", borderColor: "#211F1C" } : { borderColor: "#ECE6DA" }}>
-      {label}
-      <span className="ml-[6px] text-[11px] font-extrabold" style={{ opacity: on ? 0.8 : 0.55 }}>{count}</span>
+    <button onClick={onClick} disabled={quiet}
+      className={`text-left px-[11px] py-[9px] rounded-[12px] border transition ${on ? "text-white" : quiet ? "bg-white" : "bg-white hover:border-accent"}`}
+      style={on ? { background: "#211F1C", borderColor: "#211F1C" }
+        : { borderColor: "#ECE6DA", opacity: quiet ? 0.55 : 1, cursor: quiet ? "default" : "pointer" }}>
+      <div className="text-[11px] font-bold truncate" style={on ? undefined : { color: "#8A8175" }}>
+        {icon} {label}
+      </div>
+      <div className="flex items-baseline gap-[6px] mt-[2px]">
+        <span className={`text-[19px] font-extrabold leading-none ${on ? "" : "text-ink"}`}>{count}</span>
+        {oldest !== null && oldest > 0 && (
+          <span className="text-[10.5px] font-bold" style={{ color: on ? "rgba(255,255,255,0.7)" : ageColor(oldest) }}>
+            ค้างสุด {oldest} วัน
+          </span>
+        )}
+      </div>
     </button>
   );
 }

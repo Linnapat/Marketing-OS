@@ -1,22 +1,25 @@
 "use client";
 
-// Approvals — one destination for every decision waiting on you.
+// Approval Center — the module that owns every decision the team has open.
 //
-// The inbox itself is not new: it has been a filter chip inside /my-tasks
-// ("My approvals") since the old Approval Queue was folded into the Status
-// Board. What was missing was a door. Nobody opens someone else's task board
-// looking for their own approvals, so captions, artwork and storyboards aged
-// behind a tab that only the people who already knew about it ever pressed.
+// It began as a filter chip inside /my-tasks ("My approvals"), and that is
+// where it kept getting stuck: a personal task board and a queue of decisions
+// are two different jobs, and nobody opens someone else's board looking for
+// their own sign-offs. So captions, artwork and storyboards aged behind a tab
+// that only the people who already knew about it ever pressed. It is a module
+// now, with its own place in the rail — and My Tasks links here rather than
+// keeping a copy, because two screens showing the same queue is how they start
+// disagreeing about what is open.
 //
-// This page is the door. It shares its list, its rules and its cards with the
-// tab (useApprovalRows → ApprovalQueue), so the two can never show different
-// work — and My Tasks keeps its version for people who live on that board.
+// Lanes, not one "Graphic" pile: Caption, Artwork and VDO each hold a lane
+// whether or not they have work today. VDO spent a long time folded into
+// "Graphic work" even though workKind() has classified it separately since it
+// existed, and a lane that vanishes on a quiet week is how it gets folded back.
 //
-// The path is /my-approvals rather than /approvals on purpose: /approvals is a
-// PERMANENT (308) redirect to the Status Board in next.config.mjs, and every
-// browser that ever followed it has that cached. Reusing the path would send
-// exactly the people who used the old queue somewhere else, with no way to
-// clear it from our side.
+// The path is /approval-center rather than /approvals: that one is a PERMANENT
+// (308) redirect to the Status Board in next.config.mjs, cached by every
+// browser that ever followed it, and nothing we deploy clears it from their
+// disk. See APPROVAL_CENTER in lib/deepLink.
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -49,15 +52,15 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task, TASKS } from "@/lib/data/tasks";
 
-export default function MyApprovalsPage() {
+export default function ApprovalCenterPage() {
   return (
     <Suspense fallback={<div className="px-5 py-10 text-[13px] text-faint">Loading…</div>}>
-      <MyApprovalsPageInner />
+      <ApprovalCenterInner />
     </Suspense>
   );
 }
 
-function MyApprovalsPageInner() {
+function ApprovalCenterInner() {
   const router = useRouter();
   const { member, user } = useAuth();
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -131,9 +134,9 @@ function MyApprovalsPageInner() {
   return (
     <div style={{ paddingBottom: 40 }}>
       <CampaignPageHeaderSection
-        eyebrow="APPROVALS"
-        title="รออนุมัติของคุณ"
-        description="ทุกอย่างที่ยังรออนุมัติ — แคปชั่น อาร์ตเวิร์ก VDO สตอรี่บอร์ด แคมเปญ และการเบิกงบ เรียงตามงานที่รอนานที่สุด · เห็นทั้งทีมได้ กดได้เฉพาะที่เป็นของคุณ"
+        eyebrow="APPROVAL CENTER"
+        title="ศูนย์อนุมัติงาน"
+        description="ทุกงานที่ยังรออนุมัติ รวมไว้ที่เดียว แยกเลนตามชนิดงาน เรียงตามงานที่รอนานที่สุด · เห็นทั้งทีมได้ กดได้เฉพาะที่เป็นของคุณ"
         right={<NotificationBell tone="light" />}
       />
 
