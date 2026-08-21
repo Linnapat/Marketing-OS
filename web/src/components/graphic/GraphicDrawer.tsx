@@ -2,7 +2,9 @@
 
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useState } from "react";
-import { fetchMembers, fetchJsonSetting } from "@/lib/db/settings";
+import { fetchMembers, fetchJsonSetting, fetchBrandConfigs, Member } from "@/lib/db/settings";
+import { resolveBrandLead } from "@/lib/db/assignments";
+import { BrandCfg } from "@/lib/data/settings";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
@@ -189,9 +191,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       toastError(`บันทึกผลอนุมัติงานเร่งด่วนไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setRushBusy(false); }
   };
-  // Real Marketing Manager / BGL from Settings for the approval chain — no more
-  // hardcoded "Mei T." Shows "—" when the role has no member yet.
-  const [bglApprover, setBglApprover] = useState("—");
+  // Who signs off THIS job's brand (resolveBrandLead), not "the first member
+  // holding Marketing Manager / BGL" — that printed the Teppen · Mainichi
+  // manager on every Omakase Don job, a brand she has no access to. null when
+  // the brand has nobody: the step is dropped instead of naming a stand-in.
+  const [brandLead, setBrandLead] = useState<string | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [brandConfigs, setBrandConfigs] = useState<BrandCfg[] | null>(null);
   // Only the Creative Leader may release a brief top-up (canReleaseBriefEdit),
   // so the request has to reach them by NAME — a notification cannot be sent to
   // a role. The ask used to say "→ Creative Leader" in its text and go to the
@@ -199,10 +205,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [creativeLeader, setCreativeLeader] = useState("");
   useEffect(() => {
     let alive = true;
+    fetchBrandConfigs().then((configs) => {
+      if (alive) setBrandConfigs(configs.length ? configs : null);
+    }).catch(() => {});
     fetchMembers().then((ms) => {
       if (!alive) return;
-      const m = ms.find((x) => /marketing manager|bgl|brand lead/i.test(x.role));
-      if (m) setBglApprover(m.name);
+      setMembers(ms);
       // Same trap as the rush decision: two people hold "Creative Leader" and
       // members arrive ordered by email, so `find` returned the QA account and
       // every brief top-up request went there. Ask Settings → Teams who leads.
@@ -218,6 +226,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  useEffect(() => {
+    setBrandLead(members.length ? resolveBrandLead(g.b, members, brandConfigs ?? undefined) : null);
+  }, [g.b, members, brandConfigs]);
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefDetails = creativeBriefDetails(g);
@@ -1293,10 +1304,18 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
           {tab === "approval" && (
             <div className="flex flex-col gap-3">
-              {[["Designer submitted", "green", g.designer], ["Requester reviewed", g.openFb > 0 ? "gold" : "green", g.requester], ["Marketing Manager / BGL approval", g.stage === "Approved" || g.stage === "Delivered" ? "green" : "neutral", bglApprover], // The CMO step was gated on `g.pendingApprover === g.approver`, which is always
-              // true — both are set from the same value when the request is created and
-              // neither ever moves — so the "neutral" branch was unreachable. Kept the
-              // behaviour, dropped the comparison that pretended to decide it.
+              {/* The brand lead step is dropped when the brand has nobody scoped to
+                  it, and when the lead IS the requester — the same person cannot
+                  hold both step 2 and step 3, which is the rule everywhere else
+                  (a requester does not sign off their own brief). Either way the
+                  job goes straight from the requester to the CMO.
+                  The CMO step was gated on `g.pendingApprover === g.approver`, which is
+                  always true — both are set from the same value when the request is
+                  created and neither ever moves — so the "neutral" branch was
+                  unreachable. Kept the behaviour, dropped the comparison that
+                  pretended to decide it. */}
+              {[["Designer submitted", "green", g.designer], ["Requester reviewed", g.openFb > 0 ? "gold" : "green", g.requester],
+              ...(brandLead && !sameName(brandLead, g.requester) ? [["Brand lead approval", g.stage === "Approved" || g.stage === "Delivered" ? "green" : "neutral", brandLead]] : []),
               ["CMO approval", g.stage === "Delivered" ? "green" : "gold", g.approver]].map(([role, tone, person], i) => (
                 <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: tone === "green" ? "#4E7A4E" : tone === "gold" ? "#C68A1E" : "#C0B8AD" }}>{i + 1}</div>
