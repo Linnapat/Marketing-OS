@@ -694,7 +694,10 @@ export function KolProfileCard({ kolId, compact = false }: { kolId: string; comp
           {initials(row.display_name)}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[18px] font-extrabold text-ink truncate">{row.display_name}</div>
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="text-[18px] font-extrabold text-ink truncate">{row.display_name}</span>
+            {row.kol_code && <span className="text-[11.5px] font-bold text-faint whitespace-nowrap">{row.kol_code}</span>}
+          </div>
           <div className="text-[12px] text-faint mt-[4px] flex items-center gap-2 flex-wrap">
             {row.tier && (
               <span className="text-[11px] font-bold px-[9px] py-[3px] rounded-pill"

@@ -58,8 +58,13 @@ console.log("\n— Category เป็น dropdown: ต้องไม่ทำ�
   // ทะเบียนจริงมี 24 โปรไฟล์ที่ category ไม่อยู่ในลิสต์ใหม่ (Coach 13 · Japanese
   // Community 5 · Athlete 3 · Nightlife/Food/Foodie อย่างละ 1) — เขียนไว้ก่อนมี
   // ลิสต์ ถ้า dropdown มีแต่ค่าทางการ เปิดฟอร์มแก้เรตครั้งเดียวก็เปลี่ยนหมวดให้เขาเงียบ ๆ
-  is("ลิสต์ทางการมี 7 หมวดตามที่ทีมขอ", KOL_CATEGORIES.join(" · "),
-    "Food Review · Lifestyle · Family · Celebrity · KOC / Staff · Coaching · Inter Kol");
+  // 7 หมวดที่ทีมกำหนด + Athlete/Nightlife ที่เพิ่มเข้ามา 19 ส.ค. (สองอันนี้
+  // ใช้อยู่จริงในทะเบียนและไม่ใช่เรื่องเดียวกับหมวดไหน) · ส่วน Coach /
+  // Japanese Community / Food / Foodie ถูก "รวม" ไม่ใช่ "เพิ่ม"
+  is("ลิสต์ทางการ 9 หมวด", KOL_CATEGORIES.join(" · "),
+    "Food Review · Lifestyle · Family · Celebrity · KOC / Staff · Coaching · Inter Kol · Athlete · Nightlife");
+  is("ไม่มีคำสะกดซ้ำความหมายเดิมอยู่ในลิสต์",
+    ["Coach", "Japanese Community", "Food", "Foodie"].filter((c) => (KOL_CATEGORIES as readonly string[]).includes(c)).join(","), "");
   is("ไม่มีค่าเดิม = ลิสต์ทางการล้วน", categoryOptions("").length, KOL_CATEGORIES.length);
   is("ค่าเดิมอยู่ในลิสต์แล้ว = ไม่เพิ่มซ้ำ", categoryOptions("Lifestyle").length, KOL_CATEGORIES.length);
   is("ค่าเดิมนอกลิสต์ = ถูกเก็บไว้เป็นตัวเลือก", categoryOptions("Japanese Community").includes("Japanese Community"), true);

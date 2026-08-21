@@ -49,6 +49,9 @@ export interface BranchRow {
 
 export interface DetailRow {
   id: number;
+  /** The library's KOL-0001 code, when the row is linked to a master profile
+   *  and that profile has been numbered. The sheet's "KOL ID" column. */
+  code: string;
   campaign: string;
   branch: string;
   handle: string;
@@ -105,7 +108,13 @@ const pct = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 :
 const per = (part: number, whole: number) => (whole > 0 ? part / whole : 0);
 
 /** Everything the monthly report shows, from the rows currently in view. */
-export function buildKolSummary(rows: Kol[], targets: SummaryTargets): KolSummary {
+export function buildKolSummary(
+  rows: Kol[],
+  targets: SummaryTargets,
+  /** Looks up the library code for a booking. Injected rather than imported so
+   *  this file stays pure and the report can be tested without a database. */
+  codeFor?: (k: Kol) => string | undefined,
+): KolSummary {
   const details: DetailRow[] = rows.map((k) => {
     const ps = kolPosts(k);
     const t = postsTotals(ps);
@@ -115,6 +124,7 @@ export function buildKolSummary(rows: Kol[], targets: SummaryTargets): KolSummar
     const totalCost = k.totalCost || paidCost + foodCost;
     return {
       id: k.id,
+      code: codeFor?.(k) ?? "",
       campaign: k.campaign || "—",
       branch: (k.branch || "").trim() || "ไม่ระบุสาขา",
       handle: k.h || "",

@@ -13,16 +13,22 @@ export const KOL_TIERS = ["Nano", "Micro", "Mid", "Macro", "Mega"] as const;
  *  apart and cannot be filtered as one thing. */
 export const KOL_CATEGORIES = [
   "Food Review", "Lifestyle", "Family", "Celebrity", "KOC / Staff", "Coaching", "Inter Kol",
+  // Added 19 Aug: two categories the library was already using that are not the
+  // same idea as anything on the list above. The other four in use — "Coach",
+  // "Japanese Community", "Food", "Foodie" — WERE the same idea under an older
+  // spelling and were merged into Coaching / Inter Kol / Food Review instead;
+  // keeping both spellings on a picker is the drift the picker exists to stop.
+  "Athlete", "Nightlife",
 ] as const;
 
 /** The options to show for a profile whose category is `current`.
  *
- *  24 profiles in the library carry a word that is not on the list above
- *  ("Coach", "Japanese Community", "Athlete", "Nightlife", "Food", "Foodie"),
- *  written before there was one. Their own value is offered alongside the
- *  official set so opening the edit form does not quietly refile them under
- *  whatever happened to be first — retiring those words is a decision for the
- *  team, not a side effect of someone fixing a rate card. */
+ *  Athlete and Nightlife joined the official list on 19 Aug, and the four
+ *  older spellings were merged away — but a value can still be off-list (an
+ *  import, or a category the team retires later). Its own value is offered
+ *  alongside the official set so opening the edit form does not quietly refile
+ *  that profile under whatever happened to be first: renaming somebody's
+ *  category is a decision, not a side effect of fixing a rate card. */
 export function categoryOptions(current?: string | null): string[] {
   const value = (current ?? "").trim();
   const official = [...KOL_CATEGORIES] as string[];
@@ -59,6 +65,7 @@ const CATEGORY_TONE: Record<string, Tone> = {
   // hues of "Coach" and "Japanese Community" — the same creators under the
   // team's newer word, so a half-migrated library still reads as one colour.
   "Family":             { bg: "#FDF2F6", border: "#F2CFDE", fg: "#A54B76" },
+  // Athlete and Nightlife keep the hues they already had as ad-hoc values.
   "Coaching":           { bg: "#EDF3EC", border: "#CCE1C7", fg: "#456F3D" },
   "Inter Kol":          { bg: "#F6EFE6", border: "#E5D3BB", fg: "#8A6231" },
 };

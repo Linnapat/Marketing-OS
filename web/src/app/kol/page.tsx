@@ -668,7 +668,25 @@ function PerformanceSummary({ list, brand, month }: { list: Kol[]; brand: string
     setAppSetting(key, JSON.stringify(next)).catch((error) => toastError(`บันทึกเป้าหมายไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   };
 
-  const s = useMemo(() => buildKolSummary(list, targets), [list, targets]);
+  // Library codes for the bookings on screen. One fetch for the page, keyed by
+  // masterKolId — the booking row does not carry the code, the profile does.
+  const [codes, setCodes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    fetchKolScorecards("", 400)
+      .then((rows) => {
+        if (!alive) return;
+        const m: Record<string, string> = {};
+        for (const r of rows) if (r.kol_code) m[r.kol_id] = r.kol_code;
+        setCodes(m);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const s = useMemo(
+    () => buildKolSummary(list, targets, (k) => (k.masterKolId ? codes[k.masterKolId] : undefined)),
+    [list, targets, codes],
+  );
   const pctText = (v: number) => `${v.toFixed(1)}%`;
 
   const cell = (label: string, value: string, hint?: string, fg?: string) => (
@@ -799,9 +817,9 @@ function PerformanceSummary({ list, brand, month }: { list: Kol[]; brand: string
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-panel text-white">
-                    {["Campaign", "Branch", "KOL", "Category", "Followers", "Status", "วันไปร้าน", "วันโพสต์",
+                    {["Campaign", "Branch", "KOL ID", "KOL", "Category", "Followers", "Status", "วันไปร้าน", "วันโพสต์",
                       "Total Reach", "Total Engage", "Food Cost", "Paid Cost", "Total Cost", "Cost/Reach", "Engage Rate"]
-                      .map((h, i) => <th key={h} className={`${th} ${i < 6 ? "text-left" : "text-right"}`}>{h}</th>)}
+                      .map((h, i) => <th key={h} className={`${th} ${i < 7 ? "text-left" : "text-right"}`}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -809,6 +827,7 @@ function PerformanceSummary({ list, brand, month }: { list: Kol[]; brand: string
                     <tr key={d.id} className="border-b border-line4 last:border-0">
                       <td className={`${td} text-muted`}>{d.campaign}</td>
                       <td className={`${td} text-muted`}>{d.branch}</td>
+                      <td className={`${td} text-muted font-semibold`}>{d.code || "—"}</td>
                       <td className={`${td} font-bold text-ink`}>{d.name}<span className="text-faint font-normal"> {d.handle}</span></td>
                       <td className={`${td} text-muted`}>{d.category || "—"}</td>
                       <td className={`${td} text-right text-muted`}>{d.followers.toLocaleString()}</td>
@@ -1235,7 +1254,12 @@ function KolLibraryRow({ r, cols, platformCols, onOpen }: {
         <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: "#6b6258" }}>{initials(r.display_name)}</span>
         {/* Partner lives in its own column at the far right — inline it ate the
             name and left every row's badges at a different x. */}
-        <button onClick={() => onOpen(r.kol_id)} className="text-[13px] font-bold text-ink truncate text-left hover:underline">{r.display_name}</button>
+        <span className="min-w-0">
+          <button onClick={() => onOpen(r.kol_id)} className="block text-[13px] font-bold text-ink truncate text-left hover:underline">{r.display_name}</button>
+          {/* The number the team's own report has always identified creators
+              by. Blank until the backfill runs — never a fake one. */}
+          {r.kol_code && <span className="block text-[10px] text-faint font-semibold">{r.kol_code}</span>}
+        </span>
       </span>
       <span>
         {r.tier
