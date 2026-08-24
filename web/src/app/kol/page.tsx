@@ -930,6 +930,9 @@ function PostResultRow({ kol, post, index, cols, numCls, onSaved }: {
   const [reach, setReach] = useState(post.reach || 0);
   const [engagement, setEngagement] = useState(post.engagement || 0);
   const [state, setState] = useState<"clean" | "dirty" | "saving" | "saved">("clean");
+  // Which figure is being edited right now. A saved number reads as text; this
+  // is what puts one field — and only one — back into a box.
+  const [editing, setEditing] = useState<null | "reach" | "engagement">(null);
 
   // A row re-rendered from fresh server data drops a draft nobody has typed
   // into; one mid-edit keeps it.
@@ -970,6 +973,26 @@ function PostResultRow({ kol, post, index, cols, numCls, onSaved }: {
   };
   const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter") void save(); };
 
+  /** A recorded figure is a fact, not a form. Once it is saved it reads as
+   *  plain text — a row of input boxes made finished work look like it was
+   *  still waiting to be filled in. Click the number to put it back in a box;
+   *  an empty figure stays a box, because that one really is waiting. */
+  const numCell = (field: "reach" | "engagement", value: number, set: (n: number) => void) => {
+    if (state === "clean" && editing !== field && value > 0) {
+      return (
+        <button type="button" onClick={() => setEditing(field)} title="แก้ไขตัวเลข"
+          className="w-full text-[12px] text-right font-semibold text-ink px-2 py-[5px] rounded-[7px] border border-transparent hover:bg-white hover:border-line2">
+          {value.toLocaleString()}
+        </button>
+      );
+    }
+    return (
+      <input type="number" value={value || ""} placeholder="0" className={numCls} autoFocus={editing === field}
+        onChange={(e) => { set(Number(e.target.value) || 0); touch(); }}
+        onBlur={() => { setEditing(null); void save(); }} onKeyDown={onKey} />
+    );
+  };
+
   return (
     <div className="grid gap-y-1 px-5 py-2 items-center bg-ivory/40" style={{ gridTemplateColumns: cols }}>
       <span className="flex items-center gap-2 text-[11.5px] text-muted min-w-0 pl-6">
@@ -985,10 +1008,8 @@ function PostResultRow({ kol, post, index, cols, numCls, onSaved }: {
               className="flex-1 min-w-0 text-[11.5px] px-2 py-[4px] rounded-[7px] border border-line2 bg-white outline-none" />}
       </span>
       <span></span>
-      <input type="number" value={reach || ""} placeholder="0" className={numCls}
-        onChange={(e) => { setReach(Number(e.target.value) || 0); touch(); }} onBlur={save} onKeyDown={onKey} />
-      <input type="number" value={engagement || ""} placeholder="0" className={numCls}
-        onChange={(e) => { setEngagement(Number(e.target.value) || 0); touch(); }} onBlur={save} onKeyDown={onKey} />
+      {numCell("reach", reach, setReach)}
+      {numCell("engagement", engagement, setEngagement)}
       <span className="text-[11.5px] text-faint text-right">{fmtPct(rate)}</span>
       <span className="text-[10.5px] text-right col-span-2 flex items-center justify-end gap-2">
         {state === "dirty" && (
