@@ -10,6 +10,7 @@ import { Task } from "@/lib/data/tasks";
 import { todayIso } from "@/lib/data/brief";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 import { sameName } from "@/lib/identity";
+import { stamp } from "@/lib/format";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
@@ -873,7 +874,9 @@ export function productionSteps(g: Graphic): ProductionStep[] {
       owner: g.storyboardOwner?.trim() || "Creative Content",
       state: sbDone ? "done" : "active",
       detail: sbDone
-        ? `อนุมัติโดย ${g.storyboardDecidedBy || "—"}`
+        // The moment, not just the name: a storyboard signed off after the
+        // shoot was booked is a different story from one signed off before.
+        ? `อนุมัติโดย ${g.storyboardDecidedBy || "—"}${stamp(g.storyboardDecidedAt) ? ` · ${stamp(g.storyboardDecidedAt)}` : ""}`
         : g.storyboardStatus === "Submitted" ? "ส่งแล้ว รออนุมัติ"
           : g.storyboardStatus === "Revision" ? `ส่งกลับแก้: ${g.storyboardNote || "—"}`
             : "ยังไม่ได้ส่ง",
@@ -2112,7 +2115,7 @@ export function creativeBriefDetails(g: Graphic): { label: string; value: string
       ? [{
         label: "Storyboard",
         value: g.storyboardStatus === "Approved"
-          ? `เปิด storyboard (อนุมัติแล้ว${g.storyboardDecidedBy ? ` โดย ${g.storyboardDecidedBy}` : ""})`
+          ? `เปิด storyboard (อนุมัติแล้ว${g.storyboardDecidedBy ? ` โดย ${g.storyboardDecidedBy}` : ""}${stamp(g.storyboardDecidedAt) ? ` · ${stamp(g.storyboardDecidedAt)}` : ""})`
           : `เปิด storyboard (${g.storyboardStatus === "Submitted" ? "รอเจ้าของงานอนุมัติ" : "ถูกส่งกลับแก้ — รอเวอร์ชันใหม่"})`,
         href: g.storyboardLink.trim(),
       }]

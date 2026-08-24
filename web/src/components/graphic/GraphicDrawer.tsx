@@ -30,6 +30,7 @@ import Link from "next/link";
 import { fetchContentById } from "@/lib/db/content";
 import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
+import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
@@ -662,13 +663,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               )}
               {g.rushStatus === "Rejected" && (
                 <div className="rounded-[14px] border px-4 py-3" style={{ background: "#FFF5F4", borderColor: "#F5C8C4" }}>
-                  <div className="text-[12.5px] font-extrabold text-status-red">✕ ไม่อนุมัติให้เร่ง{g.rushDecidedBy ? ` — โดย ${g.rushDecidedBy}` : ""}</div>
+                  <div className="text-[12.5px] font-extrabold text-status-red">✕ ไม่อนุมัติให้เร่ง{g.rushDecidedBy ? ` — โดย ${g.rushDecidedBy}` : ""}{stamp(g.rushDecidedAt) ? ` · ${stamp(g.rushDecidedAt)}` : ""}</div>
                   <div className="mt-1 text-[11.5px] text-status-red">ปรับวันส่งงานให้เข้ารอบปกติ แล้วส่งใหม่{g.rushDecisionNote ? ` · ${g.rushDecisionNote}` : ""}</div>
                 </div>
               )}
               {g.rushStatus === "Approved" && (
                 <div className="rounded-[12px] border px-4 py-2 text-[11.5px] font-semibold" style={{ background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }}>
-                  ⚡ งานเร่งด่วน · อนุมัติแล้ว{g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}
+                  ⚡ งานเร่งด่วน · อนุมัติแล้ว{g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}{stamp(g.rushDecidedAt) ? ` · ${stamp(g.rushDecidedAt)}` : ""}
                 </div>
               )}
               {/* How long it has sat where it is. The stage alone never said
@@ -744,7 +745,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[12.5px] font-extrabold" style={{ color: "#4E7A4E" }}>✓ รับงานแล้ว</span>
                     <span className="text-[11.5px] font-semibold" style={{ color: "#4E7A4E" }}>
-                      โดย {g.acceptedBy || "—"} · {g.acceptedAt ? new Date(g.acceptedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : ""}
+                      โดย {g.acceptedBy || "—"} · {stamp(g.acceptedAt)}
                     </span>
                     {canAcceptWork && (
                       <button onClick={releaseWork} className="ml-auto text-[11.5px] font-bold rounded-[9px] px-3 py-[6px] border border-line2 bg-surface text-muted">
@@ -870,7 +871,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                     )}
                     {g.storyboardStatus === "Approved" && (
                       <div className="mt-1 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
-                        ✓ อนุมัติโดย {g.storyboardDecidedBy || "—"}
+                        ✓ อนุมัติโดย {g.storyboardDecidedBy || "—"}{stamp(g.storyboardDecidedAt) ? ` · ${stamp(g.storyboardDecidedAt)}` : ""}
                       </div>
                     )}
                   </div>
@@ -1162,7 +1163,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                 <div className="rounded-card px-4 py-3" style={{ background: "#EEF4EE", border: "1px solid #CFE4C2" }}>
                   <div className="text-[12.5px] font-bold" style={{ color: "#4E7A4E" }}>
                     ✓ Brief approved by {g.briefApprovedBy}
-                    {g.briefApprovedAt ? ` · ${new Date(g.briefApprovedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}
+                    {stamp(g.briefApprovedAt) ? ` · ${stamp(g.briefApprovedAt)}` : ""}
                   </div>
                 </div>
               ) : !canSignOffBrief ? (
@@ -1539,7 +1540,7 @@ function CaptionBesideArtwork({ post }: { post: ContentItem | null }) {
       )}
       {approved && (
         <div className="mt-2 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
-          ✓ อนุมัติแล้วโดย {post.captionApprovedBy || "—"}
+          ✓ อนุมัติแล้วโดย {post.captionApprovedBy || "—"}{stamp(post.captionApprovedAt) ? ` · ${stamp(post.captionApprovedAt)}` : ""}
         </div>
       )}
     </div>
@@ -1790,9 +1791,15 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                                 <div className="text-[10.5px] text-faint">{meta.checks}</div>
                               </div>
                               {v ? (
-                                <span className="text-[11px] font-bold flex-shrink-0" style={{ color: v.verdict === "pass" ? "#4E7A4E" : "#C2691E" }}>
-                                  {v.verdict === "pass" ? "✓ ผ่าน" : "↩ ให้แก้"} · {v.by}
-                                </span>
+                                <div className="flex-shrink-0 text-right">
+                                  <div className="text-[11px] font-bold" style={{ color: v.verdict === "pass" ? "#4E7A4E" : "#C2691E" }}>
+                                    {v.verdict === "pass" ? "✓ ผ่าน" : "↩ ให้แก้"} · {v.by}
+                                  </div>
+                                  {/* The verdict is half the record — a piece
+                                      approved before the last re-export was
+                                      approved against a different file. */}
+                                  {stamp(v.at) && <div className="text-[10.5px] text-faint">{stamp(v.at)}</div>}
+                                </div>
                               ) : (
                                 <span className="text-[11px] font-semibold flex-shrink-0" style={{ color: "#C68A1E" }}>รอตรวจ</span>
                               )}

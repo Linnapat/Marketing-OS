@@ -16,7 +16,7 @@ import { BrandFilterValue, brandName, brandColor } from "@/lib/brands";
 import { useRole } from "@/lib/role";
 import { useCanApproveExpense } from "@/lib/usePermGates";
 import { optimistic } from "@/lib/optimistic";
-import { baht } from "@/lib/format";
+import { baht, stamp } from "@/lib/format";
 import { buildCsv, PnlRow, EXP_CATEGORIES, STATUS_TONE } from "@/lib/data/finance";
 import { fetchExpenseRequests, approveExpenseRequest, rejectExpenseRequest, updateExpenseRequest, ExpenseReq } from "@/lib/db/finance";
 import { daysWaiting } from "@/components/finance/ExpenseTabs";
@@ -897,7 +897,14 @@ function ApprovalTab({ brand }: { brand: BrandFilterValue }) {
                     </td>
                     <td className={`${cell} text-right`}>
                       {isRejected ? <StatusBadge tone="red">✕ Rejected</StatusBadge>
-                        : isApproved ? <StatusBadge tone="green">✓ Approved</StatusBadge>
+                        : isApproved ? (
+                          <span className="inline-flex flex-col items-end gap-[2px]">
+                            <StatusBadge tone="green">✓ Approved</StatusBadge>
+                            {/* Money is the one approval where "when" is asked
+                                for later: the row is the paper trail. */}
+                            {stamp(r.approvedAt) && <span className="text-[10.5px] text-faint">{stamp(r.approvedAt)}</span>}
+                          </span>
+                        )
                         : isPending ? (
                           <span className="inline-flex items-center gap-2">
                             {wait !== null && wait >= 1 && <b className="text-[11px]" style={{ color: wait >= 2 ? "#B33A2E" : "#C68A1E" }}>รอ {wait} วัน</b>}
