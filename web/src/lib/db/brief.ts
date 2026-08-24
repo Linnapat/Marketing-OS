@@ -421,6 +421,27 @@ export async function fetchAllBriefs(): Promise<Record<string, CampaignBrief>> {
   return out;
 }
 
+/** Briefs indexed both ways. `byId` is keyed on campaigns.id — the only key
+ *  that is actually unique — and is what anything holding a campaignId should
+ *  use. `byName` is the legacy map, kept for rows written before campaignId
+ *  existed; two campaigns sharing a name collapse to one entry there, which is
+ *  precisely why byId is the one to prefer. One query serves both. */
+export async function fetchBriefIndex(): Promise<{ byId: Record<string, CampaignBrief>; byName: Record<string, CampaignBrief> }> {
+  const db = supabase();
+  const empty = { byId: {} as Record<string, CampaignBrief>, byName: {} as Record<string, CampaignBrief> };
+  if (!db) return empty;
+  const { data, error } = await db.from("campaigns").select("id,name,data");
+  if (error || !data) return empty;
+  const byId: Record<string, CampaignBrief> = {};
+  const byName: Record<string, CampaignBrief> = {};
+  for (const r of data) {
+    if (!r.data) continue;
+    byId[String(r.id)] = r.data as CampaignBrief;
+    byName[r.name as string] = r.data as CampaignBrief;
+  }
+  return { byId, byName };
+}
+
 /** Read a saved brief back (campaigns.data). Returns null when unavailable. */
 export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | null> {
   const db = supabase();
