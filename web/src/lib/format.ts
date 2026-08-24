@@ -33,3 +33,21 @@ export function barWidth(value: number): string {
 }
 
 export { THIN };
+
+/** When a decision was made, in Thai — "24 ส.ค. 2569 14:32".
+ *
+ *  Every sign-off in the app used to read "อนุมัติโดย Gik" and stop there: the
+ *  name without the moment. That is fine while the decision is fresh and
+ *  useless a week later, when the question is whether the approval came before
+ *  or after the version now sitting in the folder. The `…At` fields were
+ *  always written — only the screens never showed them.
+ *
+ *  Returns "" for a missing or unparseable value so a caller can append it
+ *  without guarding, and so rows written before a timestamp existed degrade to
+ *  the old name-only line instead of "Invalid Date".
+ */
+export function stamp(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+}

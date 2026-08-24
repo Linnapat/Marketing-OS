@@ -28,7 +28,7 @@ import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
-import { baht } from "@/lib/format";
+import { baht, stamp } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
 import { logCollaboration, ensureKolProfile } from "@/lib/db/kolMaster";
 import { fetchKolScorecards, KolScorecardRow } from "@/lib/db/kolScorecard";
@@ -849,11 +849,13 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
             <span className="ml-auto text-[11px] font-semibold">
               อนุมัติไว้ {baht(kol.approvedAmount, { compact: true })}
               {kol.approvedBy ? ` · โดย ${kol.approvedBy}` : ""}
+              {stamp(kol.approvedAt) ? ` · ${stamp(kol.approvedAt)}` : ""}
             </span>
           ) : (
             <span className="ml-auto text-[11px] font-bold" style={{ color: "#B3641E" }}>
               ⚠ ยอดเปลี่ยนหลังอนุมัติ — เคยอนุมัติ {baht(kol.approvedAmount, { compact: true })}
-              {kol.approvedBy ? ` โดย ${kol.approvedBy}` : ""} · ตอนนี้ {baht(committedAmount(kol), { compact: true })} ต้องขออนุมัติใหม่
+              {kol.approvedBy ? ` โดย ${kol.approvedBy}` : ""}
+              {stamp(kol.approvedAt) ? ` (${stamp(kol.approvedAt)})` : ""} · ตอนนี้ {baht(committedAmount(kol), { compact: true })} ต้องขออนุมัติใหม่
             </span>
           )
         )}

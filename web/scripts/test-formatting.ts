@@ -3,7 +3,7 @@
  * Each is one line of code and used on nearly every page, so a regression here is
  * wide. Run: node --import tsx scripts/test-formatting.ts */
 
-import { baht, num, mult, pct, barWidth } from "../src/lib/format";
+import { baht, num, mult, pct, barWidth, stamp } from "../src/lib/format";
 import { csvEscape, buildCsv } from "../src/lib/data/finance";
 import { channelUrl, platformIcon, PLATFORM_ICON } from "../src/lib/platforms";
 import { canonicalBucket, canonicalAdsPlatform, BUCKET_TO_CATEGORY, ADS_PLATFORM_TO_CATEGORY } from "../src/lib/data/financeCategories";
@@ -46,6 +46,22 @@ is("เกิน 100 ถูกตัดที่ 100 (แถบไม่ทะ�
 is("ติดลบถูกตัดที่ 0 (แถบไม่กลับด้าน)", barWidth(-20), "0%");
 is("100 พอดี", barWidth(100), "100%");
 is("0 พอดี", barWidth(0), "0%");
+
+console.log("\n— stamp(): เวลาที่มีการอนุมัติ —");
+// Never "Invalid Date" on a screen: rows approved before the timestamp column
+// existed have to fall back to the name-only line, not shout at the reader.
+is("ไม่มีค่า → ว่าง", stamp(undefined), "");
+is("null → ว่าง", stamp(null), "");
+is("ข้อความว่าง → ว่าง", stamp(""), "");
+is("ค่าที่อ่านไม่ออก → ว่าง (ไม่ใช่ Invalid Date)", stamp("ไม่ใช่วันที่"), "");
+{
+  // Mid-day UTC so no timezone the team runs in can push it across a year.
+  const out = stamp("2026-08-24T07:32:00.000Z");
+  is("ปีเป็น พ.ศ.", out.includes("2569"), true);
+  is("มีเวลาแบบ ชั่วโมง:นาที", /\d{1,2}:\d{2}/.test(out), true);
+  is("เดือนเป็นตัวย่อภาษาไทย", out.includes("ส.ค."), true);
+  is("เรียกซ้ำได้ผลเดิม", stamp("2026-08-24T07:32:00.000Z"), out);
+}
 
 console.log("\n— csvEscape: ไฟล์ export ต้องไม่พังเมื่อเจออักขระพิเศษ —");
 is("ข้อความปกติไม่ต้องครอบ", csvEscape("Wagyu Festival"), "Wagyu Festival");

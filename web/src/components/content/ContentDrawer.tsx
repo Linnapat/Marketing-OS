@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
+import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
 import { createRevisionTask } from "@/lib/db/tasks";
@@ -989,7 +990,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
 
               {captionApproved(item) && (
                 <div className="rounded-[12px] px-3 py-[10px] text-[12px] font-semibold" style={{ background: "#EEF4EE", color: "#4E7A4E", border: "1px solid #CFE4C2" }}>
-                  ✓ caption อนุมัติแล้วโดย {item.captionApprovedBy || "—"}
+                  ✓ caption อนุมัติแล้วโดย {item.captionApprovedBy || "—"}{stamp(item.captionApprovedAt) ? ` · ${stamp(item.captionApprovedAt)}` : ""}
                 </div>
               )}
 
@@ -1030,7 +1031,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 <div className="text-[12.5px] text-faint mt-2">{item.feedbackRounds ?? 0} feedback round(s)</div>
                 {item.approvalStatus === "Approved" && item.approvedBy && (
                   <div className="text-[12px] text-status-green font-semibold mt-1">
-                    ✓ Approved by {item.approvedBy}{item.approvedAt ? ` · ${new Date(item.approvedAt).toLocaleString()}` : ""}
+                    ✓ Approved by {item.approvedBy}{stamp(item.approvedAt) ? ` · ${stamp(item.approvedAt)}` : ""}
                   </div>
                 )}
               </div>
