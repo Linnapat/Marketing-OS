@@ -328,8 +328,9 @@ export default function KolPage() {
 
       </div>
 
-      {/* Needs Attention */}
-      {alerts.length > 0 && (
+      {/* Needs Attention — Request List only: the alerts are per-deal rows, so
+          they belong with the list, not on Plan / Performance / Library. */}
+      {tab === "list" && alerts.length > 0 && (
         <div className="mt-4 bg-status-goldBg border border-accent-border rounded-cardLg p-4">
           <div className="text-[12px] font-bold text-status-gold mb-3">⚠ Needs Attention · {alerts.length}</div>
           <div className="flex flex-col gap-2">
