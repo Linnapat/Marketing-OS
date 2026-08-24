@@ -17,7 +17,7 @@ import { baht } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
 import {
-  KOLS, ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
+  ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
   kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
@@ -32,7 +32,7 @@ import { buildKolSummary, DEFAULT_TARGETS, type SummaryTargets } from "@/lib/dat
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchBrandConfigs } from "@/lib/db/settings";
 import { BRANDS_DATA, BrandCfg } from "@/lib/data/settings";
-import { appendBriefKolItem, syncBriefKolFromRows, fetchAllBriefs } from "@/lib/db/brief";
+import { appendBriefKolItem, syncBriefKolFromRows, fetchBriefIndex } from "@/lib/db/brief";
 import { CampaignBrief, kolBudgetTotal } from "@/lib/data/brief";
 import { createTaskDb } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
@@ -62,6 +62,43 @@ function plusDaysIso(n: number): string { const d = new Date(); d.setDate(d.getD
 // list already carries the same stage badges.
 const TABS = [["list", "KOL / Creator Request List"], ["plan", "KOL Plan"], ["performance", "Performance"], ["database", "KOL Library"]] as const;
 type Tab = (typeof TABS)[number][0];
+
+/** A campaign's identity for grouping and budget lookups. campaignId is the
+ *  real relational link; the campaign NAME is a display string that two brands
+ *  can and do share, so it is only the fallback for rows written before
+ *  campaignId existed — and it is scoped by brand even then. Grouping on the
+ *  bare name merged two brands' deals into one budget check. */
+const campaignKey = (k: Kol): string => k.campaignId || `name:${k.b}:${k.campaign || "—"}`;
+
+/** Whether a row belongs to a campaign, matched by id when both sides have one. */
+const sameCampaign = (k: Kol, campaignId: string | undefined, campaignName: string): boolean =>
+  campaignId && k.campaignId ? k.campaignId === campaignId : k.campaign === campaignName;
+
+/** The date a KOL row is filtered on: its due date, else the posting date.
+ *  `postDueDate` is a non-optional string that carries the literal "TBD" when
+ *  no date is known, so the old `postDueDate ?? postingDate` never once reached
+ *  the fallback — a row due "TBD" but posting in September showed up under
+ *  every month rather than September. */
+const kolFilterDate = (k: Kol): string | null => {
+  const real = (v?: string | null) => { const t = (v ?? "").trim(); return t && t !== "TBD" && t !== "—" ? t : null; };
+  return real(k.postDueDate) ?? real(k.postingDate);
+};
+
+/** The KOL envelope on a brief: the figure typed in Budget Allocation, falling
+ *  back to the KOL Plan's item sum for older briefs. */
+const kolEnvelope = (b?: CampaignBrief): number => (b ? b.budget.kol || kolBudgetTotal(b) : 0);
+
+/** Rows bucketed per campaign, each bucket carrying the name to display. */
+function groupByCampaign(list: Kol[]): { key: string; campaign: string; rows: Kol[] }[] {
+  const m = new Map<string, { key: string; campaign: string; rows: Kol[] }>();
+  for (const k of list) {
+    const key = campaignKey(k);
+    const group = m.get(key) ?? { key, campaign: k.campaign || "—", rows: [] };
+    group.rows.push(k);
+    m.set(key, group);
+  }
+  return Array.from(m.values()).sort((a, b) => a.campaign.localeCompare(b.campaign));
+}
 
 interface KolSavedView { tab: Tab; brand: BrandFilterValue; campaign: string; group: "list" | "campaign"; date: DateFilter }
 
@@ -126,41 +163,62 @@ export default function KolPage() {
   const summaryMonth = date.mode === "month"
     ? `${date.year}-${String(date.month + 1).padStart(2, "0")}`
     : date.mode === "year" ? String(date.year) : "range";
-  const [kols, setKols] = useState<Kol[]>(KOLS);
+  // Starts empty on purpose. Seeding this with the demo KOLS meant a failed
+  // load left six fictional creators — and their fees — on screen in
+  // production, which is the one thing fetchKols refuses to do on its own.
+  const [kols, setKols] = useState<Kol[]>([]);
 
   // Campaign briefs — the KOL envelope from Budget Allocation / KOL Plan, so
-  // the specialist proposes inside the campaign's real budget.
+  // the specialist proposes inside the campaign's real budget. Indexed by
+  // campaign id; the by-name map is only for rows with no campaignId.
   const [briefs, setBriefs] = useState<Record<string, CampaignBrief>>({});
+  const [briefsById, setBriefsById] = useState<Record<string, CampaignBrief>>({});
 
   useEffect(() => {
     let alive = true;
-    fetchKols().then((k) => { if (alive) setKols(k); }).catch(() => {});
-    fetchAllBriefs().then((b) => { if (alive) setBriefs(b); }).catch(() => {});
+    fetchKols()
+      .then((k) => { if (alive) setKols(k); })
+      .catch((error) => toastError(`โหลด KOL ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+    fetchBriefIndex().then((ix) => { if (alive) { setBriefs(ix.byName); setBriefsById(ix.byId); } }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
-  /** KOL budget of a campaign: the envelope typed in Budget Allocation,
-   *  falling back to the KOL Plan's item sum for older briefs. */
-  const kolBudgetOf = (campaignName: string): number => {
-    const b = briefs[campaignName];
-    if (!b) return 0;
-    return b.budget.kol || kolBudgetTotal(b);
-  };
+  /** The brief a KOL row belongs to. campaignId is the real link; the campaign
+   *  name is only a display string and two brands can share one, so it is a
+   *  fallback for legacy rows rather than the lookup key. */
+  const briefOfKol = (k: Kol): CampaignBrief | undefined =>
+    (k.campaignId ? briefsById[k.campaignId] : undefined) ?? briefs[k.campaign];
+
+  /** KOL budget of a group of rows — read off whichever campaign they belong
+   *  to, by id when they carry one. */
+  const kolBudgetOfRows = (rows: Kol[]): number => kolEnvelope(rows.length ? briefOfKol(rows[0]) : undefined);
+
+  /** Budget + committed spend for the request form, which knows the campaign it
+   *  picked by id as well as by name. */
+  const kolBudgetOf = (campaignId: string | undefined, campaignName: string): number =>
+    kolEnvelope((campaignId ? briefsById[campaignId] : undefined) ?? briefs[campaignName]);
+  const kolSpentOf = (campaignId: string | undefined, campaignName: string): number =>
+    kols.reduce((s, k) => s + (sameCampaign(k, campaignId, campaignName) ? (k.totalCost || 0) : 0), 0);
 
   // Campaigns whose committed KOL cost (fee + food of every row) already
-  // exceeds the KOL budget — surfaced before more proposals go out.
+  // exceeds the KOL budget — surfaced before more proposals go out. Grouped by
+  // campaign id, so two brands running a same-named campaign are two rows
+  // checked against their own budgets rather than one merged total.
   const overBudgetCampaigns = useMemo(() => {
-    const byCampaign = new Map<string, number>();
+    const byCampaign = new Map<string, { c: string; spent: number; budget: number }>();
     for (const k of kols) {
       if (!k.campaign || k.campaign === "—") continue;
       if (brand !== "all" && k.b !== brand) continue;
-      byCampaign.set(k.campaign, (byCampaign.get(k.campaign) || 0) + (k.totalCost || 0));
+      const key = campaignKey(k);
+      const brief = (k.campaignId ? briefsById[k.campaignId] : undefined) ?? briefs[k.campaign];
+      const row = byCampaign.get(key) ?? { c: k.campaign, spent: 0, budget: kolEnvelope(brief) };
+      row.spent += k.totalCost || 0;
+      byCampaign.set(key, row);
     }
-    return Array.from(byCampaign.entries())
-      .map(([c, spent]) => ({ c, spent, budget: briefs[c] ? (briefs[c].budget.kol || kolBudgetTotal(briefs[c])) : 0 }))
+    return Array.from(byCampaign.values())
       .filter((x) => x.budget > 0 && x.spent > x.budget)
       .sort((a, b2) => (b2.spent - b2.budget) - (a.spent - a.budget));
-  }, [kols, briefs, brand]);
+  }, [kols, briefs, briefsById, brand]);
 
   // Campaign filter options follow the brand filter; reset when out of range.
   const campaignOptions = useMemo(
@@ -233,7 +291,7 @@ export default function KolPage() {
   const outcome = filterWithReasons(
     kols.filter((k) => brandVisibility.visibleBrands.includes(k.b)),
     [
-      { label: "นอกช่วงเวลา", pass: (k) => inDateFilter(date, k.postDueDate ?? k.postingDate) },
+      { label: "นอกช่วงเวลา", pass: (k) => inDateFilter(date, kolFilterDate(k)) },
       { label: "คนละแบรนด์", pass: (k) => brand === "all" || k.b === brand },
       { label: "คนละแคมเปญ", pass: (k) => campaign === "all" || k.campaign === campaign },
     ],
@@ -377,9 +435,9 @@ export default function KolPage() {
         )}
         {tab === "list" && group === "list" && <CreatorList list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} />}
         {tab === "list" && group === "campaign" && (
-          <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />
+          <KolCampaignGroups list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOfRows} />
         )}
-        {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOf} />}
+        {tab === "plan" && <KolPlan kols={filtered} brand="all" onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} budgetOf={kolBudgetOfRows} />}
         {tab === "performance" && <KolPerformance list={filtered} onOpen={(k) => setDrawer({ kol: k, tab: "profile" })} onUpdate={handleKolUpdate} brand={String(brand)} month={summaryMonth} />}
         {tab === "database" && <KolDatabase />}
       </div>
@@ -398,7 +456,7 @@ export default function KolPage() {
       {requestOpen && (
         <RequestModal nextId={Math.max(0, ...kols.map((k) => k.id)) + 1} onClose={() => setRequestOpen(false)} onCreate={addKol}
           budgetOf={kolBudgetOf}
-          spentOf={(c) => kols.filter((k) => k.campaign === c).reduce((s, k) => s + (k.totalCost || 0), 0)} />
+          spentOf={kolSpentOf} />
       )}
     </>
   );
@@ -465,32 +523,28 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats (creators, fee, stage mix), expandable to the
  *  creator list inside. */
-function KolCampaignGroups({ list, onOpen, budgetOf }: { list: Kol[]; onOpen: (k: Kol) => void; budgetOf?: (campaign: string) => number }) {
+function KolCampaignGroups({ list, onOpen, budgetOf }: { list: Kol[]; onOpen: (k: Kol) => void; budgetOf?: (rows: Kol[]) => number }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const groups = useMemo(() => {
-    const m = new Map<string, Kol[]>();
-    for (const k of list) { const c = k.campaign || "—"; (m.get(c) ?? m.set(c, []).get(c)!).push(k); }
-    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [list]);
+  const groups = useMemo(() => groupByCampaign(list), [list]);
   if (list.length === 0) return <CreatorList list={[]} onOpen={onOpen} />;
   const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
     <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
   );
   return (
     <div className="flex flex-col gap-3">
-      {groups.map(([campaign, ks]) => {
-        const isOpen = openGroups[campaign] ?? true;
+      {groups.map(({ key, campaign, rows: ks }) => {
+        const isOpen = openGroups[key] ?? true;
         const fee = ks.reduce((s, k) => s + (k.fee || 0), 0);
         // Committed cost (fee + food) vs the campaign's KOL budget from the plan.
         const spent = ks.reduce((s, k) => s + (k.totalCost || 0), 0);
-        const budget = budgetOf?.(campaign) ?? 0;
+        const budget = budgetOf?.(ks) ?? 0;
         const remaining = budget - spent;
         const producing = ks.filter((k) => ["Producing", "In Review"].includes(normalizeStage(k.status))).length;
         const posted = ks.filter((k) => ["Posted", "Completed"].includes(normalizeStage(k.status))).length;
         const overdue = ks.filter((k) => k.isOverdue).length;
         return (
-          <div key={campaign} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-            <button onClick={() => setOpenGroups((o) => ({ ...o, [campaign]: !(o[campaign] ?? true) }))}
+          <div key={key} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <button onClick={() => setOpenGroups((o) => ({ ...o, [key]: !(o[key] ?? true) }))}
               className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-ivory/60">
               <span className="text-faint text-[13px]">{isOpen ? "▾" : "▸"}</span>
               <span className="text-[13px] font-extrabold text-ink">🎯 {campaign}</span>
@@ -538,15 +592,17 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
   );
 }
 
-function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void; budgetOf?: (campaign: string) => number }) {
+function KolPlan({ kols, brand, onOpen, budgetOf }: { kols: Kol[]; brand: BrandFilterValue; onOpen: (k: Kol) => void; budgetOf?: (rows: Kol[]) => number }) {
   const list = kols.filter((k) => brand === "all" || k.b === brand);
   const [planView, setPlanView] = useState<"list" | "month" | "week">("month");
   // Per-campaign budget context for the deal — from the campaign's KOL Plan.
   const budgetRows = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const k of list) { if (!k.campaign || k.campaign === "—") continue; m.set(k.campaign, (m.get(k.campaign) || 0) + (k.totalCost || 0)); }
-    return Array.from(m.entries())
-      .map(([c, spent]) => ({ c, spent, budget: budgetOf?.(c) ?? 0 }))
+    return groupByCampaign(list.filter((k) => k.campaign && k.campaign !== "—"))
+      .map(({ campaign, rows }) => ({
+        c: campaign,
+        spent: rows.reduce((s, k) => s + (k.totalCost || 0), 0),
+        budget: budgetOf?.(rows) ?? 0,
+      }))
       .filter((r) => r.budget > 0)
       .sort((a, b) => (a.budget - a.spent) - (b.budget - b.spent));
   }, [list, budgetOf]);
@@ -1498,8 +1554,11 @@ function AddKolModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
 function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
   nextId: number; onClose: () => void; onCreate: (kols: Kol[], item: BriefKolItem, campaign: string) => void;
-  /** KOL budget from the campaign's KOL Plan + committed cost so far. */
-  budgetOf?: (campaign: string) => number; spentOf?: (campaign: string) => number;
+  /** KOL budget from the campaign's KOL Plan + committed cost so far. Both take
+   *  the campaign id as well as the name — the picker knows the id, and names
+   *  are not unique across brands. */
+  budgetOf?: (campaignId: string | undefined, campaignName: string) => number;
+  spentOf?: (campaignId: string | undefined, campaignName: string) => number;
 }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const brandVisibility = useBrandVisibility();
@@ -1605,9 +1664,10 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
               // Budget guard: show the campaign's KOL envelope + what's left,
               // and warn when this requirement would push it over.
               if (!campaign || !budgetOf) return null;
-              const budget = budgetOf(campaign);
+              const pickedId = brandCampaigns.find((c) => c.name === campaign)?.id;
+              const budget = budgetOf(pickedId, campaign);
               if (budget <= 0) return null;
-              const spent = spentOf?.(campaign) ?? 0;
+              const spent = spentOf?.(pickedId, campaign) ?? 0;
               const remaining = budget - spent;
               const thisReq = item.budget || 0;
               const wouldExceed = thisReq > 0 && thisReq > remaining;
