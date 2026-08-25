@@ -27,6 +27,26 @@ import { PAGE_W_PX, MIN_FIT_ZOOM, fitZoom, pagesAtFullSize as pagesAtFullSizeOf,
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
 
+/** The two columns the sheet cannot lose — what the promotion is, and what the
+ *  shop floor has to do about it. Everything else is context somebody may or
+ *  may not need on the wall. */
+const FIXED_COL_WIDTHS = "1.05fr 1.9fr";
+
+/** Columns the person printing can drop. A sheet for one branch does not need
+ *  a Branch column repeating that branch on every row; a sheet of current
+ *  promotions does not need a Status column that says "ใช้งานอยู่" twelve
+ *  times. Dropping them is worth more than shrinking the type, because the
+ *  space goes back to the text that is left. */
+const OPTIONAL_COLS = [
+  { key: "pos", label: "POS Name", width: "1.15fr" },
+  { key: "branch", label: "Branch", width: ".85fr" },
+  { key: "period", label: "Period", width: ".75fr" },
+  { key: "status", label: "Status", width: ".65fr" },
+] as const;
+
+type OptionalCol = (typeof OPTIONAL_COLS)[number]["key"];
+
+
 type PrintTemplate = "board" | "compact" | "checklist";
 
 const PRINT_TEMPLATES: Record<PrintTemplate, { label: string; helper: string }> = {
@@ -534,6 +554,23 @@ export default function OmdStoreCampaignPage() {
    *  default: the sheet exists to be taped to a wall, and a wall sheet that
    *  runs to page 2 is a wall sheet whose second half nobody reads. */
   const [fitOnePage, setFitOnePage] = useState(true);
+  /** Columns left off this sheet. Empty = print everything, which is what the
+   *  sheet did before there was a choice. */
+  const [hiddenCols, setHiddenCols] = useState<Set<OptionalCol>>(() => new Set());
+  const shown = (key: OptionalCol) => !hiddenCols.has(key);
+  const toggleCol = (key: OptionalCol) => setHiddenCols((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const visibleCols = OPTIONAL_COLS.filter((c) => shown(c.key));
+  // Two templates, not one: the screen carries a trailing track for the row's
+  // edit and delete buttons, and paper has no buttons. They were living in the
+  // Status cell, which meant hiding Status also hid the only way to edit a row.
+  const checkTrack = printTemplate === "checklist" ? ".42fr " : "";
+  const bodyTracks = `${FIXED_COL_WIDTHS} ${visibleCols.map((c) => c.width).join(" ")}`.trim();
+  const colTemplate = `${checkTrack}${bodyTracks} auto`;
+  const colTemplatePrint = `${checkTrack}${bodyTracks}`;
   const sheetRef = useRef<HTMLDivElement>(null);
   const [sheetHeight, setSheetHeight] = useState<number | null>(null);
 
@@ -542,7 +579,7 @@ export default function OmdStoreCampaignPage() {
   // background: open the sheet, switch tabs while it loads, come back, and the
   // fit would silently never have been calculated. The short delay is for
   // React to commit the rows and for wrapping to settle.
-  const measureKey = `${filtered.length}|${printTemplate}|${brand}|${branch}|${category}|${periodLabel}`;
+  const measureKey = `${filtered.length}|${printTemplate}|${brand}|${branch}|${category}|${periodLabel}|${[...hiddenCols].sort().join()}`;
   useEffect(() => {
     const id = window.setTimeout(() => setSheetHeight(measurePrintHeight(sheetRef.current)), 60);
     return () => window.clearTimeout(id);
@@ -569,9 +606,9 @@ export default function OmdStoreCampaignPage() {
       // gets, and it has to be right even when the on-screen figure is stale —
       // a row added in another tab, a filter changed a millisecond ago, or a
       // tab that spent the whole load in the background.
-      const root = sheetRef.current?.closest(".print-root") as HTMLElement | null;
-      const height = measurePrintHeight(sheetRef.current);
-      if (root && height) root.style.setProperty("--omd-print-zoom", String(fitZoom(height, fitOnePage)));
+      const sheet = sheetRef.current;
+      const height = measurePrintHeight(sheet);
+      if (sheet && height) sheet.style.setProperty("--omd-print-zoom", String(fitZoom(height, fitOnePage)));
     };
     const off = () => document.body.classList.remove("omd-printing");
     window.addEventListener("beforeprint", on);
@@ -594,8 +631,7 @@ export default function OmdStoreCampaignPage() {
   };
 
   return (
-    <main className={`print-root min-h-screen bg-[#F8F7F3] text-[#17172A] template-${printTemplate}`}
-      style={{ "--omd-print-zoom": printZoom } as React.CSSProperties}>
+    <main className={`print-root min-h-screen bg-[#F8F7F3] text-[#17172A] template-${printTemplate}`}>
       <style jsx global>{`
         /* @page cannot be scoped to a class, so paper size stays here. Every
            other rule lives under .omd-printing instead of inside @media print,
@@ -622,27 +658,20 @@ export default function OmdStoreCampaignPage() {
           /* Set by the fit control; 1 = print at full size. */
           zoom: var(--omd-print-zoom, 1);
         }
-        .omd-printing .omd-print-hero {
-          border-radius: 14px !important;
-          border-color: #d8d4e4 !important;
-          background: linear-gradient(135deg, #ffffff 0%, #f8f7f3 100%) !important;
-          box-shadow: none !important;
-          padding: 8px 12px !important;
-        }
-        /* The strapline explains the module to whoever opens the app. On a
-           sheet taped to a wall it is a paragraph nobody reads costing a line
-           of promotions. */
-        .omd-printing .omd-print-blurb { display: none !important; }
-        .omd-printing .omd-print-meta {
+        /* No masthead on paper. "CAMPAIGN PRINT MODULE / Promotion Summary
+           Print" names the tool to whoever opened the app; the person reading
+           the sheet on a wall already knows what they are looking at, and the
+           block was costing a fifth of the page. What survives is the one thing
+           a loose sheet cannot be read without — whose brand and which branch —
+           on a single line above the tables. */
+        .omd-printing .omd-print-hero { display: none !important; }
+        .omd-printing .omd-print-slug {
           display: flex !important;
-          margin-top: 6px !important;
+          align-items: baseline;
+          gap: 10px;
+          padding: 0 2px 4px !important;
+          border-bottom: 1px solid #ECEAF2 !important;
         }
-        .omd-printing .omd-print-title {
-          font-size: 20px !important;
-          line-height: 1.05 !important;
-        }
-        /* The three big tiles say what the header chips already say — the
-           counts moved in there rather than being dropped. */
         .omd-printing .omd-print-summary { display: none !important; }
         .omd-printing .omd-print-sections {
           margin-top: 6px !important;
@@ -658,14 +687,14 @@ export default function OmdStoreCampaignPage() {
         }
         .omd-printing .omd-table-head {
           display: grid !important;
-          grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+          grid-template-columns: var(--omd-cols-print) !important;
           padding: 4px 10px !important;
           font-size: 8px !important;
           background: #fbfaf7 !important;
         }
         .omd-printing .omd-print-card {
           display: grid !important;
-          grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+          grid-template-columns: var(--omd-cols-print) !important;
           gap: 8px !important;
           padding: 4px 10px !important;
           break-inside: avoid;
@@ -710,10 +739,6 @@ export default function OmdStoreCampaignPage() {
         .omd-printing .template-compact .omd-print-card-meta {
           font-size: 8px !important;
         }
-        .omd-printing .template-checklist .omd-table-head,
-        .omd-printing .template-checklist .omd-print-card {
-          grid-template-columns: .42fr 1.1fr 1.65fr 1fr .8fr .65fr .65fr !important;
-        }
         .omd-printing .template-checklist .omd-check-cell {
           display: block !important;
         }
@@ -735,7 +760,23 @@ export default function OmdStoreCampaignPage() {
         .omd-measure-host .omd-page { zoom: 1 !important; }
       `}</style>
 
-      <div ref={sheetRef} className="omd-page mx-auto max-w-[1400px] px-4 py-4 md:px-6 md:py-5">
+      {/* The variables live on the sheet, not on <main>: the fit measures a
+          CLONE of this element, and a clone lifted away from an ancestor that
+          held its grid template lays out as one column per row — a sheet three
+          times too tall, and a fit computed against it. */}
+      <div ref={sheetRef} className="omd-page mx-auto max-w-[1400px] px-4 py-4 md:px-6 md:py-5"
+        style={{
+          "--omd-print-zoom": printZoom,
+          "--omd-cols": colTemplate,
+          "--omd-cols-print": colTemplatePrint,
+        } as React.CSSProperties}>
+        {/* Paper only. A sheet with no masthead still has to say whose it is:
+            these go up in several branches at once, and a page of promotions
+            with no brand on it is a page somebody tapes to the wrong wall. */}
+        <div className="omd-print-slug hidden text-[11px] font-extrabold text-[#17172A]">
+          <span>{brand === "all" ? "ทุกแบรนด์" : brandName(brand)}</span>
+          <span className="font-bold text-[#706A84]">{filterLabel(branch, "ทุกสาขา")}</span>
+        </div>
         <section className="omd-print-hero rounded-[18px] border border-[#ECEAF2] bg-white px-4 py-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)] md:px-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -865,6 +906,32 @@ export default function OmdStoreCampaignPage() {
             <div className="mt-3">
               <DateFilterBar value={period} onChange={setPeriod} />
             </div>
+            {/* Column chooser. The preview obeys it too rather than hiding
+                columns only on paper — this page IS the preview, and one that
+                shows a column the print will not is a preview that lies. */}
+            <div className="mt-3">
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">คอลัมน์ที่พิมพ์</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <span className="rounded-full border border-[#ECEAF2] bg-[#F6F5FA] px-2.5 py-1 text-[11px] font-bold text-[#9D96AC]"
+                  title="สองคอลัมน์นี้คือเนื้อของใบ ปิดไม่ได้">
+                  Promotion · Details
+                </span>
+                {OPTIONAL_COLS.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => toggleCol(c.key)}
+                    aria-pressed={shown(c.key)}
+                    className="rounded-full border px-2.5 py-1 text-[11px] font-bold"
+                    style={shown(c.key)
+                      ? { borderColor: "#CFC7FF", background: "#EEE9FF", color: "#5B4FD8" }
+                      : { borderColor: "#ECEAF2", background: "#fff", color: "#B5B0C0", textDecoration: "line-through" }}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="mt-3 rounded-[14px] bg-[#FBFAF7] px-3 py-2 text-[11px] font-semibold text-[#706A84]">
               {PRINT_TEMPLATES[printTemplate].helper}
             </div>
@@ -947,14 +1014,13 @@ export default function OmdStoreCampaignPage() {
                   </div>
                 </div>
 
-                <div className="omd-table-head hidden xl:grid grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr] border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]">
+                <div className="omd-table-head hidden xl:grid border-b border-[#ECEAF2] bg-[#FBFAF7] px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8A879A]"
+                  style={{ gridTemplateColumns: "var(--omd-cols)" }}>
                   <div className="omd-check-cell hidden">Done</div>
                   <div>Promotion</div>
                   <div>Details</div>
-                  <div>POS Name</div>
-                  <div>Branch</div>
-                  <div>Period</div>
-                  <div>Status</div>
+                  {visibleCols.map((c) => <div key={c.key}>{c.label}</div>)}
+                  <div className="no-print" />
                 </div>
 
                 <div className="divide-y divide-[#ECEAF2]">
@@ -971,7 +1037,7 @@ export default function OmdStoreCampaignPage() {
                         background: `${brandColor(item.brand)}14`,
                         borderLeft: `3px solid ${brandColor(item.brand)}`,
                       }}
-                      className="omd-print-card grid gap-3 px-4 py-3 xl:grid-cols-[1.05fr_1.9fr_1.15fr_.85fr_.75fr_.65fr]">
+                      className="omd-print-card grid gap-3 px-4 py-3 xl:[grid-template-columns:var(--omd-cols)]">
                       <div className="omd-check-cell hidden">
                         <span className="inline-block h-4 w-4 rounded-[4px] border border-[#9D96AC] bg-white" />
                       </div>
@@ -982,6 +1048,7 @@ export default function OmdStoreCampaignPage() {
                         </div>
                       </div>
                       <div className="omd-print-card-body text-[12px] font-medium leading-relaxed text-[#3E3E55]">{item.description}</div>
+                      {shown("pos") && (
                       <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
                         {/* Editable on screen; the printout shows plain text */}
                         <input
@@ -993,13 +1060,25 @@ export default function OmdStoreCampaignPage() {
                         />
                         <span className="omd-pos-text hidden">{item.posName || "—"}</span>
                       </div>
-                      <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{branchLabel(item, brandBranches[item.brand] ?? [])}</div>
-                      <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
-                        {formatDate(item.startDate)}<br className="omd-print-period-break" />
-                        <span className="text-[#8A879A]"> to {formatDate(item.endDate)}</span>
-                      </div>
-                      <div className="omd-print-card-meta flex items-start justify-between gap-2 text-[12px] font-extrabold" style={{ color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg }}>
-                        <span>{statusLabel(item)}</span>
+                      )}
+                      {shown("branch") && (
+                        <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{branchLabel(item, brandBranches[item.brand] ?? [])}</div>
+                      )}
+                      {shown("period") && (
+                        <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
+                          {formatDate(item.startDate)}<br className="omd-print-period-break" />
+                          <span className="text-[#8A879A]"> to {formatDate(item.endDate)}</span>
+                        </div>
+                      )}
+                      {shown("status") && (
+                        <div className="omd-print-card-meta text-[12px] font-extrabold" style={{ color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg }}>
+                          {statusLabel(item)}
+                        </div>
+                      )}
+                      {/* Row actions in a track of their own. They used to sit
+                          inside the Status cell, so turning Status off took the
+                          only edit and delete buttons with it. */}
+                      <div className="no-print flex items-start justify-end gap-1">
                         {/* Screen only — a printout has no buttons. Manual rows are
                             edited and deleted here; a campaign row's wording is a
                             field on its brief, so its pencil goes there rather
