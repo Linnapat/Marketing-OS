@@ -8,6 +8,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { printedStatus, OMD_STORE_CATEGORY_META, type OmdStorePromotion, type OmdStorePromotionStatus } from "../src/lib/data/omdStorePromotions";
+import { fitZoom, pagesWhenPrinted, pagesAtFullSize, fitBudget, MIN_FIT_ZOOM, PAGE_H_PX } from "../src/lib/data/printFit";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -70,6 +71,37 @@ console.log("\n— หัวข้อหมวด: ใบเดียวใช�
     .map(([key]) => key);
   is("ไม่มีหมวดไหนใส่ชื่อแบรนด์ไว้ในหัวข้อ", offenders.join(",") || "none", "none");
   is("หมวด CRM ใช้ชื่อกลาง", OMD_STORE_CATEGORY_META.crm.printLabel, "Member / CRM");
+}
+
+console.log("\n— ย่อให้พอดี 1 หน้า —");
+{
+  const B = fitBudget();
+  // Already fits: never blow a short sheet up to fill the paper.
+  is("สั้นกว่าหนึ่งหน้า = ไม่ย่อ ไม่ขยาย", fitZoom(B * 0.5), 1);
+  is("พอดีเป๊ะ = ไม่ย่อ", fitZoom(B), 1);
+  is("ปิดสวิตช์ = ไม่ย่อ แม้จะยาว", fitZoom(B * 2, false), 1);
+
+  // Rounding always errs small — a zoom rounded UP is the one that prints
+  // page two.
+  is("ปัดลงเสมอ ไม่ปัดขึ้น", fitZoom(B / 0.815) <= 0.815, true);
+  is("ทศนิยม 2 ตำแหน่ง", Math.round(fitZoom(B / 0.8157) * 1000) % 10, 0);
+
+  // The floor, and the honesty that has to come with it.
+  is("ยาวมาก = หยุดที่พื้น ไม่ย่อต่อ", fitZoom(B * 5), MIN_FIT_ZOOM);
+  is("ที่พื้นแล้วยังไม่พอ ต้องบอกว่ากี่หน้า", pagesWhenPrinted(B * 5, MIN_FIT_ZOOM), 4);
+  is("ยาว 2 หน้านิด ๆ ย่อแล้วเหลือหน้าเดียว", pagesWhenPrinted(B * 1.2, fitZoom(B * 1.2)), 1);
+  is("ยาว 1.4 หน้า ย่อแล้วเหลือหน้าเดียว", pagesWhenPrinted(B * 1.4, fitZoom(B * 1.4)), 1);
+  // 1/0.7 ≈ 1.428 is exactly where the floor stops being enough.
+  is("เกิน 1/0.7 เท่า = ย่อสุดแล้วก็ยังสองหน้า", pagesWhenPrinted(B * 1.6, fitZoom(B * 1.6)), 2);
+
+  is("ความสูงเป็นศูนย์ ไม่พัง", fitZoom(0), 1);
+  is("ค่าประหลาด ไม่พัง", fitZoom(Number.NaN), 1);
+  is("นับหน้าเมื่อความสูงเป็นศูนย์ = 1 หน้า", pagesWhenPrinted(0, 1), 1);
+
+  // The safety margin is real: a sheet that exactly fills the raw page height
+  // must still be treated as too tall.
+  is("เต็มหน้าพอดีแบบไม่เผื่อ = ยังถือว่าเกิน", fitZoom(PAGE_H_PX) < 1, true);
+  is("นับหน้าเต็มขนาด", pagesAtFullSize(B * 2.2), 3);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
