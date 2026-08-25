@@ -1270,6 +1270,135 @@ export function statusFromReview(d: Pick<GraphicDeliverable, "review" | "status"
   return p.passed ? "Approved" : "Revision";
 }
 
+/* ── The ladder the Approval tab draws ─────────────────────────────────────
+ *
+ * The tab used to print a fixed four-rung ladder — designer → requester →
+ * brand lead → CMO — whose rungs were guessed from fields that answer other
+ * questions. The requester rung went gold whenever ANY feedback thread was
+ * open, so a question about the shoot date left a piece that had been signed
+ * off reading "Pending"; the CMO rung stayed gold until the job was marked
+ * Delivered, which is a handover, not an approval. The tab therefore
+ * contradicted the Assets tab standing next to it.
+ *
+ * It now reports the gate that actually exists: the two lenses. Both pass and
+ * the piece is approved — nobody countersigns after that.
+ *
+ * The CMO rung is removed rather than turned green. The CMO may cover either
+ * lens when its owner is away (canGiveLensVerdict), but is not a step of their
+ * own on artwork, video or captions; printing them as a pending step invented
+ * an approval no rule asks for and left every finished job looking unfinished.
+ *
+ * The brand lead is not dropped either — they are one of the people who may
+ * give the `info` verdict, so they are named on that rung instead of holding a
+ * rung with no button that could ever complete it.
+ */
+export type LadderState = "done" | "pending" | "revise" | "idle";
+
+/** Shown on a settled rung whose verdict predates the two-lens records. */
+const UNRECORDED_SIGNER = "— ใบงานเก่า ไม่มีบันทึกผู้เซ็น";
+
+export interface ApprovalStep {
+  key: string;
+  role: string;
+  /** Who did it once it is done; who it waits on while it is not. */
+  person: string;
+  state: LadderState;
+  detail?: string;
+}
+
+/** Names, de-duplicated case-insensitively, with the placeholders dropped. */
+function namesOf(raw: (string | undefined | null)[]): string[] {
+  const out: string[] = [];
+  for (const value of raw) {
+    const name = (value ?? "").trim();
+    if (!name || name === "Unassigned" || name === "—") continue;
+    if (!out.some((n) => samePerson(n, name))) out.push(name);
+  }
+  return out;
+}
+
+/** Stages that only exist because work was handed in. A request sitting at one
+ *  of these with no deliverable rows behind it predates the deliverables table
+ *  — reading it as "nothing submitted" would blank a ladder for a job the board
+ *  itself calls Approved. */
+const STAGE_PAST_SUBMISSION: Record<string, "Waiting review" | "Revision" | "Approved"> = {
+  "Waiting Feedback": "Waiting review",
+  "Waiting Approval": "Waiting review",
+  "Revision Requested": "Revision",
+  Approved: "Approved",
+  Delivered: "Approved",
+};
+
+export function approvalLadder(
+  dels: GraphicDeliverable[],
+  ctx: { designer?: string; requester?: string; brandLead?: string | null; creativeLeader?: string | null; stage?: string },
+): ApprovalStep[] {
+  const fromStage = STAGE_PAST_SUBMISSION[(ctx.stage ?? "").trim()];
+  const rows = dels.some((d) => d.status !== "Not submitted") || !fromStage
+    ? dels
+    : [{ ...emptyDeliverable("Asset", "—"), status: fromStage, submittedBy: ctx.designer ?? "" }];
+  const submitted = rows.filter((d) => d.status !== "Not submitted");
+  const steps: ApprovalStep[] = [{
+    key: "submitted",
+    role: "ดีไซเนอร์ส่งงาน",
+    person: namesOf([...submitted.map((d) => d.submittedBy), ctx.designer]).join(" · ") || "—",
+    state: submitted.length ? "done" : "idle",
+    detail: submitted.length && submitted.length < rows.length
+      ? `ส่งแล้ว ${submitted.length}/${rows.length} ชิ้น`
+      : submitted.length ? undefined : "ยังไม่ส่งชิ้นงาน",
+  }];
+
+  for (const lens of REVIEW_LENSES) {
+    const meta = LENS_META[lens];
+    const role = `รีวิว ${meta.label}`;
+    // Who is expected to answer, when nobody has yet. Both people on the info
+    // rung are alternatives, not a queue: either signature settles it.
+    const waitingOn = (lens === "info"
+      ? namesOf([ctx.requester, ctx.brandLead])
+      : namesOf([ctx.creativeLeader])).join(" / ") || meta.owner;
+    // A row settled before the two lenses existed carries no `review`, only a
+    // status. Reading it as "no verdict yet" would park every job signed off
+    // before 31 Jul on a Pending rung for ever — so the row's own status
+    // answers for both lenses when the record is missing. The signature line
+    // stays empty in that case rather than inventing a name for it.
+    const outcomes = submitted.map((d) => ({
+      by: d.review?.[lens]?.by,
+      verdict: d.review?.[lens]?.verdict
+        ?? (d.status === "Approved" ? "pass" as const : d.status === "Revision" ? "revise" as const : undefined),
+    }));
+    const sentBack = outcomes.filter((v) => v.verdict === "revise");
+    const signed = outcomes.filter((v) => v.verdict === "pass");
+    if (!submitted.length) {
+      steps.push({ key: lens, role, person: waitingOn, state: "idle", detail: "ยังไม่มีชิ้นงานให้ตรวจ" });
+    } else if (sentBack.length) {
+      steps.push({
+        key: lens, role, state: "revise",
+        person: namesOf(sentBack.map((v) => v.by)).join(" · ") || UNRECORDED_SIGNER,
+        detail: `ตีกลับ ${sentBack.length} ชิ้น — รอแก้แล้วส่งใหม่`,
+      });
+    } else if (signed.length === submitted.length) {
+      steps.push({
+        key: lens, role, state: "done",
+        // Settled, but by whom is not on record: say so rather than printing
+        // the name of whoever WOULD have signed it — the ladder is read as a
+        // trail, and a guessed name in it is worse than a blank.
+        person: namesOf(signed.map((v) => v.by)).join(" · ") || UNRECORDED_SIGNER,
+        detail: meta.checks,
+      });
+    } else {
+      steps.push({
+        key: lens, role, person: waitingOn, state: "pending",
+        // The count is real only when real rows were counted; the stage
+        // fallback stands for a job of unknown size.
+        detail: rows === dels
+          ? `รออีก ${submitted.length - signed.length}/${submitted.length} ชิ้น · ${meta.checks}`
+          : meta.checks,
+      });
+    }
+  }
+  return steps;
+}
+
 /** Indexes of every deliverable that is the SAME artwork as `index` — the same
  *  file exported for different platforms. Reviewers act on the artwork, not on
  *  each row: one master under three platform labels is one thing to check, and
@@ -1825,7 +1954,7 @@ const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
     { id: 9, title: "Summer reel cover", b: "omakase", campaign: "Summer Reel Series", due: "Jun 26", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "Reel Cover", priority: "High", fb: 3, openFb: 3, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "CI correction needed", waitingSince: "Jun 22", nextAction: "Boss to revise brand colours V4", platform: "IG Reels", size: "1080×1920", contentItem: "Summer series cover" },
   ]},
   { col: "Waiting Approval", cards: [
-    { id: 10, title: "Cocktail menu card", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 24", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "Aran P.", blocker: "Waiting CMO approval", waitingSince: "Jun 23", nextAction: "Aran P. to approve final artwork", platform: "Print", size: "A5", contentItem: "Menu card" },
+    { id: 10, title: "Cocktail menu card", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 24", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "Aran P.", blocker: "Waiting artwork review", waitingSince: "Jun 23", nextAction: "Aran P. to sign off the info check", platform: "Print", size: "A5", contentItem: "Menu card" },
   ]},
   { col: "Approved", cards: [
     { id: 11, title: "Wagyu teaser story", b: "teppen", campaign: "Wagyu Festival", due: "Jun 22", designer: "Studio Nine", requester: "Ken S.", approver: "Aran P.", type: "Story", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "Upload final files for delivery", platform: "IG Story", size: "1080×1920 ×3", contentItem: "Wagyu teaser 3-frame story", deliverables: [
