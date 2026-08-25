@@ -1,7 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
-import { workLink } from "@/lib/deepLink";
+import { workLink, OPEN_PARAM } from "@/lib/deepLink";
 import Link from "next/link";
 import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -145,6 +145,7 @@ function GraphicPageInner() {
   // Request #N ↗". Opened once, after the requests have loaded, then the param
   // is dropped so closing the drawer does not reopen it on the next render.
   const openId = searchParams.get(GRAPHIC_OPEN_PARAM);
+  const openTab = searchParams.get(OPEN_PARAM.tab);
   const openedRef = useRef<string | null>(null);
   const [date, setDate] = useState(DEFAULT_DATE_FILTER);
   const [graphics, setGraphics] = useState<Graphic[]>(GRAPHICS);
@@ -210,10 +211,13 @@ function GraphicPageInner() {
     const { action, graphic } = resolveOpenTarget(openId, graphics, graphicsLoaded, openedRef.current);
     if (action === "idle" || action === "wait") return;
     openedRef.current = openId;
-    if (action === "open" && graphic) setDrawer({ g: graphic, tab: "overview" });
+    // ?tab=feedback lands on the conversation — the bell's message rows point
+    // here, and dropping someone on the summary made them hunt for the thread
+    // they were just told about.
+    if (action === "open" && graphic) setDrawer({ g: graphic, tab: openTab === "feedback" ? "feedback" : "overview" });
     else toastError(`ไม่พบใบงาน #${openId} — อาจถูกลบไปแล้ว หรืออยู่ในแบรนด์ที่คุณไม่มีสิทธิ์เห็น`);
     router.replace("/graphic");
-  }, [openId, graphics, graphicsLoaded, router]);
+  }, [openId, openTab, graphics, graphicsLoaded, router]);
 
   useEffect(() => {
     const next = brandVisibility.normalize(brand);

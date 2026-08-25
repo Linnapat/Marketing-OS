@@ -55,7 +55,9 @@ export async function postGraphicMessage(opts: {
   // open. All of them — a Reel has a shooter, an editor, whoever drew the
   // storyboard and the person who asked for it, and a question that reaches one
   // of the four is a question the other three never saw.
-  notify("mention", `💬 ${g.title}`, `${me}: ${text}`, workLink.graphic(g.id), {
+  // Straight to the conversation, not the request summary: what they are being
+  // told is that something was SAID, and the thread is where it was said.
+  notify("mention", `💬 ${g.title}`, `${me}: ${text}`, workLink.graphicThread(g.id), {
     team: graphicTeam(g),
     to,
   });
