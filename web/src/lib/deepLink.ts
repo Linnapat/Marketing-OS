@@ -37,6 +37,10 @@ const q = (v: string | number) => encodeURIComponent(String(v));
 export const workLink = {
   /** A graphic request, opened in its drawer. */
   graphic: (id: string | number) => `/graphic?${OPEN_PARAM.graphic}=${q(id)}`,
+  /** A graphic request, opened on its conversation rather than its summary —
+   *  where the bell sends you when the thing you were told about is something
+   *  somebody said. */
+  graphicThread: (id: string | number) => `/graphic?${OPEN_PARAM.graphic}=${q(id)}&${OPEN_PARAM.tab}=feedback`,
   /** A My Tasks card, opened in its drawer. */
   task: (id: string | number) => `/my-tasks?${OPEN_PARAM.task}=${q(id)}`,
   /** A content post, opened in its drawer on the Content Plan. */
