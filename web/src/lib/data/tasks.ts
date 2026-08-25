@@ -44,8 +44,18 @@ export interface Task {
    *  overwritten a KOL task with a shoot assignment. */
   graphicSlot?: "artwork" | "shoot" | "storyboard" | "rush";
   relatedCampaignId?: string;
-  /** KOL proposal approvals link the task back to the campaign KOL row. */
+  /** KOL proposal approvals link the task back to the campaign KOL row — and so
+   *  does the specialist's own work row (see kolAssignmentTask). */
   relatedKolId?: number;
+  /** Which job of a KOL deal this row is. Together with relatedKolId it
+   *  IDENTIFIES the row, the same way graphicSlot does for Graphic: the sync
+   *  matches on the pair, never on the numeric id, because other modules mint
+   *  ids from Date.now() in the same range.
+   *
+   *  Approval rows (approvalKind: "kolProposal") carry relatedKolId too and no
+   *  slot — which is exactly why the slot has to be part of the match, or
+   *  syncing a deal would overwrite the requester's approval task. */
+  kolSlot?: "work";
   approvalKind?: "kolProposal" | "budgetRevision";
   requestedBudget?: number;
   dueIso?: string;
