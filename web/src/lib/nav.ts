@@ -1,8 +1,8 @@
 import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
-  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
-  Stamp, FileText, Video,
+  Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
+  FileText, Video,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,13 +34,13 @@ export const NAV: NavGroup[] = [
     // /approvals — that one is a permanent redirect, see next.config.mjs.)
     label: "Approval",
     items: [
-      { href: "/approval-center", label: "Approval Center", icon: Stamp, ready: true },
-      // The three lanes people actually live in, as their own rail entries.
-      // Same page, one panel each (?tab=) — a Creative Leader who only ever
-      // signs Visual CI should be one click from artwork, not one click plus a
-      // scroll past captions and money. Tabbed siblings of the entry above:
-      // the Sidebar lights whichever ?tab= matches, and the plain entry when
-      // there is none.
+      // Three lanes, no combined "Approval Center" entry above them (dropped
+      // per CMO, 26 Aug 2026): the all-lanes view held captions, artwork and
+      // video in one scroll and nobody read it that way — people come here for
+      // one kind of decision at a time. Same page, one panel each (?tab=); the
+      // Sidebar lights whichever ?tab= matches. The bare path still renders
+      // every lane for the links that point at it (an expense approval has no
+      // lane of its own) — it is simply not on the rail any more.
       { href: "/approval-center", tab: "caption", label: "Caption", icon: FileText, ready: true },
       { href: "/approval-center", tab: "artwork", label: "Artwork", icon: Palette, ready: true },
       { href: "/approval-center", tab: "vdo", label: "VDO", icon: Video, ready: true },
@@ -52,7 +52,10 @@ export const NAV: NavGroup[] = [
       // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
       // route now redirects to Campaigns, which is the real front door.
       { href: "/campaigns", label: "Campaigns", icon: Target, ready: true },
-      { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
+      // Team Calendar (/workflow) is off the rail (CMO, 26 Aug 2026): it showed
+      // the same month of work the Content Plan calendar and the Shoot Schedule
+      // already show, and three calendars of one truth is how they start
+      // disagreeing. The route still opens from a direct link.
     ],
   },
   {
