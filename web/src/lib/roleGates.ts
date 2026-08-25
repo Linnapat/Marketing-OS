@@ -241,6 +241,13 @@ export function canSendGraphicBrief(role: string): boolean {
  * at all; hiding the pool would leave them a board of only what someone else
  * had already handed them.
  */
+/** Somebody outside the company doing the work — the studio a job is
+ *  outsourced to. Named where the conversation is shown so an external name in
+ *  a thread reads as external, rather than as a colleague nobody recognises. */
+export function isOutsourceRole(role: string | undefined): boolean {
+  return (role || "").trim() === "Agency (External)";
+}
+
 export function worksOwnQueueOnly(role: string): boolean {
   const r = (role || "").trim();
   return r === "VDO Editor" || r === "Agency (External)";

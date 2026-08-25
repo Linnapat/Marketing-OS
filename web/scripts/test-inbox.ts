@@ -1,7 +1,7 @@
 /* Runtime tests for grouping the bell's rows into per-job conversations.
  * Run with:  npm test */
 
-import { conversationThreads, jobTitleOf, splitSaid, threadHref, canonicalLink, type InboxItem } from "../src/lib/data/inbox";
+import { conversationThreads, jobTitleOf, splitSaid, threadHref, canonicalLink, graphicIdOf, type InboxItem } from "../src/lib/data/inbox";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -92,6 +92,14 @@ is("ลิงก์ใบงานเก่า → พาไปแท็บ Feed
 is("ลิงก์ที่ระบุแท็บมาแล้ว ไม่ยัดซ้ำ", threadHref("/graphic?open=88&tab=feedback"), "/graphic?open=88&tab=feedback");
 is("ลิงก์โมดูลอื่นไม่ถูกแตะ", threadHref("/content?post=c01"), "/content?post=c01");
 is("ไม่มีลิงก์ → ไม่มีที่ให้ไป", threadHref(null), null);
+
+console.log("\n— ใบงานที่เธรดนี้ห้อยอยู่ —");
+is("อ่าน id ใบงานจากลิงก์", graphicIdOf("/graphic?open=1784451899630"), 1784451899630);
+is("อ่าน id ได้แม้มีพารามิเตอร์อื่นต่อท้าย", graphicIdOf("/graphic?open=88&tab=feedback"), 88);
+is("ลิงก์โมดูลอื่น → ไม่ใช่ใบงานกราฟิก", graphicIdOf("/content?post=c01"), null);
+is("ไม่มีลิงก์ → null", graphicIdOf(null), null);
+is("id ไม่ใช่ตัวเลข → null", graphicIdOf("/graphic?open=abc"), null);
+is("ลิงก์กราฟิกที่ไม่มี open= → null", graphicIdOf("/graphic?brief=1"), null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
