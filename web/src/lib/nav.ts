@@ -28,26 +28,6 @@ export interface NavGroup {
 
 export const NAV: NavGroup[] = [
   {
-    // Its own heading, above everything: this is where the day starts for
-    // anyone who signs work off, and it was invisible for months as a chip
-    // inside somebody else's task board. (Path is /approval-center, not
-    // /approvals — that one is a permanent redirect, see next.config.mjs.)
-    label: "Approval",
-    items: [
-      // Three lanes, no combined "Approval Center" entry above them (dropped
-      // per CMO, 26 Aug 2026): the all-lanes view held captions, artwork and
-      // video in one scroll and nobody read it that way — people come here for
-      // one kind of decision at a time. Same page, one panel each (?tab=); the
-      // Sidebar lights whichever ?tab= matches. The bare path still renders
-      // every lane for the links that point at it (an expense approval has no
-      // lane of its own) — it is simply not on the rail any more.
-      { href: "/approval-center", tab: "caption", label: "Caption", icon: FileText, ready: true },
-      { href: "/approval-center", tab: "artwork", label: "Artwork", icon: Palette, ready: true },
-      { href: "/approval-center", tab: "vdo", label: "VDO", icon: Video, ready: true },
-      { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
-    ],
-  },
-  {
     items: [
       // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
       // route now redirects to Campaigns, which is the real front door.
@@ -90,6 +70,28 @@ export const NAV: NavGroup[] = [
       { href: "/kol", tab: "plan", label: "KOL Plan", icon: CalendarDays, ready: true },
       { href: "/kol", tab: "performance", label: "Performance", icon: BarChart3, ready: true },
       { href: "/kol", tab: "database", label: "KOL Library", icon: Star, ready: true },
+    ],
+  },
+  {
+    // Sits between KOL and Team (per CMO, 26 Aug 2026): the lanes read as the
+    // last step of producing work rather than the first thing on the rail, and
+    // the people who live here scroll past Plan & Produce and KOL to reach it
+    // anyway. Still its own heading — it was invisible for months as a chip
+    // inside somebody else's task board. (Path is /approval-center, not
+    // /approvals — that one is a permanent redirect, see next.config.mjs.)
+    label: "Approval",
+    items: [
+      // Three lanes, no combined "Approval Center" entry above them (dropped
+      // per CMO, 26 Aug 2026): the all-lanes view held captions, artwork and
+      // video in one scroll and nobody read it that way — people come here for
+      // one kind of decision at a time. Same page, one panel each (?tab=); the
+      // Sidebar lights whichever ?tab= matches. The bare path still renders
+      // every lane for the links that point at it (an expense approval has no
+      // lane of its own) — it is simply not on the rail any more.
+      { href: "/approval-center", tab: "caption", label: "Caption", icon: FileText, ready: true },
+      { href: "/approval-center", tab: "artwork", label: "Artwork", icon: Palette, ready: true },
+      { href: "/approval-center", tab: "vdo", label: "VDO", icon: Video, ready: true },
+      { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
     ],
   },
   {
