@@ -2,6 +2,7 @@
 // `data` jsonb column, so every UI field round-trips losslessly.
 
 import { supabase } from "@/lib/supabase";
+import type { AdoptablePost } from "@/lib/data/fanoutAdopt";
 import { CONTENT, ContentItem, contentApproveBlockers, canPublish } from "@/lib/data/content";
 import { CAMPAIGNS } from "@/lib/data/campaigns";
 import { liveOnly, moveToTrash, trashReady } from "@/lib/db/trash";
@@ -82,6 +83,47 @@ export async function fetchContentById(id: string): Promise<ContentItem | null> 
     id: (r.data as ContentItem).id ?? `c${r.id}`,
     createdAt: (r.data as ContentItem).createdAt ?? (r.created_at as string | undefined),
   };
+}
+
+/** One campaign's posts, reduced to what the fan-out has to reason about:
+ *  which brief item each already serves, and what it is called.
+ *
+ *  The title is here because a post raised by hand has no brief item behind it,
+ *  and its name is the only thing it shares with the item the planner later
+ *  writes into the campaign — see adoptablePostFor. */
+export async function fetchCampaignPosts(campaignId: string): Promise<AdoptablePost[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await db.from("content_posts").select("data").eq("campaign_id", campaignId);
+  // Same rule as fetchContentSourceIds: a failed read must abort the fan-out.
+  // Coming back empty here would report every hand-raised post as absent and
+  // duplicate the lot.
+  if (error) throw new Error(`เช็คโพสต์เดิมของแคมเปญไม่สำเร็จ (${error.message}) — ยังไม่ได้สร้างอะไรเพิ่ม ลองใหม่อีกครั้ง`);
+  return (data ?? [])
+    .map((r) => r.data as ContentItem | null)
+    .filter((c): c is ContentItem => !!c?.id)
+    .map((c) => ({ id: String(c.id), title: c.title, sourceContentItemId: c.sourceContentItemId }));
+}
+
+/** Stamp a brief content item onto a post that was raised by hand.
+ *
+ *  Writes one field into the blob and nothing else. The post already carries a
+ *  caption someone wrote, a date somebody moved, maybe an approved artwork —
+ *  none of that is the brief's to overwrite. All this records is "and it is
+ *  this item", so no future approval has to guess again.
+ *
+ *  Silent on a miss: the worst case is that the next fan-out infers the link
+ *  again through the title, which is exactly where we were. Failing the whole
+ *  approval over a bookkeeping stamp would be worse. */
+export async function adoptPostForBriefItem(postId: string, sourceContentItemId: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const { data } = await db.from("content_posts").select("data").eq("data->>id", postId).maybeSingle();
+  const post = data?.data as ContentItem | undefined;
+  if (!post || post.sourceContentItemId) return;
+  await db.from("content_posts")
+    .update({ data: { ...post, sourceContentItemId } })
+    .eq("data->>id", postId);
 }
 
 export async function fetchContentSourceIds(campaignId: string): Promise<Set<string>> {

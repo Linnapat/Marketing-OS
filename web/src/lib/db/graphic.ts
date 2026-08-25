@@ -2,6 +2,7 @@
 // jsonb column. Mock fallback when Supabase isn't configured.
 
 import { supabase } from "@/lib/supabase";
+import { graphicsBySourceItem, type AdoptablePost } from "@/lib/data/fanoutAdopt";
 import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, findLinkedGraphics, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
 import { BrandId } from "@/lib/brands";
 import { fetchContent, updateContent } from "./content";
@@ -103,19 +104,49 @@ export async function createGraphic(input: Graphic): Promise<void> {
  *  requests on re-Submit, and the lookup that lets a skipped item top up the
  *  request that ACTUALLY exists (the fan-out used to aim topUpGraphicBrief at
  *  the fresh gid it had just minted, which matches no row on any re-run). */
-export async function fetchGraphicSourceIds(campaignId: string): Promise<Map<string, string | number>> {
+/** Which brief content item each of a campaign's existing requests serves.
+ *
+ *  `posts` lets a request that was raised by hand be recognised too: it carries
+ *  only the post it serves, so the item it answers has to be read through that
+ *  post. Pass the campaign's posts (fetchCampaignPosts) — omit them and the
+ *  answer is the old one, which is how the same job got briefed twice. */
+/** The request linked to a post, by id — the id only, because the fan-out just
+ *  needs to know one exists. Oldest first when a post somehow carries two. */
+export async function fetchGraphicIdForPost(postId: string): Promise<string | number | undefined> {
+  const db = supabase();
+  if (!db) return undefined;
+  const { data } = await db.from("graphic_requests").select("data").eq("data->>contentPostId", postId).order("id").limit(1);
+  const g = data?.[0]?.data as Graphic | undefined;
+  return g?.id;
+}
+
+/** Record which brief item an existing request serves, once it has been worked
+ *  out through its post. Blob field only; blanks only — a request that already
+ *  names an item is not re-pointed at another one. Silent on a miss for the
+ *  same reason as adoptPostForBriefItem. */
+export async function adoptGraphicForBriefItem(graphicId: string | number, sourceContentItemId: string): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+  const { data } = await db.from("graphic_requests").select("data").eq("data->>id", String(graphicId)).maybeSingle();
+  const g = data?.data as Graphic | undefined;
+  if (!g || g.sourceContentItemId) return;
+  await db.from("graphic_requests").update({ data: { ...g, sourceContentItemId } }).eq("data->>id", String(graphicId));
+}
+
+export async function fetchGraphicSourceIds(
+  campaignId: string, posts: AdoptablePost[] = [],
+): Promise<Map<string, string | number>> {
   const db = supabase();
   if (!db) return new Map();
   const { data, error } = await db.from("graphic_requests").select("data").eq("campaign_id", campaignId);
   // A failed read must abort the fan-out, not report "nothing exists yet".
   if (error) throw new Error(`เช็คใบงานเดิมของแคมเปญไม่สำเร็จ (${error.message}) — ยังไม่ได้สร้างอะไรเพิ่ม ลองใหม่อีกครั้ง`);
   if (!data) return new Map();
-  const ids = new Map<string, string | number>();
-  for (const r of data) {
-    const g = r.data as Graphic | null;
-    if (g?.sourceContentItemId) ids.set(g.sourceContentItemId, g.id);
-  }
-  return ids;
+  const graphics = data
+    .map((r) => r.data as Graphic | null)
+    .filter((g): g is Graphic => !!g)
+    .map((g) => ({ id: g.id, sourceContentItemId: g.sourceContentItemId, contentPostId: g.contentPostId }));
+  return graphicsBySourceItem(graphics, posts);
 }
 
 /** Create a graphic request only if its (campaignId, sourceContentItemId) isn't
