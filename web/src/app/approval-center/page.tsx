@@ -33,7 +33,14 @@ import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { GraphicDrawer, GTab } from "@/components/graphic/GraphicDrawer";
 import { useApprovalRows } from "@/lib/useApprovalRows";
 import { useCreativeLeader } from "@/lib/useCreativeLeader";
-import { ApprovalKind, expenseBudgetOf } from "@/lib/data/approvals";
+import {
+  ApprovalKind, expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign,
+} from "@/lib/data/approvals";
+import { BrandFilterValue } from "@/lib/brands";
+import { useBrandVisibility } from "@/lib/brandVisibility";
+import { SELECT_STYLE } from "@/components/ui/selectStyle";
+import { DateFilterBar, inDateFilter, DateFilter } from "@/components/ui/DateFilterBar";
+import { ALL_TIME_FILTER, FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { optimistic } from "@/lib/optimistic";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { APPROVAL_CENTER, OPEN_PARAM, workLink } from "@/lib/deepLink";
@@ -140,7 +147,45 @@ function ApprovalCenterInner() {
   // lens for theirs — the notice PR #247 added, which a second write path is
   // exactly how you lose.
   const creativeLeader = useCreativeLeader();
-  const rows = useApprovalRows({ campaigns, requests, expenseReqs, graphics, posts, tasks, doneIds, viewAs: me });
+  const allRows = useApprovalRows({ campaigns, requests, expenseReqs, graphics, posts, tasks, doneIds, viewAs: me });
+
+  // A marketer only ever sees their own brands: the rows are cut by
+  // ctx.isVisible inside useApprovalRows, and the chip below can only offer the
+  // brands they may see — never "all brands" meaning somebody else's.
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
+  const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [campaign, setCampaign] = useState("all");
+  // All time, not this month: a queue exists for the things that have been
+  // waiting, and the oldest of them are exactly what a month view would hide.
+  const [date, setDate] = useState<DateFilter>({ ...ALL_TIME_FILTER });
+  useEffect(() => {
+    const next = brandVisibility.normalize(brand);
+    if (next !== brand) setBrand(next);
+  }, [brand, brandVisibility]);
+
+  // Counted within the lane on screen, not across every lane: "แสดง 3 จาก 10"
+  // above a Caption panel holding one row is a sentence about a list nobody is
+  // looking at. ApprovalQueue filters by `only` the same way (r.kind === only).
+  const laneRows = useMemo(() => (lane ? allRows.filter((r) => r.kind === lane) : allRows), [allRows, lane]);
+
+  // Offered campaigns follow the brand chip, so picking a brand cannot leave a
+  // campaign selected that has nothing under it.
+  const campaignOptions = useMemo(
+    () => approvalCampaigns(laneRows.filter((r) => matchesApprovalBrand(r, brand))),
+    [laneRows, brand],
+  );
+  useEffect(() => {
+    if (campaign !== "all" && !campaignOptions.some((c) => c.toLowerCase() === campaign.toLowerCase())) setCampaign("all");
+  }, [campaign, campaignOptions]);
+
+  const outcome = useMemo(() => filterWithReasons(laneRows, [
+    { label: "แบรนด์อื่น", pass: (r) => matchesApprovalBrand(r, brand) },
+    { label: "แคมเปญอื่น", pass: (r) => matchesApprovalCampaign(r, campaign) },
+    { label: "นอกช่วงเวลา", pass: (r) => inDateFilter(date, r.waitingSince) },
+  ]), [laneRows, brand, campaign, date]);
+  const rows = outcome.rows;
+  const clearFilters = () => { setBrand("all"); setCampaign("all"); setDate({ ...ALL_TIME_FILTER }); };
   const budgetOf = useMemo(() => expenseBudgetOf(campaigns, expenseReqs), [campaigns, expenseReqs]);
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
 
@@ -181,14 +226,36 @@ function ApprovalCenterInner() {
             </button>
           }
         >
-          <div className="text-[12.5px] text-muted leading-[1.6]">
-            {/* Artwork asks two people two different questions — the data check
-                and Visual CI. Each card says which one is yours, and a piece
-                only leaves the queue once both are in. */}
-            อาร์ตเวิร์กและ VDO ต้องผ่านการตรวจ 2 ด้าน (ข้อมูล + Visual CI) โดยคนละคน —
-            การ์ดจะบอกว่ารอบนี้คุณตรวจด้านไหน · สลับ “ทั้งทีม” เพื่อดูว่างานที่ยังไม่ขยับค้างอยู่ที่ใคร
+          <div className="flex flex-col gap-3">
+            {/* Brand · Campaign · Period. The brand list is what this person may
+                see and nothing else — a marketer scoped to one brand gets one
+                brand here and "ทุกแบรนด์ที่ดูแล" means theirs. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE} aria-label="แบรนด์">
+                <option value="all">{brandVisibility.allowAll ? "ทุกแบรนด์" : "ทุกแบรนด์ที่ดูแล"}</option>
+                {brandOptions.map((id) => (
+                  <option key={id} value={id}>{brandVisibility.brandNames[id] ?? id}</option>
+                ))}
+              </select>
+              <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE} aria-label="แคมเปญ">
+                <option value="all">ทุกแคมเปญ</option>
+                {campaignOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <DateFilterBar value={date} onChange={setDate} />
+            </div>
+            <div className="text-[12.5px] text-muted leading-[1.6]">
+              {/* Artwork asks two people two different questions — the data check
+                  and Visual CI. Each card says which one is yours, and a piece
+                  only leaves the queue once both are in. */}
+              อาร์ตเวิร์กและ VDO ต้องผ่านการตรวจ 2 ด้าน (ข้อมูล + Visual CI) โดยคนละคน —
+              การ์ดจะบอกว่ารอบนี้คุณตรวจด้านไหน · สลับ “ทั้งทีม” เพื่อดูว่างานที่ยังไม่ขยับค้างอยู่ที่ใคร
+              {!brandVisibility.allowAll && ` · คุณเห็นเฉพาะแบรนด์ที่ดูแล (${brandVisibility.scopeLabel})`}
+            </div>
           </div>
         </CampaignCommandBar>
+
+        {/* ช่วงเวลาใช้วันที่เริ่มรอ — แถวที่ไม่มีวันที่ให้นับจะไม่ถูกซ่อน */}
+        <FilterSummary outcome={outcome} onClear={clearFilters} noun="รายการรออนุมัติ" />
 
         {loading && rows.length === 0 ? (
           <div className="text-[13px] text-faint px-1 py-8">กำลังโหลดคิวอนุมัติ…</div>

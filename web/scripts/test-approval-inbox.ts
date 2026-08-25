@@ -16,7 +16,8 @@
 
 import {
   buildApprovalRows, selectGraphicApprovals, countByKind, byWaitingLongest, waitingDays,
-  expenseBudgetOf, type ApprovalCtx, type ApprovalRow,
+  expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign,
+  type ApprovalCtx, type ApprovalRow,
 } from "../src/lib/data/approvals";
 import { emptyDeliverable, type Graphic, type GraphicDeliverable } from "../src/lib/data/graphic";
 import { personKeys } from "../src/lib/identity";
@@ -115,6 +116,28 @@ console.log("\n— แบรนด์คือตัวคัดกรองเ�
     selectGraphicApprovals([req()], ctx("Creative Leader", "Boss L.", { isVisible: () => false })).length, 0);
 }
 
+/* Marketer เห็นเฉพาะแบรนด์ที่ตัวเองดูแล — ต้องจริงกับ *ทุกชนิด* ไม่ใช่แค่งานกราฟิก
+   ชนิดใหม่ที่ลืมเช็ค isVisible จะโผล่ที่นี่ก่อนไปโผล่ในคิวของคนอื่น */
+console.log("\n— ทุกชนิดต้องถูกกรองด้วยแบรนด์ —");
+{
+  const hidden = ctx("CMO", "Aran P., ", { isVisible: () => false, canSeeBrandLabel: () => false });
+  const everything = {
+    captions: [{
+      id: "c1", title: "โพสต์", b: "teppen", campaign: "Wagyu", plat: "Facebook", owner: "Mei T.",
+      requester: "Ken S.", approver: "Ken S.", caption: "x", captionStatus: "Ready",
+      assetStatus: "—", approvalStatus: "—", publishStatus: "—", createdAt: "2026-08-01T00:00:00Z",
+    }] as never[],
+    graphics: [req()],
+    campaigns: [{ id: "CAM-1", name: "A", b: "teppen", owner: "Ken S.", status: "Waiting for Approval" }] as never[],
+    requests: [{ id: "R1", b: "teppen", campaign: "Wagyu", stage: "Waiting Approval", type: "Design", approver: "Aran P." }] as never[],
+    expenses: [{ _id: 1, b: "teppen", campaign: "Wagyu", category: "Media", requested: 1000, status: "Waiting Approval", due: "—" }] as never[],
+    kol: [{ id: 1, title: "KOL", brand: "Teppen Thailand", campaign: "Wagyu", status: "Need Approval", assignee: "Aran P." }] as never[],
+  };
+  is("แบรนด์ที่ไม่ได้ดูแล = ไม่มีแถวใดเลย", buildApprovalRows(everything, hidden).length, 0);
+  const shown = buildApprovalRows(everything, ctx("CMO", "Aran P."));
+  is("แบรนด์ที่ดูแล = มีแถว", shown.length > 0, true);
+}
+
 console.log("\n— แคมเปญ: รออนุมัติ vs รอเจ้าของกดส่ง —");
 {
   const waiting = { id: "CAM-1", name: "A", b: "teppen", owner: "Ken S.", status: "Waiting for Approval" } as never;
@@ -206,7 +229,7 @@ console.log("\n— เรียงตามงานที่รอนานท�
   is("แถวเก่าสุดมาก่อน", rows[0].kind === "caption" ? rows[0].post.title : "—", "เก่า");
   // แคมเปญไม่มี timestamp ให้นับอายุ — ต้องไปท้ายแถว ไม่ใช่ถูกนับว่าใหม่เอี่ยม
   is("แถวที่ไม่รู้อายุไปอยู่ท้าย", byWaitingLongest(
-    { kind: "campaign", key: "a", b: "teppen", waitingSince: "", mine: false, waitingOn: "CMO", c: {} as never },
+    { kind: "campaign", key: "a", b: "teppen", campaign: "", waitingSince: "", mine: false, waitingOn: "CMO", c: {} as never },
     rows[0]) > 0, true);
   is("นับตามชนิดได้", countByKind(rows).caption, 2);
   is("ไม่มี timestamp = ไม่แสดงอายุ", waitingDays("", Date.now()), null);
@@ -223,6 +246,38 @@ console.log("\n— งบแคมเปญที่เหลือหลัง�
   const info = expenseBudgetOf(campaigns, reqs)(reqs[1]);
   is("อนุมัติไปแล้วนับถูก", info?.committed, 30_000);
   is("อนุมัติใบนี้แล้วจะเกินงบ", (info?.left ?? 0) < 0, true);
+}
+
+console.log("\n— ตัวกรองแบรนด์ / แคมเปญ ที่หัวคิว —");
+{
+  const row = (over: Partial<ApprovalRow>): ApprovalRow => ({
+    kind: "campaign", key: "k", b: "teppen", campaign: "Wagyu Festival",
+    waitingSince: "", mine: false, waitingOn: "CMO", c: {} as never, ...over,
+  } as ApprovalRow);
+
+  // แบรนด์
+  is("เลือกทุกแบรนด์ = ผ่านหมด", matchesApprovalBrand(row({}), "all"), true);
+  is("แบรนด์ตรงกัน = ผ่าน", matchesApprovalBrand(row({}), "teppen"), true);
+  is("แบรนด์ไม่ตรง = ไม่ผ่าน", matchesApprovalBrand(row({}), "omakase"), false);
+  // แถวที่ต้นทางเก็บแบรนด์เป็น "ป้าย" ไม่ใช่ id (งาน KOL) — ถูกกรองสิทธิ์มาแล้วตั้งแต่ต้นทาง
+  // ถ้ามาซ่อนตรงนี้อีก = ซ่อนงานเพราะอ่านแบรนด์ไม่ออก
+  is("แถวที่ไม่มี brand id ไม่ถูกซ่อน", matchesApprovalBrand(row({ b: null }), "omakase"), true);
+
+  // แคมเปญ
+  is("เลือกทุกแคมเปญ = ผ่านหมด", matchesApprovalCampaign(row({}), "all"), true);
+  is("แคมเปญตรงกัน = ผ่าน", matchesApprovalCampaign(row({}), "Wagyu Festival"), true);
+  is("เทียบไม่สนตัวพิมพ์เล็กใหญ่", matchesApprovalCampaign(row({}), "wagyu festival"), true);
+  is("แคมเปญอื่น = ไม่ผ่าน", matchesApprovalCampaign(row({}), "Songkran"), false);
+  is("แถวที่ไม่มีแคมเปญ ไม่ใช่แคมเปญที่เลือก", matchesApprovalCampaign(row({ campaign: "" }), "Wagyu Festival"), false);
+
+  // รายชื่อแคมเปญในตัวเลือก
+  const names = approvalCampaigns([
+    row({ campaign: "Wagyu Festival" }), row({ campaign: "wagyu festival" }),
+    row({ campaign: "" }), row({ campaign: "—" }), row({ campaign: "Songkran" }),
+  ]);
+  is("ตัวเลือกไม่ซ้ำ (ไม่สนตัวพิมพ์)", names.length, 2);
+  is("ตัวเลือกเรียงตามตัวอักษร", names[0], "Songkran");
+  is("ไม่เอาแคมเปญว่างหรือขีด", names.includes("—"), false);
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} approval inbox: ${pass} passed, ${fail} failed\n`);

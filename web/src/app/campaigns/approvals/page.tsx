@@ -25,8 +25,12 @@ import {
   CampaignPageHeaderSection,
 } from "@/components/campaign/CampaignHeadController";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { useRole } from "@/lib/role";
-import { brandName } from "@/lib/brands";
+import { useAuth } from "@/lib/auth";
+import { brandName, BrandFilterValue } from "@/lib/brands";
+import { useBrandVisibility } from "@/lib/brandVisibility";
+import { SELECT_STYLE } from "@/components/ui/selectStyle";
+import { DateFilterBar, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
+import { ALL_TIME_FILTER, FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { canApproveCampaign } from "@/lib/roleGates";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { notify } from "@/lib/notify";
@@ -48,8 +52,17 @@ const daysOld = (iso: string, now: number): number => {
 };
 
 export default function ApprovalsPage() {
-  const { role } = useRole();
+  // The signed-in role, NOT useRole() — that is the sidebar's "Viewing as"
+  // switcher, which anyone may set to CMO. This queue is the CMO's alone (CMO,
+  // 26 Aug 2026): everything in it is already live, and a half-audience that
+  // can read but not answer only ever produced "why is this still here?".
+  const { role, loading: authLoading } = useAuth();
   const mayDecide = canApproveCampaign(role);
+  // Wait for the session+member read rather than flashing "ไม่มีสิทธิ์" at the
+  // person who does have it. `loading` from the auth layer, NOT "has a member
+  // row yet" — a signed-in user with no member row never gets one, and that
+  // test would leave them on a spinner for ever.
+  const roleKnown = !authLoading;
   const [rows, setRows] = useState<RetroApprovalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -65,14 +78,54 @@ export default function ApprovalsPage() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  // Nothing is fetched for someone who may not see it: the gate is not a
+  // banner over a loaded list, it is the reason the list is never asked for.
+  useEffect(() => { if (mayDecide) void load(); else setLoading(false); }, [load, mayDecide]);
 
-  const total = useMemo(() => rows.reduce((n, r) => n + r.entries.length, 0), [rows]);
+  // Brand scope first, and not as a filter: a campaign belonging to a brand you
+  // do not manage is not something "ล้างตัวกรอง" may bring back. Only what
+  // survives this is offered to the chips below.
+  const brandVisibility = useBrandVisibility();
+  const brandOptions = brandVisibility.visibleBrands;
+  const mine = useMemo(() => rows.filter((r) => brandVisibility.isVisible(r.b)), [rows, brandVisibility]);
+
+  const [brand, setBrand] = useState<BrandFilterValue>("all");
+  const [campaign, setCampaign] = useState("all");
+  // All time: this queue is for edits that have been running unreviewed, and a
+  // month view would hide exactly the oldest of them.
+  const [date, setDate] = useState<DateFilter>({ ...ALL_TIME_FILTER });
+  useEffect(() => {
+    const next = brandVisibility.normalize(brand);
+    if (next !== brand) setBrand(next);
+  }, [brand, brandVisibility]);
+
+  const campaignOptions = useMemo(() => {
+    const names = mine
+      .filter((r) => brand === "all" || r.b === brand)
+      .map((r) => r.campaignName)
+      .filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "th"));
+  }, [mine, brand]);
+  useEffect(() => {
+    if (campaign !== "all" && !campaignOptions.includes(campaign)) setCampaign("all");
+  }, [campaign, campaignOptions]);
+
+  const outcome = useMemo(() => filterWithReasons(mine, [
+    { label: "แบรนด์อื่น", pass: (r) => brand === "all" || r.b === brand },
+    { label: "แคมเปญอื่น", pass: (r) => campaign === "all" || r.campaignName === campaign },
+    // A campaign stays if ANY of its edits fall in the window — the card lists
+    // the edits, and hiding the card would hide the ones that do match.
+    { label: "นอกช่วงเวลา", pass: (r) => r.entries.some((e) => inDateFilter(date, e.at)) },
+  ]), [mine, brand, campaign, date]);
+  const visible = outcome.rows;
+  const clearFilters = () => { setBrand("all"); setCampaign("all"); setDate({ ...ALL_TIME_FILTER }); };
+
+  const total = useMemo(() => visible.reduce((n, r) => n + r.entries.length, 0), [visible]);
   // The oldest outstanding edit, in days — the honest health number for a queue
   // whose whole promise is "cleared weekly".
   const oldest = useMemo(
-    () => rows.reduce((max, r) => Math.max(max, ...r.entries.map((e) => daysOld(e.at, now))), 0),
-    [rows, now],
+    () => visible.reduce((max, r) => Math.max(max, ...r.entries.map((e) => daysOld(e.at, now))), 0),
+    [visible, now],
   );
 
   const decide = async (row: RetroApprovalRow, ids: string[], decision: "acknowledged" | "rejected") => {
@@ -103,11 +156,38 @@ export default function ApprovalsPage() {
   };
 
   const clearAll = async () => {
-    if (!window.confirm(`อนุมัติย้อนหลังทั้งหมด ${total} รายการ จาก ${rows.length} แคมเปญ?`)) return;
-    for (const row of rows) {
+    if (!window.confirm(`อนุมัติย้อนหลังทั้งหมด ${total} รายการ จาก ${visible.length} แคมเปญ?`)) return;
+    // What is on screen, not what was fetched: a filtered list with a button
+    // that acts on the unfiltered set is a trap.
+    for (const row of visible) {
       await decide(row, row.entries.map((e) => e.id), "acknowledged").catch(() => {});
     }
   };
+
+  if (!roleKnown) {
+    return <div className="mt-8 py-12 text-center text-faint text-[13px]">กำลังตรวจสิทธิ์…</div>;
+  }
+
+  // Not a banner over a loaded list — the page itself. The rail already hides
+  // this entry from everyone else (nav cmoOnly); this is the same rule where a
+  // direct link lands.
+  if (!mayDecide) {
+    return (
+      <>
+        <CampaignPageHeaderSection
+          eyebrow="APPROVALS"
+          title="รออนุมัติย้อนหลัง"
+          description="คิวนี้เป็นของ CMO"
+        />
+        <div className="mt-5 rounded-cardLg border px-5 py-8 text-center" style={{ background: "#FBF6EC", borderColor: "#EADBC1" }}>
+          <div className="text-[14px] font-bold" style={{ color: "#8A6D1E" }}>เฉพาะ CMO เท่านั้น</div>
+          <div className="text-[12.5px] text-faint mt-1">
+            การอนุมัติย้อนหลังเป็นสิทธิ์ของ CMO · งานที่แก้ไปแล้วยังเดินต่อตามปกติ ไม่ได้ถูกบล็อก
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -133,35 +213,56 @@ export default function ApprovalsPage() {
             </div>
           }
         >
-          <div className="flex items-center gap-3 flex-wrap text-[12px] font-bold text-muted">
-            <span>ค้างอยู่ {total} รายการ · {rows.length} แคมเปญ</span>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={brand} onChange={(e) => setBrand(e.target.value as BrandFilterValue)} style={SELECT_STYLE} aria-label="แบรนด์">
+                <option value="all">{brandVisibility.allowAll ? "ทุกแบรนด์" : "ทุกแบรนด์ที่ดูแล"}</option>
+                {brandOptions.map((id) => (
+                  <option key={id} value={id}>{brandVisibility.brandNames[id] ?? id}</option>
+                ))}
+              </select>
+              <select value={campaign} onChange={(e) => setCampaign(e.target.value)} style={SELECT_STYLE} aria-label="แคมเปญ">
+                <option value="all">ทุกแคมเปญ</option>
+                {campaignOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <DateFilterBar value={date} onChange={setDate} />
+            </div>
+            <div className="flex items-center gap-3 flex-wrap text-[12px] font-bold text-muted">
+            <span>ค้างอยู่ {total} รายการ · {visible.length} แคมเปญ</span>
             {oldest > 0 && (
               <StatusBadge tone={oldest >= 7 ? "red" : oldest >= 4 ? "gold" : "neutral"}>
                 เก่าสุด {oldest} วัน
               </StatusBadge>
             )}
+            {!brandVisibility.allowAll && (
+              <span className="font-normal text-faint">เห็นเฉพาะแบรนด์ที่ดูแล ({brandVisibility.scopeLabel})</span>
+            )}
+            </div>
           </div>
         </CampaignCommandBar>
-      </div>
-
-      {!mayDecide && (
-        <div className="mt-4 rounded-cardLg border px-4 py-3 text-[12.5px] font-semibold" style={{ background: "#FBF6EC", borderColor: "#EADBC1", color: "#8A6D1E" }}>
-          ดูได้อย่างเดียว — การอนุมัติย้อนหลังเป็นสิทธิ์ของ CMO
+        <div className="mt-3">
+          <FilterSummary outcome={outcome} onClear={clearFilters} noun="แคมเปญ" />
         </div>
-      )}
+      </div>
 
       {loading ? (
         <div className="mt-5 py-12 text-center text-faint text-[13px]">กำลังโหลด…</div>
-      ) : rows.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="mt-5 py-14 text-center border border-dashed border-line2 rounded-cardLg">
-          <div className="text-[15px] font-bold text-muted">ไม่มีอะไรค้าง</div>
+          {/* An empty screen has two very different meanings and must not use
+              one sentence for both: nothing is waiting, or the chips hid it. */}
+          <div className="text-[15px] font-bold text-muted">
+            {mine.length ? "ไม่มีรายการที่ตรงกับตัวกรอง" : "ไม่มีอะไรค้าง"}
+          </div>
           <div className="text-[12.5px] text-faint mt-1">
-            การแก้แคมเปญที่อนุมัติแล้วในส่วนของงบ / ช่วงเวลา / ขอบเขต / KOL จะมารออยู่ที่นี่
+            {mine.length
+              ? "ลองล้างตัวกรองแบรนด์ / แคมเปญ / ช่วงเวลาด้านบน"
+              : "การแก้แคมเปญที่อนุมัติแล้วในส่วนของงบ / ช่วงเวลา / ขอบเขต / KOL จะมารออยู่ที่นี่"}
           </div>
         </div>
       ) : (
         <div className="mt-5 flex flex-col gap-3">
-          {rows.map((row) => (
+          {visible.map((row) => (
             <div key={row.campaignId} className="bg-surface border border-line rounded-cardLg overflow-hidden">
               <div className="flex items-center gap-2 px-5 py-3 border-b border-line4 flex-wrap">
                 <Link href={`/campaigns/${row.campaignId}`} className="text-[13.5px] font-bold text-ink hover:underline inline-flex items-center gap-[5px]">
