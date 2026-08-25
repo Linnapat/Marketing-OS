@@ -189,10 +189,11 @@ function ApprovalCenterInner() {
           <div className="text-[13px] text-faint px-1 py-8">กำลังโหลดคิวอนุมัติ…</div>
         ) : (
           <ApprovalQueue
-            rows={rows} now={now} budgetOf={budgetOf}
+            rows={rows} now={now} budgetOf={budgetOf} me={me}
             onOpenTask={(id) => router.push(workLink.task(id))}
             onOpenGraphic={(id, tab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); }}
             onApprove={approveExpense} onReject={rejectExpense}
+            onGraphicUpdate={(next) => setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)))}
             only={lane}
           />
         )}

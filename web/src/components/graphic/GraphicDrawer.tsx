@@ -15,14 +15,14 @@ import { GRAPHIC_OPEN_PARAM,
   hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
-  ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
-  canGiveLensVerdict, canPassLens,
+  ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
   MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
+import { giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import Link from "next/link";
 import { fetchContentById } from "@/lib/db/content";
@@ -30,8 +30,7 @@ import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
-import { updateGraphic, patchGraphicBrief, syncApprovedAssetsToContent } from "@/lib/db/graphic";
-import { fileApprovedAsset } from "@/lib/db/assets";
+import { updateGraphic, patchGraphicBrief } from "@/lib/db/graphic";
 import { useAuth } from "@/lib/auth";
 import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
@@ -1571,33 +1570,8 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     setDels(next);
     persistGraphic({ ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history });
   };
-  /** `announce: false` still syncs the links outward — a relocated file has to
-   *  reach the Content post and the Asset Library, or those two keep pointing
-   *  at the folder the artwork just left — but skips the "approved everything"
-   *  message. Nothing was approved; a file was filed, and re-announcing a
-   *  sign-off that happened last week is how a channel stops being read. */
-  const persistGraphic = (base: Graphic, { announce = true }: { announce?: boolean } = {}) => {
-    const ng: Graphic = { ...base };
-    const ready = deliverableProgress(ng).ready;
-    ng.stage = stageFromDeliverables(ng);
-    ng.blocker = ready ? null : g.blocker;
-    ng.nextAction = ready ? "Ready to deploy — attached to Content Calendar" : g.nextAction;
-    updateGraphic(ng)
-      .then(() => onUpdate?.(ng))
-      .catch((error) => toastError(`บันทึกงาน Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-    // Fully approved → push approved asset links onto the linked content post.
-    if (ready) {
-      syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-      // …and into the Asset Library. Separate from the Content sync on purpose:
-      // POSM, posters and menu artwork serve no post, so that sync returns
-      // early for them and they used to finish nowhere.
-      void fileApprovedAsset(ng);
-      if (announce) {
-        notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${g.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish",
-          ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id), { team: graphicTeam(g) });
-      }
-    }
-  };
+  const persistGraphic = (base: Graphic, opts: { announce?: boolean } = {}) =>
+    persistGraphicDeliverables(base, { previous: g, announce: opts.announce, onUpdate });
   const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
   const submit = (i: number) => {
     const d = dels[i];
@@ -1609,42 +1583,14 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
     );
     notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
   };
-  /** One lens's verdict. The rule — both checks in, by two different people,
-   *  before anything is Approved — lives in applyLensVerdict so this drawer and
-   *  the Agency Portal cannot answer it differently. */
+  /** One lens's verdict — the write itself, and everything becoming "ready"
+   *  implies, live in lib/graphicVerdict so Approval Center's list rows record
+   *  a verdict exactly the way this drawer does. */
   const giveVerdict = (i: number, lens: ReviewLens, verdict: "pass" | "revise", note?: string) => {
-    const before = dels[i];
-    const ng = applyLensVerdict({ ...g, deliverables: dels }, i, lens, verdict, me, note);
+    const ng = giveLensVerdict({ g, deliverables: dels, index: i, lens, verdict, me, note, onUpdate });
     if (!ng) return;
-    const after = ng.deliverables![i];
     setDels(ng.deliverables!);
-    persistGraphic(ng);
     setReason(""); setRevising(null);
-
-    // Told only when the round actually ends, not on each verdict: half a
-    // review is not news the designer can act on, and pinging them twice per
-    // piece is how people start ignoring the channel.
-    if (after.status === "Revision" && before.status !== "Revision") {
-      // review is cleared once the round settles, so the notes are read back
-      // out of feedback — every entry stamped in this round, both lenses.
-      const lastAt = after.feedback.at(-1)?.at;
-      const said = after.feedback.filter((f) => f.at === lastAt).map((f) => `[${LENS_META[f.lens ?? "info"].short}] ${f.reason}`).join(" · ");
-      // The person who submitted this piece — see revisionAssignee.
-      const owner = revisionAssignee(g, before);
-      if (owner) {
-        createRevisionTask({
-          module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: owner,
-          brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
-        }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-      }
-      notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${before.platform} — ${said} · ถึง ${owner ?? "Creative"} · โดย ${me}`,
-        // The requester and whoever assigned the job hear about it too, in the
-        // bell rather than as a DM: the requester used to learn their artwork
-        // had gone back by opening the drawer and noticing, and the Creative
-        // Leader who is juggling the queue never learned at all. Neither has to
-        // act on it, so neither gets interrupted.
-        workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
-    }
   };
 
   const inp = "w-full text-[12.5px] px-[10px] py-[8px] rounded-[8px] border border-line2 bg-ivory outline-none";

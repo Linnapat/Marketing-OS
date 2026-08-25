@@ -21,12 +21,14 @@
 // Rendering is per-kind (an artwork card and an expense card are not the same
 // card), but the ORDER is global — see buildApprovalRows.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays,
 } from "@/lib/data/approvals";
-import { LENS_META } from "@/lib/data/graphic";
+import { Graphic, LENS_META } from "@/lib/data/graphic";
+import { giveLensVerdict } from "@/lib/graphicVerdict";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { ChevronDown } from "lucide-react";
 import { GTab } from "@/components/graphic/GraphicDrawer";
 import { usePanelCollapsed } from "@/components/campaign/CampaignHeadController";
@@ -67,6 +69,9 @@ const GRAPHIC_TAB: Record<string, GTab> = {
  *  header says so in red rather than leaving it to be noticed row by row. */
 const STALE_DAYS = 7;
 
+/** Rows or cards, remembered per browser — a habit, not a per-visit decision. */
+const VIEW_KEY = "approvals.view";
+
 /** Red past a week, amber past two days — the same line the expense card has
  *  always drawn, now applied to every kind. */
 const ageColor = (d: number) => (d >= STALE_DAYS ? "#B33A2E" : d >= 2 ? "#C68A1E" : "#8A8175");
@@ -106,7 +111,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject, only }: {
+export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, only }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -116,6 +121,11 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
   onOpenGraphic: (id: number, tab?: GTab) => void;
   onApprove: (r: ExpenseReq) => void;
   onReject: (r: ExpenseReq, reason: string) => void;
+  /** Who is signing — the name recorded on a verdict given from a row. */
+  me: string;
+  /** A request changed under a row (a lens verdict). The page owns the list, so
+   *  it re-renders and the row leaves the queue on its own. */
+  onGraphicUpdate?: (g: Graphic) => void;
   /** Render just this one lane — the rail's Caption / Artwork / VDO entries.
    *  Null shows every lane. A lane opened deliberately is never folded shut:
    *  the remembered collapse is for the full page, and honouring it here would
@@ -127,6 +137,20 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
   // the daily working set — opening onto forty rows, thirty-six of which you
   // cannot act on, is how a queue stops being read at all.
   const [scope, setScope] = useState<"mine" | "all">("mine");
+  // Rows by default: the point of this screen is scanning a lane and clearing
+  // it, and a row carries the file link and the verdict buttons just as well as
+  // a card does. Cards stay available for the kinds that are genuinely worth
+  // reading in full — a caption you want to see the words of. Remembered per
+  // browser, corrected from storage after mount so the markup matches on the
+  // server.
+  const [view, setView] = useState<"list" | "cards">("list");
+  useEffect(() => {
+    try { if (localStorage.getItem(VIEW_KEY) === "cards") setView("cards"); } catch { /* no-op */ }
+  }, []);
+  const chooseView = (next: "list" | "cards") => {
+    setView(next);
+    try { localStorage.setItem(VIEW_KEY, next); } catch { /* no-op */ }
+  };
   const mineRows = useMemo(() => rows.filter((r) => r.mine), [rows]);
   const scoped = scope === "mine" ? mineRows : rows;
   // Everything the header talks about is scoped to the open lane. Reading the
@@ -181,12 +205,20 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
             </button>
           )}
         </div>
-        {scopeToggle}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-[3px] p-[3px] rounded-pill flex-shrink-0" style={{ background: "#F2EFE9" }}>
+            <ScopeTab label="รายการ" on={view === "list"} onClick={() => chooseView("list")} />
+            <ScopeTab label="การ์ด" on={view === "cards"} onClick={() => chooseView("cards")} />
+          </div>
+          {scopeToggle}
+        </div>
       </div>
 
       {panels.map(({ kind, rows: kindRows }) => (
-        <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only}>
-          {kindRows.map((row) => renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }))}
+        <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only} view={view}>
+          {kindRows.map((row) => (view === "list"
+            ? renderRow(row, now, { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate })
+            : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject })))}
         </KindPanel>
       ))}
     </div>
@@ -374,6 +406,296 @@ function renderCard(row: ApprovalRow, now: number, deps: {
   }
 }
 
+/** The facts every kind can answer, so the compact list is ONE renderer rather
+ *  than a second copy of the card switch. Cards stay bespoke on purpose: they
+ *  show the caption text, the lens checklist and the budget maths, none of
+ *  which fit on a row. A row is for scanning forty of them and picking one. */
+function describe(row: ApprovalRow, codeOf: (id?: string, name?: string) => string | undefined): {
+  note?: string; title: string; meta: string; action: string;
+} {
+  switch (row.kind) {
+    case "caption":
+      return {
+        title: row.post.title,
+        meta: `${brandName(row.post.b)} · ${row.post.campaign} · เขียนโดย ${captionOwner(row.post) || "—"}`,
+        action: "อ่านและอนุมัติ →",
+      };
+    case "artwork": case "vdo": case "photo":
+      return {
+        note: LENS_META[row.lens].short,
+        title: row.g.title,
+        meta: [
+          `${brandName(row.g.b)} · ${row.g.campaign}`,
+          codeOf(row.g.campaignId, row.g.campaign),
+          `${row.deliverable.platform} · ${row.deliverable.size}`,
+          `ตรวจ: ${LENS_META[row.lens].label}`,
+        ].filter(Boolean).join(" · "),
+        action: "เปิดตรวจ →",
+      };
+    case "storyboard":
+      return {
+        title: row.g.title,
+        meta: `${brandName(row.g.b)} · ${row.g.campaign} · Storyboard ${row.g.storyboardSubmittedBy || row.g.storyboardOwner || "Creative"}`,
+        action: "อนุมัติ storyboard →",
+      };
+    case "briefUnlock":
+      return {
+        title: row.g.title,
+        meta: `${brandName(row.g.b)} · ${row.g.campaign} · ขอโดย ${row.g.briefUnlock?.requestedBy || row.g.requester}`,
+        action: "ปล่อยให้เติมบรีฟ →",
+      };
+    case "campaign":
+      return {
+        note: row.c.status,
+        title: row.c.name,
+        meta: `${brandName(row.c.b)} · ${row.c.branch || "—"} · Owner ${row.c.owner}`,
+        action: row.c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →",
+      };
+    case "request":
+      return {
+        note: row.r.stage,
+        title: `${row.r.typeIcon} ${row.r.title}`,
+        meta: `${brandName(row.r.b)} · ${row.r.campaign} · ${row.r.requester} → ${row.r.approver}`,
+        action: "Review →",
+      };
+    case "expense":
+      return {
+        title: `฿ ${row.r.category}`,
+        meta: [brandName(row.r.b), row.r.campaign, row.r.requester, row.r.vendor].filter(Boolean).join(" · "),
+        action: "",
+      };
+    case "kol":
+      return {
+        title: row.t.title,
+        meta: `${row.t.brand || "—"} · ${row.t.campaign || "—"} · Requested for ${row.t.assignee}`,
+        action: "Review →",
+      };
+  }
+}
+
+const rowCx = "w-full flex items-center gap-3 px-[13px] py-[10px] rounded-[11px] border border-line bg-surface hover:border-accent transition text-left";
+
+/** One line per decision. Same rules as the card — no buttons on somebody
+ *  else's row, the badge says which lens is yours — just dense enough to read a
+ *  whole lane without scrolling. */
+function renderRow(row: ApprovalRow, now: number, deps: {
+  codeOf: (id?: string, name?: string) => string | undefined;
+  budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
+  me: string;
+  onOpenTask: (id: number) => void;
+  onOpenGraphic: (id: number, tab?: GTab) => void;
+  onApprove: (r: ExpenseReq) => void;
+  onReject: (r: ExpenseReq, reason: string) => void;
+  onGraphicUpdate?: (g: Graphic) => void;
+}) {
+  const { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate } = deps;
+  // Money keeps its own row: the amount and the two buttons are the reason
+  // anyone opens this lane, and a shared row cannot carry them.
+  if (row.kind === "expense") {
+    return <ExpenseRow key={row.key} row={row} budget={budgetOf(row.r)} now={now} codeOf={codeOf}
+      onApprove={onApprove} onReject={onReject} />;
+  }
+  // Artwork / VDO / Photo: the asset and the verdict, on the row. Opening a
+  // drawer to look at one file and press one button was the whole reason these
+  // aged — see LensRow.
+  if (row.kind === "artwork" || row.kind === "vdo" || row.kind === "photo") {
+    return <LensRow key={row.key} row={row} now={now} codeOf={codeOf} me={me}
+      onOpenGraphic={onOpenGraphic} onGraphicUpdate={onGraphicUpdate} />;
+  }
+  const d = describe(row, codeOf);
+  const inner = (
+    <>
+      <KindBadge kind={row.kind} note={d.note} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13px] font-bold text-ink truncate">{d.title}</span>
+        <span className="block text-[11.5px] text-faint truncate">{d.meta}</span>
+      </span>
+      <AgePill iso={row.waitingSince} now={now} />
+      <Cta row={row} action={d.action} />
+    </>
+  );
+  if (row.kind === "caption") {
+    return <Link key={row.key} href={workLink.post(row.post.id)} className={rowCx}>{inner}</Link>;
+  }
+  if (row.kind === "campaign") {
+    return <Link key={row.key} href={`/campaigns/${row.c.id}?tab=approval`} className={rowCx}>{inner}</Link>;
+  }
+  if (row.kind === "request") {
+    return <Link key={row.key} href="/status" className={rowCx}>{inner}</Link>;
+  }
+  if (row.kind === "kol") {
+    return <button key={row.key} onClick={() => onOpenTask(row.t.id)} className={rowCx}>{inner}</button>;
+  }
+  return (
+    <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB[row.kind])} className={rowCx}>
+      {inner}
+    </button>
+  );
+}
+
+/** An artwork / VDO / photo row that can be signed off without opening
+ *  anything: the file to look at, the checklist for your half of the review,
+ *  and the two buttons.
+ *
+ *  This is the point of the list. The old path was open the drawer → find the
+ *  Assets tab → find the row → open the file in another tab → come back →
+ *  press. Five steps for a yes, on work whose whole problem was that it aged.
+ *  "ขอแก้" still asks for a reason inline, because a send-back with no reason
+ *  is a piece that comes straight back.
+ *
+ *  The verdict itself goes through lib/graphicVerdict — the same call the
+ *  drawer makes, so a piece signed off here files into the Asset Library and
+ *  raises its revision task exactly as one signed off there does. */
+function LensRow({ row, now, codeOf, me, onOpenGraphic, onGraphicUpdate }: {
+  row: Extract<ApprovalRow, { kind: "artwork" | "vdo" | "photo" }>;
+  now: number;
+  codeOf: (id?: string, name?: string) => string | undefined;
+  me: string;
+  onOpenGraphic: (id: number, tab?: GTab) => void;
+  onGraphicUpdate?: (g: Graphic) => void;
+}) {
+  const [revising, setRevising] = useState(false);
+  const [reason, setReason] = useState("");
+  // Latches on the first press so a double click cannot record two verdicts
+  // before the row leaves the list.
+  const [acted, setActed] = useState(false);
+  const lens = LENS_META[row.lens];
+  const d = row.deliverable;
+  const asset = (d.assetLink || "").trim();
+
+  const decide = (verdict: "pass" | "revise", note?: string) => {
+    if (acted) return;
+    setActed(true);
+    const ng = giveLensVerdict({
+      g: row.g, deliverables: row.g.deliverables ?? [], index: row.index,
+      lens: row.lens, verdict, me, note, onUpdate: onGraphicUpdate,
+    });
+    if (!ng) {
+      setActed(false);
+      toastError("บันทึกผลตรวจไม่สำเร็จ — อาจมีคนตรวจด้านนี้ไปแล้ว");
+      return;
+    }
+    onGraphicUpdate?.(ng);
+    toastSuccess(verdict === "pass"
+      ? `ผ่าน ${lens.short}: ${row.g.title}`
+      : `ส่งกลับแก้: ${row.g.title}`);
+  };
+
+  return (
+    <div className={`${rowCx} flex-wrap items-center`} style={{ cursor: "default" }}>
+      <KindBadge kind={row.kind} note={lens.short} />
+      <span className="flex-1 min-w-[220px]">
+        <span className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB[row.kind])}
+            className="text-[13px] font-bold text-ink hover:text-accent transition truncate">
+            {row.g.title}
+          </button>
+          <AgePill iso={row.waitingSince} now={now} />
+        </span>
+        <span className="block text-[11.5px] text-faint truncate">
+          {[`${brandName(row.g.b)} · ${row.g.campaign}`, codeOf(row.g.campaignId, row.g.campaign),
+            `${d.platform} · ${d.size}${d.version ? ` · v${d.version}` : ""}`,
+            `ส่งโดย ${d.submittedBy || row.g.designer || "—"}`].filter(Boolean).join(" · ")}
+        </span>
+        <span className="block text-[11px] mt-[3px]" style={{ color: APPROVAL_META[row.kind].fg }}>
+          <b>ตรวจ {lens.label}:</b> <span className="text-faint">{lens.checks}</span>
+        </span>
+      </span>
+
+      {/* The file and the verdict travel together: on a narrow row they wrap as
+          one cluster, rather than the buttons dropping to their own line while
+          the link they belong to stays up beside the title. */}
+      <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
+      {asset ? (
+        <a href={asset} target="_blank" rel="noopener noreferrer"
+          className="text-[11.5px] font-bold text-accent hover:underline flex-shrink-0">
+          เปิดไฟล์ ↗
+        </a>
+      ) : (
+        <span className="text-[11.5px] text-faint flex-shrink-0">ไม่มีลิงก์ไฟล์</span>
+      )}
+      {(d.refLink || "").trim() && (
+        <a href={d.refLink} target="_blank" rel="noopener noreferrer"
+          className="text-[11.5px] text-muted hover:underline flex-shrink-0">อ้างอิง ↗</a>
+      )}
+
+      {!row.mine ? (
+        <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
+      ) : revising ? (
+        <span className="flex items-center gap-2 flex-shrink-0">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`สิ่งที่ต้องแก้ (${lens.short})`} autoFocus
+            className="text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none w-[200px]" />
+          <button onClick={() => { if (reason.trim()) decide("revise", reason.trim()); }} disabled={!reason.trim() || acted}
+            className="text-[11.5px] font-bold text-white rounded-[8px] px-[10px] py-[6px] disabled:opacity-40" style={{ background: "#B33A2E" }}>ส่งกลับแก้</button>
+          <button onClick={() => setRevising(false)} className="text-[11.5px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 text-muted bg-white">Cancel</button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => decide("pass")} disabled={acted}
+            className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
+            {acted ? "…" : `✓ ผ่าน ${lens.short}`}
+          </button>
+          <button onClick={() => setRevising(true)} disabled={acted}
+            className="text-[11.5px] font-bold px-[9px] py-[6px] rounded-[8px] disabled:opacity-50"
+            style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>↩ ขอแก้</button>
+        </span>
+      )}
+      </span>
+    </div>
+  );
+}
+
+/** The expense row: amount, age, and — only when it is yours — the two buttons.
+ *  Reject still asks for a reason, inline, because a send-back with no reason
+ *  is a request that comes straight back. */
+function ExpenseRow({ row, budget, now, codeOf, onApprove, onReject }: {
+  row: Extract<ApprovalRow, { kind: "expense" }>;
+  budget: ExpenseBudgetInfo | null; now: number;
+  codeOf: (id?: string, name?: string) => string | undefined;
+  onApprove: (r: ExpenseReq) => void; onReject: (r: ExpenseReq, reason: string) => void;
+}) {
+  const r = row.r;
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [acted, setActed] = useState(false);
+  const over = budget !== null && budget.left < 0;
+  const d = describe(row, codeOf);
+  return (
+    <div className={`${rowCx} flex-wrap`} style={{ cursor: "default" }}>
+      <KindBadge kind="expense" />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13px] font-bold text-ink truncate">{d.title}</span>
+        <span className="block text-[11.5px] text-faint truncate">{d.meta}</span>
+      </span>
+      {over && (
+        <span className="text-[11px] font-bold" style={{ color: "#B33A2E" }}>⚠ เกินงบ {baht(Math.abs(budget!.left), { compact: true })}</span>
+      )}
+      <span className="text-[13.5px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
+      <AgePill iso={row.waitingSince} now={now} />
+      {!row.mine ? (
+        <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
+      ) : rejecting ? (
+        <span className="flex items-center gap-2 flex-shrink-0">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ" autoFocus
+            className="text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none w-[180px]" />
+          <button onClick={() => { if (reason.trim() && !acted) { setActed(true); onReject(r, reason.trim()); } }} disabled={!reason.trim() || acted}
+            className="text-[11.5px] font-bold text-white rounded-[8px] px-[10px] py-[6px] disabled:opacity-40" style={{ background: "#B33A2E" }}>ส่งกลับ</button>
+          <button onClick={() => setRejecting(false)} className="text-[11.5px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 text-muted bg-white">Cancel</button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => { if (!acted) { setActed(true); onApprove(r); } }} disabled={acted}
+            className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
+            {acted ? "…" : "Approve ✓"}
+          </button>
+          <button onClick={() => setRejecting(true)} className="text-[11.5px] font-bold px-[9px] py-[6px] rounded-[8px]"
+            style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>✕</button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Kinds that keep a panel on an empty week — see the note in `panels`. */
 const ALWAYS_SHOWN: ApprovalKind[] = ["caption", "artwork", "vdo"];
 
@@ -385,8 +707,9 @@ const ALWAYS_SHOWN: ApprovalKind[] = ["caption", "artwork", "vdo"];
  *  once and keep a short page. A panel with nothing in it renders its header
  *  and no chevron: there is nothing to unfold, and a control that opens an
  *  empty box is a control that teaches people not to press it. */
-function KindPanel({ kind, rows, now, forceOpen, children }: {
-  kind: ApprovalKind; rows: ApprovalRow[]; now: number; forceOpen?: boolean; children: React.ReactNode;
+function KindPanel({ kind, rows, now, forceOpen, view, children }: {
+  kind: ApprovalKind; rows: ApprovalRow[]; now: number; forceOpen?: boolean;
+  view: "list" | "cards"; children: React.ReactNode;
 }) {
   const meta = APPROVAL_META[kind];
   const { collapsed, toggle } = usePanelCollapsed("approval-kind", kind);
@@ -427,21 +750,25 @@ function KindPanel({ kind, rows, now, forceOpen, children }: {
       </button>
       {open && (
         <div className="px-4 pb-4">
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-            {children}
-          </div>
+          {view === "list" ? (
+            <div className="flex flex-col gap-2">{children}</div>
+          ) : (
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+              {children}
+            </div>
+          )}
         </div>
       )}
     </section>
   );
 }
 
-function ScopeTab({ label, count, on, onClick }: { label: string; count: number; on: boolean; onClick: () => void }) {
+function ScopeTab({ label, count, on, onClick }: { label: string; count?: number; on: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
       className={`text-[12px] font-bold px-[12px] py-[6px] rounded-pill transition ${on ? "bg-white text-ink shadow-sm" : "text-muted"}`}>
       {label}
-      <span className="ml-[6px] text-[11px] font-extrabold" style={{ opacity: 0.6 }}>{count}</span>
+      {count !== undefined && <span className="ml-[6px] text-[11px] font-extrabold" style={{ opacity: 0.6 }}>{count}</span>}
     </button>
   );
 }
