@@ -1,7 +1,7 @@
 "use client";
 
 import { toastError, toastSuccess } from "@/lib/toast";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchMembers, fetchJsonSetting, fetchBrandConfigs, Member } from "@/lib/db/settings";
 import { resolveBrandLead } from "@/lib/db/assignments";
 import { BrandCfg } from "@/lib/data/settings";
@@ -22,7 +22,7 @@ import { GRAPHIC_OPEN_PARAM,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
-  MESSAGE_TYPE, isMessage, replyAudience,
+  MESSAGE_TYPE, isMessage, threadAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { postGraphicMessage } from "@/lib/graphicThread";
@@ -123,13 +123,35 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     setFeedback((fs) => fs.map((x) => (x.id === id ? { ...x, status: "Resolved" } : x)));
     try { await resolveGraphicFeedback(id); } catch (e) { setFeedback(prev); toastError(`Resolve ไม่สำเร็จ: ${e instanceof Error ? e.message : "Unknown error"}`); }
   };
+  // Opens on the newest line, and follows one that arrives while you are
+  // reading — a chat that opens at the top hides the thing you came for.
+  const chatRef = useRef<HTMLDivElement>(null);
   const [feedbackTarget, setFeedbackTarget] = useState(0);
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user, role } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
-  /** Who this reply will reach, shown before it is sent so nobody types into
-   *  the dark. Same rule the send uses — see replyAudience. */
-  const replyTo = replyAudience(g, feedback, currentUser);
+  /** Everyone this message will reach, shown before it is sent so nobody
+   *  types into the dark. Same rule the send uses — see threadAudience. */
+  const replyTo = threadAudience(g, feedback, currentUser);
+  // The chat holds the talking; the list below holds the things that ask for
+  // work. Sorted by its own clock rather than reversing whatever order the
+  // caller happened to hand over — the same rows arrive newest-first from the
+  // database and oldest-first from the bundled mock, and a conversation that
+  // reads backwards depending on where it was loaded from is worse than no
+  // conversation view at all. `id` breaks ties and carries rows written before
+  // the timestamp came through: database ids climb, and an optimistic line
+  // stamped with Date.now() sorts last, which is exactly where it belongs.
+  const chat = feedback.filter(isMessage).slice().sort((a, b) => {
+    const at = a.createdAtIso ?? "", bt = b.createdAtIso ?? "";
+    if (at && bt && at !== bt) return at < bt ? -1 : 1;
+    return a.id - b.id;
+  });
+  const revisionHistory = feedback.filter((f) => !isMessage(f));
+  const chatCount = chat.length;
+  useEffect(() => {
+    const el = chatRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatCount, tab]);
   const sendMessage = async () => {
     const text = messageText.trim();
     if (!text || sendingMessage) return;
@@ -142,6 +164,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         id: Date.now(), gid: g.id, owner: currentUser, team: "Conversation", ownerColor: "#6C5CE7",
         type: MESSAGE_TYPE, text, version: "", status: "Open", assignedTo: "", due: null,
         createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        createdAtIso: new Date().toISOString(),
       }, ...fs]);
       setMessageText("");
     } catch (error) {
@@ -1216,9 +1239,45 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               <div className="rounded-card border border-line bg-surface p-4">
                 <div className="text-[13px] font-extrabold text-ink mb-1">💬 คุยกันในงานนี้</div>
                 <div className="text-[11.5px] text-faint mb-3">
-                  ถาม-ตอบกับอีกฝั่งได้เลย ไม่เปลี่ยนสถานะงาน · คนที่คุยด้วยจะได้รับแจ้งเตือน
-                  {replyTo.length > 0 && <> · ข้อความนี้จะถึง <b className="text-muted">{replyTo.join(", ")}</b></>}
+                  ถาม-ตอบกับอีกฝั่งได้เลย ไม่เปลี่ยนสถานะงาน
+                  {replyTo.length > 0
+                    ? <> · ทุกคนในงานนี้จะได้รับแจ้งเตือน: <b className="text-muted">{replyTo.join(", ")}</b></>
+                    : <> · ยังไม่มีใครอยู่ในงานนี้ให้แจ้ง</>}
                 </div>
+
+                {/* The conversation itself, oldest at the top and the box at the
+                    bottom — read down, then reply, the way every chat anyone on
+                    this team already uses works. These lines used to be mixed
+                    into the revision history below, between cards carrying a
+                    version and a Resolve button, where a two-line question
+                    looked like a piece of paperwork. */}
+                <div ref={chatRef} className="rounded-[10px] border border-line2 bg-ivory px-3 py-3 mb-2 max-h-[320px] overflow-y-auto flex flex-col gap-[10px]">
+                  {chat.length === 0 ? (
+                    <div className="text-[11.5px] text-faint text-center py-3">ยังไม่มีใครคุยในงานนี้ — เริ่มได้เลย</div>
+                  ) : chat.map((f) => {
+                    const mine = sameName(f.owner, currentUser) || f.owner.trim().toLowerCase() === currentUser.trim().toLowerCase();
+                    return (
+                      <div key={f.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+                        <span className="w-[22px] h-[22px] mt-[2px] rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white"
+                          style={{ background: f.ownerColor }}>{f.owner.slice(0, 1).toUpperCase()}</span>
+                        <div className={`min-w-0 max-w-[78%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                          {/* Own name omitted — you know who you are, and on a
+                              four-person thread the other names are the ones
+                              worth the pixels. */}
+                          {!mine && <div className="text-[10.5px] font-bold text-muted mb-[2px]">{f.owner}</div>}
+                          <div className="text-[12.5px] leading-[1.5] rounded-[12px] px-3 py-[7px] whitespace-pre-wrap break-words"
+                            style={mine
+                              ? { background: "#211F1C", color: "#FBF9F4", borderTopRightRadius: 4 }
+                              : { background: "#fff", color: "#3E3A34", border: "1px solid #ECE6DA", borderTopLeftRadius: 4 }}>
+                            {f.text}
+                          </div>
+                          <div className="text-[10px] text-faint mt-[3px]">{stamp(f.createdAtIso) || f.createdAt}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="flex gap-2">
                   <input value={messageText} onChange={(e) => setMessageText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
@@ -1276,8 +1335,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   </button>
                 </div>
               </div>
-              {feedback.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
-              {feedback.map((f) => (
+              {revisionHistory.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
+              {revisionHistory.map((f) => (
                 <div key={f.id} className="bg-surface border border-line rounded-card p-4">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: f.ownerColor }}>{f.owner.slice(0, 1)}</span>
