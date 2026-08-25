@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { X, ChevronDown } from "lucide-react";
 import { useNotifications } from "@/lib/useNotifications";
@@ -37,6 +37,8 @@ type View = "all" | "threads";
  *  every thread up front to show a two-line preview would be the whole table. */
 type ThreadState = "loading" | "error" | { rows: Feedback[]; people: string[] };
 
+const threadCacheKey = (t: InboxThread) => `${t.key}@${t.lastAt}`;
+
 export function NotificationBell({ collapsed, tone = "dark" }: {
   collapsed?: boolean;
   /** "dark" for the navy sidebar, "light" for a white page header. */
@@ -51,6 +53,7 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
   // it was outsourced to is in the member list. Read once, and only once a
   // conversation is actually opened.
   const [people, setPeople] = useState<Member[]>([]);
+  const askedForPeople = useRef(false);
   const outsource = (name: string) =>
     isOutsourceRole(people.find((m) => isSamePerson(name, personKeys(memberRef(m))))?.role);
 
@@ -70,17 +73,23 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
     setOpenThread(next);
     if (!next) return;
     if (t.unread > 0) markRead(t.ids);
-    if (!people.length) fetchMembers().then(setPeople).catch(() => {});
+    if (!people.length && !askedForPeople.current) {
+      askedForPeople.current = true;
+      fetchMembers().then(setPeople).catch(() => { askedForPeople.current = false; });
+    }
     const gid = graphicIdOf(t.link);
-    if (gid === null || threadRows[t.key]) return;
-    setThreadRows((m) => ({ ...m, [t.key]: "loading" }));
+    // Keyed by the last thing said, not by the job: a thread read an hour ago
+    // and replied to since must not be served from the session cache.
+    const cacheKey = threadCacheKey(t);
+    if (gid === null || threadRows[cacheKey]) return;
+    setThreadRows((m) => ({ ...m, [cacheKey]: "loading" }));
     // The request as well as the thread: everyone the job is ON — the studio
     // it was handed to included — not only whoever has spoken so far.
     Promise.all([fetchGraphicFeedback(gid), fetchGraphicById(gid).catch(() => null)])
       .then(([rows, g]) => setThreadRows((m) => ({
-        ...m, [t.key]: { rows, people: threadAudience(g ?? {}, rows, "") },
+        ...m, [cacheKey]: { rows, people: threadAudience(g ?? {}, rows, "") },
       })))
-      .catch(() => setThreadRows((m) => ({ ...m, [t.key]: "error" })));
+      .catch(() => setThreadRows((m) => ({ ...m, [cacheKey]: "error" })));
   };
 
   const when = (iso: string) =>
@@ -182,7 +191,7 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
                 threads.map((t) => {
                   const href = threadHref(t.link);
                   const expanded = openThread === t.key;
-                  const rows = threadRows[t.key];
+                  const rows = threadRows[threadCacheKey(t)];
                   const loaded = typeof rows === "object" ? rows : null;
                   return (
                     <div key={t.key} style={{ borderTop: "1px solid #F4EFE5", background: t.unread ? "#FFFCF5" : undefined }}>
