@@ -25,7 +25,7 @@ import {
   CampaignPageHeaderSection,
 } from "@/components/campaign/CampaignHeadController";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { brandName, BrandFilterValue } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
@@ -56,11 +56,13 @@ export default function ApprovalsPage() {
   // switcher, which anyone may set to CMO. This queue is the CMO's alone (CMO,
   // 26 Aug 2026): everything in it is already live, and a half-audience that
   // can read but not answer only ever produced "why is this still here?".
-  const { role, member, user } = useAuth();
+  const { role, loading: authLoading } = useAuth();
   const mayDecide = canApproveCampaign(role);
-  // Before the member row lands, role is not yet known — wait rather than
-  // flashing "ไม่มีสิทธิ์" at the person who does have it.
-  const roleKnown = !AUTH_REQUIRED || !user || !!member;
+  // Wait for the session+member read rather than flashing "ไม่มีสิทธิ์" at the
+  // person who does have it. `loading` from the auth layer, NOT "has a member
+  // row yet" — a signed-in user with no member row never gets one, and that
+  // test would leave them on a spinner for ever.
+  const roleKnown = !authLoading;
   const [rows, setRows] = useState<RetroApprovalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
