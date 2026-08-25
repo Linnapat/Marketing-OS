@@ -36,7 +36,7 @@ import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchContent } from "@/lib/db/content";
 import { ContentItem, captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
-import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, awaitsBriefUnlockDecision, canReleaseBriefEdit, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { Graphic, Feedback, awaitsArtworkReview, awaitsStoryboardDecision, awaitsBriefUnlockDecision, canReleaseBriefEdit, isMessage, threadAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -1076,7 +1076,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     fetchGraphicFeedback(graphic.id).then((f) => { if (alive) setThread(f); }).catch(() => {});
     return () => { alive = false; };
   }, [graphic]);
-  const replyTo = graphic ? replyAudience(graphic, thread, me) : [];
+  const replyTo = graphic ? threadAudience(graphic, thread, me) : [];
   const checklistDone = new Set(t.checklistDone ?? []);
 
   const start = () => onPatch({ status: "In Progress", group: "doFirst" });

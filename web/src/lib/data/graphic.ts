@@ -1848,6 +1848,7 @@ export const STAGE_ORDER = ["New Request", "In Progress", "Waiting Feedback", "R
 
 export const GRAPHICS: Graphic[] = BOARD.flatMap((col) => col.cards.map((c) => ({ ...c, stage: col.col })));
 
+
 export const STAGE_TONE: Record<string, Tone> = {
   "New Request": "neutral", "Brief Incomplete": "red", "Ready to Start": "neutral",
   "In Progress": "blue", "Waiting Feedback": "gold", "Revision Requested": "orange",
@@ -1864,6 +1865,11 @@ export const DESIGNER_COLOR: Record<string, string> = { Boss: "#4E7A4E", Aom: "#
 export interface Feedback {
   id: number; gid: number; owner: string; team: string; ownerColor: string;
   type: string; text: string; version: string; status: string; assignedTo: string; due: string | null; createdAt: string;
+  /** The raw moment, for the conversation view — `createdAt` is a display
+   *  string ("Aug 21") with no time in it, and in a chat "who said what before
+   *  what" is the point. Absent on rows read before this was carried through,
+   *  which fall back to the date alone. */
+  createdAtIso?: string;
 }
 
 /* ── Talking about a request ───────────────────────────────────────────────
@@ -1883,40 +1889,49 @@ export const MESSAGE_TYPE = "Message";
 
 export const isMessage = (f: Pick<Feedback, "type">) => f.type === MESSAGE_TYPE;
 
-/** Who a reply is addressed to — one person, the one being answered.
+/** Everyone this request belongs to — the people a message in its thread has
+ *  to reach.
  *
- *  The last person to speak who is not me. A conversation answers whoever
- *  asked, and on a request that is as often Creative asking the requester as
- *  the other way round.
+ *  This used to name exactly one person: whoever spoke last, or one counterpart
+ *  across the table. On a two-person job that reads fine. On the jobs this
+ *  actually runs — a Reel with a shooter, an editor, whoever drew the
+ *  storyboard and the person who asked for it — it meant a question went to one
+ *  of the four and the other three never heard it. The line under the box said
+ *  so out loud ("ข้อความนี้จะถึง Jeeno") and that was the whole problem: the
+ *  crew was on the job, not in the conversation.
  *
- *  With nothing said yet there is nobody to answer, so it goes to the other
- *  SIDE: the requester writes to whoever holds the job, Creative writes to the
- *  requester. Deliberately one person and not "everyone on the request" —
- *  copying a designer into a question meant for the requester is how a channel
- *  earns the habit of being ignored.
+ *  So: every name the request carries, plus anyone who has already spoken in
+ *  the thread, minus yourself. Role order, not alphabetical — the list is shown
+ *  to the sender before they hit send, and it should read like the crew.
  *
- *  Never me: notifying yourself about your own message is the same disease.
- *  Empty when there is genuinely nobody on the other side, rather than falling
- *  back to a name that would silently swallow the message. */
-export function replyAudience(
-  g: Pick<Graphic, "requester" | "acceptedBy" | "designer">,
-  thread: Pick<Feedback, "owner" | "type">[],
+ *  `sameName` does the de-duplicating so "jeeno" and "jeeno@teppen…" are one
+ *  person rather than two notifications; "Unassigned" is a placeholder, never a
+ *  recipient. */
+export function threadAudience(
+  // Partial on purpose: a caller holding a half-loaded request should get the
+  // names it does know rather than a type error, and a job with no shooter is
+  // the normal case, not a missing field.
+  g: Partial<Pick<Graphic, "requester" | "acceptedBy" | "designer" | "storyboardOwner" | "shooter" | "deliverables">>,
+  thread: Pick<Feedback, "owner">[],
   me: string,
 ): string[] {
-  const norm = (s: string | null | undefined) => (s ?? "").trim();
-  const mine = (name: string) => name.toLowerCase() === norm(me).toLowerCase();
-  const real = (name: string) => !!name && name !== "Unassigned" && !mine(name);
-
-  const lastSpeaker = thread.map((f) => norm(f.owner)).find(real);
-  if (lastSpeaker) return [lastSpeaker];
-
-  // Nothing said yet — write across the table, not around it.
-  const amRequester = mine(norm(g.requester));
-  const order = amRequester
-    ? [g.acceptedBy, g.designer, g.requester]
-    : [g.requester, g.acceptedBy, g.designer];
-  const other = order.map(norm).find(real);
-  return other ? [other] : [];
+  const onTheJob = [
+    g.requester,       // เจ้าของงาน — the one who asked for it
+    g.acceptedBy,      // whoever picked it up, even while designer reads Unassigned
+    g.designer,
+    g.storyboardOwner, // Creative Content
+    g.shooter,         // คนถ่าย
+    ...(g.deliverables ?? []).map((d) => d.submittedBy),
+  ];
+  const out: string[] = [];
+  for (const raw of [...onTheJob, ...thread.map((f) => f.owner)]) {
+    const name = (raw ?? "").trim();
+    if (!name || name === "Unassigned") continue;
+    if (sameName(name, me) || name.toLowerCase() === (me ?? "").trim().toLowerCase()) continue;
+    if (out.some((x) => sameName(x, name) || x.toLowerCase() === name.toLowerCase())) continue;
+    out.push(name);
+  }
+  return out;
 }
 
 export const FEEDBACK: Feedback[] = [

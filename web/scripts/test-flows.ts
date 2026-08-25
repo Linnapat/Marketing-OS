@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, threadAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
 import { memberTeam, isAssignableMember } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -724,20 +724,41 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ไม่เคยขอ → ไม่อยู่ในคิว", !awaitsBriefUnlockDecision({}));
   }
 
-  // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง
+  // คุยกันในใบงาน: ข้อความต้องถึงทุกคนที่อยู่ในงาน ไม่ใช่คนเดียว
   {
-    const req = { requester: "Khun Aran", acceptedBy: "Jungjing", designer: "Boss" };
+    // The crew on a real Reel: who asked for it, who picked it up, the
+    // designer on the ticket, whoever drew the storyboard, and the shooter.
+    const req = {
+      requester: "Khun Aran", acceptedBy: "Jungjing", designer: "Boss",
+      storyboardOwner: "Pichayaporn", shooter: "Jeeno",
+    };
     const msg = (owner: string) => ({ owner, type: MESSAGE_TYPE });
     // thread เรียงใหม่สุดขึ้นก่อน (ตาม fetchGraphicFeedback)
-    check("ตอบไปหาคนที่พูดล่าสุด", replyAudience(req, [msg("Jungjing")], "Khun Aran").join() === "Jungjing");
-    check("ข้ามข้อความของตัวเอง", replyAudience(req, [msg("Khun Aran"), msg("Jungjing")], "Khun Aran").join() === "Jungjing");
-    check("ไม่เด้งใส่ตัวเอง", replyAudience(req, [msg("Khun Aran")], "Khun Aran").includes("Khun Aran") === false);
-    // ยังไม่มีใครพูด = ข้อความแรก ต้องถึงคนที่ถือใบงาน
-    check("ข้อความแรกถึงคนที่รับงาน", replyAudience(req, [], "Khun Aran").join() === "Jungjing");
-    check("ไม่มีคนรับงานก็ถึง designer", replyAudience({ ...req, acceptedBy: "" }, [], "Khun Aran").join() === "Boss");
-    check("ฝั่ง Creative ตอบ = ถึง requester", replyAudience(req, [], "Jungjing").join() === "Khun Aran");
-    check("Unassigned ไม่นับเป็นคน", replyAudience({ requester: "Khun Aran", acceptedBy: "Unassigned", designer: "Unassigned" }, [], "Jungjing").join() === "Khun Aran");
-    check("ไม่มีใครให้ตอบ = ไม่แจ้งใคร", replyAudience({ requester: "Khun Aran", acceptedBy: "", designer: "" }, [], "Khun Aran").length === 0);
+    const to = (g: Parameters<typeof threadAudience>[0], thread: { owner: string }[], me: string) =>
+      threadAudience(g, thread, me).join(",");
+
+    // The bug: the shooter asked a question and only one of the four heard it.
+    check("ถึงทุกคนในงาน ไม่ใช่แค่คนเดียว",
+      to(req, [], "Jeeno") === "Khun Aran,Jungjing,Boss,Pichayaporn");
+    check("เจ้าของงานพิมพ์ = ถึงทีมที่เหลือทั้งหมด",
+      to(req, [], "Khun Aran") === "Jungjing,Boss,Pichayaporn,Jeeno");
+    check("ไม่เด้งใส่ตัวเอง", !threadAudience(req, [msg("Jeeno")], "Jeeno").includes("Jeeno"));
+    check("คนที่เคยคุยแต่ไม่ได้อยู่บนใบงานก็ยังได้รับ",
+      to(req, [msg("Pupay")], "Jeeno") === "Khun Aran,Jungjing,Boss,Pichayaporn,Pupay");
+    check("คนเดิมไม่ถูกนับซ้ำ",
+      to(req, [msg("Boss"), msg("Boss")], "Jeeno") === "Khun Aran,Jungjing,Boss,Pichayaporn");
+    // sameName: "jeeno" กับ "jeeno@teppen…" คือคนเดียวกัน ไม่ใช่สองคน
+    check("อีเมลกับชื่อสั้นคือคนเดียวกัน",
+      !threadAudience({ ...req, shooter: "jeeno@teppenthailand.co.th" }, [], "Jeeno")
+        .some((n) => n.toLowerCase().startsWith("jeeno")));
+    check("Unassigned ไม่นับเป็นคน",
+      to({ requester: "Khun Aran", acceptedBy: "Unassigned", designer: "Unassigned" }, [], "Jungjing") === "Khun Aran");
+    check("ไม่มีใครให้แจ้ง = ไม่แจ้งใคร",
+      threadAudience({ requester: "Khun Aran", acceptedBy: "", designer: "" }, [], "Khun Aran").length === 0);
+    // คนส่ง asset (เช่น agency) ก็อยู่ในงานนี้ด้วย
+    check("คนที่ส่ง asset ก็ได้รับ (เช่น agency)",
+      to({ requester: "Khun Aran", deliverables: [{ submittedBy: "Studio Nine" }] as never }, [], "Khun Aran")
+        === "Studio Nine");
     // ข้อความธรรมดา vs feedback ที่สั่งงาน ต้องแยกออกจากกัน
     check("Message = ข้อความคุย", isMessage({ type: MESSAGE_TYPE }) === true);
     check("Design revision ไม่ใช่ข้อความคุย", isMessage({ type: "Design revision" }) === false);
