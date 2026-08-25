@@ -194,6 +194,7 @@ function ApprovalCenterInner() {
             onOpenGraphic={(id, tab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); }}
             onApprove={approveExpense} onReject={rejectExpense}
             onGraphicUpdate={(next) => setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)))}
+            onContentUpdate={(next) => setPosts((ps) => ps.map((p) => (p.id === next.id ? next : p)))}
             only={lane}
           />
         )}

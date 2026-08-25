@@ -32,7 +32,8 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { ChevronDown } from "lucide-react";
 import { GTab } from "@/components/graphic/GraphicDrawer";
 import { usePanelCollapsed } from "@/components/campaign/CampaignHeadController";
-import { captionOwner } from "@/lib/data/content";
+import { ContentItem, captionOwner } from "@/lib/data/content";
+import { decideCaption } from "@/lib/captionDecision";
 import { brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
 import { rateLabel, inferWhtRate } from "@/lib/data/expenseTax";
@@ -111,7 +112,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, only }: {
+export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, only }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -126,6 +127,8 @@ export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraph
   /** A request changed under a row (a lens verdict). The page owns the list, so
    *  it re-renders and the row leaves the queue on its own. */
   onGraphicUpdate?: (g: Graphic) => void;
+  /** Same, for a post whose caption was just decided. */
+  onContentUpdate?: (c: ContentItem) => void;
   /** Render just this one lane — the rail's Caption / Artwork / VDO entries.
    *  Null shows every lane. A lane opened deliberately is never folded shut:
    *  the remembered collapse is for the full page, and honouring it here would
@@ -217,7 +220,7 @@ export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraph
       {panels.map(({ kind, rows: kindRows }) => (
         <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only} view={view}>
           {kindRows.map((row) => (view === "list"
-            ? renderRow(row, now, { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate })
+            ? renderRow(row, now, { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate })
             : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject })))}
         </KindPanel>
       ))}
@@ -487,8 +490,9 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   onApprove: (r: ExpenseReq) => void;
   onReject: (r: ExpenseReq, reason: string) => void;
   onGraphicUpdate?: (g: Graphic) => void;
+  onContentUpdate?: (c: ContentItem) => void;
 }) {
-  const { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate } = deps;
+  const { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate } = deps;
   // Money keeps its own row: the amount and the two buttons are the reason
   // anyone opens this lane, and a shared row cannot carry them.
   if (row.kind === "expense") {
@@ -502,6 +506,11 @@ function renderRow(row: ApprovalRow, now: number, deps: {
     return <LensRow key={row.key} row={row} now={now} codeOf={codeOf} me={me}
       onOpenGraphic={onOpenGraphic} onGraphicUpdate={onGraphicUpdate} />;
   }
+  // Captions: the words themselves, and the verdict. An easy yes should not
+  // need a page load — the whole thing being approved is right here.
+  if (row.kind === "caption") {
+    return <CaptionRow key={row.key} row={row} now={now} me={me} onContentUpdate={onContentUpdate} />;
+  }
   const d = describe(row, codeOf);
   const inner = (
     <>
@@ -514,9 +523,6 @@ function renderRow(row: ApprovalRow, now: number, deps: {
       <Cta row={row} action={d.action} />
     </>
   );
-  if (row.kind === "caption") {
-    return <Link key={row.key} href={workLink.post(row.post.id)} className={rowCx}>{inner}</Link>;
-  }
   if (row.kind === "campaign") {
     return <Link key={row.key} href={`/campaigns/${row.c.id}?tab=approval`} className={rowCx}>{inner}</Link>;
   }
@@ -530,6 +536,83 @@ function renderRow(row: ApprovalRow, now: number, deps: {
     <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB[row.kind])} className={rowCx}>
       {inner}
     </button>
+  );
+}
+
+/** A caption row that can be read and signed off without leaving the page.
+ *
+ *  The words are the whole object under review — unlike an artwork, there is no
+ *  file to open — so they sit on the row in full rather than clipped to three
+ *  lines. Hashtags and CTA come too: a caption approved without them is a
+ *  caption approved without half of what gets published.
+ *
+ *  The title still links to the post for anything the row cannot answer (the
+ *  brief guide, the artwork beside it, the publish settings). */
+function CaptionRow({ row, now, me, onContentUpdate }: {
+  row: Extract<ApprovalRow, { kind: "caption" }>;
+  now: number;
+  me: string;
+  onContentUpdate?: (c: ContentItem) => void;
+}) {
+  const [revising, setRevising] = useState(false);
+  const [reason, setReason] = useState("");
+  const [acted, setActed] = useState(false);
+  const p = row.post;
+  const words = (p.caption ?? "").trim();
+  const extras = [p.hashtags, p.cta].map((x) => (x ?? "").trim()).filter(Boolean).join(" · ");
+
+  const decide = async (decision: "approve" | "revise", note?: string) => {
+    if (acted) return;
+    setActed(true);
+    const next = await decideCaption({ item: p, decision, by: me, reason: note, onUpdate: onContentUpdate });
+    // Refused (nothing waiting, no reason, or the write failed) → let them try
+    // again rather than leaving a row that looks pressed and did nothing.
+    if (!next) setActed(false);
+  };
+
+  return (
+    <div className={`${rowCx} flex-wrap items-start`} style={{ cursor: "default" }}>
+      <KindBadge kind="caption" />
+      <span className="flex-1 min-w-[240px]">
+        <span className="flex items-center gap-2 flex-wrap">
+          <Link href={workLink.post(p.id)} className="text-[13px] font-bold text-ink hover:text-accent transition truncate">
+            {p.title}
+          </Link>
+          <AgePill iso={row.waitingSince} now={now} />
+        </span>
+        <span className="block text-[11.5px] text-faint truncate">
+          {brandName(p.b)} · {p.campaign} · {p.plat} · เขียนโดย {captionOwner(p) || "—"}
+        </span>
+        <span className="block text-[12px] text-muted leading-[1.55] mt-[4px] whitespace-pre-wrap">
+          {words || "— ไม่มีข้อความ —"}
+        </span>
+        {extras && <span className="block text-[11px] text-faint mt-[2px]">{extras}</span>}
+      </span>
+
+      <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
+        {!row.mine ? (
+          <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
+        ) : revising ? (
+          <span className="flex items-center gap-2">
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="สิ่งที่ต้องแก้" autoFocus
+              className="text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none w-[200px]" />
+            <button onClick={() => { if (reason.trim()) void decide("revise", reason.trim()); }} disabled={!reason.trim() || acted}
+              className="text-[11.5px] font-bold text-white rounded-[8px] px-[10px] py-[6px] disabled:opacity-40" style={{ background: "#B33A2E" }}>ส่งกลับแก้</button>
+            <button onClick={() => setRevising(false)} className="text-[11.5px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 text-muted bg-white">Cancel</button>
+          </span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <button onClick={() => void decide("approve")} disabled={acted}
+              className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
+              {acted ? "…" : "✓ อนุมัติ"}
+            </button>
+            <button onClick={() => setRevising(true)} disabled={acted}
+              className="text-[11.5px] font-bold px-[9px] py-[6px] rounded-[8px] disabled:opacity-50"
+              style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>↩ ขอแก้</button>
+          </span>
+        )}
+      </span>
+    </div>
   );
 }
 
