@@ -190,11 +190,24 @@ console.log("Graphic due date — the lead time and the publish date can contrad
   check("publish exactly on the minimum = fine", !graphicDueRangeImpossible("2026-08-03", request));
 
   // …and Submit must not block on "due ≤ publish" when no date can satisfy it.
+  //
+  // These dates are relative to TODAY, and have to be: whether a range is
+  // possible is measured from today (min due = 5 business days out), so a
+  // hardcoded "far enough out" post stops being far enough the moment the
+  // calendar reaches it — this suite went red on 26 Aug 2026 because 2026-09-01
+  // had drifted inside the lead time and the rule was correctly skipped.
+  // Built off todayIso() — the same local-calendar "today" the rule reads — so
+  // the fixture and the rule can never disagree about what day it is.
+  const inDays = (days: number) => {
+    const [y, m, d] = todayIso().split("-").map(Number);
+    const at = new Date(y, m - 1, d + days);
+    return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+  };
   const brief = (publishDate: string, graphicDueDate: string): CampaignBrief => {
     const b = emptyBrief("due-range-test");
     b.name = "N"; b.objective = "Awareness"; b.campaignType = "Always-on"; b.b = "teppen";
-    b.branches = ["Central"]; b.startDate = "2026-07-01"; b.endDate = "2026-12-31";
-    b.launchDate = "2026-07-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O"; b.approver = "CMO";
+    b.branches = ["Central"]; b.startDate = inDays(-30); b.endDate = inDays(365);
+    b.launchDate = inDays(-30); b.audience = "A"; b.mainMessage = "M"; b.offer = "O"; b.approver = "CMO";
     b.content = [{
       ...emptyContentItem(1), id: "c1", title: "T", subHead: "S", platforms: ["Instagram"],
       assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], requiredGraphic: true,
@@ -204,9 +217,9 @@ console.log("Graphic due date — the lead time and the publish date can contrad
   };
   const afterPublish = (b: CampaignBrief) => validateSubmit(b).some((e) => /must not be after Publish Date/.test(e));
   // A post far enough out: the rule still bites.
-  check("due after publish is still blocked when the range is possible", afterPublish(brief("2026-09-01", "2026-09-15")));
+  check("due after publish is still blocked when the range is possible", afterPublish(brief(inDays(60), inDays(75))));
   // A post inside the lead time: warned in the form, never blocked here.
-  check("…but not blocked when no date could satisfy both", !afterPublish(brief("2026-07-28", "2026-08-03")));
+  check("…but not blocked when no date could satisfy both", !afterPublish(brief(inDays(1), inDays(3))));
 }
 
 console.log("Graphic lead time — a rule about the ask, not about how old the campaign is");

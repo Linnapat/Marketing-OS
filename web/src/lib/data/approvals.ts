@@ -26,7 +26,7 @@
 // Everything here is pure: no fetching, no React. The page owns the data, this
 // owns the rules — so /my-approvals and /my-tasks can never disagree.
 
-import type { BrandId } from "@/lib/brands";
+import type { BrandId, BrandFilterValue } from "@/lib/brands";
 import type { CampaignRow } from "@/lib/data/campaigns";
 import type { ContentItem } from "@/lib/data/content";
 import type { RequestRow } from "@/lib/data/requests";
@@ -61,6 +61,11 @@ interface RowBase {
   key: string;
   /** Null only where the source row carries a brand LABEL rather than an id. */
   b: BrandId | null;
+  /** The campaign this decision belongs to, by name — what the filter at the
+   *  top of the queue offers, and what the card already prints. Empty where the
+   *  source row carries none (an ad-hoc request), which the filter treats as
+   *  "cannot say" rather than hiding it. */
+  campaign: string;
   waitingSince: string;
   /** May the person reading this actually decide it? Drives the buttons, the
    *  "ของฉัน / ทั้งทีม" split and the badge — never whether the row exists. */
@@ -165,7 +170,7 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
 
     if (awaitsStoryboardDecision(g)) {
       out.push({
-        kind: "storyboard", key: `g${g.id}:storyboard`, b: g.b, g,
+        kind: "storyboard", key: `g${g.id}:storyboard`, b: g.b, campaign: g.campaign ?? "", g,
         waitingSince: g.storyboardSubmittedAt || g.createdAt || "",
         mine: isRequester, waitingOn: firstName(g.requester, "ผู้ขอเปิดงาน"),
       });
@@ -177,7 +182,7 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
       for (const lens of REVIEW_LENSES) {
         if (d.review?.[lens]) continue;
         out.push({
-          kind, key: `g${g.id}:d${index}:${lens}`, b: g.b, g, deliverable: d, index, lens,
+          kind, key: `g${g.id}:d${index}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
           waitingSince: d.submittedAt || g.submittedAt || g.createdAt || "",
           mine: canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d }),
           // The data check is the requester's by name; Visual CI belongs to the
@@ -189,7 +194,7 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
 
     if (awaitsBriefUnlockDecision(g)) {
       out.push({
-        kind: "briefUnlock", key: `g${g.id}:briefUnlock`, b: g.b, g,
+        kind: "briefUnlock", key: `g${g.id}:briefUnlock`, b: g.b, campaign: g.campaign ?? "", g,
         waitingSince: g.briefUnlock?.requestedAt || g.createdAt || "",
         // Not the person who asked — they are waiting on the answer, not
         // holding it, however senior they are.
@@ -234,7 +239,7 @@ export function buildApprovalRows(input: {
     // field let them approve themselves.
     const wroteIt = captionOwner(post).toLowerCase() === ctx.me.trim().toLowerCase();
     rows.push({
-      kind: "caption", key: `c:${post.id}`, b: post.b, post,
+      kind: "caption", key: `c:${post.id}`, b: post.b, campaign: post.campaign ?? "", post,
       waitingSince: post.createdAt || "",
       mine: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
       waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),
@@ -248,7 +253,7 @@ export function buildApprovalRows(input: {
     if (!campaignPending(c) || !ctx.isVisible(c.b)) continue;
     const forApproval = (c.status ?? "").trim() === "Waiting for Approval";
     rows.push({
-      kind: "campaign", key: `cam:${c.id}`, b: c.b, c, waitingSince: "",
+      kind: "campaign", key: `cam:${c.id}`, b: c.b, campaign: c.name ?? "", c, waitingSince: "",
       mine: forApproval
         ? ctx.canApproveCampaign
         // Fail-closed on a blank name: while the member row loads, `me` is ""
@@ -263,7 +268,7 @@ export function buildApprovalRows(input: {
   for (const r of input.requests) {
     if (!PENDING_REQ_STAGES.has(r.stage) || r.type === "Budget" || !ctx.isVisible(r.b)) continue;
     rows.push({
-      kind: "request", key: `req:${r.id}`, b: r.b, r, waitingSince: "",
+      kind: "request", key: `req:${r.id}`, b: r.b, campaign: r.campaign ?? "", r, waitingSince: "",
       mine: isSamePerson(r.approver, ctx.myKeys), waitingOn: firstName(r.approver, "ผู้อนุมัติ"),
     });
   }
@@ -289,7 +294,7 @@ export function buildApprovalRows(input: {
     if (!ctx.canSeeSpending) break;
     if (r.status !== "Waiting Approval" || !ctx.isVisible(r.b)) continue;
     rows.push({
-      kind: "expense", key: `exp:${r._id ?? r.ref ?? `${r.b}-${r.category}`}`, b: r.b, r,
+      kind: "expense", key: `exp:${r._id ?? r.ref ?? `${r.b}-${r.category}`}`, b: r.b, campaign: r.campaign ?? "", r,
       waitingSince: r.createdAt || "",
       // The expense row carries no approver column — the gate IS the role.
       mine: ctx.canApproveExpense, waitingOn: DEFAULT_APPROVER,
@@ -300,12 +305,51 @@ export function buildApprovalRows(input: {
   for (const t of input.kol) {
     if (t.status !== "Need Approval" || ctx.doneIds.has(t.id) || !ctx.canSeeBrandLabel(t.brand)) continue;
     rows.push({
-      kind: "kol", key: `kol:${t.id}`, b: null, t, waitingSince: "",
+      kind: "kol", key: `kol:${t.id}`, b: null, campaign: t.campaign ?? "", t, waitingSince: "",
       mine: isSamePerson(t.assignee, ctx.myKeys), waitingOn: firstName(t.assignee, "ผู้อนุมัติ"),
     });
   }
 
   return rows.sort(byWaitingLongest);
+}
+
+/* ── Narrowing the queue ───────────────────────────────────────────────────
+ *
+ * Brand and campaign, as chips over rows the viewer is already ALLOWED to see.
+ * The permission cut happens earlier, in buildApprovalRows (ctx.isVisible) —
+ * these two only narrow what is on screen, and what they hide is reported by
+ * FilterSummary. A filter that hides silently and a permission that hides
+ * permanently must never look the same to the person reading the list.
+ */
+
+/** Campaign names present in these rows, for the filter's options. */
+export function approvalCampaigns(rows: ApprovalRow[]): string[] {
+  const seen = new Map<string, string>();
+  for (const r of rows) {
+    const name = (r.campaign ?? "").trim();
+    if (!name || name === "—") continue;
+    const key = name.toLowerCase();
+    if (!seen.has(key)) seen.set(key, name);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, "th"));
+}
+
+/** Does this row survive the brand chip?
+ *
+ *  A row whose source carries a brand LABEL rather than an id (KOL tasks) has
+ *  no id to compare, so it stays: it was already brand-scoped on the way in
+ *  (ctx.canSeeBrandLabel), and dropping it here would hide a decision on the
+ *  grounds that we could not read its brand. */
+export function matchesApprovalBrand(row: ApprovalRow, brand: BrandFilterValue): boolean {
+  if (brand === "all") return true;
+  return row.b === null || row.b === brand;
+}
+
+/** Does this row survive the campaign chip? A row with no campaign is not the
+ *  campaign you picked, so it goes — and is counted as hidden, not vanished. */
+export function matchesApprovalCampaign(row: ApprovalRow, campaign: string): boolean {
+  if (campaign === "all") return true;
+  return (row.campaign ?? "").trim().toLowerCase() === campaign.trim().toLowerCase();
 }
 
 /** Count per kind, for the chip badges. Every kind is present (as 0) so the
