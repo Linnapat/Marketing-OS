@@ -10,7 +10,7 @@
 
 import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
-  applyLensVerdict, rejectionsByLens, emptyDeliverable,
+  applyLensVerdict, rejectionsByLens, emptyDeliverable, approvalLadder,
   creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS, approvedAssetRow,
   relocateApprovedAsset,
   type Graphic, type GraphicDeliverable,
@@ -190,6 +190,78 @@ is("VDO Editor ย้ายไม่ได้", canRelocateApprovedAsset("VDO Ed
 is("Agency (External) ย้ายไม่ได้", canRelocateApprovedAsset("Agency (External)"), false);
 is("Marketing Manager / BGL ย้ายไม่ได้", canRelocateApprovedAsset("Marketing Manager / BGL"), false);
 is("role ว่างย้ายไม่ได้", canRelocateApprovedAsset(""), false);
+
+console.log("\n— บันไดอนุมัติที่แท็บ Approval —");
+/* บันไดเดิมเดาจากฟิลด์อื่น: ขั้น requester เป็น Pending เมื่อมี feedback ค้างสักเส้น
+   และขั้น CMO ค้างจนกว่าจะ Delivered — งานที่เซ็นครบแล้วจึงอ่านว่ายังไม่เสร็จ */
+{
+  const who = { designer: "Boss", requester: "Ken S.", brandLead: "Pupay", creativeLeader: "Boss L." };
+  const passed = (by: string) => ({ verdict: "pass" as const, by, at: "2026-08-01T02:00:00Z" });
+
+  const none = approvalLadder([], who);
+  is("ยังไม่ส่งงาน → ขั้นแรกยังไม่ติ๊ก", none[0].state, "idle");
+  is("ยังไม่ส่งงาน → ด้านข้อมูลยังไม่เริ่ม", none[1].state, "idle");
+
+  // ไม่มีขั้น CMO อีกแล้ว — CMO เซ็นแทนด้านไหนก็ได้ แต่ไม่ใช่ขั้นของตัวเอง
+  const waiting = approvalLadder([submitted()], who);
+  is("บันไดมี 3 ขั้น (ส่ง + สองด้าน)", waiting.length, 3);
+  is("ไม่มีขั้น CMO", waiting.some((s) => /CMO/i.test(s.role)), false);
+  is("ส่งงานแล้ว → ขั้นแรก Done", waiting[0].state, "done");
+  is("ขั้นแรกขึ้นชื่อคนส่งจริง", waiting[0].person, "Boss");
+  is("ยังไม่มีใครตรวจ → ด้านข้อมูล Pending", waiting[1].state, "pending");
+  is("ด้านข้อมูลรอผู้ขอหรือ brand lead", waiting[1].person, "Ken S. / Pupay");
+  is("ด้าน CI รอ Creative Leader", waiting[2].person, "Boss L.");
+
+  // เซ็นด้านเดียวไม่ทำให้ทั้งใบเสร็จ แต่ต้องไม่ทำให้ด้านที่เซ็นแล้วค้าง Pending ด้วย
+  const half = approvalLadder([submitted({ review: { info: passed("Ken S.") } })], who);
+  is("เซ็นด้านข้อมูลแล้ว → Done", half[1].state, "done");
+  is("ขึ้นชื่อคนเซ็นจริง ไม่ใช่ชื่อคนที่ควรเซ็น", half[1].person, "Ken S.");
+  is("ด้าน CI ยังค้าง", half[2].state, "pending");
+
+  // CMO เซ็นแทนได้ และต้องขึ้นชื่อ CMO ตรงด้านที่เซ็น ไม่ใช่ขั้นแยกท้ายบันได
+  const byCmo = approvalLadder([submitted({ review: { ci: passed("Aran P.") } })], who);
+  is("CMO เซ็นแทนด้าน CI ได้ และขึ้นชื่อตรงด้านนั้น", byCmo[2].person, "Aran P.");
+  is("CMO เซ็นแทนแล้วยังมีแค่ 3 ขั้น", byCmo.length, 3);
+
+  const bothIn = approvalLadder([submitted({ review: { info: passed("Ken S."), ci: passed("Boss L.") } })], who);
+  is("ครบสองด้าน → ด้านข้อมูล Done", bothIn[1].state, "done");
+  is("ครบสองด้าน → ด้าน CI Done", bothIn[2].state, "done");
+  is("ครบสองด้านแล้วไม่มีอะไรค้าง", bothIn.some((s) => s.state === "pending"), false);
+
+  const kicked = approvalLadder([submitted({ review: { info: { verdict: "revise", by: "Ken S.", at: "2026-08-01T02:00:00Z", note: "ราคาผิด" } } })], who);
+  is("ตีกลับ → ไม่ใช่ Pending แต่เป็น revise", kicked[1].state, "revise");
+  is("ตีกลับขึ้นชื่อคนตีกลับ", kicked[1].person, "Ken S.");
+
+  // สองชิ้น เซ็นไปชิ้นเดียว = ยังไม่จบ และต้องบอกว่าเหลือกี่ชิ้น
+  const partial = approvalLadder([
+    submitted({ review: { info: passed("Ken S.") } }),
+    submitted({ platform: "Facebook", review: {} }),
+  ], who);
+  is("เซ็นไม่ครบทุกชิ้น → ยัง Pending", partial[1].state, "pending");
+  is("บอกจำนวนที่ยังเหลือ", partial[1].detail?.startsWith("รออีก 1/2 ชิ้น"), true);
+
+  // แถวเก่าก่อนมีการตรวจสองด้าน: มีแต่ status ไม่มี review — ต้องไม่ค้าง Pending ตลอดกาล
+  const legacy = approvalLadder([submitted({ status: "Approved", review: undefined })], who);
+  is("แถวเก่าที่ Approved แล้ว → ด้านข้อมูล Done", legacy[1].state, "done");
+  is("แถวเก่าที่ Approved แล้ว → ด้าน CI Done", legacy[2].state, "done");
+  is("แถวเก่าไม่เดาชื่อคนเซ็น", legacy[1].person.startsWith("—"), true);
+  const legacyBack = approvalLadder([submitted({ status: "Revision", review: undefined })], who);
+  is("แถวเก่าที่โดนตีกลับ → ไม่ใช่ Pending", legacyBack[1].state, "revise");
+
+  // ใบงานเก่าที่ไม่มีแถว deliverable เลย — บันไดต้องอ่านจากสถานะใบงานแทน ไม่ใช่ขึ้น "ยังไม่ส่งงาน"
+  const noRows = approvalLadder([], { ...who, stage: "Approved" });
+  is("ใบงานเก่าไม่มีแถว + stage Approved → ส่งงานแล้ว", noRows[0].state, "done");
+  is("ใบงานเก่าไม่มีแถว + stage Approved → ด้านข้อมูล Done", noRows[1].state, "done");
+  const waitingStage = approvalLadder([], { ...who, stage: "Waiting Approval" });
+  is("stage Waiting Approval → ด้านข้อมูลรอตรวจ", waitingStage[1].state, "pending");
+  is("stage Waiting Approval → ไม่โชว์จำนวนชิ้นปลอม", waitingStage[1].detail?.includes("รออีก"), false);
+  const early = approvalLadder([], { ...who, stage: "New Request" });
+  is("stage ยังไม่ถึงส่งงาน → ขั้นแรกยังว่าง", early[0].state, "idle");
+
+  // แบรนด์ที่ไม่มี brand lead: ขั้นไม่หาย และไม่ตั้งคนแทน
+  const noLead = approvalLadder([submitted()], { ...who, brandLead: null });
+  is("ไม่มี brand lead → ด้านข้อมูลยังอยู่ รอผู้ขอคนเดียว", noLead[1].person, "Ken S.");
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

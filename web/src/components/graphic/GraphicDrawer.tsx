@@ -18,7 +18,7 @@ import { GRAPHIC_OPEN_PARAM,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress, applyLensVerdict,
-  canGiveLensVerdict, canPassLens,
+  canGiveLensVerdict, canPassLens, approvalLadder,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
@@ -1364,25 +1364,41 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
           {tab === "approval" && (
             <div className="flex flex-col gap-3">
-              {/* The brand lead step is dropped when the brand has nobody scoped to
-                  it, and when the lead IS the requester — the same person cannot
-                  hold both step 2 and step 3, which is the rule everywhere else
-                  (a requester does not sign off their own brief). Either way the
-                  job goes straight from the requester to the CMO.
-                  The CMO step was gated on `g.pendingApprover === g.approver`, which is
-                  always true — both are set from the same value when the request is
-                  created and neither ever moves — so the "neutral" branch was
-                  unreachable. Kept the behaviour, dropped the comparison that
-                  pretended to decide it. */}
-              {[["Designer submitted", "green", g.designer], ["Requester reviewed", g.openFb > 0 ? "gold" : "green", g.requester],
-              ...(brandLead && !sameName(brandLead, g.requester) ? [["Brand lead approval", g.stage === "Approved" || g.stage === "Delivered" ? "green" : "neutral", brandLead]] : []),
-              ["CMO approval", g.stage === "Delivered" ? "green" : "gold", g.approver]].map(([role, tone, person], i) => (
-                <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: tone === "green" ? "#4E7A4E" : tone === "gold" ? "#C68A1E" : "#C0B8AD" }}>{i + 1}</div>
-                  <div className="flex-1"><div className="text-[13px] font-bold">{role as string}</div><div className="text-[11.5px] text-faint">{person as string}</div></div>
-                  <StatusBadge tone={tone as "green" | "gold" | "neutral"}>{tone === "green" ? "Done" : tone === "gold" ? "Pending" : "—"}</StatusBadge>
-                </div>
-              ))}
+              {/* Rungs come from approvalLadder in lib/data/graphic — the same
+                  review records the Assets tab writes, so the two can no longer
+                  disagree about whether this job is signed off. */}
+              {approvalLadder(deliverables, {
+                designer: g.designer,
+                requester: g.requester,
+                brandLead,
+                creativeLeader,
+                stage: g.stage,
+              }).map((s, i) => {
+                const tone = s.state === "done" ? "green" : s.state === "pending" ? "gold" : s.state === "revise" ? "orange" : "neutral";
+                const label = s.state === "done" ? "Done" : s.state === "pending" ? "Pending" : s.state === "revise" ? "ตีกลับ" : "—";
+                const dot = { green: "#4E7A4E", gold: "#C68A1E", orange: "#DD8A2F", neutral: "#C0B8AD" }[tone];
+                return (
+                  <div key={s.key} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
+                    <div className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: dot }}>{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-bold">{s.role}</div>
+                      <div className="text-[11.5px] text-faint">{s.person}</div>
+                      {s.detail && <div className="text-[11px] text-faint mt-[2px] leading-[1.5]">{s.detail}</div>}
+                    </div>
+                    <StatusBadge tone={tone as "green" | "gold" | "orange" | "neutral"}>{label}</StatusBadge>
+                  </div>
+                );
+              })}
+              {/* Said out loud, because the ladder used to end at a CMO rung and
+                  people waited on it. */}
+              <div className="rounded-card border border-line px-3 py-[10px] text-[11.5px] text-muted leading-[1.6]" style={{ background: "#F7F4EE" }}>
+                ครบทั้งสองด้าน = อนุมัติแล้ว · <b>CMO ไม่ต้องเซ็นเพิ่ม</b> สำหรับ Artwork / VDO / Caption (เซ็นแทนด้านที่เจ้าของไม่ว่างได้ แต่ไม่ใช่ขั้นของตัวเอง)
+                {brandLead && !sameName(brandLead, g.requester) ? ` · ${brandLead} (brand lead ${brandName(g.b)}) เซ็นด้านข้อมูลแทนผู้ขอได้` : ""}
+              </div>
+              {/* The buttons live in Assets, and people looked for them here. */}
+              <button onClick={() => setTab("assets")} className="self-start text-[12px] font-bold text-panel underline">
+                ปุ่มกดตรวจอยู่ที่แท็บ Assets →
+              </button>
             </div>
           )}
 
