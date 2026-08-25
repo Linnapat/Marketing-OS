@@ -193,8 +193,12 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
                   href={item.tab ? `${item.href}?tab=${item.tab}` : item.href}
                   onClick={() => {
                     onNavigate?.();
-                    if (!item.tab) return;
-                    setActiveTab(item.tab);
+                    // Fires for plain entries too, with tab undefined: going
+                    // from ?tab=artwork back to the bare href is the same
+                    // same-pathname move, and skipping it left the rail lit on
+                    // Artwork while the page had already gone back to showing
+                    // everything. Pages ignore hrefs that are not theirs.
+                    setActiveTab(item.tab ?? null);
                     // Same pathname, different query → the page does not
                     // remount, so tell it directly which tab to show.
                     window.dispatchEvent(new CustomEvent("nav:tab", { detail: { href: item.href, tab: item.tab } }));

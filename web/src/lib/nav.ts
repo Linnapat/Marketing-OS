@@ -2,7 +2,7 @@ import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
   CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
-  Stamp,
+  Stamp, FileText, Video,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +35,15 @@ export const NAV: NavGroup[] = [
     label: "Approval",
     items: [
       { href: "/approval-center", label: "Approval Center", icon: Stamp, ready: true },
+      // The three lanes people actually live in, as their own rail entries.
+      // Same page, one panel each (?tab=) — a Creative Leader who only ever
+      // signs Visual CI should be one click from artwork, not one click plus a
+      // scroll past captions and money. Tabbed siblings of the entry above:
+      // the Sidebar lights whichever ?tab= matches, and the plain entry when
+      // there is none.
+      { href: "/approval-center", tab: "caption", label: "Caption", icon: FileText, ready: true },
+      { href: "/approval-center", tab: "artwork", label: "Artwork", icon: Palette, ready: true },
+      { href: "/approval-center", tab: "vdo", label: "VDO", icon: Video, ready: true },
       { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
     ],
   },

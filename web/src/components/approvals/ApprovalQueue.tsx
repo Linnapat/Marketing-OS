@@ -24,10 +24,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, countByKind, waitingDays,
+  ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays,
 } from "@/lib/data/approvals";
 import { LENS_META } from "@/lib/data/graphic";
+import { ChevronDown } from "lucide-react";
 import { GTab } from "@/components/graphic/GraphicDrawer";
+import { usePanelCollapsed } from "@/components/campaign/CampaignHeadController";
 import { captionOwner } from "@/lib/data/content";
 import { brandName } from "@/lib/brands";
 import { baht } from "@/lib/format";
@@ -104,7 +106,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject, emptyHint }: {
+export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject, only }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -114,55 +116,46 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
   onOpenGraphic: (id: number, tab?: GTab) => void;
   onApprove: (r: ExpenseReq) => void;
   onReject: (r: ExpenseReq, reason: string) => void;
-  emptyHint?: string;
+  /** Render just this one lane — the rail's Caption / Artwork / VDO entries.
+   *  Null shows every lane. A lane opened deliberately is never folded shut:
+   *  the remembered collapse is for the full page, and honouring it here would
+   *  send someone who clicked "Artwork" to an artwork panel with nothing in it. */
+  only?: ApprovalKind | null;
 }) {
   const codeOf = useCampaignCodes();
-  const [kind, setKind] = useState<ApprovalKind | "all">("all");
   // Yours by default. The team view is the answer to "why is this late", not
   // the daily working set — opening onto forty rows, thirty-six of which you
   // cannot act on, is how a queue stops being read at all.
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const mineRows = useMemo(() => rows.filter((r) => r.mine), [rows]);
   const scoped = scope === "mine" ? mineRows : rows;
-  const counts = useMemo(() => countByKind(scoped), [scoped]);
+  // Everything the header talks about is scoped to the open lane. Reading the
+  // whole queue here put "ค้างเกิน 7 วัน 2 รายการ" above an empty VDO lane —
+  // a real number about work that was nowhere on the screen.
+  const inLane = (list: ApprovalRow[]) => (only ? list.filter((r) => r.kind === only) : list);
+  const laneRows = useMemo(() => inLane(scoped), [scoped, only]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const laneTeam = useMemo(() => inLane(rows), [rows, only]);       // eslint-disable-line react-hooks/exhaustive-deps
   // Anything past a week is the queue failing, not the queue working.
   const stalled = useMemo(
-    () => scoped.filter((r) => (waitingDays(r.waitingSince, now) ?? 0) >= STALE_DAYS).length,
-    [scoped, now],
+    () => laneRows.filter((r) => (waitingDays(r.waitingSince, now) ?? 0) >= STALE_DAYS).length,
+    [laneRows, now],
   );
-  // Narrowing to a kind and then clearing the last of it would otherwise leave
-  // an empty list under a chip that no longer exists.
-  const active = kind !== "all" && counts[kind] === 0 ? "all" : kind;
-  const visible = useMemo(
-    () => (active === "all" ? scoped : scoped.filter((r) => r.kind === active)),
-    [scoped, active],
-  );
-
-  // The oldest thing waiting in each lane. A count alone says how much is open;
-  // this says whether any of it has been abandoned, which is the number a
-  // command centre exists to put in front of someone.
-  const oldestOf = useMemo(() => {
-    const out = {} as Record<ApprovalKind, number | null>;
-    for (const k of APPROVAL_KIND_ORDER) {
-      const ages = scoped.filter((r) => r.kind === k)
-        .map((r) => waitingDays(r.waitingSince, now))
-        .filter((d): d is number => d !== null);
-      out[k] = ages.length ? Math.max(...ages) : null;
-    }
-    return out;
-  }, [scoped, now]);
-
-  // Caption, Artwork and VDO always get a lane, empty or not. VDO spent a long
-  // time folded into "Graphic work" and a tile that disappears on a quiet week
-  // is how it gets folded back in — the lanes are the shape of the work, not a
+  // Every kind that gets a panel, and the rows inside it. Caption, Artwork and
+  // VDO hold a panel whether or not they have work today: VDO spent a long time
+  // folded into "Graphic work" even though workKind() has classified it
+  // separately since it existed, and a section that vanishes on a quiet week is
+  // how it gets folded back in. The panels are the shape of the work, not a
   // summary of today's rows. Everything else appears when it has something.
-  const ALWAYS: ApprovalKind[] = ["caption", "artwork", "vdo"];
-  const lanes = useMemo(
-    () => APPROVAL_KIND_ORDER.filter((k) => ALWAYS.includes(k) || counts[k] > 0),
-    // ALWAYS is a module-level constant in spirit — listing it would churn the memo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [counts],
-  );
+  const panels = useMemo(() => {
+    const byKind = new Map<ApprovalKind, ApprovalRow[]>();
+    for (const r of scoped) {
+      const list = byKind.get(r.kind);
+      if (list) list.push(r); else byKind.set(r.kind, [r]);
+    }
+    return APPROVAL_KIND_ORDER
+      .filter((k) => (only ? k === only : ALWAYS_SHOWN.includes(k) || (byKind.get(k)?.length ?? 0) > 0))
+      .map((k) => ({ kind: k, rows: byKind.get(k) ?? [] }));
+  }, [scoped, only]);
 
   const scopeToggle = (
     <div className="flex items-center gap-[3px] p-[3px] rounded-pill flex-shrink-0" style={{ background: "#F2EFE9" }}>
@@ -171,261 +164,284 @@ export function ApprovalQueue({ rows, now, budgetOf, onOpenTask, onOpenGraphic, 
     </div>
   );
 
-  const controls = (
-    <div className="flex flex-col gap-3">
+  return (
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-[13px] font-semibold text-faint">
-          {scope === "mine" ? "รอคุณตัดสินใจ" : "ค้างอยู่ทั้งทีม"} {scoped.length} รายการ
+          {scope === "mine" ? "รอคุณตัดสินใจ" : "ค้างอยู่ทั้งทีม"}
+          {only ? ` · ${APPROVAL_META[only].label}` : ""} {laneRows.length} รายการ
           {stalled > 0 && (
             <span className="ml-[8px] font-bold" style={{ color: "#B33A2E" }}>· ค้างเกิน {STALE_DAYS} วัน {stalled} รายการ</span>
+          )}
+          {/* Clear on your side but the team still has work stuck: say so here
+              rather than let a quiet screen read as "all done". */}
+          {scope === "mine" && laneRows.length === 0 && laneTeam.length > 0 && (
+            <button onClick={() => setScope("all")} className="ml-[8px] font-bold text-accent hover:underline">
+              · ทีมยังค้าง {laneTeam.length} รายการ →
+            </button>
           )}
         </div>
         {scopeToggle}
       </div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(132px,1fr))" }}>
-        <Lane label="ทั้งหมด" icon="🗂" count={scoped.length} oldest={null}
-          on={active === "all"} onClick={() => setKind("all")} />
-        {lanes.map((k) => (
-          <Lane key={k} label={APPROVAL_META[k].label} icon={APPROVAL_META[k].icon} count={counts[k]}
-            oldest={oldestOf[k]} on={active === k} onClick={() => setKind(k)} />
-        ))}
-      </div>
-    </div>
-  );
 
-  if (scoped.length === 0) {
-    return (
-      <div className="flex flex-col gap-4">
-        {controls}
-        <div className="border-2 border-dashed border-line2 rounded-cardLg flex items-center justify-center p-16 text-center">
-          <div>
-            <div className="text-[15px] font-bold text-ink">
-              {scope === "mine" ? "ไม่มีงานรอคุณอนุมัติ 🎉" : "ไม่มีงานค้างอนุมัติในทีม 🎉"}
-            </div>
-            <div className="text-[12.5px] text-faint mt-1">
-              {emptyHint ?? "แคปชั่น อาร์ตเวิร์ก VDO แคมเปญ และการเบิกงบที่รออนุมัติจะมาโผล่ที่นี่"}
-            </div>
-            {/* Clear on your side but the team still has work stuck: say so
-                here rather than let an empty screen read as "all done". */}
-            {scope === "mine" && rows.length > 0 && (
-              <button onClick={() => setScope("all")} className="text-[12.5px] font-bold text-accent mt-3 hover:underline">
-                ทีมยังมีค้างอยู่ {rows.length} รายการ — ดูทั้งทีม →
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      {controls}
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-        {visible.map((row) => {
-          switch (row.kind) {
-            case "caption":
-              return (
-                <Link key={row.key} href={workLink.post(row.post.id)} className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.post.title}</span>
-                    <KindBadge kind="caption" />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-2 flex items-center gap-[6px] flex-wrap">
-                    <span>{brandCampaignLine(brandName(row.post.b), row.post.campaign)}</span>
-                    <AgePill iso={row.waitingSince} now={now} />
-                  </div>
-                  {/* The words themselves, so an easy yes needs no click. */}
-                  <div className="text-[12px] text-muted leading-[1.5] mb-3"
-                    style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                    {(row.post.caption ?? "").trim() || "— ไม่มีข้อความ —"}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(row.post) || "—"}</span>
-                    <Cta row={row} action="อ่านและอนุมัติ →" />
-                  </div>
-                </Link>
-              );
-
-            case "artwork":
-            case "vdo":
-            case "photo": {
-              const lens = LENS_META[row.lens];
-              return (
-                <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB[row.kind])} className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.g.title}</span>
-                    <KindBadge kind={row.kind} note={lens.short} />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-2 flex items-center gap-[5px] flex-wrap">
-                    <span>{brandName(row.g.b)} · {row.g.campaign}</span>
-                    <CampaignCode code={codeOf(row.g.campaignId, row.g.campaign)} />
-                    <AgePill iso={row.waitingSince} now={now} />
-                  </div>
-                  {/* Which piece, and which of the two checks is yours. Without
-                      the second line a Creative Leader could not tell a CI row
-                      from the requester's data check on the same artwork. */}
-                  <div className="text-[11.5px] mb-2">
-                    <div className="text-muted truncate">
-                      {row.deliverable.platform} · {row.deliverable.size}
-                      {row.deliverable.version ? ` · v${row.deliverable.version}` : ""}
-                    </div>
-                    <div className="font-bold mt-[2px]" style={{ color: APPROVAL_META[row.kind].fg }}>
-                      ตรวจ: {lens.label}
-                    </div>
-                    <div className="text-faint text-[11px] mt-[1px] leading-[1.45]">{lens.checks}</div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11.5px] text-muted truncate">
-                      ส่งโดย {row.deliverable.submittedBy || row.g.designer || "—"}
-                    </span>
-                    <Cta row={row} action="เปิดตรวจ →" />
-                  </div>
-                </button>
-              );
-            }
-
-            case "storyboard":
-              return (
-                <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB.storyboard)} className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.g.title}</span>
-                    <KindBadge kind="storyboard" />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                    <span>{brandName(row.g.b)} · {row.g.campaign} · {row.g.type}</span>
-                    <CampaignCode code={codeOf(row.g.campaignId, row.g.campaign)} />
-                    <AgePill iso={row.waitingSince} now={now} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    {/* Whose work is waiting on you — the storyboard is the
-                        Creative Content person's, not the designer's. */}
-                    <span className="text-[11.5px] text-muted truncate">
-                      Storyboard {row.g.storyboardSubmittedBy || row.g.storyboardOwner || "Creative"}
-                    </span>
-                    <Cta row={row} action="อนุมัติ storyboard →" />
-                  </div>
-                </button>
-              );
-
-            case "briefUnlock":
-              return (
-                <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB.briefUnlock)} className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.g.title}</span>
-                    <KindBadge kind="briefUnlock" />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                    <span>{brandName(row.g.b)} · {row.g.campaign} · {row.g.type}</span>
-                    <AgePill iso={row.waitingSince} now={now} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11.5px] text-muted truncate">
-                      ขอโดย {row.g.briefUnlock?.requestedBy || row.g.requester}
-                      {row.g.briefUnlock?.reason ? ` · ${row.g.briefUnlock.reason}` : ""}
-                    </span>
-                    <Cta row={row} action="ปล่อยให้เติมบรีฟ →" />
-                  </div>
-                </button>
-              );
-
-            case "expense":
-              return <ExpenseApprovalCard key={row.key} row={row} budget={budgetOf(row.r)} onApprove={onApprove} onReject={onReject} />;
-
-            case "campaign":
-              return (
-                <Link key={row.key} href={`/campaigns/${row.c.id}?tab=approval`} className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.c.name}</span>
-                    <KindBadge kind="campaign" note={row.c.status} />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-3">{brandName(row.c.b)} · {row.c.branch || "—"} · {row.c.campType}</div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11.5px] text-muted">Owner {row.c.owner}</span>
-                    {/* Name the actual ask. "Review →" on a Ready-for-Review card
-                        sent its owner looking for an approve button that is not
-                        theirs to press — the campaign is waiting to be SUBMITTED. */}
-                    <Cta row={row} action={row.c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"} />
-                  </div>
-                </Link>
-              );
-
-            case "request":
-              return (
-                <Link key={row.key} href="/status" className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.r.typeIcon} {row.r.title}</span>
-                    <KindBadge kind="request" note={row.r.stage} />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
-                    <span>{brandName(row.r.b)} · {row.r.campaign} · {row.r.type}</span>
-                    {/* Requests carry only the campaign name, so this resolves by
-                        name and stays blank when two campaigns share one. */}
-                    <CampaignCode code={codeOf(undefined, row.r.campaign)} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11.5px] text-muted">{row.r.requester} → {row.r.approver}</span>
-                    <Cta row={row} action="Review →" />
-                  </div>
-                </Link>
-              );
-
-            case "kol":
-              return (
-                <button key={row.key} onClick={() => onOpenTask(row.t.id)} className={cardCx}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13.5px] font-bold text-ink truncate">{row.t.title}</span>
-                    <KindBadge kind="kol" />
-                  </div>
-                  <div className="text-[11.5px] text-faint mb-3">{brandCampaignLine(row.t.brand, row.t.campaign)}</div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11.5px] text-muted">Requested for {row.t.assignee}</span>
-                    <Cta row={row} action="Review →" />
-                  </div>
-                </button>
-              );
-          }
-        })}
-      </div>
+      {panels.map(({ kind, rows: kindRows }) => (
+        <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only}>
+          {kindRows.map((row) => renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }))}
+        </KindPanel>
+      ))}
     </div>
   );
 }
 
-/** ของฉัน / ทั้งทีม. A segmented pair rather than a checkbox: the two are
- *  different readings of the same queue, and neither is a setting you turn on. */
+/** One card, by kind. An artwork card and an expense card are not the same
+ *  object — they answer different questions and carry different controls — so
+ *  this stays a switch rather than a generic row renderer. TypeScript checks it
+ *  is exhaustive: a kind added to ApprovalRow cannot compile past here without
+ *  a card to draw it.
+ *
+ *  Deps are passed rather than read from context because the callers are two
+ *  different pages with two different sets of handlers. */
+function renderCard(row: ApprovalRow, now: number, deps: {
+  codeOf: (id?: string, name?: string) => string | undefined;
+  budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
+  onOpenTask: (id: number) => void;
+  onOpenGraphic: (id: number, tab?: GTab) => void;
+  onApprove: (r: ExpenseReq) => void;
+  onReject: (r: ExpenseReq, reason: string) => void;
+}) {
+  const { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject } = deps;
+  switch (row.kind) {
+    case "caption":
+      return (
+        <Link key={row.key} href={workLink.post(row.post.id)} className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.post.title}</span>
+            <KindBadge kind="caption" />
+          </div>
+          <div className="text-[11.5px] text-faint mb-2 flex items-center gap-[6px] flex-wrap">
+            <span>{brandCampaignLine(brandName(row.post.b), row.post.campaign)}</span>
+            <AgePill iso={row.waitingSince} now={now} />
+          </div>
+          {/* The words themselves, so an easy yes needs no click. */}
+          <div className="text-[12px] text-muted leading-[1.5] mb-3"
+            style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {(row.post.caption ?? "").trim() || "— ไม่มีข้อความ —"}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(row.post) || "—"}</span>
+            <Cta row={row} action="อ่านและอนุมัติ →" />
+          </div>
+        </Link>
+      );
+
+    case "artwork":
+    case "vdo":
+    case "photo": {
+      const lens = LENS_META[row.lens];
+      return (
+        <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB[row.kind])} className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.g.title}</span>
+            <KindBadge kind={row.kind} note={lens.short} />
+          </div>
+          <div className="text-[11.5px] text-faint mb-2 flex items-center gap-[5px] flex-wrap">
+            <span>{brandName(row.g.b)} · {row.g.campaign}</span>
+            <CampaignCode code={codeOf(row.g.campaignId, row.g.campaign)} />
+            <AgePill iso={row.waitingSince} now={now} />
+          </div>
+          {/* Which piece, and which of the two checks is yours. Without
+              the second line a Creative Leader could not tell a CI row
+              from the requester's data check on the same artwork. */}
+          <div className="text-[11.5px] mb-2">
+            <div className="text-muted truncate">
+              {row.deliverable.platform} · {row.deliverable.size}
+              {row.deliverable.version ? ` · v${row.deliverable.version}` : ""}
+            </div>
+            <div className="font-bold mt-[2px]" style={{ color: APPROVAL_META[row.kind].fg }}>
+              ตรวจ: {lens.label}
+            </div>
+            <div className="text-faint text-[11px] mt-[1px] leading-[1.45]">{lens.checks}</div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] text-muted truncate">
+              ส่งโดย {row.deliverable.submittedBy || row.g.designer || "—"}
+            </span>
+            <Cta row={row} action="เปิดตรวจ →" />
+          </div>
+        </button>
+      );
+    }
+
+    case "storyboard":
+      return (
+        <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB.storyboard)} className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.g.title}</span>
+            <KindBadge kind="storyboard" />
+          </div>
+          <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+            <span>{brandName(row.g.b)} · {row.g.campaign} · {row.g.type}</span>
+            <CampaignCode code={codeOf(row.g.campaignId, row.g.campaign)} />
+            <AgePill iso={row.waitingSince} now={now} />
+          </div>
+          <div className="flex items-center justify-between">
+            {/* Whose work is waiting on you — the storyboard is the
+                Creative Content person's, not the designer's. */}
+            <span className="text-[11.5px] text-muted truncate">
+              Storyboard {row.g.storyboardSubmittedBy || row.g.storyboardOwner || "Creative"}
+            </span>
+            <Cta row={row} action="อนุมัติ storyboard →" />
+          </div>
+        </button>
+      );
+
+    case "briefUnlock":
+      return (
+        <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB.briefUnlock)} className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.g.title}</span>
+            <KindBadge kind="briefUnlock" />
+          </div>
+          <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+            <span>{brandName(row.g.b)} · {row.g.campaign} · {row.g.type}</span>
+            <AgePill iso={row.waitingSince} now={now} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] text-muted truncate">
+              ขอโดย {row.g.briefUnlock?.requestedBy || row.g.requester}
+              {row.g.briefUnlock?.reason ? ` · ${row.g.briefUnlock.reason}` : ""}
+            </span>
+            <Cta row={row} action="ปล่อยให้เติมบรีฟ →" />
+          </div>
+        </button>
+      );
+
+    case "expense":
+      return <ExpenseApprovalCard key={row.key} row={row} budget={budgetOf(row.r)} onApprove={onApprove} onReject={onReject} />;
+
+    case "campaign":
+      return (
+        <Link key={row.key} href={`/campaigns/${row.c.id}?tab=approval`} className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.c.name}</span>
+            <KindBadge kind="campaign" note={row.c.status} />
+          </div>
+          <div className="text-[11.5px] text-faint mb-3">{brandName(row.c.b)} · {row.c.branch || "—"} · {row.c.campType}</div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] text-muted">Owner {row.c.owner}</span>
+            {/* Name the actual ask. "Review →" on a Ready-for-Review card
+                sent its owner looking for an approve button that is not
+                theirs to press — the campaign is waiting to be SUBMITTED. */}
+            <Cta row={row} action={row.c.status === "Ready for Review" ? "ส่งขออนุมัติ →" : "Review & approve →"} />
+          </div>
+        </Link>
+      );
+
+    case "request":
+      return (
+        <Link key={row.key} href="/status" className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.r.typeIcon} {row.r.title}</span>
+            <KindBadge kind="request" note={row.r.stage} />
+          </div>
+          <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
+            <span>{brandName(row.r.b)} · {row.r.campaign} · {row.r.type}</span>
+            {/* Requests carry only the campaign name, so this resolves by
+                name and stays blank when two campaigns share one. */}
+            <CampaignCode code={codeOf(undefined, row.r.campaign)} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] text-muted">{row.r.requester} → {row.r.approver}</span>
+            <Cta row={row} action="Review →" />
+          </div>
+        </Link>
+      );
+
+    case "kol":
+      return (
+        <button key={row.key} onClick={() => onOpenTask(row.t.id)} className={cardCx}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-[13.5px] font-bold text-ink truncate">{row.t.title}</span>
+            <KindBadge kind="kol" />
+          </div>
+          <div className="text-[11.5px] text-faint mb-3">{brandCampaignLine(row.t.brand, row.t.campaign)}</div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] text-muted">Requested for {row.t.assignee}</span>
+            <Cta row={row} action="Review →" />
+          </div>
+        </button>
+      );
+  }
+}
+
+/** Kinds that keep a panel on an empty week — see the note in `panels`. */
+const ALWAYS_SHOWN: ApprovalKind[] = ["caption", "artwork", "vdo"];
+
+/** One foldable section of the centre: a kind of work, how much of it is open,
+ *  how long the worst of it has waited, and the cards themselves.
+ *
+ *  Folded state is remembered per browser through the same hook the summary
+ *  cards use, so somebody who never signs off artwork can collapse that panel
+ *  once and keep a short page. A panel with nothing in it renders its header
+ *  and no chevron: there is nothing to unfold, and a control that opens an
+ *  empty box is a control that teaches people not to press it. */
+function KindPanel({ kind, rows, now, forceOpen, children }: {
+  kind: ApprovalKind; rows: ApprovalRow[]; now: number; forceOpen?: boolean; children: React.ReactNode;
+}) {
+  const meta = APPROVAL_META[kind];
+  const { collapsed, toggle } = usePanelCollapsed("approval-kind", kind);
+  const oldest = useMemo(() => {
+    const ages = rows.map((r) => waitingDays(r.waitingSince, now)).filter((d): d is number => d !== null);
+    return ages.length ? Math.max(...ages) : null;
+  }, [rows, now]);
+  const empty = rows.length === 0;
+  const open = !empty && (forceOpen || !collapsed);
+
+  return (
+    <section className="rounded-cardLg border border-line bg-surface">
+      <button onClick={empty ? undefined : toggle} disabled={empty}
+        aria-expanded={empty ? undefined : !collapsed}
+        aria-label={empty ? undefined : `${collapsed ? "เปิด" : "ยุบ"} ${meta.label}`}
+        className="w-full flex items-center gap-[10px] px-4 py-[13px] text-left"
+        style={{ cursor: empty ? "default" : "pointer", opacity: empty ? 0.6 : 1 }}>
+        <span className="text-[16px] flex-shrink-0">{meta.icon}</span>
+        <span className="text-[13.5px] font-extrabold text-ink flex-shrink-0">{meta.label}</span>
+        <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill flex-shrink-0"
+          style={{ background: meta.bg, color: meta.fg }}>{rows.length}</span>
+        {oldest !== null && oldest > 0 && (
+          <span className="text-[11px] font-bold flex-shrink-0" style={{ color: ageColor(oldest) }}>
+            ค้างสุด {oldest} วัน
+          </span>
+        )}
+        <span className="flex-1" />
+        {empty
+          ? <span className="text-[11.5px] text-faint flex-shrink-0">ไม่มีงานค้าง</span>
+          : (
+            /* A span, not the shared CollapseButton: the whole header row is
+               already the button, and a <button> inside a <button> is invalid
+               markup that fired toggle twice on one click. */
+            <span aria-hidden className="w-7 h-7 rounded-[9px] border border-line2 bg-white/78 flex items-center justify-center text-faint flex-shrink-0">
+              <ChevronDown size={14} className="transition-transform" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
+            </span>
+          )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+            {children}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ScopeTab({ label, count, on, onClick }: { label: string; count: number; on: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
       className={`text-[12px] font-bold px-[12px] py-[6px] rounded-pill transition ${on ? "bg-white text-ink shadow-sm" : "text-muted"}`}>
       {label}
       <span className="ml-[6px] text-[11px] font-extrabold" style={{ opacity: 0.6 }}>{count}</span>
-    </button>
-  );
-}
-
-/** One lane of the command centre: how much is open in this kind of work, and
- *  how long the worst of it has waited. Doubles as the filter — a number you
- *  cannot click is a number you have to go and act on somewhere else. */
-function Lane({ label, icon, count, oldest, on, onClick }: {
-  label: string; icon: string; count: number; oldest: number | null; on: boolean; onClick: () => void;
-}) {
-  const quiet = count === 0;
-  return (
-    <button onClick={onClick} disabled={quiet}
-      className={`text-left px-[11px] py-[9px] rounded-[12px] border transition ${on ? "text-white" : quiet ? "bg-white" : "bg-white hover:border-accent"}`}
-      style={on ? { background: "#211F1C", borderColor: "#211F1C" }
-        : { borderColor: "#ECE6DA", opacity: quiet ? 0.55 : 1, cursor: quiet ? "default" : "pointer" }}>
-      <div className="text-[11px] font-bold truncate" style={on ? undefined : { color: "#8A8175" }}>
-        {icon} {label}
-      </div>
-      <div className="flex items-baseline gap-[6px] mt-[2px]">
-        <span className={`text-[19px] font-extrabold leading-none ${on ? "" : "text-ink"}`}>{count}</span>
-        {oldest !== null && oldest > 0 && (
-          <span className="text-[10.5px] font-bold" style={{ color: on ? "rgba(255,255,255,0.7)" : ageColor(oldest) }}>
-            ค้างสุด {oldest} วัน
-          </span>
-        )}
-      </div>
     </button>
   );
 }

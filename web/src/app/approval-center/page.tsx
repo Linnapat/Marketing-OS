@@ -32,10 +32,10 @@ import { NotificationBell } from "@/components/shell/NotificationBell";
 import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { GraphicDrawer, GTab } from "@/components/graphic/GraphicDrawer";
 import { useApprovalRows } from "@/lib/useApprovalRows";
-import { expenseBudgetOf } from "@/lib/data/approvals";
+import { ApprovalKind, expenseBudgetOf } from "@/lib/data/approvals";
 import { optimistic } from "@/lib/optimistic";
 import { DEFAULT_APPROVER } from "@/lib/approval";
-import { workLink } from "@/lib/deepLink";
+import { APPROVAL_CENTER, OPEN_PARAM, workLink } from "@/lib/deepLink";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchRequests } from "@/lib/db/requests";
@@ -51,6 +51,10 @@ import { RequestRow } from "@/lib/data/requests";
 import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task, TASKS } from "@/lib/data/tasks";
+
+/** Lanes that have their own entry on the rail. Anything else in the query is
+ *  ignored rather than rendering an empty page for a typo'd link. */
+const RAIL_LANES = ["caption", "artwork", "vdo"] as const;
 
 export default function ApprovalCenterPage() {
   return (
@@ -76,6 +80,29 @@ function ApprovalCenterInner() {
   const [now, setNow] = useState(0);
   const [graphicOpenId, setGraphicOpenId] = useState<number | null>(null);
   const [graphicOpenTab, setGraphicOpenTab] = useState<GTab>("brief");
+
+  // Which lane the rail asked for. Caption / Artwork / VDO are their own entries
+  // under Approval Center and all four share this pathname, so the query is
+  // the only thing that changes and the page never remounts — first paint reads
+  // the URL, and the sidebar tells us directly after that (same contract /kol
+  // uses; see Sidebar's nav:tab dispatch).
+  const [lane, setLane] = useState<ApprovalKind | null>(null);
+  useEffect(() => {
+    const read = (value: string | null) =>
+      setLane(value && (RAIL_LANES as readonly string[]).includes(value) ? value as ApprovalKind : null);
+    read(new URLSearchParams(window.location.search).get(OPEN_PARAM.tab));
+    const onNavTab = (e: Event) => {
+      const detail = (e as CustomEvent<{ href?: string; tab?: string }>).detail;
+      if (detail?.href === APPROVAL_CENTER) read(detail.tab ?? null);
+    };
+    const onPop = () => read(new URLSearchParams(window.location.search).get(OPEN_PARAM.tab));
+    window.addEventListener("nav:tab", onNavTab);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("nav:tab", onNavTab);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, []);
 
   // Same fallback identity My Tasks uses — the signed-in member's name, or
   // their own login when Settings has no matching row. Never a teammate's.
@@ -166,6 +193,7 @@ function ApprovalCenterInner() {
             onOpenTask={(id) => router.push(workLink.task(id))}
             onOpenGraphic={(id, tab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); }}
             onApprove={approveExpense} onReject={rejectExpense}
+            only={lane}
           />
         )}
       </div>
