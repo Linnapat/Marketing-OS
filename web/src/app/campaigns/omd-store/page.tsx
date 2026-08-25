@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ChevronsLeftRight, ChevronsRightLeft, Download, Minimize2, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import {
   OMD_STORE_CATEGORY_META,
-  OMD_STORE_SYNC_CONTRACT,
   type OmdStorePromotion,
   type OmdStorePromotionCategory,
   type OmdStorePromotionStatus,
@@ -552,7 +551,6 @@ export default function OmdStoreCampaignPage() {
     .filter((group) => group.items.length > 0);
 
   const activeCount = filtered.filter((item) => ["active", "open_end"].includes(liveStatus(item))).length;
-  const storeCount = new Set(filtered.flatMap((item) => item.branches)).size;
 
   /** Fit the whole sheet onto one page, or print it at full size. On by
    *  default: the sheet exists to be taped to a wall, and a wall sheet that
@@ -683,7 +681,6 @@ export default function OmdStoreCampaignPage() {
           padding: 0 2px 4px !important;
           border-bottom: 1px solid #ECEAF2 !important;
         }
-        .omd-printing .omd-print-summary { display: none !important; }
         .omd-printing .omd-print-sections {
           margin-top: 6px !important;
           display: flex !important;
@@ -840,10 +837,13 @@ export default function OmdStoreCampaignPage() {
                   setSyncState("synced");
                   window.setTimeout(() => setSyncState("ready"), 1800);
                 }}
-                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#ECEAF2] bg-white px-3 text-[12px] font-bold text-[#5B4FD8]"
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] border px-3 text-[12px] font-bold"
+                style={syncState === "synced"
+                  ? { borderColor: "#CFE4C2", background: "#EEF4EE", color: "#4E7A4E" }
+                  : { borderColor: "#ECEAF2", background: "#fff", color: "#5B4FD8" }}
               >
                 <RefreshCw size={15} />
-                Sync Campaign
+                {syncState === "synced" ? "ซิงก์แล้ว" : "Sync Campaign"}
               </button>
               <button
                 type="button"
@@ -881,7 +881,10 @@ export default function OmdStoreCampaignPage() {
           </div>
         </section>
 
-        <section className="no-print mt-3 grid gap-3 xl:grid-cols-[1.2fr_.8fr]">
+        {/* One column now. The narrow track next to it held the Campaign Sync
+            card; leaving the two-column grid behind would reserve 40% of a wide
+            screen for nothing. */}
+        <section className="no-print mt-3">
           <div className="rounded-[18px] border border-[#ECEAF2] bg-white p-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)]">
             <div className="grid gap-3 md:grid-cols-6">
               <label className="flex flex-col gap-1.5">
@@ -927,19 +930,6 @@ export default function OmdStoreCampaignPage() {
             </div>
           </div>
 
-          <div className="rounded-[18px] border border-[#D8D4E4] bg-[#17172A] p-4 text-white shadow-[0_12px_30px_rgba(23,23,42,0.13)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-white/45">Campaign Sync</div>
-                <div className="mt-1 text-[14px] font-extrabold">{syncState === "synced" ? "Synced preview ready" : "On-demand now, realtime-ready later"}</div>
-              </div>
-              <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-[#C8EA6A]">{OMD_STORE_SYNC_CONTRACT.mode}</span>
-            </div>
-            <div className="mt-3 text-[12px] font-medium leading-relaxed text-white/58">
-              จาก Campaign {printedCampaignItems.length} รายการ · เพิ่มเอง {manualItems.length} รายการ
-              {hiddenCampaignItems.length > 0 && <> · เอาออกจากใบพิมพ์ {hiddenCampaignItems.length} รายการ</>}
-            </div>
-          </div>
         </section>
 
         {hiddenCampaignItems.length > 0 && (
@@ -963,22 +953,6 @@ export default function OmdStoreCampaignPage() {
             </div>
           </section>
         )}
-
-        <section className="omd-print-summary mt-3 grid gap-3 md:grid-cols-3">
-          <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
-            <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Visible Items</div>
-            <div className="mt-2 text-[26px] font-extrabold">{filtered.length}</div>
-          </div>
-          <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
-            <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Active / Open End</div>
-            <div className="mt-2 text-[26px] font-extrabold">{activeCount}</div>
-          </div>
-          <div className="rounded-[16px] border border-[#ECEAF2] bg-white p-4">
-            <div className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">Brand / Branch</div>
-            <div className="mt-2 text-[26px] font-extrabold">{brand === "all" ? "All" : brandName(brand)}</div>
-            <div className="mt-1 text-[11px] font-bold text-[#8A879A]">{storeCount} branch groups</div>
-          </div>
-        </section>
 
         <section className="omd-print-sections mt-3 space-y-3">
           {grouped.map((group) => {
