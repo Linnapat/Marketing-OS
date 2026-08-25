@@ -18,7 +18,7 @@ import { ApprovalRow, buildApprovalRows } from "@/lib/data/approvals";
 import { BRANDS, BrandId } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth } from "@/lib/auth";
-import { useCanApproveExpense } from "@/lib/usePermGates";
+import { useCanApproveExpense, useCanSeeAllSpending } from "@/lib/usePermGates";
 import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
 import { personKeys, memberRef } from "@/lib/identity";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -50,6 +50,10 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
   // same permissions matrix the database checks (Finance >= Approve) rather
   // than string-matching "CMO" here.
   const canApproveExpense = useCanApproveExpense();
+  // Seeing the money lane at all is its own line — everything else in this
+  // queue is open to the whole team, amounts are not. Same gate the Spending
+  // Log uses (Finance ≥ View).
+  const canSeeSpending = useCanSeeAllSpending();
   // From useAuth, NOT useRole: useRole is the sidebar's "Viewing as" switcher,
   // which anyone can set to CMO. The Approve button on the campaign page reads
   // useAuth().role, so trusting the switcher here would hand a designer buttons
@@ -73,11 +77,12 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
     myKeys, me: member?.name || viewAs, role: authRole,
     canApproveCampaign: canApproveCampaign(authRole),
     canApproveExpense,
+    canSeeSpending,
     canEditContentPlan: canEditContentPlan(authRole),
     isVisible: (b: BrandId) => brandVisibility.isVisible(b),
     canSeeBrandLabel,
     doneIds,
-  }), [myKeys, member, viewAs, authRole, canApproveExpense, brandVisibility, canSeeBrandLabel, doneIds]);
+  }), [myKeys, member, viewAs, authRole, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
 
   return useMemo(
     () => buildApprovalRows({

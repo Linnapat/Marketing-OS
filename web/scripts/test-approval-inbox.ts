@@ -48,6 +48,8 @@ const ctx = (role: string, me: string, over: Partial<ApprovalCtx> = {}): Approva
   myKeys: personKeys({ name: me }), me, role,
   canApproveCampaign: role === "CMO",
   canApproveExpense: role === "CMO",
+  // สายการเงิน/ผู้บริหารเห็นยอดได้ คนอื่นไม่เห็นเลนนี้เลย
+  canSeeSpending: /CMO|Finance|Marketing Manager/.test(role),
   canEditContentPlan: /CMO|Marketing|Planner/.test(role),
   isVisible: () => true,
   canSeeBrandLabel: () => true,
@@ -176,13 +178,18 @@ console.log("\n— KOL / งบ: รอคนที่ถูกมอบหม�
   is("งานที่ปิดแล้วหลุดจากคิว", done.length, 0);
 }
 
-console.log("\n— เงิน: กติกาเดิม CMO เท่านั้น —");
+console.log("\n— เงินเป็นข้อยกเว้น: ไม่ใช่ทุกคนที่เห็น —");
 {
   const exp = { _id: 1, category: "Media", b: "teppen", campaign: "X", requested: 5000, approved: 0, status: "Waiting Approval", due: "—", createdAt: "2026-08-10T00:00:00Z" } as never;
   is("CMO กดได้", buildApprovalRows({ ...empty, expenses: [exp] }, ctx("CMO", "Aran P."))[0]?.mine, true);
+  // สายที่เห็นยอดได้แต่ไม่ใช่คนอนุมัติ — เห็นว่ามีใบค้าง แต่กดไม่ได้
+  const mm = buildApprovalRows({ ...empty, expenses: [exp] }, ctx("Marketing Manager / BGL", "Mei T."));
+  is("สายที่เห็นยอดได้ เห็นใบค้าง", mm.length, 1);
+  is("…แต่กดไม่ได้", mm[0]?.mine, false);
+  // นี่คือข้อยกเว้นของกติกา "ทุกคนเห็นทุกอย่าง" — คนที่ไม่มีสิทธิ์เห็นยอด
+  // ต้องไม่เห็นแม้แต่ว่ามีใบค้างอยู่ ไม่งั้นคิวกลายเป็นช่องรั่วที่สะดวก
   const staff = buildApprovalRows({ ...empty, expenses: [exp] }, ctx("Content Planner", "Ken S."));
-  is("คนอื่นเห็นว่ามีใบค้าง", staff.length, 1);
-  is("…แต่กดไม่ได้", staff[0]?.mine, false);
+  is("คนที่ไม่มีสิทธิ์เห็นยอด ไม่เห็นเลนเงินเลย", staff.length, 0);
 }
 
 console.log("\n— เรียงตามงานที่รอนานที่สุด —");

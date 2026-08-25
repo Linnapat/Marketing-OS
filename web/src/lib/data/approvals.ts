@@ -139,6 +139,9 @@ export interface ApprovalCtx {
   role: string;
   canApproveCampaign: boolean;
   canApproveExpense: boolean;
+  /** May they see company-wide spending at all? Money is the one lane the
+   *  "everyone sees everything" rule does not cover — see the expense loop. */
+  canSeeSpending: boolean;
   canEditContentPlan: boolean;
   isVisible: (b: BrandId) => boolean;
   /** Task rows carry a brand LABEL, not a BrandId, so they need their own test. */
@@ -266,12 +269,24 @@ export function buildApprovalRows(input: {
   }
 
   // ── Expenses ────────────────────────────────────────────────────────────
-  // The gate is a role, read from the same permissions matrix the database
-  // checks (Finance >= Approve) — this UI and
-  // supabase/security_p12_expense_approval.sql can never disagree about who
-  // may decide. Rows people cannot READ never arrive here at all: RLS decides
-  // what fetchExpenseRequests returns.
+  // Money is the exception to this queue's whole premise. Everything else is
+  // shown to everyone on a visible brand, because "why is this late" should be
+  // readable off a screen rather than asked in a channel. Amounts are not that
+  // kind of fact: what a KOL was paid or what a shoot cost is not everybody's
+  // business, and a queue that quietly published it would be a worse leak for
+  // being convenient. So the lane needs Finance ≥ View (canSeeAllSpending) —
+  // the same line the Spending Log draws — and simply does not exist for
+  // anyone else.
+  //
+  // Belt and braces on purpose: RLS already decides what fetchExpenseRequests
+  // returns, so this gate is tidying rather than the boundary. But it is read
+  // from the permissions matrix, which is where an admin expects to change it.
+  //
+  // Deciding one is a separate, stricter gate (Finance ≥ Approve + the CMO
+  // check inside the RPC — see security_p12_expense_approval.sql), carried on
+  // each row as `mine`.
   for (const r of input.expenses) {
+    if (!ctx.canSeeSpending) break;
     if (r.status !== "Waiting Approval" || !ctx.isVisible(r.b)) continue;
     rows.push({
       kind: "expense", key: `exp:${r._id ?? r.ref ?? `${r.b}-${r.category}`}`, b: r.b, r,
