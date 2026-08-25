@@ -9,7 +9,7 @@ import {
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
 import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
-import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS, todayIso, addBusinessDays } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
@@ -207,6 +207,65 @@ console.log("Graphic due date — the lead time and the publish date can contrad
   check("due after publish is still blocked when the range is possible", afterPublish(brief("2026-09-01", "2026-09-15")));
   // A post inside the lead time: warned in the form, never blocked here.
   check("…but not blocked when no date could satisfy both", !afterPublish(brief("2026-07-28", "2026-08-03")));
+}
+
+console.log("Graphic lead time — a rule about the ask, not about how old the campaign is");
+{
+  // The campaign that started this: a live campaign edited in month two to move
+  // budget was refused because a graphic deadline agreed in month one had since
+  // come within five business days of today. Nothing about the graphic changed;
+  // the calendar did.
+  const stale = (graphicDueDate: string): CampaignBrief => {
+    const b = emptyBrief("lead-time-test");
+    b.name = "Seasonal menu"; b.objective = "Awareness"; b.campaignType = "Seasonal"; b.b = "teppen";
+    b.branches = ["Central"]; b.startDate = "2026-09-01"; b.endDate = "2026-11-30";
+    b.launchDate = "2026-09-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O"; b.approver = "CMO";
+    b.content = [{
+      ...emptyContentItem(1), id: "c1", title: "0901_Seasonal Menu", subHead: "S", platforms: ["Instagram"],
+      assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], requiredGraphic: true,
+      publishDate: "2026-09-20", graphicDueDate,
+    }];
+    return b;
+  };
+  const tooSoon = todayIso();                       // today can never be 5 business days out
+  const leadErr = (b: CampaignBrief, baseline?: CampaignBrief | null) =>
+    validateSubmit(b, undefined, baseline).some((e) => /business days after Request Date/.test(e));
+
+  const fresh = stale(tooSoon);
+  check("สร้างใหม่: วันส่งงานเร็วเกินไป = บล็อกเหมือนเดิม", leadErr(fresh));
+
+  // Editing, graphic untouched — the deadline is already agreed and the job is
+  // already in someone's queue.
+  const baseline = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  const budgetOnlyEdit = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  budgetOnlyEdit.budget.total = 250000;
+  check("แก้แค่งบ ไม่แตะ graphic = ไม่บล็อก", !leadErr(budgetOnlyEdit, baseline));
+
+  // Move the deadline and it is a new ask again.
+  const movedDue = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  movedDue.content[0].graphicDueDate = addBusinessDays(tooSoon, 1);
+  check("ขยับวันส่งงานเอง = กลับมาบล็อก", leadErr(movedDue, baseline));
+
+  // Turning the graphic ask ON is a new request even if the date is unchanged.
+  const offBaseline = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  offBaseline.content[0].requiredGraphic = false;
+  check("เพิ่งติ๊กว่าต้องใช้ graphic = เป็นการขอใหม่ ต้องบล็อก", leadErr(fresh, offBaseline));
+
+  // A brand-new content row in an existing campaign has no baseline of its own.
+  const addedRow = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  addedRow.content.push({
+    ...emptyContentItem(2), id: "c2", title: "0902_New", subHead: "S", platforms: ["Instagram"],
+    assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], requiredGraphic: true,
+    publishDate: "2026-09-20", graphicDueDate: tooSoon,
+  });
+  check("เพิ่ม content ใหม่ในแคมเปญเดิม = บล็อกเฉพาะแถวใหม่",
+    validateSubmit(addedRow, undefined, baseline).filter((e) => /business days after Request Date/.test(e)).length === 1);
+
+  // Everything else keeps biting while editing — the exemption is this one rule.
+  const missingDue = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  missingDue.content[0].graphicDueDate = "";
+  check("ลบวันส่งงานทิ้ง = ยังบล็อกตามเดิม",
+    validateSubmit(missingDue, undefined, baseline).some((e) => /Please select a Graphic Due Date/.test(e)));
 }
 
 console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-message quota) must still submit");
