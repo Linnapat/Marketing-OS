@@ -127,3 +127,16 @@ export function threadHref(link: string | null): string | null {
   if (!link.startsWith("/graphic?") || /[?&]tab=/.test(link)) return link;
   return `${link}&tab=feedback`;
 }
+
+/** The graphic request a thread belongs to, when it is one.
+ *
+ *  The panel reads the conversation itself once a row is opened, and that needs
+ *  the request id — not the link. Null for anything that is not a graphic
+ *  request link (a content post, a task), which falls back to showing the
+ *  notifications the thread was grouped from. */
+export function graphicIdOf(link: string | null): number | null {
+  if (!link || !link.startsWith("/graphic?")) return null;
+  const found = link.split("?")[1]?.split("&").find((p) => p.startsWith("open="));
+  const id = Number(decodeURIComponent(found?.slice(5) ?? ""));
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
