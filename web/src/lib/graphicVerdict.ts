@@ -18,6 +18,7 @@
 import {
   Graphic, GraphicDeliverable, ReviewLens, LENS_META,
   applyLensVerdict, deliverableProgress, stageFromDeliverables, revisionAssignee, assignedBy,
+  reviewProgress,
   storyboardAuthor,
 } from "@/lib/data/graphic";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
@@ -72,7 +73,7 @@ export function persistGraphicDeliverables(
  *  Callers pass the deliverables they are holding: the drawer edits a local
  *  copy before saving, and handing `g.deliverables` in from a list would throw
  *  that away. */
-export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, onUpdate }: {
+export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, creativeLeader, onUpdate }: {
   g: Graphic;
   deliverables: GraphicDeliverable[];
   index: number;
@@ -80,6 +81,11 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
   verdict: "pass" | "revise";
   me: string;
   note?: string;
+  /** Resolved by NAME, because a notification cannot be sent to a role — the
+   *  person who owes the Visual CI verdict has to be someone. Blank is
+   *  tolerated (the notice still reaches the designer and requester), but a
+   *  caller that can resolve it should. */
+  creativeLeader?: string;
   onUpdate?: (g: Graphic) => void;
 }): Graphic | null {
   const before = deliverables[index];
@@ -111,6 +117,30 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
       // juggling the queue never learned at all. Neither has to act on it, so
       // neither gets interrupted.
       workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
+  } else {
+    // Half a review told NOBODY anything, and that is where pieces went to sit.
+    // A designer heard "มีแก้กลับไปนะคะ" in Slack, opened the request, found
+    // feedback and no box to submit into, and no way to tell that the other
+    // lens simply had not answered yet. Meanwhile the reviewer who owed that
+    // verdict was never asked for it.
+    //
+    // The batching stays — a designer still gets one combined list rather than
+    // two rounds of exporting (see statusFromReview). What changes is that the
+    // wait is now addressed to someone: the outstanding reviewer is asked, and
+    // the people watching the piece can see why it has not moved.
+    const waiting = reviewProgress(after).pending[0];
+    if (waiting) {
+      const owes = waiting === "ci" ? [creativeLeader] : [g.requester];
+      const verdictWord = verdict === "revise" ? "ขอให้แก้" : "ผ่าน";
+      notify("feedback", `👀 รอตรวจอีกหนึ่งด้าน: ${g.title}`,
+        `${before.platform} — [${LENS_META[lens].short}] ${verdictWord} โดย ${me} · รอ [${LENS_META[waiting].short}] ${LENS_META[waiting].owner} ตรวจ แล้วชิ้นนี้ถึงจะขยับ`,
+        workLink.graphic(g.id),
+        // The reviewer who owes it is the one who has to act, so they are the
+        // one interrupted. The designer and the requester get it in the bell:
+        // there is nothing for them to do until the round closes, but "a
+        // revision is coming" beats hearing it from a colleague on Slack.
+        { team: graphicTeam(g), to: owes.filter(Boolean) as string[], inform: [revisionAssignee(g, before), g.requester] });
+    }
   }
   return saved;
 }

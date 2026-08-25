@@ -32,6 +32,7 @@ import { NotificationBell } from "@/components/shell/NotificationBell";
 import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { GraphicDrawer, GTab } from "@/components/graphic/GraphicDrawer";
 import { useApprovalRows } from "@/lib/useApprovalRows";
+import { useCreativeLeader } from "@/lib/useCreativeLeader";
 import { ApprovalKind, expenseBudgetOf } from "@/lib/data/approvals";
 import { optimistic } from "@/lib/optimistic";
 import { DEFAULT_APPROVER } from "@/lib/approval";
@@ -135,6 +136,10 @@ function ApprovalCenterInner() {
       .catch(() => {});
   }, [viewAs]);
 
+  // Needed so a verdict given from a row still asks whoever owes the OTHER
+  // lens for theirs — the notice PR #247 added, which a second write path is
+  // exactly how you lose.
+  const creativeLeader = useCreativeLeader();
   const rows = useApprovalRows({ campaigns, requests, expenseReqs, graphics, posts, tasks, doneIds, viewAs: me });
   const budgetOf = useMemo(() => expenseBudgetOf(campaigns, expenseReqs), [campaigns, expenseReqs]);
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
@@ -189,7 +194,7 @@ function ApprovalCenterInner() {
           <div className="text-[13px] text-faint px-1 py-8">กำลังโหลดคิวอนุมัติ…</div>
         ) : (
           <ApprovalQueue
-            rows={rows} now={now} budgetOf={budgetOf} me={me}
+            rows={rows} now={now} budgetOf={budgetOf} me={me} creativeLeader={creativeLeader}
             onOpenTask={(id) => router.push(workLink.task(id))}
             onOpenGraphic={(id, tab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); }}
             onApprove={approveExpense} onReject={rejectExpense}

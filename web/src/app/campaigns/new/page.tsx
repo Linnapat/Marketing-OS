@@ -287,7 +287,10 @@ export default function NewCampaignPage() {
   const branchOptions = brandConfigsLoaded ? branches : undefined;
   const checklist = useMemo(() => guidelineChecklist(brief, branchOptions), [brief, branchOptions]);
   const preview = useMemo(() => taskPreview(brief), [brief]);
-  const errors = useMemo(() => validateSubmit(brief, branchOptions), [brief, branchOptions]);
+  // originalBrief is what makes "did THIS edit move it?" answerable — without it
+  // an edit is indistinguishable from a fresh submission and every rule that
+  // measures against today gets re-asked of rows nobody touched.
+  const errors = useMemo(() => validateSubmit(brief, branchOptions, originalBrief), [brief, branchOptions, originalBrief]);
   const budgetGuardWarning = useMemo(() => monthlyBudgetWarning(brief, savedBriefs, budgetSheetRows), [brief, savedBriefs, budgetSheetRows]);
 
   const outOfRange = (iso: string) => iso && brief.startDate && brief.endDate && (iso < brief.startDate || iso > brief.endDate);

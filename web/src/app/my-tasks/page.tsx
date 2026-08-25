@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek, byDueThenPriority } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
+import { mintId } from "@/lib/data/ids";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
 import { APPROVAL_CENTER, OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
@@ -25,7 +26,7 @@ import { optimistic } from "@/lib/optimistic";
 import { approveTask } from "@/lib/taskApproval";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
-import { Graphic, Feedback, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
+import { Graphic, Feedback, isMessage, threadAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
@@ -505,7 +506,7 @@ function MyTasksPageInner() {
             onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
         </div>
       )}
-      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
+      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={mintId(Date.now(), Math.random())} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
           <span className="text-[18px]">🌿</span>
@@ -597,7 +598,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
     fetchGraphicFeedback(graphic.id).then((f) => { if (alive) setThread(f); }).catch(() => {});
     return () => { alive = false; };
   }, [graphic]);
-  const replyTo = graphic ? replyAudience(graphic, thread, me) : [];
+  const replyTo = graphic ? threadAudience(graphic, thread, me) : [];
   const checklistDone = new Set(t.checklistDone ?? []);
 
   const start = () => onPatch({ status: "In Progress", group: "doFirst" });

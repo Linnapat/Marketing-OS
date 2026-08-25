@@ -1,8 +1,10 @@
 "use client";
 
 import { toastError, toastSuccess } from "@/lib/toast";
-import { useEffect, useState } from "react";
-import { fetchMembers, fetchJsonSetting } from "@/lib/db/settings";
+import { useEffect, useRef, useState } from "react";
+import { fetchMembers, fetchJsonSetting, fetchBrandConfigs, Member } from "@/lib/db/settings";
+import { resolveBrandLead } from "@/lib/db/assignments";
+import { BrandCfg } from "@/lib/data/settings";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
 import { campaignReleasedForWork } from "@/lib/data/campaigns";
@@ -15,11 +17,12 @@ import { GRAPHIC_OPEN_PARAM,
   hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
-  ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,   canGiveLensVerdict, canPassLens,
+  ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,
+  canGiveLensVerdict, canPassLens, approvalLadder,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
-  MESSAGE_TYPE, isMessage, replyAudience,
+  MESSAGE_TYPE, isMessage, threadAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { decideStoryboard as decideStoryboardShared, giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
@@ -28,6 +31,7 @@ import Link from "next/link";
 import { fetchContentById } from "@/lib/db/content";
 import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
+import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief } from "@/lib/db/graphic";
@@ -119,13 +123,35 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     setFeedback((fs) => fs.map((x) => (x.id === id ? { ...x, status: "Resolved" } : x)));
     try { await resolveGraphicFeedback(id); } catch (e) { setFeedback(prev); toastError(`Resolve ไม่สำเร็จ: ${e instanceof Error ? e.message : "Unknown error"}`); }
   };
+  // Opens on the newest line, and follows one that arrives while you are
+  // reading — a chat that opens at the top hides the thing you came for.
+  const chatRef = useRef<HTMLDivElement>(null);
   const [feedbackTarget, setFeedbackTarget] = useState(0);
   const [feedbackReason, setFeedbackReason] = useState("");
   const { member, user, role } = useAuth();
   const currentUser = member?.name ?? user?.email ?? g.designer;
-  /** Who this reply will reach, shown before it is sent so nobody types into
-   *  the dark. Same rule the send uses — see replyAudience. */
-  const replyTo = replyAudience(g, feedback, currentUser);
+  /** Everyone this message will reach, shown before it is sent so nobody
+   *  types into the dark. Same rule the send uses — see threadAudience. */
+  const replyTo = threadAudience(g, feedback, currentUser);
+  // The chat holds the talking; the list below holds the things that ask for
+  // work. Sorted by its own clock rather than reversing whatever order the
+  // caller happened to hand over — the same rows arrive newest-first from the
+  // database and oldest-first from the bundled mock, and a conversation that
+  // reads backwards depending on where it was loaded from is worse than no
+  // conversation view at all. `id` breaks ties and carries rows written before
+  // the timestamp came through: database ids climb, and an optimistic line
+  // stamped with Date.now() sorts last, which is exactly where it belongs.
+  const chat = feedback.filter(isMessage).slice().sort((a, b) => {
+    const at = a.createdAtIso ?? "", bt = b.createdAtIso ?? "";
+    if (at && bt && at !== bt) return at < bt ? -1 : 1;
+    return a.id - b.id;
+  });
+  const revisionHistory = feedback.filter((f) => !isMessage(f));
+  const chatCount = chat.length;
+  useEffect(() => {
+    const el = chatRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatCount, tab]);
   const sendMessage = async () => {
     const text = messageText.trim();
     if (!text || sendingMessage) return;
@@ -138,6 +164,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         id: Date.now(), gid: g.id, owner: currentUser, team: "Conversation", ownerColor: "#6C5CE7",
         type: MESSAGE_TYPE, text, version: "", status: "Open", assignedTo: "", due: null,
         createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        createdAtIso: new Date().toISOString(),
       }, ...fs]);
       setMessageText("");
     } catch (error) {
@@ -188,9 +215,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       toastError(`บันทึกผลอนุมัติงานเร่งด่วนไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setRushBusy(false); }
   };
-  // Real Marketing Manager / BGL from Settings for the approval chain — no more
-  // hardcoded "Mei T." Shows "—" when the role has no member yet.
-  const [bglApprover, setBglApprover] = useState("—");
+  // Who signs off THIS job's brand (resolveBrandLead), not "the first member
+  // holding Marketing Manager / BGL" — that printed the Teppen · Mainichi
+  // manager on every Omakase Don job, a brand she has no access to. null when
+  // the brand has nobody: the step is dropped instead of naming a stand-in.
+  const [brandLead, setBrandLead] = useState<string | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [brandConfigs, setBrandConfigs] = useState<BrandCfg[] | null>(null);
   // Only the Creative Leader may release a brief top-up (canReleaseBriefEdit),
   // so the request has to reach them by NAME — a notification cannot be sent to
   // a role. The ask used to say "→ Creative Leader" in its text and go to the
@@ -198,10 +229,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [creativeLeader, setCreativeLeader] = useState("");
   useEffect(() => {
     let alive = true;
+    fetchBrandConfigs().then((configs) => {
+      if (alive) setBrandConfigs(configs.length ? configs : null);
+    }).catch(() => {});
     fetchMembers().then((ms) => {
       if (!alive) return;
-      const m = ms.find((x) => /marketing manager|bgl|brand lead/i.test(x.role));
-      if (m) setBglApprover(m.name);
+      setMembers(ms);
       // Same trap as the rush decision: two people hold "Creative Leader" and
       // members arrive ordered by email, so `find` returned the QA account and
       // every brief top-up request went there. Ask Settings → Teams who leads.
@@ -217,6 +250,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  useEffect(() => {
+    setBrandLead(members.length ? resolveBrandLead(g.b, members, brandConfigs ?? undefined) : null);
+  }, [g.b, members, brandConfigs]);
   const openFb = feedback.filter((f) => f.status === "Open").length;
   const brief = briefFields(g);
   const briefDetails = creativeBriefDetails(g);
@@ -639,13 +675,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               )}
               {g.rushStatus === "Rejected" && (
                 <div className="rounded-[14px] border px-4 py-3" style={{ background: "#FFF5F4", borderColor: "#F5C8C4" }}>
-                  <div className="text-[12.5px] font-extrabold text-status-red">✕ ไม่อนุมัติให้เร่ง{g.rushDecidedBy ? ` — โดย ${g.rushDecidedBy}` : ""}</div>
+                  <div className="text-[12.5px] font-extrabold text-status-red">✕ ไม่อนุมัติให้เร่ง{g.rushDecidedBy ? ` — โดย ${g.rushDecidedBy}` : ""}{stamp(g.rushDecidedAt) ? ` · ${stamp(g.rushDecidedAt)}` : ""}</div>
                   <div className="mt-1 text-[11.5px] text-status-red">ปรับวันส่งงานให้เข้ารอบปกติ แล้วส่งใหม่{g.rushDecisionNote ? ` · ${g.rushDecisionNote}` : ""}</div>
                 </div>
               )}
               {g.rushStatus === "Approved" && (
                 <div className="rounded-[12px] border px-4 py-2 text-[11.5px] font-semibold" style={{ background: "#EEF4EE", borderColor: "#CFE4C2", color: "#4E7A4E" }}>
-                  ⚡ งานเร่งด่วน · อนุมัติแล้ว{g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}
+                  ⚡ งานเร่งด่วน · อนุมัติแล้ว{g.rushDecidedBy ? ` โดย ${g.rushDecidedBy}` : ""}{stamp(g.rushDecidedAt) ? ` · ${stamp(g.rushDecidedAt)}` : ""}
                 </div>
               )}
               {/* How long it has sat where it is. The stage alone never said
@@ -721,7 +757,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[12.5px] font-extrabold" style={{ color: "#4E7A4E" }}>✓ รับงานแล้ว</span>
                     <span className="text-[11.5px] font-semibold" style={{ color: "#4E7A4E" }}>
-                      โดย {g.acceptedBy || "—"} · {g.acceptedAt ? new Date(g.acceptedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : ""}
+                      โดย {g.acceptedBy || "—"} · {stamp(g.acceptedAt)}
                     </span>
                     {canAcceptWork && (
                       <button onClick={releaseWork} className="ml-auto text-[11.5px] font-bold rounded-[9px] px-3 py-[6px] border border-line2 bg-surface text-muted">
@@ -847,7 +883,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                     )}
                     {g.storyboardStatus === "Approved" && (
                       <div className="mt-1 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
-                        ✓ อนุมัติโดย {g.storyboardDecidedBy || "—"}
+                        ✓ อนุมัติโดย {g.storyboardDecidedBy || "—"}{stamp(g.storyboardDecidedAt) ? ` · ${stamp(g.storyboardDecidedAt)}` : ""}
                       </div>
                     )}
                   </div>
@@ -1139,7 +1175,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                 <div className="rounded-card px-4 py-3" style={{ background: "#EEF4EE", border: "1px solid #CFE4C2" }}>
                   <div className="text-[12.5px] font-bold" style={{ color: "#4E7A4E" }}>
                     ✓ Brief approved by {g.briefApprovedBy}
-                    {g.briefApprovedAt ? ` · ${new Date(g.briefApprovedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}
+                    {stamp(g.briefApprovedAt) ? ` · ${stamp(g.briefApprovedAt)}` : ""}
                   </div>
                 </div>
               ) : !canSignOffBrief ? (
@@ -1178,7 +1214,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           {tab === "assets" && (
             <div className="flex flex-col gap-3">
               <CaptionBesideArtwork post={linkedPost} />
-              <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />
+              <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} creativeLeader={creativeLeader} onUpdate={updateCurrentGraphic} />
             </div>
           )}
 
@@ -1192,9 +1228,45 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               <div className="rounded-card border border-line bg-surface p-4">
                 <div className="text-[13px] font-extrabold text-ink mb-1">💬 คุยกันในงานนี้</div>
                 <div className="text-[11.5px] text-faint mb-3">
-                  ถาม-ตอบกับอีกฝั่งได้เลย ไม่เปลี่ยนสถานะงาน · คนที่คุยด้วยจะได้รับแจ้งเตือน
-                  {replyTo.length > 0 && <> · ข้อความนี้จะถึง <b className="text-muted">{replyTo.join(", ")}</b></>}
+                  ถาม-ตอบกับอีกฝั่งได้เลย ไม่เปลี่ยนสถานะงาน
+                  {replyTo.length > 0
+                    ? <> · ทุกคนในงานนี้จะได้รับแจ้งเตือน: <b className="text-muted">{replyTo.join(", ")}</b></>
+                    : <> · ยังไม่มีใครอยู่ในงานนี้ให้แจ้ง</>}
                 </div>
+
+                {/* The conversation itself, oldest at the top and the box at the
+                    bottom — read down, then reply, the way every chat anyone on
+                    this team already uses works. These lines used to be mixed
+                    into the revision history below, between cards carrying a
+                    version and a Resolve button, where a two-line question
+                    looked like a piece of paperwork. */}
+                <div ref={chatRef} className="rounded-[10px] border border-line2 bg-ivory px-3 py-3 mb-2 max-h-[320px] overflow-y-auto flex flex-col gap-[10px]">
+                  {chat.length === 0 ? (
+                    <div className="text-[11.5px] text-faint text-center py-3">ยังไม่มีใครคุยในงานนี้ — เริ่มได้เลย</div>
+                  ) : chat.map((f) => {
+                    const mine = sameName(f.owner, currentUser) || f.owner.trim().toLowerCase() === currentUser.trim().toLowerCase();
+                    return (
+                      <div key={f.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+                        <span className="w-[22px] h-[22px] mt-[2px] rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white"
+                          style={{ background: f.ownerColor }}>{f.owner.slice(0, 1).toUpperCase()}</span>
+                        <div className={`min-w-0 max-w-[78%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                          {/* Own name omitted — you know who you are, and on a
+                              four-person thread the other names are the ones
+                              worth the pixels. */}
+                          {!mine && <div className="text-[10.5px] font-bold text-muted mb-[2px]">{f.owner}</div>}
+                          <div className="text-[12.5px] leading-[1.5] rounded-[12px] px-3 py-[7px] whitespace-pre-wrap break-words"
+                            style={mine
+                              ? { background: "#211F1C", color: "#FBF9F4", borderTopRightRadius: 4 }
+                              : { background: "#fff", color: "#3E3A34", border: "1px solid #ECE6DA", borderTopLeftRadius: 4 }}>
+                            {f.text}
+                          </div>
+                          <div className="text-[10px] text-faint mt-[3px]">{stamp(f.createdAtIso) || f.createdAt}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="flex gap-2">
                   <input value={messageText} onChange={(e) => setMessageText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
@@ -1252,8 +1324,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   </button>
                 </div>
               </div>
-              {feedback.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
-              {feedback.map((f) => (
+              {revisionHistory.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
+              {revisionHistory.map((f) => (
                 <div key={f.id} className="bg-surface border border-line rounded-card p-4">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: f.ownerColor }}>{f.owner.slice(0, 1)}</span>
@@ -1281,17 +1353,41 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
           {tab === "approval" && (
             <div className="flex flex-col gap-3">
-              {[["Designer submitted", "green", g.designer], ["Requester reviewed", g.openFb > 0 ? "gold" : "green", g.requester], ["Marketing Manager / BGL approval", g.stage === "Approved" || g.stage === "Delivered" ? "green" : "neutral", bglApprover], // The CMO step was gated on `g.pendingApprover === g.approver`, which is always
-              // true — both are set from the same value when the request is created and
-              // neither ever moves — so the "neutral" branch was unreachable. Kept the
-              // behaviour, dropped the comparison that pretended to decide it.
-              ["CMO approval", g.stage === "Delivered" ? "green" : "gold", g.approver]].map(([role, tone, person], i) => (
-                <div key={i} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: tone === "green" ? "#4E7A4E" : tone === "gold" ? "#C68A1E" : "#C0B8AD" }}>{i + 1}</div>
-                  <div className="flex-1"><div className="text-[13px] font-bold">{role as string}</div><div className="text-[11.5px] text-faint">{person as string}</div></div>
-                  <StatusBadge tone={tone as "green" | "gold" | "neutral"}>{tone === "green" ? "Done" : tone === "gold" ? "Pending" : "—"}</StatusBadge>
-                </div>
-              ))}
+              {/* Rungs come from approvalLadder in lib/data/graphic — the same
+                  review records the Assets tab writes, so the two can no longer
+                  disagree about whether this job is signed off. */}
+              {approvalLadder(deliverables, {
+                designer: g.designer,
+                requester: g.requester,
+                brandLead,
+                creativeLeader,
+                stage: g.stage,
+              }).map((s, i) => {
+                const tone = s.state === "done" ? "green" : s.state === "pending" ? "gold" : s.state === "revise" ? "orange" : "neutral";
+                const label = s.state === "done" ? "Done" : s.state === "pending" ? "Pending" : s.state === "revise" ? "ตีกลับ" : "—";
+                const dot = { green: "#4E7A4E", gold: "#C68A1E", orange: "#DD8A2F", neutral: "#C0B8AD" }[tone];
+                return (
+                  <div key={s.key} className="flex items-center gap-3 py-2 border-b border-line4 last:border-0">
+                    <div className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: dot }}>{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-bold">{s.role}</div>
+                      <div className="text-[11.5px] text-faint">{s.person}</div>
+                      {s.detail && <div className="text-[11px] text-faint mt-[2px] leading-[1.5]">{s.detail}</div>}
+                    </div>
+                    <StatusBadge tone={tone as "green" | "gold" | "orange" | "neutral"}>{label}</StatusBadge>
+                  </div>
+                );
+              })}
+              {/* Said out loud, because the ladder used to end at a CMO rung and
+                  people waited on it. */}
+              <div className="rounded-card border border-line px-3 py-[10px] text-[11.5px] text-muted leading-[1.6]" style={{ background: "#F7F4EE" }}>
+                ครบทั้งสองด้าน = อนุมัติแล้ว · <b>CMO ไม่ต้องเซ็นเพิ่ม</b> สำหรับ Artwork / VDO / Caption (เซ็นแทนด้านที่เจ้าของไม่ว่างได้ แต่ไม่ใช่ขั้นของตัวเอง)
+                {brandLead && !sameName(brandLead, g.requester) ? ` · ${brandLead} (brand lead ${brandName(g.b)}) เซ็นด้านข้อมูลแทนผู้ขอได้` : ""}
+              </div>
+              {/* The buttons live in Assets, and people looked for them here. */}
+              <button onClick={() => setTab("assets")} className="self-start text-[12px] font-bold text-panel underline">
+                ปุ่มกดตรวจอยู่ที่แท็บ Assets →
+              </button>
             </div>
           )}
 
@@ -1508,15 +1604,19 @@ function CaptionBesideArtwork({ post }: { post: ContentItem | null }) {
       )}
       {approved && (
         <div className="mt-2 text-[11px] font-semibold" style={{ color: "#4E7A4E" }}>
-          ✓ อนุมัติแล้วโดย {post.captionApprovedBy || "—"}
+          ✓ อนุมัติแล้วโดย {post.captionApprovedBy || "—"}{stamp(post.captionApprovedAt) ? ` · ${stamp(post.captionApprovedAt)}` : ""}
         </div>
       )}
     </div>
   );
 }
 
-function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
-  g: Graphic; me: string; role: string; isRequester: boolean; onUpdate?: (g: Graphic) => void;
+function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate }: {
+  g: Graphic; me: string; role: string; isRequester: boolean;
+  /** Resolved by name, because a notification cannot be sent to a role — the
+   *  person who owes the Visual CI verdict has to be someone. */
+  creativeLeader: string;
+  onUpdate?: (g: Graphic) => void;
 }) {
   // Sign-off is now two checks, asked per lens inside each row — see
   // canGiveLensVerdict. Everyone else sees the artwork and who it waits on.
@@ -1576,7 +1676,7 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
    *  implies, live in lib/graphicVerdict so Approval Center's list rows record
    *  a verdict exactly the way this drawer does. */
   const giveVerdict = (i: number, lens: ReviewLens, verdict: "pass" | "revise", note?: string) => {
-    const ng = giveLensVerdict({ g, deliverables: dels, index: i, lens, verdict, me, note, onUpdate });
+    const ng = giveLensVerdict({ g, deliverables: dels, index: i, lens, verdict, me, note, creativeLeader, onUpdate });
     if (!ng) return;
     setDels(ng.deliverables!);
     setReason(""); setRevising(null);
@@ -1706,9 +1806,15 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                                 <div className="text-[10.5px] text-faint">{meta.checks}</div>
                               </div>
                               {v ? (
-                                <span className="text-[11px] font-bold flex-shrink-0" style={{ color: v.verdict === "pass" ? "#4E7A4E" : "#C2691E" }}>
-                                  {v.verdict === "pass" ? "✓ ผ่าน" : "↩ ให้แก้"} · {v.by}
-                                </span>
+                                <div className="flex-shrink-0 text-right">
+                                  <div className="text-[11px] font-bold" style={{ color: v.verdict === "pass" ? "#4E7A4E" : "#C2691E" }}>
+                                    {v.verdict === "pass" ? "✓ ผ่าน" : "↩ ให้แก้"} · {v.by}
+                                  </div>
+                                  {/* The verdict is half the record — a piece
+                                      approved before the last re-export was
+                                      approved against a different file. */}
+                                  {stamp(v.at) && <div className="text-[10.5px] text-faint">{stamp(v.at)}</div>}
+                                </div>
                               ) : (
                                 <span className="text-[11px] font-semibold flex-shrink-0" style={{ color: "#C68A1E" }}>รอตรวจ</span>
                               )}
@@ -1752,11 +1858,25 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                         );
                       })}
                     </div>
-                    {prog2.given === 1 && (
-                      <div className="text-[10.5px] text-faint mt-2">
-                        ชิ้นนี้ยังไม่ขยับจนกว่าจะครบทั้งสองด้าน — ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ
-                      </div>
-                    )}
+                    {/* One verdict in. Say WHICH way it went and WHO is being
+                        waited on — the old line said only that the piece would
+                        not move, so a designer looking at feedback with no
+                        submit box could not tell whether a revision was already
+                        queued or whether the form was broken. */}
+                    {prog2.given === 1 && (() => {
+                      const inLens = REVIEW_LENSES.find((l) => d.review?.[l]);
+                      const waiting = prog2.pending[0];
+                      if (!inLens || !waiting) return null;
+                      const said = d.review?.[inLens]?.verdict === "revise";
+                      return (
+                        <div className="text-[10.5px] mt-2 rounded-[8px] px-[9px] py-[6px]"
+                          style={said ? { background: "#FFF7ED", color: "#8A5418" } : { background: "#F6F5FA", color: "#706A84" }}>
+                          {said
+                            ? <>มีรายการให้แก้จาก <b>{LENS_META[inLens].label}</b> แล้ว — ยังส่งงานใหม่ไม่ได้จนกว่า <b>{LENS_META[waiting].owner}</b> จะตรวจ <b>{LENS_META[waiting].label}</b> เสร็จ ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ</>
+                            : <><b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน</>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

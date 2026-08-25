@@ -10,6 +10,7 @@ import { Task } from "@/lib/data/tasks";
 import { todayIso } from "@/lib/data/brief";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 import { sameName } from "@/lib/identity";
+import { stamp } from "@/lib/format";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
@@ -873,7 +874,9 @@ export function productionSteps(g: Graphic): ProductionStep[] {
       owner: g.storyboardOwner?.trim() || "Creative Content",
       state: sbDone ? "done" : "active",
       detail: sbDone
-        ? `อนุมัติโดย ${g.storyboardDecidedBy || "—"}`
+        // The moment, not just the name: a storyboard signed off after the
+        // shoot was booked is a different story from one signed off before.
+        ? `อนุมัติโดย ${g.storyboardDecidedBy || "—"}${stamp(g.storyboardDecidedAt) ? ` · ${stamp(g.storyboardDecidedAt)}` : ""}`
         : g.storyboardStatus === "Submitted" ? "ส่งแล้ว รออนุมัติ"
           : g.storyboardStatus === "Revision" ? `ส่งกลับแก้: ${g.storyboardNote || "—"}`
             : "ยังไม่ได้ส่ง",
@@ -1265,6 +1268,135 @@ export function statusFromReview(d: Pick<GraphicDeliverable, "review" | "status"
   const p = reviewProgress(d);
   if (!p.settled) return "Waiting review";
   return p.passed ? "Approved" : "Revision";
+}
+
+/* ── The ladder the Approval tab draws ─────────────────────────────────────
+ *
+ * The tab used to print a fixed four-rung ladder — designer → requester →
+ * brand lead → CMO — whose rungs were guessed from fields that answer other
+ * questions. The requester rung went gold whenever ANY feedback thread was
+ * open, so a question about the shoot date left a piece that had been signed
+ * off reading "Pending"; the CMO rung stayed gold until the job was marked
+ * Delivered, which is a handover, not an approval. The tab therefore
+ * contradicted the Assets tab standing next to it.
+ *
+ * It now reports the gate that actually exists: the two lenses. Both pass and
+ * the piece is approved — nobody countersigns after that.
+ *
+ * The CMO rung is removed rather than turned green. The CMO may cover either
+ * lens when its owner is away (canGiveLensVerdict), but is not a step of their
+ * own on artwork, video or captions; printing them as a pending step invented
+ * an approval no rule asks for and left every finished job looking unfinished.
+ *
+ * The brand lead is not dropped either — they are one of the people who may
+ * give the `info` verdict, so they are named on that rung instead of holding a
+ * rung with no button that could ever complete it.
+ */
+export type LadderState = "done" | "pending" | "revise" | "idle";
+
+/** Shown on a settled rung whose verdict predates the two-lens records. */
+const UNRECORDED_SIGNER = "— ใบงานเก่า ไม่มีบันทึกผู้เซ็น";
+
+export interface ApprovalStep {
+  key: string;
+  role: string;
+  /** Who did it once it is done; who it waits on while it is not. */
+  person: string;
+  state: LadderState;
+  detail?: string;
+}
+
+/** Names, de-duplicated case-insensitively, with the placeholders dropped. */
+function namesOf(raw: (string | undefined | null)[]): string[] {
+  const out: string[] = [];
+  for (const value of raw) {
+    const name = (value ?? "").trim();
+    if (!name || name === "Unassigned" || name === "—") continue;
+    if (!out.some((n) => samePerson(n, name))) out.push(name);
+  }
+  return out;
+}
+
+/** Stages that only exist because work was handed in. A request sitting at one
+ *  of these with no deliverable rows behind it predates the deliverables table
+ *  — reading it as "nothing submitted" would blank a ladder for a job the board
+ *  itself calls Approved. */
+const STAGE_PAST_SUBMISSION: Record<string, "Waiting review" | "Revision" | "Approved"> = {
+  "Waiting Feedback": "Waiting review",
+  "Waiting Approval": "Waiting review",
+  "Revision Requested": "Revision",
+  Approved: "Approved",
+  Delivered: "Approved",
+};
+
+export function approvalLadder(
+  dels: GraphicDeliverable[],
+  ctx: { designer?: string; requester?: string; brandLead?: string | null; creativeLeader?: string | null; stage?: string },
+): ApprovalStep[] {
+  const fromStage = STAGE_PAST_SUBMISSION[(ctx.stage ?? "").trim()];
+  const rows = dels.some((d) => d.status !== "Not submitted") || !fromStage
+    ? dels
+    : [{ ...emptyDeliverable("Asset", "—"), status: fromStage, submittedBy: ctx.designer ?? "" }];
+  const submitted = rows.filter((d) => d.status !== "Not submitted");
+  const steps: ApprovalStep[] = [{
+    key: "submitted",
+    role: "ดีไซเนอร์ส่งงาน",
+    person: namesOf([...submitted.map((d) => d.submittedBy), ctx.designer]).join(" · ") || "—",
+    state: submitted.length ? "done" : "idle",
+    detail: submitted.length && submitted.length < rows.length
+      ? `ส่งแล้ว ${submitted.length}/${rows.length} ชิ้น`
+      : submitted.length ? undefined : "ยังไม่ส่งชิ้นงาน",
+  }];
+
+  for (const lens of REVIEW_LENSES) {
+    const meta = LENS_META[lens];
+    const role = `รีวิว ${meta.label}`;
+    // Who is expected to answer, when nobody has yet. Both people on the info
+    // rung are alternatives, not a queue: either signature settles it.
+    const waitingOn = (lens === "info"
+      ? namesOf([ctx.requester, ctx.brandLead])
+      : namesOf([ctx.creativeLeader])).join(" / ") || meta.owner;
+    // A row settled before the two lenses existed carries no `review`, only a
+    // status. Reading it as "no verdict yet" would park every job signed off
+    // before 31 Jul on a Pending rung for ever — so the row's own status
+    // answers for both lenses when the record is missing. The signature line
+    // stays empty in that case rather than inventing a name for it.
+    const outcomes = submitted.map((d) => ({
+      by: d.review?.[lens]?.by,
+      verdict: d.review?.[lens]?.verdict
+        ?? (d.status === "Approved" ? "pass" as const : d.status === "Revision" ? "revise" as const : undefined),
+    }));
+    const sentBack = outcomes.filter((v) => v.verdict === "revise");
+    const signed = outcomes.filter((v) => v.verdict === "pass");
+    if (!submitted.length) {
+      steps.push({ key: lens, role, person: waitingOn, state: "idle", detail: "ยังไม่มีชิ้นงานให้ตรวจ" });
+    } else if (sentBack.length) {
+      steps.push({
+        key: lens, role, state: "revise",
+        person: namesOf(sentBack.map((v) => v.by)).join(" · ") || UNRECORDED_SIGNER,
+        detail: `ตีกลับ ${sentBack.length} ชิ้น — รอแก้แล้วส่งใหม่`,
+      });
+    } else if (signed.length === submitted.length) {
+      steps.push({
+        key: lens, role, state: "done",
+        // Settled, but by whom is not on record: say so rather than printing
+        // the name of whoever WOULD have signed it — the ladder is read as a
+        // trail, and a guessed name in it is worse than a blank.
+        person: namesOf(signed.map((v) => v.by)).join(" · ") || UNRECORDED_SIGNER,
+        detail: meta.checks,
+      });
+    } else {
+      steps.push({
+        key: lens, role, person: waitingOn, state: "pending",
+        // The count is real only when real rows were counted; the stage
+        // fallback stands for a job of unknown size.
+        detail: rows === dels
+          ? `รออีก ${submitted.length - signed.length}/${submitted.length} ชิ้น · ${meta.checks}`
+          : meta.checks,
+      });
+    }
+  }
+  return steps;
 }
 
 /** Indexes of every deliverable that is the SAME artwork as `index` — the same
@@ -1822,7 +1954,7 @@ const BOARD: { col: string; cards: Omit<Graphic, "stage">[] }[] = [
     { id: 9, title: "Summer reel cover", b: "omakase", campaign: "Summer Reel Series", due: "Jun 26", designer: "Boss", requester: "Ken S.", approver: "Aran P.", type: "Reel Cover", priority: "High", fb: 3, openFb: 3, isOverdue: true, briefComplete: true, pendingApprover: "Ken S.", blocker: "CI correction needed", waitingSince: "Jun 22", nextAction: "Boss to revise brand colours V4", platform: "IG Reels", size: "1080×1920", contentItem: "Summer series cover" },
   ]},
   { col: "Waiting Approval", cards: [
-    { id: 10, title: "Cocktail menu card", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 24", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "Aran P.", blocker: "Waiting CMO approval", waitingSince: "Jun 23", nextAction: "Aran P. to approve final artwork", platform: "Print", size: "A5", contentItem: "Menu card" },
+    { id: 10, title: "Cocktail menu card", b: "touka", campaign: "Cocktail Hour Launch", due: "Jun 24", designer: "Aom", requester: "Ploy R.", approver: "Aran P.", type: "Print", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "Aran P.", blocker: "Waiting artwork review", waitingSince: "Jun 23", nextAction: "Aran P. to sign off the info check", platform: "Print", size: "A5", contentItem: "Menu card" },
   ]},
   { col: "Approved", cards: [
     { id: 11, title: "Wagyu teaser story", b: "teppen", campaign: "Wagyu Festival", due: "Jun 22", designer: "Studio Nine", requester: "Ken S.", approver: "Aran P.", type: "Story", priority: "Med", fb: 1, openFb: 0, isOverdue: false, briefComplete: true, pendingApprover: "—", blocker: null, waitingSince: null, nextAction: "Upload final files for delivery", platform: "IG Story", size: "1080×1920 ×3", contentItem: "Wagyu teaser 3-frame story", deliverables: [
@@ -1845,6 +1977,7 @@ export const STAGE_ORDER = ["New Request", "In Progress", "Waiting Feedback", "R
 
 export const GRAPHICS: Graphic[] = BOARD.flatMap((col) => col.cards.map((c) => ({ ...c, stage: col.col })));
 
+
 export const STAGE_TONE: Record<string, Tone> = {
   "New Request": "neutral", "Brief Incomplete": "red", "Ready to Start": "neutral",
   "In Progress": "blue", "Waiting Feedback": "gold", "Revision Requested": "orange",
@@ -1861,6 +1994,11 @@ export const DESIGNER_COLOR: Record<string, string> = { Boss: "#4E7A4E", Aom: "#
 export interface Feedback {
   id: number; gid: number; owner: string; team: string; ownerColor: string;
   type: string; text: string; version: string; status: string; assignedTo: string; due: string | null; createdAt: string;
+  /** The raw moment, for the conversation view — `createdAt` is a display
+   *  string ("Aug 21") with no time in it, and in a chat "who said what before
+   *  what" is the point. Absent on rows read before this was carried through,
+   *  which fall back to the date alone. */
+  createdAtIso?: string;
 }
 
 /* ── Talking about a request ───────────────────────────────────────────────
@@ -1880,40 +2018,49 @@ export const MESSAGE_TYPE = "Message";
 
 export const isMessage = (f: Pick<Feedback, "type">) => f.type === MESSAGE_TYPE;
 
-/** Who a reply is addressed to — one person, the one being answered.
+/** Everyone this request belongs to — the people a message in its thread has
+ *  to reach.
  *
- *  The last person to speak who is not me. A conversation answers whoever
- *  asked, and on a request that is as often Creative asking the requester as
- *  the other way round.
+ *  This used to name exactly one person: whoever spoke last, or one counterpart
+ *  across the table. On a two-person job that reads fine. On the jobs this
+ *  actually runs — a Reel with a shooter, an editor, whoever drew the
+ *  storyboard and the person who asked for it — it meant a question went to one
+ *  of the four and the other three never heard it. The line under the box said
+ *  so out loud ("ข้อความนี้จะถึง Jeeno") and that was the whole problem: the
+ *  crew was on the job, not in the conversation.
  *
- *  With nothing said yet there is nobody to answer, so it goes to the other
- *  SIDE: the requester writes to whoever holds the job, Creative writes to the
- *  requester. Deliberately one person and not "everyone on the request" —
- *  copying a designer into a question meant for the requester is how a channel
- *  earns the habit of being ignored.
+ *  So: every name the request carries, plus anyone who has already spoken in
+ *  the thread, minus yourself. Role order, not alphabetical — the list is shown
+ *  to the sender before they hit send, and it should read like the crew.
  *
- *  Never me: notifying yourself about your own message is the same disease.
- *  Empty when there is genuinely nobody on the other side, rather than falling
- *  back to a name that would silently swallow the message. */
-export function replyAudience(
-  g: Pick<Graphic, "requester" | "acceptedBy" | "designer">,
-  thread: Pick<Feedback, "owner" | "type">[],
+ *  `sameName` does the de-duplicating so "jeeno" and "jeeno@teppen…" are one
+ *  person rather than two notifications; "Unassigned" is a placeholder, never a
+ *  recipient. */
+export function threadAudience(
+  // Partial on purpose: a caller holding a half-loaded request should get the
+  // names it does know rather than a type error, and a job with no shooter is
+  // the normal case, not a missing field.
+  g: Partial<Pick<Graphic, "requester" | "acceptedBy" | "designer" | "storyboardOwner" | "shooter" | "deliverables">>,
+  thread: Pick<Feedback, "owner">[],
   me: string,
 ): string[] {
-  const norm = (s: string | null | undefined) => (s ?? "").trim();
-  const mine = (name: string) => name.toLowerCase() === norm(me).toLowerCase();
-  const real = (name: string) => !!name && name !== "Unassigned" && !mine(name);
-
-  const lastSpeaker = thread.map((f) => norm(f.owner)).find(real);
-  if (lastSpeaker) return [lastSpeaker];
-
-  // Nothing said yet — write across the table, not around it.
-  const amRequester = mine(norm(g.requester));
-  const order = amRequester
-    ? [g.acceptedBy, g.designer, g.requester]
-    : [g.requester, g.acceptedBy, g.designer];
-  const other = order.map(norm).find(real);
-  return other ? [other] : [];
+  const onTheJob = [
+    g.requester,       // เจ้าของงาน — the one who asked for it
+    g.acceptedBy,      // whoever picked it up, even while designer reads Unassigned
+    g.designer,
+    g.storyboardOwner, // Creative Content
+    g.shooter,         // คนถ่าย
+    ...(g.deliverables ?? []).map((d) => d.submittedBy),
+  ];
+  const out: string[] = [];
+  for (const raw of [...onTheJob, ...thread.map((f) => f.owner)]) {
+    const name = (raw ?? "").trim();
+    if (!name || name === "Unassigned") continue;
+    if (sameName(name, me) || name.toLowerCase() === (me ?? "").trim().toLowerCase()) continue;
+    if (out.some((x) => sameName(x, name) || x.toLowerCase() === name.toLowerCase())) continue;
+    out.push(name);
+  }
+  return out;
 }
 
 export const FEEDBACK: Feedback[] = [
@@ -2112,7 +2259,7 @@ export function creativeBriefDetails(g: Graphic): { label: string; value: string
       ? [{
         label: "Storyboard",
         value: g.storyboardStatus === "Approved"
-          ? `เปิด storyboard (อนุมัติแล้ว${g.storyboardDecidedBy ? ` โดย ${g.storyboardDecidedBy}` : ""})`
+          ? `เปิด storyboard (อนุมัติแล้ว${g.storyboardDecidedBy ? ` โดย ${g.storyboardDecidedBy}` : ""}${stamp(g.storyboardDecidedAt) ? ` · ${stamp(g.storyboardDecidedAt)}` : ""})`
           : `เปิด storyboard (${g.storyboardStatus === "Submitted" ? "รอเจ้าของงานอนุมัติ" : "ถูกส่งกลับแก้ — รอเวอร์ชันใหม่"})`,
         href: g.storyboardLink.trim(),
       }]

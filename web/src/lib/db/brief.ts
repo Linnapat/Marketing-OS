@@ -8,8 +8,9 @@ import { supabase } from "@/lib/supabase";
 import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
-import { createContentIfNew, fetchContentSourceIds } from "./content";
-import { createGraphicIfNew, fetchGraphicSourceIds, buildGraphic, topUpGraphicBrief } from "./graphic";
+import { createContentIfNew, fetchContentSourceIds, fetchCampaignPosts, adoptPostForBriefItem } from "./content";
+import { adoptablePostFor } from "@/lib/data/fanoutAdopt";
+import { createGraphicIfNew, fetchGraphicSourceIds, fetchGraphicIdForPost, adoptGraphicForBriefItem, buildGraphic, topUpGraphicBrief } from "./graphic";
 import { needsStoryboard, initialNextAction } from "@/lib/data/graphic";
 import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
@@ -92,9 +93,13 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
 
   // Idempotency: what's already been materialised for this campaign, so a repeat
   // Submit / retry creates nothing new. Keyed by real source ids, not names.
+  // The campaign's posts come first because both of the other reads depend on
+  // them: a post raised by hand is how a request that predates the brief gets
+  // recognised at all.
+  const campaignPosts = await fetchCampaignPosts(normalizedBrief.id);
   const [contentSeen, graphicSeen, kolRows, kolAssign] = await Promise.all([
     fetchContentSourceIds(normalizedBrief.id),
-    fetchGraphicSourceIds(normalizedBrief.id),
+    fetchGraphicSourceIds(normalizedBrief.id, campaignPosts),
     fetchKolsForCampaign(normalizedBrief.id),
     resolveKolAssignment(),
   ]);
@@ -168,6 +173,27 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
       captionStatus: "Missing", assetStatus: needsCreative ? "Waiting Design" : "No Asset",
       approvalStatus: "Draft", publishStatus: "Draft",
     };
+    // Was this piece already briefed by hand, before it was written into the
+    // campaign? Then take that post over instead of making a second one — and
+    // stamp the item onto it, so every later run matches by id and none of this
+    // has to be inferred again. Everything else about the post is left alone:
+    // whatever the team has done to it since is theirs, not the brief's to
+    // overwrite.
+    const adopted = contentSeen.has(ci.id) ? null : adoptablePostFor(ci, campaignPosts);
+    if (adopted) {
+      await adoptPostForBriefItem(adopted.id, ci.id);
+      adopted.sourceContentItemId = ci.id;
+      contentSeen.add(ci.id);
+      // The request linked to that post answers this item too — without this
+      // the graphic half would still be made twice. Stamped as well as
+      // remembered, so the next run matches by id instead of inferring it
+      // again.
+      const linked = await fetchGraphicIdForPost(adopted.id);
+      if (linked !== undefined && !graphicSeen.has(ci.id)) {
+        graphicSeen.set(ci.id, linked);
+        await adoptGraphicForBriefItem(linked, ci.id);
+      }
+    }
     const madeContent = await createContentIfNew(post, contentSeen);
     if (madeContent.created) {
       content++;
@@ -419,6 +445,27 @@ export async function fetchAllBriefs(): Promise<Record<string, CampaignBrief>> {
   const out: Record<string, CampaignBrief> = {};
   for (const r of data) if (r.data) out[r.name as string] = r.data as CampaignBrief;
   return out;
+}
+
+/** Briefs indexed both ways. `byId` is keyed on campaigns.id — the only key
+ *  that is actually unique — and is what anything holding a campaignId should
+ *  use. `byName` is the legacy map, kept for rows written before campaignId
+ *  existed; two campaigns sharing a name collapse to one entry there, which is
+ *  precisely why byId is the one to prefer. One query serves both. */
+export async function fetchBriefIndex(): Promise<{ byId: Record<string, CampaignBrief>; byName: Record<string, CampaignBrief> }> {
+  const db = supabase();
+  const empty = { byId: {} as Record<string, CampaignBrief>, byName: {} as Record<string, CampaignBrief> };
+  if (!db) return empty;
+  const { data, error } = await db.from("campaigns").select("id,name,data");
+  if (error || !data) return empty;
+  const byId: Record<string, CampaignBrief> = {};
+  const byName: Record<string, CampaignBrief> = {};
+  for (const r of data) {
+    if (!r.data) continue;
+    byId[String(r.id)] = r.data as CampaignBrief;
+    byName[r.name as string] = r.data as CampaignBrief;
+  }
+  return { byId, byName };
 }
 
 /** Read a saved brief back (campaigns.data). Returns null when unavailable. */

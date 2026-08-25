@@ -114,6 +114,17 @@ console.log("\n— ตาราง Campaign Detail —");
   ];
   const s = buildKolSummary(rows, DEFAULT_TARGETS);
   is("เรียงตามแคมเปญ แล้วตามชื่อ", s.details.map((d) => `${d.campaign}/${d.name}`), ["Alpha/A", "Zeta/B"]);
+
+  // KOL ID มาจากทะเบียน ไม่ใช่จากใบจอง — ใบที่ยังไม่ผูกโปรไฟล์ต้องเป็นค่าว่าง
+  // ไม่ใช่เลขมั่ว
+  const withCodes = buildKolSummary(
+    [k({ id: 9, name: "C", campaign: "Alpha", masterKolId: "m-9" }), k({ id: 10, name: "D", campaign: "Alpha" })],
+    DEFAULT_TARGETS,
+    (kk) => (kk.masterKolId === "m-9" ? "KOL-0219" : undefined),
+  );
+  is("ผูกทะเบียนแล้ว = ได้รหัส", withCodes.details.find((d) => d.name === "C")?.code, "KOL-0219");
+  is("ยังไม่ผูกทะเบียน = ไม่มีรหัส ไม่ใช่เลขมั่ว", withCodes.details.find((d) => d.name === "D")?.code, "");
+  is("ไม่ส่ง codeFor มาเลย ก็ไม่พัง", buildKolSummary([k({ id: 11 })], DEFAULT_TARGETS).details[0].code, "");
   const b = s.details.find((d) => d.name === "B")!;
   is("แยกค่าอาหารกับค่าตัว", [b.paidCost, b.foodCost, b.totalCost], [100, 50, 150]);
   is("วันไปร้าน + วันโพสต์ แยกคอลัมน์", [b.visitDate, b.postDate], ["2026-08-20", "2026-08-25"]);

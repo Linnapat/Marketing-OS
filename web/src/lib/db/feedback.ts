@@ -63,6 +63,7 @@ export async function fetchGraphicFeedback(gid: number): Promise<Feedback[]> {
     ownerColor: (r.owner_color as string) ?? "#9A9387", type: (r.type as string) ?? "", text: (r.text as string) ?? "",
     version: (r.version as string) ?? "", status: (r.status as string) ?? "Open", assignedTo: (r.assigned_to as string) ?? "",
     due: (r.due as string) ?? null, createdAt: shortDate(r.created_at as string),
+    createdAtIso: (r.created_at as string) ?? undefined,
   }));
 }
 
@@ -88,5 +89,6 @@ export async function addGraphicFeedback(gid: number, f: {
     id: data.id as number, gid, owner: f.owner, team: f.team ?? "", ownerColor: f.ownerColor ?? "#9A9387",
     type: f.type, text: f.text, version: f.version ?? "", status: "Open", assignedTo: f.assignedTo ?? "",
     due: f.due ?? null, createdAt: shortDate(data.created_at as string),
+    createdAtIso: (data.created_at as string) ?? undefined,
   };
 }

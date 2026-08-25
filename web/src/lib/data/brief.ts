@@ -762,8 +762,13 @@ export function guidelineChecklist(brief: CampaignBrief, branchOptions?: string[
 }
 
 // ── Submit validation (Save Draft is exempt) ──────────────────────────────
-/** Returns the list of blocking messages. Empty ⇒ OK to submit. */
-export function validateSubmit(brief: CampaignBrief, branchOptions?: string[]): string[] {
+/** Returns the list of blocking messages. Empty ⇒ OK to submit.
+ *
+ *  `baseline` is the campaign as it was last saved, passed when EDITING. It
+ *  exists for one reason: some rules are about the ask being made *now*, and
+ *  re-asking them of an untouched row means a campaign becomes un-submittable
+ *  simply by getting older. Everything else is checked the same either way. */
+export function validateSubmit(brief: CampaignBrief, branchOptions?: string[], baseline?: CampaignBrief | null): string[] {
   const e: string[] = [];
   if (!brief.name.trim()) e.push("Please enter a Campaign Name");
   if (!brief.objective) e.push("Please select an Objective");
@@ -787,7 +792,16 @@ export function validateSubmit(brief: CampaignBrief, branchOptions?: string[]): 
       if (!c.assets.some((a) => a.platform === p)) e.push(`Please select asset size for ${p}`);
     });
     if (c.requiredGraphic && !c.graphicDueDate) e.push(`Please select a Graphic Due Date for “${tag}”`);
-    if (c.requiredGraphic && c.graphicDueDate && !isGraphicDueDateAllowed(c.graphicDueDate, todayIso())) e.push(`Graphic Due Date for “${tag}” must be at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days after Request Date`);
+    // The five-business-day lead time protects Creative from being handed a job
+    // due tomorrow. It is a rule about the REQUEST, so it applies to a graphic
+    // ask that is new or has just been moved — not to one agreed weeks ago and
+    // already sitting in someone's queue. Measured against today, an untouched
+    // row fails the moment its deadline comes within five days, which locked
+    // the whole campaign: changing a budget in month two was refused because of
+    // a graphic deadline set, and honoured, in month one.
+    const before = baseline?.content?.find((x) => x.id === c.id);
+    const graphicAskIsNew = !before || !before.requiredGraphic || before.graphicDueDate !== c.graphicDueDate;
+    if (c.requiredGraphic && c.graphicDueDate && graphicAskIsNew && !isGraphicDueDateAllowed(c.graphicDueDate, todayIso())) e.push(`Graphic Due Date for “${tag}” must be at least ${GRAPHIC_MIN_BUSINESS_DAYS} business days after Request Date`);
     // Only enforceable when the two limits can both hold; see graphicDueRangeImpossible.
     if (c.requiredGraphic && c.graphicDueDate && c.publishDate && c.graphicDueDate > c.publishDate
         && !graphicDueRangeImpossible(c.publishDate)) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);

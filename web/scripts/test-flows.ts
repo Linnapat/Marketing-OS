@@ -9,11 +9,11 @@ import {
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
 import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
-import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS } from "../src/lib/data/brief";
+import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS, todayIso, addBusinessDays } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, replyAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, threadAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
 import { memberTeam, isAssignableMember } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -207,6 +207,65 @@ console.log("Graphic due date — the lead time and the publish date can contrad
   check("due after publish is still blocked when the range is possible", afterPublish(brief("2026-09-01", "2026-09-15")));
   // A post inside the lead time: warned in the form, never blocked here.
   check("…but not blocked when no date could satisfy both", !afterPublish(brief("2026-07-28", "2026-08-03")));
+}
+
+console.log("Graphic lead time — a rule about the ask, not about how old the campaign is");
+{
+  // The campaign that started this: a live campaign edited in month two to move
+  // budget was refused because a graphic deadline agreed in month one had since
+  // come within five business days of today. Nothing about the graphic changed;
+  // the calendar did.
+  const stale = (graphicDueDate: string): CampaignBrief => {
+    const b = emptyBrief("lead-time-test");
+    b.name = "Seasonal menu"; b.objective = "Awareness"; b.campaignType = "Seasonal"; b.b = "teppen";
+    b.branches = ["Central"]; b.startDate = "2026-09-01"; b.endDate = "2026-11-30";
+    b.launchDate = "2026-09-01"; b.audience = "A"; b.mainMessage = "M"; b.offer = "O"; b.approver = "CMO";
+    b.content = [{
+      ...emptyContentItem(1), id: "c1", title: "0901_Seasonal Menu", subHead: "S", platforms: ["Instagram"],
+      assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], requiredGraphic: true,
+      publishDate: "2026-09-20", graphicDueDate,
+    }];
+    return b;
+  };
+  const tooSoon = todayIso();                       // today can never be 5 business days out
+  const leadErr = (b: CampaignBrief, baseline?: CampaignBrief | null) =>
+    validateSubmit(b, undefined, baseline).some((e) => /business days after Request Date/.test(e));
+
+  const fresh = stale(tooSoon);
+  check("สร้างใหม่: วันส่งงานเร็วเกินไป = บล็อกเหมือนเดิม", leadErr(fresh));
+
+  // Editing, graphic untouched — the deadline is already agreed and the job is
+  // already in someone's queue.
+  const baseline = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  const budgetOnlyEdit = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  budgetOnlyEdit.budget.total = 250000;
+  check("แก้แค่งบ ไม่แตะ graphic = ไม่บล็อก", !leadErr(budgetOnlyEdit, baseline));
+
+  // Move the deadline and it is a new ask again.
+  const movedDue = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  movedDue.content[0].graphicDueDate = addBusinessDays(tooSoon, 1);
+  check("ขยับวันส่งงานเอง = กลับมาบล็อก", leadErr(movedDue, baseline));
+
+  // Turning the graphic ask ON is a new request even if the date is unchanged.
+  const offBaseline = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  offBaseline.content[0].requiredGraphic = false;
+  check("เพิ่งติ๊กว่าต้องใช้ graphic = เป็นการขอใหม่ ต้องบล็อก", leadErr(fresh, offBaseline));
+
+  // A brand-new content row in an existing campaign has no baseline of its own.
+  const addedRow = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  addedRow.content.push({
+    ...emptyContentItem(2), id: "c2", title: "0902_New", subHead: "S", platforms: ["Instagram"],
+    assets: [{ platform: "Instagram", size: "1:1 (1080×1080)" }], requiredGraphic: true,
+    publishDate: "2026-09-20", graphicDueDate: tooSoon,
+  });
+  check("เพิ่ม content ใหม่ในแคมเปญเดิม = บล็อกเฉพาะแถวใหม่",
+    validateSubmit(addedRow, undefined, baseline).filter((e) => /business days after Request Date/.test(e)).length === 1);
+
+  // Everything else keeps biting while editing — the exemption is this one rule.
+  const missingDue = JSON.parse(JSON.stringify(fresh)) as CampaignBrief;
+  missingDue.content[0].graphicDueDate = "";
+  check("ลบวันส่งงานทิ้ง = ยังบล็อกตามเดิม",
+    validateSubmit(missingDue, undefined, baseline).some((e) => /Please select a Graphic Due Date/.test(e)));
 }
 
 console.log("Budget — optional: a zero-spend campaign (e.g. Mainichi free-message quota) must still submit");
@@ -665,20 +724,41 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ไม่เคยขอ → ไม่อยู่ในคิว", !awaitsBriefUnlockDecision({}));
   }
 
-  // คุยกันในใบงาน: ตอบแล้วต้องถึงคนที่ถาม ไม่ใช่เด้งใส่ตัวเอง
+  // คุยกันในใบงาน: ข้อความต้องถึงทุกคนที่อยู่ในงาน ไม่ใช่คนเดียว
   {
-    const req = { requester: "Khun Aran", acceptedBy: "Jungjing", designer: "Boss" };
+    // The crew on a real Reel: who asked for it, who picked it up, the
+    // designer on the ticket, whoever drew the storyboard, and the shooter.
+    const req = {
+      requester: "Khun Aran", acceptedBy: "Jungjing", designer: "Boss",
+      storyboardOwner: "Pichayaporn", shooter: "Jeeno",
+    };
     const msg = (owner: string) => ({ owner, type: MESSAGE_TYPE });
     // thread เรียงใหม่สุดขึ้นก่อน (ตาม fetchGraphicFeedback)
-    check("ตอบไปหาคนที่พูดล่าสุด", replyAudience(req, [msg("Jungjing")], "Khun Aran").join() === "Jungjing");
-    check("ข้ามข้อความของตัวเอง", replyAudience(req, [msg("Khun Aran"), msg("Jungjing")], "Khun Aran").join() === "Jungjing");
-    check("ไม่เด้งใส่ตัวเอง", replyAudience(req, [msg("Khun Aran")], "Khun Aran").includes("Khun Aran") === false);
-    // ยังไม่มีใครพูด = ข้อความแรก ต้องถึงคนที่ถือใบงาน
-    check("ข้อความแรกถึงคนที่รับงาน", replyAudience(req, [], "Khun Aran").join() === "Jungjing");
-    check("ไม่มีคนรับงานก็ถึง designer", replyAudience({ ...req, acceptedBy: "" }, [], "Khun Aran").join() === "Boss");
-    check("ฝั่ง Creative ตอบ = ถึง requester", replyAudience(req, [], "Jungjing").join() === "Khun Aran");
-    check("Unassigned ไม่นับเป็นคน", replyAudience({ requester: "Khun Aran", acceptedBy: "Unassigned", designer: "Unassigned" }, [], "Jungjing").join() === "Khun Aran");
-    check("ไม่มีใครให้ตอบ = ไม่แจ้งใคร", replyAudience({ requester: "Khun Aran", acceptedBy: "", designer: "" }, [], "Khun Aran").length === 0);
+    const to = (g: Parameters<typeof threadAudience>[0], thread: { owner: string }[], me: string) =>
+      threadAudience(g, thread, me).join(",");
+
+    // The bug: the shooter asked a question and only one of the four heard it.
+    check("ถึงทุกคนในงาน ไม่ใช่แค่คนเดียว",
+      to(req, [], "Jeeno") === "Khun Aran,Jungjing,Boss,Pichayaporn");
+    check("เจ้าของงานพิมพ์ = ถึงทีมที่เหลือทั้งหมด",
+      to(req, [], "Khun Aran") === "Jungjing,Boss,Pichayaporn,Jeeno");
+    check("ไม่เด้งใส่ตัวเอง", !threadAudience(req, [msg("Jeeno")], "Jeeno").includes("Jeeno"));
+    check("คนที่เคยคุยแต่ไม่ได้อยู่บนใบงานก็ยังได้รับ",
+      to(req, [msg("Pupay")], "Jeeno") === "Khun Aran,Jungjing,Boss,Pichayaporn,Pupay");
+    check("คนเดิมไม่ถูกนับซ้ำ",
+      to(req, [msg("Boss"), msg("Boss")], "Jeeno") === "Khun Aran,Jungjing,Boss,Pichayaporn");
+    // sameName: "jeeno" กับ "jeeno@teppen…" คือคนเดียวกัน ไม่ใช่สองคน
+    check("อีเมลกับชื่อสั้นคือคนเดียวกัน",
+      !threadAudience({ ...req, shooter: "jeeno@teppenthailand.co.th" }, [], "Jeeno")
+        .some((n) => n.toLowerCase().startsWith("jeeno")));
+    check("Unassigned ไม่นับเป็นคน",
+      to({ requester: "Khun Aran", acceptedBy: "Unassigned", designer: "Unassigned" }, [], "Jungjing") === "Khun Aran");
+    check("ไม่มีใครให้แจ้ง = ไม่แจ้งใคร",
+      threadAudience({ requester: "Khun Aran", acceptedBy: "", designer: "" }, [], "Khun Aran").length === 0);
+    // คนส่ง asset (เช่น agency) ก็อยู่ในงานนี้ด้วย
+    check("คนที่ส่ง asset ก็ได้รับ (เช่น agency)",
+      to({ requester: "Khun Aran", deliverables: [{ submittedBy: "Studio Nine" }] as never }, [], "Khun Aran")
+        === "Studio Nine");
     // ข้อความธรรมดา vs feedback ที่สั่งงาน ต้องแยกออกจากกัน
     check("Message = ข้อความคุย", isMessage({ type: MESSAGE_TYPE }) === true);
     check("Design revision ไม่ใช่ข้อความคุย", isMessage({ type: "Design revision" }) === false);

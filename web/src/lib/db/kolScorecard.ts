@@ -37,6 +37,11 @@ export function followerFreshness(checkedAt: string | null | undefined): Followe
 
 export interface KolScorecardRow {
   kol_id: string;
+  /** The human number — KOL-0001. The uuid is the key the database joins on;
+   *  nobody can read one out to a colleague, and the team's own report has
+   *  identified creators by this code for years. Optional because a profile
+   *  created before the column existed has none until the backfill runs. */
+  kol_code?: string | null;
   display_name: string;
   kol_type: string | null;
   tier: string | null;

@@ -114,7 +114,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only }: {
+export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -126,6 +126,9 @@ export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraph
   onReject: (r: ExpenseReq, reason: string) => void;
   /** Who is signing — the name recorded on a verdict given from a row. */
   me: string;
+  /** The Creative Leader by name, so a verdict given here still asks whoever
+   *  owes the other lens for theirs. See useCreativeLeader. */
+  creativeLeader?: string;
   /** A request changed under a row (a lens verdict). The page owns the list, so
    *  it re-renders and the row leaves the queue on its own. */
   onGraphicUpdate?: (g: Graphic) => void;
@@ -224,7 +227,7 @@ export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraph
       {panels.map(({ kind, rows: kindRows }) => (
         <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only} view={view}>
           {kindRows.map((row) => (view === "list"
-            ? renderRow(row, now, { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
+            ? renderRow(row, now, { codeOf, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
             : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject })))}
         </KindPanel>
       ))}
@@ -489,6 +492,7 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   codeOf: (id?: string, name?: string) => string | undefined;
   budgetOf: (r: ExpenseReq) => ExpenseBudgetInfo | null;
   me: string;
+  creativeLeader?: string;
   onOpenTask: (id: number) => void;
   onOpenGraphic: (id: number, tab?: GTab) => void;
   onApprove: (r: ExpenseReq) => void;
@@ -497,7 +501,7 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   onContentUpdate?: (c: ContentItem) => void;
   onTaskApproved?: (t: Task) => void;
 }) {
-  const { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved } = deps;
+  const { codeOf, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved } = deps;
   // Money keeps its own row: the amount and the two buttons are the reason
   // anyone opens this lane, and a shared row cannot carry them.
   if (row.kind === "expense") {
@@ -508,7 +512,7 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   // drawer to look at one file and press one button was the whole reason these
   // aged — see LensRow.
   if (row.kind === "artwork" || row.kind === "vdo" || row.kind === "photo") {
-    return <LensRow key={row.key} row={row} now={now} codeOf={codeOf} me={me}
+    return <LensRow key={row.key} row={row} now={now} codeOf={codeOf} me={me} creativeLeader={creativeLeader}
       onOpenGraphic={onOpenGraphic} onGraphicUpdate={onGraphicUpdate} />;
   }
   // Captions: the words themselves, and the verdict. An easy yes should not
@@ -770,11 +774,12 @@ function CaptionRow({ row, now, me, onContentUpdate }: {
  *  The verdict itself goes through lib/graphicVerdict — the same call the
  *  drawer makes, so a piece signed off here files into the Asset Library and
  *  raises its revision task exactly as one signed off there does. */
-function LensRow({ row, now, codeOf, me, onOpenGraphic, onGraphicUpdate }: {
+function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphicUpdate }: {
   row: Extract<ApprovalRow, { kind: "artwork" | "vdo" | "photo" }>;
   now: number;
   codeOf: (id?: string, name?: string) => string | undefined;
   me: string;
+  creativeLeader?: string;
   onOpenGraphic: (id: number, tab?: GTab) => void;
   onGraphicUpdate?: (g: Graphic) => void;
 }) {
@@ -792,7 +797,7 @@ function LensRow({ row, now, codeOf, me, onOpenGraphic, onGraphicUpdate }: {
     setActed(true);
     const ng = giveLensVerdict({
       g: row.g, deliverables: row.g.deliverables ?? [], index: row.index,
-      lens: row.lens, verdict, me, note, onUpdate: onGraphicUpdate,
+      lens: row.lens, verdict, me, note, creativeLeader, onUpdate: onGraphicUpdate,
     });
     if (!ng) {
       setActed(false);

@@ -4,6 +4,7 @@ import {
   Graphic, briefFields, creativeBriefDetails, stageTone,
   deliverableProgress, deriveDeliverables, productionBlockers, productionSteps,
 } from "@/lib/data/graphic";
+import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
 /* The brief, where the work is.
@@ -72,7 +73,7 @@ export function TaskGraphicBrief({ g, onOpenFull }: { g: Graphic; onOpenFull: ()
 
         {g.briefApprovedBy ? (
           <div className="text-[11px] font-bold rounded-[8px] px-[9px] py-[6px] mb-[10px]" style={{ background: "#EEF4EE", color: "#4E7A4E", border: "1px solid #CFE4C2" }}>
-            ✓ บรีฟอนุมัติแล้วโดย {g.briefApprovedBy}
+            ✓ บรีฟอนุมัติแล้วโดย {g.briefApprovedBy}{stamp(g.briefApprovedAt) ? ` · ${stamp(g.briefApprovedAt)}` : ""}
           </div>
         ) : (
           <div className="text-[11px] font-bold rounded-[8px] px-[9px] py-[6px] mb-[10px]" style={{ background: "#FBF8EE", color: "#8A6D1E", border: "1px solid #EAD9A8" }}>

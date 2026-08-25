@@ -14,7 +14,7 @@
 // places.
 
 import { addGraphicFeedback } from "@/lib/db/feedback";
-import { Feedback, Graphic, MESSAGE_TYPE, replyAudience } from "@/lib/data/graphic";
+import { Feedback, Graphic, MESSAGE_TYPE, threadAudience } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
@@ -37,7 +37,7 @@ export async function postGraphicMessage(opts: {
   const text = opts.text.trim();
   if (!text) return null;
   const { graphic: g, me } = opts;
-  const to = replyAudience(g, opts.thread, me);
+  const to = threadAudience(g, opts.thread, me);
 
   const saved = await addGraphicFeedback(g.id, {
     owner: me,
@@ -50,8 +50,11 @@ export async function postGraphicMessage(opts: {
     assignedTo: "",
   });
 
-  // `to`, not the room: this answers a specific person, and until it was
-  // addressed to them the reply sat on a screen they had no reason to open.
+  // `to`, not the room: this belongs to the people on this job, and until it
+  // was addressed to them the message sat on a screen they had no reason to
+  // open. All of them — a Reel has a shooter, an editor, whoever drew the
+  // storyboard and the person who asked for it, and a question that reaches one
+  // of the four is a question the other three never saw.
   notify("mention", `💬 ${g.title}`, `${me}: ${text}`, workLink.graphic(g.id), {
     team: graphicTeam(g),
     to,

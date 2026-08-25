@@ -28,7 +28,7 @@ import { platformIcon, channelUrl } from "@/lib/platforms";
 import { kolTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
-import { baht } from "@/lib/format";
+import { baht, stamp } from "@/lib/format";
 import { updateKol } from "@/lib/db/kol";
 import { logCollaboration, ensureKolProfile } from "@/lib/db/kolMaster";
 import { fetchKolScorecards, KolScorecardRow } from "@/lib/db/kolScorecard";
@@ -411,7 +411,6 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
     // Once it has been decided, its task is closed, and pointing at it again is
     // how a re-opened approval reaches no one.
     const taskId = (!stillApproved && kol.proposalApprovalTaskId) || Date.now();
-    const requester = (kol.requester || kol.pendingApprover || "").trim();
     const next: Kol = {
       ...kol, name: name.trim() || kol.name, h: handle.trim() || kol.h, kolType,
       followers, expectedReach: avgReach, audienceFit, contentStyle, pastCollab,
@@ -432,32 +431,8 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
       // the first time. `taskId` is a fresh id after a decided approval, so the
       // request lands in My Approval again instead of on a ticked-off task.
       const needsApproval = !stillApproved;
-      if (needsApproval && taskId !== kol.proposalApprovalTaskId && requester && requester !== "Unassigned" && requester !== "—") {
-        const due = new Date(); due.setDate(due.getDate() + 3);
-        const task: Task = {
-          id: taskId, title: `Approve KOL proposal — ${next.name}`,
-          module: "KOL", moduleIcon: "🌟", moduleColor: "#B5577E", type: "KOL",
-          assignee: requester, brand: brandName(next.b), campaign: next.campaign,
-          status: "Need Approval", priority: "High", group: "needApproval",
-          due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
-          dueIso: due.toISOString().slice(0, 10), blocker: null,
-          pendingApprover: requester, isQuickWin: false,
-          // The approver used to see the fee alone. Across 121 recorded deals the
-          // real bill ran 43.7% above the fee — every baht of it food support,
-          // and on 42 barter deals the fee was ฿0 while food was not. Show what
-          // is actually being committed, broken down so it is not a mystery.
-          nextAction: (() => {
-            const fee = next.fee || 0;
-            const food = next.foodCost || 0;
-            const total = next.totalCost || fee + food;
-            const parts = [`ค่าตัว ${baht(fee, { compact: true })}`];
-            if (food > 0) parts.push(`ค่าอาหาร ${baht(food, { compact: true })}`);
-            return `อนุมัติงบรวม ${baht(total, { compact: true })} (${parts.join(" + ")}) — ตรวจโปรไฟล์ แพลตฟอร์ม และงบ แล้ว Approve หรือขอแก้`;
-          })(),
-          checklist: ["Check KOL profile & followers", "Check platforms / links", "Check proposal budget & food support"],
-          relatedKolId: next.id, approvalKind: "kolProposal",
-        };
-        await createTaskDb(task);
+      if (needsApproval && taskId !== kol.proposalApprovalTaskId) {
+        await raiseProposalApproval(next, taskId);
       }
       onUpdate?.(next); setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch (error) {
@@ -666,6 +641,46 @@ function BriefTab({ kol }: { kol: Kol }) {
 // Contract + Quotation are the KOL team's to set (they gate Contract Signed).
 // Invoice + Payment mirror Finance — read-only here, actioned via the CTA.
 const CONTRACT_OPTS = ["Pending", "Sent", "Signed"];
+/** Send a proposal to the person who asked for the creator.
+ *
+ *  The approval always goes to the REQUESTER — the campaign side that asked for
+ *  this KOL — never to the specialist who built the proposal. Extracted because
+ *  two paths now raise it: submitting a proposal, and swapping in a replacement
+ *  creator after the first one cancelled.
+ *
+ *  Returns false when there is nobody to ask, so the caller can say so instead
+ *  of quietly filing a request that reaches no one. */
+async function raiseProposalApproval(k: Kol, taskId: number): Promise<boolean> {
+  const requester = (k.requester || k.pendingApprover || "").trim();
+  if (!requester || requester === "Unassigned" || requester === "—") return false;
+  const due = new Date(); due.setDate(due.getDate() + 3);
+  const task: Task = {
+    id: taskId, title: `Approve KOL proposal — ${k.name}`,
+    module: "KOL", moduleIcon: "🌟", moduleColor: "#B5577E", type: "KOL",
+    assignee: requester, brand: brandName(k.b), campaign: k.campaign,
+    status: "Need Approval", priority: "High", group: "needApproval",
+    due: due.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+    dueIso: due.toISOString().slice(0, 10), blocker: null,
+    pendingApprover: requester, isQuickWin: false,
+    // The approver used to see the fee alone. Across 121 recorded deals the
+    // real bill ran 43.7% above the fee — every baht of it food support, and on
+    // 42 barter deals the fee was ฿0 while food was not. Show what is actually
+    // being committed, broken down so it is not a mystery.
+    nextAction: (() => {
+      const fee = k.fee || 0;
+      const food = k.foodCost || 0;
+      const total = k.totalCost || fee + food;
+      const parts = [`ค่าตัว ${baht(fee, { compact: true })}`];
+      if (food > 0) parts.push(`ค่าอาหาร ${baht(food, { compact: true })}`);
+      return `อนุมัติงบรวม ${baht(total, { compact: true })} (${parts.join(" + ")}) — ตรวจโปรไฟล์ แพลตฟอร์ม และงบ แล้ว Approve หรือขอแก้`;
+    })(),
+    checklist: ["Check KOL profile & followers", "Check platforms / links", "Check proposal budget & food support"],
+    relatedKolId: k.id, approvalKind: "kolProposal",
+  };
+  await createTaskDb(task);
+  return true;
+}
+
 /** Put another page into a slot the original creator walked away from.
  *
  *  The slot — its campaign, brand, branch and budget — is what was planned and
@@ -687,12 +702,28 @@ function ReplaceCreatorForm({ kol, by, onClose, onDone }: {
   const submit = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
-    const next = replaceCreator(kol, {
+    // A fresh task id: the previous creator's approval task has been decided and
+    // pointing at it again is how a re-opened approval reaches nobody.
+    const taskId = Date.now();
+    const next = { ...replaceCreator(kol, {
       name, handle, platform, followers: followers || undefined, reason,
-    }, by, new Date().toISOString());
+    }, by, new Date().toISOString()), proposalApprovalTaskId: taskId };
     try {
       await updateKol(next);
-      toastSuccess(`เปลี่ยนเป็น ${next.name} แล้ว — ต้องขออนุมัติใหม่เพราะเป็นคนละคน`);
+      // Asked of the REQUESTER — the campaign side that asked for a creator in
+      // this slot is the one who has to accept a different one. Raised here
+      // rather than waiting for a re-submit: the swap IS the new proposal, and
+      // an approval nobody was told about is the failure this whole thread has
+      // been about.
+      const asked = await raiseProposalApproval(next, taskId);
+      notify("approval", `↔ เปลี่ยน KOL: ${kol.name} → ${next.name}`,
+        `${brandName(next.b)} · ${next.campaign} · ${baht(next.totalCost || next.fee || 0)}${reason.trim() ? ` · เหตุผล: ${reason.trim()}` : ""} — ต้องอนุมัติใหม่เพราะเป็นคนละคน`,
+        next.masterKolId ? workLink.kol(next.masterKolId) : "/kol?tab=list",
+        { team: "kol", to: [next.requester || next.pendingApprover] });
+      toastSuccess(asked
+        ? `เปลี่ยนเป็น ${next.name} แล้ว — ส่งขออนุมัติไปที่ ${next.requester || next.pendingApprover} แล้ว`
+        : `เปลี่ยนเป็น ${next.name} แล้ว — แต่ยังไม่มี Requester ให้ส่งขออนุมัติ`);
+      if (!asked) toastError("ใบงานนี้ไม่มี Requester — ต้องระบุก่อน ไม่งั้นคำขออนุมัติไปไม่ถึงใคร");
       onDone(next);
     } catch (error) {
       toastError(`เปลี่ยน KOL ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -818,11 +849,13 @@ function ContractTab({ kol, onUpdate, embedded = false }: { kol: Kol; onUpdate?:
             <span className="ml-auto text-[11px] font-semibold">
               อนุมัติไว้ {baht(kol.approvedAmount, { compact: true })}
               {kol.approvedBy ? ` · โดย ${kol.approvedBy}` : ""}
+              {stamp(kol.approvedAt) ? ` · ${stamp(kol.approvedAt)}` : ""}
             </span>
           ) : (
             <span className="ml-auto text-[11px] font-bold" style={{ color: "#B3641E" }}>
               ⚠ ยอดเปลี่ยนหลังอนุมัติ — เคยอนุมัติ {baht(kol.approvedAmount, { compact: true })}
-              {kol.approvedBy ? ` โดย ${kol.approvedBy}` : ""} · ตอนนี้ {baht(committedAmount(kol), { compact: true })} ต้องขออนุมัติใหม่
+              {kol.approvedBy ? ` โดย ${kol.approvedBy}` : ""}
+              {stamp(kol.approvedAt) ? ` (${stamp(kol.approvedAt)})` : ""} · ตอนนี้ {baht(committedAmount(kol), { compact: true })} ต้องขออนุมัติใหม่
             </span>
           )
         )}

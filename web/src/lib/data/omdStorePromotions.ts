@@ -10,7 +10,11 @@ export type OmdStorePromotionCategory =
   | "big_cleaning"
   | "crm";
 
-export type OmdStorePromotionStatus = "active" | "upcoming" | "ended" | "open_end";
+/** "cancelled" is not "ended": a promotion Marketing pulled must never go on a
+ *  wall, whether its dates have passed or have not arrived yet. Everything else
+ *  here is a fact about the dates and is recomputed at render time — see
+ *  liveStatus in the print page. */
+export type OmdStorePromotionStatus = "active" | "upcoming" | "ended" | "open_end" | "cancelled";
 
 export interface OmdStorePromotion {
   id: string;
@@ -25,6 +29,38 @@ export interface OmdStorePromotion {
   periodDays?: number;
   status: OmdStorePromotionStatus;
   source?: "campaign" | "manual" | "seed";
+  /** Kept out of the printout. A campaign row can only be hidden, never deleted —
+   *  the campaign belongs to another module — so "remove from the sheet" is
+   *  stored as this flag and can be undone. */
+  hidden?: boolean;
+}
+
+/** What the shop floor actually needs from the Status column: is this on the
+ *  wall today?
+ *
+ *  The stored status is a snapshot — written when a manual promotion was saved,
+ *  or copied from the campaign's workflow state — and a snapshot goes stale the
+ *  moment the calendar moves. Deriving from the dates on every read is what
+ *  keeps the column honest, and it is the only reading under which a promotion
+ *  cannot be finished before it has started: a campaign someone had marked
+ *  Completed printed "จบแล้ว" while its flight was still a week away.
+ *
+ *  Cancelled is the one thing the dates cannot tell you, so it survives; a
+ *  stored "ended" is read as closed-early and applies only once the promotion
+ *  has actually started.
+ *
+ *  `today` is passed in (yyyy-mm-dd, local) rather than read here, so callers
+ *  stay pure and this stays testable. */
+export function printedStatus(
+  item: Pick<OmdStorePromotion, "status" | "startDate" | "endDate">,
+  today: string,
+): OmdStorePromotionStatus {
+  if (item.status === "cancelled") return "cancelled";
+  if (item.startDate && item.startDate > today) return "upcoming";
+  if (item.endDate && item.endDate < today) return "ended";
+  if (item.status === "ended") return "ended";
+  if (!item.endDate) return "open_end";
+  return "active";
 }
 
 export const OMD_STORE_CATEGORY_META: Record<OmdStorePromotionCategory, {
@@ -85,7 +121,10 @@ export const OMD_STORE_CATEGORY_META: Record<OmdStorePromotionCategory, {
   },
   crm: {
     label: "CRM",
-    printLabel: "OMD Member / CRM",
+    // Brand-neutral on purpose: this sheet prints for every brand, and a Teppen
+    // CRM promotion filed under a heading that says OMD reads as the wrong
+    // brand's offer to anyone holding the printout.
+    printLabel: "Member / CRM",
     bg: "#FFF0F0",
     fg: "#D95454",
     border: "#F4B6B6",

@@ -270,8 +270,12 @@ export function kolKpis(list: Kol[]) {
   return { total, active, prospect, waitingReview: inReview, inReview, posted, completed, openComments, fees, expReach, avgRoas, revisionRequests, approvedCount, latePosts, overdueItems, onTimeDone, onTimeJudged: judged.length, onTimeRate };
 }
 
+/** Deals that need a human: comments waiting, past due, or parked in review.
+ *  The review test goes through normalizeStage — matching the raw status let a
+ *  row stored as "Draft Submitted" (the same In-Review stage as "Waiting
+ *  Review") sit unseen unless it happened to be overdue or have comments. */
 export function kolAlerts(list: Kol[]): Kol[] {
-  return list.filter((k) => k.openComments > 0 || k.isOverdue || k.status === "Waiting Review" || k.status === "Revision Requested");
+  return list.filter((k) => k.openComments > 0 || k.isOverdue || normalizeStage(k.status) === "In Review");
 }
 
 export function stageProgress(status: string): { idx: number; total: number } {
@@ -279,19 +283,44 @@ export function stageProgress(status: string): { idx: number; total: number } {
   return { idx: idx >= 0 ? idx : 0, total: ALL_STAGES.length };
 }
 
-const dueDateFromLabel = (label: string): Date | null => {
+const HALF_YEAR_MS = 183 * 24 * 60 * 60 * 1000;
+
+/** A "Jun 28"-style label carries no year, so one has to be inferred. Assuming
+ *  the current year broke every January: a deal due "Dec 20" became due next
+ *  December and quietly left the overdue list the day the year rolled over.
+ *  Pick the year that puts the label closest to today instead — more than six
+ *  months ahead means it was last year's, more than six months behind means
+ *  it is next year's. */
+const dueDateFromLabel = (label: string, now: Date = new Date()): Date | null => {
   const m = /^([A-Za-z]{3})\s+(\d{1,2})$/.exec((label || "").trim());
   if (!m) return null;
   const idx = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(m[1]);
   if (idx < 0) return null;
-  return new Date(new Date().getFullYear(), idx, Number(m[2]), 23, 59, 59, 999);
+  const day = Number(m[2]);
+  const at = (year: number) => new Date(year, idx, day, 23, 59, 59, 999);
+  const here = at(now.getFullYear());
+  if (here.getTime() - now.getTime() > HALF_YEAR_MS) return at(now.getFullYear() - 1);
+  if (now.getTime() - here.getTime() > HALF_YEAR_MS) return at(now.getFullYear() + 1);
+  return here;
 };
 
 /** The deal's due moment — postDueDate is a "Jun 28"-style label or ISO. */
-function kolDue(k: Kol): Date | null {
+function kolDue(k: Kol, now: Date = new Date()): Date | null {
   const iso = /^\d{4}-\d{2}-\d{2}/.test(k.postDueDate || "") ? new Date(`${k.postDueDate.slice(0, 10)}T23:59:59`) : null;
   if (iso && !isNaN(+iso)) return iso;
-  return dueDateFromLabel(k.postDueDate);
+  return dueDateFromLabel(k.postDueDate, now);
+}
+
+/** A stored moment — ISO date, ISO timestamp, or a "May 30"-style label. Bare
+ *  labels are the reason this exists: `new Date("May 30")` is not invalid, it
+ *  is the year 2001, which slipped past every isNaN guard and made a post that
+ *  went out months late compare as comfortably on time. */
+function kolMoment(raw: string | null | undefined, now: Date = new Date()): Date | null {
+  const v = (raw || "").trim();
+  if (!v) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(`${v}T12:00:00`);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) { const d = new Date(v); return isNaN(+d) ? null : d; }
+  return dueDateFromLabel(v, now);
 }
 
 /** Live overdue — computed against today, never trusted from the stored flag:
@@ -317,7 +346,7 @@ export function kolMetrics(k: Kol) {
   const approvedCount = history.filter((e) => e.type === "approved").length || (/approved/i.test(k.quotationStatus || "") ? 1 : 0);
   // On-plan KPI: the post moment (history event, else postedDate) vs due.
   const postedAtRaw = history.find((e) => e.type === "posted")?.at ?? k.postedDate ?? null;
-  const postedAt = postedAtRaw ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(postedAtRaw) ? `${postedAtRaw}T12:00:00` : postedAtRaw) : null;
-  const onTime: 0 | 1 | null = due && postedAt && !isNaN(+postedAt) ? (postedAt.getTime() <= due.getTime() ? 1 : 0) : null;
+  const postedAt = kolMoment(postedAtRaw);
+  const onTime: 0 | 1 | null = due && postedAt ? (postedAt.getTime() <= due.getTime() ? 1 : 0) : null;
   return { revisionCount, proposalSubmitCount, latePostCount, overdueCount, approvedCount, onTime };
 }
