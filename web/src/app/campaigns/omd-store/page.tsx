@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Download, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import {
   OMD_STORE_CATEGORY_META,
   OMD_STORE_SYNC_CONTRACT,
@@ -143,14 +144,20 @@ const emptyDraft = {
   endDate: "",
 };
 
-/** Add a promotion that isn't a campaign — a Must Eat push, a bank promotion,
- *  a Big Cleaning notice. The sheet used to print campaigns only, so anything
- *  the shop floor needed that never became a campaign had to be written by hand
- *  on the printout. */
+/** Add or fix a promotion that isn't a campaign — a Must Eat push, a bank
+ *  promotion, a Big Cleaning notice. The sheet used to print campaigns only, so
+ *  anything the shop floor needed that never became a campaign had to be written
+ *  by hand on the printout.
+ *
+ *  `editing` makes it the same form for both jobs. Without it the only way to
+ *  fix a typo in a date or a price was to delete the row and type all seven
+ *  fields again — and a delete-and-retype loses the POS name the branch team
+ *  had already filled in. */
 function PromotionEditor({
-  open, onClose, onSave, brandBranches,
+  open, editing, onClose, onSave, brandBranches,
 }: {
   open: boolean;
+  editing: OmdStorePromotion | null;
   onClose: () => void;
   onSave: (item: OmdStorePromotion) => Promise<void>;
   brandBranches: Record<string, string[]>;
@@ -159,9 +166,28 @@ function PromotionEditor({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // A fresh form every time it opens — a half-typed promotion left over from a
-  // cancelled edit is how the wrong thing gets printed.
-  useEffect(() => { if (open) { setDraft(emptyDraft); setError(""); } }, [open]);
+  // Loaded fresh every time it opens — from the row being edited, or empty for a
+  // new one. A half-typed promotion left over from a cancelled edit is how the
+  // wrong thing gets printed.
+  useEffect(() => {
+    if (!open) return;
+    setError("");
+    setDraft(editing
+      ? {
+        brand: editing.brand,
+        category: editing.category,
+        title: editing.title,
+        description: editing.description,
+        posName: editing.posName,
+        // "All Branch" is the stored stand-in for "no branch picked" — showing
+        // it as a selected branch would turn a brand-wide row into a one-branch
+        // row on the next save.
+        branches: editing.branches.filter((b) => !/^all\s*branch(es)?$/i.test(b)),
+        startDate: editing.startDate,
+        endDate: editing.endDate ?? "",
+      }
+      : emptyDraft);
+  }, [open, editing]);
 
   const branchOptions = brandBranches[draft.brand] ?? [];
   const set = <K extends keyof typeof emptyDraft>(key: K, value: (typeof emptyDraft)[K]) =>
@@ -174,7 +200,9 @@ function PromotionEditor({
     setSaving(true);
     try {
       await onSave({
-        id: `manual-${crypto.randomUUID()}`,
+        // Same id when editing: this is the row being corrected, not a second
+        // copy of it.
+        id: editing?.id ?? `manual-${crypto.randomUUID()}`,
         brand: draft.brand,
         category: draft.category,
         title: draft.title.trim(),
@@ -185,9 +213,11 @@ function PromotionEditor({
         branches: draft.branches.length ? draft.branches : ["All Branch"],
         startDate: draft.startDate,
         endDate: draft.endDate || undefined,
-        status: deriveStatus(draft.startDate, draft.endDate),
-        source: "manual",
-        hidden: false,
+        // Cancelled survives a date edit — moving the dates of a promotion that
+        // was pulled must not quietly put it back on the wall.
+        status: editing?.status === "cancelled" ? "cancelled" : deriveStatus(draft.startDate, draft.endDate),
+        source: editing?.source ?? "manual",
+        hidden: editing?.hidden ?? false,
       });
       onClose();
     } catch (err) {
@@ -204,13 +234,13 @@ function PromotionEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title="เพิ่มโปรโมชั่นลงใบพิมพ์"
+      title={editing ? "แก้ไขโปรโมชั่น" : "เพิ่มโปรโมชั่นลงใบพิมพ์"}
       maxWidth="2xl"
       footer={
         <>
           <button type="button" onClick={onClose} className="h-10 rounded-[12px] border border-[#ECEAF2] px-4 text-[12px] font-bold text-[#3E3E55]">ยกเลิก</button>
           <button type="button" onClick={submit} disabled={saving} className="h-10 rounded-[12px] bg-[#17172A] px-4 text-[12px] font-bold text-white disabled:opacity-50">
-            {saving ? "กำลังบันทึก…" : "เพิ่มลงใบพิมพ์"}
+            {saving ? "กำลังบันทึก…" : editing ? "บันทึกการแก้ไข" : "เพิ่มลงใบพิมพ์"}
           </button>
         </>
       }
@@ -311,6 +341,8 @@ export default function OmdStoreCampaignPage() {
   // belongs to another module, and "I didn't mean that one" has to be undoable.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [editorOpen, setEditorOpen] = useState(false);
+  // The manual row the editor is currently correcting; null = adding a new one.
+  const [editingItem, setEditingItem] = useState<OmdStorePromotion | null>(null);
 
   useEffect(() => {
     refreshFromSupabase();
@@ -347,10 +379,19 @@ export default function OmdStoreCampaignPage() {
       .catch((error) => toastError(`บันทึก POS name ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
   };
 
-  const addManualItem = async (item: OmdStorePromotion) => {
+  const openAdd = () => { setEditingItem(null); setEditorOpen(true); };
+  const openEdit = (item: OmdStorePromotion) => { setEditingItem(item); setEditorOpen(true); };
+
+  /** One save for both jobs — an id already on the sheet replaces its row
+   *  instead of adding a second one. The POS name goes back into the overrides
+   *  map as well, or the inline POS box would keep showing the old text until
+   *  the next reload. */
+  const saveManualItem = async (item: OmdStorePromotion) => {
+    const isUpdate = manualItems.some((x) => x.id === item.id);
     await savePromotionSummaryItem(item);
-    setManualItems((list) => [item, ...list]);
-    toastSuccess(`เพิ่ม “${item.title}” ลงใบพิมพ์แล้ว`);
+    setManualItems((list) => (isUpdate ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list]));
+    setPosOverrides((m) => ({ ...m, [item.id]: item.posName }));
+    toastSuccess(isUpdate ? `แก้ “${item.title}” แล้ว` : `เพิ่ม “${item.title}” ลงใบพิมพ์แล้ว`);
   };
 
   /** Manual rows are ours, so they go for good. Campaign rows can only be hidden
@@ -612,7 +653,7 @@ export default function OmdStoreCampaignPage() {
             <div className="no-print flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setEditorOpen(true)}
+                onClick={openAdd}
                 className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#CFC7FF] bg-[#EEE9FF] px-3 text-[12px] font-bold text-[#5B4FD8]"
               >
                 <Plus size={15} />
@@ -827,7 +868,29 @@ export default function OmdStoreCampaignPage() {
                       <div className="omd-print-card-meta flex items-start justify-between gap-2 text-[12px] font-extrabold" style={{ color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg }}>
                         <span>{statusLabel(item)}</span>
                         {/* Screen only — a printout has no buttons. Manual rows are
-                            deleted, campaign rows are taken off the sheet. */}
+                            edited and deleted here; a campaign row's wording is a
+                            field on its brief, so its pencil goes there rather
+                            than opening a copy that would drift from the campaign. */}
+                        {item.source === "manual" ? (
+                          <button
+                            type="button"
+                            onClick={() => openEdit(item)}
+                            title="แก้ไขโปรโมชั่นนี้"
+                            aria-label={`แก้ไข ${item.title}`}
+                            className="no-print shrink-0 rounded-[8px] border border-[#ECEAF2] bg-white p-1.5 text-[#9D96AC] hover:border-[#C7BEF5] hover:text-[#6C5CE7]"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        ) : (
+                          <Link
+                            href={`/campaigns/new?edit=${encodeURIComponent(item.id.replace(/^campaign-/, ""))}`}
+                            title="แก้ที่แคมเปญ — ข้อความหน้าร้านเป็นช่องหนึ่งในบรีฟ"
+                            aria-label={`แก้ ${item.title} ที่แคมเปญ`}
+                            className="no-print shrink-0 rounded-[8px] border border-[#ECEAF2] bg-white p-1.5 text-[#9D96AC] hover:border-[#C7BEF5] hover:text-[#6C5CE7]"
+                          >
+                            <Pencil size={13} />
+                          </Link>
+                        )}
                         <button
                           type="button"
                           onClick={() => removeItem(item)}
@@ -866,8 +929,9 @@ export default function OmdStoreCampaignPage() {
 
       <PromotionEditor
         open={editorOpen}
-        onClose={() => setEditorOpen(false)}
-        onSave={addManualItem}
+        editing={editingItem}
+        onClose={() => { setEditorOpen(false); setEditingItem(null); }}
+        onSave={saveManualItem}
         brandBranches={brandBranches}
       />
     </main>

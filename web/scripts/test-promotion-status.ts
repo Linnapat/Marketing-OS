@@ -7,7 +7,7 @@
  * Run with:  npm test   (chained after test-flows.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { printedStatus, type OmdStorePromotion, type OmdStorePromotionStatus } from "../src/lib/data/omdStorePromotions";
+import { printedStatus, OMD_STORE_CATEGORY_META, type OmdStorePromotion, type OmdStorePromotionStatus } from "../src/lib/data/omdStorePromotions";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -57,6 +57,19 @@ console.log("\n— สถานะที่เก็บไว้ต้องไ�
   is("แถวที่บันทึกไว้ว่า upcoming แต่ถึงวันแล้ว = ใช้งานอยู่", at("upcoming", "2026-08-01", "2026-09-30"), "active");
   is("แถวที่บันทึกไว้ว่า upcoming แต่เลยวันจบแล้ว = จบแล้ว", at("upcoming", "2026-07-01", "2026-07-31"), "ended");
   is("แถวที่บันทึกไว้ว่า active แต่ยังไม่ถึงวัน = ยังไม่เริ่ม", at("active", "2026-12-01", "2026-12-31"), "upcoming");
+}
+
+console.log("\n— หัวข้อหมวด: ใบเดียวใช้ทุกแบรนด์ —");
+{
+  // A Teppen CRM promotion printed under a heading that says OMD reads as the
+  // wrong brand's offer to whoever is holding the sheet. No category heading
+  // may name a brand — the Brand column and the row tint carry that.
+  const brandWords = /\b(omd|teppen|omakase|mainichi|touka|takao)\b/i;
+  const offenders = Object.entries(OMD_STORE_CATEGORY_META)
+    .filter(([, meta]) => brandWords.test(meta.printLabel) || brandWords.test(meta.label))
+    .map(([key]) => key);
+  is("ไม่มีหมวดไหนใส่ชื่อแบรนด์ไว้ในหัวข้อ", offenders.join(",") || "none", "none");
+  is("หมวด CRM ใช้ชื่อกลาง", OMD_STORE_CATEGORY_META.crm.printLabel, "Member / CRM");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -121,7 +121,10 @@ export const OMD_STORE_CATEGORY_META: Record<OmdStorePromotionCategory, {
   },
   crm: {
     label: "CRM",
-    printLabel: "OMD Member / CRM",
+    // Brand-neutral on purpose: this sheet prints for every brand, and a Teppen
+    // CRM promotion filed under a heading that says OMD reads as the wrong
+    // brand's offer to anyone holding the printout.
+    printLabel: "Member / CRM",
     bg: "#FFF0F0",
     fg: "#D95454",
     border: "#F4B6B6",
