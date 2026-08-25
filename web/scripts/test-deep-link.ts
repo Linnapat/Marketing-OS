@@ -28,9 +28,11 @@ is("post", workLink.post("c-9"), "/content?post=c-9");
 is("campaign", workLink.campaign("CAM-1"), "/campaigns/CAM-1");
 is("campaign + tab", workLink.campaign("CAM-1", "approval"), "/campaigns/CAM-1?tab=approval");
 is("kol", workLink.kol(5), "/kol/5");
-// Money has no record page; the queue holding the Approve button is the closest
-// honest destination, and it is a tab the recipient would otherwise have to find.
-is("approvals queue", workLink.approvals(), "/my-tasks?tab=approval");
+// Money has no record page; Approval Center holds the Approve button and is the
+// closest honest destination. It used to be a tab inside My Tasks — a
+// notification that lands on someone's personal task board and asks them to
+// find the right chip is most of a dead end. Now it is its own module.
+is("approvals queue", workLink.approvals(), "/approval-center");
 
 console.log("\nparam ที่ลิงก์ใช้ = param ที่หน้าอ่าน");
 // The failure this prevents: renaming a param on the page while the builder

@@ -15,7 +15,11 @@ function keyFor(scope: string, label: string) {
   return `mkt-os:${scope}:${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 }
 
-function usePanelCollapsed(scope: string, label: string) {
+/** Remembered collapse state for one panel, keyed by scope + label.
+ *  Exported because Approval Center's per-kind panels are the same object as
+ *  the summary cards here — a section you fold away and find folded tomorrow —
+ *  and a second implementation would remember it in a second place. */
+export function usePanelCollapsed(scope: string, label: string) {
   const key = keyFor(scope, label);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -42,7 +46,7 @@ function usePanelCollapsed(scope: string, label: string) {
   return { collapsed, toggle };
 }
 
-function CollapseButton({ collapsed, onClick }: { collapsed: boolean; onClick: () => void }) {
+export function CollapseButton({ collapsed, onClick }: { collapsed: boolean; onClick: () => void }) {
   return (
     <button
       type="button"

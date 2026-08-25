@@ -34,6 +34,14 @@ const q = (v: string | number) => encodeURIComponent(String(v));
 /** The link for one piece of work. Anything not listed has no way to be opened
  *  on its own yet, and those call sites keep pointing at the module page —
  *  honestly, rather than inventing a param no page reads. */
+/** Approval Center's route, named once because three modules link to it and a
+ *  literal path in each is how a rename leaves two of them pointing at a 404.
+ *
+ *  NOT "/approvals": that path is a PERMANENT (308) redirect to the Status
+ *  Board in next.config.mjs, cached by every browser that ever followed it, and
+ *  nothing we deploy can clear it from their disk. */
+export const APPROVAL_CENTER = "/approval-center";
+
 export const workLink = {
   /** A graphic request, opened in its drawer. */
   graphic: (id: string | number) => `/graphic?${OPEN_PARAM.graphic}=${q(id)}`,
@@ -56,11 +64,10 @@ export const workLink = {
    *  to point at. */
   expense: (ref?: string | null) =>
     (ref ?? "").trim() ? `/expenses?${OPEN_PARAM.expense}=${q((ref ?? "").trim())}` : "/expenses",
-  /** The approval queue itself. Used where the thing to act on has no page of
-   *  its own to open — landing on the queue that holds the Approve button still
-   *  beats landing on someone's personal task board and asking them to find the
-   *  tab. */
-  approvals: () => `/my-tasks?${OPEN_PARAM.tab}=approval`,
+  /** Approval Center. Used where the thing to act on has no page of its own to
+   *  open — landing on the queue that holds the Approve button still beats
+   *  landing on someone's personal task board and asking them to find a tab. */
+  approvals: () => APPROVAL_CENTER,
 };
 
 /** What a page should do about an `?open=`-style param this render.

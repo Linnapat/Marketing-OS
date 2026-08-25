@@ -2,6 +2,7 @@ import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
   CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
+  Stamp, FileText, Video,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +28,26 @@ export interface NavGroup {
 
 export const NAV: NavGroup[] = [
   {
+    // Its own heading, above everything: this is where the day starts for
+    // anyone who signs work off, and it was invisible for months as a chip
+    // inside somebody else's task board. (Path is /approval-center, not
+    // /approvals — that one is a permanent redirect, see next.config.mjs.)
+    label: "Approval",
+    items: [
+      { href: "/approval-center", label: "Approval Center", icon: Stamp, ready: true },
+      // The three lanes people actually live in, as their own rail entries.
+      // Same page, one panel each (?tab=) — a Creative Leader who only ever
+      // signs Visual CI should be one click from artwork, not one click plus a
+      // scroll past captions and money. Tabbed siblings of the entry above:
+      // the Sidebar lights whichever ?tab= matches, and the plain entry when
+      // there is none.
+      { href: "/approval-center", tab: "caption", label: "Caption", icon: FileText, ready: true },
+      { href: "/approval-center", tab: "artwork", label: "Artwork", icon: Palette, ready: true },
+      { href: "/approval-center", tab: "vdo", label: "VDO", icon: Video, ready: true },
+      { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
+    ],
+  },
+  {
     items: [
       // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
       // route now redirects to Campaigns, which is the real front door.
@@ -38,10 +59,6 @@ export const NAV: NavGroup[] = [
     label: "QA",
     items: [
       { href: "/status", label: "Status Board", icon: LayoutList, ready: true },
-      // The weekly pass over edits made to campaigns that were already approved.
-      // Nobody is blocked by what is in here, so it sits with the QA screens
-      // rather than in front of the planning work.
-      { href: "/campaigns/approvals", label: "Approvals", icon: ClipboardCheck, ready: true, cmoOnly: true },
       { href: "/platforms", label: "Platform Performance", icon: BarChart3, ready: true },
       { href: "/performance-center", label: "Performance Center", icon: Sparkles, ready: true },
       // Lives under Performance Center as a route, but it is the monthly people
