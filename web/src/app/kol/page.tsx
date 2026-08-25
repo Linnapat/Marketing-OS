@@ -1,6 +1,7 @@
 "use client";
 
 import { toastError } from "@/lib/toast";
+import { mintId, mintIds } from "@/lib/data/ids";
 import { authHeaders } from "@/lib/supabase";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
@@ -455,7 +456,7 @@ export default function KolPage() {
         />
       )}
       {requestOpen && (
-        <RequestModal nextId={Math.max(0, ...kols.map((k) => k.id)) + 1} onClose={() => setRequestOpen(false)} onCreate={addKol}
+        <RequestModal nextId={mintId(Date.now(), Math.random())} onClose={() => setRequestOpen(false)} onCreate={addKol}
           budgetOf={kolBudgetOf}
           spentOf={kolSpentOf} />
       )}
@@ -1649,8 +1650,11 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
     // A request for N pages becomes N independent rows so each page is tracked,
     // reviewed, and updated on its own. Budget is split per page.
     const perPageBudget = Math.round((item.budget || 0) / count);
+    // A block reserved in one go, not nextId+i off a counted maximum: the run
+    // has to stay inside the millisecond it was minted in — see mintIds.
+    const ids = mintIds(Date.now(), Math.random(), count);
     const kols = Array.from({ length: count }, (_, i) => buildKol({
-      id: nextId + i, campaign: campaign || "—", b: brandId, kolType: item.kolType,
+      id: ids[i], campaign: campaign || "—", b: brandId, kolType: item.kolType,
       count: 1, budget: perPageBudget,
       deliverables: item.contentRequired.join(" + "), notes: item.note,
       expectedReach: item.expectedReach, expectedEngagement: expEng,

@@ -36,6 +36,9 @@ join graphic_requests keep
   on  keep.campaign_id = dup.campaign_id
   and keep.id <> dup.id
   and dup.title = keep.title || ' — ' || dup.type
+  -- ต้องเทียบ type ด้วย ไม่งั้นแคมเปญที่มีสองใบชื่อเดียวกัน (Reel กับ Artwork)
+  -- จะ join ไขว้กันเป็น 4 แถวจาก 2 คู่ — เจอตอนรันจริง 25 ส.ค.
+  and keep.type = dup.type
 where dup.deleted_at is null
   and keep.deleted_at is null
 order by dup.campaign, keep.title;

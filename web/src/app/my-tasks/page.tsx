@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek, byDueThenPriority } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
+import { mintId } from "@/lib/data/ids";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
 import { OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
@@ -681,7 +682,7 @@ function MyTasksPageInner() {
             onClose={() => setGraphicOpenId(null)} onUpdate={patchGraphic} />
         </div>
       )}
-      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={Math.max(...tasks.map((t) => t.id)) + 1} onClose={() => setNewOpen(false)} onCreate={createTask} />}
+      {newOpen && <NewTaskModal owner={viewAs} people={people} campaigns={campaigns.filter((c) => brandVisibility.isVisible(c.b))} brandOptions={brandOptions} nextId={mintId(Date.now(), Math.random())} onClose={() => setNewOpen(false)} onCreate={createTask} />}
       {celebration && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 rounded-[16px] px-6 py-[14px] shadow-2xl" style={{ bottom: 28, background: "#211F1C", color: "#fff" }}>
           <span className="text-[18px]">🌿</span>

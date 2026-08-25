@@ -31,6 +31,7 @@ import { fileApprovedAsset } from "@/lib/db/assets";
 import { notify } from "@/lib/notify";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { mintId } from "@/lib/data/ids";
 import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
@@ -511,7 +512,7 @@ function GraphicPageInner() {
       )}
       {reqOpen && (
         <RequestModal
-          nextId={Math.max(0, ...graphics.map((g) => g.id)) + 1}
+          nextId={mintId(Date.now(), Math.random())}
           graphics={graphics}
           prefillPost={briefForPost}
           onClose={closeRequestModal}
