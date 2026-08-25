@@ -69,9 +69,11 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-[60] bg-black/20" onClick={() => setOpen(false)} />
+          {/* Above the task and request drawers (z-200 / z-260 on My Tasks) and
+              below the toaster (z-400): this is the thing just asked for. */}
+          <div className="fixed inset-0 z-[320] bg-black/20" onClick={() => setOpen(false)} />
           <aside role="dialog" aria-label="กล่องข้อความ"
-            className="fixed inset-y-0 right-0 z-[61] w-[400px] max-w-[94vw] flex flex-col shadow-2xl"
+            className="fixed inset-y-0 right-0 z-[321] w-[400px] max-w-[94vw] flex flex-col shadow-2xl"
             style={{ background: "#fff", borderLeft: "1px solid #E5DECF" }}>
             <div className="flex items-center gap-2 px-4 py-[12px]" style={{ background: "#FBF1E9", borderBottom: "1px solid #EFE6D8" }}>
               <span className="text-[13px] font-bold text-ink">กล่องข้อความ</span>

@@ -58,6 +58,17 @@ export function jobTitleOf(raw: string): string {
   return after.length >= 3 ? after : noIcon;
 }
 
+/** The job a link points at, ignoring which tab it happens to open on.
+ *
+ *  Message rows link to the conversation (`…&tab=feedback`) and review notices
+ *  to the request itself; grouping on the raw string would file the same job
+ *  under two rows the moment both kinds arrive. */
+export function canonicalLink(link: string): string {
+  const [path, query = ""] = link.trim().split("?");
+  const kept = query.split("&").filter((p) => p && !p.startsWith("tab="));
+  return kept.length ? `${path}?${kept.join("&")}` : path;
+}
+
 /** Speaker and words, from a "Name: what they said" detail line. */
 export function splitSaid(detail?: string | null): { by: string | null; text: string } {
   const said = (detail ?? "").trim();
@@ -73,7 +84,8 @@ export function conversationThreads(items: InboxItem[]): InboxThread[] {
   const ordered = [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   for (const n of ordered) {
     const title = jobTitleOf(n.title);
-    const link = (n.link ?? "").trim() || null;
+    const raw = (n.link ?? "").trim();
+    const link = raw ? canonicalLink(raw) : null;
     const key = link ?? title.toLowerCase();
     if (!key) continue;
     const isMessage = n.event === "comment";

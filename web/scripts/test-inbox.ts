@@ -1,7 +1,7 @@
 /* Runtime tests for grouping the bell's rows into per-job conversations.
  * Run with:  npm test */
 
-import { conversationThreads, jobTitleOf, splitSaid, threadHref, type InboxItem } from "../src/lib/data/inbox";
+import { conversationThreads, jobTitleOf, splitSaid, threadHref, canonicalLink, type InboxItem } from "../src/lib/data/inbox";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -70,6 +70,22 @@ console.log("\n— แถวที่ไม่มีลิงก์ —");
   is("นับข้อความครบ", noLink[0].messages, 2);
   is("ไม่มีลิงก์ให้กด", noLink[0].link, null);
 }
+
+console.log("\n— งานเดียวกันแต่ลิงก์คนละแท็บ —");
+{
+  // ข้อความส่งลิงก์ &tab=feedback ส่วนแจ้งเตือนรีวิวส่งลิงก์เปล่า — ต้องเป็นงานใบเดียวกัน
+  const mixed = conversationThreads([
+    row({ id: 30, event: "revision", title: "↩ รอตรวจอีกหนึ่งด้าน: Kani Last Chance — Reel", link: "/graphic?open=88", detail: "Facebook — [CI] ขอให้แก้" }),
+    row({ id: 31, title: "💬 Kani Last Chance — Reel", link: "/graphic?open=88&tab=feedback", detail: "Pichayaporn: 0:40 จิ้ม", createdAt: "2026-08-25T16:10:00Z" }),
+  ]);
+  is("ลิงก์คนละแท็บไม่ทำให้แตกเป็นสองแถว", mixed.length, 1);
+  is("นับข้อความถูก", mixed[0].messages, 1);
+  is("นับแจ้งเตือนอื่นถูก", mixed[0].notices, 1);
+  is("ลิงก์ที่เก็บไว้ไม่มี tab ติดมา", mixed[0].link, "/graphic?open=88");
+}
+is("ตัด tab ออกจากลิงก์", canonicalLink("/graphic?open=88&tab=feedback"), "/graphic?open=88");
+is("ลิงก์ที่มีแต่ tab เหลือแค่ path", canonicalLink("/my-tasks?tab=approval"), "/my-tasks");
+is("ลิงก์ที่ไม่มี query ไม่ถูกแตะ", canonicalLink("/campaigns/12"), "/campaigns/12");
 
 console.log("\n— ลิงก์ของแถวบทสนทนา —");
 is("ลิงก์ใบงานเก่า → พาไปแท็บ Feedback", threadHref("/graphic?open=88"), "/graphic?open=88&tab=feedback");
