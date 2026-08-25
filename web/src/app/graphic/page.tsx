@@ -489,10 +489,13 @@ function GraphicPageInner() {
         {view === "board" && <BoardView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
         {view === "list" && <ListView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
         {view === "campaign" && <CampaignGroupView items={items} onOpen={(g) => setDrawer({ g, tab: "overview" })} onQuickApprove={quickApprove} />}
-        {/* Brand-visible requests, NOT `items`: the call sheet is not filtered by
-            the board's designer/date controls — hiding a booked shoot because the
-            board is showing August would be a way to miss it. */}
-        {view === "shoot" && <ShootCalendar me={me} requests={graphics.filter((g) => brandVisibility.isVisible(g.b))} onPatchRequest={patchGraphicRow} onOpenRequest={(g) => setDrawer({ g, tab: "overview" })} />}
+        {/* Brand-visible requests, NOT `items`: the board's filters read the
+            ARTWORK due date and its designer, neither of which is what a call
+            sheet is about. The sheet applies the brand and the period itself,
+            against the SHOOT date — see ShootCalendar. */}
+        {view === "shoot" && <ShootCalendar me={me} requests={graphics.filter((g) => brandVisibility.isVisible(g.b))}
+          pageBrand={brand} period={date}
+          onPatchRequest={patchGraphicRow} onOpenRequest={(g) => setDrawer({ g, tab: "overview" })} />}
       </div>
 
       {drawer && (
@@ -759,8 +762,16 @@ const REQ_ROW_PREFIX = "req-";
 const reqRowId = (graphicId: number) => `${REQ_ROW_PREFIX}${graphicId}`;
 const isReqRow = (r: { id: string }) => r.id.startsWith(REQ_ROW_PREFIX);
 
-function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
-  me: string; requests: Graphic[]; onPatchRequest: (g: Graphic) => void; onOpenRequest: (g: Graphic) => void;
+function ShootCalendar({ me, requests, pageBrand, period, onPatchRequest, onOpenRequest }: {
+  me: string; requests: Graphic[];
+  /** The brand picked at the top of the page. The sheet follows it — two brand
+   *  controls that can disagree is worse than one. */
+  pageBrand: BrandFilterValue;
+  /** The page's Month / Year / Range. Applied to the SHOOT date here, not to
+   *  the artwork due date the board filters on: a shoot booked for September
+   *  belongs on September's call sheet whatever month its artwork is due. */
+  period: DateFilter;
+  onPatchRequest: (g: Graphic) => void; onOpenRequest: (g: Graphic) => void;
 }) {
   const [rows, setRows] = useState<ShootRow[]>([]);
   const [autoRows, setAutoRows] = useState<ShootRow[]>([]);
@@ -777,7 +788,11 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
   // One brand's shoots at a time, when asked for. The crew that turns up for a
   // Mainichi day should not be handed four brands' worth of queue to read past
   // — "ขอเพิ่มฟิลเตอร์แบรนด์ก่อนสั่งปริ้นด้วย" (3/8/26). Empty = every brand.
-  const [brandFilter, setBrandFilter] = useState<BrandId | "">("");
+  const [brandFilter, setBrandFilter] = useState<BrandId | "">(pageBrand === "all" ? "" : pageBrand as BrandId);
+  // Follows the page. Picking Teppen at the top and still being handed four
+  // brands' worth of shoots is the complaint that started this; the crew can
+  // still narrow further here before printing.
+  useEffect(() => { setBrandFilter(pageBrand === "all" ? "" : pageBrand as BrandId); }, [pageBrand]);
 
   useEffect(() => {
     let alive = true;
@@ -883,7 +898,14 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
         source: "request" as const,
       };
     });
-    return [...fromRequests, ...manualRows].sort((x, y) => (x.date || "9999").localeCompare(y.date || "9999"));
+    // Day first, then the hour the crew is called. Sorting on the day alone
+    // left a 09:00 shoot printed under a 17:00 one on the same sheet, which is
+    // the one ordering a call sheet must never get wrong. Undated rows sink to
+    // the bottom rather than disappearing — they are queue, not schedule.
+    return [...fromRequests, ...manualRows].sort((x, y) =>
+      (x.date || "9999").localeCompare(y.date || "9999")
+      || (x.time || "99:99").localeCompare(y.time || "99:99")
+      || (x.content || "").localeCompare(y.content || ""));
   }, [assigned, overrides, manualRows]);
   const kindOf = useMemo(
     () => new Map(assigned.map((a) => [reqRowId(a.graphicId), a.kind])),
@@ -898,9 +920,17 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
   // What the table and the printed sheet actually show. Filtering here, not in
   // `merged`, keeps editRow's seed lookup able to find a row the filter hides.
   const visible = useMemo(
-    () => (brandFilter ? merged.filter((r) => r.brand === brandFilter) : merged),
-    [merged, brandFilter],
+    () => merged.filter((r) =>
+      (!brandFilter || r.brand === brandFilter)
+      // Against the shoot day. A row with no day yet stays — inDateFilter
+      // passes an unparseable date on purpose, and a shoot nobody has dated is
+      // exactly the one that must not vanish from the sheet.
+      && inDateFilter(period, r.date)),
+    [merged, brandFilter, period],
   );
+  // Never hide a booked shoot in silence. The old sheet ignored every filter
+  // for this reason; now the filters work and the sheet says what they cost.
+  const hiddenCount = merged.length - visible.length;
   // Only offer brands that have a shoot — a filter listing brands with nothing
   // behind them is a menu of dead ends.
   const brandsWithShoots = useMemo(
@@ -982,6 +1012,12 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
                 <option key={id} value={id}>{brandName(id)} ({merged.filter((r) => r.brand === id).length})</option>
               ))}
             </select>
+            {hiddenCount > 0 && (
+              <span className="text-[11px] font-bold rounded-[8px] px-2.5 py-[6px]" style={{ background: "#FFF7ED", color: "#8A5418" }}
+                title="ตัวกรองด้านบน (แบรนด์ / ช่วงเวลา) ซ่อนคิวถ่ายเหล่านี้อยู่ — คิวยังอยู่ ไม่ได้หายไป">
+                ซ่อนอยู่ {hiddenCount} คิว
+              </span>
+            )}
             <button onClick={addRow} className="text-[12px] font-bold text-white bg-panel rounded-[9px] px-3 py-[7px]">+ เพิ่มคิวถ่าย</button>
             <button onClick={() => setPreview(true)} className="inline-flex items-center gap-[6px] text-[12px] font-bold text-muted border border-line2 rounded-[9px] px-3 py-[7px] bg-white">🖨 Preview & ปริ้น</button>
           </div>
@@ -996,8 +1032,8 @@ function ShootCalendar({ me, requests, onPatchRequest, onOpenRequest }: {
             <tbody>
               {visible.length === 0 && (
                 <tr><td colSpan={9} className="px-4 py-6 text-center text-[12px] text-faint">
-                  {brandFilter
-                    ? `ยังไม่มีคิวถ่ายของ ${brandName(brandFilter)} — เลือก "ทุกแบรนด์" เพื่อดูคิวที่เหลือ`
+                  {merged.length > 0
+                    ? `ไม่มีคิวถ่ายที่ตรงกับตัวกรอง — ซ่อนอยู่ ${hiddenCount} คิว${brandFilter ? ` · แบรนด์ ${brandName(brandFilter)}` : ""} · ลองขยายช่วงเวลาหรือเลือกทุกแบรนด์`
                     : "ยังไม่มีคิวถ่าย — มอบหมายคนถ่าย + วันถ่ายในใบงาน แล้วจะขึ้นที่นี่เอง · หรือกด \"เพิ่มคิวถ่าย\""}
                 </td></tr>
               )}
