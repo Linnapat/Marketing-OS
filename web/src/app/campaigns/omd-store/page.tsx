@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Minimize2, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import { ChevronsLeftRight, ChevronsRightLeft, Download, Minimize2, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import {
   OMD_STORE_CATEGORY_META,
   OMD_STORE_SYNC_CONTRACT,
@@ -45,6 +45,10 @@ const OPTIONAL_COLS = [
 ] as const;
 
 type OptionalCol = (typeof OPTIONAL_COLS)[number]["key"];
+
+/** Width of a collapsed column on screen — wide enough to click, narrow enough
+ *  to give the space back to the columns that are left. */
+const COLLAPSED_TRACK = "18px";
 
 
 type PrintTemplate = "board" | "compact" | "checklist";
@@ -564,13 +568,20 @@ export default function OmdStoreCampaignPage() {
     return next;
   });
   const visibleCols = OPTIONAL_COLS.filter((c) => shown(c.key));
-  // Two templates, not one: the screen carries a trailing track for the row's
-  // edit and delete buttons, and paper has no buttons. They were living in the
-  // Status cell, which meant hiding Status also hid the only way to edit a row.
+  // Two templates, not one, and they differ in two ways.
+  //
+  // A collapsed column keeps a narrow strip on screen — that strip is the
+  // handle you click to bring it back, and a column that vanishes with no way
+  // to reopen it is a column somebody has to reload the page to recover. On
+  // paper the strip is 16px of nothing repeated down the sheet, so there the
+  // track goes altogether.
+  //
+  // The screen also carries a trailing track for the row's edit and delete
+  // buttons; paper has no buttons.
   const checkTrack = printTemplate === "checklist" ? ".42fr " : "";
-  const bodyTracks = `${FIXED_COL_WIDTHS} ${visibleCols.map((c) => c.width).join(" ")}`.trim();
-  const colTemplate = `${checkTrack}${bodyTracks} auto`;
-  const colTemplatePrint = `${checkTrack}${bodyTracks}`;
+  const screenTracks = OPTIONAL_COLS.map((c) => (shown(c.key) ? c.width : COLLAPSED_TRACK)).join(" ");
+  const colTemplate = `${checkTrack}${FIXED_COL_WIDTHS} ${screenTracks} auto`;
+  const colTemplatePrint = `${checkTrack}${FIXED_COL_WIDTHS} ${visibleCols.map((c) => c.width).join(" ")}`.trim();
   const sheetRef = useRef<HTMLDivElement>(null);
   const [sheetHeight, setSheetHeight] = useState<number | null>(null);
 
@@ -713,14 +724,19 @@ export default function OmdStoreCampaignPage() {
         /* Start and end on one line: two lines per row, times every row, is a
            whole band of paper spent on a dash. */
         .omd-printing .omd-print-period-break { display: none !important; }
-        /* A text box is chrome; on paper the POS name is just a word. These
-           were Tailwind's print: variants, which live in @media print and so
-           were invisible to the measuring pass — the sheet was measured with a
-           26px input in every row and printed with a 12px word, and a fit
-           calculated against a taller sheet than the one that comes out shrinks
-           further than it needs to. */
-        .omd-printing .omd-pos-input { display: none !important; }
-        .omd-printing .omd-pos-text { display: inline !important; }
+        /* The POS box prints AS a box. It is not a value being reported, it is
+           a blank the branch fills in with a pen, so the printed sheet has to
+           give them something to write in. Kept as the same input the screen
+           shows, which also means the measuring pass and the paper agree on how
+           tall a row is. */
+        .omd-printing .omd-pos-input {
+          background: #ffffff !important;
+          border-color: #C9C4D6 !important;
+        }
+        /* A collapsed column is a click target on screen and nothing at all on
+           paper — 18px of blank repeated down every row is exactly the kind of
+           waste this sheet was trying to get rid of. */
+        .omd-printing .omd-col-collapsed { display: none !important; }
         .omd-printing .omd-category-head {
           padding: 4px 10px !important;
         }
@@ -906,32 +922,6 @@ export default function OmdStoreCampaignPage() {
             <div className="mt-3">
               <DateFilterBar value={period} onChange={setPeriod} />
             </div>
-            {/* Column chooser. The preview obeys it too rather than hiding
-                columns only on paper — this page IS the preview, and one that
-                shows a column the print will not is a preview that lies. */}
-            <div className="mt-3">
-              <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#9D96AC]">คอลัมน์ที่พิมพ์</span>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <span className="rounded-full border border-[#ECEAF2] bg-[#F6F5FA] px-2.5 py-1 text-[11px] font-bold text-[#9D96AC]"
-                  title="สองคอลัมน์นี้คือเนื้อของใบ ปิดไม่ได้">
-                  Promotion · Details
-                </span>
-                {OPTIONAL_COLS.map((c) => (
-                  <button
-                    key={c.key}
-                    type="button"
-                    onClick={() => toggleCol(c.key)}
-                    aria-pressed={shown(c.key)}
-                    className="rounded-full border px-2.5 py-1 text-[11px] font-bold"
-                    style={shown(c.key)
-                      ? { borderColor: "#CFC7FF", background: "#EEE9FF", color: "#5B4FD8" }
-                      : { borderColor: "#ECEAF2", background: "#fff", color: "#B5B0C0", textDecoration: "line-through" }}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
             <div className="mt-3 rounded-[14px] bg-[#FBFAF7] px-3 py-2 text-[11px] font-semibold text-[#706A84]">
               {PRINT_TEMPLATES[printTemplate].helper}
             </div>
@@ -1019,7 +1009,29 @@ export default function OmdStoreCampaignPage() {
                   <div className="omd-check-cell hidden">Done</div>
                   <div>Promotion</div>
                   <div>Details</div>
-                  {visibleCols.map((c) => <div key={c.key}>{c.label}</div>)}
+                  {/* Collapse lives on the column it collapses. A control that
+                      sits somewhere else and hides a column over here is one
+                      more thing to go looking for. */}
+                  {OPTIONAL_COLS.map((c) => (shown(c.key) ? (
+                    <div key={c.key} className="flex items-center gap-1">
+                      <span>{c.label}</span>
+                      <button type="button" onClick={() => toggleCol(c.key)}
+                        title={`ยุบคอลัมน์ ${c.label} — ไม่พิมพ์ลงกระดาษ`}
+                        aria-label={`ยุบคอลัมน์ ${c.label}`}
+                        className="no-print text-[#C4BFD0] hover:text-[#6C5CE7]">
+                        <ChevronsLeftRight size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div key={c.key} className="omd-col-collapsed flex justify-center">
+                      <button type="button" onClick={() => toggleCol(c.key)}
+                        title={`กาง ${c.label} กลับมา`}
+                        aria-label={`กางคอลัมน์ ${c.label}`}
+                        className="no-print rounded-[4px] px-0.5 text-[#9D96AC] hover:bg-[#EEE9FF] hover:text-[#6C5CE7]">
+                        <ChevronsRightLeft size={12} />
+                      </button>
+                    </div>
+                  )))}
                   <div className="no-print" />
                 </div>
 
@@ -1048,33 +1060,42 @@ export default function OmdStoreCampaignPage() {
                         </div>
                       </div>
                       <div className="omd-print-card-body text-[12px] font-medium leading-relaxed text-[#3E3E55]">{item.description}</div>
-                      {shown("pos") && (
-                      <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
-                        {/* Editable on screen; the printout shows plain text */}
-                        <input
-                          value={item.posName}
-                          onChange={(e) => setPosName(item.id, e.target.value)}
-                          onBlur={() => savePosName(item)}
-                          placeholder="พิมพ์ชื่อใน POS…"
-                          className="omd-pos-input w-full rounded-[8px] border border-[#E5E1F0] bg-white px-2 py-1 text-[12px] font-bold text-[#3E3E55] outline-none focus:border-[#6C5CE7]"
-                        />
-                        <span className="omd-pos-text hidden">{item.posName || "—"}</span>
+                      {/* Every cell is always rendered, empty when its column
+                          is collapsed, so the strip in the header lines up with
+                          the rows under it. Paper drops them — see
+                          .omd-col-collapsed. */}
+                      <div className={shown("pos")
+                        ? "omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]"
+                        : "omd-col-collapsed"}>
+                        {shown("pos") && (
+                          // A box on paper too, not a printed word: the branch
+                          // team writes the POS name in by hand on the sheet.
+                          <input
+                            value={item.posName}
+                            onChange={(e) => setPosName(item.id, e.target.value)}
+                            onBlur={() => savePosName(item)}
+                            placeholder="พิมพ์ชื่อใน POS…"
+                            className="omd-pos-input w-full rounded-[8px] border border-[#E5E1F0] bg-white px-2 py-1 text-[12px] font-bold text-[#3E3E55] outline-none focus:border-[#6C5CE7]"
+                          />
+                        )}
                       </div>
-                      )}
-                      {shown("branch") && (
-                        <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{branchLabel(item, brandBranches[item.brand] ?? [])}</div>
-                      )}
-                      {shown("period") && (
-                        <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
+                      <div className={shown("branch")
+                        ? "omd-print-card-meta text-[12px] font-extrabold text-[#17172A]"
+                        : "omd-col-collapsed"}>
+                        {shown("branch") && branchLabel(item, brandBranches[item.brand] ?? [])}
+                      </div>
+                      <div className={shown("period")
+                        ? "omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]"
+                        : "omd-col-collapsed"}>
+                        {shown("period") && (<>
                           {formatDate(item.startDate)}<br className="omd-print-period-break" />
                           <span className="text-[#8A879A]"> to {formatDate(item.endDate)}</span>
-                        </div>
-                      )}
-                      {shown("status") && (
-                        <div className="omd-print-card-meta text-[12px] font-extrabold" style={{ color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg }}>
-                          {statusLabel(item)}
-                        </div>
-                      )}
+                        </>)}
+                      </div>
+                      <div className={shown("status") ? "omd-print-card-meta text-[12px] font-extrabold" : "omd-col-collapsed"}
+                        style={shown("status") ? { color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg } : undefined}>
+                        {shown("status") && statusLabel(item)}
+                      </div>
                       {/* Row actions in a track of their own. They used to sit
                           inside the Status cell, so turning Status off took the
                           only edit and delete buttons with it. */}
