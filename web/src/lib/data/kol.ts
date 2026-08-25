@@ -432,7 +432,18 @@ export function kolAssignmentTask(k: Kol): Task | null {
     assignee: owner,
     brand: brandName(k.b),
     campaign: k.campaign,
-    status: done ? "Done" : k.isOverdue ? "Stuck" : "Todo",
+    // The deal's own stage IS the task's status. "Todo" told the specialist
+    // nothing, and it is what My Tasks' List view groups by — so a specialist
+    // holding forty deals saw one undifferentiated "Todo" pile instead of
+    // "12 Negotiating · 8 Producing · 5 In Review". Other modules already put
+    // their own vocabulary in this field ("Need Approval", "Revision",
+    // "Waiting"); this is KOL's.
+    //
+    // Two stages override it, because urgency beats where-in-the-pipeline:
+    // finished deals read "Done" (that is what closes the row), and late ones
+    // read "Stuck" so they surface as their own group rather than hiding
+    // inside whichever stage they stalled in.
+    status: done ? "Done" : k.isOverdue ? "Stuck" : stage,
     // Overdue deals outrank the rest of the queue; nothing else here is urgent
     // enough to claim High on its own.
     priority: k.isOverdue ? "High" : "Med",
