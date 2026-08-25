@@ -81,6 +81,8 @@ console.log("\n— ดีลที่จบแล้ว ปิดแถว ไ�
   is("Completed = Done", [done.status, done.group], ["Done", "done"]);
   // Reporting map เข้า Completed ด้วย
   is("Reporting ก็ถือว่าจบ", t({ status: "Reporting" })!.status, "Done");
+  // เคยตกไป default ว่า "ติดตามงาน KOL" บนดีลที่ปิดไปตั้งแต่เดือนพฤษภาคม
+  is("ดีลที่จบแล้วไม่บอกให้ไปตามงาน", done.nextAction, "จบงานแล้ว — ผลลัพธ์บันทึกครบ");
   // Posted ยังไม่จบ — ต้องกรอกผลลัพธ์ก่อน
   is("Posted ยังไม่จบ", t({ status: "Posted" })!.status, "Todo");
 }

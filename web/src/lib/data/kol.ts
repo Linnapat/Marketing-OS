@@ -403,6 +403,10 @@ function kolNextAction(stage: string, k: Pick<Kol, "name" | "pendingApprover" | 
     case "Approved": return "ยืนยันวันโพสต์กับครีเอเตอร์";
     case "Posted": return "กรอกผลลัพธ์ (reach / engagement / visits)";
     case "Paused": return "งานถูกพัก — รอปลดล็อก";
+    // A finished deal still renders its row (Done, so it can be closed rather
+    // than abandoned) — and "ติดตามงาน KOL" on a deal that wrapped in May is
+    // the kind of line that makes people stop reading the field.
+    case "Completed": return "จบงานแล้ว — ผลลัพธ์บันทึกครบ";
     default: return "ติดตามงาน KOL";
   }
 }
