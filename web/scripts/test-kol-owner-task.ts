@@ -8,6 +8,7 @@
  * Run with:  npm test */
 
 import { kolAssignmentTask, kolTaskId, type Kol } from "../src/lib/data/kol";
+import { STATUS_ORDER } from "../src/components/work/WorkViews";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -59,6 +60,18 @@ is("Posted", t({ status: "Posted" })!.nextAction, "กรอกผลลัพ�
 is("Draft Submitted = In Review", t({ status: "Draft Submitted" })!.nextAction, "รอ Aran P. ตรวจงาน");
 is("Waiting Review = In Review", t({ status: "Waiting Review" })!.nextAction, "รอ Aran P. ตรวจงาน");
 
+console.log("\n— status = stage ของดีล เพื่อให้ List view กรุ๊ปตาม stage ได้ —");
+// เดิมทุกแถวเป็น "Todo" เหมือนกันหมด specialist ที่ถือ 40 ดีลเลยเห็นกองเดียว
+// แทนที่จะเห็น "12 Negotiating · 8 Producing · 5 In Review"
+is("Negotiating", t({ status: "Negotiating" })!.status, "Negotiating");
+is("Producing (จาก legacy Content Creating)", t({ status: "Content Creating" })!.status, "Producing");
+is("In Review (จาก legacy Draft Submitted)", t({ status: "Draft Submitted" })!.status, "In Review");
+is("Posted", t({ status: "Posted" })!.status, "Posted");
+is("Paused", t({ status: "Paused" })!.status, "Paused");
+// สองอันนี้ทับ stage เพราะความเร่งด่วนสำคัญกว่าว่าอยู่ขั้นไหน
+is("จบแล้วอ่านว่า Done ไม่ใช่ Completed", t({ status: "Completed" })!.status, "Done");
+is("เลยกำหนดอ่านว่า Stuck ไม่ใช่ stage", t({ status: "Negotiating", isOverdue: true })!.status, "Stuck");
+
 console.log("\n— รอคนอื่นอยู่ ต้องไม่ตะโกนอยู่ใน Do First —");
 is("In Review ไปอยู่ waitingMe", t({ status: "In Review" })!.group, "waitingMe");
 is("Paused ก็รอเหมือนกัน", t({ status: "Paused" })!.group, "waitingMe");
@@ -84,7 +97,21 @@ console.log("\n— ดีลที่จบแล้ว ปิดแถว ไ�
   // เคยตกไป default ว่า "ติดตามงาน KOL" บนดีลที่ปิดไปตั้งแต่เดือนพฤษภาคม
   is("ดีลที่จบแล้วไม่บอกให้ไปตามงาน", done.nextAction, "จบงานแล้ว — ผลลัพธ์บันทึกครบ");
   // Posted ยังไม่จบ — ต้องกรอกผลลัพธ์ก่อน
-  is("Posted ยังไม่จบ", t({ status: "Posted" })!.status, "Todo");
+  is("Posted ยังไม่จบ", t({ status: "Posted" })!.group, "doFirst");
+}
+
+console.log("\n— List view จัดกลุ่มตาม stage ตามลำดับ pipeline —");
+{
+  // ถ้าไม่ประกาศ stage ไว้ใน STATUS_ORDER มันจะตกท้ายแถวแล้วเรียงตามตัวอักษร
+  // บอร์ดของ specialist จะอ่านว่า Contract Signed → In Review → Negotiating
+  // → Owner Assigned ซึ่งคือ pipeline ที่สับไพ่แล้ว
+  const rank = (x: string) => STATUS_ORDER.indexOf(x);
+  const pipeline = ["Request", "Owner Assigned", "Negotiating", "Contract Signed", "Producing", "In Review", "Approved", "Posted"];
+  is("ทุก stage มีที่ทางของตัวเอง", pipeline.filter((x) => rank(x) === -1), []);
+  is("เรียงตาม pipeline ไม่ใช่ตามตัวอักษร",
+    pipeline.slice().sort((a, b) => rank(a) - rank(b)), pipeline);
+  is("Stuck อยู่เหนือทุก stage", rank("Stuck") < rank("Request"), true);
+  is("Done อยู่ท้ายสุด", rank("Done"), STATUS_ORDER.length - 1);
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} KOL owner task: ${pass} passed, ${fail} failed\n`);

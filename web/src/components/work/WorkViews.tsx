@@ -57,6 +57,16 @@ export const STATUS_MAP: Record<string, [string, string]> = {
   Stuck: ["#B33A2E", "#FFF5F4"],
   Revision: ["#C2691E", "#FBF1E9"],
   Todo: ["#9A9387", "#F2F0EB"], "To Do": ["#9A9387", "#F2F0EB"],
+  // KOL deal stages — a KOL task carries its deal's stage as its status, so the
+  // List view groups a specialist's deals by where each one actually is (see
+  // kolAssignmentTask). Coloured along the pipeline: grey while it is still
+  // being set up, blue once work is happening, gold while it waits on someone,
+  // green once it is out.
+  Request: ["#9A9387", "#F2F0EB"], "Owner Assigned": ["#9A9387", "#F2F0EB"],
+  Negotiating: ["#C2691E", "#FBF1E9"], "Contract Signed": ["#3E5C9A", "#EEF1F8"],
+  Producing: ["#3E5C9A", "#EEF1F8"], "In Review": ["#C68A1E", "#FBF8EE"],
+  Posted: ["#4E7A4E", "#EEF4EE"], Completed: ["#4E7A4E", "#EEF4EE"],
+  Paused: ["#9A9387", "#F2F0EB"],
 };
 
 export const PRIORITY_MAP: Record<string, [string, string]> = {
@@ -363,8 +373,20 @@ export function WorkCalendarView({ items, month, year, onNavigate, onOpen, onOpe
 
 /** Status order for the grouped list: what needs a decision first, what is
  *  moving, what is stuck, and finished work last. Anything unrecognised keeps
- *  its own group at the end rather than being folded into "other". */
-const STATUS_ORDER = ["Need Approval", "Stuck", "Revision", "In Progress", "Todo", "Waiting", "Done"];
+ *  its own group at the end rather than being folded into "other".
+ *
+ *  The tail is the KOL deal pipeline, in pipeline order. A KOL task carries its
+ *  deal's stage as its status (see kolAssignmentTask), and without naming them
+ *  here they all fell past the end and sorted ALPHABETICALLY — a specialist's
+ *  board read Contract Signed → In Review → Negotiating → Owner Assigned,
+ *  which is the pipeline shuffled. Anything of theirs that is late or waiting
+ *  on a decision still surfaces above all of it, as Stuck. */
+export const STATUS_ORDER = [
+  "Need Approval", "Stuck", "Revision", "In Progress", "Todo", "Waiting",
+  "Request", "Owner Assigned", "Negotiating", "Contract Signed", "Producing",
+  "In Review", "Approved", "Posted", "Paused",
+  "Done",
+];
 
 const statusRank = (s: string) => {
   const i = STATUS_ORDER.indexOf(s);

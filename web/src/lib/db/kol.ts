@@ -248,3 +248,39 @@ export function buildKol(input: {
     ],
   } as Kol;
 }
+
+/** Give every existing deal the My Tasks row it should have had.
+ *
+ *  createKol / updateKol keep a deal's row in step from now on, but deals that
+ *  were already in the table when that landed have never been through either —
+ *  their specialists' lists stay empty until somebody happens to open and save
+ *  each one. This is the one-off that closes that gap, and it is safe to run
+ *  again: upsertKolTask matches on (relatedKolId, kolSlot), so a second run
+ *  updates the rows it made the first time instead of doubling them.
+ *
+ *  Deliberately NOT wired into fetchKols. A read path that writes is both a
+ *  surprise and a bill — every visit to the KOL page would fan out a write per
+ *  deal (see the Aug 2026 egress audit).
+ *
+ *  Sequential for the same reason syncGraphicAssignmentTask is: each upsert
+ *  reads-then-writes the tasks table, and firing hundreds at once just makes
+ *  them queue for the same connection while raising the odds two of them race
+ *  for one row. */
+export async function backfillKolTasks(): Promise<{ total: number; synced: number; skipped: number }> {
+  const kols = await fetchKols();
+  let synced = 0, skipped = 0;
+  for (const k of kols) {
+    const task = kolAssignmentTask(k);
+    // No owner yet = nothing to hand anyone. Those deals get their row the
+    // moment somebody is put on them.
+    if (!task) { skipped += 1; continue; }
+    try {
+      await upsertKolTask(task);
+      synced += 1;
+    } catch {
+      // One bad row must not stop the sweep — the report says how many made it.
+      skipped += 1;
+    }
+  }
+  return { total: kols.length, synced, skipped };
+}

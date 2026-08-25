@@ -1,6 +1,7 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
+import { useRole } from "@/lib/role";
 import { mintId, mintIds } from "@/lib/data/ids";
 import { authHeaders } from "@/lib/supabase";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
@@ -21,7 +22,7 @@ import {
   ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
   kolKpis, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
-import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
+import { fetchKols, createKolIfNew, buildKol, updateKol, backfillKolTasks } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
 import { fetchKolScorecards, createKolWithChannels, followerFreshness, KolScorecardRow } from "@/lib/db/kolScorecard";
 import { KolProfileDrawer } from "@/components/kol/KolProfileDrawer";
@@ -229,6 +230,26 @@ export default function KolPage() {
   useEffect(() => { if (campaign !== "all" && !campaignOptions.includes(campaign)) setCampaign("all");   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignOptions, campaign]);
 
+  // Deals created before the task sync existed have no My Tasks row — their
+  // specialists' lists are empty for work they are already carrying. This is
+  // the one-off that fixes that; it reuses kolAssignmentTask so a backfilled
+  // row is identical to one written on save, and it is idempotent.
+  const { atLeast } = useRole();
+  const canManageKol = atLeast("KOL", "Edit");
+  const [backfilling, setBackfilling] = useState(false);
+  const runBackfill = async () => {
+    setBackfilling(true);
+    try {
+      const { total, synced, skipped } = await backfillKolTasks();
+      toastSuccess(
+        `ซิงก์เข้า Task แล้ว ${synced} จาก ${total} ดีล`
+        + (skipped ? ` · ข้าม ${skipped} (ยังไม่มีเจ้าของงาน)` : ""),
+      );
+    } catch (error) {
+      toastError(`ซิงก์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBackfilling(false); }
+  };
+
   // Create a request: persist EACH requested page as its own row (a request for
   // 5 pages = 5 independently-trackable records), then sync ONE requirement item
   // back into the campaign's KOL Plan.
@@ -325,7 +346,22 @@ export default function KolPage() {
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send KOL Brief</button>}
+          action={
+            <div className="flex items-center gap-2">
+              {/* One-off sweep for deals that predate the task sync. Gated on
+                  KOL ≥ Edit because it writes, and hidden once it has nothing
+                  left to do would be worse than showing it — it is safe to
+                  press twice (upsert), and a specialist joining later needs it. */}
+              {canManageKol && (
+                <button onClick={() => void runBackfill()} disabled={backfilling}
+                  title="สร้าง Task ให้ดีลเก่าที่ยังไม่มี — กดซ้ำได้ ไม่สร้างซ้ำ"
+                  className="text-[12.5px] font-bold rounded-[12px] px-4 py-[10px] border border-line2 bg-white text-muted disabled:opacity-50">
+                  {backfilling ? "กำลังซิงก์…" : "ซิงก์งานเข้า Task"}
+                </button>
+              )}
+              <button onClick={() => setRequestOpen(true)} className="text-[12.5px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Send KOL Brief</button>
+            </div>
+          }
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-4 flex-wrap">
