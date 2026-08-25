@@ -252,3 +252,58 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
 
   await updateTaskDb(current.id, patch);
 }
+
+
+/** Create or update the ONE My Tasks row for a KOL deal's own work.
+ *
+ *  Same shape as upsertGraphicTask and for the same reason: identity is
+ *  (relatedKolId, kolSlot), never the numeric id. Approval rows carry
+ *  relatedKolId with no slot, so matching on the deal alone would let a stage
+ *  change overwrite the requester's "Approve KOL proposal" task. */
+export async function upsertKolTask(task: Task): Promise<void> {
+  const db = supabase();
+  if (!db || task.relatedKolId == null || !task.kolSlot) return;
+
+  const found = await db.from("tasks")
+    .select("id, data")
+    .eq("data->>relatedKolId", String(task.relatedKolId))
+    .eq("data->>kolSlot", task.kolSlot)
+    .maybeSingle();
+  assertDbOk(found.error, "Could not check existing KOL task");
+
+  if (!found.data) {
+    // A deal that was already finished before this existed does not need a
+    // ticked-off row invented for it — the specialist would open My Tasks to a
+    // pile of "Done" KOL work they wrapped months ago.
+    if (task.status === "Done") return;
+    return createTaskDb({ ...task, id: await freeTaskId(task.id) });
+  }
+
+  const current = found.data.data as Task;
+  const patch: Partial<Task> = {
+    title: task.title,
+    kolSlot: task.kolSlot,
+    assignee: task.assignee,
+    brand: task.brand,
+    campaign: task.campaign,
+    due: task.due,
+    nextAction: task.nextAction,
+    blocker: task.blocker,
+    pendingApprover: task.pendingApprover,
+    priority: task.priority,
+    // Someone who ticked the row off by hand keeps it ticked — the stage may
+    // lag behind reality, and un-completing a person's task from a background
+    // sync is the fastest way to make them stop trusting the list.
+    status: current.status === "Done" ? current.status : task.status,
+    group: current.status === "Done" ? current.group : task.group,
+  };
+
+  // Handing a deal to a different specialist is a hand-over, so it has to reach
+  // them — the owner field used to change in silence.
+  if (current.assignee !== task.assignee && task.assignee) {
+    notify("newTask", `🔁 งาน KOL ถูกมอบหมายให้ ${task.assignee}`, `${task.title} · ${task.brand} · ${task.campaign}`,
+      workLink.task(current.id), { team: "kol", to: [task.assignee] });
+  }
+
+  await updateTaskDb(current.id, patch);
+}

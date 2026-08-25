@@ -2,7 +2,8 @@
 // deliverables, comment threads, and specialist workload. Derivations produce the KPI
 // strip, needs-attention list, and per-creator stage progress.
 
-import { BrandId } from "@/lib/brands";
+import { BrandId, brandName } from "@/lib/brands";
+import type { Task } from "@/lib/data/tasks";
 
 export interface KolEvent {
   type: "requested" | "owner_assigned" | "proposal_submitted" | "stage_changed" | "revision_requested" | "approved" | "posted" | "creator_replaced" | "visit_updated";
@@ -271,6 +272,12 @@ export function kolKpis(list: Kol[]) {
 }
 
 /** Deals that need a human: comments waiting, past due, or parked in review.
+ *
+ *  No UI reads this today — the "Needs Attention" strip it fed sat above the
+ *  KOL tabs and was removed (the same rows are in the list right below it, and
+ *  the work itself now reaches its owner through My Tasks; see
+ *  kolAssignmentTask). Kept because the rule is right and tested: if an alert
+ *  surface comes back, it should ask this rather than re-derive it.
  *  The review test goes through normalizeStage — matching the raw status let a
  *  row stored as "Draft Submitted" (the same In-Review stage as "Waiting
  *  Review") sit unseen unless it happened to be overdue or have comments. */
@@ -349,4 +356,88 @@ export function kolMetrics(k: Kol) {
   const postedAt = kolMoment(postedAtRaw);
   const onTime: 0 | 1 | null = due && postedAt ? (postedAt.getTime() <= due.getTime() ? 1 : 0) : null;
   return { revisionCount, proposalSubmitCount, latePostCount, overdueCount, approvedCount, onTime };
+}
+
+
+// ── The KOL specialist's own work, as a My Tasks row ──────────────────────
+//
+// KOL raised tasks for exactly one person: the requester who has to APPROVE a
+// proposal. The specialist who actually does the work — finds the creator,
+// negotiates the fee, sends the brief, chases the draft, records the results —
+// never got a row. Their whole queue lived on the KOL page, which is a list of
+// deals, not a list of what to do next; so "งาน KOL ไม่เข้า Task" was true, and
+// the only way to know what was outstanding was to remember it.
+//
+// Modelled on graphicAssignmentTasks: pure and tested here, upserted by
+// lib/db/kol so the row follows the deal through its stages instead of being
+// created once and left to rot.
+
+/** Which job of a KOL deal a task row is. One for now — the deal itself — but
+ *  named the same way Graphic names its slots, because identity is
+ *  (relatedKolId, kolSlot) and a second job later must not overwrite this one. */
+export const KOL_TASK_SLOT = { work: "work" } as const;
+
+/** Preferred My Tasks id for a KOL deal's work row. A starting point, not an
+ *  identity — upsertKolTask moves off it when the number is taken. */
+export function kolTaskId(kolId: number | string): number {
+  return Number(`${kolId}91`);
+}
+
+/** Stages where the deal is finished as far as the specialist is concerned. */
+const KOL_DONE_STAGES = new Set(["Completed"]);
+
+/** What the owner has to do next, by stage. Written as the next physical
+ *  action, not the stage name: "Producing" tells you where the deal is, not
+ *  what to pick up. */
+function kolNextAction(stage: string, k: Pick<Kol, "name" | "pendingApprover" | "currentBlocker">): string {
+  if (k.currentBlocker) return k.currentBlocker;
+  switch (stage) {
+    case "Request": return `หาและติดต่อ ${k.name}`;
+    case "Owner Assigned": return `เริ่มติดต่อ ${k.name}`;
+    case "Negotiating": return "เจรจาค่าตัวและเงื่อนไข";
+    case "Contract Signed": return "ส่งบรีฟให้ครีเอเตอร์";
+    case "Producing": return "ติดตามงานจากครีเอเตอร์";
+    // The ball is with the approver here, not the owner — the row stays theirs
+    // (they answer for the deal) but says who it is actually waiting on.
+    case "In Review": return `รอ ${k.pendingApprover?.trim() || "ผู้อนุมัติ"} ตรวจงาน`;
+    case "Approved": return "ยืนยันวันโพสต์กับครีเอเตอร์";
+    case "Posted": return "กรอกผลลัพธ์ (reach / engagement / visits)";
+    case "Paused": return "งานถูกพัก — รอปลดล็อก";
+    default: return "ติดตามงาน KOL";
+  }
+}
+
+/** The My Tasks row for the person who OWNS this deal, or null when nobody
+ *  holds it yet.
+ *
+ *  A finished deal still returns its row, marked Done, so the task gets closed
+ *  rather than abandoned — the upsert declines to invent one for a deal that
+ *  was already complete before this existed (same rule as Graphic). */
+export function kolAssignmentTask(k: Kol): Task | null {
+  const owner = (k.owner || "").trim();
+  if (!owner || owner === "Unassigned" || owner === "—") return null;
+  const stage = normalizeStage(k.status);
+  const done = KOL_DONE_STAGES.has(stage);
+  const waiting = stage === "In Review" || stage === "Paused";
+  return {
+    id: kolTaskId(k.id),
+    kolSlot: "work",
+    relatedKolId: k.id,
+    title: `KOL: ${k.name}${k.h ? ` (${k.h})` : ""}`,
+    module: "KOL", moduleIcon: "🌟", moduleColor: "#B5577E", type: "KOL",
+    assignee: owner,
+    brand: brandName(k.b),
+    campaign: k.campaign,
+    status: done ? "Done" : k.isOverdue ? "Stuck" : "Todo",
+    // Overdue deals outrank the rest of the queue; nothing else here is urgent
+    // enough to claim High on its own.
+    priority: k.isOverdue ? "High" : "Med",
+    group: done ? "done" : k.isOverdue ? "stuck" : waiting ? "waitingMe" : "doFirst",
+    due: k.postDueDate || "TBD",
+    blocker: k.currentBlocker,
+    pendingApprover: k.pendingApprover?.trim() || null,
+    isQuickWin: false,
+    nextAction: kolNextAction(stage, k),
+    checklist: ["ติดต่อ / เจรจา", "ทำสัญญา + ใบเสนอราคา", "ส่งบรีฟ", "ตรวจงานก่อนโพสต์", "กรอกผลลัพธ์หลังโพสต์"],
+  };
 }

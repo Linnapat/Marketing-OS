@@ -19,7 +19,7 @@ import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
 import {
   ALL_STAGES, SPECIALISTS, Kol, KolPost, initials, fmtFollow,
-  kolKpis, kolAlerts, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
+  kolKpis, stageProgress, normalizeStage, kolPosts, postsTotals, kolRoas,
 } from "@/lib/data/kol";
 import { fetchKols, createKolIfNew, buildKol, updateKol } from "@/lib/db/kol";
 import { resolveKolAssignment } from "@/lib/db/assignments";
@@ -300,7 +300,6 @@ export default function KolPage() {
   const filtered = outcome.rows;
   const clearFilters = () => { setDate({ ...ALL_TIME_FILTER }); setBrand("all"); setCampaign("all"); };
   const kpi = kolKpis(filtered);
-  const alerts = kolAlerts(filtered);
 
   const KPIS: { label: string; value: string; tone?: string; dark?: boolean }[] = [
     // "Total Requests" = every KOL request row; "Active" = only in-flight
@@ -386,28 +385,6 @@ export default function KolPage() {
         </ModuleSummaryCard>
 
       </div>
-
-      {/* Needs Attention — Request List only: the alerts are per-deal rows, so
-          they belong with the list, not on Plan / Performance / Library. */}
-      {tab === "list" && alerts.length > 0 && (
-        <div className="mt-4 bg-status-goldBg border border-accent-border rounded-cardLg p-4">
-          <div className="text-[12px] font-bold text-status-gold mb-3">⚠ Needs Attention · {alerts.length}</div>
-          <div className="flex flex-col gap-2">
-            {alerts.map((k) => (
-              <button key={k.id} onClick={() => setDrawer({ kol: k, tab: "comments" })} className="flex items-center gap-3 text-left bg-surface rounded-card px-3 py-2 hover:bg-ivory transition">
-                <span className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: brandColor(k.b) }}>{initials(k.name)}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-ink">{k.name}</div>
-                  <div className="text-[11px] text-faint">{k.campaign}</div>
-                </div>
-                <span className="text-[11.5px] font-semibold text-status-gold flex-shrink-0">
-                  {k.isOverdue ? "⚠ Overdue" : k.status === "Revision Requested" ? "↩ Revision needed" : k.openComments > 0 ? `💬 ${k.openComments} open` : "⏳ Waiting review"}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="mt-5 flex gap-1 overflow-x-auto border-b border-line pb-[2px]">

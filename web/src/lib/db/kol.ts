@@ -5,7 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
 import { baht } from "@/lib/format";
-import { KOLS, Kol, withLiveKolOverdue } from "@/lib/data/kol";
+import { KOLS, Kol, withLiveKolOverdue, kolAssignmentTask } from "@/lib/data/kol";
+import { upsertKolTask } from "@/lib/db/tasks";
 import { BrandId, brandName } from "@/lib/brands";
 import { assertDbData, assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
@@ -41,6 +42,18 @@ export async function fetchKols(): Promise<Kol[]> {
 }
 
 /** Insert a new creator request; returns it (with a unique id). */
+/** The specialist's own My Tasks row for this deal — created on request, kept
+ *  in step on every save.
+ *
+ *  The rule lives in lib/data/kol (pure, tested) so the page and this sync can
+ *  never disagree about what the owner owes. Best-effort: a task that fails to
+ *  write must not roll back the deal itself. */
+async function syncKolAssignmentTask(kol: Kol): Promise<void> {
+  const task = kolAssignmentTask(kol);
+  if (!task) return;
+  await upsertKolTask(task).catch(() => {});
+}
+
 export async function createKol(kol: Kol): Promise<Kol> {
   const db = supabase();
   if (!db) return kol;
@@ -54,6 +67,11 @@ export async function createKol(kol: Kol): Promise<Kol> {
   // the row still saves on a DB that hasn't run the migration yet.
   if (kol.campaignId) await db.from("kols").update({ campaign_id: kol.campaignId }).eq("id", row.id);
   mirrorKolToSheet(kol);
+  // The work reaches its owner here. Before this, a KOL request notified the
+  // room and nothing else — the specialist's own list stayed empty and the
+  // only record of what they owed was the KOL page, which is a list of deals
+  // rather than a list of what to do next.
+  await syncKolAssignmentTask(kol);
   return kol;
 }
 
@@ -144,6 +162,9 @@ export async function updateKol(kol: Kol): Promise<void> {
       .select("id"),
     "บันทึก KOL request ไม่สำเร็จ",
   );
+  // Stages move, owners change, deals get parked — the row follows rather than
+  // being written once at creation and left saying "หาและติดต่อ" forever.
+  await syncKolAssignmentTask(kol);
 }
 
 /** Approve a submitted KOL proposal from My Approval. */
