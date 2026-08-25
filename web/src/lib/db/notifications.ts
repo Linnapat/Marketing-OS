@@ -61,10 +61,12 @@ const DEMO_NOTIFS: Notif[] = [
     title: "งานถูกตีกลับ: Wagyu menu board",
     detail: "Instagram 9:16 · [CI] โลโก้เล็กไป ขอใหญ่ขึ้น",
     link: "/graphic", createdAt: new Date(Date.now() - 36e5).toISOString(), readAt: null },
+  // Points at a demo request that has a thread behind it (FEEDBACK gid 9), so
+  // the conversation view has something to open in demo mode.
   { id: -2, recipient: "You", event: "comment", actor: "Ken S.",
-    title: "คอมเมนต์ใหม่: Wagyu key visual — Revision 2",
-    detail: "ขอเช็คราคาในสไลด์ 2 อีกรอบก่อนส่งนะ",
-    link: "/my-tasks", createdAt: new Date(Date.now() - 72e5).toISOString(), readAt: null },
+    title: "💬 Summer reel cover",
+    detail: "Ken S.: ขอเช็คราคาในสไลด์ 2 อีกรอบก่อนส่งนะ",
+    link: "/graphic?open=9&tab=feedback", createdAt: new Date(Date.now() - 72e5).toISOString(), readAt: null },
   { id: -3, recipient: "You", event: "brief", actor: "Nok W.",
     title: "ขอเติมบรีฟ: Lunch set carousel",
     detail: "เพิ่ม CTA จองโต๊ะในสไลด์สุดท้าย",
