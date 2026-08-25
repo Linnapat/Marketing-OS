@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Download, Minimize2, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import {
   OMD_STORE_CATEGORY_META,
   OMD_STORE_SYNC_CONTRACT,
@@ -23,6 +23,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { BRAND_ORDER, brandName, brandColor, type BrandId } from "@/lib/brands";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, filterWindow, parseRowRange, MONTHS } from "@/components/ui/DateFilterBar";
+import { PAGE_W_PX, MIN_FIT_ZOOM, fitZoom, pagesAtFullSize as pagesAtFullSizeOf, pagesWhenPrinted as pagesWhenPrintedOf } from "@/lib/data/printFit";
 
 const categoryOrder = Object.keys(OMD_STORE_CATEGORY_META) as OmdStorePromotionCategory[];
 
@@ -320,6 +321,30 @@ function toCsv(items: OmdStorePromotion[]) {
     .join("\n");
 }
 
+/** Measure the sheet as it will print, by cloning it, laying the clone out at
+ *  paper width with the print rules switched on, and reading its height.
+ *
+ *  A clone rather than the live node because the alternative is putting the
+ *  page into print layout on screen for a frame, which the person using it
+ *  sees as a flicker. The print rules live under .omd-printing precisely so
+ *  this measures the same layout the printer gets rather than a second copy of
+ *  it that drifts.
+ *
+ *  Returns the height in CSS pixels, or null when there is nothing to measure
+ *  (server render, or an empty sheet). */
+function measurePrintHeight(sheet: HTMLElement | null): number | null {
+  if (!sheet || typeof document === "undefined") return null;
+  const host = document.createElement("div");
+  host.className = "omd-measure-host omd-printing";
+  host.style.width = `${PAGE_W_PX}px`;
+  const clone = sheet.cloneNode(true) as HTMLElement;
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  const height = clone.getBoundingClientRect().height;
+  host.remove();
+  return height || null;
+}
+
 export default function OmdStoreCampaignPage() {
   const [brand, setBrand] = useState<BrandId | "all">("all");
   const [category, setCategory] = useState<OmdStorePromotionCategory | "all">("all");
@@ -505,6 +530,59 @@ export default function OmdStoreCampaignPage() {
   const activeCount = filtered.filter((item) => ["active", "open_end"].includes(liveStatus(item))).length;
   const storeCount = new Set(filtered.flatMap((item) => item.branches)).size;
 
+  /** Fit the whole sheet onto one page, or print it at full size. On by
+   *  default: the sheet exists to be taped to a wall, and a wall sheet that
+   *  runs to page 2 is a wall sheet whose second half nobody reads. */
+  const [fitOnePage, setFitOnePage] = useState(true);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [sheetHeight, setSheetHeight] = useState<number | null>(null);
+
+  // Re-measure whenever what would be printed changes. A timer rather than
+  // requestAnimationFrame, which does not run at all while the tab is in the
+  // background: open the sheet, switch tabs while it loads, come back, and the
+  // fit would silently never have been calculated. The short delay is for
+  // React to commit the rows and for wrapping to settle.
+  const measureKey = `${filtered.length}|${printTemplate}|${brand}|${branch}|${category}|${periodLabel}`;
+  useEffect(() => {
+    const id = window.setTimeout(() => setSheetHeight(measurePrintHeight(sheetRef.current)), 60);
+    return () => window.clearTimeout(id);
+  }, [measureKey]);
+
+  const pagesAtFull = sheetHeight ? pagesAtFullSizeOf(sheetHeight) : null;
+  // Never scales UP — a one-row sheet blown up to fill A4 is a poster, not a
+  // fix — and never below the floor: past it the answer is fewer rows.
+  const printZoom = sheetHeight ? fitZoom(sheetHeight, fitOnePage) : 1;
+  // What the reader will actually get, so the number on screen is the truth
+  // rather than a promise: at the floor a long sheet still runs over.
+  const pagesPrinted = sheetHeight ? pagesWhenPrintedOf(sheetHeight, printZoom) : null;
+  const fitFellShort = fitOnePage && pagesPrinted !== null && pagesPrinted > 1;
+
+  // The print rules are a class, not a media query, so something has to put it
+  // on. beforeprint rather than the button alone: half this team prints with
+  // Cmd+P, and a fit that only works from our own button is a fit that quietly
+  // does nothing most of the time.
+  useEffect(() => {
+    const on = () => {
+      document.body.classList.add("omd-printing");
+      // Measure again here, not just on screen. The number in the header is
+      // whatever the last settled render produced; this is the one the paper
+      // gets, and it has to be right even when the on-screen figure is stale —
+      // a row added in another tab, a filter changed a millisecond ago, or a
+      // tab that spent the whole load in the background.
+      const root = sheetRef.current?.closest(".print-root") as HTMLElement | null;
+      const height = measurePrintHeight(sheetRef.current);
+      if (root && height) root.style.setProperty("--omd-print-zoom", String(fitZoom(height, fitOnePage)));
+    };
+    const off = () => document.body.classList.remove("omd-printing");
+    window.addEventListener("beforeprint", on);
+    window.addEventListener("afterprint", off);
+    return () => {
+      window.removeEventListener("beforeprint", on);
+      window.removeEventListener("afterprint", off);
+      off();
+    };
+  }, [fitOnePage]);
+
   const exportCsv = () => {
     const blob = new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -516,129 +594,154 @@ export default function OmdStoreCampaignPage() {
   };
 
   return (
-    <main className={`print-root min-h-screen bg-[#F8F7F3] text-[#17172A] template-${printTemplate}`}>
+    <main className={`print-root min-h-screen bg-[#F8F7F3] text-[#17172A] template-${printTemplate}`}
+      style={{ "--omd-print-zoom": printZoom } as React.CSSProperties}>
       <style jsx global>{`
-        @media print {
-          @page { size: A4 landscape; margin: 8mm; }
-          html, body {
-            background: #ffffff !important;
-            font-size: 10px !important;
-          }
-          .print-root {
-            color-adjust: exact;
-            print-color-adjust: exact;
-            -webkit-print-color-adjust: exact;
-            background: #ffffff !important;
-            min-height: auto !important;
-          }
-          .omd-page {
-            max-width: none !important;
-            padding: 0 !important;
-          }
-          .omd-print-hero {
-            border-radius: 14px !important;
-            border-color: #d8d4e4 !important;
-            background: linear-gradient(135deg, #ffffff 0%, #f8f7f3 100%) !important;
-            box-shadow: none !important;
-            padding: 12px 14px !important;
-          }
-          .omd-print-meta {
-            display: flex !important;
-          }
-          .omd-print-title {
-            font-size: 23px !important;
-            line-height: 1.05 !important;
-          }
-          .omd-print-summary {
-            display: grid !important;
-            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-            gap: 8px !important;
-            margin-top: 8px !important;
-          }
-          .omd-print-summary > div {
-            border-radius: 12px !important;
-            padding: 10px 12px !important;
-            break-inside: avoid;
-          }
-          .omd-print-sections {
-            margin-top: 8px !important;
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 8px !important;
-          }
-          .omd-print-section {
-            border-radius: 14px !important;
-            box-shadow: none !important;
-            break-inside: avoid;
-            overflow: hidden !important;
-          }
-          .omd-table-head {
-            display: grid !important;
-            grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
-            padding: 7px 10px !important;
-            font-size: 8px !important;
-            background: #fbfaf7 !important;
-          }
-          .omd-print-card {
-            display: grid !important;
-            grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
-            gap: 8px !important;
-            padding: 8px 10px !important;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          .omd-print-card * {
-            line-height: 1.28 !important;
-          }
-          .omd-print-card-title {
-            font-size: 10.5px !important;
-          }
-          .omd-print-card-body,
-          .omd-print-card-meta {
-            font-size: 9.5px !important;
-          }
-          .omd-category-head {
-            padding: 8px 10px !important;
-          }
-          .omd-category-head-title {
-            font-size: 11.5px !important;
-          }
-          .omd-chip {
-            border: 1px solid rgba(255,255,255,0.55) !important;
-            padding: 3px 7px !important;
-            font-size: 8.5px !important;
-          }
-          .template-compact .omd-print-summary {
-            display: none !important;
-          }
-          .template-compact .omd-print-card {
-            padding: 6px 9px !important;
-          }
-          .template-compact .omd-print-card-body,
-          .template-compact .omd-print-card-meta {
-            font-size: 8.8px !important;
-          }
-          .template-checklist .omd-table-head,
-          .template-checklist .omd-print-card {
-            grid-template-columns: .42fr 1.1fr 1.65fr 1fr .8fr .65fr .65fr !important;
-          }
-          .template-checklist .omd-check-cell {
-            display: block !important;
-          }
-          .template-board .omd-check-cell,
-          .template-compact .omd-check-cell {
-            display: none !important;
-          }
+        /* @page cannot be scoped to a class, so paper size stays here. Every
+           other rule lives under .omd-printing instead of inside @media print,
+           because the same rules have to run twice: once on paper, and once
+           off-screen while measuring how tall the sheet will be. Two copies of
+           a layout drift, and a fit-to-one-page that measures a layout slightly
+           different from the printed one is worse than no fit at all. */
+        @media print { @page { size: A4 landscape; margin: 8mm; } }
+
+        .omd-printing {
+          background: #ffffff !important;
+          font-size: 10px !important;
         }
+        .omd-printing .print-root {
+          color-adjust: exact;
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+          background: #ffffff !important;
+          min-height: auto !important;
+        }
+        .omd-printing .omd-page {
+          max-width: none !important;
+          padding: 0 !important;
+          /* Set by the fit control; 1 = print at full size. */
+          zoom: var(--omd-print-zoom, 1);
+        }
+        .omd-printing .omd-print-hero {
+          border-radius: 14px !important;
+          border-color: #d8d4e4 !important;
+          background: linear-gradient(135deg, #ffffff 0%, #f8f7f3 100%) !important;
+          box-shadow: none !important;
+          padding: 8px 12px !important;
+        }
+        /* The strapline explains the module to whoever opens the app. On a
+           sheet taped to a wall it is a paragraph nobody reads costing a line
+           of promotions. */
+        .omd-printing .omd-print-blurb { display: none !important; }
+        .omd-printing .omd-print-meta {
+          display: flex !important;
+          margin-top: 6px !important;
+        }
+        .omd-printing .omd-print-title {
+          font-size: 20px !important;
+          line-height: 1.05 !important;
+        }
+        /* The three big tiles say what the header chips already say — the
+           counts moved in there rather than being dropped. */
+        .omd-printing .omd-print-summary { display: none !important; }
+        .omd-printing .omd-print-sections {
+          margin-top: 6px !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 5px !important;
+        }
+        .omd-printing .omd-print-section {
+          border-radius: 12px !important;
+          box-shadow: none !important;
+          break-inside: avoid;
+          overflow: hidden !important;
+        }
+        .omd-printing .omd-table-head {
+          display: grid !important;
+          grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+          padding: 4px 10px !important;
+          font-size: 8px !important;
+          background: #fbfaf7 !important;
+        }
+        .omd-printing .omd-print-card {
+          display: grid !important;
+          grid-template-columns: 1.05fr 1.9fr 1.15fr .85fr .75fr .65fr !important;
+          gap: 8px !important;
+          padding: 4px 10px !important;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .omd-printing .omd-print-card * {
+          line-height: 1.2 !important;
+        }
+        .omd-printing .omd-print-card-title {
+          font-size: 9.5px !important;
+        }
+        .omd-printing .omd-print-card-body,
+        .omd-printing .omd-print-card-meta {
+          font-size: 8.6px !important;
+        }
+        /* Start and end on one line: two lines per row, times every row, is a
+           whole band of paper spent on a dash. */
+        .omd-printing .omd-print-period-break { display: none !important; }
+        /* A text box is chrome; on paper the POS name is just a word. These
+           were Tailwind's print: variants, which live in @media print and so
+           were invisible to the measuring pass — the sheet was measured with a
+           26px input in every row and printed with a 12px word, and a fit
+           calculated against a taller sheet than the one that comes out shrinks
+           further than it needs to. */
+        .omd-printing .omd-pos-input { display: none !important; }
+        .omd-printing .omd-pos-text { display: inline !important; }
+        .omd-printing .omd-category-head {
+          padding: 4px 10px !important;
+        }
+        .omd-printing .omd-category-head-title {
+          font-size: 10.5px !important;
+        }
+        .omd-printing .omd-chip {
+          border: 1px solid rgba(255,255,255,0.55) !important;
+          padding: 2px 6px !important;
+          font-size: 8.5px !important;
+        }
+        .omd-printing .template-compact .omd-print-card {
+          padding: 3px 9px !important;
+        }
+        .omd-printing .template-compact .omd-print-card-body,
+        .omd-printing .template-compact .omd-print-card-meta {
+          font-size: 8px !important;
+        }
+        .omd-printing .template-checklist .omd-table-head,
+        .omd-printing .template-checklist .omd-print-card {
+          grid-template-columns: .42fr 1.1fr 1.65fr 1fr .8fr .65fr .65fr !important;
+        }
+        .omd-printing .template-checklist .omd-check-cell {
+          display: block !important;
+        }
+        .omd-printing .template-board .omd-check-cell,
+        .omd-printing .template-compact .omd-check-cell {
+          display: none !important;
+        }
+        /* The measuring pass: a clone of the sheet, laid out at paper width,
+           parked where nobody sees it. */
+        .omd-measure-host {
+          position: fixed !important;
+          left: -20000px !important;
+          top: 0 !important;
+          visibility: hidden !important;
+          pointer-events: none !important;
+          z-index: -1 !important;
+        }
+        .omd-measure-host .no-print { display: none !important; }
+        .omd-measure-host .omd-page { zoom: 1 !important; }
       `}</style>
 
-      <div className="omd-page mx-auto max-w-[1400px] px-4 py-4 md:px-6 md:py-5">
+      <div ref={sheetRef} className="omd-page mx-auto max-w-[1400px] px-4 py-4 md:px-6 md:py-5">
         <section className="omd-print-hero rounded-[18px] border border-[#ECEAF2] bg-white px-4 py-4 shadow-[0_8px_22px_rgba(23,23,42,0.04)] md:px-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#6C5CE7]">Campaign Print Module</div>
               <h1 className="omd-print-title mt-1 text-[24px] font-extrabold leading-tight md:text-[30px]">Promotion Summary Print</h1>
-              <p className="mt-1 max-w-[780px] text-[13px] font-medium text-[#7D7789]">
+              <p className="omd-print-blurb mt-1 max-w-[780px] text-[13px] font-medium text-[#7D7789]">
                 Print-ready promotion summary synced from Campaign, grouped by type, brand, and branch with Marketing-OS colors.
               </p>
               <div className="omd-print-meta mt-3 hidden flex-wrap gap-2 text-[10px] font-bold text-[#706A84]">
@@ -647,8 +750,22 @@ export default function OmdStoreCampaignPage() {
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Category: {category === "all" ? "All Categories" : OMD_STORE_CATEGORY_META[category].label}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Period: {periodLabel}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Template: {PRINT_TEMPLATES[printTemplate].label}</span>
+                <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">รายการ: {filtered.length} · ใช้งานอยู่ {activeCount}</span>
                 <span className="rounded-full border border-[#ECEAF2] bg-white px-2.5 py-1">Printed: {formatDate(new Date().toISOString())}</span>
               </div>
+              {/* Screen only, and deliberately a number rather than a promise:
+                  the fit has a floor, so a long sheet still runs over and the
+                  person choosing what to print is the only one who can fix
+                  that — by filtering, not by shrinking further. */}
+              {pagesPrinted !== null && (
+                <div className="no-print mt-2 text-[11px] font-bold" style={{ color: fitFellShort ? "#B3641E" : "#7D7789" }}>
+                  {fitFellShort
+                    ? `ย่อสุดที่ ${Math.round(MIN_FIT_ZOOM * 100)}% แล้วยังได้ ${pagesPrinted} หน้า — เล็กกว่านี้จะอ่านไม่ออก ลองกรองแบรนด์ / หมวด / ช่วงเวลาให้แคบลง`
+                    : fitOnePage && printZoom < 1
+                      ? `พิมพ์ได้ 1 หน้า · ย่อเหลือ ${Math.round(printZoom * 100)}% (เต็มขนาดจะเป็น ${pagesAtFull ?? 1} หน้า)`
+                      : `พิมพ์ได้ ${pagesPrinted} หน้า${printZoom === 1 && (pagesAtFull ?? 0) <= 1 ? " · พอดีอยู่แล้ว ไม่ต้องย่อ" : ""}`}
+                </div>
+              )}
             </div>
             <div className="no-print flex flex-wrap gap-2">
               <button
@@ -678,6 +795,22 @@ export default function OmdStoreCampaignPage() {
               >
                 <Download size={15} />
                 CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => setFitOnePage((v) => !v)}
+                title={fitOnePage
+                  ? "กำลังย่อให้พอดีหน้าเดียว — กดเพื่อพิมพ์ขนาดเต็ม"
+                  : "พิมพ์ขนาดเต็ม — กดเพื่อย่อให้พอดีหน้าเดียว"}
+                aria-pressed={fitOnePage}
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] border px-3 text-[12px] font-bold"
+                style={fitOnePage
+                  ? { borderColor: "#CFC7FF", background: "#EEE9FF", color: "#5B4FD8" }
+                  : { borderColor: "#ECEAF2", background: "#fff", color: "#3E3E55" }}
+              >
+                <Minimize2 size={15} />
+                พอดี 1 หน้า
+                {fitOnePage && printZoom < 1 && <span className="font-extrabold">{Math.round(printZoom * 100)}%</span>}
               </button>
               <button
                 type="button"
@@ -856,14 +989,14 @@ export default function OmdStoreCampaignPage() {
                           onChange={(e) => setPosName(item.id, e.target.value)}
                           onBlur={() => savePosName(item)}
                           placeholder="พิมพ์ชื่อใน POS…"
-                          className="print:hidden w-full rounded-[8px] border border-[#E5E1F0] bg-white px-2 py-1 text-[12px] font-bold text-[#3E3E55] outline-none focus:border-[#6C5CE7]"
+                          className="omd-pos-input w-full rounded-[8px] border border-[#E5E1F0] bg-white px-2 py-1 text-[12px] font-bold text-[#3E3E55] outline-none focus:border-[#6C5CE7]"
                         />
-                        <span className="hidden print:inline">{item.posName || "—"}</span>
+                        <span className="omd-pos-text hidden">{item.posName || "—"}</span>
                       </div>
                       <div className="omd-print-card-meta text-[12px] font-extrabold text-[#17172A]">{branchLabel(item, brandBranches[item.brand] ?? [])}</div>
                       <div className="omd-print-card-meta text-[12px] font-bold leading-relaxed text-[#3E3E55]">
-                        {formatDate(item.startDate)}<br />
-                        <span className="text-[#8A879A]">to {formatDate(item.endDate)}</span>
+                        {formatDate(item.startDate)}<br className="omd-print-period-break" />
+                        <span className="text-[#8A879A]"> to {formatDate(item.endDate)}</span>
                       </div>
                       <div className="omd-print-card-meta flex items-start justify-between gap-2 text-[12px] font-extrabold" style={{ color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg }}>
                         <span>{statusLabel(item)}</span>
