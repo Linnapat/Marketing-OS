@@ -6,6 +6,7 @@ import { X, ChevronDown } from "lucide-react";
 import { useNotifications } from "@/lib/useNotifications";
 import { notifMeta } from "@/lib/db/notifications";
 import { conversationThreads, threadHref, jobTitleOf, graphicIdOf, type InboxThread } from "@/lib/data/inbox";
+import { BellApprovals } from "@/components/shell/BellApprovals";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { fetchGraphicById } from "@/lib/db/graphic";
 import { fetchMembers, Member } from "@/lib/db/settings";
@@ -30,7 +31,7 @@ import { isSamePerson, personKeys, memberRef } from "@/lib/identity";
  * of, not four interruptions.
  */
 
-type View = "all" | "threads";
+type View = "all" | "threads" | "approvals";
 
 /** What the panel knows about one opened conversation. Fetched on expand, one
  *  job at a time and once per session — the bell is on every page, and reading
@@ -138,7 +139,10 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
             </div>
 
             <div className="flex gap-1 px-3 pt-[10px] pb-[8px]" style={{ borderBottom: "1px solid #F4EFE5" }}>
-              {([["all", "แจ้งเตือน", unread.length], ["threads", "บทสนทนา", threads.length]] as const).map(([id, label, count]) => (
+              {/* รออนุมัติ carries no number: the count is only knowable after
+                  the queue is read, and reading it to print a badge is the
+                  poll-on-every-page cost this tab is lazy to avoid. */}
+              {([["all", "แจ้งเตือน", unread.length], ["threads", "บทสนทนา", threads.length], ["approvals", "รออนุมัติ", 0]] as const).map(([id, label, count]) => (
                 <button key={id} onClick={() => setView(id)}
                   className={`flex items-center gap-[6px] text-[12px] font-bold px-[11px] py-[6px] rounded-[9px] transition ${
                     view === id ? "text-ink" : "text-faint hover:text-muted"
@@ -154,7 +158,12 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {view === "all" ? (
+              {/* Mounted only while its tab is open: the six reads behind an
+                  approval queue are not something a bell should pay for on
+                  every page just in case somebody presses it. */}
+              {view === "approvals" ? (
+                <BellApprovals onNavigate={() => setOpen(false)} />
+              ) : view === "all" ? (
                 items.length === 0 ? (
                   <div className="px-4 py-10 text-center text-[12px] text-faint">ไม่มีอะไรค้างอยู่ 🌿</div>
                 ) : (

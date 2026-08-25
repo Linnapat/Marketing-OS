@@ -16,7 +16,7 @@
 
 import {
   buildApprovalRows, selectGraphicApprovals, countByKind, byWaitingLongest, waitingDays,
-  expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign,
+  expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign, approvalTitle,
   type ApprovalCtx, type ApprovalRow,
 } from "../src/lib/data/approvals";
 import { emptyDeliverable, type Graphic, type GraphicDeliverable } from "../src/lib/data/graphic";
@@ -278,6 +278,33 @@ console.log("\n— ตัวกรองแบรนด์ / แคมเปญ 
   is("ตัวเลือกไม่ซ้ำ (ไม่สนตัวพิมพ์)", names.length, 2);
   is("ตัวเลือกเรียงตามตัวอักษร", names[0], "Songkran");
   is("ไม่เอาแคมเปญว่างหรือขีด", names.includes("—"), false);
+}
+
+console.log("\n— ชื่อรายการแบบสั้น (ลิสต์ในกระดิ่ง) —");
+{
+  const rows = selectGraphicApprovals([req()], ctx("Creative Leader", "Boss L."));
+  const artwork = rows.find((r) => r.kind === "artwork")!;
+  // ชิ้นเดียวที่ต้องตรวจสองด้าน = สองแถว ถ้าไม่บอกด้าน ลิสต์สั้น ๆ จะอ่านเหมือนงานซ้ำ
+  is("งานอาร์ตเวิร์กบอกชื่องาน + platform + ด้านที่ตรวจ", approvalTitle(artwork), "Wagyu KV · Instagram · ข้อมูล");
+  const ciRow = rows.find((r) => r.kind === "artwork" && r.lens === "ci")!;
+  is("อีกด้านชื่อไม่ซ้ำกัน", approvalTitle(ciRow), "Wagyu KV · Instagram · CI");
+  is("แคปชั่นใช้ชื่อโพสต์", approvalTitle({
+    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, waitingOn: "—",
+    post: { title: "โพสต์ข้าวหน้าปลา" } as never,
+  } as ApprovalRow), "โพสต์ข้าวหน้าปลา");
+  is("โพสต์ไม่มีชื่อ ไม่คืนค่าว่าง", approvalTitle({
+    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, waitingOn: "—",
+    post: { title: "" } as never,
+  } as ApprovalRow), "(ไม่มีชื่อโพสต์)");
+  is("เบิกงบบอกหมวดกับแคมเปญ", approvalTitle({
+    kind: "expense", key: "e", b: "teppen", campaign: "Wagyu", waitingSince: "", mine: true, waitingOn: "CMO",
+    r: { category: "Media", campaign: "Wagyu" } as never,
+  } as ApprovalRow), "Media · Wagyu");
+  // แถวเบิกงบที่ไม่ผูกแคมเปญเก็บค่าเป็น "—" ไม่ใช่ค่าว่าง
+  is("เบิกงบที่ไม่มีแคมเปญ ไม่ลากขีดมาโชว์", approvalTitle({
+    kind: "expense", key: "e", b: "teppen", campaign: "—", waitingSince: "", mine: true, waitingOn: "CMO",
+    r: { category: "Media", campaign: "—" } as never,
+  } as ApprovalRow), "Media");
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} approval inbox: ${pass} passed, ${fail} failed\n`);

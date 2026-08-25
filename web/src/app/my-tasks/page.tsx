@@ -9,7 +9,7 @@ import { fetchTasks, createTaskDb, reassignDb, updateTaskDb } from "@/lib/db/tas
 import { mintId } from "@/lib/data/ids";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
-import { APPROVAL_CENTER, OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
+import { OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns } from "@/lib/db/campaigns";
@@ -25,6 +25,7 @@ import { useNotifications } from "@/lib/useNotifications";
 import { optimistic } from "@/lib/optimistic";
 import { approveTask } from "@/lib/taskApproval";
 import { NotificationBell } from "@/components/shell/NotificationBell";
+import { ApprovalInbox } from "@/components/approvals/ApprovalInbox";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic, Feedback, isMessage, threadAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
@@ -171,6 +172,12 @@ function MyTasksPageInner() {
   // to know which tab the request was hiding behind.
   const wantsApprovals = searchParams.get(OPEN_PARAM.tab) === "approval";
   const [tasksLoaded, setTasksLoaded] = useState(false);
+  // Sign-off is back on this page (CMO, 26 Aug 2026) — it moved out to Approval
+  // Center on 21 Aug and the round trip was the complaint: "ไม่ต้องวิ่ง ๆ ที่
+  // Approval center ก็ได้". It is the SAME component the lanes render
+  // (ApprovalInbox), not a second copy of the queue, so the two cannot disagree
+  // about what is open. The rows are only fetched once this view is chosen.
+  const [view, setView] = useState<"work" | "approval">("work");
   const openedRef = useRef<string | null>(null);
 
 
@@ -214,7 +221,11 @@ function MyTasksPageInner() {
   // with nothing to show — old Slack DMs and emails carry this param and will
   // keep arriving for months.
   useEffect(() => {
-    if (wantsApprovals) router.replace(APPROVAL_CENTER);
+    if (!wantsApprovals) return;
+    setView("approval");
+    // Drop the param so closing/returning does not re-select it, and so the
+    // old Slack DMs and emails carrying ?tab=approval keep landing right.
+    router.replace("/my-tasks");
   }, [wantsApprovals, router]);
 
   useEffect(() => {
@@ -333,7 +344,7 @@ function MyTasksPageInner() {
       <CampaignPageHeaderSection
         eyebrow="MY TASKS"
         title="My Tasks"
-        description="Personal workspace and team workload in one calm command center. งานที่รออนุมัติย้ายไป Approval Center แล้ว"
+        description="Personal workspace and team workload in one calm command center."
         right={<NotificationBell tone="light" />}
       />
 
@@ -344,21 +355,35 @@ function MyTasksPageInner() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-[13px] font-semibold text-faint">
-                Viewing as {viewAs} · focus work and team support in one place
+                Viewing as {viewAs} · {view === "work" ? "focus work and team support in one place" : "งานที่รอการตัดสินใจของคุณ และของทั้งทีม"}
               </div>
-              {/* Sign-off left this page for Approval Center — a personal task
-                  board and a queue of decisions are two different jobs, and the
-                  queue was invisible as a chip on somebody else's screen. */}
-              <Link href={APPROVAL_CENTER} className="text-[12.5px] font-bold text-accent hover:underline">
-                รออนุมัติ → Approval Center
-              </Link>
+              {/* Two jobs on one page, and the switch says which you are on.
+                  The approval side loads nothing until it is opened. */}
+              <div className="flex items-center gap-1 p-[3px] rounded-[12px]" style={{ background: "#F4F2F8" }}>
+                {([["work", "งานของฉัน"], ["approval", "รออนุมัติ"]] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => setView(id)}
+                    className={`text-[12.5px] font-bold px-[13px] py-[7px] rounded-[10px] transition ${view === id ? "text-ink bg-white shadow-soft" : "text-faint hover:text-muted"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <DateFilterBar value={date} onChange={setDate} />
+            {/* One period control on screen at a time. The approval queue
+                carries its own (over "waiting since", not over task due dates),
+                and two date bars answering different questions is a way to
+                misread both. */}
+            {view === "work" && <DateFilterBar value={date} onChange={setDate} />}
           </div>
         </CampaignCommandBar>
       </div>
 
-      {(
+      {view === "approval" && (
+        <div className="mt-5">
+          <ApprovalInbox />
+        </div>
+      )}
+
+      {view === "work" && (
         <div className="flex flex-col gap-[18px]">
           {/* The inbox. Comments and sent-back work used to go only to a LINE
               group and an inbox nobody opened, so the person they were for had
