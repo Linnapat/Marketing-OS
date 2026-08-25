@@ -1225,7 +1225,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           {tab === "assets" && (
             <div className="flex flex-col gap-3">
               <CaptionBesideArtwork post={linkedPost} />
-              <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} onUpdate={updateCurrentGraphic} />
+              <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} creativeLeader={creativeLeader} onUpdate={updateCurrentGraphic} />
             </div>
           )}
 
@@ -1606,8 +1606,12 @@ function CaptionBesideArtwork({ post }: { post: ContentItem | null }) {
   );
 }
 
-function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
-  g: Graphic; me: string; role: string; isRequester: boolean; onUpdate?: (g: Graphic) => void;
+function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate }: {
+  g: Graphic; me: string; role: string; isRequester: boolean;
+  /** Resolved by name, because a notification cannot be sent to a role — the
+   *  person who owes the Visual CI verdict has to be someone. */
+  creativeLeader: string;
+  onUpdate?: (g: Graphic) => void;
 }) {
   // Sign-off is now two checks, asked per lens inside each row — see
   // canGiveLensVerdict. Everyone else sees the artwork and who it waits on.
@@ -1723,6 +1727,30 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
         // Leader who is juggling the queue never learned at all. Neither has to
         // act on it, so neither gets interrupted.
         workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
+    } else {
+      // Half a review told NOBODY anything, and that is where pieces went to
+      // sit. A designer heard "มีแก้กลับไปนะคะ" in Slack, opened the request,
+      // found feedback and no box to submit into, and no way to tell that the
+      // other lens simply had not answered yet. Meanwhile the reviewer who owed
+      // that verdict was never asked for it.
+      //
+      // The batching stays — a designer still gets one combined list rather
+      // than two rounds of exporting (see statusFromReview). What changes is
+      // that the wait is now addressed to someone: the outstanding reviewer is
+      // asked, and the people watching the piece can see why it has not moved.
+      const waiting = reviewProgress(after).pending[0];
+      if (waiting) {
+        const owes = waiting === "ci" ? [creativeLeader] : [g.requester];
+        const verdictWord = verdict === "revise" ? "ขอให้แก้" : "ผ่าน";
+        notify("feedback", `👀 รอตรวจอีกหนึ่งด้าน: ${g.title}`,
+          `${before.platform} — [${LENS_META[lens].short}] ${verdictWord} โดย ${me} · รอ [${LENS_META[waiting].short}] ${LENS_META[waiting].owner} ตรวจ แล้วชิ้นนี้ถึงจะขยับ`,
+          workLink.graphic(g.id),
+          // The reviewer who owes it is the one who has to act, so they are the
+          // one interrupted. The designer and the requester get it in the bell:
+          // there is nothing for them to do until the round closes, but "a
+          // revision is coming" beats hearing it from a colleague on Slack.
+          { team: graphicTeam(g), to: owes, inform: [revisionAssignee(g, before), g.requester] });
+      }
     }
   };
 
@@ -1902,11 +1930,25 @@ function DeliverablesEditor({ g, me, role, isRequester, onUpdate }: {
                         );
                       })}
                     </div>
-                    {prog2.given === 1 && (
-                      <div className="text-[10.5px] text-faint mt-2">
-                        ชิ้นนี้ยังไม่ขยับจนกว่าจะครบทั้งสองด้าน — ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ
-                      </div>
-                    )}
+                    {/* One verdict in. Say WHICH way it went and WHO is being
+                        waited on — the old line said only that the piece would
+                        not move, so a designer looking at feedback with no
+                        submit box could not tell whether a revision was already
+                        queued or whether the form was broken. */}
+                    {prog2.given === 1 && (() => {
+                      const inLens = REVIEW_LENSES.find((l) => d.review?.[l]);
+                      const waiting = prog2.pending[0];
+                      if (!inLens || !waiting) return null;
+                      const said = d.review?.[inLens]?.verdict === "revise";
+                      return (
+                        <div className="text-[10.5px] mt-2 rounded-[8px] px-[9px] py-[6px]"
+                          style={said ? { background: "#FFF7ED", color: "#8A5418" } : { background: "#F6F5FA", color: "#706A84" }}>
+                          {said
+                            ? <>มีรายการให้แก้จาก <b>{LENS_META[inLens].label}</b> แล้ว — ยังส่งงานใหม่ไม่ได้จนกว่า <b>{LENS_META[waiting].owner}</b> จะตรวจ <b>{LENS_META[waiting].label}</b> เสร็จ ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ</>
+                            : <><b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน</>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
