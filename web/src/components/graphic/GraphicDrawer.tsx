@@ -17,12 +17,12 @@ import { GRAPHIC_OPEN_PARAM,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,   canGiveLensVerdict, canPassLens,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
-  releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved, storyboardAuthor,
+  releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
   MESSAGE_TYPE, isMessage, replyAudience,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
-import { giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
+import { decideStoryboard as decideStoryboardShared, giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
 import { postGraphicMessage } from "@/lib/graphicThread";
 import Link from "next/link";
 import { fetchContentById } from "@/lib/db/content";
@@ -376,24 +376,13 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     notify("feedback", `🎬 ส่ง storyboard: ${g.title}`, `โดย ${currentUser} → รอ ${g.requester} อนุมัติ`, workLink.graphic(g.id), { team: graphicTeam(g), to: [g.requester] });
   };
 
+  /** The write, the nextAction rewrite and the DM to whoever drew it live in
+   *  lib/graphicVerdict — the same call Approval Center's list rows make. */
   const decideStoryboard = (approved: boolean) => {
-    if (!approved && sbNote.trim().length < 5) { toastError("เขียนเหตุผลที่ส่งกลับแก้อย่างน้อย 5 ตัวอักษร"); return; }
-    const at = new Date().toISOString();
-    saveGraphic({
-      ...g,
-      storyboardStatus: approved ? "Approved" : "Revision",
-      storyboardDecidedBy: currentUser, storyboardDecidedAt: at,
-      storyboardNote: approved ? "" : sbNote.trim(),
-      nextAction: approved ? "storyboard ผ่านแล้ว — เริ่มถ่าย/ผลิตงานได้" : "Creative Content แก้ storyboard แล้วส่งใหม่",
-    }, "บันทึกผล storyboard ไม่สำเร็จ");
+    const next = decideStoryboardShared({ g, approved, by: currentUser, note: sbNote, onUpdate: updateCurrentGraphic });
+    if (!next) return;
     setSbNote("");
     toastSuccess(approved ? "อนุมัติ storyboard แล้ว" : "ส่ง storyboard กลับไปแก้แล้ว");
-    // The person who drew it is the one this decision is about — approved means
-    // they can stop waiting, sent back means they have work to do. It went to
-    // the room only, so the author learned either way by opening the drawer.
-    notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`,
-      approved ? `โดย ${currentUser} — เริ่มถ่าย/ผลิตงานได้` : `${sbNote.trim()} · โดย ${currentUser}`,
-      workLink.graphic(g.id), { team: graphicTeam(g), to: [storyboardAuthor(g)] });
   };
 
   /** Naming a shooter is a hand-over, so it has to reach them. The field saved

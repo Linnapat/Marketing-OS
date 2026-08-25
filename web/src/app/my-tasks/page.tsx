@@ -5,13 +5,13 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek, byDueThenPriority } from "@/lib/data/tasks";
-import { fetchTasks, createTaskDb, markDoneDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
+import { fetchTasks, createTaskDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { notify } from "@/lib/notify";
 import { APPROVAL_CENTER, OPEN_PARAM, resolveOpenTarget, workLink } from "@/lib/deepLink";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
 import { DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
-import { fetchCampaigns, updateCampaignBudget } from "@/lib/db/campaigns";
+import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
@@ -22,7 +22,7 @@ import { useNotifications } from "@/lib/useNotifications";
 
 
 import { optimistic } from "@/lib/optimistic";
-import { approveKolProposal } from "@/lib/db/kol";
+import { approveTask } from "@/lib/taskApproval";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic, Feedback, isMessage, replyAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
@@ -261,17 +261,19 @@ function MyTasksPageInner() {
 
   const markDone = (id: number) => {
     const task = tasks.find((t) => t.id === id);
-    if (task?.approvalKind === "kolProposal" && task.relatedKolId != null) {
-      approveKolProposal(task.relatedKolId, member?.name || user?.email || undefined)
-        .catch((error) => toastError(`อนุมัติ KOL ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-    }
-    if (task?.approvalKind === "budgetRevision" && task.relatedCampaignId && task.requestedBudget) {
-      updateCampaignBudget(task.relatedCampaignId, task.requestedBudget, member?.name || user?.email || "").catch((error) => toastError(`ปรับ Budget ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-      setCampaigns((cs) => cs.map((c) => c.id === task.relatedCampaignId ? { ...c, budget: task.requestedBudget! } : c));
-    }
     setDoneIds((s) => new Set(s).add(id));
     setDrawerId(null);
-    markDoneDb(id).catch((error) => toastError(`บันทึก Done ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+    // A "Need Approval" task stands for something — a KOL proposal, a revised
+    // budget — and approving it has to apply that first. lib/taskApproval owns
+    // both halves so Approval Center's list rows cannot say yes to the wrapper
+    // and leave the thing behind it untouched.
+    if (task) {
+      void approveTask({
+        task, by: member?.name || user?.email || "",
+        onBudgetApplied: (campaignId, budget) =>
+          setCampaigns((cs) => cs.map((c) => (c.id === campaignId ? { ...c, budget } : c))),
+      });
+    }
     const msg = CELEBRATIONS[id % CELEBRATIONS.length];
     setCelebration(msg);
     setTimeout(() => setCelebration((c) => (c === msg ? null : c)), 3000);

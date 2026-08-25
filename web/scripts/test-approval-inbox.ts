@@ -145,6 +145,37 @@ console.log("\n— แคปชั่น: คนเขียนไม่ได�
   is("คนเขียนเองกดไม่ได้ แม้ไม่มีคนถูกระบุ", ownWords[0]?.mine, false);
 }
 
+console.log("\n— Storyboard: รอคนขอเปิดงานตัดสิน —");
+{
+  const sb = req({ id: 9, type: "VDO Editing", requiredVideo: true, deliverables: [],
+    storyboardOwner: "Nok W.", storyboardStatus: "Submitted",
+    storyboardSubmittedBy: "Nok W.", storyboardSubmittedAt: "2026-08-05T00:00:00Z" });
+  const asRequester = selectGraphicApprovals([sb], ctx("Marketing Manager / BGL", "Ken S."));
+  is("มีแถว storyboard", asRequester.length, 1);
+  is("ผู้ขอเปิดงานกดได้", asRequester[0].mine, true);
+  is("นับอายุจากวันที่ส่ง", waitingDays(asRequester[0].waitingSince, Date.parse("2026-08-08T00:00:00Z")), 3);
+  const other = selectGraphicApprovals([sb], ctx("Creative Leader", "Boss L."));
+  is("คนอื่นเห็นแต่กดไม่ได้", other.length === 1 && other[0].mine === false, true);
+  is("…และบอกว่ารอใคร", other[0].waitingOn, "Ken S.");
+}
+
+console.log("\n— KOL / งบ: รอคนที่ถูกมอบหมาย —");
+{
+  const task = (over: Record<string, unknown>) => ({
+    id: 71, title: "Tokyo Tom proposal", assignee: "Aran P.", status: "Need Approval",
+    brand: "TEPPEN", campaign: "Wagyu Festival", approvalKind: "kolProposal", relatedKolId: 5, ...over,
+  }) as never;
+  const asApprover = buildApprovalRows({ ...empty, kol: [task({})] }, ctx("CMO", "Aran P."));
+  is("คนที่ถูกมอบหมายกดได้", asApprover[0]?.mine, true);
+  const other = buildApprovalRows({ ...empty, kol: [task({})] }, ctx("CMO", "Ken S."));
+  is("คนอื่นเห็นแต่กดไม่ได้", other.length === 1 && other[0].mine === false, true);
+  is("…และบอกว่ารอใคร", other[0]?.waitingOn, "Aran P.");
+  // งานที่ทำเสร็จแล้วต้องไม่ค้างอยู่ในคิว
+  const done = buildApprovalRows({ ...empty, kol: [task({})] },
+    ctx("CMO", "Aran P.", { doneIds: new Set([71]) }));
+  is("งานที่ปิดแล้วหลุดจากคิว", done.length, 0);
+}
+
 console.log("\n— เงิน: กติกาเดิม CMO เท่านั้น —");
 {
   const exp = { _id: 1, category: "Media", b: "teppen", campaign: "X", requested: 5000, approved: 0, status: "Waiting Approval", due: "—", createdAt: "2026-08-10T00:00:00Z" } as never;

@@ -27,7 +27,9 @@ import {
   ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays,
 } from "@/lib/data/approvals";
 import { Graphic, LENS_META } from "@/lib/data/graphic";
-import { giveLensVerdict } from "@/lib/graphicVerdict";
+import { decideStoryboard, giveLensVerdict } from "@/lib/graphicVerdict";
+import { approveTask } from "@/lib/taskApproval";
+import { Task } from "@/lib/data/tasks";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { ChevronDown } from "lucide-react";
 import { GTab } from "@/components/graphic/GraphicDrawer";
@@ -112,7 +114,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, only }: {
+export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -129,6 +131,8 @@ export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraph
   onGraphicUpdate?: (g: Graphic) => void;
   /** Same, for a post whose caption was just decided. */
   onContentUpdate?: (c: ContentItem) => void;
+  /** A task-shaped approval (KOL proposal, budget revision) just went through. */
+  onTaskApproved?: (t: Task) => void;
   /** Render just this one lane — the rail's Caption / Artwork / VDO entries.
    *  Null shows every lane. A lane opened deliberately is never folded shut:
    *  the remembered collapse is for the full page, and honouring it here would
@@ -220,7 +224,7 @@ export function ApprovalQueue({ rows, now, budgetOf, me, onOpenTask, onOpenGraph
       {panels.map(({ kind, rows: kindRows }) => (
         <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only} view={view}>
           {kindRows.map((row) => (view === "list"
-            ? renderRow(row, now, { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate })
+            ? renderRow(row, now, { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
             : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject })))}
         </KindPanel>
       ))}
@@ -491,8 +495,9 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   onReject: (r: ExpenseReq, reason: string) => void;
   onGraphicUpdate?: (g: Graphic) => void;
   onContentUpdate?: (c: ContentItem) => void;
+  onTaskApproved?: (t: Task) => void;
 }) {
-  const { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate } = deps;
+  const { codeOf, budgetOf, me, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved } = deps;
   // Money keeps its own row: the amount and the two buttons are the reason
   // anyone opens this lane, and a shared row cannot carry them.
   if (row.kind === "expense") {
@@ -510,6 +515,12 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   // need a page load — the whole thing being approved is right here.
   if (row.kind === "caption") {
     return <CaptionRow key={row.key} row={row} now={now} me={me} onContentUpdate={onContentUpdate} />;
+  }
+  if (row.kind === "storyboard") {
+    return <StoryboardRow key={row.key} row={row} now={now} me={me} onOpenGraphic={onOpenGraphic} onGraphicUpdate={onGraphicUpdate} />;
+  }
+  if (row.kind === "kol") {
+    return <TaskApprovalRow key={row.key} row={row} now={now} me={me} onOpenTask={onOpenTask} onTaskApproved={onTaskApproved} />;
   }
   const d = describe(row, codeOf);
   const inner = (
@@ -529,13 +540,143 @@ function renderRow(row: ApprovalRow, now: number, deps: {
   if (row.kind === "request") {
     return <Link key={row.key} href="/status" className={rowCx}>{inner}</Link>;
   }
-  if (row.kind === "kol") {
-    return <button key={row.key} onClick={() => onOpenTask(row.t.id)} className={rowCx}>{inner}</button>;
-  }
   return (
     <button key={row.key} onClick={() => onOpenGraphic(row.g.id, GRAPHIC_TAB[row.kind])} className={rowCx}>
       {inner}
     </button>
+  );
+}
+
+/** A storyboard row: the board to look at, and accept / send back.
+ *
+ *  Storyboards block everything downstream — nobody shoots or cuts until one
+ *  passes — so they are the rows where an unopened drawer costs the most. The
+ *  link goes to whatever the author submitted; the buttons sit next to it. */
+function StoryboardRow({ row, now, me, onOpenGraphic, onGraphicUpdate }: {
+  row: Extract<ApprovalRow, { kind: "storyboard" }>;
+  now: number; me: string;
+  onOpenGraphic: (id: number, tab?: GTab) => void;
+  onGraphicUpdate?: (g: Graphic) => void;
+}) {
+  const [revising, setRevising] = useState(false);
+  const [note, setNote] = useState("");
+  const [acted, setActed] = useState(false);
+  const g = row.g;
+  const board = (g.storyboardLink || "").trim();
+
+  const decide = (approved: boolean, reason?: string) => {
+    if (acted) return;
+    setActed(true);
+    const next = decideStoryboard({ g, approved, by: me, note: reason, onUpdate: onGraphicUpdate });
+    // Refused (a send-back with no real reason) → let them fix it and try again.
+    if (!next) { setActed(false); return; }
+    onGraphicUpdate?.(next);
+    toastSuccess(approved ? "อนุมัติ storyboard แล้ว" : "ส่ง storyboard กลับไปแก้แล้ว");
+  };
+
+  return (
+    <div className={`${rowCx} flex-wrap items-center`} style={{ cursor: "default" }}>
+      <KindBadge kind="storyboard" />
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => onOpenGraphic(g.id, GRAPHIC_TAB.storyboard)}
+            className="text-[13px] font-bold text-ink hover:text-accent transition truncate">{g.title}</button>
+          <AgePill iso={row.waitingSince} now={now} />
+        </span>
+        <span className="block text-[11.5px] text-faint truncate">
+          {brandName(g.b)} · {g.campaign} · {g.type} · โดย {g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}
+        </span>
+      </span>
+
+      <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
+        {board ? (
+          <a href={board} target="_blank" rel="noopener noreferrer"
+            className="text-[11.5px] font-bold text-accent hover:underline">เปิด storyboard ↗</a>
+        ) : (
+          <span className="text-[11.5px] text-faint">ไม่มีลิงก์ storyboard</span>
+        )}
+        {!row.mine ? (
+          <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
+        ) : revising ? (
+          <span className="flex items-center gap-2">
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เหตุผลที่ส่งกลับแก้" autoFocus
+              className="text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none w-[200px]" />
+            <button onClick={() => decide(false, note)} disabled={note.trim().length < 5 || acted}
+              className="text-[11.5px] font-bold text-white rounded-[8px] px-[10px] py-[6px] disabled:opacity-40" style={{ background: "#B33A2E" }}>ส่งกลับแก้</button>
+            <button onClick={() => setRevising(false)} className="text-[11.5px] font-semibold px-[8px] py-[6px] rounded-[8px] border border-line2 text-muted bg-white">Cancel</button>
+          </span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <button onClick={() => decide(true)} disabled={acted}
+              className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
+              {acted ? "…" : "✓ อนุมัติ"}
+            </button>
+            <button onClick={() => setRevising(true)} disabled={acted}
+              className="text-[11.5px] font-bold px-[9px] py-[6px] rounded-[8px] disabled:opacity-50"
+              style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>↩ ขอแก้</button>
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** A KOL proposal (or a budget revision) waiting on a yes.
+ *
+ *  What the row shows is the NUMBER, because that is what is being approved:
+ *  a KOL proposal commits ค่าตัว + ค่าอาหาร, and a budget revision moves a
+ *  campaign's envelope. Approving goes through lib/taskApproval, which applies
+ *  the thing behind the task before marking it done — a yes that ticked the
+ *  wrapper and left the proposal pending is the failure worth preventing here.
+ *
+ *  There is no inline "no": sending a proposal back means editing the quote,
+ *  and that only exists in the KOL drawer. "ดูรายละเอียด" goes there. */
+function TaskApprovalRow({ row, now, me, onOpenTask, onTaskApproved }: {
+  row: Extract<ApprovalRow, { kind: "kol" }>;
+  now: number; me: string;
+  onOpenTask: (id: number) => void;
+  onTaskApproved?: (t: Task) => void;
+}) {
+  const [acted, setActed] = useState(false);
+  const t = row.t;
+  const amount = t.approvalKind === "budgetRevision" ? t.requestedBudget : undefined;
+
+  const approve = async () => {
+    if (acted) return;
+    setActed(true);
+    await approveTask({ task: t, by: me });
+    onTaskApproved?.(t);
+    toastSuccess(`อนุมัติแล้ว: ${t.title}`);
+  };
+
+  return (
+    <div className={`${rowCx} flex-wrap items-center`} style={{ cursor: "default" }}>
+      <KindBadge kind="kol" note={t.approvalKind === "budgetRevision" ? "งบ" : undefined} />
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => onOpenTask(t.id)} className="text-[13px] font-bold text-ink hover:text-accent transition truncate">{t.title}</button>
+          <AgePill iso={row.waitingSince} now={now} />
+        </span>
+        <span className="block text-[11.5px] text-faint truncate">
+          {[t.brand, t.campaign, `ขอโดย ${t.assignee}`].filter(Boolean).join(" · ")}
+        </span>
+      </span>
+
+      <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
+        {amount ? (
+          <span className="text-[13.5px] font-extrabold" style={{ color: "#B8945A" }}>{baht(amount, { compact: true })}</span>
+        ) : null}
+        <button onClick={() => onOpenTask(t.id)} className="text-[11.5px] font-bold text-accent hover:underline">ดูรายละเอียด →</button>
+        {!row.mine ? (
+          <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
+        ) : (
+          <button onClick={() => void approve()} disabled={acted}
+            className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
+            {acted ? "…" : "✓ อนุมัติ"}
+          </button>
+        )}
+      </span>
+    </div>
   );
 }
 

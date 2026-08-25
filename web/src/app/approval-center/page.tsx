@@ -195,6 +195,7 @@ function ApprovalCenterInner() {
             onApprove={approveExpense} onReject={rejectExpense}
             onGraphicUpdate={(next) => setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)))}
             onContentUpdate={(next) => setPosts((ps) => ps.map((p) => (p.id === next.id ? next : p)))}
+            onTaskApproved={(t) => setDoneIds((ids) => new Set(ids).add(t.id))}
             only={lane}
           />
         )}

@@ -76,7 +76,11 @@ export type ApprovalRow =
       kind: "artwork" | "vdo" | "photo";
       g: Graphic; deliverable: GraphicDeliverable; index: number; lens: ReviewLens;
     })
-  | (RowBase & { kind: "storyboard" | "briefUnlock"; g: Graphic })
+  // Split rather than one member with a two-value kind, so that
+  // Extract<ApprovalRow, { kind: "storyboard" }> resolves to the row instead of
+  // `never` — the list renders a different component for each.
+  | (RowBase & { kind: "storyboard"; g: Graphic })
+  | (RowBase & { kind: "briefUnlock"; g: Graphic })
   | (RowBase & { kind: "campaign"; c: CampaignRow })
   | (RowBase & { kind: "request"; r: RequestRow })
   | (RowBase & { kind: "expense"; r: ExpenseReq })

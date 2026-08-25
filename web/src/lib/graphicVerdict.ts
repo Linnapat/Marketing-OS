@@ -18,6 +18,7 @@
 import {
   Graphic, GraphicDeliverable, ReviewLens, LENS_META,
   applyLensVerdict, deliverableProgress, stageFromDeliverables, revisionAssignee, assignedBy,
+  storyboardAuthor,
 } from "@/lib/data/graphic";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
@@ -112,4 +113,47 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
       workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
   }
   return saved;
+}
+
+/** Accept a storyboard, or send it back with a reason.
+ *
+ *  Lives beside the lens verdict for the same reason: Approval Center decides
+ *  storyboards from a list row, the drawer decides them from the production
+ *  panel, and the decision is not just a status — it rewrites nextAction (a
+ *  storyboard that passed means "start shooting", one sent back means "Creative
+ *  Content fixes it"), and it tells the person who DREW it, who is the one this
+ *  decision is actually about.
+ *
+ *  Returns the saved request, or null when refused — a send-back with a reason
+ *  shorter than five characters is not a reason, and "no" was the whole message
+ *  the author used to get. */
+export function decideStoryboard({ g, approved, by, note = "", onUpdate }: {
+  g: Graphic;
+  approved: boolean;
+  by: string;
+  note?: string;
+  onUpdate?: (g: Graphic) => void;
+}): Graphic | null {
+  if (!approved && note.trim().length < 5) {
+    toastError("เขียนเหตุผลที่ส่งกลับแก้อย่างน้อย 5 ตัวอักษร");
+    return null;
+  }
+  const at = new Date().toISOString();
+  const next: Graphic = {
+    ...g,
+    storyboardStatus: approved ? "Approved" : "Revision",
+    storyboardDecidedBy: by, storyboardDecidedAt: at,
+    storyboardNote: approved ? "" : note.trim(),
+    nextAction: approved ? "storyboard ผ่านแล้ว — เริ่มถ่าย/ผลิตงานได้" : "Creative Content แก้ storyboard แล้วส่งใหม่",
+  };
+  updateGraphic(next)
+    .then(() => onUpdate?.(next))
+    .catch((error) => toastError(`บันทึกผล storyboard ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+  // The person who drew it is the one this decision is about — approved means
+  // they can stop waiting, sent back means they have work to do. It went to the
+  // room only, so the author learned either way by opening the drawer.
+  notify(approved ? "approved" : "rejected", `${approved ? "✅ อนุมัติ" : "✏️ ส่งกลับแก้"} storyboard: ${g.title}`,
+    approved ? `โดย ${by} — เริ่มถ่าย/ผลิตงานได้` : `${note.trim()} · โดย ${by}`,
+    workLink.graphic(g.id), { team: graphicTeam(g), to: [storyboardAuthor(g)] });
+  return next;
 }
