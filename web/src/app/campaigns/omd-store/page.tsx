@@ -8,6 +8,7 @@ import {
   type OmdStorePromotion,
   type OmdStorePromotionCategory,
   type OmdStorePromotionStatus,
+  printedStatus,
 } from "@/lib/data/omdStorePromotions";
 import { CAMPAIGNS, campaignPeriod, type CampaignRow } from "@/lib/data/campaigns";
 import { fetchCampaigns } from "@/lib/db/campaigns";
@@ -46,10 +47,18 @@ function formatDate(value?: string) {
   return new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }
 
+/** printedStatus against today. A thin wrapper so every call site reads the
+ *  same clock and nobody has to remember to pass it. */
+function liveStatus(item: OmdStorePromotion): OmdStorePromotionStatus {
+  return printedStatus(item, isoDate(new Date())!);
+}
+
 function statusLabel(item: OmdStorePromotion) {
-  if (item.status === "open_end") return "ไม่ระบุวันจบ";
-  if (item.status === "ended") return "จบแล้ว";
-  if (item.status === "upcoming") return "กำลังจะเริ่ม";
+  const status = liveStatus(item);
+  if (status === "cancelled") return "ยกเลิกแล้ว";
+  if (status === "open_end") return "ไม่ระบุวันจบ";
+  if (status === "ended") return "จบแล้ว";
+  if (status === "upcoming") return "กำลังจะเริ่ม";
   return "ใช้งานอยู่";
 }
 
@@ -107,20 +116,20 @@ function campaignToStorePromotion(campaign: CampaignRow, storePromotion: string)
     branches: campaign.branch.split(",").map((item) => item.trim()).filter(Boolean),
     startDate: isoDate(start) ?? "",
     endDate: isoDate(end),
-    status: ["Completed", "Cancelled"].includes(campaign.status) ? "ended" : "active",
+    // The workflow verdict, not the printed one. "Completed" here means
+    // Marketing closed the campaign, which liveStatus applies only once the
+    // flight has actually started — a campaign marked Completed while it is
+    // still a week away used to print "จบแล้ว", finished before it ever began.
+    status: campaign.status === "Cancelled" ? "cancelled" : campaign.status === "Completed" ? "ended" : "active",
     source: "campaign",
   };
 }
 
-/** Status is a fact about the dates, not a separate thing to type: a promotion
- *  with no end date runs open-ended, one that hasn't started yet is upcoming,
- *  and one whose end has passed is over. Campaign rows already derive theirs. */
+/** The status stored with a new manual promotion. Only a snapshot — the column
+ *  on screen is derived live by printedStatus — but it keeps the saved row
+ *  truthful at the moment it is written, and one rule decides both. */
 function deriveStatus(startDate: string, endDate: string): OmdStorePromotionStatus {
-  const today = isoDate(new Date())!;
-  if (endDate && endDate < today) return "ended";
-  if (startDate && startDate > today) return "upcoming";
-  if (!endDate) return "open_end";
-  return "active";
+  return printedStatus({ status: "active", startDate, endDate }, isoDate(new Date())!);
 }
 
 const emptyDraft = {
@@ -452,7 +461,7 @@ export default function OmdStoreCampaignPage() {
     }))
     .filter((group) => group.items.length > 0);
 
-  const activeCount = filtered.filter((item) => item.status === "active" || item.status === "open_end").length;
+  const activeCount = filtered.filter((item) => ["active", "open_end"].includes(liveStatus(item))).length;
   const storeCount = new Set(filtered.flatMap((item) => item.branches)).size;
 
   const exportCsv = () => {
@@ -815,7 +824,7 @@ export default function OmdStoreCampaignPage() {
                         {formatDate(item.startDate)}<br />
                         <span className="text-[#8A879A]">to {formatDate(item.endDate)}</span>
                       </div>
-                      <div className="omd-print-card-meta flex items-start justify-between gap-2 text-[12px] font-extrabold" style={{ color: item.status === "ended" ? "#8A879A" : meta.fg }}>
+                      <div className="omd-print-card-meta flex items-start justify-between gap-2 text-[12px] font-extrabold" style={{ color: ["ended", "cancelled"].includes(liveStatus(item)) ? "#8A879A" : meta.fg }}>
                         <span>{statusLabel(item)}</span>
                         {/* Screen only — a printout has no buttons. Manual rows are
                             deleted, campaign rows are taken off the sheet. */}
