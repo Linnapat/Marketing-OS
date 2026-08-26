@@ -84,6 +84,48 @@ console.log("\n— อาร์ตเวิร์กหนึ่งชิ้น 
   is("แถวข้อมูลบอกชื่อคนที่รอ", designer.find((r) => r.kind === "artwork" && r.lens === "info")?.waitingOn, "Ken S.");
 }
 
+/* คิวของ CMO เคยมี 77 รายการ เพราะ CMO เซ็นแทนได้ทุกด้าน = ทุกงานในบริษัทนับเป็น "ของฉัน"
+   ตอนนี้ "ของฉัน" = งานที่จ่าหน้าถึงเรา ส่วนสิทธิ์เซ็นแทนอยู่ที่ canAct (ปุ่มยังอยู่) */
+console.log("\n— เซ็นแทนได้ ≠ เป็นงานของเรา —");
+{
+  const g = req();
+  const cmo = selectGraphicApprovals([g], ctx("CMO", "Aran P."));
+  is("CMO เห็นทั้งสองด้าน", cmo.length, 2);
+  is("แต่ไม่มีด้านไหนเป็นของ CMO", mineOf(cmo), 0);
+  is("…และยังกดได้ทั้งสองด้าน", cmo.every((r) => r.canAct), true);
+  is("แถวยังบอกว่าจริง ๆ รอใคร", cmo.find((r) => r.kind === "artwork" && r.lens === "info")?.waitingOn, "Ken S.");
+
+  // Marketing Manager ที่ไม่ใช่ผู้ขอเปิดงาน ก็เซ็นด้านข้อมูลแทนได้ แต่ไม่ใช่เจ้าของ
+  const mm = selectGraphicApprovals([g], ctx("Marketing Manager / BGL", "Pupay"));
+  is("MM ที่ไม่ได้เปิดงาน ไม่ใช่เจ้าของ", mineOf(mm), 0);
+  is("…แต่ยังเซ็นด้านข้อมูลแทนได้", mm.find((r) => r.kind === "artwork" && r.lens === "info")?.canAct, true);
+  is("…ด้าน CI ไม่ใช่เรื่องของ MM", mm.find((r) => r.kind === "artwork" && r.lens === "ci")?.canAct, false);
+
+  // เจ้าของจริงยังได้งานของตัวเองเหมือนเดิม
+  is("ผู้ขอเปิดงานยังได้ด้านข้อมูลเป็นของตัวเอง", mineOf(selectGraphicApprovals([g], ctx("Marketing Executive", "Ken S."))), 1);
+  is("Creative Leader ยังได้ด้าน CI เป็นของตัวเอง", mineOf(selectGraphicApprovals([g], ctx("Creative Leader", "Boss L."))), 1);
+}
+
+console.log("\n— แคปชั่นที่ไม่ได้จ่าหน้าถึงใคร ไม่ใช่ของ CMO —");
+{
+  const post = (over: Record<string, unknown> = {}) => ({
+    id: "c1", title: "T", b: "teppen", campaign: "W", plat: "Facebook", owner: "Pupay",
+    caption: "x", captionStatus: "Ready", assetStatus: "—", approvalStatus: "—", publishStatus: "—",
+    createdAt: "2026-08-15T00:00:00Z", ...over,
+  }) as never;
+  // ไม่มี approver/requester = ไม่มีชื่อใครบนงาน
+  const loose = buildApprovalRows({ ...empty, captions: [post()] }, ctx("CMO", "Aran P."));
+  is("แคปชั่นลอย ๆ ไม่ถูกนับเป็นของ CMO", mineOf(loose), 0);
+  is("…แต่ยังเคลียร์ได้ ไม่ถูกทิ้งค้าง", loose[0]?.canAct, true);
+  is("…และบอกว่ารอฝ่ายวางแผน", loose[0]?.waitingOn, "ฝ่ายวางแผน");
+  // จ่าหน้าถึงใคร = ของคนนั้น
+  const addressed = buildApprovalRows({ ...empty, captions: [post({ approver: "Aran P." })] }, ctx("CMO", "Aran P."));
+  is("แคปชั่นที่จ่าหน้าถึงเรา = ของเรา", mineOf(addressed), 1);
+  const other = buildApprovalRows({ ...empty, captions: [post({ approver: "Ken S." })] }, ctx("CMO", "Aran P."));
+  is("จ่าหน้าถึงคนอื่น = ไม่ใช่ของเรา", mineOf(other), 0);
+  is("…แต่ CMO ยังกดไม่ได้ ถ้าไม่ได้จ่าหน้าถึง", other[0]?.canAct, false);
+}
+
 console.log("\n— ด้านที่มีคนเซ็นแล้ว หายไปจากคิวของทุกคน —");
 {
   const g = req({ deliverables: [submitted({ review: { ci: { verdict: "pass", by: "Boss L.", at: "2026-08-02T02:00:00Z" } } })] });
@@ -229,7 +271,7 @@ console.log("\n— เรียงตามงานที่รอนานท�
   is("แถวเก่าสุดมาก่อน", rows[0].kind === "caption" ? rows[0].post.title : "—", "เก่า");
   // แคมเปญไม่มี timestamp ให้นับอายุ — ต้องไปท้ายแถว ไม่ใช่ถูกนับว่าใหม่เอี่ยม
   is("แถวที่ไม่รู้อายุไปอยู่ท้าย", byWaitingLongest(
-    { kind: "campaign", key: "a", b: "teppen", campaign: "", waitingSince: "", mine: false, waitingOn: "CMO", c: {} as never },
+    { kind: "campaign", key: "a", b: "teppen", campaign: "", waitingSince: "", mine: false, canAct: false, waitingOn: "CMO", c: {} as never },
     rows[0]) > 0, true);
   is("นับตามชนิดได้", countByKind(rows).caption, 2);
   is("ไม่มี timestamp = ไม่แสดงอายุ", waitingDays("", Date.now()), null);
@@ -252,7 +294,7 @@ console.log("\n— ตัวกรองแบรนด์ / แคมเปญ 
 {
   const row = (over: Partial<ApprovalRow>): ApprovalRow => ({
     kind: "campaign", key: "k", b: "teppen", campaign: "Wagyu Festival",
-    waitingSince: "", mine: false, waitingOn: "CMO", c: {} as never, ...over,
+    waitingSince: "", mine: false, canAct: false, waitingOn: "CMO", c: {} as never, ...over,
   } as ApprovalRow);
 
   // แบรนด์
@@ -289,20 +331,20 @@ console.log("\n— ชื่อรายการแบบสั้น (ลิ�
   const ciRow = rows.find((r) => r.kind === "artwork" && r.lens === "ci")!;
   is("อีกด้านชื่อไม่ซ้ำกัน", approvalTitle(ciRow), "Wagyu KV · Instagram · CI");
   is("แคปชั่นใช้ชื่อโพสต์", approvalTitle({
-    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, waitingOn: "—",
+    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, canAct: true, waitingOn: "—",
     post: { title: "โพสต์ข้าวหน้าปลา" } as never,
   } as ApprovalRow), "โพสต์ข้าวหน้าปลา");
   is("โพสต์ไม่มีชื่อ ไม่คืนค่าว่าง", approvalTitle({
-    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, waitingOn: "—",
+    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, canAct: true, waitingOn: "—",
     post: { title: "" } as never,
   } as ApprovalRow), "(ไม่มีชื่อโพสต์)");
   is("เบิกงบบอกหมวดกับแคมเปญ", approvalTitle({
-    kind: "expense", key: "e", b: "teppen", campaign: "Wagyu", waitingSince: "", mine: true, waitingOn: "CMO",
+    kind: "expense", key: "e", b: "teppen", campaign: "Wagyu", waitingSince: "", mine: true, canAct: true, waitingOn: "CMO",
     r: { category: "Media", campaign: "Wagyu" } as never,
   } as ApprovalRow), "Media · Wagyu");
   // แถวเบิกงบที่ไม่ผูกแคมเปญเก็บค่าเป็น "—" ไม่ใช่ค่าว่าง
   is("เบิกงบที่ไม่มีแคมเปญ ไม่ลากขีดมาโชว์", approvalTitle({
-    kind: "expense", key: "e", b: "teppen", campaign: "—", waitingSince: "", mine: true, waitingOn: "CMO",
+    kind: "expense", key: "e", b: "teppen", campaign: "—", waitingSince: "", mine: true, canAct: true, waitingOn: "CMO",
     r: { category: "Media", campaign: "—" } as never,
   } as ApprovalRow), "Media");
 }

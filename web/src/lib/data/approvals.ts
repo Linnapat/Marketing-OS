@@ -67,9 +67,21 @@ interface RowBase {
    *  "cannot say" rather than hiding it. */
   campaign: string;
   waitingSince: string;
-  /** May the person reading this actually decide it? Drives the buttons, the
-   *  "ของฉัน / ทั้งทีม" split and the badge — never whether the row exists. */
+  /** Is this decision ADDRESSED to the person reading it — theirs to make,
+   *  not merely one they are senior enough to make?
+   *
+   *  These were one flag and it made the CMO's queue useless: the CMO may cover
+   *  either artwork lens, sign any caption and release any brief, so every
+   *  piece of creative work in the company counted as "waiting on you" — 77 of
+   *  them on the day this was reported, of which about none were actually the
+   *  CMO's to answer. Ownership and permission are different questions:
+   *  `mine` drives the "ของฉัน" list and the counts, `canAct` drives the
+   *  buttons. A stand-in still gets the buttons; they just no longer get
+   *  somebody else's queue. */
   mine: boolean;
+  /** May they give this verdict at all — the role rule, standing overrides
+   *  included. Never whether the row exists. */
+  canAct: boolean;
   /** Who is holding it, for the rows that are not yours. A name where we have
    *  one, otherwise the role that owns the decision. */
   waitingOn: string;
@@ -172,7 +184,11 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
       out.push({
         kind: "storyboard", key: `g${g.id}:storyboard`, b: g.b, campaign: g.campaign ?? "", g,
         waitingSince: g.storyboardSubmittedAt || g.createdAt || "",
-        mine: isRequester, waitingOn: firstName(g.requester, "ผู้ขอเปิดงาน"),
+        // Whose it is: the person who asked for the work. The CMO keeps the
+        // standing override the drawer already gives them (canDecideStoryboard).
+        mine: isRequester,
+        canAct: isRequester || ctx.role === DEFAULT_APPROVER,
+        waitingOn: firstName(g.requester, "ผู้ขอเปิดงาน"),
       });
     }
 
@@ -181,10 +197,16 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
       if (d.status !== "Waiting review") return;
       for (const lens of REVIEW_LENSES) {
         if (d.review?.[lens]) continue;
+        const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d });
         out.push({
           kind, key: `g${g.id}:d${index}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
           waitingSince: d.submittedAt || g.submittedAt || g.createdAt || "",
-          mine: canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d }),
+          // Whose check this is — the requester's for the data, the Creative
+          // Leader's for CI. Everyone else who MAY give it (Marketing Manager,
+          // CMO) is covering, and covering is not owning: they keep the buttons
+          // through canAct without the row landing in their own queue.
+          mine: canPass && (lens === "info" ? isRequester : ctx.role === "Creative Leader"),
+          canAct: canPass,
           // The data check is the requester's by name; Visual CI belongs to the
           // Creative Leader as a role, and no row names one.
           waitingOn: lens === "info" ? firstName(g.requester, "สาย Marketing") : "Creative Leader",
@@ -197,8 +219,10 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
         kind: "briefUnlock", key: `g${g.id}:briefUnlock`, b: g.b, campaign: g.campaign ?? "", g,
         waitingSince: g.briefUnlock?.requestedAt || g.createdAt || "",
         // Not the person who asked — they are waiting on the answer, not
-        // holding it, however senior they are.
-        mine: canReleaseBriefEdit(ctx.role) && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys),
+        // holding it, however senior they are. The lane belongs to the Creative
+        // Leader; the CMO may release one, which is covering, not owning.
+        mine: ctx.role === "Creative Leader" && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys),
+        canAct: canReleaseBriefEdit(ctx.role) && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys),
         waitingOn: "Creative Leader",
       });
     }
@@ -241,7 +265,12 @@ export function buildApprovalRows(input: {
     rows.push({
       kind: "caption", key: `c:${post.id}`, b: post.b, campaign: post.campaign ?? "", post,
       waitingSince: post.createdAt || "",
-      mine: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
+      // Addressed, or nobody's. An unaddressed caption (legacy rows, posts
+      // added straight to the calendar) is still CLEARABLE by the planning side
+      // — that is why it is not stranded — but it is not counted as anyone's
+      // own work, which is how every one of them ended up in the CMO's queue.
+      mine: !wroteIt && !!reviewer && isSamePerson(reviewer, ctx.myKeys),
+      canAct: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
       waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),
     });
   }
@@ -254,10 +283,15 @@ export function buildApprovalRows(input: {
     const forApproval = (c.status ?? "").trim() === "Waiting for Approval";
     rows.push({
       kind: "campaign", key: `cam:${c.id}`, b: c.b, campaign: c.name ?? "", c, waitingSince: "",
+      // Signing a campaign off IS the approver's own job, so here owning and
+      // being allowed are the same question.
       mine: forApproval
         ? ctx.canApproveCampaign
         // Fail-closed on a blank name: while the member row loads, `me` is ""
         // and an owner-less campaign would match everybody.
+        : !!ctx.me.trim() && (c.owner ?? "").trim() === ctx.me.trim(),
+      canAct: forApproval
+        ? ctx.canApproveCampaign
         : !!ctx.me.trim() && (c.owner ?? "").trim() === ctx.me.trim(),
       waitingOn: forApproval ? DEFAULT_APPROVER : firstName(c.owner, "เจ้าของแคมเปญ"),
     });
@@ -269,7 +303,9 @@ export function buildApprovalRows(input: {
     if (!PENDING_REQ_STAGES.has(r.stage) || r.type === "Budget" || !ctx.isVisible(r.b)) continue;
     rows.push({
       kind: "request", key: `req:${r.id}`, b: r.b, campaign: r.campaign ?? "", r, waitingSince: "",
-      mine: isSamePerson(r.approver, ctx.myKeys), waitingOn: firstName(r.approver, "ผู้อนุมัติ"),
+      mine: isSamePerson(r.approver, ctx.myKeys),
+      canAct: isSamePerson(r.approver, ctx.myKeys),
+      waitingOn: firstName(r.approver, "ผู้อนุมัติ"),
     });
   }
 
@@ -296,8 +332,9 @@ export function buildApprovalRows(input: {
     rows.push({
       kind: "expense", key: `exp:${r._id ?? r.ref ?? `${r.b}-${r.category}`}`, b: r.b, campaign: r.campaign ?? "", r,
       waitingSince: r.createdAt || "",
-      // The expense row carries no approver column — the gate IS the role.
-      mine: ctx.canApproveExpense, waitingOn: DEFAULT_APPROVER,
+      // The expense row carries no approver column — the gate IS the role, so
+      // whoever holds it owns these rather than covering for somebody.
+      mine: ctx.canApproveExpense, canAct: ctx.canApproveExpense, waitingOn: DEFAULT_APPROVER,
     });
   }
 
@@ -306,7 +343,9 @@ export function buildApprovalRows(input: {
     if (t.status !== "Need Approval" || ctx.doneIds.has(t.id) || !ctx.canSeeBrandLabel(t.brand)) continue;
     rows.push({
       kind: "kol", key: `kol:${t.id}`, b: null, campaign: t.campaign ?? "", t, waitingSince: "",
-      mine: isSamePerson(t.assignee, ctx.myKeys), waitingOn: firstName(t.assignee, "ผู้อนุมัติ"),
+      mine: isSamePerson(t.assignee, ctx.myKeys),
+      canAct: isSamePerson(t.assignee, ctx.myKeys),
+      waitingOn: firstName(t.assignee, "ผู้อนุมัติ"),
     });
   }
 
