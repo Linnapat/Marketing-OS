@@ -16,7 +16,7 @@
 
 import {
   buildApprovalRows, selectGraphicApprovals, countByKind, byWaitingLongest, waitingDays,
-  expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign, approvalTitle,
+  expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign, approvalTitle, platformLabel,
   type ApprovalCtx, type ApprovalRow,
 } from "../src/lib/data/approvals";
 import { emptyDeliverable, type Graphic, type GraphicDeliverable } from "../src/lib/data/graphic";
@@ -372,6 +372,43 @@ console.log("\n— คอลัมน์ ส่งโดย / ส่งวัน
     [{ ...g, deliverables: [{ ...submitted(), submittedBy: "" }] }], ctx("Creative Leader", "Boss L."));
   is("ไม่มีชื่อคนส่งบนชิ้นงาน → ใช้ดีไซเนอร์ของใบงาน", noSubmitter[0].submittedBy, "Boss");
 }
+
+console.log("\n— ไฟล์เดียวหลาย platform = แถวเดียว —");
+{
+  // ไฟล์ 9:16 ตัวเดียวส่งลง 3 platform = 3 แถวในตาราง deliverables แต่เป็นงานชิ้นเดียว
+  // ที่ต้องตรวจครั้งเดียว — applyLensVerdict fan ให้ทั้งกลุ่มอยู่แล้ว ถ้าคิวโชว์ 3 แถว
+  // กดผ่านอันเดียวแล้วอีกสองอันหายไปเอง
+  const threeWays = req({ deliverables: [
+    submitted({ platform: "Facebook", size: "9:16 (1080×1920)" }),
+    submitted({ platform: "Instagram", size: "9:16 (1080×1920)" }),
+    submitted({ platform: "TikTok", size: "9:16 (1080x1920)" }),
+  ] });
+  const rows = selectGraphicApprovals([threeWays], ctx("Creative Leader", "Boss L."));
+  is("สามแพลตฟอร์มยุบเหลือสองแถว (ด้านละหนึ่ง)", rows.length, 2);
+  const info = rows.find((r) => r.kind === "artwork" && r.lens === "info");
+  is("แถวเดียวบอกครบทุกแพลตฟอร์ม",
+    info && info.kind === "artwork" ? info.platforms.join(",") : "—", "Facebook,Instagram,TikTok");
+
+  // คนละไซซ์ = คนละไฟล์ = คนละงาน ต้องไม่ถูกยุบรวม
+  const twoSizes = req({ deliverables: [
+    submitted({ platform: "Facebook", size: "9:16 (1080×1920)" }),
+    submitted({ platform: "Facebook", size: "1:1 (1080×1080)" }),
+  ] });
+  is("คนละไซซ์ยังแยกแถว", selectGraphicApprovals([twoSizes], ctx("Creative Leader", "Boss L.")).length, 4);
+
+  // แถวที่เคยถูกเซ็นไว้ก่อนมีการ fan ต้องไม่ลากงานที่ยังค้างของพี่น้องหายไปด้วย
+  const halfSettled = req({ deliverables: [
+    submitted({ platform: "Facebook", size: "9:16 (1080×1920)", review: { ci: { verdict: "pass", by: "Boss L.", at: "2026-08-02T02:00:00Z" } } }),
+    submitted({ platform: "Instagram", size: "9:16 (1080×1920)" }),
+  ] });
+  const mixed = selectGraphicApprovals([halfSettled], ctx("Creative Leader", "Boss L."));
+  is("ด้าน CI ที่ยังค้างของอีกแถวไม่หายไป", mixed.some((r) => r.kind === "artwork" && r.lens === "ci"), true);
+}
+
+console.log("\n— ชื่อแพลตฟอร์มแบบสั้น —");
+is("สามอันขึ้นครบ", platformLabel(["Facebook", "Instagram", "TikTok"]), "Facebook · Instagram · TikTok");
+is("เกินสามอันย่อ", platformLabel(["Facebook", "Instagram", "TikTok", "LINE OA"]), "Facebook · Instagram +2");
+is("ไม่มีเลยใช้ค่าสำรอง", platformLabel([], "Instagram"), "Instagram");
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} approval inbox: ${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
