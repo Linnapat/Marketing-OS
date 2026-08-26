@@ -714,6 +714,26 @@ export const PRODUCTION_ROLES: Record<WorkKind, string[]> = {
   photo_shoot: ["VDO Editor"],
 };
 
+/** What a revision task is CALLED.
+ *
+ *  The task module stays "Graphic" — video work lives in Graphic Request like
+ *  everything else — so the kind has to be in the title, or a re-cut lands in a
+ *  VDO Editor's My Tasks looking like a poster to redraw. */
+const REVISION_LABEL: Record<WorkKind, string> = {
+  graphic: "งานกราฟฟิก",
+  vdo: "งาน VDO",
+  vdo_shoot: "งานถ่าย VDO",
+  photo_shoot: "งานถ่ายภาพ",
+};
+
+export function revisionTaskTitle(
+  g: Pick<Graphic, "title" | "type" | "requiredVideo">,
+  where?: string,
+): string {
+  const label = REVISION_LABEL[workKind(g.type, g.requiredVideo)];
+  return `แก้${label} — ${g.title}${where ? ` (${where})` : ""}`;
+}
+
 /** Who must act on feedback for this piece — the people the message is FOR.
  *
  *  The named person first (revisionAssignee: whoever handed it in, then whoever

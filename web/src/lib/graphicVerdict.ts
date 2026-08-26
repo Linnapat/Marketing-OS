@@ -18,7 +18,7 @@
 import {
   Graphic, GraphicDeliverable, ReviewLens, LENS_META,
   applyLensVerdict, deliverableProgress, stageFromDeliverables, assignedBy,
-  reviewProgress, feedbackOwners,
+  reviewProgress, feedbackOwners, revisionTaskTitle,
   storyboardAuthor,
 } from "@/lib/data/graphic";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
@@ -112,7 +112,7 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
     const owner = owners[0] ?? null;
     if (owner) {
       createRevisionTask({
-        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: owner,
+        module: "Graphic", title: revisionTaskTitle(g, before.platform), assignee: owner,
         brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }

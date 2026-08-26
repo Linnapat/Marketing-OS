@@ -16,7 +16,7 @@ import { GRAPHIC_OPEN_PARAM,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth, materialNote,
   hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
-  canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit, feedbackOwners,
+  canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit, feedbackOwners, revisionTaskTitle,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,
   canGiveLensVerdict, canPassLens, approvalLadder,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
@@ -153,6 +153,15 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const el = chatRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chatCount, tab]);
+  /* Most feedback in this app is typed here, in the conversation — 13 of the
+   * last 14 feedback rows were chat messages, not revision requests. A message
+   * is deliberately not a job (postGraphicMessage leaves assignedTo blank), so
+   * every one of those said "แก้ตรงนี้ด้วยนะ" and produced no task for anyone,
+   * which is what "แก้ไม่ไหลกลับเข้า Task" means.
+   *
+   * This is the bridge: say it once, and tick the box when it is work. The
+   * message still reads as a message in the thread; what changes is that the
+   * person who has to act gets it on their board. */
   const sendMessage = async () => {
     const text = messageText.trim();
     if (!text || sendingMessage) return;
@@ -168,6 +177,28 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
         createdAtIso: new Date().toISOString(),
       }, ...fs]);
       setMessageText("");
+      if (asRevision) {
+        // Same audience rule as the two revision buttons — one helper, so the
+        // three ways of asking for a fix cannot tell three different people.
+        const owners = feedbackOwners(g, undefined, {
+          pool: productionOwners(workKind(g.type, g.requiredVideo)),
+          creativeLeader,
+        });
+        const owner = owners[0] ?? null;
+        if (owner) {
+          createRevisionTask({
+            module: "Graphic", title: revisionTaskTitle(g), assignee: owner,
+            brand: brandName(g.b), campaign: g.campaign, reason: text, by: currentUser,
+            relatedGraphicId: String(g.id),
+          }).catch((error) => toastError(`สร้าง task แก้งานไม่สำเร็จ: ${error?.message || "Unknown error"}`));
+        }
+        notify("rejected", `✏️ สั่งแก้: ${g.title}`,
+          `${text} · ถึง ${owner ?? "Creative"} · โดย ${currentUser}`,
+          workLink.graphicThread(g.id),
+          { team: graphicTeam(g), to: owners, inform: [g.requester, assignedBy(g)] });
+        toastSuccess(owner ? `ส่งเป็นงานแก้ให้ ${owner} แล้ว` : "ส่งข้อความแล้ว — ยังไม่มีคนรับงานนี้");
+        setAsRevision(false);
+      }
     } catch (error) {
       toastError(`ส่งข้อความไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setSendingMessage(false); }
@@ -232,6 +263,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // unassigned job used to reach only the requester (and nobody at all when
   // the requester was the one writing it).
   const productionOwners = useProductionOwners();
+  /** Send this message as a revision — creates the task and tells the person
+   *  who has to do it. Off by default: most messages are questions. */
+  const [asRevision, setAsRevision] = useState(false);
   useEffect(() => {
     let alive = true;
     fetchBrandConfigs().then((configs) => {
@@ -599,7 +633,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     // Bounce the revision into their My Tasks.
     if (owner) {
       createRevisionTask({
-        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${d.platform})`, assignee: owner,
+        module: "Graphic", title: revisionTaskTitle(g, d.platform), assignee: owner,
         brand: brandName(g.b), campaign: g.campaign, reason, by: currentUser, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
@@ -1274,15 +1308,23 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   })}
                 </div>
 
-                <div className="flex gap-2">
-                  <input value={messageText} onChange={(e) => setMessageText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                    placeholder="พิมพ์ข้อความ… (Enter เพื่อส่ง)"
-                    className="flex-1 text-[12.5px] px-[11px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none" />
-                  <button onClick={sendMessage} disabled={!messageText.trim() || sendingMessage}
-                    className="text-[12px] font-bold text-white rounded-[9px] px-4 disabled:opacity-40" style={{ background: "#211F1C" }}>
-                    {sendingMessage ? "…" : "ส่ง"}
-                  </button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input value={messageText} onChange={(e) => setMessageText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                      placeholder={asRevision ? "สิ่งที่ต้องแก้… (Enter เพื่อส่ง)" : "พิมพ์ข้อความ… (Enter เพื่อส่ง)"}
+                      className="flex-1 text-[12.5px] px-[11px] py-[9px] rounded-[9px] border border-line2 bg-ivory outline-none" />
+                    <button onClick={sendMessage} disabled={!messageText.trim() || sendingMessage}
+                      className="text-[12px] font-bold text-white rounded-[9px] px-4 disabled:opacity-40"
+                      style={{ background: asRevision ? "#B33A2E" : "#211F1C" }}>
+                      {sendingMessage ? "…" : asRevision ? "ส่งงานแก้" : "ส่ง"}
+                    </button>
+                  </div>
+                  {/* The bridge from "ว่ากันในแชต" to "อยู่ในลิสต์ของใครสักคน". */}
+                  <label className="flex items-center gap-[7px] text-[11.5px] text-muted cursor-pointer select-none">
+                    <input type="checkbox" checked={asRevision} onChange={(e) => setAsRevision(e.target.checked)} />
+                    <span>ส่งเป็น<b className="text-ink">งานแก้</b> — สร้าง Task ให้คนที่ต้องแก้ พร้อมแจ้งเตือน</span>
+                  </label>
                 </div>
               </div>
               <div className="rounded-card border border-line bg-ivory p-4">

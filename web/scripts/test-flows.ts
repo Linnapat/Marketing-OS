@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, threadAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, feedbackOwners, PRODUCTION_ROLES, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, threadAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, feedbackOwners, PRODUCTION_ROLES, revisionTaskTitle, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
 import { memberTeam, isAssignableMember } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -703,6 +703,15 @@ console.log("Artwork counting — by pixels, platform collapsed");
     // งานตัดต่อไปหา VDO Editor ไม่ใช่ดีไซเนอร์ — คนละสายงาน
     check("งาน VDO มีกลุ่มของตัวเอง", PRODUCTION_ROLES.vdo.join(",") === "VDO Editor");
     check("งานกราฟิกไปหาดีไซเนอร์", PRODUCTION_ROLES.graphic.includes("Senior Graphic Designer"));
+
+    // ชื่อ task ต้องบอกชนิดงาน — module ยังเป็น "Graphic" เหมือนกันหมด ถ้าไม่บอก
+    // ในชื่อ งานตัดต่อจะไปโผล่ใน My Tasks เหมือนงานวาดโปสเตอร์
+    check("งานตัดต่อขึ้นชื่อว่า VDO",
+      revisionTaskTitle({ title: "Kani Reel", type: "Reel", requiredVideo: true }, "TikTok") === "แก้งาน VDO — Kani Reel (TikTok)");
+    check("งานกราฟิกยังใช้คำเดิม",
+      revisionTaskTitle({ title: "Menu board", type: "In-Store" }, "In-store") === "แก้งานกราฟฟิก — Menu board (In-store)");
+    check("ไม่ระบุ platform ก็ไม่มีวงเล็บว่าง",
+      revisionTaskTitle({ title: "Kani Reel", type: "Reel" }) === "แก้งาน VDO — Kani Reel");
   }
 
   // งานเด้งกลับ = คนคุมคิวต้องรู้ด้วย ไม่ใช่รู้แค่คนแก้
