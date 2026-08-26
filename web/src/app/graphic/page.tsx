@@ -30,7 +30,8 @@ import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApproved
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { notify } from "@/lib/notify";
 import { graphicTeam } from "@/lib/notifyRouting";
-import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, monthKeyOf } from "@/components/ui/DateFilterBar";
+import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { mintId } from "@/lib/data/ids";
 import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -405,6 +406,9 @@ function GraphicPageInner() {
             </div>
           </div>
         </CampaignCommandBar>
+
+        {/* ประกาศเดดไลน์ — อ่านจากปฏิทินทีมที่เดียวกับทุกโมดูล */}
+        <DeadlineStrip forMonth={monthKeyOf(date)} />
 
         <FilterSummary outcome={outcome} onClear={clearFilters} noun="ใบงาน" />
 

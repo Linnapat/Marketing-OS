@@ -2,6 +2,8 @@
 
 import { toastError } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_DATE_FILTER, monthKeyOf } from "@/components/ui/DateFilterBar";
+import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { BrandFilterValue, BrandId, brandName } from "@/lib/brands";
@@ -441,6 +443,10 @@ export default function AssetLibraryPage() {
             </div>
           </div>
         </CampaignCommandBar>
+
+        {/* ประกาศเดดไลน์ — อ่านจากปฏิทินทีมที่เดียวกับทุกโมดูล
+            หน้านี้ไม่มีตัวกรองเดือนของตัวเอง จึงประกาศของเดือนปัจจุบัน */}
+        <DeadlineStrip forMonth={monthKeyOf(DEFAULT_DATE_FILTER)} />
 
         <ModuleSummaryCard title="Assets Summary">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
