@@ -16,8 +16,9 @@
 // back in the hole that notice was added to fix (PR #247).
 
 import { useEffect, useState } from "react";
-import { fetchMembers, fetchJsonSetting } from "@/lib/db/settings";
+import { fetchMembers, fetchJsonSetting, Member } from "@/lib/db/settings";
 import { roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
+import { PRODUCTION_ROLES, WorkKind } from "@/lib/data/graphic";
 
 /** The lead's name, or "" until the lookup lands (callers tolerate blank — the
  *  designer and requester are still told, only the "you owe a verdict" DM is
@@ -41,4 +42,19 @@ export function useCreativeLeader(): string {
     return () => { alive = false; };
   }, []);
   return name;
+}
+
+/** The people who could take an UNASSIGNED piece of work of this kind.
+ *
+ *  Same reason the lead is resolved by name above: a notification cannot be
+ *  addressed to "VDO Editor". Returns [] until the member list lands, which
+ *  callers tolerate — feedbackOwners falls through to the Creative Leader. */
+export function useProductionOwners(): (kind: WorkKind) => string[] {
+  const [members, setMembers] = useState<Member[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchMembers().then((ms) => { if (alive) setMembers(ms); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return (kind: WorkKind) => roleHolders(members, PRODUCTION_ROLES[kind] ?? []);
 }

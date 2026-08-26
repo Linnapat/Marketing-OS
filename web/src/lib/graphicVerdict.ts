@@ -17,8 +17,8 @@
 
 import {
   Graphic, GraphicDeliverable, ReviewLens, LENS_META,
-  applyLensVerdict, deliverableProgress, stageFromDeliverables, revisionAssignee, assignedBy,
-  reviewProgress,
+  applyLensVerdict, deliverableProgress, stageFromDeliverables, assignedBy,
+  reviewProgress, feedbackOwners, revisionTaskTitle,
   storyboardAuthor,
 } from "@/lib/data/graphic";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
@@ -73,7 +73,7 @@ export function persistGraphicDeliverables(
  *  Callers pass the deliverables they are holding: the drawer edits a local
  *  copy before saving, and handing `g.deliverables` in from a list would throw
  *  that away. */
-export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, creativeLeader, onUpdate }: {
+export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, creativeLeader, productionOwners, onUpdate }: {
   g: Graphic;
   deliverables: GraphicDeliverable[];
   index: number;
@@ -86,6 +86,10 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
    *  tolerated (the notice still reaches the designer and requester), but a
    *  caller that can resolve it should. */
   creativeLeader?: string;
+  /** People who could take the piece when the request names nobody — see
+   *  feedbackOwners. Without it an unassigned job's revision reaches only the
+   *  requester, and nobody at all when the requester is the one who wrote it. */
+  productionOwners?: string[];
   onUpdate?: (g: Graphic) => void;
 }): Graphic | null {
   const before = deliverables[index];
@@ -102,11 +106,13 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
     // of feedback — every entry stamped in this round, both lenses.
     const lastAt = after.feedback.at(-1)?.at;
     const said = after.feedback.filter((f) => f.at === lastAt).map((f) => `[${LENS_META[f.lens ?? "info"].short}] ${f.reason}`).join(" · ");
-    // The person who submitted this piece — see revisionAssignee.
-    const owner = revisionAssignee(g, before);
+    // The person who submitted this piece, or — when the request names nobody
+    // — whoever could pick it up. See feedbackOwners.
+    const owners = feedbackOwners(g, before, { pool: productionOwners, creativeLeader });
+    const owner = owners[0] ?? null;
     if (owner) {
       createRevisionTask({
-        module: "Graphic", title: `แก้งานกราฟฟิก — ${g.title} (${before.platform})`, assignee: owner,
+        module: "Graphic", title: revisionTaskTitle(g, before.platform), assignee: owner,
         brand: brandName(g.b), campaign: g.campaign, reason: said, by: me, relatedGraphicId: String(g.id),
       }).catch((error) => toastError(`สร้าง task แก้ Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
@@ -116,7 +122,7 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
       // gone back by opening the drawer and noticing, and the Creative Leader
       // juggling the queue never learned at all. Neither has to act on it, so
       // neither gets interrupted.
-      workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
+      workLink.graphic(g.id), { team: graphicTeam(g), to: owners, inform: [g.requester, assignedBy(g)] });
   } else {
     // Half a review told NOBODY anything, and that is where pieces went to sit.
     // A designer heard "มีแก้กลับไปนะคะ" in Slack, opened the request, found
@@ -139,7 +145,8 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
         // one interrupted. The designer and the requester get it in the bell:
         // there is nothing for them to do until the round closes, but "a
         // revision is coming" beats hearing it from a colleague on Slack.
-        { team: graphicTeam(g), to: owes.filter(Boolean) as string[], inform: [revisionAssignee(g, before), g.requester] });
+        { team: graphicTeam(g), to: owes.filter(Boolean) as string[],
+          inform: [...feedbackOwners(g, before, { pool: productionOwners, creativeLeader }), g.requester] });
     }
   }
   return saved;

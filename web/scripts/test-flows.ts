@@ -13,7 +13,7 @@ import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSum
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
   awaitsStoryboardDecision, awaitsArtworkReview, briefChangeAudience, creativeBriefDetails,
-  assignedShoots, withShootMoved, withShooterAssigned, threadAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
+  assignedShoots, withShootMoved, withShooterAssigned, threadAudience, isMessage, MESSAGE_TYPE, storyboardAuthor, revisionAssignee, feedbackOwners, PRODUCTION_ROLES, revisionTaskTitle, assignedBy, briefFixRequestedBy, awaitsBriefUnlockDecision } from "../src/lib/data/graphic";
 import { memberTeam, isAssignableMember } from "../src/components/ui/OwnerSelect";
 
 let pass = 0, fail = 0;
@@ -681,6 +681,37 @@ console.log("Artwork counting — by pixels, platform collapsed");
     check("ส่ง footage → ถึงคนที่รับงาน", revisionAssignee({ acceptedBy: "Aom", designer: "Boss" }) === "Aom");
     check("ไม่มีคนรับงาน → ชื่อบนใบงาน", revisionAssignee({ acceptedBy: "", designer: "Boss" }) === "Boss");
     check("ไม่มีใครเลย → null (ไม่แจ้งผิดคน)", revisionAssignee({ acceptedBy: "", designer: "Unassigned" }) === null);
+  }
+
+  // ฟีดแบคบนงานที่ยังไม่มีคนทำ ต้องไม่เงียบหายไปทั้งใบ
+  // (26/8/26: 25 จาก 71 ใบงาน VDO ที่เปิดอยู่เป็น "Unassigned" — ฟีดแบคไปถึงแค่
+  //  ผู้ขอเปิดงาน และถ้าคนพิมพ์ฟีดแบค *คือ* ผู้ขอเอง API กรอง actor ทิ้ง เหลือศูนย์คน:
+  //  ไม่มี DM ไม่มีกระดิ่ง ไม่มี task)
+  {
+    const none = { acceptedBy: "", designer: "Unassigned" };
+    check("มีชื่อบนใบงาน → คนนั้นคนเดียว",
+      feedbackOwners({ acceptedBy: "", designer: "Four" }, undefined, { pool: ["Four", "Jeeno"], creativeLeader: "Pichayaporn" }).join(",") === "Four");
+    check("คนส่งชิ้นงานมาก่อนชื่อบนใบงาน",
+      feedbackOwners({ acceptedBy: "Aom", designer: "Boss" }, { submittedBy: "GID" }, {}).join(",") === "GID");
+    check("ไม่มีใครบนใบงาน → ถึงคนที่รับงานนี้ได้ทั้งกลุ่ม",
+      feedbackOwners(none, undefined, { pool: ["Four", "Jeeno"], creativeLeader: "Pichayaporn" }).join(",") === "Four,Jeeno");
+    check("ไม่มีทั้งชื่อและกลุ่ม → ตกที่คนแจกงาน",
+      feedbackOwners(none, undefined, { creativeLeader: "Pichayaporn" }).join(",") === "Pichayaporn");
+    check("Unassigned ในกลุ่มไม่นับเป็นคน",
+      feedbackOwners(none, undefined, { pool: ["Unassigned", " "], creativeLeader: "Pichayaporn" }).join(",") === "Pichayaporn");
+    check("ไม่มีอะไรเลย → ว่าง (ไม่เดาชื่อ)", feedbackOwners(none, undefined, {}).length === 0);
+    // งานตัดต่อไปหา VDO Editor ไม่ใช่ดีไซเนอร์ — คนละสายงาน
+    check("งาน VDO มีกลุ่มของตัวเอง", PRODUCTION_ROLES.vdo.join(",") === "VDO Editor");
+    check("งานกราฟิกไปหาดีไซเนอร์", PRODUCTION_ROLES.graphic.includes("Senior Graphic Designer"));
+
+    // ชื่อ task ต้องบอกชนิดงาน — module ยังเป็น "Graphic" เหมือนกันหมด ถ้าไม่บอก
+    // ในชื่อ งานตัดต่อจะไปโผล่ใน My Tasks เหมือนงานวาดโปสเตอร์
+    check("งานตัดต่อขึ้นชื่อว่า VDO",
+      revisionTaskTitle({ title: "Kani Reel", type: "Reel", requiredVideo: true }, "TikTok") === "แก้งาน VDO — Kani Reel (TikTok)");
+    check("งานกราฟิกยังใช้คำเดิม",
+      revisionTaskTitle({ title: "Menu board", type: "In-Store" }, "In-store") === "แก้งานกราฟฟิก — Menu board (In-store)");
+    check("ไม่ระบุ platform ก็ไม่มีวงเล็บว่าง",
+      revisionTaskTitle({ title: "Kani Reel", type: "Reel" }) === "แก้งาน VDO — Kani Reel");
   }
 
   // งานเด้งกลับ = คนคุมคิวต้องรู้ด้วย ไม่ใช่รู้แค่คนแก้
