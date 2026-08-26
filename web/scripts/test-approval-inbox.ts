@@ -410,5 +410,26 @@ is("สามอันขึ้นครบ", platformLabel(["Facebook", "Instag
 is("เกินสามอันย่อ", platformLabel(["Facebook", "Instagram", "TikTok", "LINE OA"]), "Facebook · Instagram +2");
 is("ไม่มีเลยใช้ค่าสำรอง", platformLabel([], "Instagram"), "Instagram");
 
+console.log("\n— แถวต้องบอกชื่อคนที่กดได้จริง —");
+{
+  const named = ctx("CMO", "Aran P.", { creativeLeader: "Pichayaporn", cmoName: "Gik" });
+  const g = req({ requester: "Pichayaporn" });
+  const rows = selectGraphicApprovals([g], named);
+  is("ด้าน CI ปกติชี้ที่ Creative Leader",
+    rows.find((r) => r.kind === "artwork" && r.lens === "ci")?.waitingOn, "Pichayaporn");
+
+  // เคสที่รายงานมา: Creative Leader เป็นผู้ขอเปิดงานเอง เซ็นด้านข้อมูลไปแล้ว
+  const blocked = req({
+    requester: "Pichayaporn",
+    deliverables: [submitted({ review: { info: { verdict: "pass", by: "Pichayaporn", at: "2026-08-26T09:00:00Z" } } })],
+  });
+  const ciRow = selectGraphicApprovals([blocked], named).find((r) => r.kind === "artwork" && r.lens === "ci");
+  is("เซ็นอีกด้านไปแล้ว → แถวชี้ไปที่ CMO ไม่ใช่คนที่กดไม่ได้", ciRow?.waitingOn, "Gik");
+  // ยังไม่รู้ชื่อใครเลย (member list ยังไม่มา) → ถอยไปใช้ชื่อ role เหมือนเดิม
+  const anon = selectGraphicApprovals([blocked], ctx("CMO", "Aran P."))
+    .find((r) => r.kind === "artwork" && r.lens === "ci");
+  is("ยังไม่รู้ชื่อ → ใช้ชื่อตำแหน่งเหมือนเดิม", anon?.waitingOn, "Creative Leader");
+}
+
 console.log(`\n${fail === 0 ? "✓" : "✗"} approval inbox: ${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

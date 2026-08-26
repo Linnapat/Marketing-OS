@@ -22,7 +22,7 @@ import { GRAPHIC_OPEN_PARAM,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
-  MESSAGE_TYPE, isMessage, threadAudience, workKind,
+  MESSAGE_TYPE, isMessage, threadAudience, workKind, lensAskWho,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { decideStoryboard as decideStoryboardShared, giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
@@ -48,7 +48,7 @@ import { monthServedByFinalAw } from "@/lib/data/deadlinePolicy";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
-import { useProductionOwners } from "@/lib/useCreativeLeader";
+import { useProductionOwners, useCmoName } from "@/lib/useCreativeLeader";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 export type GTab = (typeof TABS)[number][0];
@@ -1671,6 +1671,8 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
   // threaded down, so the editor and the drawer's feedback box tell the same
   // people.
   const productionOwners = useProductionOwners();
+  // Who covers a lens its owner may not give — see lensAskWho.
+  const cmoName = useCmoName();
   // Sign-off is now two checks, asked per lens inside each row — see
   // canGiveLensVerdict. Everyone else sees the artwork and who it waits on.
   // Production is on hold while an urgent brief is unresolved (or refused).
@@ -1730,7 +1732,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
    *  a verdict exactly the way this drawer does. */
   const giveVerdict = (i: number, lens: ReviewLens, verdict: "pass" | "revise", note?: string) => {
     const ng = giveLensVerdict({
-      g, deliverables: dels, index: i, lens, verdict, me, note, creativeLeader,
+      g, deliverables: dels, index: i, lens, verdict, me, note, creativeLeader, cmoName,
       productionOwners: productionOwners(workKind(g.type, g.requiredVideo)), onUpdate,
     });
     if (!ng) return;
@@ -1903,13 +1905,22 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                                 )}
                               </div>
                             ))}
-                            {!v && !mayAct && (
-                              <div className="text-[11px] text-faint mt-1">
-                                {/* Naming who it is on beats a bare "no permission" — the
-                                    point of the row is to show who to chase. */}
-                                รอ {lens === "info" ? `${g.requester || "ผู้ขอเปิดงาน"} / Marketing Manager` : "Creative Leader"} ตรวจ
-                              </div>
-                            )}
+                            {!v && !mayAct && (() => {
+                              /* Naming who it is on beats a bare "no permission" — the
+                                 point of the row is to show who to chase. And it has to
+                                 be someone who CAN: the owner of a lens may be barred
+                                 from their own (they submitted it, or they signed the
+                                 other one), and naming them anyway is how 23 pieces
+                                 ended up waiting on a person the rules forbid. */
+                              const ask = lensAskWho(lens, d, { requester: g.requester, creativeLeader, cmo: cmoName });
+                              return (
+                                <div className="text-[11px] text-faint mt-1">
+                                  {ask.name
+                                    ? <>รอ {ask.name} ตรวจ{ask.covering ? ` (แทน${lens === "info" ? "ผู้ขอเปิดงาน" : "Creative Leader"} ซึ่ง${ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้" : "เซ็นอีกด้านไปแล้ว"})` : ""}</>
+                                    : <>ยังไม่มีใครตรวจด้านนี้ได้ — คนที่ดูแลด้านนี้{ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้เอง" : "เซ็นอีกด้านไปแล้ว"} ต้องเพิ่มคนใน Settings</>}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -1929,7 +1940,10 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                           style={said ? { background: "#FFF7ED", color: "#8A5418" } : { background: "#F6F5FA", color: "#706A84" }}>
                           {said
                             ? <>มีรายการให้แก้จาก <b>{LENS_META[inLens].label}</b> แล้ว — ยังส่งงานใหม่ไม่ได้จนกว่า <b>{LENS_META[waiting].owner}</b> จะตรวจ <b>{LENS_META[waiting].label}</b> เสร็จ ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ</>
-                            : <><b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน</>}
+                            : (() => {
+                                const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName });
+                                return <><b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{ask.name ?? LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน{ask.covering && ask.name ? ` · ${LENS_META[waiting].owner} ตรวจเองไม่ได้ (${ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้" : "เซ็นอีกด้านไปแล้ว"})` : ""}</>;
+                              })()}
                         </div>
                       );
                     })()}

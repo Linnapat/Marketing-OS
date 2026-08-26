@@ -34,7 +34,7 @@ import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
 import type { Graphic, GraphicDeliverable, ReviewLens, WorkKind } from "@/lib/data/graphic";
 import {
-  REVIEW_LENSES, LENS_META, normSize, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
+  REVIEW_LENSES, LENS_META, normSize, lensAskWho, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
 import { captionAwaitsApproval, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
@@ -173,6 +173,10 @@ export interface ApprovalCtx {
    *  "everyone sees everything" rule does not cover — see the expense loop. */
   canSeeSpending: boolean;
   canEditContentPlan: boolean;
+  /** Resolved by name, so a row can say who to chase rather than which role.
+   *  Blank until the member list lands — callers fall back to the role name. */
+  creativeLeader?: string;
+  cmoName?: string;
   isVisible: (b: BrandId) => boolean;
   /** Task rows carry a brand LABEL, not a BrandId, so they need their own test. */
   canSeeBrandLabel: (label?: string | null) => boolean;
@@ -265,9 +269,14 @@ export function selectGraphicApprovals(
           canAct: canPass,
           submittedBy: firstName(d.submittedBy, g.designer),
           postDate,
-          // The data check is the requester's by name; Visual CI belongs to the
-          // Creative Leader as a role, and no row names one.
-          waitingOn: lens === "info" ? firstName(g.requester, "สาย Marketing") : "Creative Leader",
+          // Whoever can actually give it — the lens owner unless the rules bar
+          // them from their own lens (they submitted it, or they signed the
+          // other one), in which case the person covering. A queue that names
+          // somebody who may not press the button is a queue that does not move.
+          waitingOn: firstName(
+            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName }).name,
+            lens === "info" ? "สาย Marketing" : "Creative Leader",
+          ),
         });
       }
     }

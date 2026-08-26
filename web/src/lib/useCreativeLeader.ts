@@ -58,3 +58,20 @@ export function useProductionOwners(): (kind: WorkKind) => string[] {
   }, []);
   return (kind: WorkKind) => roleHolders(members, PRODUCTION_ROLES[kind] ?? []);
 }
+
+/** The CMO, by name — the person who covers a lens its owner may not give.
+ *
+ *  Needed on screen as well as in the notification: a card that says "รอ
+ *  Creative Leader ตรวจ" when the Creative Leader is the one who raised the
+ *  brief names somebody the rules forbid from moving it. */
+export function useCmoName(): string {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    let alive = true;
+    fetchMembers()
+      .then((ms) => { if (alive) setName(roleHolders(ms, ["CMO"])[0] ?? ""); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return name;
+}

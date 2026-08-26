@@ -10,7 +10,7 @@
 
 import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
-  applyLensVerdict, rejectionsByLens, emptyDeliverable, approvalLadder,
+  applyLensVerdict, rejectionsByLens, emptyDeliverable, approvalLadder, lensAskWho,
   creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS, approvedAssetRow,
   relocateApprovedAsset,
   type Graphic, type GraphicDeliverable,
@@ -261,6 +261,39 @@ console.log("\n— บันไดอนุมัติที่แท็บ App
   // แบรนด์ที่ไม่มี brand lead: ขั้นไม่หาย และไม่ตั้งคนแทน
   const noLead = approvalLadder([submitted()], { ...who, brandLead: null });
   is("ไม่มี brand lead → ด้านข้อมูลยังอยู่ รอผู้ขอคนเดียว", noLead[1].person, "Ken S.");
+}
+
+console.log("\n— ถามใครได้จริง เมื่อเจ้าของด้านนั้นตรวจเองไม่ได้ —");
+{
+  const who = { requester: "Pichayaporn", creativeLeader: "Pichayaporn", cmo: "Gik" };
+  // ปกติ: เจ้าของด้านนั้นเอง
+  const fresh = submitted({ submittedBy: "GID" });
+  is("ด้านข้อมูลถามผู้ขอเปิดงาน", lensAskWho("info", fresh, who).name, "Pichayaporn");
+  is("ด้าน CI ถาม Creative Leader", lensAskWho("ci", fresh, who).name, "Pichayaporn");
+  is("ปกติไม่ใช่การเซ็นแทน", lensAskWho("ci", fresh, who).covering, false);
+
+  /* เคสที่รายงานมา: Creative Leader เป็นคนบรีฟงานเอง เซ็นด้านข้อมูลไปแล้ว
+     ด้าน CI จึงตรวจเองไม่ได้ (กติกาห้ามคนเดียวเซ็นสองด้าน) — หน้าจอเดิมยังขึ้นว่า
+     "รอ Creative Leader ตรวจ" และเตือนไปหาเธอ = งานค้างรอคนที่กติกาห้ามขยับ */
+  const infoDone = submitted({ submittedBy: "GID", review: { info: { verdict: "pass", by: "Pichayaporn", at: "2026-08-26T09:49:00Z" } } });
+  const ask = lensAskWho("ci", infoDone, who);
+  is("เซ็นอีกด้านไปแล้ว → ตกไปที่ CMO", ask.name, "Gik");
+  is("…และบอกว่าเป็นการเซ็นแทน", ask.covering, true);
+  is("…พร้อมเหตุผลว่าทำไมเจ้าของตรวจไม่ได้", ask.reason, "gaveOther");
+
+  // คนส่งงานเองก็ตรวจงานตัวเองไม่ได้
+  const selfSubmitted = submitted({ submittedBy: "Pichayaporn" });
+  is("คนส่งงานเอง → ตกไปที่ CMO", lensAskWho("ci", selfSubmitted, who).name, "Gik");
+  is("…เหตุผลคือเป็นคนส่งเอง", lensAskWho("ci", selfSubmitted, who).reason, "submitted");
+
+  // CMO ก็ติดกฎเดียวกัน ถ้าเซ็นอีกด้านไปแล้วก็คลุมไม่ได้
+  const cmoGaveInfo = submitted({ submittedBy: "GID", review: { info: { verdict: "pass", by: "Gik", at: "2026-08-26T09:49:00Z" } } });
+  is("CMO เซ็นอีกด้านไปแล้ว → ไม่มีใครตรวจได้", lensAskWho("ci", cmoGaveInfo, { ...who, creativeLeader: "Gik" }).name, null);
+
+  // ไม่รู้จัก CMO (ยังโหลดไม่เสร็จ) → บอกว่าไม่มีใคร ดีกว่าชี้คนที่กดไม่ได้
+  is("ไม่มีชื่อ CMO → null ไม่เดา", lensAskWho("ci", infoDone, { ...who, cmo: "" }).name, null);
+  is("ไม่มีคนดูแลด้านนั้นเลย → ตกไปที่ CMO", lensAskWho("ci", fresh, { ...who, creativeLeader: "" }).name, "Gik");
+  is("Unassigned ไม่นับเป็นคน", lensAskWho("ci", fresh, { ...who, creativeLeader: "Unassigned" }).name, "Gik");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

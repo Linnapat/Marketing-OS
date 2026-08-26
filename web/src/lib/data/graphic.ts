@@ -1294,6 +1294,57 @@ export function canPassLens(
   return canGiveLensVerdict(lens, ctx) && !samePerson(ctx.deliverable.submittedBy, ctx.me);
 }
 
+/** Who to ASK for a verdict that is still outstanding.
+ *
+ *  The lens has an owner — the requester checks the data, the Creative Leader
+ *  checks CI — but the two rules that make this a two-person review can leave
+ *  that owner unable to answer their own lens: they submitted the piece, or
+ *  they already gave the OTHER verdict. When that happens the screen used to go
+ *  on naming them ("รอ Creative Leader ตรวจ") and the reminder was sent to them,
+ *  so the piece waited on the one person the rules forbid from moving it.
+ *
+ *  That is not a rare corner. The team has one Creative Leader, she raises most
+ *  of the briefs herself, and 23 pieces were sitting in exactly this state the
+ *  day it was reported: info signed by her as requester, CI open, waiting on
+ *  her as Creative Leader.
+ *
+ *  So: name the stand-in instead. The CMO covers either lane (canGiveLensVerdict
+ *  says so already) — what was missing was anything on screen, or in anyone's
+ *  inbox, that said so. */
+export interface LensAsk {
+  /** Who can actually give it. Null when nobody named here may — an honest
+   *  dead end is better than a name that cannot act on it. */
+  name: string | null;
+  /** The owner is out and this is the person covering for them. */
+  covering: boolean;
+  /** Why the owner is out, for the line that explains the wait. */
+  reason: "" | "submitted" | "gaveOther";
+}
+
+export function lensAskWho(
+  lens: ReviewLens,
+  d: Pick<GraphicDeliverable, "review" | "submittedBy">,
+  who: { requester?: string | null; creativeLeader?: string | null; cmo?: string | null },
+): LensAsk {
+  const owner = ((lens === "info" ? who.requester : who.creativeLeader) ?? "").trim();
+  const other = d.review?.[lens === "info" ? "ci" : "info"];
+  const blocked = (name: string): LensAsk["reason"] => {
+    if (!name) return "";
+    if (samePerson(name, d.submittedBy)) return "submitted";
+    if (samePerson(name, other?.by)) return "gaveOther";
+    return "";
+  };
+  const ownerReason = blocked(owner);
+  if (owner && owner !== "Unassigned" && !ownerReason) {
+    return { name: owner, covering: false, reason: "" };
+  }
+  const cmo = (who.cmo ?? "").trim();
+  // The stand-in is subject to the same two rules — a CMO who signed the other
+  // lens cannot cover this one either.
+  if (cmo && !blocked(cmo)) return { name: cmo, covering: true, reason: ownerReason };
+  return { name: null, covering: true, reason: ownerReason };
+}
+
 export interface ReviewProgress {
   given: number;
   total: number;
