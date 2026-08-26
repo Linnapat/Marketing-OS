@@ -1,6 +1,7 @@
 // Data access for Content Calendar. Rich objects are stored whole in the
 // `data` jsonb column, so every UI field round-trips losslessly.
 
+import { pgSafeText, pgSafeDeep } from "@/lib/pgText";
 import { supabase } from "@/lib/supabase";
 import type { AdoptablePost } from "@/lib/data/fanoutAdopt";
 import { CONTENT, ContentItem, contentApproveBlockers, canPublish } from "@/lib/data/content";
@@ -49,7 +50,7 @@ export async function createContent(input: ContentItem): Promise<ContentItem> {
   const { data, error } = await db.from("content_posts").insert({
     title: post.title, brand: post.b, campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
     platforms: post.platforms ?? [post.plat], status: post.status, day: post.day, time: post.time,
-    owner: post.owner, caption: post.caption, data: post,
+    owner: post.owner, caption: pgSafeText(post.caption ?? ""), data: pgSafeDeep(post),
   }).select("id").single();
   if (error || !data) throw new Error(error?.message || "Could not save content post to Supabase");
   if (post.id) return post;
@@ -185,8 +186,11 @@ export async function updateContent(post: ContentItem): Promise<void> {
       title: post.title, brand: post.b,
       campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
       platforms: post.platforms ?? [post.plat], status: post.status,
-      day: post.day, time: post.time, owner: post.owner, caption: post.caption,
-      data: post,
+      // A caption is pasted more often than typed; an invisible NUL from a doc
+      // or a chat window fails the whole update (22P05, "unsupported Unicode
+      // escape sequence") with nothing on screen to explain it.
+      day: post.day, time: post.time, owner: post.owner, caption: pgSafeText(post.caption ?? ""),
+      data: pgSafeDeep(post),
     })
     .eq("data->>id", post.id)
     .select("id");

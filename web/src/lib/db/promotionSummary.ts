@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { assertDbOk } from "@/lib/db/assert";
+import { pgSafeText } from "@/lib/pgText";
 import type { BrandId } from "@/lib/brands";
 import type {
   OmdStorePromotion,
@@ -37,14 +38,18 @@ const toPromotion = (row: Row): OmdStorePromotion => ({
   hidden: row.hidden ?? false,
 });
 
+/* Cleaned on the way in, not on the way out: a promotion is pasted from Excel
+ * or a PDF menu more often than it is typed, and one invisible NUL in any of
+ * these fields fails the whole write with "unsupported Unicode escape
+ * sequence" — the error Pupay hit, with nothing on screen to explain it. */
 const toRow = (item: OmdStorePromotion): Row => ({
   id: item.id,
   brand: item.brand,
   category: item.category,
-  title: item.title,
-  description: item.description,
-  pos_name: item.posName || null,
-  branches: item.branches,
+  title: pgSafeText(item.title),
+  description: pgSafeText(item.description),
+  pos_name: pgSafeText(item.posName) || null,
+  branches: item.branches.map(pgSafeText),
   start_date: item.startDate,
   end_date: item.endDate ?? null,
   status: item.status,

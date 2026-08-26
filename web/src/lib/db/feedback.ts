@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { KOL_COMMENTS, KolComment } from "@/lib/data/kol";
 import { FEEDBACK, Feedback } from "@/lib/data/graphic";
 import { logAudit } from "@/lib/db/audit";
+import { pgSafeText } from "@/lib/pgText";
 
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -40,7 +41,7 @@ export async function addKolComment(kolId: number, c: {
   const db = supabase();
   if (!db) return null;
   const { data, error } = await db.from("kol_comments").insert({
-    kol_id: kolId, type: c.type, text: c.text, owner: c.owner, owner_team: c.ownerTeam ?? null,
+    kol_id: kolId, type: c.type, text: pgSafeText(c.text), owner: c.owner, owner_team: c.ownerTeam ?? null,
     owner_color: c.ownerColor ?? "#9A9387", assigned_to: c.assignedTo ?? null, related_item: c.relatedItem ?? null, due: c.due ?? null,
   }).select("*").single();
   if (error || !data) throw error ?? new Error("insert failed");
@@ -82,7 +83,9 @@ export async function addGraphicFeedback(gid: number, f: {
   if (!db) return null;
   const { data, error } = await db.from("graphic_feedback").insert({
     gid, owner: f.owner, team: f.team ?? null, owner_color: f.ownerColor ?? "#9A9387", type: f.type,
-    text: f.text, version: f.version ?? null, assigned_to: f.assignedTo ?? null, due: f.due ?? null,
+    // Cleaned on the way in: feedback and chat are pasted as often as typed,
+    // and one invisible NUL from an Excel copy fails the whole insert (22P05).
+    text: pgSafeText(f.text), version: f.version ?? null, assigned_to: f.assignedTo ?? null, due: f.due ?? null,
   }).select("*").single();
   if (error || !data) throw error ?? new Error("insert failed");
   return {
