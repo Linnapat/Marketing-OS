@@ -40,10 +40,14 @@ type ThreadState = "loading" | "error" | { rows: Feedback[]; people: string[] };
 
 const threadCacheKey = (t: InboxThread) => `${t.key}@${t.lastAt}`;
 
-export function NotificationBell({ collapsed, tone = "dark" }: {
+export function NotificationBell({ collapsed, tone = "dark", hideApprovals = false }: {
   collapsed?: boolean;
   /** "dark" for the navy sidebar, "light" for a white page header. */
   tone?: "dark" | "light";
+  /** Leave the รออนุมัติ tab out entirely, for people who decide nothing —
+   *  an external agency. An empty tab is not the same as no tab: the empty one
+   *  still has to read six tables to prove it is empty. */
+  hideApprovals?: boolean;
 }) {
   const { items, unread, markRead } = useNotifications();
   const [open, setOpen] = useState(false);
@@ -59,6 +63,8 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
     isOutsourceRole(people.find((m) => isSamePerson(name, personKeys(memberRef(m))))?.role);
 
   const threads = useMemo(() => conversationThreads(items), [items]);
+  // A tab that is not offered must not still be showing.
+  const shown: View = hideApprovals && view === "approvals" ? "all" : view;
 
   useEffect(() => {
     if (!open) return;
@@ -142,16 +148,17 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
               {/* รออนุมัติ carries no number: the count is only knowable after
                   the queue is read, and reading it to print a badge is the
                   poll-on-every-page cost this tab is lazy to avoid. */}
-              {([["all", "แจ้งเตือน", unread.length], ["threads", "บทสนทนา", threads.length], ["approvals", "รออนุมัติ", 0]] as const).map(([id, label, count]) => (
+              {([["all", "แจ้งเตือน", unread.length], ["threads", "บทสนทนา", threads.length],
+                ...(hideApprovals ? [] : [["approvals", "รออนุมัติ", 0] as const])] as const).map(([id, label, count]) => (
                 <button key={id} onClick={() => setView(id)}
                   className={`flex items-center gap-[6px] text-[12px] font-bold px-[11px] py-[6px] rounded-[9px] transition ${
-                    view === id ? "text-ink" : "text-faint hover:text-muted"
+                    shown === id ? "text-ink" : "text-faint hover:text-muted"
                   }`}
-                  style={view === id ? { background: "#F4EFE5" } : undefined}>
+                  style={shown === id ? { background: "#F4EFE5" } : undefined}>
                   {label}
                   {count > 0 && (
                     <span className="text-[10px] font-bold px-[5px] py-[1px] rounded-pill"
-                      style={{ background: view === id ? "#fff" : "#F4EFE5", color: "#8A879A" }}>{count}</span>
+                      style={{ background: shown === id ? "#fff" : "#F4EFE5", color: "#8A879A" }}>{count}</span>
                   )}
                 </button>
               ))}
@@ -161,9 +168,9 @@ export function NotificationBell({ collapsed, tone = "dark" }: {
               {/* Mounted only while its tab is open: the six reads behind an
                   approval queue are not something a bell should pay for on
                   every page just in case somebody presses it. */}
-              {view === "approvals" ? (
+              {shown === "approvals" ? (
                 <BellApprovals onNavigate={() => setOpen(false)} />
-              ) : view === "all" ? (
+              ) : shown === "all" ? (
                 items.length === 0 ? (
                   <div className="px-4 py-10 text-center text-[12px] text-faint">ไม่มีอะไรค้างอยู่ 🌿</div>
                 ) : (

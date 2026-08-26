@@ -3,7 +3,6 @@
 import { toastError } from "@/lib/toast";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { TASKS, Task, CELEBRATIONS, daysUntilDue, isDueThisWeek, byDueThenPriority } from "@/lib/data/tasks";
 import { fetchTasks, createTaskDb, reassignDb, updateTaskDb } from "@/lib/db/tasks";
 import { mintId } from "@/lib/data/ids";
@@ -18,14 +17,14 @@ import { BRANDS, BrandId, brandName } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
-import { notifMeta, pushNotifications } from "@/lib/db/notifications";
-import { useNotifications } from "@/lib/useNotifications";
+import { pushNotifications } from "@/lib/db/notifications";
 
 
 import { optimistic } from "@/lib/optimistic";
 import { approveTask } from "@/lib/taskApproval";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { ApprovalInbox } from "@/components/approvals/ApprovalInbox";
+import { UnreadPanel } from "@/components/shell/UnreadPanel";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic, Feedback, isMessage, threadAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
@@ -159,7 +158,6 @@ function MyTasksPageInner() {
   const openGraphicAt = (id: number, tab: GTab = "brief") => { setGraphicOpenId(id); setGraphicOpenTab(tab); };
   // Same rows the sidebar bell reads — one shared inbox, or the two drift and
   // a bell saying 3 sits above a list showing 1.
-  const { unread, markRead } = useNotifications();
   // /my-tasks?task=<id> — arriving from a Slack DM or the email about this one
   // card. `tasksLoaded` exists because `tasks` starts as the bundled demo seed:
   // a non-empty list says nothing about whether the real rows are in, and
@@ -385,52 +383,8 @@ function MyTasksPageInner() {
 
       {view === "work" && (
         <div className="flex flex-col gap-[18px]">
-          {/* The inbox. Comments and sent-back work used to go only to a LINE
-              group and an inbox nobody opened, so the person they were for had
-              nothing on their own screen — which is exactly how it was
-              reported: "My Tasks ไม่ขึ้นเตือนเมื่อมีคอมเมนต์หรือตีกลับงาน". */}
-          {unread.length > 0 && (
-            <div className="rounded-[18px] overflow-hidden" style={{ border: "1px solid #F0D5BC" }}>
-              <div className="flex items-center gap-2 px-5 py-3" style={{ background: "#FBF1E9" }}>
-                <span className="text-[15px]">🔔</span>
-                <span className="text-[13px] font-bold text-ink">ยังไม่ได้อ่าน</span>
-                <span className="text-[11.5px] font-bold px-[9px] py-[2px] rounded-pill" style={{ background: "#B33A2E", color: "#fff" }}>{unread.length}</span>
-                <button onClick={() => markRead(unread.map((n) => n.id))}
-                  className="ml-auto text-[11.5px] font-bold text-muted border border-line2 rounded-[8px] px-3 py-[5px] bg-white">
-                  อ่านทั้งหมดแล้ว
-                </button>
-              </div>
-              <div className="bg-white">
-                {unread.slice(0, 8).map((n) => {
-                  const meta = notifMeta(n.event);
-                  return (
-                    <div key={n.id} className="flex items-start gap-3 px-5 py-[11px]" style={{ borderTop: "1px solid #F4EFE5" }}>
-                      <span className="text-[14px] mt-[1px]">{meta.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[12.5px] font-bold text-ink">{n.title}</div>
-                        {n.detail && <div className="text-[11.5px] text-muted leading-[1.45]">{n.detail}</div>}
-                        <div className="text-[10.5px] text-faint mt-[2px]">
-                          {meta.label}{n.actor ? ` · โดย ${n.actor}` : ""} · {new Date(n.createdAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {n.link && (
-                          <Link href={n.link} onClick={() => markRead([n.id])}
-                            className="text-[11.5px] font-bold text-accent whitespace-nowrap">เปิดดู →</Link>
-                        )}
-                        <button onClick={() => markRead([n.id])} className="text-[11px] text-faint whitespace-nowrap">อ่านแล้ว</button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {unread.length > 8 && (
-                  <div className="px-5 py-2 text-[11px] text-faint" style={{ borderTop: "1px solid #F4EFE5" }}>
-                    และอีก {unread.length - 8} รายการ
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          {/* The inbox, shared with the Agency Portal — see UnreadPanel. */}
+          <UnreadPanel />
 
           {/* BENTO (greeting card removed per request) */}
           <div className="flex gap-[14px] flex-wrap">

@@ -19,6 +19,8 @@ import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/a
 import { fetchGraphics, updateGraphic } from "@/lib/db/graphic";
 import { Graphic } from "@/lib/data/graphic";
 import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
+import { NotificationBell } from "@/components/shell/NotificationBell";
+import { UnreadPanel } from "@/components/shell/UnreadPanel";
 import { AgencyDeliverables } from "@/components/agency/AgencyDeliverables";
 import { fetchMembers, Member } from "@/lib/db/settings";
 import { useAuth } from "@/lib/auth";
@@ -329,10 +331,17 @@ export default function AgencyPortalPage() {
 
   return (
     <>
+      {/* The bell matters more here than anywhere else: an external account gets
+          no Slack DM at all (the bot cannot resolve an email outside the
+          workspace — see lib/slackDirectory), so this is the only place a
+          message actually reaches them. Its approvals tab is dropped for an
+          agency — nothing in that queue is ever theirs to decide, and opening it
+          would fire six reads RLS answers with nothing. */}
       <CampaignPageHeaderSection
         eyebrow="AGENCY PORTAL"
         title="Agency Portal"
-        description="งานของคุณจาก Graphic Request — บรีฟ ไฟล์ และ feedback ในที่เดียว"
+        description="งานของคุณจาก Graphic Request — บรีฟ ไฟล์ ข้อความ และ feedback ในที่เดียว"
+        right={<NotificationBell tone="light" hideApprovals={isAgency} />}
       />
 
       <div className="mt-5 flex flex-col gap-5">
@@ -361,6 +370,10 @@ export default function AgencyPortalPage() {
       </div>
 
       <div className="mt-[18px] flex flex-col gap-[18px]">
+        {/* Same inbox as My Tasks, same component. Sits above the work: a piece
+            sent back is a message before it is a task. */}
+        <UnreadPanel />
+
         {/* BENTO — the same shape as My Tasks' Today's Focus. */}
         <div className="flex gap-[14px] flex-wrap">
           <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
