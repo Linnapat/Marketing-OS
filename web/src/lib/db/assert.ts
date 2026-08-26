@@ -12,10 +12,20 @@ const looksLikeRls = (error: DbErrorLike) =>
  *  button, so they need words a person can act on. "new row violates row-level
  *  security policy for table expense_requests" tells a marketer nothing except
  *  that something is broken — and it is not broken, they simply may not do it. */
+/** Postgres 22P05: a string in the payload carried a character `text` cannot
+ *  hold — in practice a NUL that came in with a paste from Excel or a PDF.
+ *  Raw, it reads "unsupported Unicode escape sequence", which names neither the
+ *  cause nor anything the person could do about it. */
+const looksLikeBadUnicode = (error: DbErrorLike) =>
+  !!error && ((error.code ?? "") === "22P05" || /unsupported Unicode escape/i.test(error.message ?? ""));
+
 export function assertDbOk(error: DbErrorLike, message: string): void {
   if (!error) return;
   if (looksLikeRls(error)) {
     throw new Error(`${message} — บัญชีของคุณไม่มีสิทธิ์ทำรายการนี้ (ตรวจสิทธิ์ได้ที่ Settings › Permissions หรือแจ้ง CMO)`);
+  }
+  if (looksLikeBadUnicode(error)) {
+    throw new Error(`${message} — ข้อความมีอักขระที่มองไม่เห็นซึ่งฐานข้อมูลเก็บไม่ได้ (มักติดมาจากการคัดลอกจาก Excel / PDF) · ลองพิมพ์ข้อความนั้นใหม่ หรือวางแบบไม่เอารูปแบบ (Ctrl/Cmd + Shift + V)`);
   }
   throw new Error(error.message || message);
 }
