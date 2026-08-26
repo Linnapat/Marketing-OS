@@ -89,12 +89,25 @@ function AgePill({ iso, now }: { iso: string; now: number }) {
   );
 }
 
+/** You may sign this, but it is not yours — the CMO covering an artwork check,
+ *  the planning side clearing a caption nobody was named on. Say whose it is
+ *  BEFORE offering the buttons, or covering quietly becomes the default and the
+ *  person who owns it never learns it was waiting. */
+function CoverNote({ row }: { row: ApprovalRow }) {
+  if (row.mine || !row.canAct) return null;
+  return (
+    <span className="text-[11px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>
+      รอ {row.waitingOn} · เซ็นแทนได้
+    </span>
+  );
+}
+
 /** The right-hand end of a card: the thing to do, or the person to chase.
  *  Never both, and never an action word on a row whose buttons are not there —
  *  "Review →" on somebody else's decision is how you teach people that the
  *  arrow means nothing. */
 function Cta({ row, action }: { row: ApprovalRow; action: string }) {
-  if (row.mine) return <span className="text-[11.5px] font-bold text-accent flex-shrink-0">{action}</span>;
+  if (row.canAct) return <span className="text-[11.5px] font-bold text-accent flex-shrink-0">{action}</span>;
   return (
     <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>
       รอ {row.waitingOn}
@@ -599,7 +612,8 @@ function StoryboardRow({ row, now, me, onOpenGraphic, onGraphicUpdate }: {
         ) : (
           <span className="text-[11.5px] text-faint">ไม่มีลิงก์ storyboard</span>
         )}
-        {!row.mine ? (
+        <CoverNote row={row} />
+        {!row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : revising ? (
           <span className="flex items-center gap-2">
@@ -671,7 +685,8 @@ function TaskApprovalRow({ row, now, me, onOpenTask, onTaskApproved }: {
           <span className="text-[13.5px] font-extrabold" style={{ color: "#B8945A" }}>{baht(amount, { compact: true })}</span>
         ) : null}
         <button onClick={() => onOpenTask(t.id)} className="text-[11.5px] font-bold text-accent hover:underline">ดูรายละเอียด →</button>
-        {!row.mine ? (
+        <CoverNote row={row} />
+        {!row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : (
           <button onClick={() => void approve()} disabled={acted}
@@ -735,7 +750,8 @@ function CaptionRow({ row, now, me, onContentUpdate }: {
       </span>
 
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
-        {!row.mine ? (
+        <CoverNote row={row} />
+        {!row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : revising ? (
           <span className="flex items-center gap-2">
@@ -848,7 +864,8 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           className="text-[11.5px] text-muted hover:underline flex-shrink-0">อ้างอิง ↗</a>
       )}
 
-      {!row.mine ? (
+      <CoverNote row={row} />
+      {!row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
       ) : revising ? (
         <span className="flex items-center gap-2 flex-shrink-0">
@@ -901,7 +918,8 @@ function ExpenseRow({ row, budget, now, codeOf, onApprove, onReject }: {
       )}
       <span className="text-[13.5px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
       <AgePill iso={row.waitingSince} now={now} />
-      {!row.mine ? (
+      <CoverNote row={row} />
+      {!row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
       ) : rejecting ? (
         <span className="flex items-center gap-2 flex-shrink-0">
@@ -1097,7 +1115,8 @@ function ExpenseApprovalCard({ row, budget, onApprove, onReject }: {
           )}
         </div>
       )}
-      {!row.mine ? (
+      <CoverNote row={row} />
+      {!row.canAct ? (
         <div className="text-[11.5px] font-semibold text-center rounded-[9px] py-[8px]"
           style={{ background: "#F7F4EE", color: "#8A8175" }}>
           รอ {row.waitingOn} อนุมัติ
