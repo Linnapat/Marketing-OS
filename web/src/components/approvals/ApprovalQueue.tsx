@@ -24,7 +24,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays,
+  ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays, platformLabel,
 } from "@/lib/data/approvals";
 import { Graphic, LENS_META } from "@/lib/data/graphic";
 import { decideStoryboard, giveLensVerdict } from "@/lib/graphicVerdict";
@@ -334,7 +334,7 @@ function renderCard(row: ApprovalRow, now: number, deps: {
               from the requester's data check on the same artwork. */}
           <div className="text-[11.5px] mb-2">
             <div className="text-muted truncate">
-              {row.deliverable.platform} · {row.deliverable.size}
+              {platformLabel(row.platforms, row.deliverable.platform)} · {row.deliverable.size}
               {row.deliverable.version ? ` · v${row.deliverable.version}` : ""}
             </div>
             <div className="font-bold mt-[2px]" style={{ color: APPROVAL_META[row.kind].fg }}>
@@ -874,7 +874,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           {/* ส่งโดย moved to its own column — see MetaColumns. Below md the
               columns are hidden, so it comes back into this line there. */}
           {[`${brandName(row.g.b)} · ${row.g.campaign}`, codeOf(row.g.campaignId, row.g.campaign),
-            `${d.platform} · ${d.size}${d.version ? ` · v${d.version}` : ""}`].filter(Boolean).join(" · ")}
+            `${platformLabel(row.platforms, d.platform)} · ${d.size}${d.version ? ` · v${d.version}` : ""}`].filter(Boolean).join(" · ")}
           <span className="md:hidden"> · ส่งโดย {row.submittedBy || "—"}</span>
         </span>
         <span className="block text-[11px] mt-[3px]" style={{ color: APPROVAL_META[row.kind].fg }}>

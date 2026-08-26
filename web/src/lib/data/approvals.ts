@@ -34,7 +34,7 @@ import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
 import type { Graphic, GraphicDeliverable, ReviewLens, WorkKind } from "@/lib/data/graphic";
 import {
-  REVIEW_LENSES, LENS_META, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
+  REVIEW_LENSES, LENS_META, normSize, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
 import { captionAwaitsApproval, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
@@ -102,6 +102,9 @@ export type ApprovalRow =
   | (RowBase & {
       kind: "artwork" | "vdo" | "photo";
       g: Graphic; deliverable: GraphicDeliverable; index: number; lens: ReviewLens;
+      /** Every platform this one file is delivered to. The row is the artwork,
+       *  not the platform row it was read from. */
+      platforms: string[];
     })
   // Split rather than one member with a two-value kind, so that
   // Extract<ApprovalRow, { kind: "storyboard" }> resolves to the row instead of
@@ -216,13 +219,43 @@ export function selectGraphicApprovals(
     }
 
     const kind = KIND_OF_WORK[workKind(g.type, g.requiredVideo)];
-    (g.deliverables ?? []).forEach((d, index) => {
-      if (d.status !== "Waiting review") return;
+
+    /* One row per ARTWORK per lens — not per platform row.
+     *
+     * A 9:16 export delivered to Facebook, Instagram and TikTok is three rows
+     * in the deliverables table and ONE file to look at. The queue used to
+     * emit all three, so the same job appeared three times per lens; worse,
+     * pressing "ผ่าน" on one cleared the other two, because applyLensVerdict
+     * has always fanned a verdict across the artwork group (same normSize).
+     * The list was showing work that a single click made disappear.
+     *
+     * Grouped on normSize, the same key artworkGroup and the billing count use,
+     * so "one artwork" means the same thing here as everywhere else. */
+    const waiting = (g.deliverables ?? [])
+      .map((d, index) => ({ d, index }))
+      .filter(({ d }) => d.status === "Waiting review");
+    const groups = new Map<string, { members: { d: GraphicDeliverable; index: number }[]; platforms: string[] }>();
+    for (const item of waiting) {
+      const key = normSize(item.d.size);
+      const group = groups.get(key) ?? { members: [], platforms: [] };
+      group.members.push(item);
+      const platform = (item.d.platform || "").trim();
+      if (platform && !group.platforms.includes(platform)) group.platforms.push(platform);
+      groups.set(key, group);
+    }
+
+    for (const [sizeKey, group] of groups) {
       for (const lens of REVIEW_LENSES) {
-        if (d.review?.[lens]) continue;
+        // Members that still owe this verdict. Normally all or none — the fan
+        // keeps them in step — but a row settled before the fan existed must
+        // not take its siblings' open decision off the board with it.
+        const pending = group.members.filter((m) => !m.d.review?.[lens]);
+        if (!pending.length) continue;
+        const { d, index } = pending[0];
         const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d });
         out.push({
-          kind, key: `g${g.id}:d${index}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
+          kind, key: `g${g.id}:${sizeKey}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
+          platforms: group.platforms,
           waitingSince: d.submittedAt || g.submittedAt || g.createdAt || "",
           // Whose check this is — the requester's for the data, the Creative
           // Leader's for CI. Everyone else who MAY give it (Marketing Manager,
@@ -237,7 +270,7 @@ export function selectGraphicApprovals(
           waitingOn: lens === "info" ? firstName(g.requester, "สาย Marketing") : "Creative Leader",
         });
       }
-    });
+    }
 
     if (awaitsBriefUnlockDecision(g)) {
       out.push({
@@ -398,6 +431,15 @@ export function buildApprovalRows(input: {
  * permanently must never look the same to the person reading the list.
  */
 
+/** The platforms one artwork goes to, short enough for a list. Past three it
+ *  is the count that matters, not the names. */
+export function platformLabel(platforms: string[] | undefined, fallback = ""): string {
+  const list = (platforms ?? []).filter(Boolean);
+  if (!list.length) return fallback;
+  if (list.length <= 3) return list.join(" · ");
+  return `${list.slice(0, 2).join(" · ")} +${list.length - 2}`;
+}
+
 /** One line naming what this decision is about — for the compact lists (the
  *  bell) that have no room for a card. The full cards read their own source
  *  row; this exists so a summary list cannot invent a different name for the
@@ -409,7 +451,7 @@ export function approvalTitle(row: ApprovalRow): string {
     case "vdo":
     // The lens belongs in the name: a piece needing both checks produces two
     // rows, and without it a compact list reads as the same job listed twice.
-    case "photo": return [row.g.title, row.deliverable.platform, LENS_META[row.lens].short].filter(Boolean).join(" · ");
+    case "photo": return [row.g.title, platformLabel(row.platforms, row.deliverable.platform), LENS_META[row.lens].short].filter(Boolean).join(" · ");
     case "storyboard": return `${row.g.title} · storyboard`;
     case "briefUnlock": return `${row.g.title} · ขอเติมบรีฟ`;
     case "campaign": return row.c.name || row.c.id;
