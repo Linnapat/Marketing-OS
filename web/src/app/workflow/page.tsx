@@ -23,6 +23,7 @@ import {
 } from "@/lib/data/calendarTasks";
 import { unboundMilestones } from "@/lib/data/deadlinePolicy";
 import { DatePicker, fmtShort } from "@/components/ui/DatePicker";
+import { DeadlineBoard } from "@/components/work/DeadlineBoard";
 
 interface ResolvedTask {
   en: string; jp: string; r: string; a: string;
@@ -366,6 +367,13 @@ export default function WorkCalendarPage() {
           )}
         </div>
       )}
+
+      {/* The grid's own answer to "what is due", above the grid. Same rows,
+          read through the same resolver every other module uses — the month
+          being viewed, not always today's. */}
+      <div className="mt-5">
+        <DeadlineBoard month={`${ym.y}-${String(ym.m + 1).padStart(2, "0")}`} compact />
+      </div>
 
       <div className="mt-5">
         <ModuleSummaryCard

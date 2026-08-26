@@ -25,6 +25,7 @@ import { approveTask } from "@/lib/taskApproval";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { ApprovalInbox } from "@/components/approvals/ApprovalInbox";
 import { UnreadPanel } from "@/components/shell/UnreadPanel";
+import { DeadlineBoard } from "@/components/work/DeadlineBoard";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { Graphic, Feedback, isMessage, threadAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
@@ -383,6 +384,10 @@ function MyTasksPageInner() {
 
       {view === "work" && (
         <div className="flex flex-col gap-[18px]">
+          {/* What the month is asking for, before what today is asking for. The
+              dates come from the Team Calendar, not from a copy kept here. */}
+          <DeadlineBoard />
+
           {/* The inbox, shared with the Agency Portal — see UnreadPanel. */}
           <UnreadPanel />
 
