@@ -34,7 +34,7 @@ import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
 import type { Graphic, GraphicDeliverable, ReviewLens, WorkKind } from "@/lib/data/graphic";
 import {
-  REVIEW_LENSES, awaitsBriefUnlockDecision, awaitsStoryboardDecision,
+  REVIEW_LENSES, LENS_META, awaitsBriefUnlockDecision, awaitsStoryboardDecision,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
 import { captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
@@ -321,6 +321,27 @@ export function buildApprovalRows(input: {
  * FilterSummary. A filter that hides silently and a permission that hides
  * permanently must never look the same to the person reading the list.
  */
+
+/** One line naming what this decision is about — for the compact lists (the
+ *  bell) that have no room for a card. The full cards read their own source
+ *  row; this exists so a summary list cannot invent a different name for the
+ *  same thing. */
+export function approvalTitle(row: ApprovalRow): string {
+  switch (row.kind) {
+    case "caption": return row.post.title || "(ไม่มีชื่อโพสต์)";
+    case "artwork":
+    case "vdo":
+    // The lens belongs in the name: a piece needing both checks produces two
+    // rows, and without it a compact list reads as the same job listed twice.
+    case "photo": return [row.g.title, row.deliverable.platform, LENS_META[row.lens].short].filter(Boolean).join(" · ");
+    case "storyboard": return `${row.g.title} · storyboard`;
+    case "briefUnlock": return `${row.g.title} · ขอเติมบรีฟ`;
+    case "campaign": return row.c.name || row.c.id;
+    case "request": return row.r.title || row.r.type;
+    case "expense": return [row.r.category, row.r.campaign].filter((v) => v && v !== "—").join(" · ");
+    case "kol": return row.t.title;
+  }
+}
 
 /** Campaign names present in these rows, for the filter's options. */
 export function approvalCampaigns(rows: ApprovalRow[]): string[] {
