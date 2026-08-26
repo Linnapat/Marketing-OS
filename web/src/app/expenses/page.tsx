@@ -4,7 +4,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { OPEN_PARAM } from "@/lib/deepLink";
 import { Download } from "lucide-react";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter, inDateFilter, monthKeyOf } from "@/components/ui/DateFilterBar";
+import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { Segmented } from "@/components/ui/Segmented";
 import { SavedViewsBar } from "@/components/ui/SavedViews";
@@ -139,6 +140,9 @@ function ExpensesPageInner() {
             <DateFilterBar value={date} onChange={setDate} />
           </div>
         </CampaignCommandBar>
+
+        {/* ประกาศเดดไลน์ — อ่านจากปฏิทินทีมที่เดียวกับทุกโมดูล */}
+        <DeadlineStrip forMonth={monthKeyOf(date)} />
 
         <ModuleSummaryCard
           title="Expenses Summary"

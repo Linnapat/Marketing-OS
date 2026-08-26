@@ -13,7 +13,7 @@
 
 import { fmtRange } from "../src/lib/data/brief";
 import { campaignPeriod } from "../src/lib/data/campaigns";
-import { parseRowRange, rangeInFilter, rangeOverlapFraction, DateFilter } from "../src/components/ui/DateFilterBar";
+import { parseRowRange, rangeInFilter, rangeOverlapFraction, monthKeyOf, DateFilter } from "../src/components/ui/DateFilterBar";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -89,6 +89,17 @@ is("ก.พ. 2027 ไม่เห็น", rangeInFilter(month(1, 2027), campaign
 // the year-less label cannot promise that, which is the point of the columns.
 is("ผลไม่ขึ้นกับปีปัจจุบัน", rangeInFilter(month(9, 2026), campaignPeriod(stored)), rangeInFilter(month(9, 2026), { start: "2026-10-01", end: "2027-01-31" }));
 is("แคมเปญไม่มีวันที่เลย ยังเห็นเสมอ", rangeInFilter(month(0), campaignPeriod({ dates: "TBD" })), true);
+
+console.log("\n— เดือนที่ตัวกรองพูดถึง (ใช้ประกาศเดดไลน์ข้างตัวกรอง) —");
+{
+  const f = (over: Partial<DateFilter>): DateFilter =>
+    ({ mode: "month", month: 7, year: 2026, start: "", end: "", ...over });
+  is("โหมดเดือน = เดือนนั้น", monthKeyOf(f({})), "2026-08");
+  is("โหมดปี = เดือนแรกของปี", monthKeyOf(f({ mode: "year" })), "2026-01");
+  is("โหมดช่วง = เดือนแรกของช่วง", monthKeyOf(f({ mode: "range", start: "2026-09-15", end: "2026-11-02" })), "2026-09");
+  // ตัวกรอง "ทุกช่วงเวลา" ไม่มีปลายทั้งสองข้าง — ต้องไม่คืนค่าว่าง ไม่งั้นแถบประกาศหายไปเฉย ๆ
+  is("ทุกช่วงเวลา = เดือนของตัวกรองเอง", monthKeyOf(f({ mode: "range", start: "", end: "" })), "2026-08");
+}
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} date-range: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

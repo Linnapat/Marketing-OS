@@ -144,6 +144,13 @@ export function rangeOverlapFraction(f: DateFilter, range?: RowPeriod): number {
   return Math.min(1, overlap / total);
 }
 
+/** The one month a period speaks about — the first it covers, or its own
+ *  month/year when the range has no ends to read (the all-time filter). For
+ *  anything that shows a per-month fact beside a filter that may span several. */
+export function monthKeyOf(f: DateFilter): string {
+  return filterMonthKeys(f)[0] ?? `${f.year}-${String(f.month + 1).padStart(2, "0")}`;
+}
+
 /** Month keys (YYYY-MM) covered by the selected period — for monthly budgets. */
 export function filterMonthKeys(f: DateFilter): string[] {
   if (f.mode === "month") return [`${f.year}-${String(f.month + 1).padStart(2, "0")}`];
