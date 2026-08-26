@@ -16,13 +16,13 @@ import { GRAPHIC_OPEN_PARAM,
   isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth, materialNote,
   hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
-  canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit,
+  canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit, feedbackOwners,
   ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,
   canGiveLensVerdict, canPassLens, approvalLadder,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
-  MESSAGE_TYPE, isMessage, threadAudience,
+  MESSAGE_TYPE, isMessage, threadAudience, workKind,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { decideStoryboard as decideStoryboardShared, giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
@@ -48,6 +48,7 @@ import { monthServedByFinalAw } from "@/lib/data/deadlinePolicy";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
+import { useProductionOwners } from "@/lib/useCreativeLeader";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 export type GTab = (typeof TABS)[number][0];
@@ -227,6 +228,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // a role. The ask used to say "→ Creative Leader" in its text and go to the
   // designer, which is how requests sat Pending with nobody aware of them.
   const [creativeLeader, setCreativeLeader] = useState("");
+  // Who could take the piece when the request names nobody — feedback on an
+  // unassigned job used to reach only the requester (and nobody at all when
+  // the requester was the one writing it).
+  const productionOwners = useProductionOwners();
   useEffect(() => {
     let alive = true;
     fetchBrandConfigs().then((configs) => {
@@ -557,8 +562,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const d = targetDeliverable;
     if (!reason || !d || d.status !== "Waiting review") return;
     const at = new Date().toISOString();
-    // Whoever handed this piece in, not whoever the request is filed under.
-    const owner = revisionAssignee(g, d);
+    // Whoever handed this piece in, not whoever the request is filed under —
+    // and when the request names nobody at all, whoever could pick it up.
+    const owners = feedbackOwners(g, d, { pool: productionOwners(workKind(g.type, g.requiredVideo)), creativeLeader });
+    const owner = owners[0] ?? null;
     const nextDeliverables = deliverables.map((x, i) => i === feedbackTarget
       ? { ...x, status: "Revision" as const, feedback: [...x.feedback, { reason, by: currentUser, at }] }
       : x);
@@ -599,7 +606,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     // Same audience as the two-lens revision above — whoever assigned the job
     // is told here too, so the two revision paths cannot tell different people.
     notify("rejected", `✏️ งานกราฟฟิกถูกส่งกลับแก้: ${g.title}`, `${d.platform} — ${reason} · ถึง ${owner ?? "Creative"} · โดย ${currentUser}`,
-      workLink.graphic(g.id), { team: graphicTeam(g), to: [owner], inform: [g.requester, assignedBy(g)] });
+      workLink.graphic(g.id), { team: graphicTeam(g), to: owners, inform: [g.requester, assignedBy(g)] });
     setFeedbackReason("");
     setTab("feedback");
   };
@@ -1618,6 +1625,10 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
   creativeLeader: string;
   onUpdate?: (g: Graphic) => void;
 }) {
+  // The pool that could take an unassigned piece — resolved here rather than
+  // threaded down, so the editor and the drawer's feedback box tell the same
+  // people.
+  const productionOwners = useProductionOwners();
   // Sign-off is now two checks, asked per lens inside each row — see
   // canGiveLensVerdict. Everyone else sees the artwork and who it waits on.
   // Production is on hold while an urgent brief is unresolved (or refused).
@@ -1676,7 +1687,10 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
    *  implies, live in lib/graphicVerdict so Approval Center's list rows record
    *  a verdict exactly the way this drawer does. */
   const giveVerdict = (i: number, lens: ReviewLens, verdict: "pass" | "revise", note?: string) => {
-    const ng = giveLensVerdict({ g, deliverables: dels, index: i, lens, verdict, me, note, creativeLeader, onUpdate });
+    const ng = giveLensVerdict({
+      g, deliverables: dels, index: i, lens, verdict, me, note, creativeLeader,
+      productionOwners: productionOwners(workKind(g.type, g.requiredVideo)), onUpdate,
+    });
     if (!ng) return;
     setDels(ng.deliverables!);
     setReason(""); setRevising(null);

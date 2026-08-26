@@ -702,6 +702,44 @@ export function revisionAssignee(
   return firstRealName(d?.submittedBy, g.acceptedBy, g.designer);
 }
 
+/** The roles that actually DO each kind of work.
+ *
+ *  Used when a request carries no name yet: feedback on an unassigned piece
+ *  still has to reach somebody who can pick it up. Roles, not names — the pool
+ *  is resolved from the member list at the call site (useProductionOwners). */
+export const PRODUCTION_ROLES: Record<WorkKind, string[]> = {
+  graphic: ["Senior Graphic Designer", "Graphic Designer"],
+  vdo: ["VDO Editor"],
+  vdo_shoot: ["VDO Editor"],
+  photo_shoot: ["VDO Editor"],
+};
+
+/** Who must act on feedback for this piece — the people the message is FOR.
+ *
+ *  The named person first (revisionAssignee: whoever handed it in, then whoever
+ *  picked the job up, then whoever it is filed under). When the request carries
+ *  nobody at all — 25 of 71 open VDO requests were in that state — the old
+ *  answer was "nobody", and the whole notification collapsed: `to` was empty,
+ *  `inform` held the requester, and when the person writing the feedback WAS
+ *  the requester the API filtered them out as the actor and the message reached
+ *  no DM, no bell and no task. Feedback given, nothing said, to anyone.
+ *
+ *  So an unassigned piece falls through to the people who could take it (the
+ *  production pool for its kind), and past that to the person who hands work
+ *  out. Never to nobody. */
+export function feedbackOwners(
+  g: Pick<Graphic, "acceptedBy" | "designer">,
+  d: Pick<GraphicDeliverable, "submittedBy"> | undefined,
+  opts: { pool?: string[]; creativeLeader?: string | null } = {},
+): string[] {
+  const named = revisionAssignee(g, d);
+  if (named) return [named];
+  const pool = (opts.pool ?? []).map((n) => (n ?? "").trim()).filter((n) => n && n !== "Unassigned");
+  if (pool.length) return pool;
+  const lead = (opts.creativeLeader ?? "").trim();
+  return lead ? [lead] : [];
+}
+
 /** Is this request inside `me`'s own queue — the scope worksOwnQueueOnly()
  *  puts VDO Editors and outside studios on?
  *
