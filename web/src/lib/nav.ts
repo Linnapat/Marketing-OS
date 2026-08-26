@@ -1,7 +1,7 @@
 import {
   Target, CalendarDays, Palette, Star,
   Wallet, CheckSquare, Users, Settings, Inbox, FolderOpen,
-  Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
+  CalendarClock, Globe, BarChart3, Receipt, Sparkles, LayoutList, Gauge, Trash2, ClipboardCheck,
   FileText, Video,
   type LucideIcon,
 } from "lucide-react";
@@ -32,10 +32,10 @@ export const NAV: NavGroup[] = [
       // Mood & Metrics (the "/" dashboard) closed per CMO, 18 Jul 2026 — the
       // route now redirects to Campaigns, which is the real front door.
       { href: "/campaigns", label: "Campaigns", icon: Target, ready: true },
-      // Team Calendar (/workflow) is off the rail (CMO, 26 Aug 2026): it showed
-      // the same month of work the Content Plan calendar and the Shoot Schedule
-      // already show, and three calendars of one truth is how they start
-      // disagreeing. The route still opens from a direct link.
+      // Off the rail for a few hours on 26 Aug 2026 and put straight back (CMO):
+      // it overlaps the Content Plan calendar and the Shoot Schedule, but the
+      // team reads the month here. Leave it.
+      { href: "/workflow", label: "Team Calendar", icon: CalendarClock, ready: true },
     ],
   },
   {
