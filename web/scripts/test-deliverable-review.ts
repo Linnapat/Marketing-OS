@@ -50,9 +50,20 @@ is("Marketing Manager / BGL ตรวจด้านข้อมูลได้"
 is("Creative Leader ตรวจด้านข้อมูลไม่ได้", canGiveLensVerdict("info", { ...fresh, role: "Creative Leader", me: "Boss L." }), false);
 // CI = Creative Leader เจ้าของเรื่อง, CMO เป็นตัวสำรอง
 is("Creative Leader ตรวจ CI ได้", canGiveLensVerdict("ci", { ...fresh, role: "Creative Leader", me: "Boss L." }), true);
+// เพิ่ม 26 ส.ค. 69: CI ไม่ควรมีคนเดียวคุม — Senior Graphic Designer ตรวจได้ด้วย
+is("Senior Graphic Designer ตรวจ CI ได้", canGiveLensVerdict("ci", { ...fresh, role: "Senior Graphic Designer", me: "Jungjing" }), true);
+is("…แต่ตรวจงานที่ตัวเองส่งไม่ได้",
+  canPassLens("ci", { role: "Senior Graphic Designer", isRequester: false, me: "Jungjing", deliverable: submitted({ submittedBy: "Jungjing" }) }), false);
 is("CMO ตรวจ CI ได้ (สำรอง)", canGiveLensVerdict("ci", { ...fresh, role: "CMO", me: "Aran P." }), true);
 is("ผู้ขอเปิดงานตรวจ CI ไม่ได้", canGiveLensVerdict("ci", { ...fresh, isRequester: true, me: "Ken S." }), false);
-is("ดีไซเนอร์ตรวจอะไรไม่ได้", canGiveLensVerdict("ci", { ...fresh, role: "Senior Graphic Designer", me: "Boss" }), false);
+/* เดิมกฎคือ "ดีไซเนอร์ตรวจอะไรไม่ได้" — เปลี่ยนตามที่ผู้ใช้สั่ง 26 ส.ค. 69 ให้
+   Senior Graphic Designer ตรวจ CI ได้ เพราะ CI มีคนคุมคนเดียวแล้วงานค้าง 23 ชิ้น
+   สิ่งที่ต้องไม่เปลี่ยนคือ: ตรวจงานที่ตัวเองส่งไม่ได้ */
+is("ดีไซเนอร์กดผ่านงานที่ตัวเองส่งไม่ได้",
+  canPassLens("ci", { role: "Senior Graphic Designer", isRequester: false, me: "Boss", deliverable: submitted() }), false);
+is("…แต่ตรวจงานของคนอื่นได้",
+  canPassLens("ci", { role: "Senior Graphic Designer", isRequester: false, me: "Jungjing", deliverable: submitted() }), true);
+is("VDO Editor ยังตรวจอะไรไม่ได้", canGiveLensVerdict("ci", { ...fresh, role: "VDO Editor", me: "Four" }), false);
 
 console.log("\n— สองลายเซ็นต้องเป็นคนละคน —");
 // CMO คลุมได้ทั้งสองเลน ถ้าไม่กันตรงนี้ CMO คนเดียวเซ็นครบทั้งใบได้ การแยกตรวจก็เหลือแค่ในกระดาษ
@@ -292,6 +303,16 @@ console.log("\n— ถามใครได้จริง เมื่อเจ
 
   // ไม่รู้จัก CMO (ยังโหลดไม่เสร็จ) → บอกว่าไม่มีใคร ดีกว่าชี้คนที่กดไม่ได้
   is("ไม่มีชื่อ CMO → null ไม่เดา", lensAskWho("ci", infoDone, { ...who, cmo: "" }).name, null);
+
+  /* ทางออกที่ผู้ใช้เลือก: ให้ Senior Graphic Designer ตรวจ CI ได้ด้วย
+     ถามดีไซเนอร์ก่อน CMO — CMO เป็นด่านสุดท้าย ไม่ใช่ด่านแรก */
+  const withBackup = { ...who, ciBackup: ["Jungjing"] };
+  is("เจ้าของด้านติดกติกา → ถาม Senior Graphic Designer ก่อน CMO",
+    lensAskWho("ci", infoDone, withBackup).name, "Jungjing");
+  is("ดีไซเนอร์ที่ส่งงานชิ้นนั้นเอง ข้ามไปหา CMO",
+    lensAskWho("ci", submitted({ submittedBy: "Jungjing", review: { info: { verdict: "pass", by: "Pichayaporn", at: "x" } } }), withBackup).name, "Gik");
+  is("ด้านข้อมูลไม่เกี่ยวกับ backup ของ CI",
+    lensAskWho("info", submitted({ submittedBy: "Pichayaporn" }), withBackup).name, "Gik");
   is("ไม่มีคนดูแลด้านนั้นเลย → ตกไปที่ CMO", lensAskWho("ci", fresh, { ...who, creativeLeader: "" }).name, "Gik");
   is("Unassigned ไม่นับเป็นคน", lensAskWho("ci", fresh, { ...who, creativeLeader: "Unassigned" }).name, "Gik");
 }

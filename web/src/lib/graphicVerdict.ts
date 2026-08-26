@@ -73,7 +73,7 @@ export function persistGraphicDeliverables(
  *  Callers pass the deliverables they are holding: the drawer edits a local
  *  copy before saving, and handing `g.deliverables` in from a list would throw
  *  that away. */
-export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, creativeLeader, cmoName, productionOwners, onUpdate }: {
+export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, creativeLeader, cmoName, ciBackup, productionOwners, onUpdate }: {
   g: Graphic;
   deliverables: GraphicDeliverable[];
   index: number;
@@ -88,6 +88,8 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
   creativeLeader?: string;
   /** The CMO by name — covers a lens whose owner may not give it. */
   cmoName?: string;
+  /** Senior Graphic Designers, asked for CI before the CMO is pulled in. */
+  ciBackup?: string[];
   /** People who could take the piece when the request names nobody — see
    *  feedbackOwners. Without it an unassigned job's revision reaches only the
    *  requester, and nobody at all when the requester is the one who wrote it. */
@@ -142,7 +144,7 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
       // own — they submitted the piece, or they just signed the other lens —
       // and asking them anyway is how a piece waits on the one person the rules
       // forbid from moving it (23 were doing exactly that when this was found).
-      const ask = lensAskWho(waiting, after, { requester: g.requester, creativeLeader, cmo: cmoName });
+      const ask = lensAskWho(waiting, after, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup });
       const owes = [ask.name];
       const verdictWord = verdict === "revise" ? "ขอให้แก้" : "ผ่าน";
       notify("feedback", `👀 รอตรวจอีกหนึ่งด้าน: ${g.title}`,

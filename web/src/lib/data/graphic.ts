@@ -1225,6 +1225,21 @@ export interface GraphicDeliverable {
 
 export type ReviewLens = "info" | "ci";
 
+/** Roles that may give the Visual CI verdict besides the Creative Leader who
+ *  owns it (CMO, 26 Aug 2026).
+ *
+ *  Added because one person holding the CI lane is a single point of failure,
+ *  and it had already stopped 23 pieces: the Creative Leader raises most briefs
+ *  herself, and signing the data check as requester bars her from CI on the
+ *  same piece. A Senior Graphic Designer judges logo, type, colour and safe
+ *  area every day — they are the obvious second pair of eyes.
+ *
+ *  It does NOT weaken the two-person rule: whoever gives CI still may not be
+ *  the person who submitted the piece, nor the person who signed the data
+ *  check. A designer can clear a colleague's or the agency's work, never their
+ *  own. */
+export const CI_BACKUP_ROLES: string[] = ["Senior Graphic Designer"];
+
 export const REVIEW_LENSES: ReviewLens[] = ["info", "ci"];
 
 export const LENS_META: Record<ReviewLens, { label: string; short: string; owner: string; checks: string }> = {
@@ -1237,7 +1252,9 @@ export const LENS_META: Record<ReviewLens, { label: string; short: string; owner
   ci: {
     label: "Visual CI",
     short: "CI",
-    owner: "Creative Leader",
+    // The lane is the Creative Leader's; a Senior Graphic Designer is the
+    // second pair of eyes when it cannot be (CI_BACKUP_ROLES).
+    owner: "Creative Leader / Senior Graphic Designer",
     checks: "โลโก้ · ฟอนต์ · สี · ลำดับสายตา · safe area · ความคมของไฟล์",
   },
 };
@@ -1279,7 +1296,7 @@ export function canGiveLensVerdict(
   const role = (ctx.role || "").trim();
   const allowed = lens === "info"
     ? ctx.isRequester || role === "Marketing Manager / BGL" || role === "CMO"
-    : role === "Creative Leader" || role === "CMO";
+    : role === "Creative Leader" || CI_BACKUP_ROLES.includes(role) || role === "CMO";
   if (!allowed) return false;
   const other = ctx.deliverable.review?.[lens === "info" ? "ci" : "info"];
   return !samePerson(other?.by, ctx.me);
@@ -1324,7 +1341,14 @@ export interface LensAsk {
 export function lensAskWho(
   lens: ReviewLens,
   d: Pick<GraphicDeliverable, "review" | "submittedBy">,
-  who: { requester?: string | null; creativeLeader?: string | null; cmo?: string | null },
+  who: {
+    requester?: string | null;
+    creativeLeader?: string | null;
+    cmo?: string | null;
+    /** Senior Graphic Designers — the CI lane's second pair of eyes, asked
+     *  before the CMO is pulled in. */
+    ciBackup?: (string | null | undefined)[];
+  },
 ): LensAsk {
   const owner = ((lens === "info" ? who.requester : who.creativeLeader) ?? "").trim();
   const other = d.review?.[lens === "info" ? "ci" : "info"];
@@ -1338,10 +1362,15 @@ export function lensAskWho(
   if (owner && owner !== "Unassigned" && !ownerReason) {
     return { name: owner, covering: false, reason: "" };
   }
-  const cmo = (who.cmo ?? "").trim();
-  // The stand-in is subject to the same two rules — a CMO who signed the other
-  // lens cannot cover this one either.
-  if (cmo && !blocked(cmo)) return { name: cmo, covering: true, reason: ownerReason };
+  // Stand-ins are subject to the same two rules — anyone who submitted the
+  // piece or signed the other lens is out too, however senior.
+  const backups = lens === "ci" ? (who.ciBackup ?? []) : [];
+  for (const raw of [...backups, who.cmo]) {
+    const name = (raw ?? "").trim();
+    if (!name || name === "Unassigned") continue;
+    if (blocked(name)) continue;
+    return { name, covering: true, reason: ownerReason };
+  }
   return { name: null, covering: true, reason: ownerReason };
 }
 

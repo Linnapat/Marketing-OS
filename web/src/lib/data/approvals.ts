@@ -177,6 +177,8 @@ export interface ApprovalCtx {
    *  Blank until the member list lands — callers fall back to the role name. */
   creativeLeader?: string;
   cmoName?: string;
+  /** Senior Graphic Designers — the CI lane's second pair of eyes. */
+  ciBackup?: string[];
   isVisible: (b: BrandId) => boolean;
   /** Task rows carry a brand LABEL, not a BrandId, so they need their own test. */
   canSeeBrandLabel: (label?: string | null) => boolean;
@@ -274,7 +276,7 @@ export function selectGraphicApprovals(
           // other one), in which case the person covering. A queue that names
           // somebody who may not press the button is a queue that does not move.
           waitingOn: firstName(
-            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName }).name,
+            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup }).name,
             lens === "info" ? "สาย Marketing" : "Creative Leader",
           ),
         });

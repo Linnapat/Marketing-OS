@@ -18,7 +18,7 @@
 import { useEffect, useState } from "react";
 import { fetchMembers, fetchJsonSetting, Member } from "@/lib/db/settings";
 import { roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
-import { PRODUCTION_ROLES, WorkKind } from "@/lib/data/graphic";
+import { PRODUCTION_ROLES, CI_BACKUP_ROLES, WorkKind } from "@/lib/data/graphic";
 
 /** The lead's name, or "" until the lookup lands (callers tolerate blank — the
  *  designer and requester are still told, only the "you owe a verdict" DM is
@@ -74,4 +74,18 @@ export function useCmoName(): string {
     return () => { alive = false; };
   }, []);
   return name;
+}
+
+/** Who can give the Visual CI verdict besides the Creative Leader — resolved by
+ *  name, for the card and the "still waiting" notice. */
+export function useCiBackup(): string[] {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchMembers()
+      .then((ms) => { if (alive) setNames(roleHolders(ms, CI_BACKUP_ROLES)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return names;
 }

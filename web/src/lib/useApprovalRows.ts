@@ -18,7 +18,7 @@ import { ApprovalRow, buildApprovalRows } from "@/lib/data/approvals";
 import { BRANDS, BrandId } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth } from "@/lib/auth";
-import { useCreativeLeader, useCmoName } from "@/lib/useCreativeLeader";
+import { useCreativeLeader, useCmoName, useCiBackup } from "@/lib/useCreativeLeader";
 import { useCanApproveExpense, useCanSeeAllSpending } from "@/lib/usePermGates";
 import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
 import { personKeys, memberRef } from "@/lib/identity";
@@ -78,10 +78,11 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
   // the lens owner is barred from their own lens it has to name the stand-in.
   const creativeLeader = useCreativeLeader();
   const cmoName = useCmoName();
+  const ciBackup = useCiBackup();
 
   const ctx = useMemo(() => ({
     myKeys, me: member?.name || viewAs, role: authRole,
-    creativeLeader, cmoName,
+    creativeLeader, cmoName, ciBackup,
     canApproveCampaign: canApproveCampaign(authRole),
     canApproveExpense,
     canSeeSpending,
@@ -89,7 +90,7 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
     isVisible: (b: BrandId) => brandVisibility.isVisible(b),
     canSeeBrandLabel,
     doneIds,
-  }), [myKeys, member, viewAs, authRole, creativeLeader, cmoName, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
+  }), [myKeys, member, viewAs, authRole, creativeLeader, cmoName, ciBackup, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
 
   return useMemo(
     () => buildApprovalRows({
