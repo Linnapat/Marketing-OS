@@ -271,7 +271,7 @@ console.log("\n— เรียงตามงานที่รอนานท�
   is("แถวเก่าสุดมาก่อน", rows[0].kind === "caption" ? rows[0].post.title : "—", "เก่า");
   // แคมเปญไม่มี timestamp ให้นับอายุ — ต้องไปท้ายแถว ไม่ใช่ถูกนับว่าใหม่เอี่ยม
   is("แถวที่ไม่รู้อายุไปอยู่ท้าย", byWaitingLongest(
-    { kind: "campaign", key: "a", b: "teppen", campaign: "", waitingSince: "", mine: false, canAct: false, waitingOn: "CMO", c: {} as never },
+    { kind: "campaign", key: "a", b: "teppen", campaign: "", waitingSince: "", mine: false, canAct: false, submittedBy: "", waitingOn: "CMO", c: {} as never },
     rows[0]) > 0, true);
   is("นับตามชนิดได้", countByKind(rows).caption, 2);
   is("ไม่มี timestamp = ไม่แสดงอายุ", waitingDays("", Date.now()), null);
@@ -294,7 +294,7 @@ console.log("\n— ตัวกรองแบรนด์ / แคมเปญ 
 {
   const row = (over: Partial<ApprovalRow>): ApprovalRow => ({
     kind: "campaign", key: "k", b: "teppen", campaign: "Wagyu Festival",
-    waitingSince: "", mine: false, canAct: false, waitingOn: "CMO", c: {} as never, ...over,
+    waitingSince: "", mine: false, canAct: false, submittedBy: "", waitingOn: "CMO", c: {} as never, ...over,
   } as ApprovalRow);
 
   // แบรนด์
@@ -331,22 +331,46 @@ console.log("\n— ชื่อรายการแบบสั้น (ลิ�
   const ciRow = rows.find((r) => r.kind === "artwork" && r.lens === "ci")!;
   is("อีกด้านชื่อไม่ซ้ำกัน", approvalTitle(ciRow), "Wagyu KV · Instagram · CI");
   is("แคปชั่นใช้ชื่อโพสต์", approvalTitle({
-    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, canAct: true, waitingOn: "—",
+    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, canAct: true, submittedBy: "", waitingOn: "—",
     post: { title: "โพสต์ข้าวหน้าปลา" } as never,
   } as ApprovalRow), "โพสต์ข้าวหน้าปลา");
   is("โพสต์ไม่มีชื่อ ไม่คืนค่าว่าง", approvalTitle({
-    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, canAct: true, waitingOn: "—",
+    kind: "caption", key: "c", b: "teppen", campaign: "W", waitingSince: "", mine: true, canAct: true, submittedBy: "", waitingOn: "—",
     post: { title: "" } as never,
   } as ApprovalRow), "(ไม่มีชื่อโพสต์)");
   is("เบิกงบบอกหมวดกับแคมเปญ", approvalTitle({
-    kind: "expense", key: "e", b: "teppen", campaign: "Wagyu", waitingSince: "", mine: true, canAct: true, waitingOn: "CMO",
+    kind: "expense", key: "e", b: "teppen", campaign: "Wagyu", waitingSince: "", mine: true, canAct: true, submittedBy: "", waitingOn: "CMO",
     r: { category: "Media", campaign: "Wagyu" } as never,
   } as ApprovalRow), "Media · Wagyu");
   // แถวเบิกงบที่ไม่ผูกแคมเปญเก็บค่าเป็น "—" ไม่ใช่ค่าว่าง
   is("เบิกงบที่ไม่มีแคมเปญ ไม่ลากขีดมาโชว์", approvalTitle({
-    kind: "expense", key: "e", b: "teppen", campaign: "—", waitingSince: "", mine: true, canAct: true, waitingOn: "CMO",
+    kind: "expense", key: "e", b: "teppen", campaign: "—", waitingSince: "", mine: true, canAct: true, submittedBy: "", waitingOn: "CMO",
     r: { category: "Media", campaign: "—" } as never,
   } as ApprovalRow), "Media");
+}
+
+console.log("\n— คอลัมน์ ส่งโดย / ส่งวันที่ / Post date —");
+{
+  const g = req();
+  const rows = selectGraphicApprovals([g], ctx("Creative Leader", "Boss L."));
+  is("ส่งโดยอ่านจากคนที่ส่งชิ้นนั้น", rows[0].submittedBy, "Boss");
+  // ส่งวันที่ใช้ฟิลด์เดียวกับที่นับ "รอมากี่วัน" — สองคอลัมน์นี้จะขัดกันเองไม่ได้
+  is("ส่งวันที่คือวันเดียวกับที่เริ่มนับรอ", rows[0].waitingSince, submitted().submittedAt);
+  is("ไม่รู้จัก Content Plan → ไม่เดา Post date", rows[0].postDate, undefined);
+
+  // ผูกกับโพสต์แล้ว = รู้ว่าของชิ้นนี้ต้องออกวันไหน
+  const post = { id: "p1", campaign: "Wagyu Festival", title: "Wagyu KV", dateIso: "2026-09-02", day: 2 } as never;
+  const linked = selectGraphicApprovals([{ ...g, contentPostId: "p1" }], ctx("Creative Leader", "Boss L."), [post]);
+  is("ผูกโพสต์แล้วได้ Post date", linked[0].postDate, "2026-09-02");
+
+  // ลิงก์ที่ชี้ไปโพสต์ที่ไม่มีอยู่ = ลิงก์เสีย ไม่ใช่สัญญาณให้เดาต่อ
+  const broken = selectGraphicApprovals([{ ...g, contentPostId: "ghost" }], ctx("Creative Leader", "Boss L."), [post]);
+  is("ลิงก์เสีย → ไม่เดา Post date จากชื่อ", broken[0].postDate, undefined);
+
+  // ดีไซเนอร์ยังไม่ได้ระบุชื่อบนชิ้นงาน → ถอยไปใช้ชื่อดีไซเนอร์ของใบงาน
+  const noSubmitter = selectGraphicApprovals(
+    [{ ...g, deliverables: [{ ...submitted(), submittedBy: "" }] }], ctx("Creative Leader", "Boss L."));
+  is("ไม่มีชื่อคนส่งบนชิ้นงาน → ใช้ดีไซเนอร์ของใบงาน", noSubmitter[0].submittedBy, "Boss");
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} approval inbox: ${pass} passed, ${fail} failed\n`);

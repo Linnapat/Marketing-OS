@@ -34,10 +34,10 @@ import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
 import type { Graphic, GraphicDeliverable, ReviewLens, WorkKind } from "@/lib/data/graphic";
 import {
-  REVIEW_LENSES, LENS_META, awaitsBriefUnlockDecision, awaitsStoryboardDecision,
+  REVIEW_LENSES, LENS_META, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
-import { captionAwaitsApproval, captionOwner, captionReviewer } from "@/lib/data/content";
+import { captionAwaitsApproval, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
 import { isSamePerson } from "@/lib/identity";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 
@@ -82,6 +82,16 @@ interface RowBase {
   /** May they give this verdict at all — the role rule, standing overrides
    *  included. Never whether the row exists. */
   canAct: boolean;
+  /** Who handed this in — the designer who exported the file, the person who
+   *  wrote the caption, whoever raised the request. Blank where the source row
+   *  names nobody. Paired with `waitingSince` (the date they handed it in) and
+   *  `postDate`, these are the three columns the list shows: who, when, and
+   *  what it is holding up. */
+  submittedBy: string;
+  /** The day the work is due to go out (ISO), when there is a post behind it.
+   *  Absent for decisions with no publish date of their own — a campaign, a
+   *  budget line — rather than borrowed from something else. */
+  postDate?: string;
   /** Who is holding it, for the rows that are not yours. A name where we have
    *  one, otherwise the role that owns the decision. */
   waitingOn: string;
@@ -174,11 +184,22 @@ export interface ApprovalCtx {
  *  every open check; canPassLens then answers only whether it is THIS person's
  *  to give (right role for the lens, not the person who gave the other verdict,
  *  not the person who submitted the piece). */
-export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): ApprovalRow[] {
+export function selectGraphicApprovals(
+  graphics: Graphic[],
+  ctx: ApprovalCtx,
+  /** The Content Plan, for the "goes out on" column. Optional so the callers
+   *  that only care about the decisions (and the tests) need not carry it; the
+   *  column simply reads "—" without it. */
+  posts: LinkablePost[] = [],
+): ApprovalRow[] {
   const out: ApprovalRow[] = [];
   for (const g of graphics) {
     if (!ctx.isVisible(g.b)) continue;
     const isRequester = isSamePerson(g.requester, ctx.myKeys);
+    // Resolved once per request, not once per row: a five-size artwork emits
+    // ten rows and findLinkedPost walks the whole Content Plan each time.
+    const linked = posts.length ? findLinkedPost(g, posts) : null;
+    const postDate = linked ? contentDateIso(linked as ContentItem) : undefined;
 
     if (awaitsStoryboardDecision(g)) {
       out.push({
@@ -188,6 +209,8 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
         // standing override the drawer already gives them (canDecideStoryboard).
         mine: isRequester,
         canAct: isRequester || ctx.role === DEFAULT_APPROVER,
+        submittedBy: firstName(g.storyboardOwner, g.designer),
+        postDate,
         waitingOn: firstName(g.requester, "ผู้ขอเปิดงาน"),
       });
     }
@@ -207,6 +230,8 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
           // through canAct without the row landing in their own queue.
           mine: canPass && (lens === "info" ? isRequester : ctx.role === "Creative Leader"),
           canAct: canPass,
+          submittedBy: firstName(d.submittedBy, g.designer),
+          postDate,
           // The data check is the requester's by name; Visual CI belongs to the
           // Creative Leader as a role, and no row names one.
           waitingOn: lens === "info" ? firstName(g.requester, "สาย Marketing") : "Creative Leader",
@@ -223,6 +248,8 @@ export function selectGraphicApprovals(graphics: Graphic[], ctx: ApprovalCtx): A
         // Leader; the CMO may release one, which is covering, not owning.
         mine: ctx.role === "Creative Leader" && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys),
         canAct: canReleaseBriefEdit(ctx.role) && !isSamePerson(g.briefUnlock?.requestedBy ?? "", ctx.myKeys),
+        submittedBy: firstName(g.briefUnlock?.requestedBy, g.requester),
+        postDate,
         waitingOn: "Creative Leader",
       });
     }
@@ -271,11 +298,13 @@ export function buildApprovalRows(input: {
       // own work, which is how every one of them ended up in the CMO's queue.
       mine: !wroteIt && !!reviewer && isSamePerson(reviewer, ctx.myKeys),
       canAct: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
+      submittedBy: captionOwner(post),
+      postDate: contentDateIso(post),
       waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),
     });
   }
 
-  rows.push(...selectGraphicApprovals(input.graphics, ctx));
+  rows.push(...selectGraphicApprovals(input.graphics, ctx, input.captions));
 
   // ── Campaigns ───────────────────────────────────────────────────────────
   for (const c of input.campaigns) {
@@ -293,6 +322,7 @@ export function buildApprovalRows(input: {
       canAct: forApproval
         ? ctx.canApproveCampaign
         : !!ctx.me.trim() && (c.owner ?? "").trim() === ctx.me.trim(),
+      submittedBy: firstName(c.owner),
       waitingOn: forApproval ? DEFAULT_APPROVER : firstName(c.owner, "เจ้าของแคมเปญ"),
     });
   }
@@ -305,6 +335,7 @@ export function buildApprovalRows(input: {
       kind: "request", key: `req:${r.id}`, b: r.b, campaign: r.campaign ?? "", r, waitingSince: "",
       mine: isSamePerson(r.approver, ctx.myKeys),
       canAct: isSamePerson(r.approver, ctx.myKeys),
+      submittedBy: firstName(r.requester),
       waitingOn: firstName(r.approver, "ผู้อนุมัติ"),
     });
   }
@@ -334,7 +365,9 @@ export function buildApprovalRows(input: {
       waitingSince: r.createdAt || "",
       // The expense row carries no approver column — the gate IS the role, so
       // whoever holds it owns these rather than covering for somebody.
-      mine: ctx.canApproveExpense, canAct: ctx.canApproveExpense, waitingOn: DEFAULT_APPROVER,
+      mine: ctx.canApproveExpense, canAct: ctx.canApproveExpense,
+      submittedBy: firstName(r.requester),
+      waitingOn: DEFAULT_APPROVER,
     });
   }
 
@@ -345,6 +378,10 @@ export function buildApprovalRows(input: {
       kind: "kol", key: `kol:${t.id}`, b: null, campaign: t.campaign ?? "", t, waitingSince: "",
       mine: isSamePerson(t.assignee, ctx.myKeys),
       canAct: isSamePerson(t.assignee, ctx.myKeys),
+      // A KOL task carries no submitter of its own — the row IS the proposal,
+      // and naming the approver here would read as "handed in by the person
+      // waiting on it".
+      submittedBy: "",
       waitingOn: firstName(t.assignee, "ผู้อนุมัติ"),
     });
   }

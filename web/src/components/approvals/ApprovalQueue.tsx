@@ -89,6 +89,31 @@ function AgePill({ iso, now }: { iso: string; now: number }) {
   );
 }
 
+/** Who handed it in, when, and the day it has to go out.
+ *
+ *  One block, fixed widths, rendered in the same place on every row so the list
+ *  reads down as three columns rather than three facts buried in three
+ *  different meta lines. "รอมา N วัน" stays beside the title where it always
+ *  was — it is the thing you scan for, not a column you compare.
+ *
+ *  Hidden below md: at that width the columns would wrap under the title and
+ *  stop being columns; the row still carries the same facts in its meta line. */
+function MetaColumns({ row }: { row: ApprovalRow }) {
+  const cell = (label: string, value: string) => (
+    <span className="flex flex-col leading-[1.3] min-w-0">
+      <span className="text-[9.5px] font-bold uppercase tracking-[0.04em]" style={{ color: "#B3ADA2" }}>{label}</span>
+      <span className="text-[11.5px] text-muted truncate">{value || "—"}</span>
+    </span>
+  );
+  return (
+    <span className="hidden md:flex items-center gap-4 flex-shrink-0">
+      <span className="w-[104px]">{cell("ส่งโดย", row.submittedBy)}</span>
+      <span className="w-[86px]">{cell("ส่งวันที่", row.waitingSince ? fmtThaiDate(row.waitingSince) : "")}</span>
+      <span className="w-[86px]">{cell("Post date", row.postDate ? fmtThaiDate(row.postDate) : "")}</span>
+    </span>
+  );
+}
+
 /** You may sign this, but it is not yours — the CMO covering an artwork check,
  *  the planning side clearing a caption nobody was named on. Say whose it is
  *  BEFORE offering the buttons, or covering quietly becomes the default and the
@@ -548,6 +573,7 @@ function renderRow(row: ApprovalRow, now: number, deps: {
         <span className="block text-[11.5px] text-faint truncate">{d.meta}</span>
       </span>
       <AgePill iso={row.waitingSince} now={now} />
+      <MetaColumns row={row} />
       <Cta row={row} action={d.action} />
     </>
   );
@@ -604,6 +630,8 @@ function StoryboardRow({ row, now, me, onOpenGraphic, onGraphicUpdate }: {
           {brandName(g.b)} · {g.campaign} · {g.type} · โดย {g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}
         </span>
       </span>
+
+      <MetaColumns row={row} />
 
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
         {board ? (
@@ -680,6 +708,8 @@ function TaskApprovalRow({ row, now, me, onOpenTask, onTaskApproved }: {
         </span>
       </span>
 
+      <MetaColumns row={row} />
+
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
         {amount ? (
           <span className="text-[13.5px] font-extrabold" style={{ color: "#B8945A" }}>{baht(amount, { compact: true })}</span>
@@ -741,13 +771,16 @@ function CaptionRow({ row, now, me, onContentUpdate }: {
           <AgePill iso={row.waitingSince} now={now} />
         </span>
         <span className="block text-[11.5px] text-faint truncate">
-          {brandName(p.b)} · {p.campaign} · {p.plat} · เขียนโดย {captionOwner(p) || "—"}
+          {brandName(p.b)} · {p.campaign} · {p.plat}
+          <span className="md:hidden"> · เขียนโดย {row.submittedBy || "—"}</span>
         </span>
         <span className="block text-[12px] text-muted leading-[1.55] mt-[4px] whitespace-pre-wrap">
           {words || "— ไม่มีข้อความ —"}
         </span>
         {extras && <span className="block text-[11px] text-faint mt-[2px]">{extras}</span>}
       </span>
+
+      <MetaColumns row={row} />
 
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
         <CoverNote row={row} />
@@ -838,14 +871,18 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           <AgePill iso={row.waitingSince} now={now} />
         </span>
         <span className="block text-[11.5px] text-faint truncate">
+          {/* ส่งโดย moved to its own column — see MetaColumns. Below md the
+              columns are hidden, so it comes back into this line there. */}
           {[`${brandName(row.g.b)} · ${row.g.campaign}`, codeOf(row.g.campaignId, row.g.campaign),
-            `${d.platform} · ${d.size}${d.version ? ` · v${d.version}` : ""}`,
-            `ส่งโดย ${d.submittedBy || row.g.designer || "—"}`].filter(Boolean).join(" · ")}
+            `${d.platform} · ${d.size}${d.version ? ` · v${d.version}` : ""}`].filter(Boolean).join(" · ")}
+          <span className="md:hidden"> · ส่งโดย {row.submittedBy || "—"}</span>
         </span>
         <span className="block text-[11px] mt-[3px]" style={{ color: APPROVAL_META[row.kind].fg }}>
           <b>ตรวจ {lens.label}:</b> <span className="text-faint">{lens.checks}</span>
         </span>
       </span>
+
+      <MetaColumns row={row} />
 
       {/* The file and the verdict travel together: on a narrow row they wrap as
           one cluster, rather than the buttons dropping to their own line while
@@ -918,6 +955,7 @@ function ExpenseRow({ row, budget, now, codeOf, onApprove, onReject }: {
       )}
       <span className="text-[13.5px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
       <AgePill iso={row.waitingSince} now={now} />
+      <MetaColumns row={row} />
       <CoverNote row={row} />
       {!row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
