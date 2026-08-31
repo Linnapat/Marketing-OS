@@ -128,16 +128,12 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
       // neither gets interrupted.
       workLink.graphic(g.id), { team: graphicTeam(g), to: owners, inform: [g.requester, assignedBy(g)] });
   } else {
-    // Half a review told NOBODY anything, and that is where pieces went to sit.
-    // A designer heard "มีแก้กลับไปนะคะ" in Slack, opened the request, found
-    // feedback and no box to submit into, and no way to tell that the other
-    // lens simply had not answered yet. Meanwhile the reviewer who owed that
-    // verdict was never asked for it.
-    //
-    // The batching stays — a designer still gets one combined list rather than
-    // two rounds of exporting (see statusFromReview). What changes is that the
-    // wait is now addressed to someone: the outstanding reviewer is asked, and
-    // the people watching the piece can see why it has not moved.
+    // The other half of the review, still owed. Since a "แก้" now sends the
+    // piece straight back (statusFromReview), this branch is the one-lens-
+    // PASSED case: nothing is blocked, but the piece cannot reach Approved
+    // until the outstanding reviewer answers — and nobody used to ask them.
+    // So the wait is addressed to someone: the reviewer who owes the verdict
+    // is asked, and the people watching can see why it has not moved.
     const waiting = reviewProgress(after).pending[0];
     if (waiting) {
       // Ask whoever CAN give it. The owner of a lens is often barred from their

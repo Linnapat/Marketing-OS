@@ -12,7 +12,7 @@ import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
   applyLensVerdict, rejectionsByLens, emptyDeliverable, approvalLadder, lensAskWho,
   creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS, approvedAssetRow,
-  relocateApprovedAsset,
+  relocateApprovedAsset, submitDeliverable,
   type Graphic, type GraphicDeliverable,
 } from "../src/lib/data/graphic";
 import { canRelocateApprovedAsset } from "../src/lib/roleGates";
@@ -83,6 +83,15 @@ is("ผ่านด้านเดียว → ยังรอรีวิว �
 is("ผ่านทั้งสอง → Approved", statusFromReview(submitted({ review: { info: { verdict: "pass", by: "Ken S.", at: "x" }, ci: { verdict: "pass", by: "Boss L.", at: "y" } } })), "Approved");
 is("ครบสองแต่มีตีกลับ → Revision", statusFromReview(submitted({ review: { info: { verdict: "pass", by: "Ken S.", at: "x" }, ci: { verdict: "revise", by: "Boss L.", at: "y", note: "โลโก้เล็ก" } } })), "Revision");
 is("ยังไม่ส่งงาน → สถานะไม่ขยับ", statusFromReview(emptyDeliverable("IG", "1:1")), "Not submitted");
+
+console.log("\n— แต่ 'ให้แก้' ด้านเดียวพอ: ปล่อยงานกลับหาดีไซเนอร์ทันที —");
+// เดิมค้างที่ Waiting review จนกว่าจะครบสองด้าน ทำให้ 28 ชิ้นมีใบสั่งแก้แต่ไม่มี
+// ช่องส่งงาน ชิ้นเก่าสุดค้างตั้งแต่ 10 ส.ค. เพราะอีกด้านยังไม่เปิดดู
+const ciRevised = submitted({ review: { ci: { verdict: "revise", by: "Boss L.", at: "y", note: "โลโก้เล็ก" } } });
+is("CI สั่งแก้ ฝั่งข้อมูลยังไม่ตรวจ → Revision (ส่งงานแก้ได้เลย)", statusFromReview(ciRevised), "Revision");
+is("ฝั่งข้อมูลสั่งแก้ ฝั่ง CI ยังไม่ตรวจ → Revision เหมือนกัน", statusFromReview(submitted({ review: { info: { verdict: "revise", by: "Ken S.", at: "x", note: "ราคาผิด" } } })), "Revision");
+// กติกาของ Approved ไม่เปลี่ยน — Artwork Count ออกบิลจาก event นี้
+is("ผ่านด้านเดียวยังไม่ Approved เหมือนเดิม", statusFromReview(submitted({ review: { ci: { verdict: "pass", by: "Boss L.", at: "y" } } })), "Waiting review");
 is("นับความคืบหน้า 1 จาก 2", reviewProgress(submitted({ review: { info: { verdict: "pass", by: "Ken S.", at: "x" } } })).given, 1);
 is("บอกได้ว่าค้างด้านไหน", reviewProgress(submitted({ review: { info: { verdict: "pass", by: "Ken S.", at: "x" } } })).pending.join(","), "ci");
 
@@ -113,6 +122,22 @@ is("ครบสองโดยมีตีกลับ → Revision", sentBack.
 is("โน้ตเข้า feedback พร้อมป้ายด้าน", sentBack.deliverables![0].feedback.at(-1)?.lens, "ci");
 is("เคลียร์ผลตรวจรอบเก่า รอบใหม่เริ่มนับใหม่", sentBack.deliverables![0].review, undefined);
 is("ตีกลับต้องมีเหตุผล — ไม่มีโน้ต = ไม่ทำอะไร", applyLensVerdict(req(threeRows), 0, "ci", "revise", "Boss L."), null);
+
+// ตีกลับด้านเดียว โดยที่อีกด้านยังไม่ตรวจ — เคสของ TPN_2609_005-C03 ในภาพ
+const ciOnly = applyLensVerdict(req(threeRows), 0, "ci", "revise", "Boss L.", "เพิ่มเสียง clock out")!;
+is("ตีกลับด้านเดียว → Revision ทันที ไม่ต้องรออีกด้าน", ciOnly.deliverables![0].status, "Revision");
+is("ลงทั้งกลุ่ม artwork เหมือนเดิม", ciOnly.deliverables![1].status, "Revision");
+is("เคลียร์ผลตรวจ รอบใหม่เริ่มนับใหม่", ciOnly.deliverables![0].review, undefined);
+is("ยิง event revision_requested ให้ task/แจ้งเตือนทำงานทันที", (ciOnly.history ?? []).filter((e) => e.type === "revision_requested").length, 2);
+is("ยังไม่มี event approved หลุดออกไป", (ciOnly.history ?? []).filter((e) => e.type === "approved").length, 0);
+is("stage ขยับเป็น Revision Requested", ciOnly.stage, "Revision Requested");
+
+// ส่งงานรอบใหม่ = รอบใหม่จริง ๆ ผลตรวจของเวอร์ชันก่อนต้องไม่ตามมา
+const stale = req([submitted({ review: { ci: { verdict: "revise", by: "Boss L.", at: "y", note: "เก่า" } }, assetLink: "https://drive/v1" })]);
+const resubmitted = submitDeliverable(stale, 0, "Four", { assetLink: "https://drive/v2" })!;
+is("ส่งงานใหม่ → กลับไปรอรีวิว", resubmitted.deliverables![0].status, "Waiting review");
+is("ผลตรวจของเวอร์ชันเก่าไม่ติดมากับเวอร์ชันใหม่", resubmitted.deliverables![0].review, undefined);
+is("เลขเวอร์ชันเดินหน้า", resubmitted.deliverables![0].version, 2);
 is("ยังไม่ส่งงาน = ตรวจไม่ได้", applyLensVerdict(req([emptyDeliverable("IG", "1:1")]), 0, "ci", "pass", "Boss L."), null);
 
 console.log("\n— แยกสาเหตุการตีกลับ (design problem หรือ brief problem?) —");
