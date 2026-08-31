@@ -1440,7 +1440,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
   onClose: () => void;
   /** Who may clear a rush, best first — see RUSH_DECIDER_ROLES. */
   rushDeciders: string[];
-  onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string, linkedPost: ContentItem | null) => void;
+  onCreate: (g: Graphic, post: ContentItem | null, briefItem: BriefContentItem | null, campaign: string, linkedPost: ContentItem | null) => Promise<void>;
 }) {
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   const brandVisibility = useBrandVisibility();
@@ -1466,6 +1466,12 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
   // which ("none") the form could not express before — print, POSM and menu
   // artwork had to be filed as a social post to reach the Creative queue.
   const [rushReason, setRushReason] = useState("");
+  // Submitting is not instant: the request has to be numbered, inserted and
+  // have its Creative task raised before the modal closes — about two seconds.
+  // The button used to stay live and silent for all of it, so a second click
+  // re-ran the whole thing with the SAME id, and the duplicate insert came
+  // back 409 — "บันทึกไม่สำเร็จ" over a request that HAD just been saved.
+  const [saving, setSaving] = useState(false);
   // Monthly brief cutoff, set by the CMO in Settings; 0 turns the rule off.
   const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
   useEffect(() => {
@@ -1577,8 +1583,9 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
     !dueOrderValid ? "graphic due date before publish date" : null,
     !rushReasonValid ? "เหตุผลที่ต้องเร่ง (อย่างน้อย 10 ตัวอักษร)" : null,
   ].filter(Boolean) as string[];
-  const submit = () => {
-    if (!canCreate) return;
+  const submit = async () => {
+    if (!canCreate || saving) return;
+    setSaving(true);
     const needsStoryboardFor = needsStoryboard({ type: item.type, requiredVideo: item.requiredVideo });
     const plats = item.platforms;
     const pairs = item.assets.length ? item.assets : plats.map((p) => ({ platform: p, size: "" }));
@@ -1660,7 +1667,13 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
       };
       g.contentPostId = postId;
     }
-    onCreate(g, post, postLink === "new" ? item : null, campaign.trim(), linkedPost ?? null);
+    // The parent reports its own failure (and keeps the modal open so the brief
+    // typed here is not lost); this only has to release the button.
+    try {
+      await onCreate(g, post, postLink === "new" ? item : null, campaign.trim(), linkedPost ?? null);
+    } catch {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1787,10 +1800,10 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
             Requester stays fixed to login, and designer will be assigned after the brief comes in.
           </div>
         </div>
-        <button onClick={submit} disabled={!canCreate}
+        <button onClick={submit} disabled={!canCreate || saving}
           className={`w-full mt-4 text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40 ${isRush ? "" : "bg-panel"}`}
           style={isRush ? { background: "#B3641E" } : undefined}>
-          {isRush ? "⚡ ส่งบรีฟด่วน (รออนุมัติ)" : "Send Graphic Request"}
+          {saving ? "กำลังบันทึก…" : isRush ? "⚡ ส่งบรีฟด่วน (รออนุมัติ)" : "Send Graphic Request"}
         </button>
       </div>
     </div>
