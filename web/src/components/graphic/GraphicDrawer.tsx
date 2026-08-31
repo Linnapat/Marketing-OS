@@ -1723,7 +1723,8 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
     if (!d.assetLink.trim()) return;
     const at = new Date().toISOString();
     persist(
-      dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: at } : x),
+      // review: undefined — a new version starts a new round; see submitDeliverable.
+      dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: at, review: undefined } : x),
       { type: "submitted", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
     );
     notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
@@ -1926,25 +1927,20 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                         );
                       })}
                     </div>
-                    {/* One verdict in. Say WHICH way it went and WHO is being
-                        waited on — the old line said only that the piece would
-                        not move, so a designer looking at feedback with no
-                        submit box could not tell whether a revision was already
-                        queued or whether the form was broken. */}
+                    {/* One verdict in, and it was a PASS — a "แก้" no longer
+                        stops here, it sends the piece straight back to the
+                        designer (statusFromReview), so this row is only ever
+                        the "one down, one to go" case. Name who is being waited
+                        on: the old line said only that the piece would not
+                        move, which read as a broken form. */}
                     {prog2.given === 1 && (() => {
                       const inLens = REVIEW_LENSES.find((l) => d.review?.[l]);
                       const waiting = prog2.pending[0];
                       if (!inLens || !waiting) return null;
-                      const said = d.review?.[inLens]?.verdict === "revise";
+                      const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup });
                       return (
-                        <div className="text-[10.5px] mt-2 rounded-[8px] px-[9px] py-[6px]"
-                          style={said ? { background: "#FFF7ED", color: "#8A5418" } : { background: "#F6F5FA", color: "#706A84" }}>
-                          {said
-                            ? <>มีรายการให้แก้จาก <b>{LENS_META[inLens].label}</b> แล้ว — ยังส่งงานใหม่ไม่ได้จนกว่า <b>{LENS_META[waiting].owner}</b> จะตรวจ <b>{LENS_META[waiting].label}</b> เสร็จ ดีไซเนอร์จะได้ลิสต์แก้รวมทีเดียว ไม่ต้อง export สองรอบ</>
-                            : (() => {
-                                const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup });
-                                return <><b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{ask.name ?? LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน{ask.covering && ask.name ? ` · ${LENS_META[waiting].owner} ตรวจเองไม่ได้ (${ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้" : "เซ็นอีกด้านไปแล้ว"})` : ""}</>;
-                              })()}
+                        <div className="text-[10.5px] mt-2 rounded-[8px] px-[9px] py-[6px]" style={{ background: "#F6F5FA", color: "#706A84" }}>
+                          <b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{ask.name ?? LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน{ask.covering && ask.name ? ` · ${LENS_META[waiting].owner} ตรวจเองไม่ได้ (${ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้" : "เซ็นอีกด้านไปแล้ว"})` : ""}
                         </div>
                       );
                     })()}

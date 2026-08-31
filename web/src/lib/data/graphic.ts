@@ -1380,7 +1380,8 @@ export interface ReviewProgress {
   pending: ReviewLens[];
   /** Both in and both passed. */
   passed: boolean;
-  /** Both in and at least one sent it back. */
+  /** At least one lens sent it back — settled or not. One "แก้" is enough to
+   *  put the piece back on the designer; see statusFromReview. */
   sentBack: boolean;
   /** Every lens has answered. */
   settled: boolean;
@@ -1391,21 +1392,29 @@ export function reviewProgress(d: Pick<GraphicDeliverable, "review">): ReviewPro
   const pending = REVIEW_LENSES.filter((l) => !r[l]);
   const given = REVIEW_LENSES.length - pending.length;
   const settled = pending.length === 0;
-  const sentBack = settled && REVIEW_LENSES.some((l) => r[l]?.verdict === "revise");
+  const sentBack = REVIEW_LENSES.some((l) => r[l]?.verdict === "revise");
   return { given, total: REVIEW_LENSES.length, pending, passed: settled && !sentBack, sentBack, settled };
 }
 
 /** The row's status once the verdicts are in.
  *
- *  Deliberately keeps the piece in "Waiting review" while one lens is still
- *  out, rather than moving it on the first answer: a designer who starts
- *  fixing after one verdict re-exports again when the second arrives, which is
- *  the round trip the parallel design exists to avoid. */
+ *  One "แก้" is enough. The rule used to hold the piece in "Waiting review"
+ *  until BOTH lenses had answered, so the designer would get a single combined
+ *  list and export once instead of twice. In practice the second lens is not
+ *  always quick: 28 pieces were sitting with a revision already written and no
+ *  submit box to answer it — the oldest since 10 Aug — because the other
+ *  reviewer had not opened them yet. A batch that saves one export is not worth
+ *  a week of a video editor being unable to touch their own work.
+ *
+ *  "Approved" still needs both, and still fires exactly one `approved` event
+ *  (Artwork Count bills studios from those, so half a review must never count).
+ *  Anything the outstanding lens has to say lands on the NEXT round, against
+ *  the version it is actually looking at. */
 export function statusFromReview(d: Pick<GraphicDeliverable, "review" | "status">): string {
   if (d.status === "Not submitted") return d.status;
   const p = reviewProgress(d);
-  if (!p.settled) return "Waiting review";
-  return p.passed ? "Approved" : "Revision";
+  if (p.sentBack) return "Revision";
+  return p.passed ? "Approved" : "Waiting review";
 }
 
 /* ── The ladder the Approval tab draws ─────────────────────────────────────
@@ -2049,6 +2058,10 @@ export function submitDeliverable(
     version: target.version + 1,
     submittedBy: by,
     submittedAt: at,
+    // A new version is a new round. A verdict left over from the previous one
+    // would count towards it — and, being a "revise", would bounce the piece
+    // back the moment the other lens answered, over a file nobody re-read.
+    review: undefined,
   };
 
   return {
