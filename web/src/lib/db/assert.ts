@@ -19,8 +19,19 @@ const looksLikeRls = (error: DbErrorLike) =>
 const looksLikeBadUnicode = (error: DbErrorLike) =>
   !!error && ((error.code ?? "") === "22P05" || /unsupported Unicode escape/i.test(error.message ?? ""));
 
+/** Postgres 23505: the row is already there. Raw, it reads "duplicate key value
+ *  violates unique constraint …_blob_id_uniq", which sounds like the save was
+ *  lost — and it is the opposite: the save went through, and this is a SECOND
+ *  copy of it being turned away. Someone clicking a slow button twice must not
+ *  be told their work failed. */
+const looksLikeDuplicate = (error: DbErrorLike) =>
+  !!error && ((error.code ?? "") === "23505" || /duplicate key value|violates unique constraint/i.test(error.message ?? ""));
+
 export function assertDbOk(error: DbErrorLike, message: string): void {
   if (!error) return;
+  if (looksLikeDuplicate(error)) {
+    throw new Error(`${message} — รายการนี้ถูกบันทึกไปแล้ว (ระบบได้รับคำขอซ้ำ) · ลอง refresh หน้านี้ดูก่อน ถ้าเห็นรายการแล้วแปลว่าไม่ต้องทำอะไรเพิ่ม`);
+  }
   if (looksLikeRls(error)) {
     throw new Error(`${message} — บัญชีของคุณไม่มีสิทธิ์ทำรายการนี้ (ตรวจสิทธิ์ได้ที่ Settings › Permissions หรือแจ้ง CMO)`);
   }
