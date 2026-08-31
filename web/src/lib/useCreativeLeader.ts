@@ -18,7 +18,7 @@
 import { useEffect, useState } from "react";
 import { fetchMembers, fetchJsonSetting, Member } from "@/lib/db/settings";
 import { roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
-import { PRODUCTION_ROLES, WorkKind } from "@/lib/data/graphic";
+import { PRODUCTION_ROLES, CI_BACKUP_ROLES, WorkKind } from "@/lib/data/graphic";
 
 /** The lead's name, or "" until the lookup lands (callers tolerate blank — the
  *  designer and requester are still told, only the "you owe a verdict" DM is
@@ -57,4 +57,35 @@ export function useProductionOwners(): (kind: WorkKind) => string[] {
     return () => { alive = false; };
   }, []);
   return (kind: WorkKind) => roleHolders(members, PRODUCTION_ROLES[kind] ?? []);
+}
+
+/** The CMO, by name — the person who covers a lens its owner may not give.
+ *
+ *  Needed on screen as well as in the notification: a card that says "รอ
+ *  Creative Leader ตรวจ" when the Creative Leader is the one who raised the
+ *  brief names somebody the rules forbid from moving it. */
+export function useCmoName(): string {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    let alive = true;
+    fetchMembers()
+      .then((ms) => { if (alive) setName(roleHolders(ms, ["CMO"])[0] ?? ""); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return name;
+}
+
+/** Who can give the Visual CI verdict besides the Creative Leader — resolved by
+ *  name, for the card and the "still waiting" notice. */
+export function useCiBackup(): string[] {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchMembers()
+      .then((ms) => { if (alive) setNames(roleHolders(ms, CI_BACKUP_ROLES)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return names;
 }

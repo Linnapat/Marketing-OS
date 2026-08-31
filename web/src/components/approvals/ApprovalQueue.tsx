@@ -27,7 +27,7 @@ import {
   ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays, platformLabel,
 } from "@/lib/data/approvals";
 import { Graphic, LENS_META, workKind } from "@/lib/data/graphic";
-import { useProductionOwners } from "@/lib/useCreativeLeader";
+import { useProductionOwners, useCmoName, useCiBackup } from "@/lib/useCreativeLeader";
 import { decideStoryboard, giveLensVerdict } from "@/lib/graphicVerdict";
 import { approveTask } from "@/lib/taskApproval";
 import { Task } from "@/lib/data/tasks";
@@ -844,13 +844,15 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
   // Who could take it when the request names nobody — same fallback the drawer
   // uses, so a verdict given from the list tells the same people.
   const productionOwners = useProductionOwners();
+  const cmoName = useCmoName();
+  const ciBackup = useCiBackup();
 
   const decide = (verdict: "pass" | "revise", note?: string) => {
     if (acted) return;
     setActed(true);
     const ng = giveLensVerdict({
       g: row.g, deliverables: row.g.deliverables ?? [], index: row.index,
-      lens: row.lens, verdict, me, note, creativeLeader,
+      lens: row.lens, verdict, me, note, creativeLeader, cmoName, ciBackup,
       productionOwners: productionOwners(workKind(row.g.type, row.g.requiredVideo)),
       onUpdate: onGraphicUpdate,
     });
