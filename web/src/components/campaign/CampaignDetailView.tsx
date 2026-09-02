@@ -413,6 +413,12 @@ function BriefFromBuilder({ brief }: { brief: CampaignBrief }) {
           <div className="flex flex-col gap-4">
             {field("Objective", brief.objective)}
             {field("Period", `${fmtDisplay(brief.startDate)} – ${fmtDisplay(brief.endDate)}`)}
+            {/* Which branches this runs for — the brief said when and to whom but
+                never where. Read the multi-select first and fall back to the
+                joined string, because briefs written before branches[] existed
+                only ever filled `branch`. Brands with no branch list (personal
+                branding) legitimately have neither, and get the dash. */}
+            {field("Branches", brief.branches.length ? brief.branches.join(", ") : brief.branch)}
             {field("Target Audience", brief.audience)}
             {field("Main Message", brief.mainMessage)}
             {field("Offer / Promotion", brief.offer)}
