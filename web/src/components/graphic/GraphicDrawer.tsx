@@ -386,10 +386,26 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // convention.
   const canAcceptWork = !isRequester && (role === "CMO" || isCreativeSideRole(role)) && campaignReleased;
 
+  /** Show the change, then write it.
+   *
+   *  This used to wait for the round trip before touching the screen —
+   *  `updateGraphic(next).then(() => updateCurrentGraphic(next))` — and
+   *  updateGraphic is a PATCH plus a task sync, a second or two on a normal
+   *  day. Every control fed by it is bound to `g`, so for that whole second a
+   *  dropdown you had just changed sat there still showing the OLD name. Pick
+   *  a storyboard owner, glance away, and the honest reading of the screen is
+   *  that the choice did not save.
+   *
+   *  So the state moves first and the write follows. A failed write puts the
+   *  old value back — the screen must never keep showing something the
+   *  database refused. */
   const saveGraphic = (next: Graphic, failMessage: string) => {
-    updateGraphic(next)
-      .then(() => updateCurrentGraphic(next))
-      .catch((error) => toastError(`${failMessage}: ${error?.message || "Unknown error"}`));
+    const previous = g;
+    updateCurrentGraphic(next);
+    updateGraphic(next).catch((error) => {
+      updateCurrentGraphic(previous);
+      toastError(`${failMessage}: ${error?.message || "Unknown error"} — ค่าถูกคืนเป็นของเดิมแล้ว`);
+    });
   };
 
   const acceptWork = () => {
@@ -434,9 +450,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
   // Every shoot/storyboard write funnels through here, so the gate lives on the
   // handler as well as the controls — a disabled input is not a rule.
-  const setShooting = (patch: Partial<Graphic>) => {
+  const setShooting = (patch: Partial<Graphic>, saidWhat?: string) => {
     if (!canRunPipeline) return;
     saveGraphic({ ...g, ...patch }, "บันทึกไม่สำเร็จ");
+    if (saidWhat) toastSuccess(saidWhat);
   };
 
   const submitStoryboard = () => {
@@ -472,8 +489,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const assignShooter = (name: string) => {
     if (!canRunPipeline) return;
     const before = (g.shooter ?? "").trim();
-    setShooting({ shooter: name });
     const next = name.trim();
+    setShooting({ shooter: name }, next ? `บันทึกแล้ว — ${next} เป็นคนถ่ายงานนี้` : "ล้างคนถ่ายแล้ว");
     // Clearing the field, or re-picking the same person, is not a hand-over.
     if (!next || sameName(next, before)) return;
     notify("newTask", `📷 ให้ถ่ายงาน: ${g.title}`,
@@ -893,7 +910,10 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                     <div className="mb-2">
                       <div className="text-[10.5px] font-bold text-faint mb-[4px]">คนทำ storyboard (Creative Content)</div>
                       {canRunPipeline ? (
-                        <OwnerSelect value={g.storyboardOwner ?? ""} onChange={(name) => setShooting({ storyboardOwner: name })} team="Creative" placeholder="ยังไม่ระบุ" />
+                        <OwnerSelect value={g.storyboardOwner ?? ""}
+                          onChange={(name) => setShooting({ storyboardOwner: name },
+                            name.trim() ? `บันทึกแล้ว — ${name} ทำ storyboard งานนี้` : "ล้างคนทำ storyboard แล้ว")}
+                          team="Creative" placeholder="ยังไม่ระบุ" />
                       ) : (
                         <div className="text-[12.5px] text-ink">{g.storyboardOwner || "ยังไม่ระบุ"}</div>
                       )}
