@@ -8,6 +8,7 @@ import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, pre
 import { brandName, brandColor } from "@/lib/brands";
 import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
 import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
@@ -21,7 +22,6 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { ExpandableTextarea } from "@/components/ui/ExpandableTextarea";
 import { WorkCode } from "@/components/ui/CampaignCode";
 import { issueContentCode } from "@/lib/db/workCode";
-import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { CaptionTemplateStore, TemplateKind, forgetTemplate, rememberTemplate, templatesFor } from "@/lib/data/captionTemplates";
 import { fetchCaptionTemplates, saveCaptionTemplates } from "@/lib/db/captionTemplates";
 import { AssetLinkList } from "@/components/content/AssetLinkList";
@@ -412,7 +412,6 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       next === "Unassigned" ? "ยกเลิกการมอบหมายแล้ว" : `มอบหมายให้ ${next} เขียนแคปชั่นแล้ว`,
     );
   };
-
   const removePost = async () => {
     // Deleting a planned post is a scheduling decision, so it follows the same
     // gate as editing and moving one. It had none: the button sat below the
@@ -615,57 +614,20 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
         <div className="flex-1 overflow-y-auto px-5 py-[18px]">
           {tab === "overview" && (
             <div className="flex flex-col gap-[14px]">
-              {/* The artwork itself when there is one to show — the tile used to
-                  be a permanent 🖼 placeholder even after Creative had attached
-                  approved assets. */}
-              {hero && !heroBroken ? (
+              {/* The artwork, only when there IS one. The empty state used to
+                  hold a 🖼 tile the height of the fold, and the four cards under
+                  it — Status · Owner · Asset · Caption — repeated what the
+                  Content Plan row already shows and what the Caption, Approval
+                  and Publish tabs say in full. Overview opened on a screen of
+                  labels you had already read. */}
+              {hero && !heroBroken && (
                 <a href={hero.href} target="_blank" rel="noreferrer" title="เปิดไฟล์เต็ม"
                   className="rounded-[14px] overflow-hidden block relative" style={{ background: "#F0EBE0" }}>
                   <img src={hero.previewUrl} alt={item.title} loading="lazy" referrerPolicy="no-referrer"
                     onError={() => setHeroBroken(true)} className="w-full max-h-[240px] object-contain bg-white" />
                   <span className="absolute bottom-2 right-2 text-[10.5px] font-bold px-2 py-[3px] rounded-pill bg-black/55 text-white">{item.assetStatus}</span>
                 </a>
-              ) : (
-                <div className="rounded-[14px] h-40 flex flex-col items-center justify-center gap-2" style={{ background: "#F0EBE0" }}>
-                  <span className="text-[28px]">🖼</span>
-                  <span className="text-[13px] text-faint font-semibold">{item.assetStatus}</span>
-                </div>
               )}
-              <div className="grid grid-cols-2 gap-[10px]">
-                {[["Status", <StatusBadge key="s" tone={contentTone(item.status)}>{item.status}</StatusBadge>],
-                  ["Owner (คนเขียนแคปชั่น)", canAssign
-                    ? (
-                      // The one control that turns "งานเขียนแคปชั่นไหลเข้า Content
-                      // creator" into something the app actually does. Shows the
-                      // content planner while nobody has been assigned — that is
-                      // who owns the words until Creative takes them, not
-                      // "ยังไม่มอบหมาย" — and offers the people the work may be
-                      // handed on to (CAPTION_WRITER_ROLES). Scoped to "all"
-                      // rather than a team on purpose: the two writer roles live
-                      // in different teams, so filtering by team first would
-                      // leave nobody to pick. Clearing the slot hands the post
-                      // back to its planner; whoever holds it now stays listed
-                      // even when their role is not a writer's.
-                      <OwnerSelect
-                        key="o"
-                        value={captionOwner(item)}
-                        onChange={assignOwner}
-                        team="all"
-                        roleMatch={CAPTION_WRITER_ROLES}
-                        placeholder="ยังไม่มอบหมาย"
-                        emptyLabel="ยังไม่มีใครถูกตั้งเป็น Content Creator / Creative Leader — ตั้ง role ที่ Settings › Members ก่อน"
-                        className="text-[13px]"
-                      />
-                    )
-                    : <span key="o" className="text-[13.5px] font-semibold">{captionOwner(item) || "ยังไม่มอบหมาย"}</span>],
-                  ["Asset", <StatusBadge key="a" tone={contentTone(item.assetStatus)}>{item.assetStatus}</StatusBadge>],
-                  ["Caption", <StatusBadge key="c" tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>]].map(([label, node], i) => (
-                  <div key={i} className="rounded-[12px] px-[14px] py-3" style={{ background: "#F7F4EE" }}>
-                    <div className="text-[10px] font-bold tracking-[0.06em] uppercase text-faint mb-1">{label as string}</div>
-                    {node as React.ReactNode}
-                  </div>
-                ))}
-              </div>
               {warnings.length > 0 && (
                 <div className="rounded-[12px] px-[14px] py-3" style={{ background: "#FBF3F1", border: "1px solid #E8C5BC" }}>
                   <div className="text-[11.5px] font-bold text-status-red mb-2">Action needed</div>
@@ -947,6 +909,27 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 <button onClick={markCaptionReady} disabled={busy || !caption.trim()} className="text-[13.5px] font-semibold py-[11px] px-4 rounded-[10px] border border-line2 text-muted disabled:opacity-40">Mark Ready</button>
               </div>
               <div className="text-[11.5px] text-faint">Last edited by {captionOwner(item) || "—"}{caption.trim() ? "" : " · เขียน caption ก่อนกด Mark Ready"}</div>
+
+              {/* Handing the words to a writer. It used to sit on Overview among
+                  four status cards that only repeated the Content Plan row, and
+                  went with them — but the Content Plan's "แคปชั่นรอมอบหมาย"
+                  queue sends people here to do exactly this, so taking the
+                  control away would have left that queue pointing at nothing.
+                  It belongs beside the caption anyway. */}
+              {canAssign && (
+                <div className="rounded-[12px] px-[14px] py-3" style={{ background: "#F7F4EE" }}>
+                  <div className="text-[10px] font-bold tracking-[0.06em] uppercase text-faint mb-1">มอบหมายให้ใครเขียน</div>
+                  <OwnerSelect
+                    value={captionOwner(item)}
+                    onChange={assignOwner}
+                    team="all"
+                    roleMatch={CAPTION_WRITER_ROLES}
+                    placeholder="ยังไม่มอบหมาย"
+                    emptyLabel="ยังไม่มีใครถูกตั้งเป็น Content Creator / Creative Leader — ตั้ง role ที่ Settings › Members ก่อน"
+                    className="text-[13px]"
+                  />
+                </div>
+              )}
 
               {/* What the writer was told last time — kept in front of them
                   while they rewrite, not buried in a notification. */}
