@@ -89,12 +89,13 @@ export function canDecideCaption(
   // their queue unless it is actually theirs (see captionReviewer).
   const addressed = !!reviewer && me === reviewer;
   if (!addressed && role !== "CMO" && !canEditContentPlan(role)) return false;
-  // Addressed to you = yours to decide, your own words included. The marketer
-  // who asks for a post usually writes its caption; the plan names one person
-  // for both on purpose. Barring them left 49 of 63 ready captions with a named
-  // approver forbidden from approving and nobody to fall through to.
-  if (addressed) return true;
   if (!me || !writer || writer === "unassigned") return true;
+  // Writing it still bars you from clearing it — the caption is written by
+  // Creative and accepted by the marketer who asked for the post, two people by
+  // design. What must NOT happen is the bar closing the last door: when the row
+  // names the writer as its own reviewer the planning side takes it instead
+  // (see buildApprovalRows), so the check keeps its meaning without stranding
+  // the caption.
   return me !== writer;
 }
 

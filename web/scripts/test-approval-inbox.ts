@@ -167,6 +167,35 @@ console.log("\n— ชิ้นที่ยังไม่ส่งไม่เ�
     selectGraphicApprovals([done], ctx("Creative Leader", "Boss L."), published as never).length, 0);
 }
 
+console.log("\n— แคปชั่นต้องไม่ค้างโดยไม่มีใครกดได้ —");
+{
+  // 2 ก.ย. 69: เลน Caption ขึ้น "ทั้งทีม 42" ให้ Pupay โดยที่ทั้ง 42 ไม่มีใครกดได้เลย
+  // ต้นเหตุ: fan-out stamp คนเขียน = requester ทำให้คนเขียน/คนขอ/ผู้อนุมัติเป็นคนเดียว
+  // กติกาห้ามเซ็นงานตัวเองกันคนนั้นออก และแถวที่ระบุชื่อไว้ไม่เปิดให้คนอื่นกด
+  const post = (over: Record<string, unknown> = {}) => ({
+    id: "p1", day: 1, time: "10:00", title: "โพสต์", b: "teppen", plat: "Instagram",
+    status: "Draft", campaign: "Brand Awareness", caption: "ข้อความ", hashtags: "", cta: "",
+    captionStatus: "Ready", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
+    ...over,
+  });
+  const rowsFor = (p: unknown, me: string, role: string) =>
+    buildApprovalRows({ captions: [p as never], graphics: [], campaigns: [], requests: [], expenses: [], kol: [] },
+      ctx(role, me)).filter((r) => r.kind === "caption");
+
+  // ปกติ: Creative เขียน · Marketer ที่ขอเปิดโพสต์เป็นคนอนุมัติ
+  const normal = post({ owner: "Pichayaporn", requester: "Pupay", approver: "Pupay" });
+  is("คนขอเปิดโพสต์เป็นคนอนุมัติ", rowsFor(normal, "Pupay", "Marketing Manager / BGL")[0]?.canAct, true);
+  is("…และนับเป็นงานของเขา", rowsFor(normal, "Pupay", "Marketing Manager / BGL")[0]?.mine, true);
+  is("คนเขียนกดงานตัวเองไม่ได้", rowsFor(normal, "Pichayaporn", "Creative Leader")[0]?.canAct, false);
+
+  // ข้อมูลยังพังอยู่ (คนเขียน = ผู้อนุมัติ) → ต้องตกไปฝั่งวางแผน ไม่ใช่ตายทั้งแถว
+  const collapsed = post({ owner: "Pupay", requester: "Pupay", approver: "Pupay" });
+  is("คนเขียน=ผู้อนุมัติ → เจ้าตัวยังกดไม่ได้", rowsFor(collapsed, "Pupay", "Marketing Manager / BGL")[0]?.canAct, false);
+  is("…แต่ฝั่งวางแผนคนอื่นกดได้ ไม่ใช่ทางตัน", rowsFor(collapsed, "Gik", "CMO")[0]?.canAct, true);
+  is("…และป้ายบอกว่ารอฝ่ายวางแผน ไม่ใช่ชี้คนที่กดไม่ได้",
+    rowsFor(collapsed, "Gik", "CMO")[0]?.waitingOn, "ฝ่ายวางแผน");
+}
+
 console.log("\n— แบรนด์คือตัวคัดกรองเดียวที่ซ่อนงาน —");
 {
   is("brand ที่มองไม่เห็น = ไม่มีแถว",

@@ -15,7 +15,7 @@ import { needsStoryboard, initialNextAction } from "@/lib/data/graphic";
 import { autoNumberDeliverables, emptyDeliverable } from "@/lib/data/graphic";
 import { upsertKolRequirement, fetchKolsForCampaign, buildKol } from "./kol";
 import { Kol } from "@/lib/data/kol";
-import { resolveKolAssignment } from "./assignments";
+import { resolveKolAssignment, resolveCaptionWriter } from "./assignments";
 import { upsertBriefTask } from "./tasks";
 import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
@@ -139,6 +139,9 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
   // updateContent/deleteContent match BOTH rows, so editing one edited the
   // other and deleting one deleted the other.
   let itemIndex = 0;
+  // Resolved once for the whole fan-out — a campaign with twelve content items
+  // does not need twelve member lookups for one answer.
+  const captionWriter = await resolveCaptionWriter();
   for (const ci of normalizedBrief.content) {
     const idx = itemIndex++;
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
@@ -160,11 +163,16 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
       b: normalizedBrief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: normalizedBrief.name,
       campaignId: normalizedBrief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
       requester: ci.requester, designer: ci.designer, approver: ci.approver,
-      // Owner is assigned later inside the Creative team — leave unassigned here.
-      // The person who planned the item owns the post until someone else picks
-      // it up. "Unassigned" was a placeholder that never got replaced: all 51
-      // live posts carried it while the requester was known the whole time.
-      owner: ci.requester || "Unassigned", caption: "", hashtags: "", cta: ci.cta || "",
+      // The caption WRITER, and captions are Creative's work: the marketer asks
+      // for the post and accepts the words, Creative writes them.
+      //
+      // This read `ci.requester` — the person who ASKED. That made writer,
+      // requester and approver the same name on 49 live posts, so the rule that
+      // nobody signs off their own words barred the one person the row named,
+      // and a row naming a reviewer offers the buttons to no one else: the
+      // Caption lane read "ทั้งทีม 42" with every button dead. The Creative
+      // Leader is the landing point and hands it on from there.
+      owner: captionWriter, caption: "", hashtags: "", cta: ci.cta || "",
       // Brief guide for the caption writer.
       subHead: ci.subHead || undefined, mainMessage: ci.mainMessage || undefined,
       productHighlight: ci.productHighlight || undefined, captionDirection: ci.captionDirection || undefined,

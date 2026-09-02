@@ -387,18 +387,20 @@ export function buildApprovalRows(input: {
   for (const post of input.captions) {
     if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
     const reviewer = captionReviewer(post);
-    const isReviewer = !!reviewer && isSamePerson(reviewer, ctx.myKeys);
-    // "Nobody signs off their own words" only bites when somebody ELSE could.
-    //
-    // The marketer who asks for a post usually writes its caption too — the
-    // plan names one person for both on purpose. Barring them left 49 of the 63
-    // ready captions with a named approver who was forbidden from approving and
-    // no one to fall through to: the lane read "ทั้งทีม 42" while every member
-    // of that team, including the named approver, got zero buttons. So the
-    // named reviewer always decides, their own words included; the bar stays on
-    // the fallback, where a caption with no reviewer must still not be cleared
-    // by whoever wrote it.
+    // Captions are written by Creative and accepted by the marketer who asked
+    // for the post — two people by design. But the fan-out used to stamp the
+    // post's writer as its REQUESTER, so on 49 of the 63 ready captions the
+    // writer, the requester and the approver were one name, the "nobody signs
+    // off their own words" rule barred that person, and a row that names a
+    // reviewer offers the buttons to nobody else: the lane read "ทั้งทีม 42"
+    // while every member of that team, the named approver included, had zero
+    // buttons. The writer field is fixed at the source now; this is the
+    // backstop — when the row still names its own writer as reviewer, it falls
+    // through to the planning side rather than to nobody.
     const wroteIt = captionOwner(post).toLowerCase() === ctx.me.trim().toLowerCase();
+    const reviewerWroteIt = !!reviewer
+      && reviewer.trim().toLowerCase() === captionOwner(post).trim().toLowerCase();
+    const isReviewer = !!reviewer && !reviewerWroteIt && isSamePerson(reviewer, ctx.myKeys);
     rows.push({
       kind: "caption", key: `c:${post.id}`, b: post.b, campaign: post.campaign ?? "", post,
       waitingSince: post.createdAt || "",
@@ -407,10 +409,10 @@ export function buildApprovalRows(input: {
       // — that is why it is not stranded — but it is not counted as anyone's
       // own work, which is how every one of them ended up in the CMO's queue.
       mine: isReviewer,
-      canAct: reviewer ? isReviewer : (!wroteIt && ctx.canEditContentPlan),
+      canAct: reviewer && !reviewerWroteIt ? isReviewer : (!wroteIt && ctx.canEditContentPlan),
       submittedBy: captionOwner(post),
       postDate: contentDateIso(post),
-      waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),
+      waitingOn: firstName(reviewerWroteIt ? null : reviewer, "ฝ่ายวางแผน"),
     });
   }
 

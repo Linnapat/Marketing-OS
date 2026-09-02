@@ -68,6 +68,26 @@ export async function resolveApprover(moduleName: string): Promise<string> {
 }
 
 /** Resolve both at once for KOL creation. */
+/** Who writes captions: the Creative Leader.
+ *
+ *  Captions are Creative's work — the marketer asks for the post and accepts
+ *  the words, Creative writes them. The fan-out used to stamp the post's writer
+ *  as its own requester (`owner: ci.requester`), which made every caption look
+ *  self-written: writer, requester and approver one name on 49 live posts, the
+ *  self-approval rule barring that person, and nobody else offered the buttons.
+ *
+ *  The Leader is the landing point, not necessarily the hand that types it —
+ *  they hand it on from there (canAssignCaption). "Unassigned" when Settings
+ *  names no active Creative Leader, so the slot reads empty rather than being
+ *  filled with a guess. */
+export async function resolveCaptionWriter(): Promise<string> {
+  const members = await fetchMembers().catch(() => [] as Member[]);
+  const lead = members.find(
+    (m) => (m.status || "").toLowerCase() === "active" && (m.role || "").trim() === "Creative Leader",
+  );
+  return (lead?.name || "").trim() || UNASSIGNED;
+}
+
 export async function resolveKolAssignment(): Promise<{ owner: string; approver: string }> {
   const [owner, approver] = await Promise.all([resolveKolOwner(), resolveApprover("KOL / Creator")]);
   return { owner, approver };

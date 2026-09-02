@@ -316,12 +316,11 @@ console.log("\n— ใครอนุมัติ caption ได้ —");
       canDecideCaption("CMO", owed("Gik", "Pupay")), true);
     is("ไม่มีคนถูกระบุ → กลับไปใช้กติกาฝั่งวางแผนเหมือนเดิม",
       canDecideCaption("Marketing Executive", owed("Ken S.", null)), true);
-    // 2 ก.ย. 69: คนที่ถูกระบุให้ตรวจ กดงานที่ตัวเองเขียนได้ — Marketer ที่ขอเปิด
-    // โพสต์มักเขียนแคปชั่นเองด้วย แผนตั้งใจให้เป็นคนเดียวกัน · ก่อนแก้ 49 จาก 63
-    // แคปชั่นมีผู้อนุมัติที่ถูกกติกาห้ามอนุมัติ และไม่มีใครให้ถอยไปหา
-    is("คนที่ถูกระบุให้ตรวจ กดงานที่ตัวเองเขียนได้",
-      canDecideCaption("Creative Leader", { me: "May T.", writer: "May T.", reviewer: "May T." }), true);
-    is("…แต่ถ้าไม่ได้ถูกระบุ คนเขียนยังกดงานตัวเองไม่ได้",
+    // แคปชั่นเขียนโดย Creative และรับโดย Marketer ที่ขอเปิดโพสต์ — คนละคนโดยตั้งใจ
+    // กติกาห้ามเซ็นงานตัวเองจึงยังอยู่ แม้จะถูกระบุชื่อให้ตรวจก็ตาม
+    is("ถูกระบุให้ตรวจ แต่เป็นคนเขียนเอง กดไม่ได้",
+      canDecideCaption("Creative Leader", { me: "May T.", writer: "May T.", reviewer: "May T." }), false);
+    is("คนเขียนกดงานตัวเองไม่ได้ แม้อยู่ฝั่งวางแผน",
       canDecideCaption("Marketing Executive", { me: "May T.", writer: "May T.", reviewer: null }), false);
   }
 }
