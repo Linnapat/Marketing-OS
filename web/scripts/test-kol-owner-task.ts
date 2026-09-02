@@ -8,6 +8,7 @@
  * Run with:  npm test */
 
 import { kolAssignmentTask, kolTaskId, type Kol } from "../src/lib/data/kol";
+import { pickKolOwner } from "../src/lib/db/assignments";
 import { STATUS_ORDER } from "../src/components/work/WorkViews";
 
 let pass = 0, fail = 0;
@@ -112,6 +113,31 @@ console.log("\n— List view จัดกลุ่มตาม stage ตาม�
     pipeline.slice().sort((a, b) => rank(a) - rank(b)), pipeline);
   is("Stuck อยู่เหนือทุก stage", rank("Stuck") < rank("Request"), true);
   is("Done อยู่ท้ายสุด", rank("Done"), STATUS_ORDER.length - 1);
+}
+
+console.log("\n— คำขอ KOL ต้องมีเจ้าของเองโดยไม่ต้องรอใครมอบหมาย —");
+{
+  const M = (name: string, role: string, email: string, status = "Active") =>
+    ({ name, role, email, status, brandAccess: "All brands" }) as never;
+  // ของจริง: Settings › Teams มี CRM / Marketing-BGL / Creative / Management
+  // ไม่มีทีมชื่อ KOL เลย kolTeam() จึงคืน null และคำขอทุกใบตกเป็น Unassigned
+  const staff = [
+    M("Pupay", "Marketing Manager / BGL", "pupay@x.co"),
+    M("Ninew", "KOL Specialist", "ninew@x.co"),
+    M("Pichayaporn", "Creative Leader", "pichayaporn@x.co"),
+  ];
+  is("ไม่มีทีม KOL → ตกที่คนที่ role เป็น KOL", pickKolOwner(null, staff), "Ninew");
+  is("มีทีม KOL และมีหัวหน้า → หัวหน้าทีมมาก่อน role",
+    pickKolOwner({ lead: "pupay@x.co" }, staff), "Pupay");
+  is("ทีมมีแต่สมาชิก ไม่มีหัวหน้า → สมาชิกคนแรกที่ยัง active",
+    pickKolOwner({ members: ["pichayaporn@x.co"] }, staff), "Pichayaporn");
+  is("หัวหน้าที่ลาออกแล้ว ข้ามไปหาคนที่ยังอยู่",
+    pickKolOwner({ lead: "gone@x.co", members: ["ninew@x.co"] }, staff), "Ninew");
+  // ไม่มีใครเลยต้องบอกว่าไม่มี ไม่ใช่เดาชื่อ
+  is("ไม่มีทั้งทีมและ role → Unassigned",
+    pickKolOwner(null, [M("Pupay", "Marketing Manager / BGL", "pupay@x.co")]), "Unassigned");
+  is("KOL Specialist ที่ไม่ active ไม่นับ",
+    pickKolOwner(null, [M("Ninew", "KOL Specialist", "ninew@x.co", "Inactive")]), "Unassigned");
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} KOL owner task: ${pass} passed, ${fail} failed\n`);
