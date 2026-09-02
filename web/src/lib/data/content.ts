@@ -409,7 +409,11 @@ export function applyCaptionDecision(
   if (!captionAwaitsApproval(c)) return c;
   const at = new Date().toISOString();
   if (decision === "approve") {
-    return advanceApprovalState({ ...c, captionStatus: "Approved", captionApprovedBy: by, captionApprovedAt: at });
+    // The caption may be the second of the two sign-offs — queue the post if the
+    // artwork is already in. Same call the artwork side makes.
+    return withPublishQueue(
+      advanceApprovalState({ ...c, captionStatus: "Approved", captionApprovedBy: by, captionApprovedAt: at }),
+    );
   }
   const said = reason.trim();
   if (!said) return c;
@@ -469,22 +473,43 @@ export function canPublish(c: ContentItem): { ok: boolean; reasons: string[] } {
 
 /** Attach approved graphic deliverables to a content post and mark its asset
  *  ready. Returns a fresh object (no mutation) so callers can persist + bubble up. */
+/** An artwork status that counts as signed off. Same pair preflight() checks —
+ *  "Final" is the older word for it and still on live rows. */
+const ASSET_SIGNED_OFF = ["Approved", "Final"];
+
+/** Both halves done: the words accepted AND the artwork approved. Either alone
+ *  is half a post — a caption with nothing to show, or a picture with nothing
+ *  to say — and neither can go out. */
+export function readyToQueue(c: Pick<ContentItem, "captionStatus" | "assetStatus">): boolean {
+  return c.captionStatus === "Approved" && ASSET_SIGNED_OFF.includes(c.assetStatus);
+}
+
+/** Put a post in the publish queue the moment both halves are signed off.
+ *
+ *  "Queued" used to be set by hand, so a post whose caption and artwork were
+ *  both approved sat in "Draft" — the same bucket as one nobody had started —
+ *  and the only way to tell them apart was to open each. 13 live posts were in
+ *  that state.
+ *
+ *  Only ever an upgrade, and only at the moment a sign-off lands: it never
+ *  touches a post already Published or Queued, and it is deliberately NOT
+ *  applied on every save, so someone who moves the row back to Draft by hand
+ *  stays there instead of being re-queued behind their back. */
+export function withPublishQueue(c: ContentItem): ContentItem {
+  if (!readyToQueue(c)) return c;
+  if (c.publishStatus === "Published" || c.publishStatus === "Queued") return c;
+  return { ...c, publishStatus: "Queued" };
+}
+
 export function attachApprovedAssets(
   c: ContentItem,
   assets: { platform: string; size: string; link: string }[],
 ): ContentItem {
   const clean = assets.filter((a) => a.link);
-  return {
+  return withPublishQueue({
     ...c,
     assets: clean,
     assetStatus: clean.length ? "Approved" : c.assetStatus,
     status: c.status === "Waiting Design" ? "Draft" : c.status,
-    // Artwork signed off means the post has left the drawing board and is
-    // waiting its slot — that is what "Queued" is for. It used to stay "Draft",
-    // so 17 posts with fully approved artwork sat in the same bucket as ones
-    // nobody had started, and the only way to tell them apart was to open each.
-    // Never touches a post already Published, and never moves one that has no
-    // artwork attached.
-    publishStatus: clean.length && c.publishStatus !== "Published" ? "Queued" : c.publishStatus,
-  };
+  });
 }

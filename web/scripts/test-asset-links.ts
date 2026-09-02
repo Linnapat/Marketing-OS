@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { assetLinkView, driveFileId, heroPreview, isDirectImage } from "../src/lib/data/assetLinks";
 import { comboboxMatches } from "../src/lib/data/optionSearch";
 import { assetPreviewSrc, isFolderLink, dropboxImageSrc } from "../src/lib/data/requests";
-import { attachApprovedAssets, type ContentItem } from "../src/lib/data/content";
+import { attachApprovedAssets, applyCaptionDecision, readyToQueue, type ContentItem } from "../src/lib/data/content";
 
 const DRIVE_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456";
 
@@ -124,14 +124,32 @@ const post = (over: Partial<ContentItem> = {}): ContentItem => ({
 } as ContentItem);
 const oneAsset = [{ platform: "Instagram", size: "9:16 (1080×1920)", link: "https://dropbox/reel.mp4" }];
 
-assert.equal(attachApprovedAssets(post(), oneAsset).publishStatus, "Queued");
-assert.equal(attachApprovedAssets(post(), oneAsset).assetStatus, "Approved");
+// ต้องครบสองด้าน: แคปชั่นอนุมัติ + อาร์ตเวิร์กอนุมัติ
+const approvedCaption = { captionStatus: "Approved" };
+assert.equal(attachApprovedAssets(post(approvedCaption), oneAsset).publishStatus, "Queued");
+assert.equal(attachApprovedAssets(post(approvedCaption), oneAsset).assetStatus, "Approved");
+// แคปชั่นยังไม่อนุมัติ = ยังไม่พร้อมลง แม้อาร์ตเวิร์กจะเสร็จ
+assert.equal(attachApprovedAssets(post({ captionStatus: "Ready" }), oneAsset).publishStatus, "Draft");
+assert.equal(attachApprovedAssets(post({ captionStatus: "Missing" }), oneAsset).publishStatus, "Draft");
 // โพสต์ที่ลงไปแล้วต้องไม่ถูกดึงกลับมาเข้าคิว
-assert.equal(attachApprovedAssets(post({ publishStatus: "Published" }), oneAsset).publishStatus, "Published");
+assert.equal(attachApprovedAssets(post({ ...approvedCaption, publishStatus: "Published" }), oneAsset).publishStatus, "Published");
 // ไม่มีไฟล์แนบ = ยังไม่มีอะไรให้รอ publish
-assert.equal(attachApprovedAssets(post(), []).publishStatus, "Draft");
-assert.equal(attachApprovedAssets(post(), [{ platform: "IG", size: "1:1", link: "" }]).publishStatus, "Draft");
+assert.equal(attachApprovedAssets(post(approvedCaption), []).publishStatus, "Draft");
+assert.equal(attachApprovedAssets(post(approvedCaption), [{ platform: "IG", size: "1:1", link: "" }]).publishStatus, "Draft");
 // อยู่ในคิวอยู่แล้ว ส่งไฟล์เวอร์ชันใหม่เข้าไม่เปลี่ยนอะไร
-assert.equal(attachApprovedAssets(post({ publishStatus: "Queued" }), oneAsset).publishStatus, "Queued");
+assert.equal(attachApprovedAssets(post({ ...approvedCaption, publishStatus: "Queued" }), oneAsset).publishStatus, "Queued");
+
+// อีกทางหนึ่ง: อาร์ตเวิร์กเสร็จก่อน แล้วแคปชั่นมาอนุมัติทีหลัง
+const artworkDone = post({ assetStatus: "Approved", captionStatus: "Ready" });
+assert.equal(applyCaptionDecision(artworkDone, "approve", "Pupay").publishStatus, "Queued");
+// "Final" คือคำเดิมของ "อนุมัติแล้ว" ที่ยังมีในแถวเก่า — ต้องนับด้วย
+assert.equal(applyCaptionDecision(post({ assetStatus: "Final", captionStatus: "Ready" }), "approve", "Pupay").publishStatus, "Queued");
+// อาร์ตเวิร์กยังไม่เสร็จ อนุมัติแคปชั่นอย่างเดียวยังไม่เข้าคิว
+assert.equal(applyCaptionDecision(post({ assetStatus: "Waiting Design", captionStatus: "Ready" }), "approve", "Pupay").publishStatus, "Draft");
+// คนที่ย้ายกลับเป็น Draft เองต้องไม่ถูกดันกลับเข้าคิว — withPublishQueue ทำงาน
+// เฉพาะจังหวะที่ลายเซ็นเพิ่งลง ไม่ใช่ทุกครั้งที่บันทึก
+assert.equal(readyToQueue({ captionStatus: "Approved", assetStatus: "Approved" }), true);
+assert.equal(readyToQueue({ captionStatus: "Ready", assetStatus: "Approved" }), false);
+assert.equal(readyToQueue({ captionStatus: "Approved", assetStatus: "No Asset" }), false);
 
 console.log("✓ asset links + combobox filter + asset thumbnails + queued-for-publish");
