@@ -38,7 +38,7 @@ import {
   LENS_META, normSize, lensAskWho, lensesFor, REVIEW_LENSES, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
-import { captionAwaitsApproval, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
+import { captionAwaitsApproval, captionApproved, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
 import { isSamePerson } from "@/lib/identity";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 
@@ -389,7 +389,22 @@ export function buildApprovalRows(input: {
   // Addressed to the person who asked for the post; only an unaddressed one
   // falls back to the planning side, so nothing is stranded with no owner.
   for (const post of input.captions) {
-    if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
+    if (!ctx.isVisible(post.b)) continue;
+    // Approved, not out yet — the caption keeps its place in the lane instead of
+    // vanishing on the click, the same way artwork does. It drops off when the
+    // post is published; nothing to decide, so nobody's queue grows.
+    if (captionApproved(post) && !isPostFinished(post)) {
+      rows.push({
+        kind: "caption", key: `c:${post.id}:queued`, b: post.b, campaign: post.campaign ?? "", post,
+        waitingSince: post.captionApprovedAt || post.createdAt || "",
+        queued: true, mine: false, canAct: false,
+        submittedBy: captionOwner(post),
+        postDate: contentDateIso(post),
+        waitingOn: "รอ publish",
+      });
+      continue;
+    }
+    if (!captionAwaitsApproval(post)) continue;
     const reviewer = captionReviewer(post, ctx.brandMarketer?.(post.b), ctx.cmoName);
     // Captions are written by Creative and accepted by the marketer who asked
     // for the post — two people by design. But the fan-out used to stamp the

@@ -202,6 +202,22 @@ console.log("\n— แคปชั่นต้องไม่ค้างโด�
   is("…และป้ายบอกว่ารอฝ่ายวางแผน ไม่ใช่ชี้คนที่กดไม่ได้",
     rowsFor(collapsed, "Gik", "CMO")[0]?.waitingOn, "ฝ่ายวางแผน");
 
+  // อนุมัติแล้วต้องไม่หายจากจอ — ย้ายลงกลุ่ม Queued เหมือนอาร์ตเวิร์กและ VDO
+  const approved = post({ captionStatus: "Approved", captionApprovedAt: "2026-09-01T00:00:00Z",
+    owner: "Pichayaporn", requester: "Pupay", approver: "Pupay" });
+  const q = rowsFor(approved, "Pupay", "Marketing Manager / BGL");
+  is("อนุมัติแล้วยังอยู่ในลิสต์", q.length, 1);
+  is("…อยู่ในกลุ่ม Queued", q[0]?.queued, true);
+  is("…ไม่มีอะไรให้กดแล้ว", q[0]?.canAct, false);
+  is("…และไม่ไปพองตัวเลข 'รอคุณตัดสินใจ'", q[0]?.mine, false);
+  // ลงจริงแล้ว = จบ หลุดออกจากลิสต์
+  is("โพสต์ publish แล้ว → หลุดออกจาก Queued",
+    rowsFor(post({ captionStatus: "Approved", publishStatus: "Published", owner: "Pichayaporn", requester: "Pupay" }),
+      "Pupay", "Marketing Manager / BGL").length, 0);
+  // แคปชั่นที่ยังไม่เขียน ไม่ใช่ทั้งงานค้างและไม่ใช่ของที่รอ publish
+  is("แคปชั่นที่ยังไม่พร้อม ไม่โผล่เลย",
+    rowsFor(post({ captionStatus: "Missing", owner: "Pichayaporn", requester: "Pupay" }), "Pupay", "Marketing Manager / BGL").length, 0);
+
   // CMO ไม่รับแคปชั่นของแบรนด์อื่นเข้าคิวตัวเอง — กติกาที่ตั้งใจไว้ตั้งแต่ 5 ส.ค. 69
   // (เทสต์ "CMO ยังกดไม่ได้ ถ้าไม่ได้จ่าหน้าถึง" ด้านบนกำหนดไว้แล้ว)
   is("แคปชั่นที่จ่าหน้าถึง Marketer ของแบรนด์ ไม่ใช่งานของ CMO",

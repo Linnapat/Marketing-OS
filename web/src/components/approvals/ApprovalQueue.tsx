@@ -325,7 +325,9 @@ function renderCard(row: ApprovalRow, now: number, deps: {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[11.5px] text-muted">เขียนโดย {captionOwner(row.post) || "—"}</span>
-            <Cta row={row} action="อ่านและอนุมัติ →" />
+            {row.queued
+              ? <span className="text-[11.5px] font-bold flex-shrink-0" style={{ color: "#4E7A4E" }}>✓ อนุมัติแล้ว · รอ publish</span>
+              : <Cta row={row} action="อ่านและอนุมัติ →" />}
           </div>
         </Link>
       );
@@ -797,7 +799,10 @@ function CaptionRow({ row, now, me, onContentUpdate }: {
       <MetaColumns row={row} />
 
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
-        {!row.canAct ? (
+        {row.queued ? (
+          <span className="text-[11.5px] font-bold px-[9px] py-[4px] rounded-pill"
+            style={{ background: "#EEF4EE", color: "#4E7A4E" }}>✓ อนุมัติแล้ว · รอ publish</span>
+        ) : !row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : revising ? (
           <span className="flex items-center gap-2">
