@@ -1242,6 +1242,38 @@ export const CI_BACKUP_ROLES: string[] = ["Senior Graphic Designer"];
 
 export const REVIEW_LENSES: ReviewLens[] = ["info", "ci"];
 
+/** Video work is signed off ONCE, by the Creative Leader (or the CMO).
+ *
+ *  The two-lens split was built for print and social artwork, where the data
+ *  check catches a wrong price or a misspelt menu name on a file that is about
+ *  to be sent to a printer. On a Reel it turned into two people watching the
+ *  same cut and both saying yes: 67 of the 76 pieces waiting on a half-finished
+ *  review were video, against 9 for everything else. A second signature that
+ *  only ever repeats the first is not a control, it is a queue.
+ *
+ *  What this does NOT relax: the person who submitted the cut still cannot pass
+ *  it, and "Approved" still fires exactly one `approved` event, so Artwork Count
+ *  bills the same as before. The data on a video — prices, dates, branch names —
+ *  now rides with whoever gives that single verdict. */
+export const VDO_LENSES: ReviewLens[] = ["ci"];
+
+export function lensesFor(g: Pick<Graphic, "type" | "requiredVideo">): ReviewLens[] {
+  return workKind(g.type, g.requiredVideo) === "graphic" ? REVIEW_LENSES : VDO_LENSES;
+}
+
+/** Same question from a kind that has already been worked out. */
+export function lensesForKind(kind: WorkKind): ReviewLens[] {
+  return kind === "graphic" ? REVIEW_LENSES : VDO_LENSES;
+}
+
+/** Who owns a lane for THIS kind of work. Video has no Senior Graphic Designer
+ *  stand-in: with one lens there is no second signature to protect, so the lane
+ *  stays with the Creative Leader and the CMO who covers for them. */
+export function lensOwner(lens: ReviewLens, kind: WorkKind = "graphic"): string {
+  if (lens === "ci" && kind !== "graphic") return "Creative Leader / CMO";
+  return LENS_META[lens].owner;
+}
+
 export const LENS_META: Record<ReviewLens, { label: string; short: string; owner: string; checks: string }> = {
   info: {
     label: "ข้อมูลถูกต้อง",
@@ -1291,12 +1323,24 @@ const samePerson = (a?: string, b?: string) =>
  *  locked while it waits. Only `pass` is restricted — see canPassLens. */
 export function canGiveLensVerdict(
   lens: ReviewLens,
-  ctx: { role: string; isRequester: boolean; me: string; deliverable: Pick<GraphicDeliverable, "review" | "submittedBy"> },
+  ctx: {
+    role: string; isRequester: boolean; me: string;
+    deliverable: Pick<GraphicDeliverable, "review" | "submittedBy">;
+    /** Defaults to artwork, which keeps the two-lens rules exactly as they were. */
+    kind?: WorkKind;
+  },
 ): boolean {
   const role = (ctx.role || "").trim();
+  const kind = ctx.kind ?? "graphic";
+  // Video runs on one lane. A verdict for the lane it does not use is not a
+  // permission question — there is nothing there to sign.
+  if (!lensesForKind(kind).includes(lens)) return false;
   const allowed = lens === "info"
     ? ctx.isRequester || role === "Marketing Manager / BGL" || role === "CMO"
-    : role === "Creative Leader" || CI_BACKUP_ROLES.includes(role) || role === "CMO";
+    // The Senior Graphic Designer stand-in exists to protect the SECOND
+    // signature on artwork. Video has only one, so the lane stays with the
+    // Creative Leader and the CMO.
+    : role === "Creative Leader" || role === "CMO" || (kind === "graphic" && CI_BACKUP_ROLES.includes(role));
   if (!allowed) return false;
   const other = ctx.deliverable.review?.[lens === "info" ? "ci" : "info"];
   return !samePerson(other?.by, ctx.me);
@@ -1306,7 +1350,11 @@ export function canGiveLensVerdict(
  *  submission. */
 export function canPassLens(
   lens: ReviewLens,
-  ctx: { role: string; isRequester: boolean; me: string; deliverable: Pick<GraphicDeliverable, "review" | "submittedBy"> },
+  ctx: {
+    role: string; isRequester: boolean; me: string;
+    deliverable: Pick<GraphicDeliverable, "review" | "submittedBy">;
+    kind?: WorkKind;
+  },
 ): boolean {
   return canGiveLensVerdict(lens, ctx) && !samePerson(ctx.deliverable.submittedBy, ctx.me);
 }
@@ -1346,8 +1394,12 @@ export function lensAskWho(
     creativeLeader?: string | null;
     cmo?: string | null;
     /** Senior Graphic Designers — the CI lane's second pair of eyes, asked
-     *  before the CMO is pulled in. */
+     *  before the CMO is pulled in. Artwork only; see `kind`. */
     ciBackup?: (string | null | undefined)[];
+    /** Defaults to artwork. Video has no Senior Graphic Designer stand-in —
+     *  asking one for a verdict they may not give is how a piece waits on
+     *  somebody the rules forbid from moving it. */
+    kind?: WorkKind;
   },
 ): LensAsk {
   const owner = ((lens === "info" ? who.requester : who.creativeLeader) ?? "").trim();
@@ -1364,7 +1416,7 @@ export function lensAskWho(
   }
   // Stand-ins are subject to the same two rules — anyone who submitted the
   // piece or signed the other lens is out too, however senior.
-  const backups = lens === "ci" ? (who.ciBackup ?? []) : [];
+  const backups = lens === "ci" && (who.kind ?? "graphic") === "graphic" ? (who.ciBackup ?? []) : [];
   for (const raw of [...backups, who.cmo]) {
     const name = (raw ?? "").trim();
     if (!name || name === "Unassigned") continue;
@@ -1387,13 +1439,19 @@ export interface ReviewProgress {
   settled: boolean;
 }
 
-export function reviewProgress(d: Pick<GraphicDeliverable, "review">): ReviewProgress {
+export function reviewProgress(
+  d: Pick<GraphicDeliverable, "review">,
+  lenses: ReviewLens[] = REVIEW_LENSES,
+): ReviewProgress {
   const r = d.review ?? {};
-  const pending = REVIEW_LENSES.filter((l) => !r[l]);
-  const given = REVIEW_LENSES.length - pending.length;
+  const pending = lenses.filter((l) => !r[l]);
+  const given = lenses.length - pending.length;
   const settled = pending.length === 0;
-  const sentBack = REVIEW_LENSES.some((l) => r[l]?.verdict === "revise");
-  return { given, total: REVIEW_LENSES.length, pending, passed: settled && !sentBack, sentBack, settled };
+  // A verdict on a lens this kind of work does not use is ignored, not counted:
+  // video rows carry `info` verdicts from before the split was narrowed, and
+  // reading them would keep asking for a check nobody owes any more.
+  const sentBack = lenses.some((l) => r[l]?.verdict === "revise");
+  return { given, total: lenses.length, pending, passed: settled && !sentBack, sentBack, settled };
 }
 
 /** The row's status once the verdicts are in.
@@ -1410,9 +1468,12 @@ export function reviewProgress(d: Pick<GraphicDeliverable, "review">): ReviewPro
  *  (Artwork Count bills studios from those, so half a review must never count).
  *  Anything the outstanding lens has to say lands on the NEXT round, against
  *  the version it is actually looking at. */
-export function statusFromReview(d: Pick<GraphicDeliverable, "review" | "status">): string {
+export function statusFromReview(
+  d: Pick<GraphicDeliverable, "review" | "status">,
+  lenses: ReviewLens[] = REVIEW_LENSES,
+): string {
   if (d.status === "Not submitted") return d.status;
-  const p = reviewProgress(d);
+  const p = reviewProgress(d, lenses);
   if (p.sentBack) return "Revision";
   return p.passed ? "Approved" : "Waiting review";
 }
@@ -1478,7 +1539,11 @@ const STAGE_PAST_SUBMISSION: Record<string, "Waiting review" | "Revision" | "App
 
 export function approvalLadder(
   dels: GraphicDeliverable[],
-  ctx: { designer?: string; requester?: string; brandLead?: string | null; creativeLeader?: string | null; stage?: string },
+  ctx: {
+    designer?: string; requester?: string; brandLead?: string | null; creativeLeader?: string | null; stage?: string;
+    /** Video draws one review rung, not two. Defaults to artwork. */
+    kind?: WorkKind;
+  },
 ): ApprovalStep[] {
   const fromStage = STAGE_PAST_SUBMISSION[(ctx.stage ?? "").trim()];
   const rows = dels.some((d) => d.status !== "Not submitted") || !fromStage
@@ -1495,14 +1560,14 @@ export function approvalLadder(
       : submitted.length ? undefined : "ยังไม่ส่งชิ้นงาน",
   }];
 
-  for (const lens of REVIEW_LENSES) {
+  for (const lens of lensesForKind(ctx.kind ?? "graphic")) {
     const meta = LENS_META[lens];
     const role = `รีวิว ${meta.label}`;
     // Who is expected to answer, when nobody has yet. Both people on the info
     // rung are alternatives, not a queue: either signature settles it.
     const waitingOn = (lens === "info"
       ? namesOf([ctx.requester, ctx.brandLead])
-      : namesOf([ctx.creativeLeader])).join(" / ") || meta.owner;
+      : namesOf([ctx.creativeLeader])).join(" / ") || lensOwner(lens, ctx.kind ?? "graphic");
     // A row settled before the two lenses existed carries no `review`, only a
     // status. Reading it as "no verdict yet" would park every job signed off
     // before 31 Jul on a Pending rung for ever — so the row's own status
@@ -1613,6 +1678,10 @@ export function applyLensVerdict(
   const target = dels[index];
   if (!target || target.status === "Not submitted") return null;
   if (verdict === "revise" && !note?.trim()) return null; // "fix it" is not a brief
+  // Video is signed off once; a verdict aimed at the lane it does not use is
+  // refused here rather than written and then ignored by reviewProgress.
+  const lenses = lensesFor(g);
+  if (!lenses.includes(lens)) return null;
 
   const at = new Date().toISOString();
   const group = artworkGroup(dels, index);
@@ -1623,7 +1692,7 @@ export function applyLensVerdict(
     if (d.status === "Not submitted") continue;
     const review: DeliverableReview = { ...(d.review ?? {}), [lens]: { verdict, by, at, note: note?.trim() || undefined } };
     const next: GraphicDeliverable = { ...d, review };
-    next.status = statusFromReview(next);
+    next.status = statusFromReview(next, lenses);
     if (verdict === "revise") {
       next.feedback = [...d.feedback, { reason: note!.trim(), by, at, lens }];
     }
@@ -2013,7 +2082,7 @@ export function passAllWaiting(
     if (d.status !== "Waiting review") continue;
     const key = normSize(d.size);
     if (seen.has(key)) continue;
-    if (!canPassLens(lens, { role: ctx.role, isRequester: ctx.isRequester, me: by, deliverable: d })) continue;
+    if (!canPassLens(lens, { role: ctx.role, isRequester: ctx.isRequester, me: by, deliverable: d, kind: workKind(g.type, g.requiredVideo) })) continue;
     seen.add(key);
     const applied = applyLensVerdict(next, i, lens, "pass", by);
     if (!applied) continue;

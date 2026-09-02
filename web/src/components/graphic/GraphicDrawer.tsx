@@ -17,7 +17,7 @@ import { GRAPHIC_OPEN_PARAM,
   hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit, feedbackOwners, revisionTaskTitle,
-  ReviewLens, REVIEW_LENSES, LENS_META, reviewProgress,
+  ReviewLens, LENS_META, reviewProgress, lensesFor, lensOwner,
   canGiveLensVerdict, canPassLens, approvalLadder,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
@@ -1422,6 +1422,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                 brandLead,
                 creativeLeader,
                 stage: g.stage,
+                kind: workKind(g.type, g.requiredVideo),
               }).map((s, i) => {
                 const tone = s.state === "done" ? "green" : s.state === "pending" ? "gold" : s.state === "revise" ? "orange" : "neutral";
                 const label = s.state === "done" ? "Done" : s.state === "pending" ? "Pending" : s.state === "revise" ? "ตีกลับ" : "—";
@@ -1685,8 +1686,12 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
   // Who covers a lens its owner may not give — see lensAskWho.
   const cmoName = useCmoName();
   const ciBackup = useCiBackup();
-  // Sign-off is now two checks, asked per lens inside each row — see
-  // canGiveLensVerdict. Everyone else sees the artwork and who it waits on.
+  // How many checks this job needs, and who owns them, follows the KIND of work:
+  // artwork is data + Visual CI, video is one sign-off by the Creative Leader
+  // (or the CMO). Read once here so the panel, the permissions and the "waiting
+  // on" line cannot disagree about it — see lensesFor.
+  const jobKind = workKind(g.type, g.requiredVideo);
+  const jobLenses = lensesFor(g);
   // Production is on hold while an urgent brief is unresolved (or refused).
   const rushHold = rushBlocksProduction(g.rushStatus);
   // …and while the steps IN FRONT of the artwork are outstanding: a reel with
@@ -1789,7 +1794,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
       {dels.map((d, i) => {
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const inReview = d.status === "Waiting review";
-        const prog2 = reviewProgress(d);
+        const prog2 = reviewProgress(d, jobLenses);
         return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -1855,16 +1860,18 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                 {inReview && (
                   <div className="rounded-[10px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[11px] font-bold tracking-[0.05em] uppercase text-faint">ตรวจ 2 ด้าน</span>
-                      <span className="text-[11px] font-bold" style={{ color: prog2.given === 2 ? "#4E7A4E" : "#C68A1E" }}>
-                        {prog2.given}/2 ตรวจแล้ว
+                      <span className="text-[11px] font-bold tracking-[0.05em] uppercase text-faint">
+                        {jobLenses.length > 1 ? `ตรวจ ${jobLenses.length} ด้าน` : "อนุมัติงาน"}
+                      </span>
+                      <span className="text-[11px] font-bold" style={{ color: prog2.given === prog2.total ? "#4E7A4E" : "#C68A1E" }}>
+                        {prog2.given}/{prog2.total} ตรวจแล้ว
                       </span>
                     </div>
                     <div className="flex flex-col gap-2">
-                      {REVIEW_LENSES.map((lens) => {
+                      {jobLenses.map((lens) => {
                         const v = d.review?.[lens];
                         const meta = LENS_META[lens];
-                        const ctx = { role, isRequester, me, deliverable: d };
+                        const ctx = { role, isRequester, me, deliverable: d, kind: jobKind };
                         const mayAct = canGiveLensVerdict(lens, ctx);
                         const mayPass = canPassLens(lens, ctx);
                         const open = revising?.i === i && revising.lens === lens;
@@ -1873,7 +1880,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <div className="min-w-0">
                                 <span className="text-[12px] font-bold text-ink">{meta.label}</span>
-                                <span className="text-[10.5px] text-faint"> · {meta.owner}</span>
+                                <span className="text-[10.5px] text-faint"> · {lensOwner(lens, jobKind)}</span>
                                 <div className="text-[10.5px] text-faint">{meta.checks}</div>
                               </div>
                               {v ? (
@@ -1925,7 +1932,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                                  from their own (they submitted it, or they signed the
                                  other one), and naming them anyway is how 23 pieces
                                  ended up waiting on a person the rules forbid. */
-                              const ask = lensAskWho(lens, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup });
+                              const ask = lensAskWho(lens, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: jobKind });
                               return (
                                 <div className="text-[11px] text-faint mt-1">
                                   {ask.name
@@ -1945,10 +1952,10 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                         on: the old line said only that the piece would not
                         move, which read as a broken form. */}
                     {prog2.given === 1 && (() => {
-                      const inLens = REVIEW_LENSES.find((l) => d.review?.[l]);
+                      const inLens = jobLenses.find((l) => d.review?.[l]);
                       const waiting = prog2.pending[0];
                       if (!inLens || !waiting) return null;
-                      const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup });
+                      const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: jobKind });
                       return (
                         <div className="text-[10.5px] mt-2 rounded-[8px] px-[9px] py-[6px]" style={{ background: "#F6F5FA", color: "#706A84" }}>
                           <b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{ask.name ?? LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน{ask.covering && ask.name ? ` · ${LENS_META[waiting].owner} ตรวจเองไม่ได้ (${ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้" : "เซ็นอีกด้านไปแล้ว"})` : ""}

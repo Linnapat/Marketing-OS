@@ -18,7 +18,7 @@
 import {
   Graphic, GraphicDeliverable, ReviewLens, LENS_META,
   applyLensVerdict, deliverableProgress, stageFromDeliverables, assignedBy,
-  reviewProgress, feedbackOwners, revisionTaskTitle, lensAskWho,
+  reviewProgress, feedbackOwners, revisionTaskTitle, lensAskWho, lensesFor, workKind,
   storyboardAuthor,
 } from "@/lib/data/graphic";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
@@ -134,13 +134,13 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
     // until the outstanding reviewer answers — and nobody used to ask them.
     // So the wait is addressed to someone: the reviewer who owes the verdict
     // is asked, and the people watching can see why it has not moved.
-    const waiting = reviewProgress(after).pending[0];
+    const waiting = reviewProgress(after, lensesFor(g)).pending[0];
     if (waiting) {
       // Ask whoever CAN give it. The owner of a lens is often barred from their
       // own — they submitted the piece, or they just signed the other lens —
       // and asking them anyway is how a piece waits on the one person the rules
       // forbid from moving it (23 were doing exactly that when this was found).
-      const ask = lensAskWho(waiting, after, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup });
+      const ask = lensAskWho(waiting, after, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: workKind(g.type, g.requiredVideo) });
       const owes = [ask.name];
       const verdictWord = verdict === "revise" ? "ขอให้แก้" : "ผ่าน";
       notify("feedback", `👀 รอตรวจอีกหนึ่งด้าน: ${g.title}`,

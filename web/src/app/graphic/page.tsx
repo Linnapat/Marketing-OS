@@ -15,7 +15,7 @@ import { BrandFilterValue, BrandId, brandCode, brandColor, brandName, BRANDS, BR
 import { FinishedFold } from "@/components/ui/FinishedFold";
 import {
   GRAPHICS, STAGE_ORDER, Graphic, stageTone, PRIORITY_TONE, DESIGNER_COLOR,
-  graphicKpis, emptyDeliverable, passAllWaiting, REVIEW_LENSES, LENS_META, canPassLens, type ReviewLens,
+  graphicKpis, emptyDeliverable, passAllWaiting, LENS_META, canPassLens, lensesFor, type ReviewLens,
   DAILY_WORK_CAP, WORK_KIND_LABEL, workKind, countWorkOnDay, artworkUnitsOf, needsStoryboard, isOwnQueueJob,
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
@@ -1214,8 +1214,9 @@ function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (
   // two-check split exists to remove — and it would silently do the other
   // reviewer's job from a list row.
   const waiting = (g.deliverables ?? []).filter((d) => d.status === "Waiting review");
-  const mine = REVIEW_LENSES.filter((lens) =>
-    waiting.some((d) => !d.review?.[lens] && canPassLens(lens, { role, isRequester, me, deliverable: d })));
+  const jobKind = workKind(g.type, g.requiredVideo);
+  const mine = lensesFor(g).filter((lens) =>
+    waiting.some((d) => !d.review?.[lens] && canPassLens(lens, { role, isRequester, me, deliverable: d, kind: jobKind })));
   if (!mine.length) return null;
   return (
     <>
@@ -1225,10 +1226,12 @@ function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (
           role="button" tabIndex={0}
           onClick={(e) => { e.stopPropagation(); onQuickApprove(g, lens); }}
           onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onQuickApprove(g, lens); } }}
-          title={`ผ่านด้าน${LENS_META[lens].short}ให้ทุกชิ้นที่รอรีวิวของงานนี้ — อีกด้านยังต้องมีคนตรวจ`}
+          title={mine.length === 1 && lensesFor(g).length === 1
+            ? "อนุมัติทุกชิ้นที่รอรีวิวของงานนี้"
+            : `ผ่านด้าน${LENS_META[lens].short}ให้ทุกชิ้นที่รอรีวิวของงานนี้ — อีกด้านยังต้องมีคนตรวจ`}
           className="inline-flex items-center text-[11px] font-bold text-white rounded-[8px] px-2.5 py-[4px] cursor-pointer whitespace-nowrap"
           style={{ background: lens === "ci" ? "#6C5CE7" : "#4E7A4E" }}
-        >✓ {LENS_META[lens].short}</span>
+        >✓ {lensesFor(g).length === 1 ? "อนุมัติ" : LENS_META[lens].short}</span>
       ))}
     </>
   );
