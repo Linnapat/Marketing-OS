@@ -24,16 +24,15 @@ import { fmtFollow } from "@/lib/data/kol";
 import { CampaignHub, HubStats, hubStats, createBudgetExpenseDrafts } from "@/lib/db/campaignHub";
 import { CampaignBrief, BriefContentItem, budgetSummary, materialised, approvedButNothingMade, plannedItems } from "@/lib/data/brief";
 import { logBriefApproval, saveCampaignBrief } from "@/lib/db/brief";
-import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMembers, fetchBrandConfigs } from "@/lib/db/settings";
 import { resolveBrandLead } from "@/lib/db/assignments";
 import { BrandCfg } from "@/lib/data/settings";
 import { sameName } from "@/lib/identity";
-import { brandName } from "@/lib/brands";
 import { updateCampaignStatus } from "@/lib/db/campaigns";
 import { useCanMakeApprovedPlan } from "@/lib/usePermGates";
 import { useAuth } from "@/lib/auth";
 import { notify } from "@/lib/notify";
+import { sendCampaignBackForRevision } from "@/lib/campaignRevision";
 import { fmtDisplay } from "@/components/ui/DatePicker";
 
 // Rough planning ratios used only until per-campaign actuals are wired in. These
@@ -92,6 +91,10 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
   // Status is the approval flow, so the CMO alone moves it — same gate as the
   // campaign list's status dropdown.
   const canApprove = role === "CMO";
+  // The banner's send-back asks for its reason inline — the button used to fire
+  // straight through with nothing to say, which is the whole bug.
+  const [sendingBack, setSendingBack] = useState(false);
+  const [sendBackReason, setSendBackReason] = useState("");
   const decide = async (approve: boolean) => {
     setApproving(true);
     try {
@@ -105,15 +108,36 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
       // used to fan out its own possibly-stale copy in parallel with the tab's
       // Approve — the two runs raced into content_posts_source_uniq and the
       // stale write silently ate the other's approval-log entries.
-      const next = approve ? "Approved" as const : "Draft" as const;
-      if (brief) {
-        const by = member?.name || role || "—";
-        const entry = { action: approve ? "Approved" : "Sent back to Draft", by, at: new Date().toISOString(), from: brief.status, to: next };
-        const fresh = (await logBriefApproval(brief.id, entry, next))
-          ?? (supabase() ? null : { ...brief, status: next, approvalLog: [...(brief.approvalLog ?? []), entry] });
-        if (fresh && approve) await materialiseApproved(c, fresh, by);
+      const by = member?.name || role || "—";
+      if (!approve) {
+        // Sending back is never silent any more — same operation as the
+        // Approval tab's button, reason and all. See lib/campaignRevision.
+        if (!brief) {
+          // Pre-builder campaign: no brief, so no planner and no task to raise.
+          // Keep the status move, and say plainly that nobody was told.
+          await updateCampaignStatus(c.id, "Draft", by);
+          toastSuccess("ส่งกลับเป็น Draft แล้ว — แคมเปญเก่าที่ไม่มีบรีฟ ระบบแจ้งใครไม่ได้ ต้องบอกเจ้าของงานเอง");
+        } else {
+          const res = await sendCampaignBackForRevision({
+            brief, campaignId: c.id, fallbackOwner: c.owner, reason: sendBackReason, by,
+          });
+          if (!res.ok) {
+            toastError(res.reason === "no-reason"
+              ? "ต้องเขียนเหตุผลก่อนส่งกลับ"
+              : "แคมเปญนี้ถูกส่งกลับไปแล้ว — ไม่ได้ทำซ้ำ (refresh เพื่อดูข้อมูลล่าสุด)");
+            return;
+          }
+          onBriefChange?.(res.brief);
+          toastSuccess(res.sentTo ? `ส่งกลับให้ ${res.sentTo} แก้แล้ว` : "ส่งกลับแล้ว — แต่แคมเปญนี้ยังไม่มีผู้วางแผน ไม่มีใครได้รับงาน");
+          setSendingBack(false); setSendBackReason("");
+        }
+      } else if (brief) {
+        const entry = { action: "Approved", by, at: new Date().toISOString(), from: brief.status, to: "Approved" as const };
+        const fresh = (await logBriefApproval(brief.id, entry, "Approved"))
+          ?? (supabase() ? null : { ...brief, status: "Approved" as const, approvalLog: [...(brief.approvalLog ?? []), entry] });
+        if (fresh) await materialiseApproved(c, fresh, by);
       } else {
-        await updateCampaignStatus(c.id, next, member?.name || role || "");
+        await updateCampaignStatus(c.id, "Approved", by);
       }
       onReload();
     } catch (error) {
@@ -192,10 +216,29 @@ export function CampaignDetailView({ detail, hub, onReload, brief, onBriefChange
             <div className="text-[11.5px] text-muted">{canApprove ? "อนุมัติเพื่อเริ่มแคมเปญ หรือส่งกลับให้แก้ไข (Approval Queue module กำลังจะมา)" : "รอผู้อนุมัติดำเนินการ — ระหว่างนี้ยังไม่ค้างถาวร ผู้อนุมัติ/Admin กดได้จากหน้านี้"}</div>
           </div>
           {canApprove && (
-            <div className="flex gap-2">
-              <button disabled={approving} onClick={() => decide(false)} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px] bg-surface disabled:opacity-40">↩ Send back to Draft</button>
-              <button disabled={approving} onClick={() => decide(true)} className="text-[12px] font-bold text-white rounded-[8px] px-4 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{approving ? "…" : "✓ Approve & Activate"}</button>
-            </div>
+            sendingBack ? (
+              /* Reason first. It becomes the planner's task and the message they
+                 get — a send-back with nothing written on it tells them only
+                 that the campaign moved. */
+              <div className="flex flex-col gap-2 min-w-[280px]">
+                <textarea value={sendBackReason} onChange={(e) => setSendBackReason(e.target.value)} rows={2} autoFocus
+                  placeholder={`ต้องแก้อะไรก่อนอนุมัติ? — ส่งถึง ${brief?.plannerOwner || c.owner || "ผู้วางแผน"}`}
+                  className="w-full text-[12.5px] px-3 py-2 rounded-[10px] border-[1.5px] border-line2 bg-ivory outline-none resize-none" />
+                <div className="flex gap-2">
+                  <button disabled={approving || !sendBackReason.trim()} onClick={() => decide(false)}
+                    className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#C67A28" }}>
+                    {approving ? "…" : "ส่งกลับให้แก้"}
+                  </button>
+                  <button disabled={approving} onClick={() => { setSendingBack(false); setSendBackReason(""); }}
+                    className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px] bg-surface">ยกเลิก</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button disabled={approving} onClick={() => setSendingBack(true)} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[7px] bg-surface disabled:opacity-40">↩ ส่งกลับให้แก้</button>
+                <button disabled={approving} onClick={() => decide(true)} className="text-[12px] font-bold text-white rounded-[8px] px-4 py-[7px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>{approving ? "…" : "✓ Approve & Activate"}</button>
+              </div>
+            )
           )}
         </div>
       )}
@@ -925,23 +968,28 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
       // KOL rows and tasks materialise into their modules (idempotent).
       await materialiseApproved(detail.row, fresh, reviewer);
     }
-    else if (nextStatus === "Need Revision") {
-      // Bounce the whole campaign back to the planner's My Tasks to fix + resubmit.
-      const planner = brief.plannerOwner || detail.row.owner;
-      if (planner && planner !== "Unassigned") {
-        await createRevisionTask({
-          module: "Campaign", title: `แก้แคมเปญ — ${brief.name}`, assignee: planner,
-          brand: brandName(brief.b), campaign: brief.name, reason: comment ?? "ขอให้แก้ก่อนอนุมัติ",
-          by: reviewer, relatedBrief: brief.id, dueDays: 2,
-        }).catch((error) => toastError(`สร้าง task แก้แคมเปญไม่สำเร็จ: ${error?.message || "Unknown error"}`));
-      }
-      notify("rejected", `↩️ แคมเปญถูกส่งกลับแก้: ${brief.name}`, `${comment ?? ""} — ถึง ${planner} · โดย ${reviewer}`, workLink.campaign(detail.row.id), { to: [planner] });
-    }
   };
-  const doRevision = () => {
+  // Sending back runs through lib/campaignRevision, not through act(): the
+  // header banner does the same thing and the two must not drift apart again.
+  const doRevision = async () => {
     const r = reason.trim(); if (!r) return;
-    act("Need Revision", "Requested revision", r);
-    setReason(""); setRevising(false);
+    setBusy(true);
+    try {
+      const res = await sendCampaignBackForRevision({
+        brief, campaignId: detail.row.id, fallbackOwner: detail.row.owner, reason: r, by: reviewer,
+      });
+      if (!res.ok) {
+        toastError(res.reason === "no-reason"
+          ? "ต้องเขียนเหตุผลก่อนส่งกลับ"
+          : `แคมเปญนี้ถูกส่งกลับไปแล้ว — ไม่ได้ทำซ้ำ (refresh เพื่อดูข้อมูลล่าสุด)`);
+        return;
+      }
+      onBriefChange?.(res.brief);
+      toastSuccess(res.sentTo ? `ส่งกลับให้ ${res.sentTo} แก้แล้ว` : "ส่งกลับแล้ว — แต่แคมเปญนี้ยังไม่มีผู้วางแผน ไม่มีใครได้รับงาน");
+      setReason(""); setRevising(false);
+    } catch (error) {
+      toastError(`ส่งกลับไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
   };
 
   const canSubmit = status === "Draft" || status === "Need Revision" || status === "Ready for Review";
