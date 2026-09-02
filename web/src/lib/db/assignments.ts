@@ -29,16 +29,39 @@ function activeMemberForToken(token: string, members: Member[]): Member | null {
 }
 
 /** Owner for a new KOL: the KOL team lead, else its first member, else Unassigned. */
+/** Who a KOL request belongs to, given the team config and the member list.
+ *
+ *  Team first — it names a person, and a person beats a job title. Then the
+ *  ROLE, which is the half that was missing: `kolTeam()` looks for a team whose
+ *  name says KOL, and the four teams actually configured are CRM,
+ *  Marketing/BGL, Creative and Management. It matched none of them, so every
+ *  KOL request ever raised landed on "Unassigned" while a KOL Specialist sat in
+ *  the member list the whole time — and the drawer opened on "มอบหมาย Owner
+ *  (KOL team)" as its next action, a job the app could have done itself.
+ *
+ *  Pure so the rule is testable without a database; resolveKolOwner just feeds
+ *  it. */
+export function pickKolOwner(
+  team: { lead?: string; members?: string[] } | null,
+  members: Member[],
+): string {
+  if (team) {
+    const lead = activeMemberForToken(team.lead || "", members);
+    if (lead) return lead.name;
+    for (const token of team.members ?? []) {
+      const member = activeMemberForToken(token, members);
+      if (member) return member.name;
+    }
+  }
+  const specialist = members.find(
+    (m) => (m.status || "").toLowerCase() === "active" && /kol/i.test(m.role || ""),
+  );
+  return specialist?.name || UNASSIGNED;
+}
+
 export async function resolveKolOwner(): Promise<string> {
   const [team, members] = await Promise.all([kolTeam(), fetchMembers()]);
-  if (!team) return UNASSIGNED;
-  const lead = activeMemberForToken(team.lead || "", members);
-  if (lead) return lead.name;
-  for (const token of team.members ?? []) {
-    const member = activeMemberForToken(token, members);
-    if (member) return member.name;
-  }
-  return UNASSIGNED;
+  return pickKolOwner(team, members);
 }
 
 /** Match an approval-chain role label (e.g. "CMO", "Marketing Manager / BGL") to a
