@@ -316,19 +316,23 @@ console.log("\n— ใครอนุมัติ caption ได้ —");
       canDecideCaption("CMO", owed("Gik", "Pupay")), true);
     is("ไม่มีคนถูกระบุ → กลับไปใช้กติกาฝั่งวางแผนเหมือนเดิม",
       canDecideCaption("Marketing Executive", owed("Ken S.", null)), true);
-    // ถูกระบุให้ตรวจ ก็ยังตรวจงานที่ตัวเองเขียนไม่ได้อยู่ดี
-    is("คนที่ถูกระบุแต่เป็นคนเขียนเอง กดไม่ได้",
+    // แคปชั่นเขียนโดย Creative และรับโดย Marketer ที่ขอเปิดโพสต์ — คนละคนโดยตั้งใจ
+    // กติกาห้ามเซ็นงานตัวเองจึงยังอยู่ แม้จะถูกระบุชื่อให้ตรวจก็ตาม
+    is("ถูกระบุให้ตรวจ แต่เป็นคนเขียนเอง กดไม่ได้",
       canDecideCaption("Creative Leader", { me: "May T.", writer: "May T.", reviewer: "May T." }), false);
+    is("คนเขียนกดงานตัวเองไม่ได้ แม้อยู่ฝั่งวางแผน",
+      canDecideCaption("Marketing Executive", { me: "May T.", writer: "May T.", reviewer: null }), false);
   }
 }
 
 console.log("\n— caption รออนุมัติของใคร —");
 {
-  // approver มาก่อน requester (db/brief ตั้ง approver = requester ให้อยู่แล้ว
-  // ถ้าไม่ได้ระบุ) และ "Unassigned" คือช่องว่าง ไม่ใช่ชื่อคน
-  is("มี approver → เป็นของ approver", captionReviewer({ approver: "Pupay", requester: "Peach" }), "Pupay");
-  is("ไม่มี approver → ตกไปที่ requester", captionReviewer({ approver: "", requester: "Peach" }), "Peach");
-  is("approver = Unassigned → ตกไปที่ requester", captionReviewer({ approver: "Unassigned", requester: "Peach" }), "Peach");
+  // requester มาก่อน approver: คนอนุมัติแคปชั่นคือ Marketer ที่ขอเปิดโพสต์
+  // ช่อง approver เป็นของการเซ็นอาร์ตเวิร์ก — มี 3 โพสต์จริงที่ช่องนั้นเป็นคนใน
+  // Creative ทั้งที่คนขอเปิดงานคือฝ่ายการตลาด · "Unassigned" คือช่องว่าง ไม่ใช่ชื่อคน
+  is("มี requester → เป็นของ requester", captionReviewer({ approver: "Orapan", requester: "Pupay" }), "Pupay");
+  is("ไม่มี requester → ตกไปที่ approver", captionReviewer({ approver: "Orapan", requester: "" }), "Orapan");
+  is("requester = Unassigned → ตกไปที่ approver", captionReviewer({ approver: "Orapan", requester: "Unassigned" }), "Orapan");
   is("ไม่มีทั้งคู่ → null (คิวกลับไปเป็นของฝั่งวางแผน)", captionReviewer({}), null);
   is("Unassigned ทั้งคู่ → null", captionReviewer({ approver: "Unassigned", requester: "Unassigned" }), null);
 }

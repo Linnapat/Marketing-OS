@@ -90,6 +90,12 @@ export function canDecideCaption(
   const addressed = !!reviewer && me === reviewer;
   if (!addressed && role !== "CMO" && !canEditContentPlan(role)) return false;
   if (!me || !writer || writer === "unassigned") return true;
+  // Writing it still bars you from clearing it — the caption is written by
+  // Creative and accepted by the marketer who asked for the post, two people by
+  // design. What must NOT happen is the bar closing the last door: when the row
+  // names the writer as its own reviewer the planning side takes it instead
+  // (see buildApprovalRows), so the check keeps its meaning without stranding
+  // the caption.
   return me !== writer;
 }
 

@@ -387,10 +387,20 @@ export function buildApprovalRows(input: {
   for (const post of input.captions) {
     if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
     const reviewer = captionReviewer(post);
-    // Nobody signs off their own words. captionOwner, not post.owner: on a post
-    // still marked "Unassigned" the planner IS the writer, and reading the raw
-    // field let them approve themselves.
+    // Captions are written by Creative and accepted by the marketer who asked
+    // for the post — two people by design. But the fan-out used to stamp the
+    // post's writer as its REQUESTER, so on 49 of the 63 ready captions the
+    // writer, the requester and the approver were one name, the "nobody signs
+    // off their own words" rule barred that person, and a row that names a
+    // reviewer offers the buttons to nobody else: the lane read "ทั้งทีม 42"
+    // while every member of that team, the named approver included, had zero
+    // buttons. The writer field is fixed at the source now; this is the
+    // backstop — when the row still names its own writer as reviewer, it falls
+    // through to the planning side rather than to nobody.
     const wroteIt = captionOwner(post).toLowerCase() === ctx.me.trim().toLowerCase();
+    const reviewerWroteIt = !!reviewer
+      && reviewer.trim().toLowerCase() === captionOwner(post).trim().toLowerCase();
+    const isReviewer = !!reviewer && !reviewerWroteIt && isSamePerson(reviewer, ctx.myKeys);
     rows.push({
       kind: "caption", key: `c:${post.id}`, b: post.b, campaign: post.campaign ?? "", post,
       waitingSince: post.createdAt || "",
@@ -398,11 +408,11 @@ export function buildApprovalRows(input: {
       // added straight to the calendar) is still CLEARABLE by the planning side
       // — that is why it is not stranded — but it is not counted as anyone's
       // own work, which is how every one of them ended up in the CMO's queue.
-      mine: !wroteIt && !!reviewer && isSamePerson(reviewer, ctx.myKeys),
-      canAct: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
+      mine: isReviewer,
+      canAct: reviewer && !reviewerWroteIt ? isReviewer : (!wroteIt && ctx.canEditContentPlan),
       submittedBy: captionOwner(post),
       postDate: contentDateIso(post),
-      waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),
+      waitingOn: firstName(reviewerWroteIt ? null : reviewer, "ฝ่ายวางแผน"),
     });
   }
 
