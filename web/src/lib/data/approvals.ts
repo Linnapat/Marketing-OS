@@ -34,7 +34,7 @@ import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
 import type { Graphic, GraphicDeliverable, ReviewLens, WorkKind } from "@/lib/data/graphic";
 import {
-  REVIEW_LENSES, LENS_META, normSize, lensAskWho, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
+  LENS_META, normSize, lensAskWho, lensesFor, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
 import { captionAwaitsApproval, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
@@ -250,15 +250,19 @@ export function selectGraphicApprovals(
       groups.set(key, group);
     }
 
+    // Video is one sign-off, artwork is two — the queue must offer exactly the
+    // decisions the drawer does, or a row appears here that nobody can give.
+    const jobLenses = lensesFor(g);
+    const jobKind = workKind(g.type, g.requiredVideo);
     for (const [sizeKey, group] of groups) {
-      for (const lens of REVIEW_LENSES) {
+      for (const lens of jobLenses) {
         // Members that still owe this verdict. Normally all or none — the fan
         // keeps them in step — but a row settled before the fan existed must
         // not take its siblings' open decision off the board with it.
         const pending = group.members.filter((m) => !m.d.review?.[lens]);
         if (!pending.length) continue;
         const { d, index } = pending[0];
-        const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d });
+        const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d, kind: jobKind });
         out.push({
           kind, key: `g${g.id}:${sizeKey}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
           platforms: group.platforms,
@@ -276,7 +280,7 @@ export function selectGraphicApprovals(
           // other one), in which case the person covering. A queue that names
           // somebody who may not press the button is a queue that does not move.
           waitingOn: firstName(
-            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup }).name,
+            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup, kind: jobKind }).name,
             lens === "info" ? "สาย Marketing" : "Creative Leader",
           ),
         });

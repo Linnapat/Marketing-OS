@@ -12,7 +12,7 @@ import {
   canGiveLensVerdict, canPassLens, reviewProgress, statusFromReview, artworkGroup,
   applyLensVerdict, rejectionsByLens, emptyDeliverable, approvalLadder, lensAskWho,
   creativeBriefLink, briefFields, REQUESTER_EDITABLE_BRIEF_FIELDS, approvedAssetRow,
-  relocateApprovedAsset, submitDeliverable,
+  relocateApprovedAsset, submitDeliverable, lensesFor, lensOwner, canGiveLensVerdict as canGive,
   type Graphic, type GraphicDeliverable,
 } from "../src/lib/data/graphic";
 import { canRelocateApprovedAsset } from "../src/lib/roleGates";
@@ -139,6 +139,38 @@ is("ส่งงานใหม่ → กลับไปรอรีวิว",
 is("ผลตรวจของเวอร์ชันเก่าไม่ติดมากับเวอร์ชันใหม่", resubmitted.deliverables![0].review, undefined);
 is("เลขเวอร์ชันเดินหน้า", resubmitted.deliverables![0].version, 2);
 is("ยังไม่ส่งงาน = ตรวจไม่ได้", applyLensVerdict(req([emptyDeliverable("IG", "1:1")]), 0, "ci", "pass", "Boss L."), null);
+
+console.log("\n— งานวิดีโออนุมัติขั้นเดียว —");
+// VDO ค้างรอรีวิว 67 ชิ้น เทียบกับงานอื่น 9 ชิ้น เพราะสองคนดูคลิปเดียวกันแล้วพยักหน้า
+// ทั้งคู่ · ตัดด้าน "ข้อมูล" ออก เหลือลายเซ็นเดียวของ Creative Leader / CMO
+const reel = (dels: GraphicDeliverable[]): Graphic => ({ ...req(dels), type: "Reel", requiredVideo: true });
+const poster = (dels: GraphicDeliverable[]): Graphic => ({ ...req(dels), type: "Social Media", requiredVideo: false });
+
+is("งานวิดีโอมีด้านเดียว", lensesFor({ type: "Reel", requiredVideo: true }).join(","), "ci");
+is("งานถ่าย VDO ก็ด้านเดียว", lensesFor({ type: "VDO Shooting", requiredVideo: false }).join(","), "ci");
+is("งานถ่ายภาพก็ด้านเดียว", lensesFor({ type: "Photo Shoot", requiredVideo: false }).join(","), "ci");
+is("งานกราฟฟิกยังสองด้านเหมือนเดิม", lensesFor({ type: "Social Media", requiredVideo: false }).join(","), "info,ci");
+is("ป้ายเจ้าของด้านของวิดีโอไม่มี Senior Graphic Designer", lensOwner("ci", "vdo"), "Creative Leader / CMO");
+
+const vdoRows = [submitted({ platform: "Facebook", size: "9:16 (1080×1920)", submittedBy: "GID" })];
+const vdoPassed = applyLensVerdict(reel(vdoRows), 0, "ci", "pass", "Pichayaporn")!;
+is("CI ผ่านคนเดียว → Approved เลย", vdoPassed.deliverables![0].status, "Approved");
+is("ยิง event approved ครั้งเดียว (บิล Artwork Count ต้องไม่เปลี่ยน)", (vdoPassed.history ?? []).filter((e) => e.type === "approved").length, 1);
+is("งานกราฟฟิกแบบเดียวกันยังไม่ Approved", applyLensVerdict(poster(vdoRows), 0, "ci", "pass", "Pichayaporn")!.deliverables![0].status, "Waiting review");
+// เขียนผลตรวจด้านที่งานชนิดนี้ไม่ใช้ไม่ได้ — กันไม่ให้มีลายเซ็นที่ไม่มีใครอ่าน
+is("ให้ผลตรวจด้านข้อมูลกับงานวิดีโอไม่ได้", applyLensVerdict(reel(vdoRows), 0, "info", "pass", "Gik"), null);
+is("ตีกลับด้านเดียวของวิดีโอ → Revision", applyLensVerdict(reel(vdoRows), 0, "ci", "revise", "Pichayaporn", "เพิ่มเสียง outro")!.deliverables![0].status, "Revision");
+
+console.log("\n— ใครกดผ่านงานวิดีโอได้ —");
+const vdoCtx = (role: string, me: string) => ({ role, isRequester: false, me, deliverable: vdoRows[0], kind: "vdo" as const });
+is("Creative Leader กดได้", canGive("ci", vdoCtx("Creative Leader", "Pichayaporn")), true);
+is("CMO กดได้", canGive("ci", vdoCtx("CMO", "Gik")), true);
+// เลือกไว้ว่าเหลือ CL + CMO เท่านั้น — ตัวสำรอง CI มีไว้กันลายเซ็นที่สอง ซึ่งวิดีโอไม่มี
+is("Senior Graphic Designer กดงานวิดีโอไม่ได้", canGive("ci", vdoCtx("Senior Graphic Designer", "Jungjing")), false);
+is("…แต่ยังกดงานกราฟฟิกได้เหมือนเดิม", canGive("ci", { ...vdoCtx("Senior Graphic Designer", "Jungjing"), kind: "graphic" as const }), true);
+is("ผู้ขอเปิดงานกดผ่านวิดีโอไม่ได้", canGive("ci", { ...vdoCtx("Marketing Manager / BGL", "Saii"), isRequester: true }), false);
+is("คนส่งงานเองกดผ่านตัวเองไม่ได้", canPassLens("ci", vdoCtx("Creative Leader", "GID")), false);
+is("…แต่ตีกลับงานตัวเองได้", canGive("ci", vdoCtx("Creative Leader", "GID")), true);
 
 console.log("\n— แยกสาเหตุการตีกลับ (design problem หรือ brief problem?) —");
 const counts = rejectionsByLens([sentBack, req([submitted({ feedback: [{ reason: "ราคาผิด", by: "Ken S.", at: "x", lens: "info" }, { reason: "เก่า", by: "Ken S.", at: "x" }] })])]);
