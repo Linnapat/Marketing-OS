@@ -5,7 +5,7 @@
  * Run with:  npm test
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { campaignReleasedForWork, campaignAwaitsMe } from "../src/lib/data/campaigns";
+import { campaignReleasedForWork, campaignAwaitsMe, campaignHoldReason } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, isOwnQueueJob, hasShootOnRecord, shootContradiction, type Graphic } from "../src/lib/data/graphic";
 import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
 
@@ -137,6 +137,28 @@ is("Cancelled → รับงานไม่ได้", campaignReleasedForWork
 is("Approved → รับงานได้", campaignReleasedForWork("Approved"), true);
 is("Active → รับงานได้", campaignReleasedForWork("Active"), true);
 is("In Progress → รับงานได้", campaignReleasedForWork("In Progress"), true);
+
+console.log("\n— บอกให้ตรงว่ารอใคร ไม่ใช่ 'รอ CMO' ทุกกรณี —");
+// TPN_2608_005 ค้าง 8 วันโดยการ์ดบอกว่า "CMO ยังไม่อนุมัติ" ทั้งที่ CMO ตีกลับ
+// ไปแล้ว คนที่ต้องขยับคือผู้วางแผน — ดีไซเนอร์จึงไปรอคนที่ไม่ได้ค้างอะไร
+const people = { planner: "Pupay", approver: "Gik" };
+is("ส่งกลับแก้ → รอผู้วางแผน ไม่ใช่ CMO", campaignHoldReason("Need Revision", people)?.who, "Pupay");
+is("…และบอกว่าต้องกดอะไรต่อ", campaignHoldReason("Need Revision", people)?.next, "แก้ตามคอมเมนต์แล้วกด Submit for Approval อีกครั้ง");
+is("ส่งไปแล้ว รออนุมัติ → รอผู้อนุมัติ", campaignHoldReason("Waiting for Approval", people)?.who, "Gik");
+is("ชื่อสถานะเก่าก็ตอบเหมือนกัน", campaignHoldReason("Waiting Approval", people)?.who, "Gik");
+is("ยังไม่ส่ง (Draft) → รอผู้วางแผนกดส่ง", campaignHoldReason("Draft", people)?.next, "กด Submit for Approval");
+is("Planning ก็คือยังไม่ส่ง", campaignHoldReason("Planning", people)?.headline, "แคมเปญยังไม่ได้ส่งอนุมัติ");
+is("Ready for Review ก็คือยังไม่ส่ง", campaignHoldReason("Ready for Review", people)?.headline, "แคมเปญยังไม่ได้ส่งอนุมัติ");
+is("ยกเลิกแล้ว → ไม่มีใครให้รอ", campaignHoldReason("Cancelled", people)?.who, null);
+is("แคมเปญปล่อยแล้ว → ไม่มีอะไรกั้น", campaignHoldReason("Approved", people), null);
+// ห้ามเดาชื่อ — ตรงกับกติกาเดียวกับ lensAskWho
+is("ไม่มีชื่อผู้วางแผน → บอกว่าไม่มี ไม่เดา", campaignHoldReason("Need Revision", {})?.who, null);
+is("Unassigned ไม่ใช่ชื่อคน", campaignHoldReason("Need Revision", { planner: "Unassigned" })?.who, null);
+is("หาแคมเปญไม่เจอ → ไม่ใช่เรื่องรออนุมัติ", campaignHoldReason("", people)?.headline, "หาแคมเปญของใบงานนี้ไม่เจอ");
+// ทุกสถานะที่ถูกกั้นต้องมีคำอธิบาย ไม่มีตัวไหนเงียบ
+check("ทุกสถานะที่รับงานไม่ได้ ต้องบอกเหตุผลได้",
+  ["Draft", "Planning", "Ready for Review", "Waiting for Approval", "Waiting Approval", "Need Revision", "Cancelled"]
+    .every((st) => !!campaignHoldReason(st, people)));
 // สถานะหาย = ไม่ปล่อย ห้ามเดาว่าอนุมัติแล้ว
 is("สถานะว่าง → ไม่ปล่อย", campaignReleasedForWork(""), false);
 is("null → ไม่ปล่อย", campaignReleasedForWork(null), false);

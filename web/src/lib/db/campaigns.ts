@@ -19,12 +19,13 @@ type Row = {
   task_blocked: number; task_waiting: number; task_overdue: number;
   task_total: number; task_done: number; task_in_progress: number;
   bottleneck_team: string; next_approval: string;
-  data: { code?: string; legacyCode?: string; previousCode?: string } | null;
+  data: { code?: string; legacyCode?: string; previousCode?: string; plannerOwner?: string; approver?: string } | null;
 };
 
 const toCampaign = (r: Row): CampaignRow => ({
   id: r.id, code: r.data?.code, legacyCode: r.data?.legacyCode, previousCode: r.data?.previousCode,
   name: r.name, b: r.brand, branch: r.branch, owner: r.owner,
+  plannerOwner: r.data?.plannerOwner, approver: r.data?.approver,
   budget: Number(r.budget), spend: Number(r.spend), roi: Number(r.roi), dates: r.dates,
   startDate: r.start_date ?? undefined, endDate: r.end_date ?? undefined,
   status: r.status, campType: r.camp_type, readiness: (r.readiness as Readiness) ?? "ready",
