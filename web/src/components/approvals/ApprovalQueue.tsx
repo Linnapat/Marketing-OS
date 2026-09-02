@@ -196,7 +196,14 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
     try { localStorage.setItem(VIEW_KEY, next); } catch { /* no-op */ }
   };
   const mineRows = useMemo(() => rows.filter((r) => r.mine), [rows]);
-  const scoped = scope === "mine" ? mineRows : rows;
+  // Queued work belongs to nobody's decision list, so it never counts towards
+  // "ของฉัน" — but it stays on screen in both scopes, because the point of
+  // keeping it is that the row you just approved does not vanish under you.
+  const queuedRows = useMemo(() => rows.filter((r) => r.queued), [rows]);
+  const scoped = useMemo(
+    () => (scope === "mine" ? [...mineRows, ...queuedRows] : rows),
+    [scope, mineRows, queuedRows, rows],
+  );
   // Everything the header talks about is scoped to the open lane. Reading the
   // whole queue here put "ค้างเกิน 7 วัน 2 รายการ" above an empty VDO lane —
   // a real number about work that was nowhere on the screen.
@@ -205,7 +212,7 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
   const laneTeam = useMemo(() => inLane(rows), [rows, only]);       // eslint-disable-line react-hooks/exhaustive-deps
   // Anything past a week is the queue failing, not the queue working.
   const stalled = useMemo(
-    () => laneRows.filter((r) => (waitingDays(r.waitingSince, now) ?? 0) >= STALE_DAYS).length,
+    () => laneRows.filter((r) => !r.queued && (waitingDays(r.waitingSince, now) ?? 0) >= STALE_DAYS).length,
     [laneRows, now],
   );
   // Every kind that gets a panel, and the rows inside it. Caption, Artwork and
@@ -228,7 +235,7 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
   const scopeToggle = (
     <div className="flex items-center gap-[3px] p-[3px] rounded-pill flex-shrink-0" style={{ background: "#F2EFE9" }}>
       <ScopeTab label="ของฉัน" count={mineRows.length} on={scope === "mine"} onClick={() => setScope("mine")} />
-      <ScopeTab label="ทั้งทีม" count={rows.length} on={scope === "all"} onClick={() => setScope("all")} />
+      <ScopeTab label="ทั้งทีม" count={rows.filter((r) => !r.queued).length} on={scope === "all"} onClick={() => setScope("all")} />
     </div>
   );
 
@@ -237,7 +244,7 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-[13px] font-semibold text-faint">
           {scope === "mine" ? "รอคุณตัดสินใจ" : "ค้างอยู่ทั้งทีม"}
-          {only ? ` · ${APPROVAL_META[only].label}` : ""} {laneRows.length} รายการ
+          {only ? ` · ${APPROVAL_META[only].label}` : ""} {laneRows.filter((r) => !r.queued).length} รายการ
           {stalled > 0 && (
             <span className="ml-[8px] font-bold" style={{ color: "#B33A2E" }}>· ค้างเกิน {STALE_DAYS} วัน {stalled} รายการ</span>
           )}
@@ -258,13 +265,38 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
         </div>
       </div>
 
-      {panels.map(({ kind, rows: kindRows }) => (
-        <KindPanel key={kind} kind={kind} rows={kindRows} now={now} forceOpen={!!only} view={view}>
-          {kindRows.map((row) => (view === "list"
-            ? renderRow(row, now, { codeOf, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
-            : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject })))}
-        </KindPanel>
-      ))}
+      {panels.map(({ kind, rows: kindRows }) => {
+        // Decisions first, then what has already been signed off. Approving used
+        // to delete the line from the screen, which reads as "did that work?" —
+        // now it moves down into Queued and stays until the post goes out.
+        const pending = kindRows.filter((r) => !r.queued);
+        const queued = kindRows.filter((r) => r.queued);
+        const draw = (row: ApprovalRow) => (view === "list"
+          ? renderRow(row, now, { codeOf, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
+          : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }));
+        return (
+          <KindPanel key={kind} kind={kind} rows={pending} queuedCount={queued.length} now={now} forceOpen={!!only} view={view}>
+            {pending.map(draw)}
+            {queued.length > 0 && (
+              <div className="mt-1">
+                <div className="flex items-center gap-2 px-1 pt-3 pb-2 border-t border-line4">
+                  <span className="text-[11.5px] font-extrabold tracking-[0.04em] uppercase" style={{ color: "#4E7A4E" }}>
+                    ✓ Queued
+                  </span>
+                  <span className="text-[11px] font-bold px-[8px] py-[1px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+                    {queued.length}
+                  </span>
+                  <span className="text-[11px] text-faint">อนุมัติแล้ว รอ publish — หายไปเองเมื่อโพสต์ลงจริง</span>
+                </div>
+                <div className={view === "list" ? "flex flex-col gap-2" : "grid gap-3"}
+                  style={view === "list" ? undefined : { gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+                  {queued.map(draw)}
+                </div>
+              </div>
+            )}
+          </KindPanel>
+        );
+      })}
     </div>
   );
 }
@@ -880,8 +912,14 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
             `${platformLabel(row.platforms, d.platform)} · ${d.size}${d.version ? ` · v${d.version}` : ""}`].filter(Boolean).join(" · ")}
           <span className="md:hidden"> · ส่งโดย {row.submittedBy || "—"}</span>
         </span>
-        <span className="block text-[11px] mt-[3px]" style={{ color: APPROVAL_META[row.kind].fg }}>
-          <b>ตรวจ {lens.label}:</b> <span className="text-faint">{lens.checks}</span>
+        {/* A queued row has nothing left to check — say who cleared it and when
+            instead of repeating the checklist it already passed. */}
+        <span className="block text-[11px] mt-[3px]" style={{ color: row.queued ? "#4E7A4E" : APPROVAL_META[row.kind].fg }}>
+          {row.queued ? (
+            <><b>อนุมัติแล้ว</b> <span className="text-faint">— รออยู่ในคิว publish</span></>
+          ) : (
+            <><b>ตรวจ {lens.label}:</b> <span className="text-faint">{lens.checks}</span></>
+          )}
         </span>
       </span>
 
@@ -904,7 +942,10 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           className="text-[11.5px] text-muted hover:underline flex-shrink-0">อ้างอิง ↗</a>
       )}
 
-      {!row.canAct ? (
+      {row.queued ? (
+        <span className="text-[11.5px] font-bold flex-shrink-0 px-[9px] py-[4px] rounded-pill"
+          style={{ background: "#EEF4EE", color: "#4E7A4E" }}>✓ อนุมัติแล้ว · รอ publish</span>
+      ) : !row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
       ) : revising ? (
         <span className="flex items-center gap-2 flex-shrink-0">
@@ -993,8 +1034,8 @@ const ALWAYS_SHOWN: ApprovalKind[] = ["caption", "artwork", "vdo"];
  *  once and keep a short page. A panel with nothing in it renders its header
  *  and no chevron: there is nothing to unfold, and a control that opens an
  *  empty box is a control that teaches people not to press it. */
-function KindPanel({ kind, rows, now, forceOpen, view, children }: {
-  kind: ApprovalKind; rows: ApprovalRow[]; now: number; forceOpen?: boolean;
+function KindPanel({ kind, rows, queuedCount = 0, now, forceOpen, view, children }: {
+  kind: ApprovalKind; rows: ApprovalRow[]; queuedCount?: number; now: number; forceOpen?: boolean;
   view: "list" | "cards"; children: React.ReactNode;
 }) {
   const meta = APPROVAL_META[kind];
@@ -1003,7 +1044,9 @@ function KindPanel({ kind, rows, now, forceOpen, view, children }: {
     const ages = rows.map((r) => waitingDays(r.waitingSince, now)).filter((d): d is number => d !== null);
     return ages.length ? Math.max(...ages) : null;
   }, [rows, now]);
-  const empty = rows.length === 0;
+  // A panel holding only queued work is not empty — there is something to see,
+  // just nothing to decide.
+  const empty = rows.length === 0 && queuedCount === 0;
   const open = !empty && (forceOpen || !collapsed);
 
   return (
@@ -1023,6 +1066,11 @@ function KindPanel({ kind, rows, now, forceOpen, view, children }: {
           </span>
         )}
         <span className="flex-1" />
+        {queuedCount > 0 && (
+          <span className="text-[11px] font-bold flex-shrink-0" style={{ color: "#4E7A4E" }}>
+            · Queued {queuedCount}
+          </span>
+        )}
         {empty
           ? <span className="text-[11.5px] text-faint flex-shrink-0">ไม่มีงานค้าง</span>
           : (

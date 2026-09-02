@@ -29,12 +29,13 @@
 import type { BrandId, BrandFilterValue } from "@/lib/brands";
 import type { CampaignRow } from "@/lib/data/campaigns";
 import type { ContentItem } from "@/lib/data/content";
+import { isPostFinished } from "@/lib/data/content";
 import type { RequestRow } from "@/lib/data/requests";
 import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
 import type { Graphic, GraphicDeliverable, ReviewLens, WorkKind } from "@/lib/data/graphic";
 import {
-  LENS_META, normSize, lensAskWho, lensesFor, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
+  LENS_META, normSize, lensAskWho, lensesFor, REVIEW_LENSES, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
 import { captionAwaitsApproval, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
@@ -95,6 +96,13 @@ interface RowBase {
   /** Who is holding it, for the rows that are not yours. A name where we have
    *  one, otherwise the role that owns the decision. */
   waitingOn: string;
+  /** Already signed off and waiting to go out — no decision left on it.
+   *
+   *  Approving used to make the row vanish, which reads as "did that save?" and
+   *  leaves nowhere to see what is finished but not yet published. Queued rows
+   *  stay in the same panel, under their own heading, and drop off only when
+   *  the post is actually published. */
+  queued?: boolean;
 }
 
 export type ApprovalRow =
@@ -193,6 +201,13 @@ export interface ApprovalCtx {
  *  every open check; canPassLens then answers only whether it is THIS person's
  *  to give (right role for the lens, not the person who gave the other verdict,
  *  not the person who submitted the piece). */
+/** When a piece was cleared — the later of the verdicts it carries. Approving
+ *  keeps `review` (only a send-back clears it), so this is on the row itself. */
+function approvedAt(d: GraphicDeliverable): string {
+  const r = d.review ?? {};
+  return REVIEW_LENSES.map((l) => r[l]?.at ?? "").reduce((a, b) => (a > b ? a : b), "");
+}
+
 export function selectGraphicApprovals(
   graphics: Graphic[],
   ctx: ApprovalCtx,
@@ -283,6 +298,45 @@ export function selectGraphicApprovals(
             lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup, kind: jobKind }).name,
             lens === "info" ? "สาย Marketing" : "Creative Leader",
           ),
+        });
+      }
+    }
+
+    // Signed off, not out yet. One row per artwork (same normSize grouping as
+    // the decisions above), so a Reel that went to three platforms is one line
+    // here too. It leaves when its post is published — a piece with no post of
+    // its own (POSM, print) has no publish step to wait for, so it stays until
+    // somebody files it, which is the honest state.
+    const approved = (g.deliverables ?? [])
+      .map((d, index) => ({ d, index }))
+      .filter(({ d }) => d.status === "Approved");
+    // Published means done — the row has served its purpose and drops off.
+    const alreadyOut = !!linked && isPostFinished(linked as ContentItem);
+    if (approved.length && !alreadyOut) {
+      const qGroups = new Map<string, { first: { d: GraphicDeliverable; index: number }; platforms: string[]; at: string }>();
+      for (const item of approved) {
+        const key = normSize(item.d.size);
+        const group = qGroups.get(key) ?? { first: item, platforms: [], at: "" };
+        const platform = (item.d.platform || "").trim();
+        if (platform && !group.platforms.includes(platform)) group.platforms.push(platform);
+        // The moment it was cleared, so "waiting to publish" counts from the
+        // sign-off rather than from when the designer handed it in.
+        const at = approvedAt(item.d) || item.d.submittedAt || "";
+        if (at > group.at) group.at = at;
+        qGroups.set(key, group);
+      }
+      for (const [sizeKey, group] of qGroups) {
+        out.push({
+          kind, key: `g${g.id}:${sizeKey}:queued`, b: g.b, campaign: g.campaign ?? "", g,
+          deliverable: group.first.d, index: group.first.index, lens: jobLenses[jobLenses.length - 1],
+          platforms: group.platforms,
+          waitingSince: group.at,
+          queued: true,
+          mine: false,
+          canAct: false,
+          submittedBy: firstName(group.first.d.submittedBy, g.designer),
+          postDate,
+          waitingOn: "รอ publish",
         });
       }
     }

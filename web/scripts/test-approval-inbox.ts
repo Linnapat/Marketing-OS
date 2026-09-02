@@ -146,10 +146,25 @@ console.log("\n— VDO ถูกแยกออกจาก Artwork —");
   is("งานกราฟิกยังเป็น artwork", selectGraphicApprovals([req()], ctx("Creative Leader", "Boss L."))[0]?.kind, "artwork");
 }
 
-console.log("\n— ชิ้นที่ยังไม่ส่ง / ผ่านแล้ว ไม่เข้าคิว —");
+console.log("\n— ชิ้นที่ยังไม่ส่งไม่เข้าคิว · ชิ้นที่ผ่านแล้วย้ายไป Queued —");
 {
-  const g = req({ deliverables: [submitted({ status: "Not submitted" }), submitted({ status: "Approved" })] });
-  is("ไม่มีแถวเลย", selectGraphicApprovals([g], ctx("Creative Leader", "Boss L.")).length, 0);
+  // ชิ้นที่ยังไม่ส่ง ไม่มีอะไรให้ตัดสินและไม่มีอะไรให้รอ publish
+  const notYet = req({ deliverables: [submitted({ status: "Not submitted" })] });
+  is("ยังไม่ส่ง = ไม่มีแถวเลย", selectGraphicApprovals([notYet], ctx("Creative Leader", "Boss L.")).length, 0);
+
+  // ผ่านแล้วต้อง "ไม่หายไป" — เดิมกดอนุมัติแล้วแถวหายจากจอ อ่านแล้วเหมือนไม่ได้บันทึก
+  const done = req({ deliverables: [submitted({ status: "Not submitted" }), submitted({ status: "Approved" })] });
+  const rows = selectGraphicApprovals([done], ctx("Creative Leader", "Boss L."));
+  is("ผ่านแล้วยังอยู่ในลิสต์ 1 แถว", rows.length, 1);
+  is("…อยู่ในกลุ่ม Queued", rows[0]?.queued, true);
+  is("…ไม่มีอะไรให้กดแล้ว", rows[0]?.canAct, false);
+  is("…และไม่ไปโผล่ในคิวตัดสินใจของใคร", rows[0]?.mine, false);
+
+  // โพสต์ลงจริงแล้ว = จบ ต้องหลุดออกจากลิสต์
+  const published = [{ id: "p1", campaignId: done.campaignId, sourceContentItemId: done.sourceContentItemId,
+    graphicRequestId: String(done.id), publishStatus: "Published", status: "Published" }];
+  is("โพสต์ลงแล้ว → หลุดออกจาก Queued",
+    selectGraphicApprovals([done], ctx("Creative Leader", "Boss L."), published as never).length, 0);
 }
 
 console.log("\n— แบรนด์คือตัวคัดกรองเดียวที่ซ่อนงาน —");
