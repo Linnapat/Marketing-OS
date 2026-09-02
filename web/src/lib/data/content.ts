@@ -339,22 +339,19 @@ export function captionAwaitsApproval(c: Pick<ContentItem, "captionStatus">): bo
   return c.captionStatus === "Ready";
 }
 
-/** WHOSE decision a finished caption is.
+/** WHOSE decision a finished caption is: the marketer who ASKED for the post.
  *
- *  The person who asked for the post — the approver named on the plan row, else
- *  the requester who raised it. Not "the planning side" as a group, which is
- *  how every ready caption landed in the CMO's queue as well as the four other
- *  planners': "Caption proposal เข้า CMO (ซึ่งไม่ต้องการ) ต้องการให้เข้า
- *  Requester หรือคนสร้างแคมเปญ".
+ *  Requester first, deliberately. It used to read `approver` first, and
+ *  `approver` is the artwork sign-off field — on three live posts it named
+ *  someone in Creative while the marketer who raised the post, and who answers
+ *  for what the caption says, was the requester. The words belong to whoever
+ *  asked for the post; that is the person the queue must address.
  *
- *  Both fields come off the campaign's Content Plan row when the post is made
- *  (db/brief), and `approver` already defaults to the requester there, so this
- *  names one real person for anything raised through a campaign. Null for a
- *  post that carries neither — legacy rows, and posts added straight to the
+ *  Null for a post carrying neither — legacy rows, posts added straight to the
  *  calendar — and the queue falls back to the planning side for those rather
  *  than stranding a caption nobody is shown. */
 export function captionReviewer(c: Pick<ContentItem, "approver" | "requester">): string | null {
-  for (const raw of [c.approver, c.requester]) {
+  for (const raw of [c.requester, c.approver]) {
     const name = (raw ?? "").trim();
     if (name && name !== "Unassigned") return name;
   }

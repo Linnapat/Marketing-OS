@@ -387,9 +387,17 @@ export function buildApprovalRows(input: {
   for (const post of input.captions) {
     if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
     const reviewer = captionReviewer(post);
-    // Nobody signs off their own words. captionOwner, not post.owner: on a post
-    // still marked "Unassigned" the planner IS the writer, and reading the raw
-    // field let them approve themselves.
+    const isReviewer = !!reviewer && isSamePerson(reviewer, ctx.myKeys);
+    // "Nobody signs off their own words" only bites when somebody ELSE could.
+    //
+    // The marketer who asks for a post usually writes its caption too — the
+    // plan names one person for both on purpose. Barring them left 49 of the 63
+    // ready captions with a named approver who was forbidden from approving and
+    // no one to fall through to: the lane read "ทั้งทีม 42" while every member
+    // of that team, including the named approver, got zero buttons. So the
+    // named reviewer always decides, their own words included; the bar stays on
+    // the fallback, where a caption with no reviewer must still not be cleared
+    // by whoever wrote it.
     const wroteIt = captionOwner(post).toLowerCase() === ctx.me.trim().toLowerCase();
     rows.push({
       kind: "caption", key: `c:${post.id}`, b: post.b, campaign: post.campaign ?? "", post,
@@ -398,8 +406,8 @@ export function buildApprovalRows(input: {
       // added straight to the calendar) is still CLEARABLE by the planning side
       // — that is why it is not stranded — but it is not counted as anyone's
       // own work, which is how every one of them ended up in the CMO's queue.
-      mine: !wroteIt && !!reviewer && isSamePerson(reviewer, ctx.myKeys),
-      canAct: !wroteIt && (reviewer ? isSamePerson(reviewer, ctx.myKeys) : ctx.canEditContentPlan),
+      mine: isReviewer,
+      canAct: reviewer ? isReviewer : (!wroteIt && ctx.canEditContentPlan),
       submittedBy: captionOwner(post),
       postDate: contentDateIso(post),
       waitingOn: firstName(reviewer, "ฝ่ายวางแผน"),

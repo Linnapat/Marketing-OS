@@ -89,6 +89,11 @@ export function canDecideCaption(
   // their queue unless it is actually theirs (see captionReviewer).
   const addressed = !!reviewer && me === reviewer;
   if (!addressed && role !== "CMO" && !canEditContentPlan(role)) return false;
+  // Addressed to you = yours to decide, your own words included. The marketer
+  // who asks for a post usually writes its caption; the plan names one person
+  // for both on purpose. Barring them left 49 of 63 ready captions with a named
+  // approver forbidden from approving and nobody to fall through to.
+  if (addressed) return true;
   if (!me || !writer || writer === "unassigned") return true;
   return me !== writer;
 }
