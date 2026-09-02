@@ -278,21 +278,9 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
           <KindPanel key={kind} kind={kind} rows={pending} queuedCount={queued.length} now={now} forceOpen={!!only} view={view}>
             {pending.map(draw)}
             {queued.length > 0 && (
-              <div className="mt-1">
-                <div className="flex items-center gap-2 px-1 pt-3 pb-2 border-t border-line4">
-                  <span className="text-[11.5px] font-extrabold tracking-[0.04em] uppercase" style={{ color: "#4E7A4E" }}>
-                    ✓ Queued
-                  </span>
-                  <span className="text-[11px] font-bold px-[8px] py-[1px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
-                    {queued.length}
-                  </span>
-                  <span className="text-[11px] text-faint">อนุมัติแล้ว รอ publish — หายไปเองเมื่อโพสต์ลงจริง</span>
-                </div>
-                <div className={view === "list" ? "flex flex-col gap-2" : "grid gap-3"}
-                  style={view === "list" ? undefined : { gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-                  {queued.map(draw)}
-                </div>
-              </div>
+              <QueuedBlock kind={kind} count={queued.length} view={view}>
+                {queued.map(draw)}
+              </QueuedBlock>
             )}
           </KindPanel>
         );
@@ -1034,6 +1022,45 @@ const ALWAYS_SHOWN: ApprovalKind[] = ["caption", "artwork", "vdo"];
  *  once and keep a short page. A panel with nothing in it renders its header
  *  and no chevron: there is nothing to unfold, and a control that opens an
  *  empty box is a control that teaches people not to press it. */
+/** The signed-off half of a panel — collapsible on its own.
+ *
+ *  It is reference, not work: once a lane has been cleared the queued list can
+ *  be longer than the decisions above it, and someone working through their
+ *  queue should be able to fold it away without losing the panel. Remembered
+ *  per lane (localStorage, same mechanism as the panels), so the choice sticks
+ *  between visits. Open by default — the reason it exists is that approving
+ *  used to make a row vanish. */
+function QueuedBlock({ kind, count, view, children }: {
+  kind: ApprovalKind; count: number; view: "list" | "cards"; children: React.ReactNode;
+}) {
+  const { collapsed, toggle } = usePanelCollapsed("approval-queued", kind);
+  return (
+    <div className="mt-1">
+      <button onClick={toggle} aria-expanded={!collapsed}
+        aria-label={`${collapsed ? "เปิด" : "ยุบ"} รายการที่อนุมัติแล้ว`}
+        className="w-full flex items-center gap-2 px-1 pt-3 pb-2 border-t border-line4 text-left">
+        <span className="text-[11.5px] font-extrabold tracking-[0.04em] uppercase" style={{ color: "#4E7A4E" }}>
+          ✓ Queued
+        </span>
+        <span className="text-[11px] font-bold px-[8px] py-[1px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+          {count}
+        </span>
+        <span className="text-[11px] text-faint">อนุมัติแล้ว รอ publish — หายไปเองเมื่อโพสต์ลงจริง</span>
+        <span className="flex-1" />
+        <span aria-hidden className="w-6 h-6 rounded-[8px] border border-line2 bg-white/78 flex items-center justify-center text-faint flex-shrink-0">
+          <ChevronDown size={13} className="transition-transform" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
+        </span>
+      </button>
+      {!collapsed && (
+        <div className={view === "list" ? "flex flex-col gap-2" : "grid gap-3"}
+          style={view === "list" ? undefined : { gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function KindPanel({ kind, rows, queuedCount = 0, now, forceOpen, view, children }: {
   kind: ApprovalKind; rows: ApprovalRow[]; queuedCount?: number; now: number; forceOpen?: boolean;
   view: "list" | "cards"; children: React.ReactNode;
