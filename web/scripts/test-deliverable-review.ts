@@ -140,6 +140,30 @@ is("ผลตรวจของเวอร์ชันเก่าไม่ต�
 is("เลขเวอร์ชันเดินหน้า", resubmitted.deliverables![0].version, 2);
 is("ยังไม่ส่งงาน = ตรวจไม่ได้", applyLensVerdict(req([emptyDeliverable("IG", "1:1")]), 0, "ci", "pass", "Boss L."), null);
 
+console.log("\n— ส่งงานทีละ artwork ไม่ใช่ทีละ platform —");
+// Reel ตัวเดียวลง Facebook/Instagram/TikTok = ไฟล์เดียว · ของจริงทุกแถวใน
+// OMD_2609_007 ถือ Dropbox link เดียวกันเป๊ะ แปลว่าดีไซเนอร์วางลิงก์เดิม 3 รอบ
+const threeUp = [
+  submitted({ platform: "Facebook", size: "9:16 Story (1080×1920)", status: "Not submitted", version: 0, assetLink: "", submittedBy: "" }),
+  submitted({ platform: "Instagram", size: "9:16 Reel/Story (1080×1920)", status: "Not submitted", version: 0, assetLink: "", submittedBy: "" }),
+  submitted({ platform: "TikTok", size: "9:16 (1080×1920)", status: "Not submitted", version: 0, assetLink: "", submittedBy: "" }),
+  submitted({ platform: "Facebook", size: "16:9 (1200×628)", status: "Not submitted", version: 0, assetLink: "", submittedBy: "" }),
+];
+const sent = submitDeliverable(req(threeUp), 0, "GID", { assetLink: "https://dropbox/reel.mp4", sourceLink: "https://dropbox/src" })!;
+is("กดครั้งเดียว แถวที่ 2 ในกลุ่มถูกส่งด้วย", sent.deliverables![1].status, "Waiting review");
+is("…และแถวที่ 3", sent.deliverables![2].status, "Waiting review");
+is("ลิงก์ถูกคัดลอกไปทั้งกลุ่ม", sent.deliverables![2].assetLink, "https://dropbox/reel.mp4");
+is("source link ก็ไปด้วย", sent.deliverables![1].sourceLink, "https://dropbox/src");
+is("คนส่งงานถูกบันทึกทุกแถว", sent.deliverables![1].submittedBy, "GID");
+is("เลขเวอร์ชันเดินหน้าทุกแถวในกลุ่ม", sent.deliverables![2].version, 1);
+// คนละ pixel = คนละไฟล์ ต้องส่งแยก
+is("ไซซ์อื่นไม่โดนลาก", sent.deliverables![3].status, "Not submitted");
+is("ไซซ์อื่นลิงก์ยังว่าง", sent.deliverables![3].assetLink, "");
+// Artwork Count อ่าน history ราย deliverableKey — ต้องครบทุกแถวที่จะออกบิล
+is("ยิง event submitted ครบทั้งกลุ่ม", (sent.history ?? []).filter((e) => e.type === "submitted").length, 3);
+is("ยังไม่มี event approved หลุดออกมา", (sent.history ?? []).filter((e) => e.type === "approved").length, 0);
+is("ไม่มีลิงก์ = ไม่ส่ง", submitDeliverable(req(threeUp), 0, "GID", { assetLink: "  " }), null);
+
 console.log("\n— งานวิดีโออนุมัติขั้นเดียว —");
 // VDO ค้างรอรีวิว 67 ชิ้น เทียบกับงานอื่น 9 ชิ้น เพราะสองคนดูคลิปเดียวกันแล้วพยักหน้า
 // ทั้งคู่ · ตัดด้าน "ข้อมูล" ออก เหลือลายเซ็นเดียวของ Creative Leader / CMO
