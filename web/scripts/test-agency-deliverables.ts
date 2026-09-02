@@ -7,6 +7,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { submitDeliverable, passAllWaiting, deliverableProgress, artworkUnits, Graphic, GraphicDeliverable } from "../src/lib/data/graphic";
+import { portalRowKey } from "../src/lib/data/agency";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) {
@@ -142,6 +143,30 @@ console.log("\n— the regression this replaces —");
   for (let i = 0; i < 3; i++) newWay = submitDeliverable(newWay, i, "Agency Studio", { assetLink: `https://drive/p${i}.png` })!;
   const newBoth = passAllWaiting(passAllWaiting(newWay, "Ken S.", "info", { role: "Marketing Executive", isRequester: true })!, "Boss L.", "ci", { role: "Creative Leader", isRequester: false })!;
   is("per-deliverable submit gives 3 of 3", deliverableProgress(newBoth).approved, 3);
+}
+
+console.log("\n— แถวใน Agency Portal ต้องเป็นคนละแถวจริง ๆ —");
+{
+  // กดที่ชื่องานแล้วเด้งเป็นงานอื่น: id ของแถวเคยเป็น Number(`9${g.id}`) และ
+  // g.id เป็นสแตมป์ 16 หลักอยู่แล้ว เติม "9" เข้าไปเลย Number.MAX_SAFE_INTEGER
+  // ปลายเลขถูกปัดทิ้ง งานที่สร้างห่างกันไม่กี่มิลลิวินาที (ซึ่งคือวิธีที่ fan-out
+  // สร้าง) จึงยุบเหลือ key เดียว — ของจริง 28 แถวใน 7 กลุ่ม กลุ่มใหญ่สุด 8 แถว
+  const ids = ["1787286695952001", "1787286695952002", "1787286695952003"];
+  check("เติม '9' แล้วเลขชนกันจริง (ต้นเหตุ)",
+    Number(`9${ids[0]}`) === Number(`9${ids[1]}`));
+  check("เลขดิบยังอยู่ในช่วงที่ปลอดภัย", ids.every((id) => Number(id) <= Number.MAX_SAFE_INTEGER));
+
+  const keys = ids.map((id) => portalRowKey({ id: Number(id), graphicId: id, source: "graphic" }));
+  check("สามงานได้สาม key ไม่ซ้ำกัน", new Set(keys).size === 3);
+  check("key อ่านจากเลขจริง ไม่แปลงเป็นตัวเลข", keys[0] === `graphic-${ids[0]}`);
+
+  // งานที่สร้างเองในพอร์ทัลยังใช้ id ของตัวเอง และไม่ชนกับฝั่ง graphic
+  check("งาน manual คนละ namespace", portalRowKey({ id: 12, source: "manual" }) === "manual-12");
+  check("manual ไม่ชนกับ graphic ที่เลขเดียวกัน",
+    portalRowKey({ id: 12, source: "manual" }) !== portalRowKey({ id: 12, graphicId: "12", source: "graphic" }));
+  // ไม่มี graphicId (แถวเก่า) ต้องไม่ระเบิด — ถอยไปใช้ id
+  check("แถว graphic ที่ไม่มี graphicId ยังได้ key",
+    portalRowKey({ id: 7, source: "graphic" }) === "manual-7");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
