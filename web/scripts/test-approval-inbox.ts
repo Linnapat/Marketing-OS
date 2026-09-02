@@ -116,7 +116,11 @@ console.log("\n— แคปชั่นที่ไม่ได้จ่าห�
   // ไม่มี approver/requester = ไม่มีชื่อใครบนงาน
   const loose = buildApprovalRows({ ...empty, captions: [post()] }, ctx("CMO", "Aran P."));
   is("แคปชั่นลอย ๆ ไม่ถูกนับเป็นของ CMO", mineOf(loose), 0);
-  is("…แต่ยังเคลียร์ได้ ไม่ถูกทิ้งค้าง", loose[0]?.canAct, true);
+  // CMO กดได้เฉพาะงานที่ตัวเองเปิด — แคปชั่นลอย ๆ ไม่ใช่ของเขา
+  is("…และ CMO ก็กดไม่ได้ด้วย", loose[0]?.canAct, false);
+  // narawich ไม่ใช่คนเขียน (post() ตั้ง owner = Pupay) จึงเคลียร์ได้จริง
+  is("…แต่ฝั่งวางแผนคนอื่นเคลียร์ได้ ไม่ถูกทิ้งค้าง",
+    buildApprovalRows({ ...empty, captions: [post()] }, ctx("Marketing Executive", "narawich"))[0]?.canAct, true);
   is("…และบอกว่ารอฝ่ายวางแผน", loose[0]?.waitingOn, "ฝ่ายวางแผน");
   // จ่าหน้าถึงใคร = ของคนนั้น
   const addressed = buildApprovalRows({ ...empty, captions: [post({ approver: "Aran P." })] }, ctx("CMO", "Aran P."));
@@ -191,7 +195,10 @@ console.log("\n— แคปชั่นต้องไม่ค้างโด�
   // ข้อมูลยังพังอยู่ (คนเขียน = ผู้อนุมัติ) → ต้องตกไปฝั่งวางแผน ไม่ใช่ตายทั้งแถว
   const collapsed = post({ owner: "Pupay", requester: "Pupay", approver: "Pupay" });
   is("คนเขียน=ผู้อนุมัติ → เจ้าตัวยังกดไม่ได้", rowsFor(collapsed, "Pupay", "Marketing Manager / BGL")[0]?.canAct, false);
-  is("…แต่ฝั่งวางแผนคนอื่นกดได้ ไม่ใช่ทางตัน", rowsFor(collapsed, "Gik", "CMO")[0]?.canAct, true);
+  is("…แต่ฝั่งวางแผนคนอื่นกดได้ ไม่ใช่ทางตัน",
+    rowsFor(collapsed, "narawich", "Marketing Executive")[0]?.canAct, true);
+  is("…CMO ไม่นับ เพราะกดได้เฉพาะงานที่ตัวเองเปิด",
+    rowsFor(collapsed, "Gik", "CMO")[0]?.canAct, false);
   is("…และป้ายบอกว่ารอฝ่ายวางแผน ไม่ใช่ชี้คนที่กดไม่ได้",
     rowsFor(collapsed, "Gik", "CMO")[0]?.waitingOn, "ฝ่ายวางแผน");
 

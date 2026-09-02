@@ -289,9 +289,12 @@ console.log("\n— ใครอนุมัติ caption ได้ —");
 {
   const other = { me: "Ken S.", writer: "May T." };
   // ฝั่งวางแผนเป็นคนตรวจ ("marketing revise or approve caption")
-  for (const r of ["CMO", "Marketing Manager / BGL", "Marketing Executive", "Co-ordinator"]) {
+  for (const r of ["Marketing Manager / BGL", "Marketing Executive", "Co-ordinator"]) {
     is(`${r} อนุมัติ caption ได้`, canDecideCaption(r, other), true);
   }
+  // CMO เป็นข้อยกเว้นเดียว: กดได้เฉพาะแคปชั่นที่ตัวเองเปิด (2 ก.ย. 69)
+  is("CMO ที่ไม่ได้เปิดงานเอง กดไม่ได้", canDecideCaption("CMO", other), false);
+  is("CMO ที่เปิดงานเอง กดได้", canDecideCaption("CMO", { ...other, reviewer: "Ken S." }), true);
   // ฝั่งผลิตเป็นคนเขียน ไม่ใช่คนตรวจ
   for (const r of ["Creative Leader", "Content Creator", "Senior Graphic Designer", "VDO Editor", "Agency (External)"]) {
     is(`${r} อนุมัติ caption ไม่ได้`, canDecideCaption(r, other), false);
@@ -300,8 +303,8 @@ console.log("\n— ใครอนุมัติ caption ได้ —");
   is("คนเขียนอนุมัติงานตัวเองไม่ได้", canDecideCaption("CMO", { me: "May T.", writer: "May T." }), false);
   is("ตัวพิมพ์/เว้นวรรคยังจับได้", canDecideCaption("CMO", { me: " may t. ", writer: "May T." }), false);
   // ยังไม่มอบหมายคนเขียน = ไม่มีใครให้กันท่า
-  is("ยังไม่มีคนเขียน → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "Unassigned" }), true);
-  is("คนเขียนว่าง → อนุมัติได้", canDecideCaption("CMO", { me: "Ken S.", writer: "" }), true);
+  is("ยังไม่มีคนเขียน → อนุมัติได้", canDecideCaption("Marketing Executive", { me: "Ken S.", writer: "Unassigned" }), true);
+  is("คนเขียนว่าง → อนุมัติได้", canDecideCaption("Marketing Executive", { me: "Ken S.", writer: "" }), true);
   is("role ว่างอนุมัติไม่ได้", canDecideCaption("", other), false);
 
   // 5 ส.ค. 69: caption proposal เด้งเข้า CMO ซึ่งไม่ต้องการ — ต้องเข้า requester
@@ -312,8 +315,11 @@ console.log("\n— ใครอนุมัติ caption ได้ —");
       canDecideCaption("Creative Leader", owed("Pichayaporn", "Pichayaporn")), true);
     is("ฝั่งผลิตที่ไม่ได้ถูกระบุ ยังกดไม่ได้",
       canDecideCaption("Creative Leader", owed("Pichayaporn", "Pupay")), false);
-    is("CMO ยังมีสิทธิ์ override เหมือนทุกที่ในแอป",
-      canDecideCaption("CMO", owed("Gik", "Pupay")), true);
+    // แคปชั่นเป็นข้อยกเว้นของ override: มันเป็นของ Marketer ที่ดูแลแบรนด์
+    is("CMO ไม่กดแคปชั่นที่จ่าหน้าถึงคนอื่น",
+      canDecideCaption("CMO", owed("Gik", "Pupay")), false);
+    is("…แต่แคปชั่นที่ CMO เปิดเอง จ่าหน้าถึงเขา และกดได้",
+      canDecideCaption("CMO", owed("Gik", "Gik")), true);
     is("ไม่มีคนถูกระบุ → กลับไปใช้กติกาฝั่งวางแผนเหมือนเดิม",
       canDecideCaption("Marketing Executive", owed("Ken S.", null)), true);
     // แคปชั่นเขียนโดย Creative และรับโดย Marketer ที่ขอเปิดโพสต์ — คนละคนโดยตั้งใจ

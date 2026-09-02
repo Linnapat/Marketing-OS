@@ -84,11 +84,14 @@ export function canDecideCaption(
   // The person the caption was addressed to decides it, whatever their role.
   // The post's requester is often the Creative Leader, who is not on the
   // planning side — routing the caption to them and then refusing them the
-  // button would just move the dead end. The CMO keeps the standing override
-  // they have everywhere; what changed is that the caption no longer lands in
-  // their queue unless it is actually theirs (see captionReviewer).
+  // button would just move the dead end.
   const addressed = !!reviewer && me === reviewer;
-  if (!addressed && role !== "CMO" && !canEditContentPlan(role)) return false;
+  // The CMO is the one exception to the standing override they have everywhere
+  // else: captions are decided by the brand's marketer, and the CMO takes only
+  // the ones they opened themselves (captionReviewer addresses those to them).
+  // Without this the Approval Center and this gate disagreed — the same caption
+  // offered buttons in the post drawer and refused them in the queue.
+  if (!addressed && (role === "CMO" || !canEditContentPlan(role))) return false;
   if (!me || !writer || writer === "unassigned") return true;
   // Writing it still bars you from clearing it — the caption is written by
   // Creative and accepted by the marketer who asked for the post, two people by
