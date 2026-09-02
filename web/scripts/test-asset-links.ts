@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { assetLinkView, driveFileId, heroPreview, isDirectImage } from "../src/lib/data/assetLinks";
 import { comboboxMatches } from "../src/lib/data/optionSearch";
 import { assetPreviewSrc, isFolderLink, dropboxImageSrc } from "../src/lib/data/requests";
+import { attachApprovedAssets, type ContentItem } from "../src/lib/data/content";
 
 const DRIVE_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456";
 
@@ -112,4 +113,25 @@ assert.equal(assetPreviewSrc({ previewUrl: DB_HOME, driveUrl: DB_HOME }), "");
 assert.equal(assetPreviewSrc({ previewUrl: DB_FOLDER, driveUrl: DB_FILE }).includes("raw=1"), true);
 assert.equal(assetPreviewSrc({ previewUrl: "https://cdn.example/x.jpg", driveUrl: DB_FOLDER }), "https://cdn.example/x.jpg");
 
-console.log("✓ asset links + combobox filter + asset thumbnails");
+// --- อาร์ตเวิร์กอนุมัติแล้ว โพสต์ต้องเข้าคิวรอ publish ----------------------
+// เดิมเซ็ตแค่ assetStatus โดย publishStatus ค้างเป็น "Draft" — 17 โพสต์ที่งาน
+// อนุมัติครบแล้วจึงไปกองรวมกับโพสต์ที่ยังไม่มีใครเริ่ม แยกไม่ออกจนกว่าจะเปิดดูทีละใบ
+const post = (over: Partial<ContentItem> = {}): ContentItem => ({
+  id: "c1", day: 5, time: "10:00", title: "Reel", b: "teppen", plat: "Instagram",
+  status: "Waiting Design", campaign: "Brand Awareness", owner: "Gik", caption: "", hashtags: "", cta: "",
+  captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
+  ...over,
+} as ContentItem);
+const oneAsset = [{ platform: "Instagram", size: "9:16 (1080×1920)", link: "https://dropbox/reel.mp4" }];
+
+assert.equal(attachApprovedAssets(post(), oneAsset).publishStatus, "Queued");
+assert.equal(attachApprovedAssets(post(), oneAsset).assetStatus, "Approved");
+// โพสต์ที่ลงไปแล้วต้องไม่ถูกดึงกลับมาเข้าคิว
+assert.equal(attachApprovedAssets(post({ publishStatus: "Published" }), oneAsset).publishStatus, "Published");
+// ไม่มีไฟล์แนบ = ยังไม่มีอะไรให้รอ publish
+assert.equal(attachApprovedAssets(post(), []).publishStatus, "Draft");
+assert.equal(attachApprovedAssets(post(), [{ platform: "IG", size: "1:1", link: "" }]).publishStatus, "Draft");
+// อยู่ในคิวอยู่แล้ว ส่งไฟล์เวอร์ชันใหม่เข้าไม่เปลี่ยนอะไร
+assert.equal(attachApprovedAssets(post({ publishStatus: "Queued" }), oneAsset).publishStatus, "Queued");
+
+console.log("✓ asset links + combobox filter + asset thumbnails + queued-for-publish");

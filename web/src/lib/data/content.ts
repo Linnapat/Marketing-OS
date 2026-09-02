@@ -457,5 +457,12 @@ export function attachApprovedAssets(
     assets: clean,
     assetStatus: clean.length ? "Approved" : c.assetStatus,
     status: c.status === "Waiting Design" ? "Draft" : c.status,
+    // Artwork signed off means the post has left the drawing board and is
+    // waiting its slot — that is what "Queued" is for. It used to stay "Draft",
+    // so 17 posts with fully approved artwork sat in the same bucket as ones
+    // nobody had started, and the only way to tell them apart was to open each.
+    // Never touches a post already Published, and never moves one that has no
+    // artwork attached.
+    publishStatus: clean.length && c.publishStatus !== "Published" ? "Queued" : c.publishStatus,
   };
 }
