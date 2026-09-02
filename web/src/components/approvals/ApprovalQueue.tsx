@@ -26,7 +26,7 @@ import Link from "next/link";
 import {
   ApprovalKind, ApprovalRow, APPROVAL_META, APPROVAL_KIND_ORDER, waitingDays, platformLabel,
 } from "@/lib/data/approvals";
-import { Graphic, LENS_META, workKind } from "@/lib/data/graphic";
+import { Graphic, LENS_META, workKind, lensesFor } from "@/lib/data/graphic";
 import { useProductionOwners, useCmoName, useCiBackup } from "@/lib/useCreativeLeader";
 import { decideStoryboard, giveLensVerdict } from "@/lib/graphicVerdict";
 import { approveTask } from "@/lib/taskApproval";
@@ -115,18 +115,13 @@ function MetaColumns({ row }: { row: ApprovalRow }) {
   );
 }
 
-/** You may sign this, but it is not yours — the CMO covering an artwork check,
- *  the planning side clearing a caption nobody was named on. Say whose it is
- *  BEFORE offering the buttons, or covering quietly becomes the default and the
- *  person who owns it never learns it was waiting. */
-function CoverNote({ row }: { row: ApprovalRow }) {
-  if (row.mine || !row.canAct) return null;
-  return (
-    <span className="text-[11px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>
-      รอ {row.waitingOn} · เซ็นแทนได้
-    </span>
-  );
-}
+/* The "รอ X · เซ็นแทนได้" note used to sit on every row you could sign but did
+   not own. On the VDO queue it told the CMO "รอ Gik · เซ็นแทนได้" — Gik reading
+   that he may cover for Gik — because `mine` is only true for the Creative
+   Leader, while lensAskWho resolves the same row to the CMO. Removed: the row
+   is in your queue and you can act on it, which the buttons already say. The
+   plain "รอ {waitingOn}" on rows you CANNOT act on stays; that one names
+   somebody else, and is the whole point of the row. */
 
 /** The right-hand end of a card: the thing to do, or the person to chase.
  *  Never both, and never an action word on a row whose buttons are not there —
@@ -641,7 +636,6 @@ function StoryboardRow({ row, now, me, onOpenGraphic, onGraphicUpdate }: {
         ) : (
           <span className="text-[11.5px] text-faint">ไม่มีลิงก์ storyboard</span>
         )}
-        <CoverNote row={row} />
         {!row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : revising ? (
@@ -716,7 +710,6 @@ function TaskApprovalRow({ row, now, me, onOpenTask, onTaskApproved }: {
           <span className="text-[13.5px] font-extrabold" style={{ color: "#B8945A" }}>{baht(amount, { compact: true })}</span>
         ) : null}
         <button onClick={() => onOpenTask(t.id)} className="text-[11.5px] font-bold text-accent hover:underline">ดูรายละเอียด →</button>
-        <CoverNote row={row} />
         {!row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : (
@@ -784,7 +777,6 @@ function CaptionRow({ row, now, me, onContentUpdate }: {
       <MetaColumns row={row} />
 
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
-        <CoverNote row={row} />
         {!row.canAct ? (
           <span className="text-[11.5px] font-semibold" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
         ) : revising ? (
@@ -839,6 +831,9 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
   // before the row leaves the list.
   const [acted, setActed] = useState(false);
   const lens = LENS_META[row.lens];
+  // Video is signed off once (lensesFor), so naming the lane on the button says
+  // nothing — "ผ่าน CI" reads as one of two steps when it is the only step.
+  const oneLens = lensesFor(row.g).length === 1;
   const d = row.deliverable;
   const asset = (d.assetLink || "").trim();
   // Who could take it when the request names nobody — same fallback the drawer
@@ -863,7 +858,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
     }
     onGraphicUpdate?.(ng);
     toastSuccess(verdict === "pass"
-      ? `ผ่าน ${lens.short}: ${row.g.title}`
+      ? `${oneLens ? "อนุมัติ" : `ผ่าน ${lens.short}`}: ${row.g.title}`
       : `ส่งกลับแก้: ${row.g.title}`);
   };
 
@@ -909,7 +904,6 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           className="text-[11.5px] text-muted hover:underline flex-shrink-0">อ้างอิง ↗</a>
       )}
 
-      <CoverNote row={row} />
       {!row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
       ) : revising ? (
@@ -924,7 +918,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
         <span className="flex items-center gap-2 flex-shrink-0">
           <button onClick={() => decide("pass")} disabled={acted}
             className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
-            {acted ? "…" : `✓ ผ่าน ${lens.short}`}
+            {acted ? "…" : oneLens ? "✓ Approve" : `✓ ผ่าน ${lens.short}`}
           </button>
           <button onClick={() => setRevising(true)} disabled={acted}
             className="text-[11.5px] font-bold px-[9px] py-[6px] rounded-[8px] disabled:opacity-50"
@@ -964,7 +958,6 @@ function ExpenseRow({ row, budget, now, codeOf, onApprove, onReject }: {
       <span className="text-[13.5px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
       <AgePill iso={row.waitingSince} now={now} />
       <MetaColumns row={row} />
-      <CoverNote row={row} />
       {!row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
       ) : rejecting ? (
@@ -1161,7 +1154,6 @@ function ExpenseApprovalCard({ row, budget, onApprove, onReject }: {
           )}
         </div>
       )}
-      <CoverNote row={row} />
       {!row.canAct ? (
         <div className="text-[11.5px] font-semibold text-center rounded-[9px] py-[8px]"
           style={{ background: "#F7F4EE", color: "#8A8175" }}>

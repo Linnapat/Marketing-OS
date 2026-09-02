@@ -150,10 +150,11 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
           </div>
           <div className="text-[12.5px] text-muted leading-[1.6]">
             {/* Artwork asks two people two different questions — the data check
-                and Visual CI. Each card says which one is yours, and a piece
-                only leaves the queue once both are in. */}
-            อาร์ตเวิร์กและ VDO ต้องผ่านการตรวจ 2 ด้าน (ข้อมูล + Visual CI) โดยคนละคน —
-            การ์ดจะบอกว่ารอบนี้คุณตรวจด้านไหน · สลับ “ทั้งทีม” เพื่อดูว่างานที่ยังไม่ขยับค้างอยู่ที่ใคร
+                and Visual CI — and only leaves the queue once both are in.
+                Video is one sign-off; saying "two checks" here was left over
+                from before lensesFor split them. */}
+            อาร์ตเวิร์กตรวจ 2 ด้าน (ข้อมูล + Visual CI) โดยคนละคน · งาน VDO เซ็นครั้งเดียวโดย Creative Leader หรือ CMO —
+            การ์ดจะบอกว่ารอบนี้คุณตรวจอะไร · สลับ “ทั้งทีม” เพื่อดูว่างานที่ยังไม่ขยับค้างอยู่ที่ใคร
             {!brandVisibility.allowAll && ` · คุณเห็นเฉพาะแบรนด์ที่ดูแล (${brandVisibility.scopeLabel})`}
           </div>
         </div>
