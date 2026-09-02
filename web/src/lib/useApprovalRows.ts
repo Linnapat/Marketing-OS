@@ -19,6 +19,7 @@ import { BRANDS, BrandId } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth } from "@/lib/auth";
 import { useCreativeLeader, useCmoName, useCiBackup } from "@/lib/useCreativeLeader";
+import { useBrandMarketer } from "@/lib/useBrandMarketer";
 import { useCanApproveExpense, useCanSeeAllSpending } from "@/lib/usePermGates";
 import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
 import { personKeys, memberRef } from "@/lib/identity";
@@ -79,6 +80,8 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
   const creativeLeader = useCreativeLeader();
   const cmoName = useCmoName();
   const ciBackup = useCiBackup();
+  // Captions are addressed by brand — see captionReviewer.
+  const brandMarketer = useBrandMarketer();
 
   const ctx = useMemo(() => ({
     myKeys, me: member?.name || viewAs, role: authRole,
@@ -88,9 +91,10 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
     canSeeSpending,
     canEditContentPlan: canEditContentPlan(authRole),
     isVisible: (b: BrandId) => brandVisibility.isVisible(b),
+    brandMarketer,
     canSeeBrandLabel,
     doneIds,
-  }), [myKeys, member, viewAs, authRole, creativeLeader, cmoName, ciBackup, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
+  }), [myKeys, member, viewAs, authRole, creativeLeader, cmoName, ciBackup, brandMarketer, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
 
   return useMemo(
     () => buildApprovalRows({

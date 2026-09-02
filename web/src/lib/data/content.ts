@@ -130,7 +130,7 @@ export function captionOwner(c: Pick<ContentItem, "owner" | "requester">): strin
 
 /** A name only when it is a person's. "Unassigned" is the app's own word for an
  *  empty slot, so it reads as blank wherever a person is meant. */
-export function realName(name?: string): string {
+export function realName(name?: string | null): string {
   const n = (name ?? "").trim();
   return n && n.toLowerCase() !== "unassigned" ? n : "";
 }
@@ -350,12 +350,37 @@ export function captionAwaitsApproval(c: Pick<ContentItem, "captionStatus">): bo
  *  Null for a post carrying neither — legacy rows, posts added straight to the
  *  calendar — and the queue falls back to the planning side for those rather
  *  than stranding a caption nobody is shown. */
-export function captionReviewer(c: Pick<ContentItem, "approver" | "requester">): string | null {
+export function captionReviewer(
+  c: Pick<ContentItem, "approver" | "requester">,
+  /** The marketer answerable for this post's BRAND (resolveBrandLead). The
+   *  caption belongs to whoever owns the brand it goes out under — a post
+   *  raised by Creative or by the CMO still needs its own brand's marketer to
+   *  accept the words, and "ฝ่ายวางแผน" as a group is not a person anyone can
+   *  be waiting for. */
+  brandMarketer?: string | null,
+  /** The CMO's name. A post the CMO opened stays with the CMO — see below. */
+  cmoName?: string | null,
+): string | null {
+  const marketer = realName(brandMarketer);
+  const cmo = realName(cmoName);
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   for (const raw of [c.requester, c.approver]) {
-    const name = (raw ?? "").trim();
-    if (name && name !== "Unassigned") return name;
+    const name = realName(raw);
+    if (!name) continue;
+    // The CMO opening a post keeps it. They asked for it, so the words are
+    // theirs to accept — handing it to the brand's marketer would be routing
+    // somebody's own request away from them.
+    if (cmo && same(name, cmo)) return name;
+    // No marketer on record for the brand — keep naming whoever asked, which is
+    // better than naming nobody.
+    if (!marketer) return name;
+    // Otherwise the asker wins only when they ARE this brand's marketer: a
+    // brand can have more than one, and the asker is the better address among
+    // them. A requester from Creative is not a marketer at all, and routing the
+    // caption back to them is how it stopped moving.
+    if (same(name, marketer)) return name;
   }
-  return null;
+  return marketer || null;
 }
 
 /** Has the caption been signed off in its own right? */

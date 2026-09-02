@@ -330,11 +330,33 @@ console.log("\n— caption รออนุมัติของใคร —");
   // requester มาก่อน approver: คนอนุมัติแคปชั่นคือ Marketer ที่ขอเปิดโพสต์
   // ช่อง approver เป็นของการเซ็นอาร์ตเวิร์ก — มี 3 โพสต์จริงที่ช่องนั้นเป็นคนใน
   // Creative ทั้งที่คนขอเปิดงานคือฝ่ายการตลาด · "Unassigned" คือช่องว่าง ไม่ใช่ชื่อคน
+  // ไม่รู้ว่าแบรนด์นี้ใครดูแล → ใช้คนที่ขอเปิดงาน ดีกว่าไม่มีชื่อเลย
   is("มี requester → เป็นของ requester", captionReviewer({ approver: "Orapan", requester: "Pupay" }), "Pupay");
   is("ไม่มี requester → ตกไปที่ approver", captionReviewer({ approver: "Orapan", requester: "" }), "Orapan");
   is("requester = Unassigned → ตกไปที่ approver", captionReviewer({ approver: "Orapan", requester: "Unassigned" }), "Orapan");
   is("ไม่มีทั้งคู่ → null (คิวกลับไปเป็นของฝั่งวางแผน)", captionReviewer({}), null);
   is("Unassigned ทั้งคู่ → null", captionReviewer({ approver: "Unassigned", requester: "Unassigned" }), null);
+
+  // รู้ว่าใครดูแลแบรนด์ → แคปชั่นเข้า Marketer ของแบรนด์นั้น
+  // teppen/mainichi = Pupay · omakase = narawich (จาก resolveBrandLead)
+  is("คนขอเปิดงานเป็น Marketer ของแบรนด์ → เป็นของเขา",
+    captionReviewer({ requester: "Pupay", approver: "Pupay" }, "Pupay"), "Pupay");
+  is("Creative เป็นคนขอเปิดงาน → ตกไปที่ Marketer ของแบรนด์",
+    captionReviewer({ requester: "Pichayaporn", approver: "Pichayaporn" }, "Pupay"), "Pupay");
+  // CMO เปิดโพสต์เอง = ของ CMO · ส่งต่อให้ Marketer ของแบรนด์คือการโยนคำขอของ
+  // เขาออกไปจากมือเขาเอง
+  is("CMO เปิดงานเอง → อยู่ที่ CMO",
+    captionReviewer({ requester: "Gik", approver: "Gik" }, "narawich", "Gik"), "Gik");
+  is("…แม้ช่อง approver จะเป็นคนอื่น",
+    captionReviewer({ requester: "Gik", approver: "Orapan" }, "narawich", "Gik"), "Gik");
+  is("แต่ถ้า CMO ไม่ได้เปิดเอง ยังเข้า Marketer ของแบรนด์",
+    captionReviewer({ requester: "Pichayaporn", approver: "Pichayaporn" }, "narawich", "Gik"), "narawich");
+  is("ไม่มีใครขอเปิดงาน → Marketer ของแบรนด์รับไป",
+    captionReviewer({}, "narawich"), "narawich");
+  is("แบรนด์ไม่มีคนดูแล → กลับไปใช้คนขอเปิดงาน",
+    captionReviewer({ requester: "Pichayaporn" }, null), "Pichayaporn");
+  is("แบรนด์ไม่มีคนดูแล และไม่มีคนขอ → null",
+    captionReviewer({}, "Unassigned"), null);
 }
 
 console.log("\n— Agency ต้องคุยในใบงานตัวเองได้ (RLS ต้องตรงกับ UI) —");

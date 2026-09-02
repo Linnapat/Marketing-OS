@@ -188,6 +188,10 @@ export interface ApprovalCtx {
   /** Senior Graphic Designers — the CI lane's second pair of eyes. */
   ciBackup?: string[];
   isVisible: (b: BrandId) => boolean;
+  /** The marketer answerable for a brand (resolveBrandLead). Captions are
+   *  addressed by brand, so the queue needs this per row. Optional: without it
+   *  the caption rows fall back to naming whoever asked, as before. */
+  brandMarketer?: (b: BrandId) => string | null;
   /** Task rows carry a brand LABEL, not a BrandId, so they need their own test. */
   canSeeBrandLabel: (label?: string | null) => boolean;
   doneIds: Set<number>;
@@ -386,7 +390,7 @@ export function buildApprovalRows(input: {
   // falls back to the planning side, so nothing is stranded with no owner.
   for (const post of input.captions) {
     if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
-    const reviewer = captionReviewer(post);
+    const reviewer = captionReviewer(post, ctx.brandMarketer?.(post.b), ctx.cmoName);
     // Captions are written by Creative and accepted by the marketer who asked
     // for the post — two people by design. But the fan-out used to stamp the
     // post's writer as its REQUESTER, so on 49 of the 63 ready captions the
