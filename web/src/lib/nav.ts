@@ -61,24 +61,14 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    // Its own heading rather than one line under Plan & Produce: KOL is four
-    // distinct jobs (request, plan, results, roster) and burying them behind a
-    // tab strip meant the roster in particular was never opened.
-    label: "KOL",
-    items: [
-      { href: "/kol", tab: "list", label: "Request List", icon: Inbox, ready: true },
-      { href: "/kol", tab: "plan", label: "KOL Plan", icon: CalendarDays, ready: true },
-      { href: "/kol", tab: "performance", label: "Performance", icon: BarChart3, ready: true },
-      { href: "/kol", tab: "database", label: "KOL Library", icon: Star, ready: true },
-    ],
-  },
-  {
-    // Sits between KOL and Team (per CMO, 26 Aug 2026): the lanes read as the
-    // last step of producing work rather than the first thing on the rail, and
-    // the people who live here scroll past Plan & Produce and KOL to reach it
-    // anyway. Still its own heading — it was invisible for months as a chip
-    // inside somebody else's task board. (Path is /approval-center, not
-    // /approvals — that one is a permanent redirect, see next.config.mjs.)
+    // Above KOL, under Plan & Produce (per CMO, 2 Sep 2026). It sat below KOL
+    // on the reasoning that approving is the last step of producing — true of
+    // the work, not of the day: the people who live here open the lanes first
+    // thing and several times over, while KOL is a weekly stop. The rail is
+    // ordered by how often it is reached for. Still its own heading — it was
+    // invisible for months as a chip inside somebody else's task board. (Path
+    // is /approval-center, not /approvals — that one is a permanent redirect,
+    // see next.config.mjs.)
     label: "Approval",
     items: [
       // Three lanes, no combined "Approval Center" entry above them (dropped
@@ -92,6 +82,18 @@ export const NAV: NavGroup[] = [
       { href: "/approval-center", tab: "artwork", label: "Artwork", icon: Palette, ready: true },
       { href: "/approval-center", tab: "vdo", label: "VDO", icon: Video, ready: true },
       { href: "/campaigns/approvals", label: "อนุมัติย้อนหลัง", icon: ClipboardCheck, ready: true, cmoOnly: true },
+    ],
+  },
+  {
+    // Its own heading rather than one line under Plan & Produce: KOL is four
+    // distinct jobs (request, plan, results, roster) and burying them behind a
+    // tab strip meant the roster in particular was never opened.
+    label: "KOL",
+    items: [
+      { href: "/kol", tab: "list", label: "Request List", icon: Inbox, ready: true },
+      { href: "/kol", tab: "plan", label: "KOL Plan", icon: CalendarDays, ready: true },
+      { href: "/kol", tab: "performance", label: "Performance", icon: BarChart3, ready: true },
+      { href: "/kol", tab: "database", label: "KOL Library", icon: Star, ready: true },
     ],
   },
   {
