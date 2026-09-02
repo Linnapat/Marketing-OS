@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { BrandFilter } from "@/components/ui/BrandFilter";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { TONES } from "@/lib/status";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
@@ -903,17 +904,31 @@ const PUBLISH_OPTS = ["Draft", "Scheduled in OS", "Queued", "Published"];
 
 /** Inline status cell: an editable dropdown for the creative team, a read-only
  *  badge for everyone else. Stops row-click so editing never opens the drawer. */
+/** A status you can read at a glance, and change if it is yours to change.
+ *
+ *  The editable form used to be a plain white dropdown while the read-only form
+ *  was a coloured pill, so Publish was the one column in the schedule you had
+ *  to actually read — Caption and Asset answered by colour from across the
+ *  room, and "Draft" and "Queued" looked identical until you did. Same tones as
+ *  the badge, so a status means the same colour whoever is looking. */
 function StatusCell({ value, opts, canEdit, onChange }: { value: string; opts: string[]; canEdit: boolean; onChange: (v: string) => void }) {
   if (!canEdit) return <StatusBadge tone={contentTone(value)}>{value}</StatusBadge>;
   const options = opts.includes(value) ? opts : [value, ...opts];
+  const t = TONES[contentTone(value)];
   return (
     <select
       value={value}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => { e.stopPropagation(); onChange(e.target.value); }}
-      className="text-[11.5px] font-bold rounded-[9px] px-2 py-[5px] border border-line2 bg-white text-ink outline-none cursor-pointer max-w-[130px]"
+      aria-label="Publish status"
+      className="text-[11.5px] font-bold rounded-pill px-[10px] py-[5px] outline-none cursor-pointer max-w-[130px]"
+      // Inline, not Tailwind: the colour is data, not a class we could name in
+      // advance — a status added later must colour itself from the same map.
+      style={{ color: t.fg, background: t.bg, border: `1px solid ${t.fg}29` }}
     >
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {/* The menu itself stays on plain white — an option list tinted to the
+          CURRENT status colours every choice wrong. */}
+      {options.map((o) => <option key={o} value={o} style={{ color: "#17172A", background: "#fff" }}>{o}</option>)}
     </select>
   );
 }
