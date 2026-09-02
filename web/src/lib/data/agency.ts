@@ -42,10 +42,28 @@ export function portalBrandAllowed(isAgency: boolean, brandVisible: boolean): bo
 
 export const AGENCY_TYPES = ["Graphic", "Video", "Content", "Photo", "Print"];
 
+/** The identity of one row in the Agency Portal.
+ *
+ *  Graphic rows key on the request's own id AS TEXT. The portal used to mint a
+ *  number for them — `Number(\`9${g.id}\`)` — and a graphic id is already a
+ *  16-digit stamp (1786677991073005), so the extra "9" pushed it past
+ *  Number.MAX_SAFE_INTEGER and the last digits were rounded away. Requests
+ *  minted milliseconds apart, which is exactly how the campaign fan-out mints
+ *  them, collapsed onto ONE key: 28 live rows in 7 groups, the largest 8 rows
+ *  deep. The list keyed its lookup on that number, so clicking a job's title
+ *  opened whichever sibling had won the collision — while clicking the size
+ *  line underneath, which passes the real id, opened the right one. */
+export function portalRowKey(t: Pick<AgencyTask, "id" | "graphicId" | "source">): string {
+  return t.source === "graphic" && t.graphicId ? `graphic-${t.graphicId}` : `manual-${t.id}`;
+}
+
 export interface AgencyTask {
   id: number;
-  /** When this row is derived from Graphic Request / Graphic Request. */
-  graphicId?: number;
+  /** When this row is derived from Graphic Request / Graphic Request.
+   *  A STRING, because a graphic's blob id is a 16-digit stamp and every
+   *  arithmetic form of it is one careless prefix away from losing digits —
+   *  see portalRowKey. */
+  graphicId?: string;
   source?: "manual" | "graphic";
   title: string;
   b: BrandId;

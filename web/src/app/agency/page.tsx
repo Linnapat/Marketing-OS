@@ -14,6 +14,7 @@ import { useBrandVisibility } from "@/lib/brandVisibility";
 import {
   AGENCY_TASKS, AGENCY_EDITABLE_STATUSES,
   AGENCY_TYPES, AgencyStatus, AgencyTask, portalBrandAllowed,
+  portalRowKey,
 } from "@/lib/data/agency";
 import { fetchAgencyTasks, createAgencyTask, updateAgencyTask } from "@/lib/db/agency";
 import { fetchGraphics, updateGraphic } from "@/lib/db/graphic";
@@ -93,8 +94,12 @@ function firstDeliverableLink(g: Graphic) {
 
 function graphicToTask(g: Graphic): PortalTask {
   return {
-    id: Number(`9${g.id}`),
-    graphicId: g.id,
+    // No "9" prefix: it pushed a 16-digit graphic id past MAX_SAFE_INTEGER and
+    // rounded digits off, which is how sibling requests ended up sharing a row
+    // identity. The raw id is inside the safe range; identity itself comes from
+    // portalRowKey, which never does arithmetic on it at all.
+    id: Number(g.id),
+    graphicId: String(g.id),
     source: "graphic",
     graphic: g,
     title: g.title,
@@ -146,7 +151,7 @@ function toWorkItem(t: PortalTask): WorkItem {
   const item = { due: t.due, dueIso: t.graphic?.dueIso };
   const days = workDaysUntilDue(item);
   return {
-    key: `${t.source}-${t.id}`,
+    key: portalRowKey(t),
     title: t.title,
     moduleIcon: t.source === "graphic" ? "🎨" : "🤝",
     moduleColor: t.source === "graphic" ? "#C2691E" : "#7A6BA8",
@@ -260,7 +265,7 @@ export default function AgencyPortalPage() {
     inDateFilter(date, t.due),
   );
 
-  const byKey = useMemo(() => new Map(rows.map((t) => [`${t.source}-${t.id}`, t])), [rows]);
+  const byKey = useMemo(() => new Map(rows.map((t) => [portalRowKey(t), t])), [rows]);
   const detailTask = detailKey ? byKey.get(detailKey) ?? null : null;
   const openGraphic = graphicOpenId === null ? null : graphics.find((g) => g.id === graphicOpenId) ?? null;
 
@@ -324,7 +329,7 @@ export default function AgencyPortalPage() {
         {!t.graphic && t.status !== "Submitted" && (
           <WorkAction label="Submit for review" bg="#4E7A4E" onClick={() => update(t, { status: "Submitted" })} />
         )}
-        <WorkAction label="Details" bg="#fff" fg="#6b6258" border="#E5DECF" onClick={() => setDetailKey(`${t.source}-${t.id}`)} />
+        <WorkAction label="Details" bg="#fff" fg="#6b6258" border="#E5DECF" onClick={() => setDetailKey(portalRowKey(t))} />
       </>
     );
   };
@@ -424,7 +429,7 @@ export default function AgencyPortalPage() {
                         key={`${t.source}-${t.id}`}
                         item={toWorkItem(t)}
                         viewer={currentUser}
-                        onOpen={() => setDetailKey(`${t.source}-${t.id}`)}
+                        onOpen={() => setDetailKey(portalRowKey(t))}
                         onOpenGraphic={setGraphicOpenId}
                         actions={actionsFor(t)}
                       />
