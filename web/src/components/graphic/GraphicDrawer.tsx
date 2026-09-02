@@ -7,7 +7,7 @@ import { resolveBrandLead } from "@/lib/db/assignments";
 import { BrandCfg } from "@/lib/data/settings";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { campaignLabel, WorkCode } from "@/components/ui/CampaignCode";
-import { campaignReleasedForWork } from "@/lib/data/campaigns";
+import { campaignReleasedForWork, campaignHoldReason } from "@/lib/data/campaigns";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import { GRAPHIC_OPEN_PARAM,
@@ -102,6 +102,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // Same lookup also yields the campaign's running code for the Linked Modules
   // row — one fetch, since the drawer already needed the row anyway.
   const [campaignCode, setCampaignCode] = useState<string | undefined>();
+  // Who the hold is on. Same row, so no extra fetch — see campaignHoldReason.
+  const [campaignPeople, setCampaignPeople] = useState<{ planner?: string; approver?: string }>({});
   useEffect(() => {
     let alive = true;
     fetchCampaigns()
@@ -112,12 +114,14 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           : rows.find((c) => c.name.trim().toLowerCase() === (g.campaign ?? "").trim().toLowerCase());
         setCampaignStatus(hit?.status ?? "");
         setCampaignCode(hit?.code);
+        setCampaignPeople({ planner: hit?.plannerOwner || hit?.owner, approver: hit?.approver });
       })
       .catch(() => { if (alive) setCampaignStatus(null); });
     return () => { alive = false; };
   }, [g.campaignId, g.campaign]);
   // null = still loading; don't claim "not approved" before we know.
   const campaignReleased = campaignStatus === null ? true : campaignReleasedForWork(campaignStatus);
+  const campaignHold = campaignStatus === null ? null : campaignHoldReason(campaignStatus, campaignPeople);
 
   const resolveFeedback = async (id: number) => {
     const prev = feedback;
@@ -813,10 +817,17 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                       {/* Say WHY the button is unavailable. A control that just
                           isn't there is the failure that kept four people locked
                           out of their own logins for twelve days. */}
-                      {!campaignReleased ? (
+                      {!campaignReleased && campaignHold ? (
                         <div className="text-[11px] font-semibold" style={{ color: "#B33A2E" }}>
-                          ⛔ แคมเปญนี้สถานะ &ldquo;{campaignStatus || "ไม่ทราบ"}&rdquo; — CMO ยังไม่อนุมัติ
-                          จึงยังรับงานไม่ได้ · วางแผน/แก้บรีฟล่วงหน้าได้ตามปกติ
+                          {/* One state, one person, one next click — "CMO ยังไม่
+                              อนุมัติ" was printed for all five blocked statuses
+                              and pointed at the wrong person in four of them. */}
+                          ⛔ {campaignHold.headline}
+                          {campaignHold.who ? <> — รอ <b>{campaignHold.who}</b> {campaignHold.next}</> : <> — {campaignHold.next}</>}
+                          {g.campaignId && (
+                            <>{" "}<a href={workLink.campaign(g.campaignId)} className="underline font-bold">เปิดแคมเปญ ↗</a></>
+                          )}
+                          <div className="font-semibold text-faint mt-[2px]">ระหว่างนี้ยังรับงานไม่ได้ · วางแผน/แก้บรีฟล่วงหน้าได้ตามปกติ</div>
                         </div>
                       ) : (
                         <div className="text-[11px] text-faint">กด &ldquo;รับงาน&rdquo; เมื่อเริ่มทำ — หลังจากนั้น Marketing จะแก้ไข/ย้ายโพสต์นี้ไม่ได้</div>

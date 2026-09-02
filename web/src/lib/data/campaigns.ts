@@ -29,6 +29,10 @@ export interface CampaignRow {
   b: BrandId;
   branch: string;
   owner: string;
+  /** ผู้วางแผน (คนที่ต้องแก้แล้วส่งอนุมัติใหม่) และผู้อนุมัติ — อ่านจาก blob,
+   *  ใช้ตอบว่า "รอใคร" ใน campaignHoldReason ไม่ใช่เดาจาก owner อย่างเดียว */
+  plannerOwner?: string;
+  approver?: string;
   budget: number;
   spend: number;
   roi: number;
@@ -115,6 +119,54 @@ export function campaignReleasedForWork(status: string | null | undefined): bool
   const s = (status ?? "").trim();
   if (!s) return false;
   return !PRE_APPROVAL_STATUSES.has(s);
+}
+
+/** WHY the campaign is holding the work, in the words of whoever has to move
+ *  next. Null when nothing is holding it.
+ *
+ *  The gate used to explain itself with one line for all five blocked statuses:
+ *  "CMO ยังไม่อนุมัติ". That is only true for one of them. A campaign at
+ *  "Need Revision" has already been to the CMO and come BACK — the ball is with
+ *  the planner, who has to answer the comment and resubmit — and a designer
+ *  reading "รอ CMO" waits on a person who is, correctly, waiting on someone
+ *  else. TPN_2608_005 sat that way for eight days with three POSM jobs under it
+ *  and their deadlines a week out.
+ *
+ *  So: name the state, name the person, name the single next click. `who` is
+ *  null when the campaign records no name for that role — say nobody rather
+ *  than guess, same rule as lensAskWho. */
+export type CampaignHold = { headline: string; who: string | null; next: string };
+
+const realName = (n: string | null | undefined): string | null => {
+  const v = (n ?? "").trim();
+  return v && v !== "Unassigned" ? v : null;
+};
+
+export function campaignHoldReason(
+  status: string | null | undefined,
+  people: { planner?: string | null; approver?: string | null } = {},
+): CampaignHold | null {
+  const s = (status ?? "").trim();
+  // Missing status is blocked (campaignReleasedForWork says so) but it is not a
+  // decision anyone owes — it means the request points at a campaign we cannot
+  // read. Send them to check the link, not to chase a person.
+  if (!s) return { headline: "หาแคมเปญของใบงานนี้ไม่เจอ", who: null, next: "เช็คว่าใบงานผูกกับแคมเปญถูกตัวหรือเปล่า" };
+  if (campaignReleasedForWork(s)) return null;
+
+  const planner = realName(people.planner);
+  const approver = realName(people.approver);
+
+  if (s === "Need Revision") {
+    return { headline: "แคมเปญถูกส่งกลับให้แก้", who: planner, next: "แก้ตามคอมเมนต์แล้วกด Submit for Approval อีกครั้ง" };
+  }
+  if (s === "Waiting for Approval" || s === "Waiting Approval") {
+    return { headline: "แคมเปญส่งไปแล้ว รออนุมัติ", who: approver, next: "กด Approve" };
+  }
+  if (s === "Cancelled") {
+    return { headline: "แคมเปญถูกยกเลิก", who: null, next: "ถ้ายังต้องทำงานนี้ ต้องย้ายไปแคมเปญอื่น หรือให้ CMO เปิดแคมเปญกลับมา" };
+  }
+  // Draft · Planning · Ready for Review — never submitted.
+  return { headline: "แคมเปญยังไม่ได้ส่งอนุมัติ", who: planner, next: "กด Submit for Approval" };
 }
 
 /** Does this campaign belong in MY approvals queue?
