@@ -49,13 +49,33 @@ export interface AdoptablePost {
  *  campaigns constantly ("Ads Branding — Reel"); matching without that scope
  *  would pull work in from a campaign that has nothing to do with this one. */
 export function adoptablePostFor(
-  item: { title?: string },
+  item: { id?: string; title?: string },
   posts: AdoptablePost[],
 ): AdoptablePost | null {
+  // The certain answer first: the two ids came out of the same submission.
+  //
+  // "+ Send Brief" mints a post `c<n>-gfx` and writes the brief item `ci-<n>`
+  // from the same number, so the pair is stated, not guessed. Title matching
+  // could not see it — and could not resolve it either, because a campaign is
+  // allowed to hold two items with the SAME title and different kinds ("TO10_
+  // YOUR DREAM, TO ISE JINGU" as a Reel and again as Artwork). Both fell to the
+  // ambiguity guard below, and both were duplicated.
+  const twin = item.id ? posts.find((p) => !p.sourceContentItemId && p.id === briefItemPostId(item.id!)) : undefined;
+  if (twin) return twin;
+
   const want = normTitle(item.title);
   if (!want) return null;
   const hits = posts.filter((p) => !p.sourceContentItemId && normTitle(p.title) === want);
   return hits.length === 1 ? hits[0] : null;
+}
+
+/** The post "+ Send Brief" would have minted for this brief item — `ci-<n>` and
+ *  `c<n>-gfx` are two halves of one submission (see the Graphic Request modal).
+ *  Empty for item ids that were not minted that way (`ci-1`, `ci-cal-…`), which
+ *  simply means there is no twin to find. */
+export function briefItemPostId(itemId: string): string {
+  const n = /^ci-(\d+)$/.exec((itemId ?? "").trim())?.[1];
+  return n ? `c${n}-gfx` : "";
 }
 
 export interface LinkedGraphic {

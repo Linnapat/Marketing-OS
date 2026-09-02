@@ -12,7 +12,7 @@
  * Run with:  npm test   (chained after test-flows.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { adoptablePostFor, graphicsBySourceItem, type AdoptablePost, type LinkedGraphic } from "../src/lib/data/fanoutAdopt";
+import { adoptablePostFor, briefItemPostId, graphicsBySourceItem, type AdoptablePost, type LinkedGraphic } from "../src/lib/data/fanoutAdopt";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -85,6 +85,36 @@ console.log("\n— ใบงานที่มีอยู่แล้ว รั
     [["ci-1", 1], ["ci-2", 2]]);
 
   is("ไม่มีอะไรเลย ไม่พัง", [...graphicsBySourceItem([], [])], []);
+}
+
+console.log("\n— จับคู่จาก id ที่มาจากการกดครั้งเดียวกัน —");
+{
+  // "+ Send Brief" ปั๊มโพสต์ c<n>-gfx และข้อบรีฟ ci-<n> จากเลขเดียวกัน
+  // TPN_2609_005: สองข้อชื่อ "TO10_YOUR DREAM, TO ISE JINGU" เหมือนกันเป๊ะ
+  // (Reel กับ Artwork) การเทียบชื่อจึงกำกวมและปล่อยให้ซ้ำทั้งคู่
+  const posts: AdoptablePost[] = [
+    { id: "c1786707824655001-gfx", title: "TO10_YOUR DREAM, TO ISE JINGU" },
+    { id: "c1786707824655003-gfx", title: "TO10_YOUR DREAM, TO ISE JINGU" },
+  ];
+  is("ชื่อซ้ำกัน แต่ id ชี้ตัวถูก (Reel)",
+    adoptablePostFor({ id: "ci-1786707824655001", title: "TO10_YOUR DREAM, TO ISE JINGU" }, posts)?.id,
+    "c1786707824655001-gfx");
+  is("…และอีกใบได้ตัวของมันเอง (Artwork)",
+    adoptablePostFor({ id: "ci-1786707824655003", title: "TO10_YOUR DREAM, TO ISE JINGU" }, posts)?.id,
+    "c1786707824655003-gfx");
+  is("ก่อนแก้: เทียบชื่ออย่างเดียวตอบไม่ได้",
+    adoptablePostFor({ title: "TO10_YOUR DREAM, TO ISE JINGU" }, posts), null);
+
+  // โพสต์ที่ถูกจองไปแล้วห้ามโดนแย่ง แม้ id จะตรง
+  is("โพสต์ที่มีเจ้าของแล้ว ไม่ถูกรับไปซ้ำ",
+    adoptablePostFor({ id: "ci-1786707824655001", title: "x" },
+      [{ id: "c1786707824655001-gfx", title: "x", sourceContentItemId: "ci-อื่น" }]), null);
+
+  // ข้อที่ไม่ได้มาจากฟอร์ม (ci-1, ci-cal-…) ไม่มีฝาแฝดให้หา ตกไปใช้กติกาชื่อเดิม
+  is("ci-1 ยังใช้การเทียบชื่อเหมือนเดิม",
+    adoptablePostFor({ id: "ci-1", title: "Only One" }, [{ id: "c-any", title: "Only One" }])?.id, "c-any");
+  is("id ที่ไม่เข้ารูปแบบ ไม่พัง", briefItemPostId("ci-cal-1787301467676-cn1pp1"), "");
+  is("แปลง id ได้ตรงรูปแบบ", briefItemPostId("ci-1786707824655001"), "c1786707824655001-gfx");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
