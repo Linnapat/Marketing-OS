@@ -413,7 +413,13 @@ export function buildApprovalRows(input: {
       // — that is why it is not stranded — but it is not counted as anyone's
       // own work, which is how every one of them ended up in the CMO's queue.
       mine: isReviewer,
-      canAct: reviewer && !reviewerWroteIt ? isReviewer : (!wroteIt && ctx.canEditContentPlan),
+      // Same rule as canDecideCaption: the CMO takes only the captions they
+      // opened themselves, so they are not offered the unaddressed fallback
+      // either. Keeping the two in step is the point — a caption must not offer
+      // buttons here and refuse them in the drawer.
+      canAct: reviewer && !reviewerWroteIt
+        ? isReviewer
+        : (!wroteIt && ctx.canEditContentPlan && ctx.role !== "CMO"),
       submittedBy: captionOwner(post),
       postDate: contentDateIso(post),
       waitingOn: firstName(reviewerWroteIt ? null : reviewer, "ฝ่ายวางแผน"),
