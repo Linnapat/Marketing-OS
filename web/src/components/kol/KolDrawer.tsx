@@ -8,7 +8,7 @@ import {
   Kol, KolPost, KOL_COMMENTS, DELIVERABLES, initials, fmtFollow, normalizeStage, kolPosts, postsTotals, kolRoas,
   VISIT_STATUSES, type VisitStatus,
 } from "@/lib/data/kol";
-import { DatePicker } from "@/components/ui/DatePicker";
+import { DatePicker, fmtDisplay } from "@/components/ui/DatePicker";
 import { useAuth } from "@/lib/auth";
 import { fetchKolComments, resolveKolComment } from "@/lib/db/feedback";
 
@@ -18,7 +18,8 @@ function isoToLabel(iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
   return m ? `${MON_SHORT[m - 1]} ${d}` : iso;
 }
-import { KOL_PLATFORMS } from "@/lib/data/brief";
+import { KOL_PLATFORMS, type CampaignBrief } from "@/lib/data/brief";
+import { fetchCampaignBrief } from "@/lib/db/brief";
 import { canTransition, nextStage, nextActionFor, prerequisitesFor, hasOwner, canSaveResults, committedAmount, approvalCoversAmount, quotationStateFor, replaceCreator } from "@/lib/kolFlow";
 import { KOL_CHANNEL_PLATFORMS } from "@/lib/platforms";
 import { DuplicateLinkWarning, useDuplicateLink } from "@/components/kol/DuplicateLinkWarning";
@@ -38,7 +39,7 @@ import { Task } from "@/lib/data/tasks";
 import { notify } from "@/lib/notify";
 
 const TABS = [
-  ["profile", "Profile"], ["campaign", "Campaign"], ["deliverables", "Deliverables"],
+  ["profile", "Profile"], ["campaign", "Campaign Summary"], ["deliverables", "Deliverables"],
   ["brief", "Brief & Assets"], ["results", "Results"], ["comments", "Comments"],
 ] as const;
 type DrawerTab = (typeof TABS)[number][0];
@@ -65,7 +66,12 @@ export function KolDrawer({ kol, initialTab = "profile", onClose, onUpdate }: { 
   const workStages = ["Producing", "In Review", "Approved", "Posted", "Completed"];
   const visibleTabs = TABS.filter(([id]) => {
     if (id === "profile") return true;
-    if (id === "campaign" || id === "comments") return false;
+    // Campaign Summary is visible from the first moment: the KOL Specialist
+    // picks up a request cold and has to know what the campaign is for before
+    // they can judge a creator against it. Hiding it until "Producing" meant
+    // the one tab explaining the job appeared only after the job was chosen.
+    if (id === "campaign") return true;
+    if (id === "comments") return false;
     if (id === "deliverables" || id === "brief") return workStages.includes(currentStage);
     if (id === "results") return currentStage === "Posted" || currentStage === "Completed";
     return false;
@@ -581,17 +587,69 @@ function ProfileTab({ kol, onUpdate }: { kol: Kol; onUpdate?: (k: Kol) => void }
   );
 }
 
+/** What the campaign is FOR, for whoever has to pick a creator for it.
+ *
+ *  The tab existed but was hidden, and read only the KOL row — where these
+ *  fields are filled in by hand and are empty on anything raised from the KOL
+ *  module. The campaign brief has all of it already, so read there first and
+ *  fall back to the row: a request that names a campaign now explains itself,
+ *  and one that does not still shows whatever was typed on it. */
 function CampaignTab({ kol }: { kol: Kol }) {
+  const [brief, setBrief] = useState<CampaignBrief | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!kol.campaignId) return;
+    let alive = true;
+    setLoading(true);
+    fetchCampaignBrief(kol.campaignId)
+      .then((b) => { if (alive) setBrief(b); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [kol.campaignId]);
+
+  // Brief first, the row second, then an em dash — never a blank box, so a gap
+  // reads as "nobody filled this in" rather than as a broken panel.
+  const pick = (...values: (string | undefined | null)[]) =>
+    values.map((v) => (v ?? "").trim()).find(Boolean) || "—";
+  const list = (values?: string[]) => (values ?? []).filter(Boolean).join(" · ") || "—";
+  const period = brief?.startDate && brief?.endDate
+    ? `${fmtDisplay(brief.startDate)} – ${fmtDisplay(brief.endDate)}`
+    : pick(kol.postingPeriod);
+  const money = (n?: number) => (typeof n === "number" && n > 0 ? baht(n) : "—");
+  const link = (href?: string, label = "เปิดลิงก์ ↗") => {
+    const url = (href ?? "").trim();
+    if (!url) return "—";
+    return <a href={url} target="_blank" rel="noreferrer" className="text-accent font-semibold hover:underline">{label}</a>;
+  };
+
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <Field label="Campaign" value={kol.campaign} />
-      <Field label="Branch / Store" value={kol.branch} />
-      <Field label="Objective" value={kol.objective} />
-      <Field label="Target Audience" value={kol.target} />
-      <div className="col-span-2"><Field label="Key Message" value={kol.keyMsg} /></div>
-      <div className="col-span-2"><Field label="Offer" value={kol.offer} /></div>
-      <Field label="Posting Period" value={kol.postingPeriod} />
-      <Field label="Coupon Code" value={kol.couponCode ?? "—"} />
+    <div className="flex flex-col gap-4">
+      {kol.campaignId && loading && <div className="text-[12px] text-faint">กำลังโหลดบรีฟแคมเปญ…</div>}
+      {kol.campaignId && !loading && !brief && (
+        <div className="text-[12px] rounded-[10px] px-3 py-2" style={{ background: "#FBF8EE", color: "#8A6D1E" }}>
+          แคมเปญนี้ไม่มีบรีฟในระบบ — แสดงเท่าที่กรอกไว้บนคำขอนี้
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Campaign" value={pick(brief?.name, kol.campaign)} />
+        <Field label="ช่วงแคมเปญ" value={period} />
+        <Field label="วัตถุประสงค์" value={pick(brief?.objective, kol.objective)} />
+        <Field label="ประเภทแคมเปญ" value={pick(brief?.campaignType)} />
+        <Field label="สาขา" value={brief?.branches?.length ? list(brief.branches) : pick(kol.branch)} />
+        <Field label="ช่องทาง" value={brief?.channels?.length ? list(brief.channels) : "—"} />
+        <div className="col-span-2"><Field label="กลุ่มเป้าหมาย" value={pick(brief?.audience, kol.target)} /></div>
+        <div className="col-span-2"><Field label="Main message" value={pick(brief?.mainMessage, kol.keyMsg)} /></div>
+        <div className="col-span-2"><Field label="โปรโมชั่น / Offer" value={pick(brief?.offer, kol.offer)} /></div>
+        {(brief?.storePromotion ?? "").trim() && (
+          <div className="col-span-2"><Field label="โปรฯ หน้าร้าน" value={brief!.storePromotion} /></div>
+        )}
+        <div className="col-span-2"><Field label="KV direction" value={pick(brief?.kvDirection)} /></div>
+        <Field label="งบแคมเปญรวม" value={money(brief?.budget?.total)} />
+        <Field label="งบ KOL" value={money(brief?.budget?.kol)} />
+        <Field label="Proposal" value={link(brief?.proposalLink)} />
+        <Field label="Coupon code" value={pick(kol.couponCode)} />
+      </div>
     </div>
   );
 }
