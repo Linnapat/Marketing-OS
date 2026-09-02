@@ -22,7 +22,7 @@ import { GRAPHIC_OPEN_PARAM,
   requestBriefEdit, decideBriefEdit, briefChangeAudience,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
-  MESSAGE_TYPE, isMessage, threadAudience, workKind, lensAskWho,
+  MESSAGE_TYPE, isMessage, threadAudience, workKind, lensAskWho, artworkGroup, submitDeliverable,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { decideStoryboard as decideStoryboardShared, giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
@@ -1727,23 +1727,30 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
       workLink.graphic(g.id), { team: graphicTeam(g), inform: [g.requester, before.submittedBy] });
   };
 
-  const persist = (next: GraphicDeliverable[], event?: NonNullable<Graphic["history"]>[number]) => {
-    setDels(next);
-    persistGraphic({ ...g, deliverables: next, history: event ? [...(g.history ?? []), event] : g.history });
-  };
   const persistGraphic = (base: Graphic, opts: { announce?: boolean } = {}) =>
     persistGraphicDeliverables(base, { previous: g, announce: opts.announce, onUpdate });
-  const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => j === i ? { ...d, ...p } : d));
+  /** The rows that are the SAME piece of artwork as `i` — same pixels, so one
+   *  master file. A Reel going to Facebook, Instagram and TikTok is one export,
+   *  and every such row in the live data carries the identical link. */
+  const groupOf = (i: number) => artworkGroup(dels, i);
+  /** Fill the link boxes for the whole group at once. Typing it three times was
+   *  three chances to paste the wrong version into one of them. */
+  const patchGroup = (i: number, p: Partial<GraphicDeliverable>) => {
+    const group = new Set(groupOf(i));
+    setDels((ds) => ds.map((d, j) => group.has(j) ? { ...d, ...p } : d));
+  };
+  // Sending goes through submitDeliverable — the same call the Agency Portal
+  // makes — so the whole artwork (every platform sharing the file) is sent in
+  // one press, and an outside studio and an in-house designer submit alike.
   const submit = (i: number) => {
     const d = dels[i];
     if (!d.assetLink.trim()) return;
-    const at = new Date().toISOString();
-    persist(
-      // review: undefined — a new version starts a new round; see submitDeliverable.
-      dels.map((x, j) => j === i ? { ...x, status: "Waiting review", version: x.version + 1, submittedBy: me, submittedAt: at, review: undefined } : x),
-      { type: "submitted", at, by: me, deliverableKey: `${d.platform}::${d.size}` },
-    );
-    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${d.platform} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
+    const next = submitDeliverable({ ...g, deliverables: dels }, i, me, { assetLink: d.assetLink, sourceLink: d.sourceLink });
+    if (!next) return;
+    setDels(next.deliverables ?? dels);
+    persistGraphic(next);
+    const where = groupOf(i).map((j) => dels[j].platform).join(" · ");
+    notify("feedback", `🎨 ส่งงานกราฟฟิกรอรีวิว: ${g.title}`, `${where} · ${d.size} · โดย ${me} → รอ ${g.requester} รีวิว`, `/graphic?${GRAPHIC_OPEN_PARAM}=${g.id}`, { team: graphicTeam(g) });
   };
   /** One lens's verdict — the write itself, and everything becoming "ready"
    *  implies, live in lib/graphicVerdict so Approval Center's list rows record
@@ -1795,6 +1802,12 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const inReview = d.status === "Waiting review";
         const prog2 = reviewProgress(d, jobLenses);
+        // Same pixels = same master file = one submission. artworkGroup is the
+        // rule the review already counts by, so both halves agree on what "one
+        // piece of artwork" means.
+        const group = groupOf(i);
+        const groupLead = group[0];
+        const groupPlatforms = group.map((j) => dels[j].platform);
         return (
           <div key={i} className="bg-surface border border-line rounded-card p-4">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -1815,14 +1828,31 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
             {d.refLink && <a href={d.refLink} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent font-semibold">Reference brief ↗</a>}
 
             {editable ? (
-              <div className="flex flex-col gap-2 mt-2">
-                {d.status === "Revision" && d.feedback.length > 0 && (
-                  <div className="text-[12px] rounded-[8px] px-3 py-2" style={{ background: "#FBECEA", color: "#B33A2E" }}>↩ {d.feedback[d.feedback.length - 1].reason}</div>
-                )}
-                <input value={d.assetLink} onChange={(e) => patch(i, { assetLink: e.target.value })} className={inp} placeholder="Artwork link (Drive / Figma / PNG) *" />
-                <input value={d.sourceLink} onChange={(e) => patch(i, { sourceLink: e.target.value })} className={inp} placeholder="Source file link" />
-                <button onClick={() => submit(i)} disabled={!d.assetLink.trim() || rushHold || preHold} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>{d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}</button>
-              </div>
+              /* One box per ARTWORK, not per platform. The row that owns the box
+                 is the first of its group; the rest say who they follow rather
+                 than asking for the same link again. */
+              groupLead === i ? (
+                <div className="flex flex-col gap-2 mt-2">
+                  {d.status === "Revision" && d.feedback.length > 0 && (
+                    <div className="text-[12px] rounded-[8px] px-3 py-2" style={{ background: "#FBECEA", color: "#B33A2E" }}>↩ {d.feedback[d.feedback.length - 1].reason}</div>
+                  )}
+                  {groupPlatforms.length > 1 && (
+                    <div className="text-[11px] text-faint">
+                      ไฟล์เดียวใช้ครบ <b className="text-muted">{groupPlatforms.join(" · ")}</b> — วางลิงก์ครั้งเดียว กดส่งครั้งเดียว
+                    </div>
+                  )}
+                  <input value={d.assetLink} onChange={(e) => patchGroup(i, { assetLink: e.target.value })} className={inp} placeholder="Artwork link (Drive / Figma / PNG) *" />
+                  <input value={d.sourceLink} onChange={(e) => patchGroup(i, { sourceLink: e.target.value })} className={inp} placeholder="Source file link" />
+                  <button onClick={() => submit(i)} disabled={!d.assetLink.trim() || rushHold || preHold} className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40" style={{ background: "#211F1C" }}>
+                    {d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}
+                    {groupPlatforms.length > 1 ? ` (${groupPlatforms.length} platform)` : ""}
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 text-[11.5px] text-faint rounded-[8px] px-3 py-2" style={{ background: "#FBF9F4" }}>
+                  ใช้ไฟล์เดียวกับ <b className="text-muted">{dels[groupLead]?.platform}</b> — ส่งพร้อมกันในปุ่มเดียว
+                </div>
+              )
             ) : (
               <div className="flex flex-col gap-2 mt-2">
                 <div className="flex items-center gap-3 text-[11.5px] flex-wrap">

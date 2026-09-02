@@ -2092,10 +2092,13 @@ export function passAllWaiting(
   return touched ? next : null;
 }
 
-/** Submit ONE deliverable for review — the per-piece counterpart of
- *  approveAllWaiting. Used by the Agency Portal; GraphicDrawer still carries an
- *  equivalent inline version tied to its own local state (it records the same
- *  history event, so counts agree — but the two should be unified).
+/** Submit ONE PIECE OF ARTWORK for review — every platform row that shares its
+ *  pixels goes together. The counterpart of approveAllWaiting.
+ *
+ *  Both submit paths run through here — the Agency Portal and GraphicDrawer —
+ *  so an outside studio and the in-house designer send work the same way. They
+ *  used to be two implementations of the same idea, which is how the drawer got
+ *  a fix the portal did not.
  *
  *  Submitting per deliverable (not per request) is what makes the work
  *  countable: a request for 1:1 + 4:5 + 9:16 is three pieces of artwork, and
@@ -2119,19 +2122,29 @@ export function submitDeliverable(
   if (!assetLink) return null; // nothing to review yet
 
   const at = new Date().toISOString();
-  dels[index] = {
-    ...target,
-    assetLink,
-    sourceLink: patch.sourceLink ?? target.sourceLink,
-    status: "Waiting review",
-    version: target.version + 1,
-    submittedBy: by,
-    submittedAt: at,
-    // A new version is a new round. A verdict left over from the previous one
-    // would count towards it — and, being a "revise", would bounce the piece
-    // back the moment the other lens answered, over a file nobody re-read.
-    review: undefined,
-  };
+  // One press sends the whole ARTWORK, not one platform row. Same pixels = same
+  // export: a Reel bound for Facebook, Instagram and TikTok is one file, and
+  // every such row in the live data carries the identical link — pasted three
+  // times, which is three chances to put the wrong version in one of them. The
+  // review has always worked this way (applyLensVerdict settles the group in
+  // one verdict); submitting was the half that still asked row by row.
+  const group = artworkGroup(dels, index);
+  const sourceLink = patch.sourceLink ?? target.sourceLink;
+  for (const i of group) {
+    dels[i] = {
+      ...dels[i],
+      assetLink,
+      sourceLink,
+      status: "Waiting review",
+      version: dels[i].version + 1,
+      submittedBy: by,
+      submittedAt: at,
+      // A new version is a new round. A verdict left over from the previous one
+      // would count towards it — and, being a "revise", would bounce the piece
+      // back the moment the other lens answered, over a file nobody re-read.
+      review: undefined,
+    };
+  }
 
   return {
     ...g,
@@ -2139,7 +2152,9 @@ export function submitDeliverable(
     stage: stageFromDeliverables({ ...g, deliverables: dels }),
     history: [
       ...(g.history ?? []),
-      { type: "submitted" as const, at, by, deliverableKey: `${target.platform}::${target.size}` },
+      // One event per row, like the `approved` events — Artwork Count reads
+      // history by deliverableKey and must see every row it will bill for.
+      ...group.map((i) => ({ type: "submitted" as const, at, by, deliverableKey: `${dels[i].platform}::${dels[i].size}` })),
     ],
   };
 }

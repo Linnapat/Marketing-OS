@@ -17,7 +17,7 @@
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
-  Graphic, GraphicDeliverable, deriveDeliverables, deliverableProgress, submitDeliverable,
+  Graphic, GraphicDeliverable, deriveDeliverables, deliverableProgress, submitDeliverable, artworkGroup,
 } from "@/lib/data/graphic";
 
 const DEL_TONE: Record<string, "green" | "gold" | "red" | "neutral"> = {
@@ -44,7 +44,13 @@ export function AgencyDeliverables({ g, by, onChange }: {
   }, [g]);
 
   const prog = deliverableProgress({ ...g, deliverables: dels });
-  const patch = (i: number, p: Partial<GraphicDeliverable>) => setDels((ds) => ds.map((d, j) => (j === i ? { ...d, ...p } : d)));
+  // Rows that are the same pixels are the same export — see submitDeliverable,
+  // which sends them together. The boxes fill together for the same reason.
+  const groupOf = (i: number) => artworkGroup(dels, i);
+  const patchGroup = (i: number, p: Partial<GraphicDeliverable>) => {
+    const group = new Set(groupOf(i));
+    setDels((ds) => ds.map((d, j) => (group.has(j) ? { ...d, ...p } : d)));
+  };
 
   const submit = (i: number) => {
     const next = submitDeliverable({ ...g, deliverables: dels }, i, by);
@@ -62,12 +68,15 @@ export function AgencyDeliverables({ g, by, onChange }: {
         </StatusBadge>
       </div>
       <div className="text-[10.5px] text-faint -mt-1">
-        ส่งงานทีละชิ้นตามไซซ์ — แต่ละไซซ์นับเป็นคนละชิ้นงาน
+        ส่งงานทีละชิ้นตามไซซ์ — แต่ละไซซ์นับเป็นคนละชิ้นงาน · ไซซ์เดียวกันที่ลงหลาย platform ใช้ไฟล์เดียว วางลิงก์ครั้งเดียว
       </div>
 
       {dels.map((d, i) => {
         const editable = d.status === "Not submitted" || d.status === "Revision";
         const lastFeedback = d.feedback[d.feedback.length - 1];
+        const group = groupOf(i);
+        const groupLead = group[0];
+        const groupPlatforms = group.map((j) => dels[j].platform);
         return (
           <div key={`${d.platform}::${d.size}::${i}`} className="bg-surface border border-line rounded-card p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -88,22 +97,34 @@ export function AgencyDeliverables({ g, by, onChange }: {
             )}
 
             {editable ? (
-              <div className="flex flex-col gap-2 mt-2">
-                {d.status === "Revision" && lastFeedback && (
-                  <div className="text-[12px] rounded-[8px] px-3 py-2" style={{ background: "#FBECEA", color: "#B33A2E" }}>
-                    ↩ {lastFeedback.reason}
-                  </div>
-                )}
-                <input value={d.assetLink} onChange={(e) => patch(i, { assetLink: e.target.value })} className={inp}
-                  placeholder="Artwork link (Drive / Canva / Figma) *" />
-                <input value={d.sourceLink} onChange={(e) => patch(i, { sourceLink: e.target.value })} className={inp}
-                  placeholder="Source file link" />
-                <button onClick={() => submit(i)} disabled={!d.assetLink.trim()}
-                  className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40"
-                  style={{ background: "#211F1C" }}>
-                  {d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}
-                </button>
-              </div>
+              groupLead === i ? (
+                <div className="flex flex-col gap-2 mt-2">
+                  {d.status === "Revision" && lastFeedback && (
+                    <div className="text-[12px] rounded-[8px] px-3 py-2" style={{ background: "#FBECEA", color: "#B33A2E" }}>
+                      ↩ {lastFeedback.reason}
+                    </div>
+                  )}
+                  {groupPlatforms.length > 1 && (
+                    <div className="text-[11px] text-faint">
+                      ไฟล์เดียวใช้ครบ <b className="text-muted">{groupPlatforms.join(" · ")}</b> — วางลิงก์ครั้งเดียว กดส่งครั้งเดียว
+                    </div>
+                  )}
+                  <input value={d.assetLink} onChange={(e) => patchGroup(i, { assetLink: e.target.value })} className={inp}
+                    placeholder="Artwork link (Drive / Canva / Figma) *" />
+                  <input value={d.sourceLink} onChange={(e) => patchGroup(i, { sourceLink: e.target.value })} className={inp}
+                    placeholder="Source file link" />
+                  <button onClick={() => submit(i)} disabled={!d.assetLink.trim()}
+                    className="self-start text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] disabled:opacity-40"
+                    style={{ background: "#211F1C" }}>
+                    {d.status === "Revision" ? "Re-submit for Review" : "Submit for Review"}
+                    {groupPlatforms.length > 1 ? ` (${groupPlatforms.length} platform)` : ""}
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 text-[11.5px] text-faint rounded-[8px] px-3 py-2" style={{ background: "#FBF9F4" }}>
+                  ใช้ไฟล์เดียวกับ <b className="text-muted">{dels[groupLead]?.platform}</b> — ส่งพร้อมกันในปุ่มเดียว
+                </div>
+              )
             ) : (
               <div className="flex items-center gap-3 mt-2 text-[11.5px]">
                 <a href={d.assetLink} target="_blank" rel="noreferrer" className="text-accent font-semibold">Open artwork ↗</a>
