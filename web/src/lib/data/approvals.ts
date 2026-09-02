@@ -390,7 +390,7 @@ export function buildApprovalRows(input: {
   // falls back to the planning side, so nothing is stranded with no owner.
   for (const post of input.captions) {
     if (!captionAwaitsApproval(post) || !ctx.isVisible(post.b)) continue;
-    const reviewer = captionReviewer(post, ctx.brandMarketer?.(post.b));
+    const reviewer = captionReviewer(post, ctx.brandMarketer?.(post.b), ctx.cmoName);
     // Captions are written by Creative and accepted by the marketer who asked
     // for the post — two people by design. But the fan-out used to stamp the
     // post's writer as its REQUESTER, so on 49 of the 63 ready captions the

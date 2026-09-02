@@ -343,8 +343,14 @@ console.log("\n— caption รออนุมัติของใคร —");
     captionReviewer({ requester: "Pupay", approver: "Pupay" }, "Pupay"), "Pupay");
   is("Creative เป็นคนขอเปิดงาน → ตกไปที่ Marketer ของแบรนด์",
     captionReviewer({ requester: "Pichayaporn", approver: "Pichayaporn" }, "Pupay"), "Pupay");
-  is("CMO เป็นคนขอเปิดงาน → ตกไปที่ Marketer ของแบรนด์",
-    captionReviewer({ requester: "Gik", approver: "Gik" }, "narawich"), "narawich");
+  // CMO เปิดโพสต์เอง = ของ CMO · ส่งต่อให้ Marketer ของแบรนด์คือการโยนคำขอของ
+  // เขาออกไปจากมือเขาเอง
+  is("CMO เปิดงานเอง → อยู่ที่ CMO",
+    captionReviewer({ requester: "Gik", approver: "Gik" }, "narawich", "Gik"), "Gik");
+  is("…แม้ช่อง approver จะเป็นคนอื่น",
+    captionReviewer({ requester: "Gik", approver: "Orapan" }, "narawich", "Gik"), "Gik");
+  is("แต่ถ้า CMO ไม่ได้เปิดเอง ยังเข้า Marketer ของแบรนด์",
+    captionReviewer({ requester: "Pichayaporn", approver: "Pichayaporn" }, "narawich", "Gik"), "narawich");
   is("ไม่มีใครขอเปิดงาน → Marketer ของแบรนด์รับไป",
     captionReviewer({}, "narawich"), "narawich");
   is("แบรนด์ไม่มีคนดูแล → กลับไปใช้คนขอเปิดงาน",

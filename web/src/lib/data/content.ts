@@ -358,19 +358,27 @@ export function captionReviewer(
    *  accept the words, and "ฝ่ายวางแผน" as a group is not a person anyone can
    *  be waiting for. */
   brandMarketer?: string | null,
+  /** The CMO's name. A post the CMO opened stays with the CMO — see below. */
+  cmoName?: string | null,
 ): string | null {
   const marketer = realName(brandMarketer);
+  const cmo = realName(cmoName);
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   for (const raw of [c.requester, c.approver]) {
     const name = realName(raw);
     if (!name) continue;
+    // The CMO opening a post keeps it. They asked for it, so the words are
+    // theirs to accept — handing it to the brand's marketer would be routing
+    // somebody's own request away from them.
+    if (cmo && same(name, cmo)) return name;
     // No marketer on record for the brand — keep naming whoever asked, which is
     // better than naming nobody.
     if (!marketer) return name;
-    // The person who asked wins only when they ARE this brand's marketer: a
+    // Otherwise the asker wins only when they ARE this brand's marketer: a
     // brand can have more than one, and the asker is the better address among
-    // them. A requester from Creative or the CMO is not a marketer at all, and
-    // routing the caption back to them is how it stopped moving.
-    if (name.toLowerCase() === marketer.toLowerCase()) return name;
+    // them. A requester from Creative is not a marketer at all, and routing the
+    // caption back to them is how it stopped moving.
+    if (same(name, marketer)) return name;
   }
   return marketer || null;
 }

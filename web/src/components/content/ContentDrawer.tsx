@@ -12,6 +12,7 @@ import { updateContent, deleteContent, approveContent, publishContent, scheduleC
 import { createRevisionTask } from "@/lib/db/tasks";
 import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { useBrandMarketer } from "@/lib/useBrandMarketer";
+import { useCmoName } from "@/lib/useCreativeLeader";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
@@ -169,6 +170,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // Captions are addressed to the brand's marketer — the badge, the handover
   // message and the Approval Center row all have to name the same person.
   const brandMarketer = useBrandMarketer();
+  const cmoName = useCmoName();
   const reviewer = member?.name ?? user?.email ?? "CMO";
   // Editing the schedule is planning work; producing against it is not.
   // useRole (not useAuth) to match the rest of the Content module — the same
@@ -448,7 +450,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // rather than every planner in the company.
   const markCaptionReady = () => {
     void persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer, captionStatus: "Ready" }));
-    const owed = captionReviewer(item, brandMarketer(item.b));
+    const owed = captionReviewer(item, brandMarketer(item.b), cmoName);
     notify("approval", `📝 caption รออนุมัติ: ${item.title}`,
       `${brandName(item.b)} · ${item.campaign} · เขียนโดย ${reviewer}${owed ? ` → รอ ${owed}` : ""}`,
       workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [owed] });
@@ -464,7 +466,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // field let them approve themselves. The REVIEWER is who it was addressed to,
   // and they decide whatever their role.
   const writer = captionOwner(item);
-  const captionOwedTo = captionReviewer(item, brandMarketer(item.b));
+  const captionOwedTo = captionReviewer(item, brandMarketer(item.b), cmoName);
   const canDecideCap = canDecideCaption(role, { me: reviewer, writer, reviewer: captionOwedTo });
   // Told apart from "not on the planning side" so the reason on screen is the
   // true one — being the writer is a different refusal from being Creative.
