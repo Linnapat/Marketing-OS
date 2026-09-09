@@ -149,6 +149,21 @@ export async function fetchGraphicSourceIds(
   return graphicsBySourceItem(graphics, posts);
 }
 
+/** One campaign's live requests, whole — for the retire pass, which has to see
+ *  the stage and the deliverables before it may bin anything. */
+export async function fetchGraphicsForCampaign(campaignId: string): Promise<Graphic[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await liveOnly(
+    db.from("graphic_requests").select("id, data, created_at").eq("campaign_id", campaignId),
+    await trashReady(),
+  );
+  if (error) throw new Error(`อ่านใบงานกราฟิกของแคมเปญไม่สำเร็จ (${error.message})`);
+  return (data ?? [])
+    .filter((r) => r.data)
+    .map((r) => withLiveGraphicOverdue({ ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at }));
+}
+
 /** Create a graphic request only if its (campaignId, sourceContentItemId) isn't
  *  present; when it is, `existingId` names the row that already serves the item. */
 export async function createGraphicIfNew(

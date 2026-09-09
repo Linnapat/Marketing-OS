@@ -40,6 +40,36 @@ export async function fetchTasks(): Promise<{ tasks: Task[]; doneIds: number[] }
   return { tasks, doneIds };
 }
 
+/** Every live task a campaign's fan-out is responsible for: the ones it wrote
+ *  itself (`relatedBrief`), plus the revision tasks that only ever name the
+ *  graphic request they were raised against. Both reach the retire pass, which
+ *  is why they are collected in one place.
+ *
+ *  `graphicIds` is what makes the second half work — "Revise graphic brief —…"
+ *  carries no brief key at all. */
+export async function fetchBriefRelatedTasks(
+  campaignId: string, graphicIds: (string | number)[] = [],
+): Promise<Task[]> {
+  const db = supabase();
+  if (!db) return [];
+  const ready = await trashReady();
+  const rows = await Promise.all([
+    liveOnly(db.from("tasks").select("id, data").eq("data->>relatedBrief", campaignId), ready),
+    // One query per id rather than an .or() filter: PostgREST needs the value
+    // inlined into the filter string, and these ids are caller-supplied.
+    ...graphicIds.map((g) =>
+      liveOnly(db.from("tasks").select("id, data").eq("data->>relatedGraphicId", String(g)), ready)),
+  ]);
+  const failed = rows.find((r) => r.error);
+  if (failed?.error) throw new Error(`อ่านงานที่ผูกกับแคมเปญไม่สำเร็จ (${failed.error.message})`);
+  const byId = new Map<number, Task>();
+  for (const r of rows) for (const row of r.data ?? []) {
+    const t = (row as { data: Task }).data;
+    if (t?.id != null) byId.set(t.id, t);
+  }
+  return [...byId.values()];
+}
+
 /** Insert a newly created task. Fire-and-forget. */
 /** Shared revision → My Task helper. Any "Request Revision" across the OS
  *  (content post, graphic deliverable, campaign brief) drops a high-priority

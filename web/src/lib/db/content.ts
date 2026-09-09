@@ -106,6 +106,28 @@ export async function fetchCampaignPosts(campaignId: string): Promise<AdoptableP
     .map((c) => ({ id: String(c.id), title: c.title, sourceContentItemId: c.sourceContentItemId }));
 }
 
+/** One campaign's live posts, whole — for the half of the fan-out that has to
+ *  look at what a post actually contains (has anyone written the caption? is
+ *  it published?) rather than just which item it serves. See db/briefRetire.
+ *
+ *  Trashed rows are excluded, unlike fetchCampaignPosts: a post already in the
+ *  bin is not work anyone still has. */
+export async function fetchCampaignContentPosts(campaignId: string): Promise<ContentItem[]> {
+  const db = supabase();
+  if (!db) return [];
+  const { data, error } = await liveOnly(
+    db.from("content_posts").select("id, data, created_at").eq("campaign_id", campaignId),
+    await trashReady(),
+  );
+  if (error) throw new Error(`อ่านโพสต์ของแคมเปญไม่สำเร็จ (${error.message})`);
+  return (data ?? [])
+    .map((r) => (r.data
+      ? { ...(r.data as ContentItem), id: (r.data as ContentItem).id ?? `c${r.id}`,
+          createdAt: (r.data as ContentItem).createdAt ?? (r.created_at as string | undefined) }
+      : null))
+    .filter(Boolean) as ContentItem[];
+}
+
 /** Stamp a brief content item onto a post that was raised by hand.
  *
  *  Writes one field into the blob and nothing else. The post already carries a
