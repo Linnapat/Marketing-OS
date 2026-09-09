@@ -25,6 +25,7 @@ import { assertDbOk } from "@/lib/db/assert";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { logAudit } from "@/lib/db/audit";
 import { noteBriefVersion, forgetBriefVersion, briefVersionOf, adoptBriefVersion } from "./briefVersion";
+import { retireRemovedBriefItems, RetireOutcome } from "./briefRetire";
 
 // Re-exported from here because this is where callers already reach for brief
 // persistence; the map itself lives in ./briefVersion so db/campaigns can keep
@@ -36,6 +37,9 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 export interface BriefSaveResult {
   campaign: CampaignRow;
   created: { content: number; graphics: number; kols: number; tasks: number };
+  /** What the edit took OUT of the plan — see retireRemovedBriefItems. Absent
+   *  on a save that removed nothing. */
+  retired?: RetireOutcome;
 }
 
 // One fan-out per campaign at a time, chained not joined: the detail page has
@@ -385,8 +389,45 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
     await markMaterialised(normalizedBrief.id).catch(() => {});
   }
 
+  // ── The other direction: items the edit took OUT of the plan ───────────────
+  // The loop above only ever adds. Editing an approved campaign's Content Plan
+  // down from six items to four used to leave all six posts, all six graphic
+  // requests and their tasks in place, so the plan said four and every other
+  // module said six — with nothing anywhere explaining the difference (found on
+  // CAM-2026-7206). Untouched work follows the plan into the bin; work anyone
+  // has started stays and is reported, never silently deleted.
+  //
+  // Best-effort, like the stamp above: the plan is saved and the new rows are
+  // in, and failing the whole save over the tidy-up would lose both.
+  const retired = await retireRemovedBriefItems(
+    normalizedBrief.id,
+    new Set(normalizedBrief.content.map((ci) => ci.id)),
+    normalizedBrief.plannerOwner || "ระบบ",
+  ).catch(() => undefined);
+  if (retired?.log.length) await appendApprovalLog(normalizedBrief, retired.log).catch(() => {});
+
   // Report the real materialised counts (idempotency may make a retry all-zero).
-  return { campaign: row, created: { content, graphics, kols, tasks } };
+  return { campaign: row, created: { content, graphics, kols, tasks }, retired };
+}
+
+/** Add lines to the brief's approval log without rewriting the rest of it —
+ *  the same read-modify-write markMaterialised uses, for the same reason: the
+ *  blob we hold is the one we just wrote, and re-persisting it whole would
+ *  clobber the materialisedAt stamp written a moment ago. */
+async function appendApprovalLog(brief: CampaignBrief, lines: string[]): Promise<void> {
+  const db = supabase();
+  if (!db || !lines.length) return;
+  const { data } = await db.from("campaigns").select("data").eq("id", brief.id).maybeSingle();
+  const blob = data?.data as CampaignBrief | undefined;
+  if (!blob) return;
+  const at = new Date().toISOString();
+  const entries: ApprovalLogEntry[] = lines.map((comment) => ({
+    action: "Content item removed from plan", by: brief.plannerOwner || "ระบบ", at, comment,
+  }));
+  const { data: written } = await db.from("campaigns")
+    .update({ data: { ...blob, approvalLog: [...(blob.approvalLog ?? []), ...entries] } })
+    .eq("id", brief.id).select("id, updated_at");
+  adoptBriefVersion(brief.id, written as { updated_at?: string }[] | null);
 }
 
 /** Stamp the brief blob as materialised, without rewriting the rest of it. */

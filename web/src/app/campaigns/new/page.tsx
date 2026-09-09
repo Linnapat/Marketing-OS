@@ -362,6 +362,24 @@ export default function NewCampaignPage() {
 
   /** Save an edit to a live campaign, queueing the parts the CMO must see.
    *  Returns whether anything was queued, so the caller can word its own toast. */
+  // What an edit did to the work behind the items it removed. Silent when the
+  // edit removed nothing — which is every edit that only touched text.
+  //
+  // The "kept" case is the one worth a message: the item is out of the plan but
+  // its post or artwork is real work someone started, so it stays and somebody
+  // has to decide. Saying nothing there is how the two counts drifted apart in
+  // the first place.
+  const reportRetired = (result: Awaited<ReturnType<typeof saveCampaignBrief>>) => {
+    const r = result.retired;
+    if (!r) return;
+    if (r.retired.content) {
+      toast(`เอา ${r.retired.content} content ออกจากแผน — ย้ายโพสต์/ใบงานที่ยังไม่ได้เริ่มลงถังขยะแล้ว (กู้คืนได้ 7 วันที่หน้า Trash)`, "info");
+    }
+    for (const k of r.kept) {
+      toastError(`เอา “${k.title}” ออกจากแผนแล้ว แต่งานที่สร้างไว้ยังอยู่ (${k.reasons.join(", ")}) — ตรวจสอบและลบเองที่ Content Plan / Graphic Request`);
+    }
+  };
+
   const saveLiveEdit = async (edit: NonNullable<ReturnType<typeof liveEdit>>, now: string): Promise<boolean> => {
     const by = brief.plannerOwner || "Planner";
     const entry = edit.queue
@@ -376,7 +394,7 @@ export default function NewCampaignPage() {
       by, at: now, comment: changes, from: edit.status, to: edit.status,
     }];
     const pending = entry ? [...(brief.pendingApprovals ?? []), entry] : (brief.pendingApprovals ?? []);
-    await saveCampaignBrief(finalize(edit.status as CampaignBrief["status"], log, now, pending));
+    reportRetired(await saveCampaignBrief(finalize(edit.status as CampaignBrief["status"], log, now, pending)));
     // One notification per save either way — the CMO's inbox does not get
     // noisier than it was, it just stops demanding a click for small things.
     if (entry) {
@@ -416,7 +434,7 @@ export default function NewCampaignPage() {
       } else {
         // A live campaign keeps its status even on a no-op save; only a genuine
         // draft is written as "Draft".
-        await saveCampaignBrief(finalize((liveStatus() ?? "Draft") as CampaignBrief["status"], brief.approvalLog, now));
+        reportRetired(await saveCampaignBrief(finalize((liveStatus() ?? "Draft") as CampaignBrief["status"], brief.approvalLog, now)));
       }
       setDraftSaved(true);
       toastSuccess("บันทึก Draft เรียบร้อย");
@@ -514,7 +532,7 @@ export default function NewCampaignPage() {
           ? `บันทึก “${brief.name}” แล้ว — งานเดินต่อ · ส่งให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติย้อนหลัง`
           : `บันทึก “${brief.name}” แล้ว — ไม่ต้องขออนุมัติใหม่`);
       } else {
-        await saveCampaignBrief(finalize(status as CampaignBrief["status"], log, now));
+        reportRetired(await saveCampaignBrief(finalize(status as CampaignBrief["status"], log, now)));
         toastSuccess(status === "Waiting for Approval"
           ? `ส่ง “${brief.name}” ให้ ${brief.approver || DEFAULT_APPROVER} อนุมัติแล้ว`
           : `บันทึก “${brief.name}” เรียบร้อย`);
@@ -1106,14 +1124,16 @@ function ContentPlan({ brief, setBrief, nextSeq, outOfRange, materialized }: {
   const rm = (id: string) => {
     // Once a campaign is approved, a content item is not just a plan row: it
     // has a real post in Content Plan and (usually) a creative request the team
-    // may already have started. Deleting it from the brief leaves those orphaned —
-    // which is exactly what happened with "Grand Menu Roundup". Warn first, and
-    // say plainly that the existing work stays put.
+    // may already have started. The save now takes the untouched ones with it
+    // (db/briefRetire) — into Trash, not out of existence — and leaves anything
+    // anyone has started, so this says which of the two is about to happen
+    // rather than the old blanket "the work stays put".
     if (materialized?.has(id)) {
       const item = brief.content.find((c) => c.id === id);
       const ok = window.confirm(
         `“${item?.title || "Content นี้"}” ถูกสร้างเป็นงานจริงแล้ว (โพสต์ใน Content Plan / ใบงาน Creative)\n\n`
-        + "ลบออกจากแคมเปญนี้ จะไม่ลบงานที่สร้างไปแล้ว — ต้องไปลบในหน้า Content Plan / Graphic Request เอง\n\nยืนยันลบออกจากแผน?",
+        + "ตอนบันทึก: ถ้ายังไม่มีใครเริ่มทำ (ยังไม่มี caption / ใบงานยังเป็น New Request) ระบบจะย้ายลงถังขยะให้ — กู้คืนได้ 7 วันที่หน้า Trash\n"
+        + "ถ้ามีคนเริ่มทำแล้ว งานจะยังอยู่ และระบบจะแจ้งให้ไปตรวจสอบเอง\n\nยืนยันลบออกจากแผน?",
       );
       if (!ok) return;
     }
