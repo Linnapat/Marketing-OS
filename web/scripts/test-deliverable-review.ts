@@ -16,6 +16,7 @@ import {
   type Graphic, type GraphicDeliverable,
 } from "../src/lib/data/graphic";
 import { canRelocateApprovedAsset } from "../src/lib/roleGates";
+import { vdoNeedsCmo } from "../src/lib/data/settings";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -193,8 +194,43 @@ is("CMO กดได้", canGive("ci", vdoCtx("CMO", "Gik")), true);
 is("Senior Graphic Designer กดงานวิดีโอไม่ได้", canGive("ci", vdoCtx("Senior Graphic Designer", "Jungjing")), false);
 is("…แต่ยังกดงานกราฟฟิกได้เหมือนเดิม", canGive("ci", { ...vdoCtx("Senior Graphic Designer", "Jungjing"), kind: "graphic" as const }), true);
 is("ผู้ขอเปิดงานกดผ่านวิดีโอไม่ได้", canGive("ci", { ...vdoCtx("Marketing Manager / BGL", "Saii"), isRequester: true }), false);
-is("คนส่งงานเองกดผ่านตัวเองไม่ได้", canPassLens("ci", vdoCtx("Creative Leader", "GID")), false);
+
+// สิทธิขาดของ Creative Leader บน VDO (CMO, 2026-09-10) — เดิมกดผ่านงานที่ตัวเอง
+// ส่งไม่ได้ ซึ่งบนวิดีโอมีลายเซ็นเดียวอยู่แล้ว กติกานั้นจึงไม่ได้กันลายเซ็นที่สอง
+// แต่กันคนที่องค์กรตั้งให้เป็นคนตัดสิน · งานกราฟฟิกไม่แตะ ยังสองลายเซ็นเหมือนเดิม
+is("Creative Leader กดผ่านวิดีโอที่ตัวเองส่งได้", canPassLens("ci", vdoCtx("Creative Leader", "GID")), true);
+is("…งานกราฟฟิกยังกดผ่านของตัวเองไม่ได้", canPassLens("ci", { ...vdoCtx("Creative Leader", "GID"), kind: "graphic" as const }), false);
+is("VDO Editor ที่ส่งงานเอง ก็ยังกดไม่ได้ (ไม่ได้อยู่ในกลุ่มผู้อนุมัติ)", canPassLens("ci", vdoCtx("VDO Editor", "GID")), false);
 is("…แต่ตีกลับงานตัวเองได้", canGive("ci", vdoCtx("Creative Leader", "GID")), true);
+
+console.log("\n— แบรนด์ที่ VDO ต้องให้ CMO อนุมัติเท่านั้น —");
+// TAKAO Japanese Food: เจ้าของแบรนด์ขอให้ CMO เซ็นเอง · เก็บเป็น flag ราย
+// แบรนด์ใน Settings › Brands ไม่ใช่ hardcode brand key ซึ่งเป็นเลขที่ระบบสร้างเอง
+const cmoOnlyCtx = (role: string, me: string) => ({ ...vdoCtx(role, me), vdoCmoOnly: true });
+is("CMO กดได้", canPassLens("ci", cmoOnlyCtx("CMO", "Gik")), true);
+is("Creative Leader กดไม่ได้", canPassLens("ci", cmoOnlyCtx("Creative Leader", "Pichayaporn")), false);
+is("…ตีกลับก็ไม่ได้ ไม่ใช่แค่กดผ่านไม่ได้", canGive("ci", cmoOnlyCtx("Creative Leader", "Pichayaporn")), false);
+is("Senior Graphic Designer ยิ่งไม่ได้", canPassLens("ci", cmoOnlyCtx("Senior Graphic Designer", "Jungjing")), false);
+// CMO เป็นลายเซ็นเดียว ถ้ากดผ่านงานตัวเองไม่ได้ ชิ้นนั้นจะไม่มีทางออกเลย
+is("CMO กดผ่านงานที่ตัวเองส่งได้ (ไม่งั้นงานตัน)", canPassLens("ci", cmoOnlyCtx("CMO", "GID")), true);
+// flag นี้ต้องไม่รั่วไปหางานกราฟฟิก — คนละกติกากันคนละชนิดงาน
+is("งานกราฟฟิกของแบรนด์เดียวกันไม่เปลี่ยน", canPassLens("ci", { ...cmoOnlyCtx("Creative Leader", "Pichayaporn"), kind: "graphic" as const }), true);
+is("ป้ายเจ้าของด้านบอกว่าเป็นของ CMO", lensOwner("ci", "vdo", true), "CMO");
+
+console.log("\n— vdoNeedsCmo: อ่าน flag จาก Settings —");
+{
+  const cfgs = [
+    { key: "omakase", name: "Omakase Don", color: "#000", lead: "", branches: 0, campaigns: 0, budget: "฿0", branchList: [] },
+    { key: "brand-1784116388699", name: "Takao Japanese Food ", color: "#db2929", lead: "", branches: 0, campaigns: 0, budget: "฿0", branchList: [], vdoCmoOnly: true },
+  ];
+  is("แบรนด์ที่ติ๊กไว้", vdoNeedsCmo("brand-1784116388699", cfgs), true);
+  is("แบรนด์อื่นไม่โดน", vdoNeedsCmo("omakase", cfgs), false);
+  // ค่า default ต้องเป็นฝั่งที่ผ่อน ไม่ใช่ฝั่งที่เข้ม: config ยังโหลดไม่เสร็จ
+  // แล้วจอกลายเป็นเข้มกว่าอีกจอชั่วครู่ คือบั๊กที่หาสาเหตุยากที่สุด
+  is("แบรนด์ที่ยังไม่ได้ตั้งค่า = ไม่โดน", vdoNeedsCmo("teppen", cfgs), false);
+  is("config ว่าง = ไม่โดน", vdoNeedsCmo("brand-1784116388699", []), false);
+  is("ไม่มี brand = ไม่โดน", vdoNeedsCmo(undefined, cfgs), false);
+}
 
 console.log("\n— แยกสาเหตุการตีกลับ (design problem หรือ brief problem?) —");
 const counts = rejectionsByLens([sentBack, req([submitted({ feedback: [{ reason: "ราคาผิด", by: "Ken S.", at: "x", lens: "info" }, { reason: "เก่า", by: "Ken S.", at: "x" }] })])]);
@@ -396,6 +432,24 @@ console.log("\n— ถามใครได้จริง เมื่อเจ
     lensAskWho("info", submitted({ submittedBy: "Pichayaporn" }), withBackup).name, "Gik");
   is("ไม่มีคนดูแลด้านนั้นเลย → ตกไปที่ CMO", lensAskWho("ci", fresh, { ...who, creativeLeader: "" }).name, "Gik");
   is("Unassigned ไม่นับเป็นคน", lensAskWho("ci", fresh, { ...who, creativeLeader: "Unassigned" }).name, "Gik");
+
+  /* วิดีโอ: คนอนุมัติเซ็นงานตัวเองได้ บรรทัด "รอใคร" จึงต้องไม่เด้งไปหาคนอื่น
+     ไม่งั้นจอบอกให้รอ CMO ทั้งที่ Creative Leader กดได้เองเดี๋ยวนั้น */
+  const vdoWho = { ...who, kind: "vdo" as const };
+  is("วิดีโอที่ Creative Leader ส่งเอง → ยังรอเธอ ไม่เด้งไป CMO",
+    lensAskWho("ci", submitted({ submittedBy: "Pichayaporn" }), vdoWho).name, "Pichayaporn");
+  is("…ไม่มีเหตุผลว่าเจ้าของตรวจไม่ได้", lensAskWho("ci", submitted({ submittedBy: "Pichayaporn" }), vdoWho).reason, "");
+  is("งานกราฟฟิกแบบเดียวกันยังเด้งไป CMO เหมือนเดิม",
+    lensAskWho("ci", submitted({ submittedBy: "Pichayaporn" }), who).name, "Gik");
+
+  /* แบรนด์ที่ CMO เซ็นคนเดียว: เจ้าของด้านคือ CMO ไม่ใช่ Creative Leader
+     ถ้ายังชี้ Creative Leader งานจะรอคนที่กดไม่ได้ ซึ่งคือบั๊กที่ฟังก์ชันนี้มีไว้กัน */
+  const cmoOnlyWho = { ...vdoWho, vdoCmoOnly: true };
+  is("VDO ของแบรนด์นี้ → รอ CMO", lensAskWho("ci", fresh, cmoOnlyWho).name, "Gik");
+  is("…ไม่ใช่การคลุมแทนใคร CMO เป็นเจ้าของด้านเอง", lensAskWho("ci", fresh, cmoOnlyWho).covering, false);
+  is("CMO ส่งงานเอง ก็ยังเป็น CMO", lensAskWho("ci", submitted({ submittedBy: "Gik" }), cmoOnlyWho).name, "Gik");
+  is("ไม่รู้จัก CMO → null ไม่ถอยไปหา Creative Leader ที่กดไม่ได้",
+    lensAskWho("ci", fresh, { ...cmoOnlyWho, cmo: "" }).name, null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

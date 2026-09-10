@@ -48,7 +48,7 @@ import { monthServedByFinalAw } from "@/lib/data/deadlinePolicy";
 import { createTaskDb, createRevisionTask } from "@/lib/db/tasks";
 import { Task } from "@/lib/data/tasks";
 import { fetchGraphicFeedback, resolveGraphicFeedback, addGraphicFeedback } from "@/lib/db/feedback";
-import { useProductionOwners, useCmoName, useCiBackup } from "@/lib/useCreativeLeader";
+import { useProductionOwners, useCmoName, useCiBackup, useVdoCmoOnly } from "@/lib/useCreativeLeader";
 
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 export type GTab = (typeof TABS)[number][0];
@@ -1706,6 +1706,8 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
   // Who covers a lens its owner may not give — see lensAskWho.
   const cmoName = useCmoName();
   const ciBackup = useCiBackup();
+  // …and whether this brand keeps video for the CMO alone (Settings › Brands).
+  const vdoCmoOnly = useVdoCmoOnly()(g.b);
   // How many checks this job needs, and who owns them, follows the KIND of work:
   // artwork is data + Visual CI, video is one sign-off by the Creative Leader
   // (or the CMO). Read once here so the panel, the permissions and the "waiting
@@ -1921,7 +1923,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                       {jobLenses.map((lens) => {
                         const v = d.review?.[lens];
                         const meta = LENS_META[lens];
-                        const ctx = { role, isRequester, me, deliverable: d, kind: jobKind };
+                        const ctx = { role, isRequester, me, deliverable: d, kind: jobKind, vdoCmoOnly };
                         const mayAct = canGiveLensVerdict(lens, ctx);
                         const mayPass = canPassLens(lens, ctx);
                         const open = revising?.i === i && revising.lens === lens;
@@ -1930,7 +1932,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <div className="min-w-0">
                                 <span className="text-[12px] font-bold text-ink">{meta.label}</span>
-                                <span className="text-[10.5px] text-faint"> · {lensOwner(lens, jobKind)}</span>
+                                <span className="text-[10.5px] text-faint"> · {lensOwner(lens, jobKind, vdoCmoOnly)}</span>
                                 <div className="text-[10.5px] text-faint">{meta.checks}</div>
                               </div>
                               {v ? (
@@ -1982,7 +1984,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                                  from their own (they submitted it, or they signed the
                                  other one), and naming them anyway is how 23 pieces
                                  ended up waiting on a person the rules forbid. */
-                              const ask = lensAskWho(lens, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: jobKind });
+                              const ask = lensAskWho(lens, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: jobKind, vdoCmoOnly });
                               return (
                                 <div className="text-[11px] text-faint mt-1">
                                   {ask.name
@@ -2005,7 +2007,7 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
                       const inLens = jobLenses.find((l) => d.review?.[l]);
                       const waiting = prog2.pending[0];
                       if (!inLens || !waiting) return null;
-                      const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: jobKind });
+                      const ask = lensAskWho(waiting, d, { requester: g.requester, creativeLeader, cmo: cmoName, ciBackup, kind: jobKind, vdoCmoOnly });
                       return (
                         <div className="text-[10.5px] mt-2 rounded-[8px] px-[9px] py-[6px]" style={{ background: "#F6F5FA", color: "#706A84" }}>
                           <b>{LENS_META[inLens].label}</b> ผ่านแล้ว — รอ <b>{ask.name ?? LENS_META[waiting].owner}</b> ตรวจ <b>{LENS_META[waiting].label}</b> อีกด้าน{ask.covering && ask.name ? ` · ${LENS_META[waiting].owner} ตรวจเองไม่ได้ (${ask.reason === "submitted" ? "เป็นคนส่งงานชิ้นนี้" : "เซ็นอีกด้านไปแล้ว"})` : ""}

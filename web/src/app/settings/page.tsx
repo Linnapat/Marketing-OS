@@ -920,6 +920,33 @@ export default function SettingsPage() {
                   </div>
                   <BranchEditor branches={b.branchList} editable={brandsEdit} onChange={(branchList) => editBrand(i, { branchList })} />
 
+                  {/* Video is the Creative Leader's call across the org. A brand
+                      whose owner wants the CMO's own signature on it instead is
+                      put behind this — one brand at a time, because that is how
+                      the exception was asked for. Artwork is untouched either
+                      way: it keeps both checks and both signatures. */}
+                  <div className="mt-3 pt-3 border-t border-line4">
+                    <div className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-faint mb-2">การอนุมัติ VDO</div>
+                    {brandsEdit ? (
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" checked={!!b.vdoCmoOnly}
+                          onChange={(e) => editBrand(i, { vdoCmoOnly: e.target.checked })}
+                          className="mt-[2px] accent-panel" />
+                        <span className="text-[12px] text-ink">
+                          VDO ต้องให้ CMO อนุมัติเท่านั้น
+                          <span className="block text-[10.5px] text-faint">ไม่ติ๊ก = Creative Leader อนุมัติได้เอง (รวมงานที่ตัวเองส่ง)</span>
+                        </span>
+                      </label>
+                    ) : (
+                      <div className="text-[12px] font-semibold text-ink">
+                        {b.vdoCmoOnly ? "CMO เท่านั้น" : "Creative Leader"}
+                        <span className="block text-[10.5px] text-faint font-normal">
+                          {b.vdoCmoOnly ? "Creative Leader กดอนุมัติ VDO ของแบรนด์นี้ไม่ได้" : "มีสิทธิขาด ไม่ต้องรอใครเซ็นซ้ำ"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Each brand runs its own LINE OA, so its own monthly
                       allowance. Broadcasts inside it bill almost nothing, which
                       is why campaign budgets alone cannot tell you what a
