@@ -15,6 +15,11 @@
 -- ทำไมคนที่ได้ไปแล้วไม่โดนซ้ำ: Automation ตั้ง maxSendsPerCustomer = 1 และ
 -- ฟังก์ชันนี้ยังกรอง MessageLog ซ้ำอีกชั้น — กันพลาดสองชั้นเพราะพลาดแล้วเรียกคืนไม่ได้
 
+-- ล็อกแบรนด์: OMD เท่านั้น ห้ามแตะลูกค้า TEPPEN
+-- ทุก query กรองแบรนด์ และปิดท้ายด้วยการตรวจว่ามี tag ไปโผล่แบรนด์อื่นไหม
+-- เจอเมื่อไหร่ล้มทั้ง transaction — รั่วแบบเงียบ ๆ แย่กว่างานรายวันพัง เพราะข้อความ
+-- ที่ส่งผิดแบรนด์ไปแล้วเรียกคืนไม่ได้
+
 create extension if not exists pg_cron;
 
 create or replace function public.refresh_omd_near200(p_daily_cap int default 250)
@@ -23,8 +28,12 @@ language plpgsql
 as $fn$
 declare
   v_brand text;
+  v_leak  int;
 begin
   select id into v_brand from "Brand" where code = 'OMD';
+  if v_brand is null then
+    raise exception 'ไม่พบแบรนด์ OMD ใน Brand — หยุดก่อน ไม่เดาแบรนด์';
+  end if;
 
   -- 1) กลุ่มที่เข้าเกณฑ์วันนี้ (แต้ม 150–199 · แต้มยังไม่หมดอายุ · ไม่ได้ถอน consent)
   create temporary table _elig on commit drop as
@@ -48,37 +57,48 @@ begin
   from _elig
   on conflict do nothing;
 
-  -- 3) ล้าง tag รอบก่อน — คนที่ครบ 200 แล้ว หรือแต้มหมดอายุ ต้องหลุดออกเอง
+  -- 3) ล้าง tag รอบก่อน เฉพาะแถวของ OMD
   update "Customer"
   set tags = array_remove(array_remove(tags, 'points:OMD:near200'), 'points:OMD:near200_active90'),
       "updatedAt" = now()
-  where tags && array['points:OMD:near200', 'points:OMD:near200_active90'];
+  where "brandId" = v_brand
+    and tags && array['points:OMD:near200', 'points:OMD:near200_active90'];
 
   -- 4) tag ทั้งแถบ ใช้ดูขนาดกลุ่ม ไม่ใช่กลุ่มที่ส่ง
   update "Customer" c
   set tags = array_append(c.tags, 'points:OMD:near200'), "updatedAt" = now()
-  from _elig e where c.id = e.customer_id;
+  from _elig e where c.id = e.customer_id and c."brandId" = v_brand;
 
   -- 5) คิวของวันนี้ = คนที่ยังไม่เคยได้ข้อความนี้ · มาใน 90 วัน · ไม่ใช่ CONTROL
   --    เรียงคนที่ใกล้ 200 ที่สุดก่อน แล้วค่อยคนที่เพิ่งมาล่าสุด
   update "Customer" c
   set tags = array_append(c.tags, 'points:OMD:near200_active90'), "updatedAt" = now()
-  where c.id in (
-    select e.customer_id
-    from _elig e
-    where e.last_access >= current_date - 90
-      and not exists (
-        select 1 from ab_test_membership a
-        where a.test_name = 'points_near200_OMD' and a.group_name = 'CONTROL'
-          and a.line_user_id = e.line_user_id)
-      and not exists (
-        select 1 from "MessageLog" m
-        where m."automationId" = 'auto_points_near200_omd' and m."customerId" = e.customer_id)
-    order by e.current_points desc, e.last_access desc
-    limit p_daily_cap
-  );
+  where c."brandId" = v_brand
+    and c.id in (
+      select e.customer_id
+      from _elig e
+      where e.last_access >= current_date - 90
+        and not exists (
+          select 1 from ab_test_membership a
+          where a.test_name = 'points_near200_OMD' and a.group_name = 'CONTROL'
+            and a.line_user_id = e.line_user_id)
+        and not exists (
+          select 1 from "MessageLog" m
+          where m."automationId" = 'auto_points_near200_omd' and m."customerId" = e.customer_id)
+      order by e.current_points desc, e.last_access desc
+      limit p_daily_cap
+    );
 
-  -- 6) อัปเดตตัวเลขหน้า Segment ให้ตรงของจริง
+  -- 6) ตรวจการรั่วข้ามแบรนด์ — เจอเมื่อไหร่ล้มทั้ง transaction ไม่ปล่อยผ่าน
+  select count(*) into v_leak
+  from "Customer"
+  where "brandId" is distinct from v_brand
+    and tags && array['points:OMD:near200', 'points:OMD:near200_active90'];
+  if v_leak > 0 then
+    raise exception 'tag ของ OMD ไปโผล่ที่ลูกค้าแบรนด์อื่น % ราย — ยกเลิกรอบนี้ทั้งหมด', v_leak;
+  end if;
+
+  -- 7) อัปเดตตัวเลขหน้า Segment ให้ตรงของจริง
   update "Segment" s
   set "memberCount" = (select count(*) from "Customer" c
                        where c.tags @> array[(s.conditions->'conditions'->0->>'value')::text]),
