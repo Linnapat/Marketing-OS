@@ -18,7 +18,7 @@ import { ApprovalRow, buildApprovalRows } from "@/lib/data/approvals";
 import { BRANDS, BrandId } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { useAuth } from "@/lib/auth";
-import { useCreativeLeader, useCmoName, useCiBackup } from "@/lib/useCreativeLeader";
+import { useCreativeLeader, useCmoName, useCiBackup, useVdoCmoOnly } from "@/lib/useCreativeLeader";
 import { useBrandMarketer } from "@/lib/useBrandMarketer";
 import { useCanApproveExpense, useCanSeeAllSpending } from "@/lib/usePermGates";
 import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
@@ -80,12 +80,15 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
   const creativeLeader = useCreativeLeader();
   const cmoName = useCmoName();
   const ciBackup = useCiBackup();
+  // Which brands keep video for the CMO alone — asked per row, since one inbox
+  // holds several brands.
+  const vdoCmoOnly = useVdoCmoOnly();
   // Captions are addressed by brand — see captionReviewer.
   const brandMarketer = useBrandMarketer();
 
   const ctx = useMemo(() => ({
     myKeys, me: member?.name || viewAs, role: authRole,
-    creativeLeader, cmoName, ciBackup,
+    creativeLeader, cmoName, ciBackup, vdoCmoOnly,
     canApproveCampaign: canApproveCampaign(authRole),
     canApproveExpense,
     canSeeSpending,
@@ -94,7 +97,7 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
     brandMarketer,
     canSeeBrandLabel,
     doneIds,
-  }), [myKeys, member, viewAs, authRole, creativeLeader, cmoName, ciBackup, brandMarketer, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
+  }), [myKeys, member, viewAs, authRole, creativeLeader, cmoName, ciBackup, vdoCmoOnly, brandMarketer, canApproveExpense, canSeeSpending, brandVisibility, canSeeBrandLabel, doneIds]);
 
   return useMemo(
     () => buildApprovalRows({

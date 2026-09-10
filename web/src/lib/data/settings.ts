@@ -44,6 +44,28 @@ export interface BrandCfg {
   campaigns: number;
   budget: string;
   branchList: string[];
+  /** VDO on this brand may only be signed off by the CMO — the Creative Leader
+   *  cannot. Off everywhere unless a brand is ticked in Settings › Brands.
+   *
+   *  A brand-level exception rather than a global rule because it IS one: the
+   *  Creative Leader holds the final say on video across the org (CMO,
+   *  2026-09-10), and a brand is put behind the CMO one at a time when its
+   *  owner wants that. Optional so configs saved before this parse unchanged.
+   *  See vdoNeedsCmo. */
+  vdoCmoOnly?: boolean;
+}
+
+/** Does this brand's video need the CMO's own signature?
+ *
+ *  Keyed by brand id, not name — Settings can rename a brand, and a rule that
+ *  stopped applying because someone fixed a trailing space in "Takao Japanese
+ *  Food " would fail silently and in the permissive direction. An unknown
+ *  brand answers false: the rule is an exception someone opted into, and a
+ *  brand nobody has configured has not opted into it. */
+export function vdoNeedsCmo(brand: string | undefined, configs: BrandCfg[]): boolean {
+  const key = (brand ?? "").trim();
+  if (!key) return false;
+  return configs.some((c) => c.key === key && c.vdoCmoOnly === true);
 }
 
 export const BRANDS_DATA: BrandCfg[] = [

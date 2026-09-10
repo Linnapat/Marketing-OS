@@ -16,7 +16,8 @@
 // back in the hole that notice was added to fix (PR #247).
 
 import { useEffect, useState } from "react";
-import { fetchMembers, fetchJsonSetting, Member } from "@/lib/db/settings";
+import { fetchMembers, fetchJsonSetting, fetchBrandConfigs, Member } from "@/lib/db/settings";
+import { BrandCfg, vdoNeedsCmo } from "@/lib/data/settings";
 import { roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
 import { PRODUCTION_ROLES, CI_BACKUP_ROLES, WorkKind } from "@/lib/data/graphic";
 
@@ -88,4 +89,21 @@ export function useCiBackup(): string[] {
     return () => { alive = false; };
   }, []);
   return names;
+}
+
+/** Brands whose VDO only the CMO may sign off (Settings › Brands).
+ *
+ *  Returned as a predicate rather than a list because every caller asks the
+ *  same question about one request's brand, and an empty set while the config
+ *  loads has to answer "no" — the permissive answer, which is the org-wide
+ *  rule. Making callers remember that is how one screen would end up stricter
+ *  than another for the first second after a page load. */
+export function useVdoCmoOnly(): (brand: string | undefined) => boolean {
+  const [configs, setConfigs] = useState<BrandCfg[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchBrandConfigs().then((cfgs) => { if (alive) setConfigs(cfgs); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return (brand) => vdoNeedsCmo(brand, configs);
 }

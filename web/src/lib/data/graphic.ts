@@ -1266,11 +1266,42 @@ export function lensesForKind(kind: WorkKind): ReviewLens[] {
   return kind === "graphic" ? REVIEW_LENSES : VDO_LENSES;
 }
 
+/* ── Who signs off video ───────────────────────────────────────────────────
+ *
+ * Across the org the Creative Leader has the final say on VDO and needs nobody
+ * else's signature — including on a cut they submitted themselves (CMO,
+ * 2026-09-10; "Content Leader" in the ask, read as Creative Leader, the only
+ * Leader role the system has — same reading as canPlanProduction).
+ *
+ * That is a deliberate exception to the two-person rule, and it is narrow. It
+ * applies to video only, where there has been one lens since the review split
+ * (VDO_LENSES) — so there is no second signature to protect, and the bar was
+ * only ever stopping the one person the org trusts to decide. It does not
+ * touch artwork, where both lenses and the self-approval bar stand exactly as
+ * they were, and it gives nothing to the designer or the VDO Editor: they are
+ * not in the approver set to begin with.
+ *
+ * Per-brand, a brand can be put behind the CMO instead (Settings › Brands →
+ * "VDO ต้องให้ CMO อนุมัติ" — BrandCfg.vdoCmoOnly). There the Creative Leader
+ * cannot pass video at all; the CMO is the only signature, and being the only
+ * one, may sign their own submission too — otherwise a CMO who uploaded the cut
+ * would leave the piece with no route out at all.
+ */
+
+/** May this role pass video on this brand? The whole membership rule, in one
+ *  place, so the buttons, the "waiting on" line and the reminder cannot
+ *  disagree about who is being asked. */
+export function canApproveVdo(role: string, cmoOnly: boolean): boolean {
+  const r = (role || "").trim();
+  return cmoOnly ? r === "CMO" : r === "Creative Leader" || r === "CMO";
+}
+
 /** Who owns a lane for THIS kind of work. Video has no Senior Graphic Designer
  *  stand-in: with one lens there is no second signature to protect, so the lane
- *  stays with the Creative Leader and the CMO who covers for them. */
-export function lensOwner(lens: ReviewLens, kind: WorkKind = "graphic"): string {
-  if (lens === "ci" && kind !== "graphic") return "Creative Leader / CMO";
+ *  stays with the Creative Leader and the CMO who covers for them — unless the
+ *  brand is one the CMO signs alone. */
+export function lensOwner(lens: ReviewLens, kind: WorkKind = "graphic", cmoOnly = false): string {
+  if (lens === "ci" && kind !== "graphic") return cmoOnly ? "CMO" : "Creative Leader / CMO";
   return LENS_META[lens].owner;
 }
 
@@ -1328,6 +1359,9 @@ export function canGiveLensVerdict(
     deliverable: Pick<GraphicDeliverable, "review" | "submittedBy">;
     /** Defaults to artwork, which keeps the two-lens rules exactly as they were. */
     kind?: WorkKind;
+    /** This brand's video is the CMO's alone — see the block above canApproveVdo.
+     *  Meaningless for artwork, which is unchanged. */
+    vdoCmoOnly?: boolean;
   },
 ): boolean {
   const role = (ctx.role || "").trim();
@@ -1338,25 +1372,37 @@ export function canGiveLensVerdict(
   const allowed = lens === "info"
     ? ctx.isRequester || role === "Marketing Manager / BGL" || role === "CMO"
     // The Senior Graphic Designer stand-in exists to protect the SECOND
-    // signature on artwork. Video has only one, so the lane stays with the
-    // Creative Leader and the CMO.
-    : role === "Creative Leader" || role === "CMO" || (kind === "graphic" && CI_BACKUP_ROLES.includes(role));
+    // signature on artwork. Video has only one, and who holds it depends on
+    // the brand.
+    : kind === "graphic"
+      ? role === "Creative Leader" || role === "CMO" || CI_BACKUP_ROLES.includes(role)
+      : canApproveVdo(role, !!ctx.vdoCmoOnly);
   if (!allowed) return false;
   const other = ctx.deliverable.review?.[lens === "info" ? "ci" : "info"];
   return !samePerson(other?.by, ctx.me);
 }
 
 /** May they PASS it? Everything canGiveLensVerdict asks, plus: not their own
- *  submission. */
+ *  submission.
+ *
+ *  That last bar is artwork's. On video the approver set has already been
+ *  narrowed to whoever holds the final say on the brand, and telling that
+ *  person they may not sign their own cut is the thing this was asked to stop
+ *  — so it does not apply there. Nobody gains a button they did not already
+ *  have: canGiveLensVerdict decides membership, and this only decides whether
+ *  a member may pass THIS piece. */
 export function canPassLens(
   lens: ReviewLens,
   ctx: {
     role: string; isRequester: boolean; me: string;
     deliverable: Pick<GraphicDeliverable, "review" | "submittedBy">;
     kind?: WorkKind;
+    vdoCmoOnly?: boolean;
   },
 ): boolean {
-  return canGiveLensVerdict(lens, ctx) && !samePerson(ctx.deliverable.submittedBy, ctx.me);
+  if (!canGiveLensVerdict(lens, ctx)) return false;
+  if ((ctx.kind ?? "graphic") !== "graphic") return true;
+  return !samePerson(ctx.deliverable.submittedBy, ctx.me);
 }
 
 /** Who to ASK for a verdict that is still outstanding.
@@ -1400,13 +1446,22 @@ export function lensAskWho(
      *  asking one for a verdict they may not give is how a piece waits on
      *  somebody the rules forbid from moving it. */
     kind?: WorkKind;
+    /** This brand's video is the CMO's alone, so the CMO is the OWNER of the
+     *  lane here rather than the person covering for the Creative Leader —
+     *  naming the Creative Leader would point the wait at someone who may not
+     *  act on it, which is the exact failure this function exists to prevent. */
+    vdoCmoOnly?: boolean;
   },
 ): LensAsk {
-  const owner = ((lens === "info" ? who.requester : who.creativeLeader) ?? "").trim();
+  const isVdo = (who.kind ?? "graphic") !== "graphic";
+  const ciOwner = isVdo && who.vdoCmoOnly ? who.cmo : who.creativeLeader;
+  const owner = ((lens === "info" ? who.requester : ciOwner) ?? "").trim();
   const other = d.review?.[lens === "info" ? "ci" : "info"];
   const blocked = (name: string): LensAsk["reason"] => {
     if (!name) return "";
-    if (samePerson(name, d.submittedBy)) return "submitted";
+    // Video's approver may sign their own cut (canPassLens), so having
+    // submitted it is not a reason to ask somebody else.
+    if (!isVdo && samePerson(name, d.submittedBy)) return "submitted";
     if (samePerson(name, other?.by)) return "gaveOther";
     return "";
   };
@@ -2068,7 +2123,7 @@ export function passAllWaiting(
   g: Graphic,
   by: string,
   lens: ReviewLens,
-  ctx: { role: string; isRequester: boolean },
+  ctx: { role: string; isRequester: boolean; vdoCmoOnly?: boolean },
 ): Graphic | null {
   const dels = g.deliverables?.length ? g.deliverables : deriveDeliverables(g);
   // One artwork per pass, not one row: applyLensVerdict already fans a verdict
@@ -2082,7 +2137,7 @@ export function passAllWaiting(
     if (d.status !== "Waiting review") continue;
     const key = normSize(d.size);
     if (seen.has(key)) continue;
-    if (!canPassLens(lens, { role: ctx.role, isRequester: ctx.isRequester, me: by, deliverable: d, kind: workKind(g.type, g.requiredVideo) })) continue;
+    if (!canPassLens(lens, { role: ctx.role, isRequester: ctx.isRequester, me: by, deliverable: d, kind: workKind(g.type, g.requiredVideo), vdoCmoOnly: ctx.vdoCmoOnly })) continue;
     seen.add(key);
     const applied = applyLensVerdict(next, i, lens, "pass", by);
     if (!applied) continue;

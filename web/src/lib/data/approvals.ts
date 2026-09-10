@@ -187,6 +187,11 @@ export interface ApprovalCtx {
   cmoName?: string;
   /** Senior Graphic Designers — the CI lane's second pair of eyes. */
   ciBackup?: string[];
+  /** Does this brand keep video for the CMO alone? (Settings › Brands →
+   *  BrandCfg.vdoCmoOnly.) The queue has to ask per row, not per session: one
+   *  person's inbox holds several brands at once. Absent = the org-wide rule,
+   *  which is the Creative Leader's. */
+  vdoCmoOnly?: (b: BrandId) => boolean;
   isVisible: (b: BrandId) => boolean;
   /** The marketer answerable for a brand (resolveBrandLead). Captions are
    *  addressed by brand, so the queue needs this per row. Optional: without it
@@ -273,6 +278,7 @@ export function selectGraphicApprovals(
     // decisions the drawer does, or a row appears here that nobody can give.
     const jobLenses = lensesFor(g);
     const jobKind = workKind(g.type, g.requiredVideo);
+    const cmoOnly = jobKind !== "graphic" && !!ctx.vdoCmoOnly?.(g.b);
     for (const [sizeKey, group] of groups) {
       for (const lens of jobLenses) {
         // Members that still owe this verdict. Normally all or none — the fan
@@ -281,7 +287,7 @@ export function selectGraphicApprovals(
         const pending = group.members.filter((m) => !m.d.review?.[lens]);
         if (!pending.length) continue;
         const { d, index } = pending[0];
-        const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d, kind: jobKind });
+        const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d, kind: jobKind, vdoCmoOnly: cmoOnly });
         out.push({
           kind, key: `g${g.id}:${sizeKey}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
           platforms: group.platforms,
@@ -290,7 +296,10 @@ export function selectGraphicApprovals(
           // Leader's for CI. Everyone else who MAY give it (Marketing Manager,
           // CMO) is covering, and covering is not owning: they keep the buttons
           // through canAct without the row landing in their own queue.
-          mine: canPass && (lens === "info" ? isRequester : ctx.role === "Creative Leader"),
+          // On a brand whose video is the CMO's alone, the CI lane IS theirs —
+          // leaving it as the Creative Leader's would file the row in the queue
+          // of the one person who cannot act on it.
+          mine: canPass && (lens === "info" ? isRequester : ctx.role === (cmoOnly ? "CMO" : "Creative Leader")),
           canAct: canPass,
           submittedBy: firstName(d.submittedBy, g.designer),
           postDate,
@@ -299,8 +308,8 @@ export function selectGraphicApprovals(
           // other one), in which case the person covering. A queue that names
           // somebody who may not press the button is a queue that does not move.
           waitingOn: firstName(
-            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup, kind: jobKind }).name,
-            lens === "info" ? "สาย Marketing" : "Creative Leader",
+            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup, kind: jobKind, vdoCmoOnly: cmoOnly }).name,
+            lens === "info" ? "สาย Marketing" : cmoOnly ? "CMO" : "Creative Leader",
           ),
         });
       }

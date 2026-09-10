@@ -41,6 +41,7 @@ import { useCampaignCodes } from "@/lib/useCampaignCodes";
 import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
+import { useVdoCmoOnly } from "@/lib/useCreativeLeader";
 import { fetchJsonSetting, saveJsonSetting } from "@/lib/db/settings";
 import { appendBriefItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -262,11 +263,13 @@ function GraphicPageInner() {
   // deliverable in the drawer (history, stage, asset sync, notify).
   const { member, user, role } = useAuth();
   const me = member?.name || user?.email?.split("@")[0] || "Approver";
+  const cmoOnlyBrand = useVdoCmoOnly();
   const quickApprove = (g: Graphic, lens: ReviewLens) => {
     const requesterKey = (g.requester || "").trim().toLowerCase();
     const isRequester = !!requesterKey &&
       [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
-    const ng = passAllWaiting(g, me, lens, { role, isRequester });
+    const vdoCmoOnly = workKind(g.type, g.requiredVideo) !== "graphic" && cmoOnlyBrand(g.b);
+    const ng = passAllWaiting(g, me, lens, { role, isRequester, vdoCmoOnly });
     // Null here also covers "every waiting piece is one you submitted yourself",
     // which would otherwise look like a dead button.
     if (!ng) {
@@ -1204,6 +1207,8 @@ const hasWaitingReview = (g: Graphic) =>
  *  prop any of them could forget is a hole in the same rule the drawer enforces. */
 function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const { member, user, role } = useAuth();
+  // Before the early return: hooks cannot be called conditionally.
+  const cmoOnlyBrand = useVdoCmoOnly();
   const requesterKey = (g.requester || "").trim().toLowerCase();
   const isRequester = !!requesterKey &&
     [member?.name, member?.email, user?.email].some((v) => (v ?? "").trim().toLowerCase() === requesterKey);
@@ -1215,8 +1220,9 @@ function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (
   // reviewer's job from a list row.
   const waiting = (g.deliverables ?? []).filter((d) => d.status === "Waiting review");
   const jobKind = workKind(g.type, g.requiredVideo);
+  const vdoCmoOnly = jobKind !== "graphic" && cmoOnlyBrand(g.b);
   const mine = lensesFor(g).filter((lens) =>
-    waiting.some((d) => !d.review?.[lens] && canPassLens(lens, { role, isRequester, me, deliverable: d, kind: jobKind })));
+    waiting.some((d) => !d.review?.[lens] && canPassLens(lens, { role, isRequester, me, deliverable: d, kind: jobKind, vdoCmoOnly })));
   if (!mine.length) return null;
   return (
     <>
