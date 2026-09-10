@@ -7,16 +7,16 @@
 -- ต้องให้คนอนุมัติแล้วเปลี่ยนเป็น ACTIVE ในหน้า CDP เอง เพราะกดแล้วข้อความ
 -- วิ่งเข้า LINE ลูกค้าจริง เรียกกลับไม่ได้
 --
--- ก่อน ACTIVE ต้องเคลียร์ 1 เรื่อง: ชื่อของรางวัลที่แลกได้จริงที่ 200 แต้ม
--- ตอนนี้เขียนกลาง ๆ ว่า "ของรางวัลสมาชิก 1 สิทธิ์" เพราะระบบไม่มีข้อมูลนี้
--- ถ้าใส่ชื่อของจริงได้ (เช่น ของหวาน/เครื่องดื่ม) อัตราการกลับมาจะดีกว่านี้มาก
+-- ของรางวัลที่ 200 แต้ม = Omakase Don (Gik ยืนยัน 10 ก.ย. 2026)
+-- ชื่อของรางวัลอยู่ทั้งใน altText (บรรทัดบนหน้าล็อก) หัวการ์ด และบรรทัดกลาง
+-- ตั้งใจให้เห็นชื่อเมนูตั้งแต่ยังไม่เปิดแชท — "ของรางวัลสมาชิก" ไม่ทำให้ใครหิว
 
 -- 1) ข้อความ (LINE Flex) --------------------------------------------------
 insert into "FlexTemplate" (id, name, "altText", "flexJson", variables, "brandCode", "createdAt", "updatedAt")
 values (
   'tpl_points_near200_omd_v1',
   'แจ้งเตือนใกล้ครบ 200 แต้ม — OMD',
-  'อีกนิดเดียว แต้มของคุณใกล้ครบ 200 แต้มแล้ว 🎉',
+  'อีกนิดเดียว อีกไม่ถึง 50 แต้ม แลก Omakase Don ได้เลย 🎉',
   $flex${
     "type": "bubble",
     "size": "mega",
@@ -27,7 +27,7 @@ values (
       "paddingAll": "20px",
       "contents": [
         {"type": "text", "text": "OMD by TEPPEN", "size": "xxs", "color": "#BFDBFF", "weight": "bold"},
-        {"type": "text", "text": "อีกนิดเดียว แต้มของคุณใกล้ครบแล้ว 🎉", "size": "lg", "color": "#FFFFFF", "weight": "bold", "wrap": true, "margin": "sm"}
+        {"type": "text", "text": "อีกนิดเดียว ได้ Omakase Don แล้ว 🎉", "size": "lg", "color": "#FFFFFF", "weight": "bold", "wrap": true, "margin": "sm"}
       ]
     },
     "body": {
@@ -46,7 +46,7 @@ values (
           "contents": [
             {"type": "text", "text": "เหลืออีกไม่ถึง", "size": "sm", "align": "center", "color": "#1B2A41", "weight": "bold"},
             {"type": "text", "text": "50 แต้ม", "size": "xxl", "align": "center", "color": "#1F6FEB", "weight": "bold", "margin": "xs"},
-            {"type": "text", "text": "ก็ครบ 200 แต้ม แลกรับของรางวัลสมาชิกได้ 1 สิทธิ์", "size": "sm", "align": "center", "color": "#1B2A41", "weight": "bold", "wrap": true, "margin": "md"},
+            {"type": "text", "text": "ก็ครบ 200 แต้ม แลก Omakase Don ได้ 1 ที่", "size": "sm", "align": "center", "color": "#1B2A41", "weight": "bold", "wrap": true, "margin": "md"},
             {"type": "separator", "color": "#D6E4FF", "margin": "md"},
             {"type": "text", "text": "ทุก 10 บาท = 1 แต้ม · อีกไม่เกิน 500 บาท ก็ครบแล้วค่ะ", "size": "xxs", "align": "center", "color": "#6F8295", "wrap": true, "margin": "md"}
           ]
