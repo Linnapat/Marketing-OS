@@ -10,6 +10,7 @@ import { upsertKolTask } from "@/lib/db/tasks";
 import { BrandId, brandName } from "@/lib/brands";
 import { assertDbData, assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { mirrorRowToSheet } from "@/lib/db/sheetMirror";
+import { fetchAllRows } from "@/lib/db/fetchAll";
 
 // Columns of the reporting template's KOL_Activities tab, in order.
 const KOL_SHEET_HEADERS = [
@@ -34,7 +35,8 @@ function mirrorKolToSheet(kol: Kol): void {
 export async function fetchKols(): Promise<Kol[]> {
   const db = supabase();
   if (!db) return KOLS.map((k) => withLiveKolOverdue({ ...k }));
-  const { data, error } = await db.from("kols").select("id, data").order("id");
+  const { data, error } = await fetchAllRows<{ id: number; data: Kol }>((from, to) =>
+    db.from("kols").select("id, data").order("id").range(from, to));
   // With a configured production database, never replace an empty/error result
   // with demo creators — that made the KPI show "Active 2" without real work.
   if (error || !data) return [];

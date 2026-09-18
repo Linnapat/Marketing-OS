@@ -9,6 +9,7 @@ import { CAMPAIGNS } from "@/lib/data/campaigns";
 import { liveOnly, moveToTrash, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, releaseMockId, seedMockIds } from "@/lib/db/mockGuard";
 import { issueContentCode } from "@/lib/db/workCode";
+import { fetchAllRows } from "@/lib/db/fetchAll";
 
 const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 
@@ -16,7 +17,9 @@ const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
 export async function fetchContent(): Promise<ContentItem[]> {
   const db = supabase();
   if (!db) return CONTENT.map((c) => ({ ...c }));
-  const { data, error } = await liveOnly(db.from("content_posts").select("id, data, created_at"), await trashReady()).order("id");
+  const ready = await trashReady();
+  const { data, error } = await fetchAllRows<{ id: number; data: ContentItem; created_at: string }>((from, to) =>
+    liveOnly(db.from("content_posts").select("id, data, created_at"), ready).order("id").range(from, to));
   if (error || !data) return []; // query error = no live data, never demo rows
   return data
     .map((r) => (r.data
