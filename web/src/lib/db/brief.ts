@@ -559,6 +559,17 @@ export async function fetchCampaignBrief(id: string): Promise<CampaignBrief | nu
 export async function detachBriefContentItem(
   campaignId: string, itemId: string, by: string, movedTo: string,
 ): Promise<boolean> {
+  return removeBriefContentItem(campaignId, itemId, by, "Content item moved to another campaign",
+    (title) => `“${title}” ย้ายไปแคมเปญ “${movedTo}”`);
+}
+
+/** Take one content item out of a campaign's plan, with a line in the approval
+ *  log saying why. Shared by moving a post away and cancelling a request
+ *  (db/briefRetire.cancelGraphicRequest). Throws if the plan cannot be saved. */
+export async function removeBriefContentItem(
+  campaignId: string, itemId: string, by: string, action: string,
+  comment: string | ((title: string) => string),
+): Promise<boolean> {
   const db = supabase();
   if (!db || !campaignId || !itemId) return false;
   const brief = await fetchCampaignBrief(campaignId);
@@ -569,10 +580,10 @@ export async function detachBriefContentItem(
     ...brief,
     content: brief.content.filter((c) => c.id !== itemId),
     approvalLog: [...(brief.approvalLog ?? []), {
-      action: "Content item moved to another campaign",
+      action,
       by,
       at: new Date().toISOString(),
-      comment: `“${item.title || itemId}” ย้ายไปแคมเปญ “${movedTo}”`,
+      comment: typeof comment === "function" ? comment(item.title || itemId) : comment,
     }],
   };
   await persistBriefBlob(next);

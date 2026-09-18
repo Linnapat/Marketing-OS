@@ -29,9 +29,11 @@ import { ContentItem } from "@/lib/data/content";
 import { Graphic } from "@/lib/data/graphic";
 import { Task } from "@/lib/data/tasks";
 
-/** One content item's materialised work, gathered from the three tables. */
+/** One content item's materialised work, gathered from the three tables.
+ *  `post` is absent for an In-store / Delivery-only item — those make a graphic
+ *  request but no Content Plan post (see OFFLINE_PLATFORMS). */
 export interface BriefBundle {
-  post: ContentItem;
+  post?: ContentItem;
   graphics: Graphic[];
   tasks: Task[];
 }
@@ -68,8 +70,15 @@ function graphicUntouched(g: Graphic): string | null {
   return null;
 }
 
-/** A task nobody has moved off the starting line. */
+/** A task nobody has moved off the starting line.
+ *
+ *  Pipeline tasks (graphicSlot — artwork / shoot / storyboard / rush) are
+ *  mirrors of the request's own state, opened and closed by the sync. A rush
+ *  approval ticked Done says a decision was made, not that anyone drew
+ *  anything — and the request's stage, designer and files already answer that.
+ *  Counting them would let a Done bookkeeping row pin a request nobody began. */
 function taskUntouched(t: Task): string | null {
+  if (t.graphicSlot) return null;
   if (!/^todo$/i.test(clean(t.status))) return `งาน “${clean(t.title)}” อยู่สถานะ ${clean(t.status)}`;
   return null;
 }
@@ -82,7 +91,7 @@ function taskUntouched(t: Task): string | null {
  *  keeps the whole bundle. */
 export function retireVerdict(bundle: BriefBundle): RetireVerdict {
   const reasons = [
-    postUntouched(bundle.post),
+    bundle.post ? postUntouched(bundle.post) : null,
     ...bundle.graphics.map(graphicUntouched),
     ...bundle.tasks.map(taskUntouched),
   ].filter((r): r is string => !!r);
@@ -103,10 +112,20 @@ export function orphanedPosts(posts: ContentItem[], liveItemIds: Set<string>): C
   });
 }
 
+/** Which graphic requests answer to an item no longer in the plan. The
+ *  post-less half of orphanedPosts: an offline-only item has only its request,
+ *  so looking for orphans through posts alone would never find it. */
+export function orphanedGraphics(graphics: Graphic[], liveItemIds: Set<string>): Graphic[] {
+  return graphics.filter((g) => {
+    const src = clean(g.sourceContentItemId);
+    return !!src && !liveItemIds.has(src);
+  });
+}
+
 /** One line per bundle for the approval log — what was retired, or what was
- *  kept and why. */
-export function retireLogLine(post: ContentItem, verdict: RetireVerdict): string {
-  const title = clean(post.title) || clean(post.id);
+ *  kept and why. Takes the post, or the request when there is no post. */
+export function retireLogLine(work: { title?: string; id?: string | number }, verdict: RetireVerdict): string {
+  const title = clean(work.title) || clean(work.id);
   return verdict.retirable
     ? `เอา “${title}” ออกจากแผน — ย้ายโพสต์/ใบงานที่ยังไม่มีใครแตะลงถังขยะ (กู้คืนได้ 7 วัน)`
     : `เอา “${title}” ออกจากแผน — แต่งานที่สร้างไว้ยังอยู่: ${verdict.reasons.join(", ")}`;
