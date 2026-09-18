@@ -520,3 +520,27 @@ export function attachApprovedAssets(
     status: c.status === "Waiting Design" ? "Draft" : c.status,
   });
 }
+
+/** The Content Plan post a My Tasks row is about, or null.
+ *
+ *  Revision tasks carry relatedPostId from now on. Rows written before that
+ *  only have their title ("แก้ caption — <post title>") and campaign, so they
+ *  are matched on both — and only when exactly one post fits, because opening
+ *  the wrong post is worse than offering no button. A campaign-plan content
+ *  task matches through its plan item (briefTaskKey `<campaign>:content:<item>`). */
+export function postForTask(
+  t: { relatedPostId?: string; title: string; campaign: string; briefTaskKey?: string },
+  posts: Pick<ContentItem, "id" | "title" | "campaign" | "campaignId" | "sourceContentItemId">[],
+): string | null {
+  if (t.relatedPostId) return t.relatedPostId;
+  const key = /^(.+):content:(.+)$/.exec(t.briefTaskKey ?? "");
+  if (key) {
+    const hit = posts.filter((p) => p.campaignId === key[1] && p.sourceContentItemId === key[2]);
+    if (hit.length === 1) return hit[0].id;
+  }
+  const m = /^แก้ (?:caption|Content) — (.+)$/i.exec((t.title ?? "").trim());
+  if (!m) return null;
+  const norm = (x?: string) => (x ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const hit = posts.filter((p) => norm(p.title) === norm(m[1]) && norm(p.campaign) === norm(t.campaign));
+  return hit.length === 1 ? hit[0].id : null;
+}

@@ -515,6 +515,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       createRevisionTask({
         module: "Content", title: `แก้ Content — ${item.title}`, assignee: fixer,
         brand: brandName(item.b), campaign: item.campaign, reason: r, by: reviewer,
+        relatedPostId: item.id,
       }).catch((error) => toastError(`สร้าง task แก้ Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     notify("rejected", `↩ Content ถูกส่งกลับแก้: ${item.title}`, `${fixer ? `ถึง ${fixer} — ` : ""}${r} · โดย ${reviewer}`, workLink.post(item.id), { team: "content", to: [fixer] });

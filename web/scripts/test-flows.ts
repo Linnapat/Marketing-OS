@@ -8,6 +8,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
+import { postForTask } from "../src/lib/data/content";
 import { materialised, approvedButNothingMade, plannedItems, kolPagesOf, kolPageProblems, MAX_KOL_PAGES, BriefKolItem } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS, todayIso, addBusinessDays } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
@@ -1060,6 +1061,20 @@ console.log("\n— KOL page cap (Fuji Don: 25,000 typed into Pages) —");
   check("a budget typed into Pages is refused",
     kolPageProblems([kr({ monthly: [{ month: "2026-10", pages: 25000, budget: 0 }] })]).length === 1);
   check("the cap itself is allowed", kolPageProblems([kr({ count: MAX_KOL_PAGES })]).length === 0);
+}
+
+console.log("\n— My Tasks: task → โพสต์ที่ต้องแก้ —");
+{
+  const posts = [
+    { id: "p1", title: "Kaisen Temari Set — Delivery Launch", campaign: "Kaisen Temari Delivery", campaignId: "CAM-1", sourceContentItemId: "ci-1" },
+    { id: "p2", title: "Same Name", campaign: "A" }, { id: "p3", title: "Same Name", campaign: "A" },
+  ];
+  check("stamped id wins", postForTask({ relatedPostId: "x", title: "", campaign: "" }, posts) === "x");
+  check("old task: title with — inside + campaign",
+    postForTask({ title: "แก้ caption — Kaisen Temari Set — Delivery Launch", campaign: "Kaisen Temari Delivery" }, posts) === "p1");
+  check("wrong campaign → no button", postForTask({ title: "แก้ caption — Kaisen Temari Set — Delivery Launch", campaign: "Other" }, posts) === null);
+  check("two posts same title → no button", postForTask({ title: "แก้ Content — Same Name", campaign: "A" }, posts) === null);
+  check("plan content task via briefTaskKey", postForTask({ title: "x — Reel", campaign: "", briefTaskKey: "CAM-1:content:ci-1" }, posts) === "p1");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
