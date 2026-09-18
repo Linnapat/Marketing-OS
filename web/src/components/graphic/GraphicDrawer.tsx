@@ -537,6 +537,38 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
       workLink.graphic(g.id), { team: graphicTeam(g), to: [next] });
   };
 
+  // ── Photo retouch ──────────────────────────────────────────────────────
+  // A second person on the same request: retouch the photos, then the VDO/AW
+  // designer builds from them. Assigned by whoever may assign the designer.
+  const [retouchLink, setRetouchLink] = useState(g.retouchLink ?? "");
+  useEffect(() => { setRetouchLink(g.retouchLink ?? ""); }, [g.retouchLink]);
+  const assignRetoucher = (name: string) => {
+    if (!canAssign) return;
+    const before = (g.retoucher ?? "").trim();
+    const next = name.trim();
+    if (sameName(next, before)) return;
+    saveGraphic({
+      ...g, retoucher: next || undefined,
+      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: `Photo retouch: ${next || "—"}` }],
+    }, "บันทึกคนรีทัชไม่สำเร็จ");
+    toastSuccess(next ? `บันทึกแล้ว — ${next} รีทัชรูปงานนี้` : "เอาขั้นรีทัชรูปออกแล้ว");
+    if (!next) return;
+    notify("newTask", `🖌 ให้รีทัชรูป: ${g.title}`,
+      `โดย ${currentUser} — รีทัชเสร็จส่งลิงก์ในใบงานนี้ แล้ว ${g.designer && g.designer !== "Unassigned" ? g.designer : "designer"} ทำต่อ`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [next] });
+  };
+  const submitRetouch = () => {
+    if (!retouchLink.trim()) return;
+    saveGraphic({
+      ...g, retouchLink: retouchLink.trim(), retouchSubmittedBy: currentUser, retouchSubmittedAt: new Date().toISOString(),
+      nextAction: `${revisionAssignee(g) ?? "Designer"} ทำ VDO/AW ต่อจากรูปรีทัช`,
+    }, "ส่งรูปรีทัชไม่สำเร็จ");
+    toastSuccess("ส่งรูปรีทัชแล้ว — designer ทำต่อได้");
+    const editor = revisionAssignee(g);
+    notify("feedback", `🖌 ส่งรูปรีทัชแล้ว: ${g.title}`, `โดย ${currentUser} → ${editor ?? "Designer"} ทำ VDO/AW ต่อ`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [editor] });
+  };
+
   const submitFootage = () => {
     if (!footage.trim()) return;
     const at = new Date().toISOString();
@@ -1117,7 +1149,32 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               </div>
 
               <div>
-                <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">Assigned Designer</div>
+                {/* Two people, one request: Photo Retouch (optional) hands the
+                    photos to the VDO/AW designer. */}
+                <div className="mb-3">
+                  <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">1. Photo Retouch <span className="normal-case font-semibold">· ถ้ามี</span></div>
+                  {canAssign ? (
+                    <OwnerSelect value={g.retoucher ?? ""} onChange={assignRetoucher} team="Creative" placeholder="ไม่ต้องรีทัช" />
+                  ) : (
+                    <div className="text-[13px] text-ink">{(g.retoucher ?? "").trim() || "ไม่ต้องรีทัช"}</div>
+                  )}
+                  {(g.retoucher ?? "").trim() && (
+                    g.retouchSubmittedAt ? (
+                      <div className="mt-2 rounded-[8px] px-2.5 py-[7px] text-[11.5px] font-semibold flex items-center gap-2 flex-wrap" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
+                        ✓ ส่งรูปรีทัชแล้ว โดย {g.retouchSubmittedBy || "—"}
+                        {g.retouchLink && <a href={g.retouchLink} target="_blank" rel="noreferrer" className="underline">เปิดไฟล์ ↗</a>}
+                      </div>
+                    ) : (
+                      <div className="mt-2 flex gap-2">
+                        <input value={retouchLink} onChange={(e) => setRetouchLink(e.target.value)} placeholder="ลิงก์รูปรีทัช (Drive)"
+                          className="flex-1 min-w-0 text-[12px] px-[10px] py-[7px] rounded-[8px] border border-line2 bg-ivory outline-none" />
+                        <button onClick={submitRetouch} disabled={!retouchLink.trim()}
+                          className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[7px] bg-panel disabled:opacity-40 whitespace-nowrap">ส่งรูปรีทัช</button>
+                      </div>
+                    )
+                  )}
+                </div>
+                <div className="text-[10.5px] uppercase tracking-[0.05em] text-faint font-bold mb-[5px]">2. VDO / AW Design</div>
                 {!canAssign ? (
                   <div className="text-[13px] text-ink">
                     {g.designer && g.designer !== "Unassigned" ? g.designer : "Unassigned"}
