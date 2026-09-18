@@ -8,7 +8,7 @@ import {
   canTransition, prerequisitesFor, canSaveResults, nextStage, hasOwner, hasPostLink,
 } from "../src/lib/kolFlow";
 import { ContentItem, CONTENT, contentApproveBlockers, contentReadyForApproval, advanceApprovalState, captionStatusAfterRevision, canPublish, sameDayPosts, sameDayWarning, bySchedule, moveToCampaign, withChange, applyCaptionDecision, captionAwaitsApproval, captionApproved } from "../src/lib/data/content";
-import { materialised, approvedButNothingMade, plannedItems } from "../src/lib/data/brief";
+import { materialised, approvedButNothingMade, plannedItems, kolPagesOf, kolPageProblems, MAX_KOL_PAGES, BriefKolItem } from "../src/lib/data/brief";
 import { campaignMonthKeys, emptyBrief, emptyContentItem, taskPreview, budgetSummary, nextCampaignCode, CampaignBrief, CONTENT_PLATFORMS, needsAssetSize, validateSubmit, guidelineChecklist, branchRequired, visitGoalOf, minGraphicDueDate, isGraphicDueDateAllowed, graphicDueRangeImpossible, finalArtworkDue, subtractBusinessDays, FINAL_AW_BUFFER_DAYS, GRAPHIC_MIN_BUSINESS_DAYS, todayIso, addBusinessDays } from "../src/lib/data/brief";
 import { Graphic, GraphicDeliverable, GRAPHICS, workKind, countWorkOnDay, artworkUnits, artworkUnitsOf, DAILY_WORK_CAP, isAccepted, contentEditLock, withNotice, unseenNotices,
   needsStoryboard, footageReady, storyboardCleared, productionBlockers, productionSteps, workDayIso, workingMonth,
@@ -1050,6 +1050,16 @@ console.log("\n— caption มีรอบอนุมัติของตั�
   const already = post({ captionStatus: "Approved" });
   check("อนุมัติซ้ำไม่ได้", applyCaptionDecision(already, "approve", "Ken S.") === already);
   check("ต้นฉบับไม่ถูกแก้", post({}).captionStatus === "Ready");
+}
+
+console.log("\n— KOL page cap (Fuji Don: 25,000 typed into Pages) —");
+{
+  const kr = (over: Partial<BriefKolItem>) => ({ kolType: "Foodie", count: 5, monthly: [], ...over } as unknown as BriefKolItem);
+  check("monthly split wins over count", kolPagesOf(kr({ monthly: [{ month: "2026-10", pages: 3, budget: 0 }] })) === 3);
+  check("no split → count", kolPagesOf(kr({})) === 5);
+  check("a budget typed into Pages is refused",
+    kolPageProblems([kr({ monthly: [{ month: "2026-10", pages: 25000, budget: 0 }] })]).length === 1);
+  check("the cap itself is allowed", kolPageProblems([kr({ count: MAX_KOL_PAGES })]).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

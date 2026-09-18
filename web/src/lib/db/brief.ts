@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink, onlinePlatforms } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink, onlinePlatforms, kolPageProblems } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds, fetchCampaignPosts, adoptPostForBriefItem } from "./content";
@@ -65,6 +65,10 @@ export async function saveCampaignBrief(brief: CampaignBrief): Promise<BriefSave
 }
 
 async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResult> {
+  // Refuse before anything is written — the form checks this too, but a save
+  // that slips past it must not mint thousands of KOL rows. See MAX_KOL_PAGES.
+  const kolProblems = kolPageProblems(brief.kols ?? []);
+  if (kolProblems.length) throw new Error(kolProblems.join("\n"));
   const normalizedBrief: CampaignBrief = {
     ...brief,
     content: brief.content.map((ci) => {

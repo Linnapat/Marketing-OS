@@ -816,12 +816,37 @@ export function validateSubmit(brief: CampaignBrief, branchOptions?: string[], b
         && !graphicDueRangeImpossible(c.publishDate)) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);
     // Reference Brief Link is optional — a real link often isn't known at planning time.
   });
+  e.push(...kolPageProblems(brief.kols));
   const months = campaignMonthKeys(brief.startDate, brief.endDate);
   if (months.length > 1) {
     const monthlyTotal = (brief.budget.monthly ?? []).filter((row) => months.includes(row.month)).reduce((sum, row) => sum + (row.amount || 0), 0);
     if (monthlyTotal !== brief.budget.total) e.push("Please allocate the Campaign Budget by month so the monthly total matches the Campaign Budget");
   }
   return e;
+}
+
+// ── KOL page count sanity ────────────────────────────────────────────────
+// Every page of a KOL requirement becomes its own KOL request row. Nothing
+// capped it, so a budget typed into the Monthly split's Pages box (25,000
+// instead of 5) on Fuji Don (USP) became 4,698 blank requests before the
+// fan-out died — and the requirement after it never got made at all. The
+// largest real requirement so far is 10 pages.
+export const MAX_KOL_PAGES = 50;
+
+/** How many KOL request rows a requirement fans out to — the Monthly split
+ *  when it has pages, else # Creator / Page. Same rule the fan-out uses. */
+export function kolPagesOf(kr: Pick<BriefKolItem, "count" | "monthly">): number {
+  const monthly = (kr.monthly ?? []).reduce((s, m) => s + Math.max(0, m.pages || 0), 0);
+  return monthly > 0 ? monthly : Math.max(1, kr.count || 1);
+}
+
+export function kolPageProblems(kols: BriefKolItem[]): string[] {
+  return kols.flatMap((kr, i) => {
+    const pages = kolPagesOf(kr);
+    return pages > MAX_KOL_PAGES
+      ? [`KOL Requirement #${i + 1} (${kr.name || kr.kolType}) ตั้งไว้ ${pages.toLocaleString("en-US")} page — เกิน ${MAX_KOL_PAGES} page ต่อ requirement ตรวจช่อง Pages ใน Monthly split (ใส่งบลงช่อง Pages หรือเปล่า?)`]
+      : [];
+  });
 }
 
 // ── Task / graphic preview ────────────────────────────────────────────────
