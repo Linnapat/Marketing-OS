@@ -24,6 +24,7 @@ import {
   scorePerson,
   summarize,
   weighted,
+  withAutoRoster,
 } from "../src/lib/data/teamKpi";
 
 let pass = 0, fail = 0;
@@ -164,6 +165,27 @@ is("ล่วงหน้าข้ามปีได้", recentMonths(new Date(
 is("ahead=0 = พฤติกรรมเดิม", recentMonths(new Date(2026, 6, 28), 3, 0), recentMonths(new Date(2026, 6, 28), 3));
 is("เดือนปัจจุบันยังอยู่ในลิสต์เสมอ", recentMonths(new Date(2026, 6, 28), 3, 2).includes("2026-07"), true);
 is("monthKeyOf ให้เดือนปัจจุบัน", monthKeyOf(new Date(2026, 6, 28)), "2026-07");
+
+console.log("\n— รอบประเมินขึ้นชื่อทุกคนอัตโนมัติ —");
+{
+  const members = [
+    { name: "Pichayaporn", role: "Creative Leader" }, { name: "Four", role: "VDO Editor" },
+    { name: "Jeeno", role: "VDO Editor" }, { name: "Jungjing", role: "Senior Graphic Designer" },
+    { name: "Ninew", role: "Content Creator" }, { name: "chayaphon.b", role: "KOL Specialist" },
+    { name: "Gik", role: "CMO" }, { name: "GID", role: "Agency (External)" }, { name: "Old", role: "VDO Editor", status: "Inactive" },
+  ];
+  // September as saved: Four only, with a typed score that must survive.
+  const sep = { ...emptyMonth("2026-09"), people: [{ id: "p1", name: "Four", position: "Video Creator", boardName: "" }], inputs: { "p1::x": { score: 90 } } };
+  const r = withAutoRoster(sep, members);
+  is("ทุกคนที่มีตำแหน่ง KPI เข้ารอบ", r.people.map((p) => p.name).sort(), ["Four", "Jeeno", "Jungjing", "Ninew", "Pichayaporn", "chayaphon.b"].sort());
+  is("Four คนเดิมไม่ซ้ำ ไม่เปลี่ยน id", r.people.filter((p) => p.name === "Four").map((p) => p.id), ["p1"]);
+  is("ค่าที่กรอกไว้ยังอยู่", r.inputs["p1::x"]?.score, 90);
+  is("ตำแหน่งตาม role", r.people.find((p) => p.name === "Jungjing")?.position, "Graphic Designer");
+  is("CMO / Agency / Inactive ไม่เข้า", r.people.some((p) => ["Gik", "GID", "Old"].includes(p.name)), false);
+  is("id คงที่ทุกครั้งที่โหลด", withAutoRoster(emptyMonth("m"), members).people.map((p) => p.id).join(), withAutoRoster(emptyMonth("m"), members).people.map((p) => p.id).join());
+  is("คนที่ CMO เอาออกไม่กลับมา", withAutoRoster({ ...emptyMonth("m"), excluded: ["jeeno"] }, members).people.some((p) => p.name === "Jeeno"), false);
+  is("excluded อ่านกลับจาก payload ได้", parseMonth("m", { excluded: ["Jeeno", 3] }).excluded, ["Jeeno"]);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

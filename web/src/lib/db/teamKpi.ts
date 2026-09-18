@@ -81,7 +81,7 @@ export async function saveTeamKpiMonth(review: TeamKpiMonth): Promise<TeamKpiSav
 
   const { error } = await db.from(TABLE).upsert({
     month: review.month,
-    payload: { people: review.people, inputs: review.inputs },
+    payload: { people: review.people, inputs: review.inputs, excluded: review.excluded ?? [] },
     updated_at: savedAt,
   });
   if (error) {
