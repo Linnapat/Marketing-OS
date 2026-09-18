@@ -35,8 +35,9 @@ import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief } from "@/lib/db/graphic";
+import { cancelGraphicRequest } from "@/lib/db/briefRetire";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
+import { isCreativeSideRole, canEditContentPlan, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -53,7 +54,7 @@ import { useProductionOwners, useCmoName, useCiBackup, useVdoCmoOnly } from "@/l
 const TABS = [["overview", "Overview"], ["brief", "Brief"], ["assets", "Assets"], ["feedback", "Feedback"], ["approval", "Approval"], ["delivery", "Delivery"]] as const;
 export type GTab = (typeof TABS)[number][0];
 
-export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hideTabs, onClose, onUpdate }: {
+export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hideTabs, onClose, onUpdate, onRemoved }: {
   g: Graphic;
   initialTab?: GTab;
   /** Tabs to leave out for this caller. Opened from My Tasks the Overview tab
@@ -65,6 +66,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   hideTabs?: readonly GTab[];
   onClose: () => void;
   onUpdate?: (g: Graphic) => void;
+  /** The request was cancelled (moved to Trash) — drop these ids from the
+   *  caller's list. Callers without it just get the drawer closed. */
+  onRemoved?: (graphicIds: string[]) => void;
 }) {
   const [g, setGraphic] = useState(initialGraphic);
   const visibleTabs = TABS.filter(([id]) => !hideTabs?.includes(id));
@@ -428,6 +432,41 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     const next: Graphic = { ...g, acceptedBy: undefined, acceptedAt: undefined };
     saveGraphic(next, "ปล่อยงานคืนไม่สำเร็จ");
     toastSuccess(`ปล่อยงาน “${g.title}” คืนแล้ว`);
+  };
+
+  // ── Cancel a mis-briefed request (wrong brand / campaign) ──────────────
+  // Planner roles only, and only before anyone has picked it up — the same
+  // window in which they may still rewrite or move the post. Everything goes
+  // to Trash, so a wrong click is undone from /trash within 7 days.
+  const canCancelBrief = canEditContentPlan(role) && !isAccepted(g);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelBrief = async () => {
+    const reason = window.prompt(
+      `ยกเลิกบรีฟ “${g.title}”?\n\n`
+      + `ใบงานนี้ พร้อมโพสต์และงานใน My Tasks ที่ผูกอยู่ จะย้ายไปถังขยะ (กู้คืนได้ 7 วัน) `
+      + `และจะถูกเอาออกจากแผนของแคมเปญ “${g.campaign || "—"}”\n`
+      + `ถ้าบรีฟผิดแบรนด์/ผิดแคมเปญ ให้บรีฟใหม่ในแคมเปญที่ถูกต้องหลังยกเลิก\n\n`
+      + `เหตุผลที่ยกเลิก:`,
+      "บรีฟผิดแบรนด์/แคมเปญ",
+    );
+    if (reason === null) return;
+    if (!reason.trim()) { toastError("กรุณาใส่เหตุผลที่ยกเลิก"); return; }
+    setCancelling(true);
+    try {
+      const out = await cancelGraphicRequest(g, currentUser, reason.trim());
+      if (!out.ok) {
+        toastError(`ยกเลิกไม่ได้ — มีคนเริ่มทำงานนี้แล้ว: ${out.reasons.join(", ")}`);
+        return;
+      }
+      toastSuccess(`ยกเลิกบรีฟ “${g.title}” แล้ว — ย้ายไปถังขยะ (กู้คืนได้ 7 วัน)`);
+      notify("feedback", `🗑 ยกเลิกบรีฟ: ${g.title}`,
+        `${brandName(g.b)} · ${g.campaign} · โดย ${currentUser} — ${reason.trim()}`, "/graphic", { team: graphicTeam(g) });
+      if (onRemoved) onRemoved([String(g.id)]); else onClose();
+    } catch (error) {
+      toastError(`ยกเลิกบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setCancelling(false);
+    }
   };
 
   // ── Production pipeline: storyboard → ถ่าย → asset ────────────────────
@@ -854,6 +893,16 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                       <button onClick={acceptWork} className="ml-auto text-[12px] font-bold rounded-[10px] px-4 py-[8px] text-white bg-panel">
                         รับงาน
                       </button>
+                    )}
+                    {canCancelBrief && (
+                      <div className="w-full flex items-center gap-2 flex-wrap border-t border-line2 pt-2 mt-1">
+                        <span className="text-[11px] text-faint flex-1 min-w-0">บรีฟผิดแบรนด์/แคมเปญ? ยกเลิกที่นี่ แล้วบรีฟใหม่ในแคมเปญที่ถูกต้อง</span>
+                        <button onClick={cancelBrief} disabled={cancelling}
+                          className="text-[11.5px] font-bold rounded-[9px] px-3 py-[6px] border bg-surface disabled:opacity-50"
+                          style={{ color: "#B33A2E", borderColor: "#E8C4BE" }}>
+                          {cancelling ? "กำลังยกเลิก…" : "🗑 ยกเลิกบรีฟ"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

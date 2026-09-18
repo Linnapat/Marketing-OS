@@ -9,7 +9,7 @@
  * Run with:  npm test
  */
 
-import { orphanedPosts, retireVerdict, retireLogLine, BriefBundle } from "../src/lib/data/briefRetire";
+import { orphanedPosts, orphanedGraphics, retireVerdict, retireLogLine, BriefBundle } from "../src/lib/data/briefRetire";
 import { ContentItem } from "../src/lib/data/content";
 import { Graphic } from "../src/lib/data/graphic";
 import { Task } from "../src/lib/data/tasks";
@@ -115,6 +115,27 @@ console.log("\n— all-or-nothing: one piece of real work keeps the whole bundle
   const v = retireVerdict(bundle({ graphics: [graphic(), graphic({ id: 901, stage: "Approved" })] }));
   is("one reason per distinct cause, not per row", v.reasons.length, 1);
 }
+
+console.log("\n— offline-only items: a request with no post —");
+{
+  // In-store / Delivery items make a graphic request but no Content Plan post,
+  // so orphans must be found through requests too, or they are never retired.
+  const gs = [graphic({ id: 1, sourceContentItemId: "ci-1" }), graphic({ id: 2, sourceContentItemId: "ci-9" }),
+    graphic({ id: 3, sourceContentItemId: undefined })];
+  const out = orphanedGraphics(gs, new Set(["ci-1"]));
+  is("finds the request whose item left the plan", out.map((g) => g.id).join(","), "2");
+  const v = retireVerdict({ graphics: [graphic()], tasks: [task()] });
+  check("an untouched post-less bundle is retirable", v.retirable);
+  check("the log line names the request", retireLogLine(graphic(), v).includes("วิ่งยังไง"));
+  check("a started post-less bundle is kept",
+    !retireVerdict({ graphics: [graphic({ designer: "Aom" })], tasks: [] }).retirable);
+}
+
+console.log("\n— pipeline tasks mirror the request, they are not work —");
+check("a Done rush-approval task does not keep an untouched request",
+  retireVerdict(bundle({ tasks: [task({ status: "Done", graphicSlot: "rush" })] })).retirable);
+check("a Done hand-made task still keeps it",
+  !retireVerdict(bundle({ tasks: [task({ status: "Done" })] })).retirable);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -519,6 +519,10 @@ function GraphicPageInner() {
             setDrawer((d) => (d ? { ...d, g: ng } : d));
             setGraphics((gs) => gs.map((x) => (x.id === ng.id ? ng : x)));
           }}
+          onRemoved={(ids) => {
+            setDrawer(null);
+            setGraphics((gs) => gs.filter((x) => !ids.includes(String(x.id))));
+          }}
         />
       )}
       {reqOpen && (
