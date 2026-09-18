@@ -13,7 +13,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -40,7 +40,7 @@ import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { Combobox } from "@/components/ui/Combobox";
 import { AssetThumb } from "@/components/content/AssetLinkList";
 import { assetLinkView } from "@/lib/data/assetLinks";
-import { emptyContentItem, BriefContentItem } from "@/lib/data/brief";
+import { emptyContentItem, BriefContentItem, onlinePlatforms } from "@/lib/data/brief";
 import { useAuth } from "@/lib/auth";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 
@@ -81,7 +81,7 @@ function KolChip({ k }: { k: KolCalendarPost }) {
 function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
   return (
     <span className="flex items-center gap-[2px] flex-shrink-0">
-      {itemPlatforms(item).map((p, i) => {
+      {onlinePlatforms(itemPlatforms(item)).map((p, i) => {
         const pi = platIcon(p);
         return (
           <span key={i} className="rounded-[4px] flex items-center justify-center font-bold flex-shrink-0"
@@ -197,7 +197,8 @@ function ContentPageInner() {
 
   useEffect(() => {
     let alive = true;
-    fetchContent().then((c) => { if (alive) { setPosts(c); setPostsLoaded(true); } })
+    // In-store / Delivery-only posts are artwork tracked in Graphic Request, not posts.
+    fetchContent().then((c) => { if (alive) { setPosts(c.filter((p) => !isOfflineOnlyPost(p))); setPostsLoaded(true); } })
       .catch(() => { if (alive) setPostsLoaded(true); });
     fetchKolCalendarPosts().then((k) => { if (alive) setKolPosts(k); }).catch(() => {});
     return () => { alive = false; };

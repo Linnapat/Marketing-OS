@@ -5,7 +5,7 @@
 // allocation lives on the brief only.
 
 import { supabase } from "@/lib/supabase";
-import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink } from "@/lib/data/brief";
+import { CampaignBrief, ApprovalLogEntry, BriefContentItem, BriefKolItem, budgetSummary, fmtRange, contentBriefLink, onlinePlatforms } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { createCampaign, fetchCampaigns } from "./campaigns";
 import { createContentIfNew, fetchContentSourceIds, fetchCampaignPosts, adoptPostForBriefItem } from "./content";
@@ -149,6 +149,10 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
   for (const ci of normalizedBrief.content) {
     const idx = itemIndex++;
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];
+    // Only the online platforms belong on the Content Plan. An In-store-only
+    // item makes its Graphic Request below but no post; a mixed one posts to
+    // its online platforms only.
+    const postPlats = onlinePlatforms(plats);
     // Video work needs a Creative request just like graphic work — a content
     // item with only "Needs Video" used to become a bare task, so VDO pieces
     // never reached Graphic Request and were never counted in Artwork Count.
@@ -164,7 +168,7 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
       // another (stamp, index) pair could also spell.
       id: `c${stamp}-${idx}`, day: dayOf(ci.publishDate) || dayOf(normalizedBrief.startDate) || 1,
       dateIso: ci.publishDate || normalizedBrief.startDate || undefined, time: "10:00", title: ci.title || `${normalizedBrief.name} — Content ${n + 1}`,
-      b: normalizedBrief.b, plat: plats[0], platforms: plats, status: ci.status || "Draft", campaign: normalizedBrief.name,
+      b: normalizedBrief.b, plat: postPlats[0] ?? plats[0], platforms: postPlats, status: ci.status || "Draft", campaign: normalizedBrief.name,
       campaignId: normalizedBrief.id, sourceContentItemId: ci.id, graphicRequestId: gid ? String(gid) : undefined,
       requester: ci.requester, designer: ci.designer, approver: ci.approver,
       // The caption WRITER, and captions are Creative's work: the marketer asks
@@ -191,7 +195,7 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
     // has to be inferred again. Everything else about the post is left alone:
     // whatever the team has done to it since is theirs, not the brief's to
     // overwrite.
-    const adopted = contentSeen.has(ci.id) ? null : adoptablePostFor(ci, campaignPosts);
+    const adopted = contentSeen.has(ci.id) || !postPlats.length ? null : adoptablePostFor(ci, campaignPosts);
     if (adopted) {
       await adoptPostForBriefItem(adopted.id, ci.id);
       adopted.sourceContentItemId = ci.id;
@@ -206,9 +210,11 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
         await adoptGraphicForBriefItem(linked, ci.id);
       }
     }
-    const madeContent = await createContentIfNew(post, contentSeen);
-    if (madeContent.created) {
-      content++;
+    const madeContent = postPlats.length ? await createContentIfNew(post, contentSeen) : { created: false };
+    if (madeContent.created) content++;
+    // An offline-only item has no post to hang its task on, so it still gets
+    // one here — upsertBriefTask's key keeps a re-submit from doubling it.
+    if (madeContent.created || !postPlats.length) {
       // A content item with creative produces one Graphic work item only. The
       // Content Calendar post remains linked, but does not duplicate My Tasks.
       if (!needsCreative) {
