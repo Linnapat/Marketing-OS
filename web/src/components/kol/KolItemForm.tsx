@@ -5,6 +5,7 @@ import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import {
   BriefKolItem, KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT, engagementRate, fmtPct,
+  MAX_KOL_PAGES,
 } from "@/lib/data/brief";
 
 // One shared editor for a KOL Plan item — used by both the Campaign Builder's
@@ -112,6 +113,11 @@ export function KolItemForm({ item, onChange, branches = [], outOfRange, hidePag
               {fmt(monthlyRows.reduce((sum, row) => sum + row.pages, 0)) || "0"} page · ฿{monthlyRows.reduce((sum, row) => sum + row.budget, 0).toLocaleString("en-US")}
             </div>
           </div>
+          {monthlyRows.reduce((sum, row) => sum + row.pages, 0) > MAX_KOL_PAGES && (
+            <div className="mb-2 rounded-[8px] px-3 py-2 text-[11.5px] font-bold" style={{ background: "#FDECEA", color: "#B33A2E" }}>
+              ⚠ รวม {fmt(monthlyRows.reduce((sum, row) => sum + row.pages, 0))} page — เกิน {MAX_KOL_PAGES} page ต่อ requirement ช่อง Pages คือจำนวน creator ไม่ใช่งบ
+            </div>
+          )}
           {/* One row per month (Excel-style): Month | Pages | Budget | Posting window */}
           <div className="rounded-[10px] border border-line3 overflow-hidden">
             <div className="grid bg-ivory px-3 py-[6px] text-[10px] font-extrabold uppercase tracking-[0.05em] text-faint" style={{ gridTemplateColumns: "0.8fr 0.7fr 1fr 1.6fr" }}>
