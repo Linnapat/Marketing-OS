@@ -12,11 +12,14 @@ import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
 import { liveOnly, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, seedMockIds } from "@/lib/db/mockGuard";
 import { issueArtworkCode } from "@/lib/db/workCode";
+import { fetchAllRows } from "@/lib/db/fetchAll";
 
 export async function fetchGraphics(): Promise<Graphic[]> {
   const db = supabase();
   if (!db) return GRAPHICS.map((g) => withLiveGraphicOverdue({ ...g }));
-  const { data, error } = await liveOnly(db.from("graphic_requests").select("id, data, created_at"), await trashReady()).order("id");
+  const ready = await trashReady();
+  const { data, error } = await fetchAllRows<{ id: number; data: Graphic; created_at: string }>((from, to) =>
+    liveOnly(db.from("graphic_requests").select("id, data, created_at"), ready).order("id").range(from, to));
   if (error || !data) return []; // query error = no live data, never demo rows
   return data
     .map((r) => (r.data ? { ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at } : null))
