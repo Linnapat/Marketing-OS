@@ -103,6 +103,10 @@ export interface TeamKpiMonth {
   month: string;
   people: KpiPerson[];
   inputs: Record<string, KpiInput>;
+  /** Names the CMO took out of this month's round. The roster fills itself
+   *  from the member list (withAutoRoster); without this a removed person
+   *  would come straight back on the next load. */
+  excluded?: string[];
   updatedAt?: string;
 }
 
@@ -273,5 +277,34 @@ export function parseMonth(month: string, raw: unknown): TeamKpiMonth {
       };
     }
   }
-  return { month, people, inputs, updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : undefined };
+  const excluded = Array.isArray(value.excluded) ? value.excluded.filter((n): n is string => typeof n === "string") : [];
+  return { month, people, inputs, excluded, updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : undefined };
+}
+
+/** Everyone who should be in the round, without the CMO typing them in.
+ *
+ *  "ยังไม่มีคนในรอบประเมิน — รอ CMO เพิ่มรายชื่อ" every month meant the review
+ *  started empty and only ever held whoever was remembered (September: Four,
+ *  alone). The roster is the member list: every active member whose role has
+ *  a KPI position joins, unless the CMO removed them this month. People
+ *  already in the round keep their entry — and their inputs — untouched.
+ *
+ *  Auto-added ids are derived from the name, so a person's typed numbers stay
+ *  attached to them across loads before the month is ever saved. */
+export function withAutoRoster(
+  review: TeamKpiMonth,
+  members: { name: string; role: string; status?: string }[],
+): TeamKpiMonth {
+  const key = (n: string) => n.trim().toLowerCase();
+  const have = new Set(review.people.map((p) => key(p.name)));
+  const out = new Set((review.excluded ?? []).map(key));
+  const add: KpiPerson[] = [];
+  for (const m of members) {
+    const position = ROLE_TO_POSITION[(m.role ?? "").trim()];
+    const name = (m.name ?? "").trim();
+    if (!position || !name || m.status === "Inactive" || have.has(key(name)) || out.has(key(name))) continue;
+    have.add(key(name));
+    add.push({ id: `auto-${key(name).replace(/[^a-z0-9ก-๙]+/g, "-")}`, name, position, boardName: "", note: "" });
+  }
+  return add.length ? { ...review, people: [...review.people, ...add] } : review;
 }

@@ -10,7 +10,7 @@ import { Plus, RefreshCw, Save, Trash2, TriangleAlert, Wand2 } from "lucide-reac
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useRole } from "@/lib/role";
-import {
+import { withAutoRoster,
   ALL_POSITIONS,
   CREATIVE_POSITIONS,
   ROLE_TO_POSITION,
@@ -108,6 +108,9 @@ export default function TeamKpiPage() {
   useEffect(() => { fetchGraphics().then(setGraphics).catch(() => {}); }, []);
   useEffect(() => { fetchKolKpiRows().then(setKolRows).catch(() => {}); }, []);
   useEffect(() => { fetchMembers().then(setMembers).catch(() => {}); }, []);
+  // Everyone with a KPI position is in the round without being added by hand;
+  // re-applied when the month loads and when the member list arrives.
+  useEffect(() => { setReview((prev) => withAutoRoster(prev, members)); }, [members, review.month, loading]);
 
   // Counted-for-you numbers: revisions and lateness per person, this month.
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -169,7 +172,10 @@ export default function TeamKpiPage() {
     // reviewer only has to choose when the two spellings differ.
     const match = designers.find((d) => d.toLowerCase() === name.toLowerCase());
     const person: KpiPerson = { id: newId(), name, position: newPosition, boardName: match ?? "" };
-    setReview((prev) => ({ ...prev, people: [...prev.people, person] }));
+    setReview((prev) => ({
+      ...prev, people: [...prev.people, person],
+      excluded: (prev.excluded ?? []).filter((n) => n.trim().toLowerCase() !== name.toLowerCase()),
+    }));
     setNewName("");
     setDirty(true);
   };
@@ -183,6 +189,8 @@ export default function TeamKpiPage() {
     setReview((prev) => ({
       ...prev,
       people: prev.people.filter((p) => p.id !== id),
+      // Remembered, so the auto roster does not put them straight back.
+      excluded: [...(prev.excluded ?? []), ...prev.people.filter((p) => p.id === id).map((p) => p.name)],
       // Drop the person's rows too, so a re-added name starts clean instead of
       // inheriting last month's numbers through a stale key.
       inputs: Object.fromEntries(Object.entries(prev.inputs).filter(([key]) => !key.startsWith(`${id}::`))),
