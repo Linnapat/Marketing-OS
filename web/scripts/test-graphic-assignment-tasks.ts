@@ -229,5 +229,18 @@ is("มีคนทำแล้ว = เรียกชื่อคนนั้�
 is("งานเร่งรออนุมัติมาก่อนทุกอย่าง", initialNextAction({ type: "Reel", rushStatus: "Pending", designer: "Four" } as Graphic), "รอ Creative Leader อนุมัติงานเร่งด่วน");
 is("ไม่มีทางออกเป็นเนื้อบรีฟยาว ๆ", ["Reel", "Photo", "Static"].every((type) => initialNextAction({ type, designer: "Four" } as Graphic).length <= 80), true);
 
+console.log("\n— Photo retouch → VDO/AW design ในใบงานเดียว —");
+// เคสจริง: "OM retouch photo kaisen don …" (Jungjing) เปิดแยกจาก Reel ของงานเดียวกัน (GID)
+const two = (over: Partial<Graphic> = {}) => shot({ designer: "GID", retoucher: "Jungjing", footageLink: "https://drive/f", ...over } as Partial<Graphic>);
+is("ได้ task รีทัชของ Jungjing แยกจากงานดีไซน์", byType(two()).filter((x) => /Retouch|Graphic/.test(x)).sort(), ["Graphic:GID", "Retouch:Jungjing"]);
+is("slot รีทัช = 05", find(two(), "Retouch")!.id, Number(`${req().id}05`));
+is("ยังไม่ส่งรูปรีทัช = designer รอ", find(two(), "Graphic")!.nextAction, "รอรูปรีทัชจาก Jungjing");
+is("ส่งรูปรีทัชแล้ว = designer เริ่มได้", find(two({ retouchLink: "https://drive/r" }), "Graphic")!.nextAction, "GID to start design");
+is("ส่งแล้ว task รีทัช Done", find(two({ retouchLink: "https://drive/r" }), "Retouch")!.status, "Done");
+is("ฟุตเทจยังไม่มา = คนรีทัชรอ", find(two({ footageLink: "" }), "Retouch")!.group, "waitingMe");
+is("ลำดับ: ถ่าย → รีทัช → ดีไซน์", productionSteps(two()).map((x) => x.key).filter((k) => k !== "brief" && k !== "storyboard"), ["shoot", "retouch", "asset"]);
+is("ไม่มีคนรีทัช = ไม่มีขั้นรีทัช", productionSteps(shot()).some((x) => x.key === "retouch"), false);
+is("Unassigned ไม่นับเป็นคนรีทัช", productionBlockers(two({ retoucher: "Unassigned" })).length, 0);
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -143,6 +143,18 @@ export interface Graphic {
   footageSubmittedBy?: string;
   footageSubmittedAt?: string;
 
+  // ── Photo retouch step (between the shoot and the design) ────────────
+  /** Who retouches the photos before the VDO/AW designer uses them. Blank =
+   *  this request has no retouch step. Kept on the SAME request as the design
+   *  so a photo that needs retouching and then a layout is one job with two
+   *  people on it, not two requests to keep in step ("OM retouch photo …"
+   *  raised beside the Reel it was for). */
+  retoucher?: string;
+  /** Retouched files handed over — until then the designer is waiting. */
+  retouchLink?: string;
+  retouchSubmittedBy?: string;
+  retouchSubmittedAt?: string;
+
   // ── Storyboard step (reel / video work) ──────────────────────────────
   /** Creative Content owner who draws the storyboard. */
   storyboardOwner?: string;
@@ -287,6 +299,15 @@ export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink"
   return !g.requiresShooting || !!g.footageLink?.trim();
 }
 
+/** Is there a retouch step, and has it been handed over? */
+export function retouchNeeded(g: Pick<Graphic, "retoucher">): boolean {
+  const r = (g.retoucher ?? "").trim();
+  return !!r && !/^unassigned$/i.test(r);
+}
+export function retouchReady(g: Pick<Graphic, "retoucher" | "retouchLink">): boolean {
+  return !retouchNeeded(g) || !!g.retouchLink?.trim();
+}
+
 /* ── The pipeline's three jobs, as three My Tasks rows ─────────────────────
  *
  * The request models storyboard → shoot → artwork, but only the artwork ever
@@ -303,7 +324,7 @@ export function footageReady(g: Pick<Graphic, "requiresShooting" | "footageLink"
 /** The numeric suffix each job's task id has always used. Kept because the 52
  *  live artwork rows carry `<graphicId>01` and the sync still recognises them
  *  by it — but the id is no longer what identifies a row. See Task.graphicSlot. */
-export const GRAPHIC_TASK_SLOT = { artwork: "01", shoot: "02", storyboard: "03", rush: "04" } as const;
+export const GRAPHIC_TASK_SLOT = { artwork: "01", shoot: "02", storyboard: "03", rush: "04", retouch: "05" } as const;
 
 /** The preferred My Tasks id for one job of one request. A starting point, not
  *  an identity: upsertGraphicTask moves off it if the number is already taken. */
@@ -462,6 +483,34 @@ export function graphicAssignmentTasks(g: Graphic): Task[] {
             ? `ถ่าย ${dueLabel(g.shootDate)} แล้วขึ้นงานต่อได้เลย`
             : `ถ่าย ${dueLabel(g.shootDate)} แล้วส่งไฟล์ให้ ${designer !== "Unassigned" ? designer : "ดีไซเนอร์"}`,
       checklist: ["ดู storyboard / บรีฟก่อนวันถ่าย", "ถ่ายตามคิว", "ส่งไฟล์ให้ดีไซเนอร์"],
+    });
+  }
+
+  // The retouch. Sits between the shoot and the design: it waits for the
+  // footage, and the designer waits for it.
+  if (retouchNeeded(g)) {
+    const retoucher = (g.retoucher ?? "").trim();
+    const done = retouchReady(g);
+    const waitingShoot = !footageReady(g);
+    tasks.push({
+      ...base,
+      id: graphicTaskId(g.id, GRAPHIC_TASK_SLOT.retouch),
+      graphicSlot: "retouch",
+      title: `รีทัชรูป: ${g.title}`,
+      moduleIcon: "🖌",
+      type: "Retouch",
+      assignee: retoucher,
+      status: done ? "Done" : "Todo",
+      group: done ? "done" : waitingShoot ? "waitingMe" : "doFirst",
+      due: g.due || "TBD",
+      dueIso: g.dueIso,
+      pendingApprover: designer !== "Unassigned" ? designer : g.requester || null,
+      nextAction: done
+        ? "ส่งรูปรีทัชแล้ว"
+        : waitingShoot
+          ? `รอ footage/ภาพจาก ${g.shooter?.trim() || "คนถ่าย"}`
+          : `รีทัชรูปแล้วส่งให้ ${designer !== "Unassigned" ? designer : "ดีไซเนอร์"}`,
+      checklist: ["ดูบรีฟ / footage", "รีทัชรูป", "ส่งลิงก์รูปรีทัชในใบงาน"],
     });
   }
 
@@ -776,13 +825,13 @@ export function feedbackOwners(
  *  person; an empty `me` returns false, because unknown identity must see
  *  nothing rather than everything. */
 export function isOwnQueueJob(
-  g: Pick<Graphic, "designer" | "storyboardOwner" | "shooter" | "acceptedBy">,
+  g: Pick<Graphic, "designer" | "storyboardOwner" | "shooter" | "retoucher" | "acceptedBy">,
   me: string,
 ): boolean {
   if (!me.trim()) return false;
   const holder = (g.designer ?? "").trim();
   if (!holder || /^unassigned$/i.test(holder)) return true;
-  return [holder, g.storyboardOwner, g.shooter, g.acceptedBy].some((n) => sameName(n, me));
+  return [holder, g.storyboardOwner, g.shooter, g.retoucher, g.acceptedBy].some((n) => sameName(n, me));
 }
 
 /** Who is holding this request right now — for display, not for routing one
@@ -883,11 +932,12 @@ export function productionBlockers(g: Graphic): string[] {
       ? `รอ footage/ภาพจาก ${g.shooter}`
       : "งานนี้ต้องถ่ายก่อน — ยังไม่ได้ระบุคนถ่าย");
   }
+  if (!retouchReady(g)) out.push(`รอรูปรีทัชจาก ${(g.retoucher ?? "").trim()}`);
   return out;
 }
 
 export interface ProductionStep {
-  key: "brief" | "storyboard" | "shoot" | "asset";
+  key: "brief" | "storyboard" | "shoot" | "retouch" | "asset";
   label: string;
   /** The role that owns this step in the agreed flow — บรีฟ → Storyboard →
    *  ถ่าย → ตัดต่อ. Printed beside the person so the sequence reads even on a
@@ -953,6 +1003,19 @@ export function productionSteps(g: Graphic): ProductionStep[] {
       detail: shotDone
         ? `ส่ง footage แล้วโดย ${g.footageSubmittedBy || "—"}`
         : g.shootDate ? `กำหนดถ่าย ${g.shootDate}` : "ยังไม่กำหนดวันถ่าย",
+    });
+  }
+  if (retouchNeeded(g)) {
+    const touched = !!g.retouchLink?.trim();
+    steps.push({
+      key: "retouch",
+      label: "รีทัชรูป",
+      role: "Photo Retouch",
+      owner: (g.retoucher ?? "").trim(),
+      state: touched ? "done" : !footageReady(g) || !storyboardCleared(g) ? "waiting" : "active",
+      detail: touched
+        ? `ส่งรูปรีทัชแล้วโดย ${g.retouchSubmittedBy || "—"}`
+        : !footageReady(g) ? "รอ footage/ภาพก่อน" : "กำลังรีทัช",
     });
   }
   const blocked = productionBlockers(g).length > 0;
