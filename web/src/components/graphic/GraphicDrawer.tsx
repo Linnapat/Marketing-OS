@@ -23,6 +23,7 @@ import { GRAPHIC_OPEN_PARAM,
   releaseBriefForRevision, revisionAssignee, assignedBy, briefFixRequestedBy, relocateApprovedAsset, withShootMoved,
   underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER,
   MESSAGE_TYPE, isMessage, threadAudience, workKind, lensAskWho, artworkGroup, submitDeliverable,
+  feedbackTimeline,
 } from "@/lib/data/graphic";
 import { graphicTeam } from "@/lib/notifyRouting";
 import { decideStoryboard as decideStoryboardShared, giveLensVerdict, persistGraphicDeliverables } from "@/lib/graphicVerdict";
@@ -156,6 +157,31 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     return a.id - b.id;
   });
   const revisionHistory = feedback.filter((f) => !isMessage(f));
+  /** One feedback-form row in the history list. Declared here so the merged
+   *  timeline (feedbackTimeline) can render form rows exactly as before. */
+  const renderFeedbackRow = (f: (typeof feedback)[number]) => (
+    <div key={f.id} className="bg-surface border border-line rounded-card p-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: f.ownerColor }}>{f.owner.slice(0, 1)}</span>
+        <span className="text-[12.5px] font-bold">{f.owner}</span>
+        <span className="text-[10.5px] text-faint">{isMessage(f) ? f.createdAt : `${f.team} · ${f.createdAt}`}</span>
+        {/* A message has no state to be in. Badging it "Open" would
+            put a chat line in the queue of things owed an answer. */}
+        {!isMessage(f) && <StatusBadge tone={stageTone(f.status)} className="ml-auto">{f.status}</StatusBadge>}
+      </div>
+      <div className="text-[12.5px] text-muted leading-[1.5]">{f.text}</div>
+      {/* The revision furniture — which version, who it is on,
+          Resolve — belongs to feedback that asks for work. A
+          message carries none of it. */}
+      {!isMessage(f) && (
+        <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
+          <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
+          <span>{f.version}</span><span>→ {f.assignedTo}</span>
+          {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
+        </div>
+      )}
+    </div>
+  );
   const chatCount = chat.length;
   useEffect(() => {
     const el = chatRef.current;
@@ -1510,30 +1536,34 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   </button>
                 </div>
               </div>
-              {revisionHistory.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
-              {revisionHistory.map((f) => (
-                <div key={f.id} className="bg-surface border border-line rounded-card p-4">
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: f.ownerColor }}>{f.owner.slice(0, 1)}</span>
-                    <span className="text-[12.5px] font-bold">{f.owner}</span>
-                    <span className="text-[10.5px] text-faint">{isMessage(f) ? f.createdAt : `${f.team} · ${f.createdAt}`}</span>
-                    {/* A message has no state to be in. Badging it "Open" would
-                        put a chat line in the queue of things owed an answer. */}
-                    {!isMessage(f) && <StatusBadge tone={stageTone(f.status)} className="ml-auto">{f.status}</StatusBadge>}
-                  </div>
-                  <div className="text-[12.5px] text-muted leading-[1.5]">{f.text}</div>
-                  {/* The revision furniture — which version, who it is on,
-                      Resolve — belongs to feedback that asks for work. A
-                      message carries none of it. */}
-                  {!isMessage(f) && (
-                    <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
-                      <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{f.type}</span>
-                      <span>{f.version}</span><span>→ {f.assignedTo}</span>
-                      {f.status === "Open" && <button onClick={() => resolveFeedback(f.id)} className="ml-auto text-[11px] font-bold text-status-green">Resolve ✓</button>}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {/* Every ask, from the form AND from review send-backs, newest
+                  first — so a re-check can be checked against all of them. */}
+              {(() => {
+                const timeline = feedbackTimeline(g, revisionHistory);
+                return (
+                  <>
+                    <div className="text-[11.5px] font-extrabold text-muted">ประวัติการขอแก้ทั้งหมด ({timeline.length})</div>
+                    {timeline.length === 0 && <div className="text-[13px] text-faint text-center py-6">No feedback history yet.</div>}
+                    {timeline.map((e) => e.row ? renderFeedbackRow(e.row) : (
+                      <div key={e.key} className="bg-surface border border-line rounded-card p-4">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: "#C67A28" }}>{(e.who || "?").slice(0, 1)}</span>
+                          <span className="text-[12.5px] font-bold">{e.who || "—"}</span>
+                          <span className="text-[10.5px] text-faint">{e.atLabel}</span>
+                          <span className="ml-auto text-[10.5px] font-bold rounded-pill px-[8px] py-[2px]" style={{ background: "#FBECEA", color: "#B33A2E" }}>
+                            ↩ ตีกลับ{e.lens ? ` · ${LENS_META[e.lens].short}` : ""}
+                          </span>
+                        </div>
+                        <div className="text-[12.5px] text-muted leading-[1.5] break-words">{e.text}</div>
+                        <div className="flex items-center gap-3 mt-2 text-[11px] text-faint">
+                          {e.piece && <span className="px-[7px] py-[1px] rounded-pill bg-ivory border border-line3">{e.piece}</span>}
+                          {e.round && <span>รอบที่ {e.round}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
             </div>
           )}
 
