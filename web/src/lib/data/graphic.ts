@@ -2354,6 +2354,52 @@ export interface Feedback {
   createdAtIso?: string;
 }
 
+/* ── Every revision ask, in one list ─────────────────────────────────────
+ *
+ * A send-back can arrive two ways: the Feedback tab's form (a graphic_feedback
+ * row) or a review verdict in Approval/Assets (stored on the deliverable's own
+ * feedback[]). The Feedback tab listed only the first, so on OMD_2610_001-C03
+ * four rounds of asks showed as one — the reviewer could not see what had been
+ * asked before, which is the thing a re-check is checked against. */
+export interface FeedbackEntry {
+  key: string;
+  who: string;
+  atIso?: string;
+  atLabel: string;
+  text: string;
+  /** The form row, when this entry is one — it carries status / Resolve. */
+  row?: Feedback;
+  lens?: ReviewLens;
+  /** Which piece it was about, e.g. "LINE OA · Rich Message 1040×1040". */
+  piece?: string;
+  /** 1-based send-back round on that piece. */
+  round?: number;
+}
+
+export function feedbackTimeline(
+  g: Pick<Graphic, "deliverables">, rows: Feedback[],
+): FeedbackEntry[] {
+  const norm = (t: string) => (t ?? "").trim().replace(/\s+/g, " ");
+  const out: FeedbackEntry[] = rows.map((f) => ({
+    key: `row-${f.id}`, who: f.owner, atIso: f.createdAtIso, atLabel: f.createdAt, text: f.text, row: f,
+  }));
+  const seen = new Set(rows.map((f) => `${norm(f.owner).toLowerCase()}|${norm(f.text)}`));
+  for (const d of g.deliverables ?? []) {
+    (d.feedback ?? []).forEach((fb, i) => {
+      const id = `${norm(fb.by).toLowerCase()}|${norm(fb.reason)}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push({
+        key: `dl-${d.platform}-${d.size}-${i}`, who: fb.by, atIso: fb.at,
+        atLabel: fb.at ? new Date(fb.at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "—",
+        text: fb.reason, lens: fb.lens, piece: [d.platform, d.size].filter(Boolean).join(" · "), round: i + 1,
+      });
+    });
+  }
+  // Newest first; entries without a moment keep their place at the end.
+  return out.sort((a, b) => (b.atIso ?? "").localeCompare(a.atIso ?? ""));
+}
+
 /* ── Talking about a request ───────────────────────────────────────────────
  *
  * Every message on a request already had a job to do: a revision reason, a

@@ -11,7 +11,7 @@
  * a shooter would overwrite the designer's task. Run with: npm test */
 
 import { todayIso } from "../src/lib/data/brief";
-import { productionSteps, materialState, materialNote, MATERIAL_EXEMPT_TYPES, productionBlockers } from "../src/lib/data/graphic";
+import { productionSteps, materialState, materialNote, MATERIAL_EXEMPT_TYPES, productionBlockers, feedbackTimeline, Feedback } from "../src/lib/data/graphic";
 import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, initialNextAction, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
@@ -241,6 +241,24 @@ is("ฟุตเทจยังไม่มา = คนรีทัชรอ", f
 is("ลำดับ: ถ่าย → รีทัช → ดีไซน์", productionSteps(two()).map((x) => x.key).filter((k) => k !== "brief" && k !== "storyboard"), ["shoot", "retouch", "asset"]);
 is("ไม่มีคนรีทัช = ไม่มีขั้นรีทัช", productionSteps(shot()).some((x) => x.key === "retouch"), false);
 is("Unassigned ไม่นับเป็นคนรีทัช", productionBlockers(two({ retoucher: "Unassigned" })).length, 0);
+
+console.log("\n— ประวัติขอแก้ครบทุกรอบ (OMD_2610_001-C03: ตีกลับ 4 รอบ ขึ้นแค่ 1) —");
+{
+  const url = "https://docs.google.com/presentation/d/1Am/edit#slide=id.oct_001_03_slide";
+  const dl = { platform: "LINE OA", size: "Rich Message 1040×1040", feedback: [
+    { at: "2026-08-30T09:11:34Z", by: "Jungjing", reason: url },
+    { at: "2026-09-08T10:36:45Z", by: "Gik", lens: "info", reason: "https://docs.google.com/x" },
+    { at: "2026-09-10T09:32:35Z", by: "Pichayaporn", lens: "ci", reason: "https://docs.google.com/y" },
+    { at: "2026-09-18T05:45:27Z", by: "Gik", lens: "info", reason: "เอาบลัชที่เป็น BG Head ออก ><" },
+  ] };
+  const row = { id: 111, gid: 1, owner: "Jungjing", team: "", ownerColor: "#000", type: "Design revision", text: url,
+    version: "V1", status: "Open", assignedTo: "Teerapat", due: null, createdAt: "Aug 30", createdAtIso: "2026-08-30T09:11:34Z" } as Feedback;
+  const t = feedbackTimeline({ deliverables: [dl] } as unknown as Graphic, [row]);
+  is("ครบ 4 รอบ (รอบจากฟอร์มไม่ซ้ำ)", t.length, 4);
+  is("ใหม่สุดอยู่บน", t[0].text, "เอาบลัชที่เป็น BG Head ออก ><");
+  is("รอบจากฟอร์มยังเป็นแถวเดิม (Resolve ได้)", t[t.length - 1].row?.id, 111);
+  is("บอกรอบที่ + ชิ้นงาน", [t[0].round, t[0].piece], [4, "LINE OA · Rich Message 1040×1040"]);
+}
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
