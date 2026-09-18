@@ -217,13 +217,58 @@ async function freeTaskId(preferred: number): Promise<number> {
   return Date.now() + Math.floor(Math.random() * 1_000_000);
 }
 
+// ── One row per job: race guard + self-heal ─────────────────────────────────
+// upsertGraphicTask / upsertKolTask read-then-write. Two syncs for the same job
+// a second apart (a save and the pipeline sync) each found nothing and each
+// created a row — 10 requests ended up with two storyboard/shoot tasks, and
+// from then on every save on them failed: maybeSingle() refused two rows and
+// the drawer said "JSON object requested, multiple (or no) rows returned"
+// (reported assigning a designer, 2026-09-16).
+
+type TaskRow = { id: number; data: Task };
+const slotQueue = new Map<string, Promise<unknown>>();
+
+/** Run jobs for the same slot one after another in this tab. */
+function serialBySlot<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = slotQueue.get(key) ?? Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  slotQueue.set(key, run);
+  run.finally(() => { if (slotQueue.get(key) === run) slotQueue.delete(key); }).catch(() => {});
+  return run;
+}
+
+/** The one row for a slot. When a race left more than one, keep the most
+ *  finished (a Done row, else the oldest) and move the rest to Trash by their
+ *  own row id — never by the id in the blob, which the extras may share. */
+async function pickSlotRow(rows: TaskRow[] | null | undefined): Promise<TaskRow | null> {
+  if (!rows?.length) return null;
+  const done = (r: TaskRow) => (r.data?.status === "Done" ? 0 : 1);
+  const [keep, ...extras] = [...rows].sort((a, b) => done(a) - done(b) || a.id - b.id);
+  const db = supabase();
+  if (extras.length && db && (await trashReady())) {
+    for (const extra of extras) {
+      const { error } = await db.from("tasks")
+        .update({ deleted_at: new Date().toISOString(), deleted_by: "ระบบ: งานซ้ำ" })
+        .eq("id", extra.id).is("deleted_at", null);
+      assertDbOk(error, "Could not tidy duplicate task");
+    }
+  }
+  return keep;
+}
+
 /** Create or update ONE My Tasks row for one job of a Graphic request —
  *  storyboard, shoot or artwork. Keyed by the task's deterministic slot id so
  *  re-assigning a shooter updates the shooter's row and leaves the designer's
  *  alone. See graphicAssignmentTasks for which jobs produce a row. */
 export async function upsertGraphicTask(task: Task): Promise<void> {
+  if (!supabase() || !task.relatedGraphicId || !task.graphicSlot) return;
+  return serialBySlot(`g:${task.relatedGraphicId}:${task.graphicSlot}`, () => upsertGraphicTaskNow(task));
+}
+
+async function upsertGraphicTaskNow(task: Task): Promise<void> {
   const db = supabase();
   if (!db || !task.relatedGraphicId || !task.graphicSlot) return;
+  const ready = await trashReady();
 
   // Identity is (relatedGraphicId, graphicSlot) — the request and which of its
   // jobs this is. NOT the numeric id: other modules mint ids from Date.now() in
@@ -232,21 +277,20 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
   //
   // Revision tasks also carry relatedGraphicId, which is why the slot is part
   // of the match and not just a filter on the request.
-  const found = await db.from("tasks")
+  const found = await liveOnly(db.from("tasks")
     .select("id, data")
     .eq("data->>relatedGraphicId", String(task.relatedGraphicId))
-    .eq("data->>graphicSlot", task.graphicSlot)
-    .maybeSingle();
+    .eq("data->>graphicSlot", task.graphicSlot), ready);
   assertDbOk(found.error, "Could not check existing graphic task");
 
   // Artwork rows written before slots existed have no graphicSlot to match on,
   // so fall back to the id they were created with. The update below stamps the
   // slot, and they are found the modern way from then on.
-  let data = found.data;
+  let data = await pickSlotRow(found.data as TaskRow[] | null);
   if (!data && task.graphicSlot === "artwork") {
-    const legacy = await db.from("tasks").select("id, data").eq("data->>id", String(task.id)).maybeSingle();
+    const legacy = await liveOnly(db.from("tasks").select("id, data").eq("data->>id", String(task.id)), ready).limit(1);
     assertDbOk(legacy.error, "Could not check existing graphic task");
-    data = legacy.data;
+    data = (legacy.data as TaskRow[] | null)?.[0] ?? null;
   }
 
   if (!data) {
@@ -291,17 +335,22 @@ export async function upsertGraphicTask(task: Task): Promise<void> {
  *  relatedKolId with no slot, so matching on the deal alone would let a stage
  *  change overwrite the requester's "Approve KOL proposal" task. */
 export async function upsertKolTask(task: Task): Promise<void> {
+  if (!supabase() || task.relatedKolId == null || !task.kolSlot) return;
+  return serialBySlot(`k:${task.relatedKolId}:${task.kolSlot}`, () => upsertKolTaskNow(task));
+}
+
+async function upsertKolTaskNow(task: Task): Promise<void> {
   const db = supabase();
   if (!db || task.relatedKolId == null || !task.kolSlot) return;
 
-  const found = await db.from("tasks")
+  const found = await liveOnly(db.from("tasks")
     .select("id, data")
     .eq("data->>relatedKolId", String(task.relatedKolId))
-    .eq("data->>kolSlot", task.kolSlot)
-    .maybeSingle();
+    .eq("data->>kolSlot", task.kolSlot), await trashReady());
   assertDbOk(found.error, "Could not check existing KOL task");
+  const row = await pickSlotRow(found.data as TaskRow[] | null);
 
-  if (!found.data) {
+  if (!row) {
     // A deal that was already finished before this existed does not need a
     // ticked-off row invented for it — the specialist would open My Tasks to a
     // pile of "Done" KOL work they wrapped months ago.
@@ -309,7 +358,7 @@ export async function upsertKolTask(task: Task): Promise<void> {
     return createTaskDb({ ...task, id: await freeTaskId(task.id) });
   }
 
-  const current = found.data.data as Task;
+  const current = row.data as Task;
   const patch: Partial<Task> = {
     title: task.title,
     kolSlot: task.kolSlot,
