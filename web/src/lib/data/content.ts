@@ -4,6 +4,7 @@
 
 import { BrandId, BRAND_ORDER, brandName, brandColor } from "@/lib/brands";
 import { Tone } from "@/lib/status";
+import { onlinePlatforms } from "@/lib/data/brief";
 
 /** The post is out and the plan is done with it.
  *
@@ -216,6 +217,12 @@ export function bySchedule(a: ContentItem, b: ContentItem): number {
 /** All channels for an item — the multi-select array, or [plat] as fallback. */
 export function itemPlatforms(c: ContentItem): string[] {
   return c.platforms && c.platforms.length ? c.platforms : [c.plat];
+}
+
+/** A post whose every platform is offline (In-store) — kept for the graphic it
+ *  links to, but not Content Plan work. See OFFLINE_PLATFORMS. */
+export function isOfflineOnlyPost(c: ContentItem): boolean {
+  return onlinePlatforms(itemPlatforms(c)).length === 0;
 }
 
 export function platIcon(plat: string): { icon: string; bg: string; fg: string } {

@@ -33,6 +33,15 @@ export const CONTENT_PLATFORMS = [
   "Facebook", "Instagram", "TikTok", "LINE OA", "Google Business Profile", "In-store", "Delivery",
 ] as const;
 
+/** Platforms the team does not post to — In-store artwork goes to print/POSM,
+ * Delivery artwork to the delivery apps' banners. A content item on these alone
+ * still gets its Graphic Request, but never a Content Plan post: there is no
+ * caption to write and nothing to publish, so it only sat there as
+ * "Missing / Draft" forever. */
+export const OFFLINE_PLATFORMS: readonly string[] = ["In-store", "Delivery"];
+export const isOfflinePlatform = (p: string): boolean => OFFLINE_PLATFORMS.includes(p);
+export const onlinePlatforms = (ps: readonly string[]): string[] => ps.filter((p) => !isOfflinePlatform(p));
+
 // Platform → available asset sizes. The Content Plan filters the Asset Size
 // dropdown to the selected platform's list, and Submit requires one per item.
 export const ASSET_SIZES: Record<string, string[]> = {

@@ -24,7 +24,7 @@ import { useCanApproveExpense, useCanSeeAllSpending } from "@/lib/usePermGates";
 import { canApproveCampaign, canEditContentPlan } from "@/lib/roleGates";
 import { personKeys, memberRef } from "@/lib/identity";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { ContentItem } from "@/lib/data/content";
+import { ContentItem, isOfflineOnlyPost } from "@/lib/data/content";
 import { RequestRow } from "@/lib/data/requests";
 import { Task } from "@/lib/data/tasks";
 import { Graphic } from "@/lib/data/graphic";
@@ -101,7 +101,8 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
 
   return useMemo(
     () => buildApprovalRows({
-      captions: posts, graphics, campaigns, requests, expenses: expenseReqs, kol: tasks,
+      // In-store / Delivery-only posts have no caption to approve — see OFFLINE_PLATFORMS.
+      captions: posts.filter((p) => !isOfflineOnlyPost(p)), graphics, campaigns, requests, expenses: expenseReqs, kol: tasks,
     }, ctx),
     [posts, graphics, campaigns, requests, expenseReqs, tasks, ctx],
   );

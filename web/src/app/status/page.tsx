@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/DateFilterBar";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { fetchContent } from "@/lib/db/content";
+import { isOfflineOnlyPost } from "@/lib/data/content";
 import { fetchGraphics } from "@/lib/db/graphic";
 import { fetchKols } from "@/lib/db/kol";
 import { fetchTasks } from "@/lib/db/tasks";
@@ -116,7 +117,7 @@ export default function StatusDashboardPage() {
       if (!alive) return;
       const today = new Date().toISOString().slice(0, 10);
       const items: WorkItem[] = [
-        ...(want.has("content") ? contentItems(content) : []),
+        ...(want.has("content") ? contentItems(content.filter((p) => !isOfflineOnlyPost(p))) : []),
         // graphicItems splits itself into the graphic and vdo lanes, so it is
         // called once and its rows are dropped per lane rather than filtered
         // twice on a rule that lives in the adapter.
