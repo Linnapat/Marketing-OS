@@ -88,6 +88,7 @@ export async function decideCaption({ item, decision, by, reason = "", onUpdate 
     createRevisionTask({
       module: "Content", title: `แก้ caption — ${item.title}`, assignee: writer,
       brand: brandName(item.b), campaign: item.campaign, reason: reason.trim(), by,
+      relatedPostId: item.id,
     }).catch(() => {});
   }
   return next;

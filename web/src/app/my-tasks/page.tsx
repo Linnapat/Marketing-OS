@@ -27,6 +27,8 @@ import { ApprovalInbox } from "@/components/approvals/ApprovalInbox";
 import { UnreadPanel } from "@/components/shell/UnreadPanel";
 import { DeadlineBoard } from "@/components/work/DeadlineBoard";
 import { fetchGraphics } from "@/lib/db/graphic";
+import { fetchContent } from "@/lib/db/content";
+import { ContentItem, postForTask } from "@/lib/data/content";
 import { Graphic, Feedback, isMessage, threadAudience, MESSAGE_TYPE } from "@/lib/data/graphic";
 import { fetchGraphicFeedback } from "@/lib/db/feedback";
 import { postGraphicMessage } from "@/lib/graphicThread";
@@ -101,6 +103,7 @@ function MyTasksPageInner() {
   const [viewAs, setViewAs] = useState("");
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [graphics, setGraphics] = useState<Graphic[]>([]);
+  const [posts, setPosts] = useState<ContentItem[]>([]);
   // Same idea for campaign briefs — one gate, shared with the page that holds
   // the Approve button, so this inbox can never offer what that page refuses.
   //
@@ -190,6 +193,10 @@ function MyTasksPageInner() {
     const byId = new Map(graphics.map((g) => [String(g.id), g]));
     return (t: Task): Graphic | null => (t.relatedGraphicId ? byId.get(String(t.relatedGraphicId)) ?? null : null);
   }, [graphics]);
+  // Caption / content tasks: the post they are about, so "เปิดโพสต์" opens it
+  // instead of the writer searching Content Plan by name.
+  const postOf = (t: Task): string | null => postForTask(t, posts);
+  const openPost = (id: string) => router.push(workLink.post(id));
   const openGraphic = graphicOpenId === null ? null : graphics.find((g) => g.id === graphicOpenId) ?? null;
   const patchGraphic = (next: Graphic) => setGraphics((gs) => gs.map((g) => (g.id === next.id ? next : g)));
 
@@ -209,6 +216,7 @@ function MyTasksPageInner() {
     }).catch(() => {});
     fetchCampaigns().then((c) => { if (alive) setCampaigns(c); }).catch(() => {});
     fetchGraphics().then((g) => { if (alive) setGraphics(g); }).catch(() => {});
+    fetchContent().then((p) => { if (alive) setPosts(p); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -458,7 +466,7 @@ function MyTasksPageInner() {
                   <div key={g.id} className="flex-shrink-0 flex flex-col" style={{ width: 340 }}>
                     <WorkGroupHeader g={g} count={groupTasks.length} />
                     <div className="flex flex-col gap-3">
-                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} onOpen={() => setDrawerId(t.id)} onOpenGraphic={openGraphicAt} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
+                      {groupTasks.map((t) => <TaskCard key={t.id} t={t} status={getStatus(t)} viewAs={viewAs} graphic={graphicOf(t)} postId={postOf(t)} onOpenPost={openPost} onOpen={() => setDrawerId(t.id)} onOpenGraphic={openGraphicAt} onDone={() => markDone(t.id)} onStart={() => patchTask(t.id, { status: "In Progress", group: "doFirst" })} />)}
                     </div>
                   </div>
                 );
@@ -479,7 +487,7 @@ function MyTasksPageInner() {
         </div>
       )}
 
-      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
+      {drawerTask && <TaskDrawer t={drawerTask} status={getStatus(drawerTask)} me={viewAs} people={people} colorOf={colorOf} graphic={graphicOf(drawerTask)} postId={postOf(drawerTask)} onOpenPost={openPost} onOpenGraphic={openGraphicAt} onClose={() => setDrawerId(null)} onDone={() => markDone(drawerTask.id)} onReassign={(to) => reassign(drawerTask.id, to)} onPatch={(p) => patchTask(drawerTask.id, p)} />}
       {/* The real request drawer, over My Tasks. Wrapped in its own stacking
           context so it sits above the task drawer (z-[200]) — GraphicDrawer is
           z-50 inside, which is correct on /graphic and too low here. */}
@@ -527,7 +535,7 @@ function taskToWorkItem(t: Task, status: string, graphic: Graphic | null): WorkI
   };
 }
 
-function TaskCard({ t, status, viewAs, graphic, onOpen, onOpenGraphic, onDone, onStart }: { t: Task; status: string; viewAs: string; graphic: Graphic | null; onOpen: () => void; onOpenGraphic: (id: number) => void; onDone: () => void; onStart: () => void }) {
+function TaskCard({ t, status, viewAs, graphic, postId, onOpen, onOpenGraphic, onOpenPost, onDone, onStart }: { t: Task; status: string; viewAs: string; graphic: Graphic | null; postId?: string | null; onOpen: () => void; onOpenGraphic: (id: number) => void; onOpenPost?: (id: string) => void; onDone: () => void; onStart: () => void }) {
   return (
     <WorkCard
       item={taskToWorkItem(t, status, graphic)}
@@ -536,6 +544,7 @@ function TaskCard({ t, status, viewAs, graphic, onOpen, onOpenGraphic, onDone, o
       onOpenGraphic={onOpenGraphic}
       actions={<>
         {graphic && <WorkAction label="🎨 เปิดบรีฟ / ส่งงาน" bg="#C2691E" onClick={() => onOpenGraphic(graphic.id)} />}
+        {!graphic && postId && onOpenPost && <WorkAction label="📝 เปิดโพสต์" bg="#5D9E35" onClick={() => onOpenPost(postId)} />}
         {(status === "In Progress" || status === "Revision") && <WorkAction label="Mark Done ✓" bg="#4E7A4E" onClick={onDone} />}
         {status === "Need Approval" && <WorkAction label="Approve ✓" bg="#4E7A4E" onClick={onDone} />}
         {status === "Stuck" && <WorkAction label="Ask for Help" bg="#FFF5F4" fg="#B33A2E" border="#F5C8C4" onClick={onOpen} />}
@@ -560,7 +569,8 @@ function ListView({ tasks, getStatus, onOpen, onOpenGraphic, colorOf, graphicOf 
 }
 
 
-function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, onClose, onDone, onReassign, onPatch }: {
+function TaskDrawer({ t, status, me, people, colorOf, graphic, postId, onOpenPost, onOpenGraphic, onClose, onDone, onReassign, onPatch }: {
+  postId?: string | null; onOpenPost?: (id: string) => void;
   t: Task; status: string; me: string; people: Person[]; colorOf: (n: string) => string; graphic: Graphic | null;
   onOpenGraphic: (id: number) => void;
   onClose: () => void; onDone: () => void; onReassign: (to: string) => void; onPatch: (p: Partial<Task>) => void;
@@ -774,6 +784,7 @@ function TaskDrawer({ t, status, me, people, colorOf, graphic, onOpenGraphic, on
             </div>
           )}
           <div className="flex gap-2 flex-wrap">
+            {!graphic && postId && onOpenPost && <span onClick={() => onOpenPost(postId)} style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#5D9E35", color: "#fff", cursor: "pointer" }}>📝 เปิดโพสต์</span>}
             {(status === "In Progress" || status === "Revision") && <span onClick={onDone} style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Mark Done ✓</span>}
             {status === "Need Approval" && <>
               <span onClick={onDone} style={{ fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 10, background: "#4E7A4E", color: "#fff", cursor: "pointer" }}>Approve ✓</span>

@@ -85,6 +85,7 @@ export async function createRevisionTask(opts: {
   by: string;
   relatedGraphicId?: string;
   relatedBrief?: string;
+  relatedPostId?: string;
   dueDays?: number;
 }): Promise<void> {
   const ICON: Record<string, { icon: string; color: string }> = {
@@ -107,6 +108,7 @@ export async function createRevisionTask(opts: {
     nextAction: `แก้ตาม feedback จาก ${opts.by}: ${opts.reason}`,
     checklist: ["อ่าน feedback", "แก้ไขงาน", "ส่งกลับให้ตรวจอีกครั้ง"],
     relatedGraphicId: opts.relatedGraphicId, relatedBrief: opts.relatedBrief,
+    relatedPostId: opts.relatedPostId,
   };
   await createTaskDb(task);
 }

@@ -33,6 +33,9 @@ export interface Task {
   /** Stable identity for re-saving/editing a brief without duplicating work. */
   briefTaskKey?: string;
   relatedGraphicId?: string;
+  /** The Content Plan post this task is about (caption / content revisions),
+   *  so My Tasks can open it instead of making the writer search by name. */
+  relatedPostId?: string;
   /** Which job of a Graphic Request this row is: the artwork, the shoot, or the
    *  storyboard. Together with relatedGraphicId it IDENTIFIES the row — the
    *  sync matches on the pair, never on the numeric id.
