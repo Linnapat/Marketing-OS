@@ -4,16 +4,16 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer, requestDateChange, decideDateChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
-import { createRevisionTask } from "@/lib/db/tasks";
+import { createRevisionTask, createTaskDb, updateTaskDb } from "@/lib/db/tasks";
 import { fetchMetaPublishingAccounts, hasMetaAccount, MetaBrandAccount } from "@/lib/db/metaPublishing";
 import { useBrandMarketer } from "@/lib/useBrandMarketer";
-import { useCmoName } from "@/lib/useCreativeLeader";
+import { useCmoName, useCreativeLeader } from "@/lib/useCreativeLeader";
 import { useAuth } from "@/lib/auth";
 import { useRole } from "@/lib/role";
 import { notify } from "@/lib/notify";
@@ -31,7 +31,7 @@ import { fetchGraphicsForPost, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
+import { canEditContentPlan, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -321,6 +321,70 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
       if (dateChanged) noticeCreative(`เลื่อนกำหนดลงโพสต์เป็น ${editDate ?? "—"} ${editTime}`);
       if (titleChanged) noticeCreative(`เปลี่ยนชื่อโพสต์เป็น “${editTitle.trim()}”`);
     });
+  };
+
+  // ── Asking to move the date of a post Creative has taken on ─────────────
+  // The lock stays (the brief must not shift under Creative), but the owner
+  // can ASK, and Creative Leader / CMO decide. See requestDateChange.
+  const creativeLeader = useCreativeLeader();
+  const { role: authRole } = useAuth();
+  const pendingMove = item.dateChangeRequest;
+  const askedByMe = !!pendingMove && pendingMove.by === reviewer;
+  // Real role, not "Viewing as" — this is an approval, like the rush decision.
+  const canDecideMove = canApproveRushBrief(authRole) && !askedByMe;
+  const canAskMove = lock.locked && canEditPlan && !pendingMove;
+  const [moveDate, setMoveDate] = useState<string | null>(null);
+  const [moveTime, setMoveTime] = useState(item.time || "10:00");
+  const [moveReason, setMoveReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
+  const moveApprover = creativeLeader || "Creative Leader";
+  const askMove = async () => {
+    if (!canAskMove || !moveDate || !moveReason.trim()) return;
+    const taskId = Date.now() + Math.floor(Math.random() * 1000);
+    const next = requestDateChange(item, { date: moveDate, time: moveTime, reason: moveReason }, reviewer, creativeLeader || undefined, creativeLeader ? taskId : undefined);
+    if (!next) { toastError("เลือกวันใหม่ที่ไม่ซ้ำวันเดิม และเขียนเหตุผลก่อน"); return; }
+    if (!(await persist(next, `ส่งคำขอเลื่อนวันโพสต์ถึง ${moveApprover} แล้ว`))) return;
+    const req = next.dateChangeRequest!;
+    noticeCreative(`${reviewer} ขอเลื่อนวันโพสต์ ${item.dateIso ?? "—"} → ${req.toDate} ${req.toTime} · ${req.reason} — รอ ${moveApprover} อนุมัติ`);
+    notify("approval", `📅 ขอเลื่อนวันโพสต์: ${item.title}`,
+      `${item.dateIso ?? "—"} → ${req.toDate} ${req.toTime} · ${req.reason} · โดย ${reviewer}`,
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [creativeLeader], inform: [linkedGraphic?.acceptedBy] });
+    if (creativeLeader) {
+      createTaskDb({
+        id: taskId, title: `อนุมัติเลื่อนวันโพสต์ — ${item.title}`,
+        module: "Content", moduleIcon: "📅", moduleColor: "#5D9E35", type: "Content",
+        assignee: creativeLeader, brand: brandName(item.b), campaign: item.campaign,
+        status: "Todo", priority: "High", group: "doFirst",
+        due: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }), dueIso: new Date().toISOString().slice(0, 10),
+        blocker: null, pendingApprover: null, isQuickWin: false,
+        nextAction: `${reviewer} ขอเลื่อนเป็น ${req.toDate} ${req.toTime}: ${req.reason}`,
+        checklist: ["เช็คกับคนทำงาน", "อนุมัติ หรือไม่อนุมัติพร้อมเหตุผล"],
+        relatedPostId: item.id,
+      }).catch(() => { /* the ask is saved; the bell already went out */ });
+    }
+    setMoveDate(null); setMoveReason("");
+  };
+  const decideMove = async (decision: "approve" | "reject" | "withdraw") => {
+    if (!pendingMove) return;
+    if (decision === "withdraw" ? !askedByMe : !canDecideMove) return;
+    if (decision === "reject" && !rejectNote.trim()) { toastError("เขียนเหตุผลที่ไม่อนุมัติก่อน"); return; }
+    const next = decideDateChange(item, decision, reviewer, rejectNote);
+    if (!next) return;
+    const said = decision === "approve" ? `อนุมัติเลื่อนเป็น ${pendingMove.toDate} ${pendingMove.toTime} แล้ว`
+      : decision === "reject" ? "ไม่อนุมัติคำขอเลื่อนวันโพสต์" : "ยกเลิกคำขอแล้ว";
+    if (!(await persist(next, said))) return;
+    if (decision === "approve") {
+      setEditDate(next.dateIso ?? null); setEditTime(next.time);
+      noticeCreative(`เลื่อนกำหนดลงโพสต์เป็น ${pendingMove.toDate} ${pendingMove.toTime} (อนุมัติโดย ${reviewer})`);
+    }
+    if (decision !== "withdraw") {
+      notify(decision === "approve" ? "approved" : "rejected",
+        `${decision === "approve" ? "✅ อนุมัติ" : "✖ ไม่อนุมัติ"}เลื่อนวันโพสต์: ${item.title}`,
+        `${pendingMove.toDate} ${pendingMove.toTime}${decision === "reject" ? ` · ${rejectNote.trim()}` : ""} · โดย ${reviewer}`,
+        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [pendingMove.by], inform: decision === "approve" ? [linkedGraphic?.acceptedBy] : [] });
+    }
+    if (pendingMove.taskId) updateTaskDb(pendingMove.taskId, { status: "Done" }).catch(() => {});
+    setRejectNote("");
   };
 
   // ── Move to another campaign ────────────────────────────────────────────
@@ -648,6 +712,39 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 {lock.locked && (
                   <div className="mb-3 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#FFF5F4", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
                     🔒 {lock.reason}
+                  </div>
+                )}
+                {pendingMove && (
+                  <div className="mb-3 rounded-[10px] px-3 py-2 text-[11.5px]" style={{ background: "#F7F2FF", border: "1px solid #DCD3F5", color: "#4B3F99" }}>
+                    <div className="font-bold">⏳ {pendingMove.by} ขอเลื่อนวันโพสต์ {item.dateIso ?? "—"} {item.time} → {pendingMove.toDate} {pendingMove.toTime}</div>
+                    <div className="mt-[2px]">เหตุผล: {pendingMove.reason} · รอ {pendingMove.approver || "Creative Leader / CMO"} อนุมัติ</div>
+                    {canDecideMove && (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <input value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} placeholder={`เหตุผลถ้าไม่อนุมัติ (ส่งถึง ${pendingMove.by})`} className={field} />
+                        <div className="flex gap-2">
+                          <button onClick={() => { void decideMove("approve"); }} disabled={busy}
+                            className="text-[12px] font-bold text-white rounded-[8px] px-3 py-[6px] disabled:opacity-40" style={{ background: "#4E7A4E" }}>อนุมัติเลื่อน</button>
+                          <button onClick={() => { void decideMove("reject"); }} disabled={busy || !rejectNote.trim()}
+                            className="text-[12px] font-bold rounded-[8px] px-3 py-[6px] border border-line2 bg-surface text-ink disabled:opacity-40">ไม่อนุมัติ</button>
+                        </div>
+                      </div>
+                    )}
+                    {askedByMe && (
+                      <button onClick={() => { void decideMove("withdraw"); }} disabled={busy}
+                        className="mt-2 text-[11.5px] font-bold text-muted underline disabled:opacity-40">ยกเลิกคำขอ</button>
+                    )}
+                  </div>
+                )}
+                {canAskMove && (
+                  <div className="mb-3 rounded-[10px] px-3 py-3 flex flex-col gap-2" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
+                    <div className="text-[11.5px] font-bold text-ink">📅 ขอเลื่อนวันโพสต์ <span className="font-normal text-faint">· ส่งถึง {moveApprover} อนุมัติ</span></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <DatePicker value={moveDate} onChange={(v) => setMoveDate(v)} />
+                      <input type="time" value={moveTime} onChange={(e) => setMoveTime(e.target.value)} className={field} />
+                    </div>
+                    <input value={moveReason} onChange={(e) => setMoveReason(e.target.value)} placeholder="เหตุผล เช่น อีเวนต์/แคมเปญเลื่อน" className={field} />
+                    <button onClick={() => { void askMove(); }} disabled={busy || !moveDate || !moveReason.trim()}
+                      className="text-[12px] font-bold text-white rounded-[8px] py-[7px] bg-panel disabled:opacity-40">ส่งขออนุมัติ</button>
                   </div>
                 )}
                 {!canEditPlan && (
