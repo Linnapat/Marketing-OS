@@ -101,6 +101,21 @@ export interface ContentItem {
    *  are producing for changes; this is the record that backs the banner on the
    *  graphic request. */
   changeLog?: ContentChange[];
+  /** A pending ask to move the publish date of a post Creative has already
+   *  taken on (see dateChangeRequest below). Cleared on decision. */
+  dateChangeRequest?: DateChangeRequest;
+}
+
+export interface DateChangeRequest {
+  toDate: string;   // YYYY-MM-DD
+  toTime: string;   // HH:MM
+  reason: string;
+  by: string;
+  at: string;
+  /** Who was asked — the Creative Leader at the time of asking. */
+  approver?: string;
+  /** The My Tasks row raised for the approver, closed on decision. */
+  taskId?: number;
 }
 
 export interface ContentChange {
@@ -544,3 +559,40 @@ export function postForTask(
   const hit = posts.filter((p) => norm(p.title) === norm(m[1]) && norm(p.campaign) === norm(t.campaign));
   return hit.length === 1 ? hit[0].id : null;
 }
+
+// ── Moving the publish date of a post Creative has taken on ────────────────
+// Once Creative accepts the job the post is locked (contentEditLock) so the
+// brief cannot shift under them. Campaigns and events still move, and the lock
+// used to say "ask Creative to release the job" with no way to ask — so the
+// planner was stuck (CMO, 2026-10-05: "ขอสิทธิ์ให้เจ้าของงานขออนุมัติเลื่อนวันโพสต์").
+// Now the owner asks, Creative Leader / CMO decides, and the date moves only
+// on approval. Pure, so the drawer and the tests read one rule.
+
+/** File the ask. Null when there is nothing to ask (same slot, no reason, or
+ *  an ask already pending). */
+export function requestDateChange(
+  c: ContentItem, to: { date: string; time: string; reason: string }, by: string, approver?: string, taskId?: number,
+): ContentItem | null {
+  const date = (to.date || "").trim(), time = (to.time || "").trim() || c.time || "10:00", reason = (to.reason || "").trim();
+  if (!date || !reason || c.dateChangeRequest) return null;
+  if (date === (c.dateIso ?? "") && time === (c.time || "10:00")) return null;
+  const req: DateChangeRequest = { toDate: date, toTime: time, reason, by, at: new Date().toISOString(), approver, taskId };
+  return withChange({ ...c, dateChangeRequest: req }, by, "ขอเลื่อนวันโพสต์", `${c.dateIso ?? "—"} ${c.time} → ${date} ${time} · ${reason}`);
+}
+
+/** Decide it. Approve moves the post (date, time and the calendar `day`);
+ *  reject and withdraw only clear the ask. Null when nothing is pending. */
+export function decideDateChange(
+  c: ContentItem, decision: "approve" | "reject" | "withdraw", by: string, note = "",
+): ContentItem | null {
+  const req = c.dateChangeRequest;
+  if (!req) return null;
+  const base: ContentItem = { ...c, dateChangeRequest: undefined };
+  if (decision === "approve") {
+    const moved: ContentItem = { ...base, dateIso: req.toDate, day: Number(req.toDate.slice(8, 10)) || c.day, time: req.toTime };
+    return withChange(moved, by, "อนุมัติเลื่อนวันโพสต์", `${c.dateIso ?? "—"} ${c.time} → ${req.toDate} ${req.toTime} · ขอโดย ${req.by}`);
+  }
+  if (decision === "reject") return withChange(base, by, "ไม่อนุมัติเลื่อนวันโพสต์", `${req.toDate} ${req.toTime}${note.trim() ? ` · ${note.trim()}` : ""}`);
+  return withChange(base, by, "ยกเลิกคำขอเลื่อนวันโพสต์", `${req.toDate} ${req.toTime}`);
+}
+
