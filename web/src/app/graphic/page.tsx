@@ -1608,7 +1608,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
     const g: Graphic = {
       ...buildGraphic({
         id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
-        type: item.type, due: labelDate(item.graphicDueDate) || "TBD", dueIso: item.graphicDueDate, designer: "Unassigned",
+        type: item.type, due: labelDate(item.graphicDueDate) || "TBD", dueIso: item.graphicDueDate, reviewDueIso: item.reviewDueDate || undefined, designer: "Unassigned",
         requester, approver: approverName, channels: plats,
         campaignId: selectedCampaign?.id,
         sourceContentItemId: linkedPost?.sourceContentItemId,

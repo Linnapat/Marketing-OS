@@ -74,6 +74,7 @@ function contentItemChanges(a: BriefContentItem, b: BriefContentItem): string[] 
   if (a.title !== b.title) changed.push(`ชื่อ → “${t(b.title)}”`);
   if (a.type !== b.type) changed.push(`type ${a.type} → ${b.type}`);
   if (a.publishDate !== b.publishDate) changed.push(`publish ${a.publishDate || "—"} → ${b.publishDate || "—"}`);
+  if ((a.reviewDueDate || "") !== (b.reviewDueDate || "")) changed.push(`review due ${a.reviewDueDate || "—"} → ${b.reviewDueDate || "—"}`);
   if (a.graphicDueDate !== b.graphicDueDate) changed.push(`graphic due ${a.graphicDueDate || "—"} → ${b.graphicDueDate || "—"}`);
   if (a.platforms.join("|") !== b.platforms.join("|")) changed.push("platforms");
   if (a.requiredGraphic !== b.requiredGraphic) changed.push(b.requiredGraphic ? "ต้องใช้ graphic" : "ไม่ใช้ graphic แล้ว");

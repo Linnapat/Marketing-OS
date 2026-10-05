@@ -169,6 +169,10 @@ export interface BriefContentItem {
   assets: AssetTarget[];    // platform+size pairs (checkbox grid)
   publishDate: string;      // ISO
   graphicDueDate: string;   // ISO — creative delivery deadline, separate from publish
+  /** ISO — when the designer sends the first version in for review. Optional,
+   *  and NOT bound by the lead-time rule: it is the planner telling Creative
+   *  when they need to see something, which on rush work is the whole point. */
+  reviewDueDate?: string;
   requiredGraphic: boolean;
   requiredVideo: boolean;
   priority: string;
@@ -814,6 +818,9 @@ export function validateSubmit(brief: CampaignBrief, branchOptions?: string[], b
     // Only enforceable when the two limits can both hold; see graphicDueRangeImpossible.
     if (c.requiredGraphic && c.graphicDueDate && c.publishDate && c.graphicDueDate > c.publishDate
         && !graphicDueRangeImpossible(c.publishDate)) e.push(`Graphic Due Date for “${tag}” must not be after Publish Date`);
+    const reviewCap = c.graphicDueDate || c.publishDate;
+    if ((c.requiredGraphic || c.requiredVideo) && c.reviewDueDate && reviewCap && c.reviewDueDate > reviewCap)
+      e.push(`เดดไลน์ส่งตรวจงานของ “${tag}” ต้องไม่เกินวันส่ง Final / วันโพสต์`);
     // Reference Brief Link is optional — a real link often isn't known at planning time.
   });
   e.push(...kolPageProblems(brief.kols));
