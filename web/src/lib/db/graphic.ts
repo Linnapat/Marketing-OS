@@ -78,7 +78,12 @@ export async function fetchGraphicsForPost(
     .map((r) => withLiveGraphicOverdue({ ...(r.data as Graphic), createdAt: (r as { created_at?: string }).created_at }));
 }
 
-export async function createGraphic(input: Graphic): Promise<void> {
+/** Returns the request as saved — WITH its job number. Callers must keep this
+ *  copy, not the one they passed in: the page used to put the un-numbered input
+ *  into state, and the next save from that page (accept, storyboard, status)
+ *  wrote the whole blob back and erased the code. 16 live requests lost theirs
+ *  that way (found 2026-10-05: "บางชิ้นงานไม่มี code งานขึ้นมา"). */
+export async function createGraphic(input: Graphic): Promise<Graphic> {
   const db = supabase();
   if (!db) {
     seedMockIds("graphic_requests", GRAPHICS.map((x) => x.id));
@@ -100,6 +105,7 @@ export async function createGraphic(input: Graphic): Promise<void> {
     assertDbOk(error, "Could not save graphic request");
   }
   await syncGraphicAssignmentTask(g);
+  return g;
 }
 
 /** Source content-item ids that already have a graphic for a campaign, mapped
@@ -255,8 +261,17 @@ export async function topUpGraphicBrief(
   if (error) console.warn("topUpGraphicBrief skipped", id, error.message);
 }
 
-export async function updateGraphic(g: Graphic): Promise<void> {
+export async function updateGraphic(input: Graphic): Promise<void> {
   const db = supabase();
+  let g = input;
+  if (db && !g.code) {
+    // The blob is written whole, so a copy held from before the number was
+    // issued (an open tab, a list built before createGraphic returned) would
+    // erase it. A job number is never removed on purpose — keep the stored one.
+    const { data: row } = await db.from("graphic_requests").select("data").eq("data->>id", String(g.id)).maybeSingle();
+    const code = (row?.data as { code?: string } | null)?.code;
+    if (code) g = { ...g, code };
+  }
   if (db) {
     // .select() so a filter matching nothing is caught: accepting a job,
     // submitting a storyboard or handing over footage all write through here,
