@@ -234,7 +234,7 @@ function GraphicPageInner() {
       // Post first: the artwork's job number nests under its post's, so the post
       // has to exist (and be numbered) before the request asks for a number.
       if (post) await createContent(post);
-      await createGraphic(g);
+      const saved = await createGraphic(g);
       // Linking to a post that already exists: stamp the back-reference and
       // flip it off "No Asset", so the Content Plan shows work is on the way.
       if (linkedPost) {
@@ -251,7 +251,8 @@ function GraphicPageInner() {
           `${brandName(g.b)} · ${campaign} · ${g.requester} ขอเร่ง: ${g.rushReason || "ไม่ได้ให้เหตุผล"}`,
           workLink.graphic(g.id), { team: graphicTeam(g), to: rushDeciders });
       }
-      setGraphics((gs) => [g, ...gs]);
+      // The saved copy, which carries the job number — see createGraphic.
+      setGraphics((gs) => [saved, ...gs]);
       setReqOpen(false);
     } catch (error) {
       toastError(`บันทึก Graphic Request ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
