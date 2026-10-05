@@ -91,7 +91,7 @@ export async function resolveApprover(moduleName: string): Promise<string> {
 }
 
 /** Resolve both at once for KOL creation. */
-/** Who writes captions: the Creative Leader.
+/** Who writes captions: the Content Creator, else the Creative Leader.
  *
  *  Captions are Creative's work — the marketer asks for the post and accepts
  *  the words, Creative writes them. The fan-out used to stamp the post's writer
@@ -99,16 +99,18 @@ export async function resolveApprover(moduleName: string): Promise<string> {
  *  self-written: writer, requester and approver one name on 49 live posts, the
  *  self-approval rule barring that person, and nobody else offered the buttons.
  *
- *  The Leader is the landing point, not necessarily the hand that types it —
- *  they hand it on from there (canAssignCaption). "Unassigned" when Settings
- *  names no active Creative Leader, so the slot reads empty rather than being
- *  filled with a guess. */
+ *  The Content Creator is the hand that types it (CMO, 2026-10-05: caption
+ *  revisions were landing on the Creative Leader instead of Ninew, who writes
+ *  them). The Leader is the fallback when no Content Creator is active, and
+ *  can still hand a post on (canAssignCaption). "Unassigned" when Settings
+ *  names neither, so the slot reads empty rather than being filled with a
+ *  guess. */
 export async function resolveCaptionWriter(): Promise<string> {
   const members = await fetchMembers().catch(() => [] as Member[]);
-  const lead = members.find(
-    (m) => (m.status || "").toLowerCase() === "active" && (m.role || "").trim() === "Creative Leader",
-  );
-  return (lead?.name || "").trim() || UNASSIGNED;
+  const active = members.filter((m) => (m.status || "").toLowerCase() === "active");
+  const pick = (role: string) => active.find((m) => (m.role || "").trim() === role);
+  const writer = pick("Content Creator") ?? pick("Creative Leader");
+  return (writer?.name || "").trim() || UNASSIGNED;
 }
 
 export async function resolveKolAssignment(): Promise<{ owner: string; approver: string }> {
