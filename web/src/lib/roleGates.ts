@@ -122,6 +122,16 @@ export function canAssignCaption(role: string): boolean {
  *  team first leaves the intersection empty and the dropdown dead. */
 export const CAPTION_WRITER_ROLES = /^(content creator|creative leader)$/i;
 
+/** Who may be named as the storyboard owner on a video job.
+ *
+ *  The storyboard is drawn by Content Creator / Creative Leader (same CMO rule
+ *  as canRunProductionPipeline). The picker used to be scoped to team
+ *  "Creative", which leaves out Content Creator — memberTeam files that role
+ *  under Planner — so Ninew, the person who actually sends storyboards, was
+ *  missing from the list while VDO editors and agencies were offered instead.
+ *  Use with team="all" for the same reason as CAPTION_WRITER_ROLES. */
+export const STORYBOARD_OWNER_ROLES = /^(content creator|creative leader)$/i;
+
 /**
  * May this person SET UP the production pipeline — pick who draws the
  * storyboard, submit it, decide whether the job needs a shoot, name the

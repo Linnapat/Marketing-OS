@@ -38,7 +38,7 @@ import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief } from "@/lib/db/graphic";
 import { cancelGraphicRequest } from "@/lib/db/briefRetire";
 import { useAuth } from "@/lib/auth";
-import { isCreativeSideRole, canEditContentPlan, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
+import { isCreativeSideRole, canEditContentPlan, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, STORYBOARD_OWNER_ROLES, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
 import { rushBlocksProduction } from "@/lib/data/briefDeadline";
 import { stageAgeDays, ageLevel, AGE_META, isUnowned } from "@/lib/data/ageing";
 import { notify } from "@/lib/notify";
@@ -1020,7 +1020,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                         <OwnerSelect value={g.storyboardOwner ?? ""}
                           onChange={(name) => setShooting({ storyboardOwner: name },
                             name.trim() ? `บันทึกแล้ว — ${name} ทำ storyboard งานนี้` : "ล้างคนทำ storyboard แล้ว")}
-                          team="Creative" placeholder="ยังไม่ระบุ" />
+                          team="all" roleMatch={STORYBOARD_OWNER_ROLES}
+                          emptyLabel="ยังไม่มี Content Creator / Creative Leader ในทีม" placeholder="ยังไม่ระบุ" />
                       ) : (
                         <div className="text-[12.5px] text-ink">{g.storyboardOwner || "ยังไม่ระบุ"}</div>
                       )}
