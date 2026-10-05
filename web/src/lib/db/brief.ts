@@ -242,7 +242,7 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
       const g: Graphic = {
         ...buildGraphic({
           id: gid, b: brief.b, campaign: brief.name, title: `${ci.title || "Content"} — ${ci.type}`,
-          type: ci.type, due: labelDate(ci.graphicDueDate || ci.publishDate) || "TBD", dueIso: ci.graphicDueDate || ci.publishDate, designer: "Unassigned",
+          type: ci.type, due: labelDate(ci.graphicDueDate || ci.publishDate) || "TBD", dueIso: ci.graphicDueDate || ci.publishDate, reviewDueIso: ci.reviewDueDate || undefined, designer: "Unassigned",
           requester: ci.requester, approver: ci.approver, channels: plats,
           campaignId: normalizedBrief.id, sourceContentItemId: ci.id,
         }),

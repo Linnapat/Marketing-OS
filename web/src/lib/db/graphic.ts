@@ -319,13 +319,13 @@ export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentIt
 /** Build a full Graphic from the request form, filling sensible defaults. */
 export function buildGraphic(input: {
   id: number; b: BrandId; campaign: string; title: string; type: string;
-  due: string; dueIso?: string; designer: string; requester: string; approver: string; channels: string[];
+  due: string; dueIso?: string; reviewDueIso?: string; designer: string; requester: string; approver: string; channels: string[];
   campaignId?: string; sourceContentItemId?: string;
 }): Graphic {
   return {
     id: input.id, stage: "Brief", title: input.title || "New request", b: input.b, campaign: input.campaign,
     campaignId: input.campaignId, sourceContentItemId: input.sourceContentItemId,
-    due: input.due || "TBD", dueIso: input.dueIso, designer: input.designer || "Unassigned", requester: input.requester || "You",
+    due: input.due || "TBD", dueIso: input.dueIso, reviewDueIso: input.reviewDueIso, designer: input.designer || "Unassigned", requester: input.requester || "You",
     // Approver falls back to the requester (a real person in the flow) — never a
     // name that doesn't exist in Settings › Users & Roles.
     approver: input.approver || input.requester || "Unassigned", type: input.type, priority: "Med", fb: 0, openFb: 0,

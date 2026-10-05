@@ -29,6 +29,10 @@ export interface Graphic {
   campaign: string;
   due: string;
   dueIso?: string;
+  /** When the first version must be in for review (CMO, 2026-10-05). The
+   *  designer's deadline — `due` stays the final-artwork date the post plan and
+   *  the overdue count are built on. */
+  reviewDueIso?: string;
   designer: string;
   requester: string;
   approver: string;
@@ -404,8 +408,10 @@ export function graphicAssignmentTasks(g: Graphic): Task[] {
     type: "Graphic",
     assignee: designer,
     status: "Todo",
-    due: g.due || "TBD",
-    dueIso: g.dueIso,
+    // The designer's own deadline is the review date when the brief gives one —
+    // that is when someone is waiting to look at their work.
+    due: (g.reviewDueIso && dueLabel(g.reviewDueIso)) || g.due || "TBD",
+    dueIso: g.reviewDueIso || g.dueIso,
     pendingApprover: g.requester || null,
     // What the artwork is ACTUALLY waiting for. It always read "<designer> to
     // start design", even on a reel whose footage had not been shot yet — so

@@ -438,6 +438,22 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
     });
   };
 
+  // The review deadline — when the designer sends the first version in. Set by
+  // whoever asked for the work, or by Creative Leader / CMO, who run the queue.
+  // Deliberately outside the brief lock and the lead-time rule: on a rush job
+  // this date is the one thing that still has to move ("ไม่สามารถแก้วัน Dead
+  // Line ได้ค่ะ", 29 ก.ย. 69), and it never touches the publish date.
+  const canSetReviewDue = isRequester || canApproveRush;
+  const saveReviewDue = (iso: string) => {
+    if (!canSetReviewDue || (g.reviewDueIso || "") === iso) return;
+    const said = iso ? `เดดไลน์ส่งตรวจ → ${iso}` : "ล้างเดดไลน์ส่งตรวจ";
+    saveGraphic(withNotice({ ...g, reviewDueIso: iso || undefined }, currentUser, said), "บันทึกเดดไลน์ส่งตรวจไม่สำเร็จ");
+    toastSuccess(iso ? `ตั้งเดดไลน์ส่งตรวจ ${iso} แล้ว` : "ล้างเดดไลน์ส่งตรวจแล้ว");
+    const worker = briefChangeAudience(g);
+    notify("feedback", `📅 เดดไลน์ส่งตรวจ: ${g.title}`, `${said} · โดย ${currentUser}`,
+      workLink.graphic(g.id), { team: graphicTeam(g), to: [worker], inform: [g.requester] });
+  };
+
   const acceptWork = () => {
     const next: Graphic = {
       ...g,
@@ -780,6 +796,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full" style={{ background: brandColor(g.b) }} />{brandName(g.b)}</span>
               <span className="text-faint">·</span><span>{g.type}</span>
               <span className="text-faint">·</span><span>Due {g.due}</span>
+              <span className="text-faint">·</span>
+              <ReviewDueControl g={g} canEdit={canSetReviewDue} onSave={saveReviewDue} />
             </div>
           </div>
           <button onClick={onClose} className="text-faint hover:text-ink flex-shrink-0"><X size={18} /></button>
@@ -2161,3 +2179,34 @@ function DeliverablesEditor({ g, me, role, isRequester, creativeLeader, onUpdate
     </div>
   );
 }
+
+/** "ส่งตรวจ <date>" in the header, editable in place for those who may set it.
+ *  A plain date input: the shared DatePicker enforces the brief's lead-time
+ *  floor, which is exactly the rule this date must not be bound by. */
+function ReviewDueControl({ g, canEdit, onSave }: {
+  g: Graphic; canEdit: boolean; onSave: (iso: string) => void;
+}) {
+  const iso = g.reviewDueIso || "";
+  // Held locally and saved on blur / Enter: a typed date passes through
+  // half-years ("0002-…") on its way, and each one would otherwise be a save
+  // and a notification to the designer.
+  const [draft, setDraft] = useState(iso);
+  useEffect(() => { setDraft(iso); }, [iso]);
+  const commit = () => { if (draft !== iso && (!draft || /^\d{4}-\d{2}-\d{2}$/.test(draft) && draft >= "2000")) onSave(draft); };
+  const late = !!draft && !!g.dueIso && draft > g.dueIso;
+  if (!canEdit) {
+    return iso
+      ? <span className="font-semibold" style={{ color: "#6C5CE7" }}>ส่งตรวจ {iso}</span>
+      : <span className="text-faint">ยังไม่กำหนดวันส่งตรวจ</span>;
+  }
+  return (
+    <label className="flex items-center gap-[5px] font-semibold" style={{ color: late ? "#B33A2E" : "#6C5CE7" }}
+      title={late ? "หลังวันส่ง Final — ตรวจอีกครั้ง" : "วันที่ designer ต้องส่งงานรอบแรกให้ตรวจ · ไม่กระทบวันโพสต์"}>
+      ส่งตรวจ
+      <input type="date" value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
+        className="text-[12px] px-[6px] py-[2px] rounded-[6px] border border-line2 bg-white outline-none" />
+    </label>
+  );
+}
+

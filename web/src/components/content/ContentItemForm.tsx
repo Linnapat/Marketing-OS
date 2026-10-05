@@ -82,6 +82,22 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showGraphicFields, needsArtwork, finalDue.fixed, finalDue.iso, item.graphicDueDate]);
 
+  // When Creative must send the first version in. Graphic AND video — a video
+  // brief used to carry nothing but the publish date. Optional, no lead-time
+  // floor (rush work is exactly when this matters), capped at the final date.
+  const reviewCap = item.graphicDueDate || item.publishDate || undefined;
+  const reviewLate = !!item.reviewDueDate && !!reviewCap && item.reviewDueDate > reviewCap;
+  const reviewDueField = showGraphicFields && needsArtwork ? (
+    <div>
+      <label className={label}>เดดไลน์ส่งตรวจงาน <span className="text-faint font-normal">· ส่งถึง designer</span></label>
+      <DatePicker value={item.reviewDueDate || null} onChange={(v) => onChange({ reviewDueDate: v })}
+        max={reviewCap} invalid={reviewLate} />
+      <div className="mt-1 text-[11px]" style={{ color: reviewLate ? "#B33A2E" : "#9A9387" }}>
+        {reviewLate ? "ต้องไม่เกินวันส่ง Final / วันโพสต์" : "วันที่อยากเห็นงานรอบแรก · ไม่ใส่ = ใช้วันส่ง Final"}
+      </div>
+    </div>
+  ) : null;
+
   const graphicDueField = showGraphicFields && item.requiredGraphic ? (
     <div>
       <label className={label}>
@@ -148,6 +164,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
       <div><label className={label}>Content Type</label><Combobox value={item.type} onChange={(v) => onChange({ type: v })} options={[...CONTENT_TYPES]} inputClassName={field} placeholder="พิมพ์เพื่อค้นหา เช่น Reel, Poster…" emptyLabel="ไม่พบ content type ที่ตรงกับที่พิมพ์" /></div>
       {requestDate ? (
         <div className={`md:col-span-2 grid gap-3 ${onPublishTimeChange ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          {reviewDueField}
           {graphicDueField}
           <div>
             <label className={label}>Publish Date</label>
@@ -162,6 +179,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         </div>
       ) : (
         <>
+          {reviewDueField}
           {graphicDueField}
           <div><label className={label}>Publish Date</label><DatePicker value={item.publishDate || null} onChange={(v) => onChange({ publishDate: v })} invalid={!!outOfRange?.(item.publishDate)} /></div>
         </>
