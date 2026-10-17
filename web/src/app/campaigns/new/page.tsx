@@ -13,7 +13,7 @@ import { MultiSelectDropdown } from "@/components/ui/MultiSelectDropdown";
 import { ContentItemForm } from "@/components/content/ContentItemForm";
 import { KolItemForm } from "@/components/kol/KolItemForm";
 import { useAuth } from "@/lib/auth";
-import { useRole } from "@/lib/role";
+import { useRole, type Role } from "@/lib/role";
 import { useCanCreateCampaign } from "@/lib/usePermGates";
 import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -131,6 +131,8 @@ function monthlyBudgetContext(brief: CampaignBrief, savedBriefs: CampaignBrief[]
     return { month: monthKey, plBudget, committed, thisCampaign, remaining, usedPct };
   });
 }
+
+const SHEET_IMPORT_ROLES: readonly Role[] = ["CMO", "Marketing Manager / BGL", "Marketing Executive"];
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -626,9 +628,9 @@ export default function NewCampaignPage() {
       <div className="mt-5 max-w-[900px]">
         {step === 0 && (
           <>
-            {/* Sheet import is CMO-only by request: planners build briefs in the
-                form; the bulk-import path stays with the person who approves them. */}
-            {role === "CMO" && (
+            {/* Sheet import: CMO plus the brand planners (MM/BGL, Marketing
+                Executive) by request — everyone else builds briefs in the form. */}
+            {SHEET_IMPORT_ROLES.includes(role) && (
               <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} />
             )}
             <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} branchOptions={branchOptions} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
