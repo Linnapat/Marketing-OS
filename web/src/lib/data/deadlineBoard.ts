@@ -16,10 +16,18 @@
  */
 
 import { MilestoneDeadline, MilestoneKey } from "@/lib/data/deadlinePolicy";
+import { briefDeadlineFor } from "@/lib/data/briefDeadline";
 
 export type DeadlineState = "overdue" | "today" | "soon" | "ahead";
 
-export interface DeadlineRow extends MilestoneDeadline {
+/** Every deadline the board and the reminders know about: the calendar's
+ *  milestones, plus the final brief cutoff, which is not a calendar row. */
+export type DeadlineKey = MilestoneKey | "finalBrief";
+
+/** A deadline as the board holds it — a calendar milestone or the brief cutoff. */
+export type BoardDeadline = Omit<MilestoneDeadline, "key"> & { key: DeadlineKey };
+
+export interface DeadlineRow extends BoardDeadline {
   /** Whole days from today to the deadline. Negative once it has passed. */
   daysLeft: number;
   state: DeadlineState;
@@ -79,10 +87,10 @@ export function shiftMonth(month: string, n: number): string {
  *  early date make sense rather than look wrong. */
 export function deadlinesLandingIn(
   month: string,
-  resolve: (forMonth: string) => MilestoneDeadline[],
-): MilestoneDeadline[] {
+  resolve: (forMonth: string) => BoardDeadline[],
+): BoardDeadline[] {
   const seen = new Set<string>();
-  const out: MilestoneDeadline[] = [];
+  const out: BoardDeadline[] = [];
   for (let n = 0; n <= LOOKAHEAD_MONTHS; n++) {
     for (const d of resolve(shiftMonth(month, n))) {
       if (!d.iso.startsWith(month)) continue;
@@ -95,10 +103,42 @@ export function deadlinesLandingIn(
   return out.sort((a, b) => a.iso.localeCompare(b.iso));
 }
 
+/** The last day to brief Graphic / VDO for `forMonth`'s work.
+ *
+ *  Not a calendar row: it is the monthly cutoff the CMO sets on the Graphic
+ *  page (`brief_cutoff_day`), the same rule the brief form enforces through
+ *  rushBreaches — so the reminder and the form cannot name different days.
+ *  null when the rule is switched off (0). */
+export function finalBriefDeadline(forMonth: string, cutoffDay: number): BoardDeadline | null {
+  const iso = briefDeadlineFor(`${forMonth}-01`, cutoffDay);
+  if (!iso) return null;
+  return {
+    key: "finalBrief",
+    label: "Final Brief",
+    governs: "ส่ง Final Brief งาน Graphic / VDO ให้ Creative",
+    iso,
+    day: Number(iso.slice(8, 10)),
+    fromMonth: iso.slice(0, 7),
+    forMonth,
+  };
+}
+
+/** The calendar's milestones for a month plus its final brief cutoff — what
+ *  both the board and the nightly reminder resolve. */
+export function withFinalBrief(
+  resolve: (forMonth: string) => MilestoneDeadline[],
+  cutoffDay: number,
+): (forMonth: string) => BoardDeadline[] {
+  return (forMonth) => {
+    const brief = finalBriefDeadline(forMonth, cutoffDay);
+    return brief ? [...resolve(forMonth), brief] : resolve(forMonth);
+  };
+}
+
 /** The board: every milestone the calendar states for this month, earliest
  *  first, each with how long is left. Rows whose date cannot be parsed are
  *  dropped — a deadline the board cannot place is one it must not announce. */
-export function deadlineBoard(list: MilestoneDeadline[], todayIso: string): DeadlineRow[] {
+export function deadlineBoard(list: BoardDeadline[], todayIso: string): DeadlineRow[] {
   return list
     .map((m) => {
       const daysLeft = daysBetween(todayIso, m.iso);
@@ -145,13 +185,19 @@ export interface MilestoneRoute {
   roles: string[];
 }
 
-export const MILESTONE_ROUTE: Record<MilestoneKey, MilestoneRoute> = {
+export const MILESTONE_ROUTE: Record<DeadlineKey, MilestoneRoute> = {
   campaignBrief: { rooms: [], roles: ["Marketing Manager / BGL", "Marketing Executive"] },
   contentPlan: { rooms: ["content"], roles: [] },
   storyboard: { rooms: ["content"], roles: [] },
-  // Final artwork is the deadline both production teams work back from.
-  finalAw: { rooms: ["graphic", "vdo"], roles: [] },
+  // The graphic and VDO rooms are reminded of the final brief, not the final
+  // artwork (CMO, Oct 2026): the cutoff is the date that decides whether next
+  // month's work gets planned. Final AW stays on the board, but nobody is pinged.
+  finalAw: { rooms: [], roles: [] },
+  finalBrief: { rooms: ["graphic", "vdo"], roles: [] },
 };
+
+/** Deadlines shown on the board on purpose without a Slack reminder. */
+export const BOARD_ONLY: DeadlineKey[] = ["finalAw"];
 
 /** One reminder line, in the words the team uses for the milestone. */
 export function reminderText(row: DeadlineRow): string {
