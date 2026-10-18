@@ -3,9 +3,9 @@
 
 import { supabase } from "@/lib/supabase";
 import { graphicsBySourceItem, type AdoptablePost } from "@/lib/data/fanoutAdopt";
-import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, findLinkedGraphics, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
+import { GRAPHICS, Graphic, withLiveGraphicOverdue, deliverableProgress, findLinkedPost, postDraftForGraphic, needsContentPost, findLinkedGraphics, RequesterBriefField, consumeBriefUnlock, graphicAssignmentTasks } from "@/lib/data/graphic";
 import { BrandId } from "@/lib/brands";
-import { fetchContent, updateContent } from "./content";
+import { fetchContent, updateContent, createContent, fetchCampaignContentPosts } from "./content";
 import { attachApprovedAssets, ContentItem } from "@/lib/data/content";
 import { upsertGraphicTask } from "./tasks";
 import { assertDbOk, assertRowsTouched } from "@/lib/db/assert";
@@ -314,6 +314,35 @@ export async function syncApprovedAssetsToContent(g: Graphic): Promise<ContentIt
   const next = attachApprovedAssets(post, assets);
   await updateContent(next);
   return next;
+}
+
+/** The posts a request could be linked to — its campaign's, or the whole plan
+ *  for a legacy request that carries no campaign id. */
+async function candidatePosts(g: Graphic): Promise<ContentItem[]> {
+  // Demo mode has no campaign query — the mock plan is the whole list.
+  return supabase() && g.campaignId ? fetchCampaignContentPosts(g.campaignId) : fetchContent();
+}
+
+/** Does this request's artwork have no Content Plan post to land on? */
+export async function graphicLacksPost(g: Graphic): Promise<boolean> {
+  return needsContentPost(g, await candidatePosts(g));
+}
+
+/** Make the missing post for a request, link both ends, and attach whatever
+ *  artwork is already approved — so an orphaned request becomes a post the
+ *  team can write a caption for and publish. Refuses when a post already
+ *  resolves to the request: a second one would split the work. */
+export async function createPostForGraphic(
+  g: Graphic, dateIso: string, time: string, by: string,
+): Promise<{ graphic: Graphic; post: ContentItem }> {
+  if (!(await graphicLacksPost(g))) throw new Error("ใบงานนี้มีโพสต์ใน Content Plan อยู่แล้ว");
+  const draft = postDraftForGraphic(g, dateIso, time, `c${Date.now()}-gfx`, by);
+  if (!draft) throw new Error("เลือกวันโพสต์ก่อน");
+  const created = await createContent(draft);
+  const linked: Graphic = { ...g, contentPostId: created.id };
+  await updateGraphic(linked);
+  const withAssets = await syncApprovedAssetsToContent(linked);
+  return { graphic: linked, post: withAssets ?? created };
 }
 
 /** Build a full Graphic from the request form, filling sensible defaults. */

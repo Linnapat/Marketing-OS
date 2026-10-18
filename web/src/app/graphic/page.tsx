@@ -20,7 +20,7 @@ import {
   GRAPHIC_BRIEF_FOR_PARAM,
   GRAPHIC_OPEN_PARAM,
   resolveOpenTarget, isGraphicFinished,
-  assignedShoots, withShootMoved, withShooterAssigned, type AssignedShoot,
+  assignedShoots, withShootMoved, withShooterAssigned, type AssignedShoot, approvedAssetNotice,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -281,13 +281,16 @@ function GraphicPageInner() {
     updateGraphic(ng)
       .then(() => {
         if (ng.stage === "Approved") {
-          syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติแล้ว แต่ sync asset เข้า Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
           void fileApprovedAsset(ng);
-          notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${ng.title}`, // The message is about the asset landing on its post, so open that post
-          // when the request is linked to one; the request's own drawer otherwise.
-          `โดย ${me} — แนบ asset เข้า Content Calendar ให้แล้ว`,
-            ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id),
-            { team: workKind(ng.type, ng.requiredVideo).startsWith("vdo") ? "vdo" : "graphic" });
+          syncApprovedAssetsToContent(ng)
+            .then((post) => {
+              // Say where the artwork actually went — see approvedAssetNotice.
+              const { detail, where } = approvedAssetNotice(ng, post?.id ?? null);
+              notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${ng.title}`, `โดย ${me} — ${detail}`,
+                where === "post" && post ? workLink.post(post.id) : workLink.graphic(ng.id),
+                { team: workKind(ng.type, ng.requiredVideo).startsWith("vdo") ? "vdo" : "graphic" });
+            })
+            .catch((error) => toastError(`อนุมัติแล้ว แต่ sync asset เข้า Content ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
         }
       })
       .catch((error) => toastError(`Approve ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
