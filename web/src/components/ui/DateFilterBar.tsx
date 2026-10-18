@@ -25,6 +25,19 @@ export const DEFAULT_DATE_FILTER: DateFilter = {
   end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
 };
 
+/** The month we are in, read when called. DEFAULT_DATE_FILTER is computed once
+ *  when the module loads, so a tab left open across a month end keeps offering
+ *  the old month as "this month" until it is reloaded. */
+export function currentMonthFilter(at: Date = new Date()): DateFilter {
+  return {
+    mode: "month",
+    month: at.getMonth(),
+    year: at.getFullYear(),
+    start: new Date(at.getFullYear(), at.getMonth(), 1).toISOString().slice(0, 10),
+    end: new Date(at.getFullYear(), at.getMonth() + 1, 0).toISOString().slice(0, 10),
+  };
+}
+
 const CURRENT_YEAR_FILTER: DateFilter = {
   mode: "year",
   month: now.getMonth(),
@@ -253,7 +266,7 @@ export function DateFilterBar({
         </>
       )}
       <button
-        onClick={() => set(f.mode === "year" ? CURRENT_YEAR_FILTER : DEFAULT_DATE_FILTER)}
+        onClick={() => set(f.mode === "year" ? { ...CURRENT_YEAR_FILTER, year: new Date().getFullYear() } : currentMonthFilter())}
         className="text-[11px] font-bold text-muted border border-line2 rounded-[8px] px-2.5 py-[5px] bg-white whitespace-nowrap"
       >
         This {f.mode === "year" ? "year" : "month"}
