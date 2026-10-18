@@ -9,6 +9,7 @@ import { CAMPAIGNS } from "@/lib/data/campaigns";
 import { liveOnly, moveToTrash, trashReady } from "@/lib/db/trash";
 import { assertMockUniqueId, releaseMockId, seedMockIds } from "@/lib/db/mockGuard";
 import { issueContentCode } from "@/lib/db/workCode";
+import { resolveCaptionWriter, UNASSIGNED } from "@/lib/db/assignments";
 import { fetchAllRows } from "@/lib/db/fetchAll";
 
 const campById = Object.fromEntries(CAMPAIGNS.map((c) => [c.name, c.id]));
@@ -49,7 +50,18 @@ export async function createContent(input: ContentItem): Promise<ContentItem> {
   }
   // Numbered here rather than in each form, so a post gets the same job number
   // whether it came from Submit, the plan modal or a graphic link.
-  const post: ContentItem = input.code ? input : { ...input, code: await issueContentCode(input.campaignId) };
+  const numbered: ContentItem = input.code ? input : { ...input, code: await issueContentCode(input.campaignId) };
+  // The caption writer is stamped here for the same reason: every create path
+  // used to pick its own. The brief fan-out asked resolveCaptionWriter, but the
+  // Content Plan "new post" form wrote `owner: me` and the Graphic page and
+  // campaign hub wrote the requester or campaign owner — so 6 of 8 posts made
+  // by hand after 5 Oct 2026 named Pichayaporn/Pupay/narawich as the writer,
+  // Peach re-assigned each to Ninew by hand, and every caption sent back before
+  // she did reached Peach instead (CMO, 2026-10-15: "แคปชั่นทุกคอนเทนต์ขอ
+  // มอบหมายให้ Ninew เขียน"). Re-assigning afterwards is still the Creative
+  // Leader's call (canAssignCaption); only the starting name is fixed here.
+  const writer = await resolveCaptionWriter();
+  const post: ContentItem = writer && writer !== UNASSIGNED ? { ...numbered, owner: writer } : numbered;
   const { data, error } = await db.from("content_posts").insert({
     title: post.title, brand: post.b, campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,
     platforms: post.platforms ?? [post.plat], status: post.status, day: post.day, time: post.time,
