@@ -7,7 +7,8 @@ import { Tone } from "@/lib/status";
 import { RushStatus } from "@/lib/data/briefDeadline";
 import { Task } from "@/lib/data/tasks";
 // todayIso only — data/brief imports nothing from here, so this cannot cycle.
-import { todayIso } from "@/lib/data/brief";
+import { todayIso, onlinePlatforms } from "@/lib/data/brief";
+import type { ContentItem } from "@/lib/data/content";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 import { sameName } from "@/lib/identity";
 import { stamp } from "@/lib/format";
@@ -1964,6 +1965,62 @@ function sameCampaign(post: LinkablePost, g: Graphic): boolean {
 /** The only match, or null when there is none or more than one. */
 function only<T>(matches: T[]): T | null {
   return matches.length === 1 ? matches[0] : null;
+}
+
+/** The online platforms a request's artwork is for — the ones a Content Plan
+ *  post publishes to. Empty for POSM / print work, which serves no post. */
+export function graphicPostPlatforms(g: Pick<Graphic, "platform">): string[] {
+  const listed = (g.platform || "").split(",").map((p) => p.trim()).filter((p) => p && p !== "—");
+  return onlinePlatforms(listed);
+}
+
+/** Artwork for a post that does not exist: online platforms, and no post in
+ *  the list resolves to it. This is how approved artwork ended up attached to
+ *  nothing — the brief row it served was removed, the request lived on, and
+ *  the approval still announced "แนบ asset เข้า Content Calendar ให้แล้ว"
+ *  (Kani Salmon VS Kani Ebi, Oct 2026). */
+export function needsContentPost(g: Graphic, posts: LinkablePost[]): boolean {
+  return graphicPostPlatforms(g).length > 0 && !findLinkedPost(g, posts);
+}
+
+/** What the "approved everything" message says about where the artwork went.
+ *  It always read "แนบ asset เข้า Content Calendar ให้แล้ว" — including when the
+ *  post had been removed from the brief, so the team went looking for a post
+ *  that was not there. `attachedTo` is the post the sync actually wrote, or null. */
+export function approvedAssetNotice(
+  g: Pick<Graphic, "platform">, attachedTo: string | null,
+): { detail: string; where: "post" | "graphic" } {
+  if (attachedTo) return { detail: "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish", where: "post" };
+  if (graphicPostPlatforms(g).length) {
+    return { detail: "⚠️ ยังไม่มีโพสต์ใน Content Plan ให้แนบ — เปิดใบงาน แท็บ Assets แล้วกด \"สร้างโพสต์ใน Content Plan\" เพื่อตั้งโพสต์และแคปชั่น", where: "graphic" };
+  }
+  return { detail: "เก็บเข้า Asset Library แล้ว", where: "graphic" };
+}
+
+/** A Content Plan post for a request that has none.
+ *
+ *  The publish date is the planner's to give — never the artwork's due date,
+ *  and never the calendar's Final AW: a post's date is when it goes out, which
+ *  nothing on the request knows. Both ends of the link are stamped by the
+ *  caller (graphicRequestId here, contentPostId on the request), and the
+ *  caption writer is set by createContent like every other new post. */
+export function postDraftForGraphic(
+  g: Graphic, dateIso: string, time: string, id: string, by: string,
+): ContentItem | null {
+  const platforms = graphicPostPlatforms(g);
+  const day = Number(dateIso.slice(8, 10));
+  if (!platforms.length || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso) || !day) return null;
+  return {
+    id, day, dateIso, time: time || "10:00",
+    title: (g.contentItem && g.contentItem !== "—" ? g.contentItem : g.title).trim(),
+    b: g.b, plat: platforms[0], platforms, status: "Draft",
+    campaign: g.campaign, campaignId: g.campaignId, sourceContentItemId: g.sourceContentItemId,
+    owner: "", requester: g.requester, designer: g.designer, approver: g.approver,
+    caption: "", hashtags: "", cta: "", captionStatus: "Missing",
+    assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
+    graphicRequestId: String(g.id), createdAt: new Date().toISOString(),
+    changeLog: [{ at: new Date().toISOString(), by, action: "สร้างโพสต์จากใบงาน", detail: `${g.title} (#${g.id})` }],
+  };
 }
 
 export function findLinkedPost(g: Graphic, posts: LinkablePost[]): LinkablePost | null {

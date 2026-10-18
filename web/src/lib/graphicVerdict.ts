@@ -19,7 +19,7 @@ import {
   Graphic, GraphicDeliverable, ReviewLens, LENS_META,
   applyLensVerdict, deliverableProgress, stageFromDeliverables, assignedBy,
   reviewProgress, feedbackOwners, revisionTaskTitle, lensAskWho, lensesFor, workKind,
-  storyboardAuthor,
+  storyboardAuthor, approvedAssetNotice,
 } from "@/lib/data/graphic";
 import { updateGraphic, syncApprovedAssetsToContent } from "@/lib/db/graphic";
 import { fileApprovedAsset } from "@/lib/db/assets";
@@ -52,15 +52,18 @@ export function persistGraphicDeliverables(
     .catch((error) => toastError(`บันทึกงาน Graphic ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   // Fully approved → push approved asset links onto the linked content post.
   if (ready) {
-    syncApprovedAssetsToContent(ng).catch((error) => toastError(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     // …and into the Asset Library. Separate from the Content sync on purpose:
     // POSM, posters and menu artwork serve no post, so that sync returns early
     // for them and they used to finish nowhere.
     void fileApprovedAsset(ng);
-    if (announce) {
-      notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${previous.title}`, "แนบ asset เข้า Content Calendar ให้แล้ว — พร้อม publish",
-        ng.contentPostId ? workLink.post(ng.contentPostId) : workLink.graphic(ng.id), { team: graphicTeam(previous) });
-    }
+    syncApprovedAssetsToContent(ng)
+      .then((post) => {
+        if (!announce) return;
+        const { detail, where } = approvedAssetNotice(ng, post?.id ?? null);
+        const link = where === "post" && post ? workLink.post(post.id) : workLink.graphic(ng.id);
+        notify("approved", `✅ งานกราฟฟิกอนุมัติครบทุกชิ้น: ${previous.title}`, detail, link, { team: graphicTeam(previous) });
+      })
+      .catch((error) => toastError(`อนุมัติครบแล้ว แต่ sync asset เข้า Content Calendar ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
   }
   return ng;
 }

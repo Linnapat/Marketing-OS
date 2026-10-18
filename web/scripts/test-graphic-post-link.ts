@@ -8,7 +8,7 @@
  * has "ci-1" in 13 campaigns at once and 488 cross-campaign id collisions.
  * Run: node --import tsx scripts/test-graphic-post-link.ts */
 
-import { findLinkedPost, findLinkedGraphics, resolveOpenTarget, pickBriefPatch, REQUESTER_EDITABLE_BRIEF_FIELDS, shootingDecision, footageReady, LinkablePost, Graphic } from "../src/lib/data/graphic";
+import { findLinkedPost, findLinkedGraphics, needsContentPost, postDraftForGraphic, approvedAssetNotice, graphicPostPlatforms, resolveOpenTarget, pickBriefPatch, REQUESTER_EDITABLE_BRIEF_FIELDS, shootingDecision, footageReady, LinkablePost, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -240,6 +240,38 @@ console.log("\n— โพสต์ที่บรีฟสร้างให้�
   // โพสต์ที่ยังไม่เคยตั้งบรีฟ = ไม่เจอ (ต้องขึ้นปุ่ม "ขอกราฟฟิก" ตามเดิม)
   is("โพสต์ที่ยังไม่มีใบงาน = ไม่เจอ",
     findLinkedGraphics({ id: "c-new" }, [oneWay, twoWay]).length, 0);
+}
+
+console.log("\n— งานที่ไม่มีโพสต์ให้ลง (Kani Salmon VS Kani Ebi, ต.ค. 69) —");
+{
+  // ใบงานจริงบน prod: ผูกกับ ci-2 ของ Kani Seasonal แต่ ci-2 ถูกลบออกจากบรีฟไปแล้ว
+  const kani = g({ id: 70, title: "Kani Salmon VS Kani Ebi — Carousel", contentItem: "Kani Salmon VS Kani Ebi",
+    campaign: "Kani Seasonal", campaignId: "CAM-2026-4856", sourceContentItemId: "ci-2",
+    platform: "Facebook, Instagram", dueIso: "2026-09-01" });
+  const others = [
+    p({ id: "c17844518991280", campaign: "Kani Seasonal", campaignId: "CAM-2026-4856", sourceContentItemId: "ci-1", title: "Kani seasonal Launch" }),
+    p({ id: "c17844518991282", campaign: "Kani Seasonal", campaignId: "CAM-2026-4856", sourceContentItemId: "ci-3", title: "Kani Last Chance" }),
+  ];
+  is("ไม่มีโพสต์ไหนชี้มา → ต้องสร้างโพสต์", needsContentPost(kani, others), true);
+  is("มีโพสต์ชี้กลับมาแล้ว → ไม่ต้อง", needsContentPost(kani, [...others, p({ id: "c-x", campaignId: "CAM-2026-4856", graphicRequestId: "70" })]), false);
+  is("งาน POSM / In-store ไม่ต้องมีโพสต์", needsContentPost(g({ platform: "In-store" }), []), false);
+  is("platform ว่าง = ไม่มีที่โพสต์", graphicPostPlatforms(g({ platform: "—" })).length, 0);
+
+  const post = postDraftForGraphic(kani, "2026-10-24", "11:00", "c-new-gfx", "Gik");
+  is("วันโพสต์ = วันที่เลือก ไม่ใช่วันส่ง artwork", post?.dateIso, "2026-10-24");
+  is("…และ day ตรงกัน", post?.day, 24);
+  is("ชื่อโพสต์ใช้ชื่อ content item", post?.title, "Kani Salmon VS Kani Ebi");
+  is("ลงเฉพาะแพลตฟอร์มออนไลน์", post?.platforms?.join(","), "Facebook,Instagram");
+  is("ผูกกลับมาที่ใบงาน", post?.graphicRequestId, "70");
+  is("อยู่แคมเปญเดิม", post?.campaignId, "CAM-2026-4856");
+  is("แคปชั่นเริ่มที่ Missing", post?.captionStatus, "Missing");
+  is("ไม่มีวันโพสต์ = ไม่สร้าง", postDraftForGraphic(kani, "", "10:00", "c-new", "Gik"), null);
+  is("POSM ไม่สร้างโพสต์", postDraftForGraphic(g({ platform: "In-store" }), "2026-10-24", "10:00", "c-new", "Gik"), null);
+
+  is("แนบได้จริง → บอกว่าแนบแล้ว", approvedAssetNotice(kani, "c-1").where, "post");
+  is("ไม่มีโพสต์ → ไม่อ้างว่าแนบแล้ว", approvedAssetNotice(kani, null).detail.includes("ยังไม่มีโพสต์"), true);
+  is("…และพาไปที่ใบงาน", approvedAssetNotice(kani, null).where, "graphic");
+  is("POSM → เก็บเข้า Asset Library", approvedAssetNotice(g({ platform: "In-store" }), null).detail, "เก็บเข้า Asset Library แล้ว");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

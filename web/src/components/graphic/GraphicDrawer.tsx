@@ -35,7 +35,7 @@ import { brandName, brandColor } from "@/lib/brands";
 import { stamp } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
-import { updateGraphic, patchGraphicBrief } from "@/lib/db/graphic";
+import { updateGraphic, patchGraphicBrief, graphicLacksPost, createPostForGraphic } from "@/lib/db/graphic";
 import { cancelGraphicRequest } from "@/lib/db/briefRetire";
 import { useAuth } from "@/lib/auth";
 import { isCreativeSideRole, canEditContentPlan, canApproveRushBrief, canAssignDesigner, canRunProductionPipeline, STORYBOARD_OWNER_ROLES, canRelocateApprovedAsset, roleHolders, leadFirst, creativeTeamLeadEmail } from "@/lib/roleGates";
@@ -1437,6 +1437,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           {tab === "assets" && (
             <div className="flex flex-col gap-3">
               <CaptionBesideArtwork post={linkedPost} />
+              <MissingPostCard g={g} me={currentUser} canCreate={canEditContentPlan(role)}
+                onCreated={(ng, post) => { updateCurrentGraphic(ng); setLinkedPost(post); }} />
               <DeliverablesEditor g={g} me={currentUser} role={role} isRequester={isRequester} creativeLeader={creativeLeader} onUpdate={updateCurrentGraphic} />
             </div>
           )}
@@ -1802,6 +1804,69 @@ function BriefEditor({ g, me, onSaved, onCancel }: {
         <button onClick={onCancel} disabled={saving} className="text-[12px] font-bold text-muted px-3 py-[7px]">ยกเลิก</button>
         <span className="text-[10.5px] text-faint ml-auto">บันทึกเฉพาะช่องที่แก้ · ไม่ทับงานคนอื่น</span>
       </div>
+    </div>
+  );
+}
+
+/** Artwork with no Content Plan post to land on — say so, and let a planner
+ *  make the post right here instead of hunting for a row that is not there.
+ *
+ *  Happens when the brief row a request served is removed but the request is
+ *  kept (Kani Salmon VS Kani Ebi, Oct 2026): approved, "attached", and nowhere
+ *  on the plan to write its caption. The publish date is asked for, never
+ *  derived — the artwork's due date and the calendar's Final AW are not when a
+ *  post goes out. */
+function MissingPostCard({ g, me, canCreate, onCreated }: {
+  g: Graphic; me: string; canCreate: boolean;
+  onCreated: (g: Graphic, post: ContentItem) => void;
+}) {
+  const [missing, setMissing] = useState(false);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("10:00");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    graphicLacksPost(g).then((v) => { if (alive) setMissing(v); }).catch(() => {});
+    return () => { alive = false; };
+  }, [g]);
+  if (!missing) return null;
+  const create = async () => {
+    if (!date || busy) return;
+    setBusy(true);
+    try {
+      const { graphic, post } = await createPostForGraphic(g, date, time, me);
+      setMissing(false);
+      onCreated(graphic, post);
+      toastSuccess("สร้างโพสต์ใน Content Plan แล้ว — ตั้งแคปชั่นต่อได้เลย");
+    } catch (error) {
+      toastError(`สร้างโพสต์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="rounded-card p-4" style={{ background: "#FFF7ED", border: "1px solid #F0C89B" }}>
+      <div className="text-[13px] font-extrabold text-ink">⚠️ งานนี้ยังไม่มีโพสต์ใน Content Plan</div>
+      <div className="text-[12px] text-muted mt-1 leading-[1.5]">
+        artwork ที่อนุมัติแล้วจะไม่มีที่ลง และตั้งแคปชั่นไม่ได้ จนกว่าจะมีโพสต์
+        {canCreate ? " — เลือกวันโพสต์แล้วสร้างได้จากตรงนี้" : " — ให้ Marketing (CMO / BGL / Marketing Executive / Co-ordinator) สร้างโพสต์ให้"}
+      </div>
+      {canCreate && (
+        <div className="mt-3 flex items-end gap-2 flex-wrap">
+          <div>
+            <label className="block text-[11px] font-bold text-faint mb-[5px]">วันโพสต์ (Publish date)</label>
+            <DatePicker value={date || null} onChange={(v) => setDate(v)} />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-faint mb-[5px]">เวลา</label>
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+              className="text-[13px] px-[10px] py-[8px] rounded-[10px] border border-line2 bg-ivory outline-none" />
+          </div>
+          <button onClick={() => { void create(); }} disabled={!date || busy}
+            className="text-[13px] font-bold rounded-[10px] px-4 py-[9px] text-white disabled:opacity-40"
+            style={{ background: "#B3641E" }}>
+            {busy ? "กำลังสร้าง…" : "สร้างโพสต์ใน Content Plan"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
