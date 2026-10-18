@@ -4,6 +4,7 @@
 import {
   deadlineBoard, dueReminders, countdownLabel, daysBetween, stateOf, reminderText,
   SOON_DAYS, REMIND_BEFORE, deadlinesLandingIn, shiftMonth, MILESTONE_ROUTE,
+  finalBriefDeadline, withFinalBrief, BOARD_ONLY,
 } from "../src/lib/data/deadlineBoard";
 import { MILESTONES, type MilestoneDeadline } from "../src/lib/data/deadlinePolicy";
 
@@ -116,12 +117,39 @@ console.log("\n— ทุกเดดไลน์ต้องมีปลาย�
 {
   // กับดักที่เจอตอนทำ: campaign brief เป็นของสายการตลาด ซึ่ง "ไม่มีห้อง" ใน Slack เลย
   // ถ้าส่งเข้าห้องอย่างเดียว เตือนตัวที่ทุกเดดไลน์อื่นรออยู่จะหายไปเงียบ ๆ
-  for (const def of MILESTONES) {
-    const route = MILESTONE_ROUTE[def.key];
-    is(`${def.key} มีปลายทาง`, !!route && (route.rooms.length + route.roles.length) > 0, true);
+  // ยกเว้นตัวที่ตั้งใจให้อยู่บนบอร์ดอย่างเดียว (BOARD_ONLY) — ต้องประกาศไว้ชัด ๆ
+  for (const key of [...MILESTONES.map((d) => d.key), "finalBrief" as const]) {
+    const route = MILESTONE_ROUTE[key];
+    if (BOARD_ONLY.includes(key)) {
+      is(`${key} อยู่บนบอร์ดอย่างเดียว ไม่ยิง Slack`, route.rooms.length + route.roles.length, 0);
+      continue;
+    }
+    is(`${key} มีปลายทาง`, !!route && (route.rooms.length + route.roles.length) > 0, true);
   }
   is("บรีฟส่งถึงคน ไม่ใช่ห้อง", MILESTONE_ROUTE.campaignBrief.roles.length > 0, true);
-  is("Final AW ถึงทั้ง graphic และ vdo", MILESTONE_ROUTE.finalAw.rooms.join(","), "graphic,vdo");
+  // CMO ขอ ต.ค. 69: ห้อง graphic/vdo เตือน Final Brief แทน Final AW
+  is("Final Brief ถึงทั้ง graphic และ vdo", MILESTONE_ROUTE.finalBrief.rooms.join(","), "graphic,vdo");
+  is("Final AW ไม่เข้าห้อง graphic/vdo แล้ว", MILESTONE_ROUTE.finalAw.rooms.length, 0);
+}
+
+console.log("\n— Final Brief มาจากเดดไลน์ส่งบรีฟ (brief_cutoff_day) —");
+{
+  // ค่าจริงบน prod = 16: งานเดือน พ.ย. ต้องบรีฟภายใน 16 ต.ค.
+  const nov = finalBriefDeadline("2026-11", 16);
+  is("งานเดือน พ.ย. → บรีฟภายใน 16 ต.ค.", nov?.iso, "2026-10-16");
+  is("…รู้ว่าเป็นงานเดือนไหน", nov?.forMonth, "2026-11");
+  is("ข้ามปีได้: งาน ม.ค. → ธ.ค. ปีก่อน", finalBriefDeadline("2027-01", 16)?.iso, "2026-12-16");
+  is("วันเกินเดือนสั้น → วันสุดท้ายของเดือน", finalBriefDeadline("2027-03", 31)?.iso, "2027-02-28");
+  is("ปิดกติกา (0) = ไม่มีเดดไลน์", finalBriefDeadline("2026-11", 0), null);
+
+  // ลงบอร์ด/เตือนผ่านทางเดียวกับ milestone อื่น
+  const landed = deadlinesLandingIn("2026-10", withFinalBrief(() => [], 16));
+  is("บอร์ดเดือน ต.ค. เห็น Final Brief ของงาน พ.ย. ตัวเดียว", landed.map((d) => `${d.key}:${d.iso}`).join(","), "finalBrief:2026-10-16");
+
+  // ข้อความที่ห้อง graphic/vdo จะได้ เย็นวันที่ 13 ต.ค.
+  const row = deadlineBoard(landed, "2026-10-13")[0];
+  is("ข้อความเตือนห้อง graphic/vdo", reminderText(row), "⏰ อีก 3 วัน: Final Brief — ส่ง Final Brief งาน Graphic / VDO ให้ Creative (กำหนด 16/10)");
+  is("…และอยู่ในรอบที่ต้องเตือน", dueReminders([row]).length, 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

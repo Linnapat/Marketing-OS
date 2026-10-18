@@ -17,7 +17,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useDeadlines } from "@/lib/useDeadlines";
 import { monthKeyOfIso } from "@/lib/data/deadlinePolicy";
-import { deadlineBoard, countdownLabel, deadlinesLandingIn, DeadlineRow, DeadlineState } from "@/lib/data/deadlineBoard";
+import { deadlineBoard, countdownLabel, deadlinesLandingIn, withFinalBrief, DeadlineRow, DeadlineState } from "@/lib/data/deadlineBoard";
+import { BRIEF_CUTOFF_SETTING_KEY, DEFAULT_BRIEF_CUTOFF_DAY } from "@/lib/data/briefDeadline";
+import { getAppSetting } from "@/lib/db/appSettings";
 import { fmtShort } from "@/components/ui/DatePicker";
 
 const TONE: Record<DeadlineState, { fg: string; bg: string; ring: string }> = {
@@ -49,10 +51,20 @@ export function DeadlineBoard({ month, compact = false }: {
 }) {
   const deadlines = useDeadlines();
   const todayIso = useTodayIso();
+  // Final brief cutoff, set on the Graphic page — the same value the brief form
+  // and the nightly reminder use.
+  const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(BRIEF_CUTOFF_SETTING_KEY)
+      .then((v) => { if (alive && v !== null && v !== "") setCutoffDay(Number(v) || 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const forMonth = month || monthKeyOfIso(todayIso);
   if (!deadlines.ready || !todayIso || !forMonth) return null;
 
-  const rows = deadlineBoard(deadlinesLandingIn(forMonth, deadlines.all), todayIso);
+  const rows = deadlineBoard(deadlinesLandingIn(forMonth, withFinalBrief(deadlines.all, cutoffDay)), todayIso);
   if (rows.length === 0) {
     // Silent rather than a card saying nothing: a month the calendar has not
     // been filled in for is a Team Calendar problem, and that is where the page

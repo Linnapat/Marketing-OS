@@ -17,7 +17,8 @@ import { resolveSlackIds } from "@/lib/slackDirectory";
 import { postDM } from "@/lib/slackBot";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { milestonesFor } from "@/lib/data/deadlinePolicy";
-import { deadlineBoard, deadlinesLandingIn, dueReminders, reminderText, MILESTONE_ROUTE } from "@/lib/data/deadlineBoard";
+import { deadlineBoard, deadlinesLandingIn, dueReminders, reminderText, withFinalBrief, MILESTONE_ROUTE } from "@/lib/data/deadlineBoard";
+import { BRIEF_CUTOFF_SETTING_KEY, DEFAULT_BRIEF_CUTOFF_DAY } from "@/lib/data/briefDeadline";
 import type { CalendarTaskEdit } from "@/lib/data/calendarTasks";
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -135,13 +136,20 @@ async function remindDeadlines(db: NonNullable<ReturnType<typeof supabaseAdmin>>
   if (error && error.code !== "PGRST116") return { error: error.message };
   const row = (data ?? {}) as { overrides?: Record<string, string>; tasks?: CalendarTaskEdit[] };
 
+  // The final brief cutoff lives in app_settings, set on the Graphic page —
+  // read the same way the brief form does (missing/blank = default, "0" = off).
+  const { data: cutoffRow } = await db.from("app_settings")
+    .select("value").eq("key", BRIEF_CUTOFF_SETTING_KEY).maybeSingle();
+  const rawCutoff = (cutoffRow as { value?: string } | null)?.value;
+  const cutoffDay = rawCutoff ? Number(rawCutoff) || 0 : DEFAULT_BRIEF_CUTOFF_DAY;
+
   const todayIso = bangkokIso(now);
   const forMonth = todayIso.slice(0, 7);
   // Deadlines that LAND this month, not deadlines FOR this month's work — the
   // reminder is about a date arriving, and those dates sit months before the
   // work they serve.
   const rows = deadlineBoard(
-    deadlinesLandingIn(forMonth, (m) => milestonesFor(m, row.overrides ?? {}, row.tasks ?? [])),
+    deadlinesLandingIn(forMonth, withFinalBrief((m) => milestonesFor(m, row.overrides ?? {}, row.tasks ?? []), cutoffDay)),
     todayIso,
   );
   const due = dueReminders(rows);
