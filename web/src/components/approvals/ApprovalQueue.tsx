@@ -80,13 +80,34 @@ const VIEW_KEY = "approvals.view";
  *  always drawn, now applied to every kind. */
 const ageColor = (d: number) => (d >= STALE_DAYS ? "#B33A2E" : d >= 2 ? "#C68A1E" : "#8A8175");
 
-function AgePill({ iso, now }: { iso: string; now: number }) {
-  const d = waitingDays(iso, now);
-  if (d === null) return null;
+const TH_MONTH_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+/** "ค้างจาก ก.ย." — a row shown under this month because it is still open from
+ *  an earlier one (approvalCarriedFrom). Sits beside the age so the two read
+ *  together: how long, and since which month. */
+function CarriedPill({ from }: { from?: string }) {
+  if (!from) return null;
+  const [y, m] = from.split("-").map(Number);
+  const sameYear = y === new Date().getFullYear();
   return (
-    <span className="text-[10.5px] font-bold flex-shrink-0" style={{ color: ageColor(d) }}>
-      รอมา {d} วัน
+    <span className="text-[10.5px] font-bold flex-shrink-0 rounded-[6px] px-[6px] py-[1px]"
+      style={{ background: "#FBF1E9", color: "#B3641E" }}>
+      ค้างจาก {TH_MONTH_SHORT[m - 1]}{sameYear ? "" : ` ${(y + 543) % 100}`}
     </span>
+  );
+}
+
+function AgePill({ row, now }: { row: ApprovalRow; now: number }) {
+  const d = waitingDays(row.waitingSince, now);
+  return (
+    <>
+      <CarriedPill from={row.carriedFrom} />
+      {d !== null && (
+        <span className="text-[10.5px] font-bold flex-shrink-0" style={{ color: ageColor(d) }}>
+          รอมา {d} วัน
+        </span>
+      )}
+    </>
   );
 }
 
@@ -316,7 +337,7 @@ function renderCard(row: ApprovalRow, now: number, deps: {
           </div>
           <div className="text-[11.5px] text-faint mb-2 flex items-center gap-[6px] flex-wrap">
             <span>{brandCampaignLine(brandName(row.post.b), row.post.campaign)}</span>
-            <AgePill iso={row.waitingSince} now={now} />
+            <AgePill row={row} now={now} />
           </div>
           {/* The words themselves, so an easy yes needs no click. */}
           <div className="text-[12px] text-muted leading-[1.5] mb-3"
@@ -345,7 +366,7 @@ function renderCard(row: ApprovalRow, now: number, deps: {
           <div className="text-[11.5px] text-faint mb-2 flex items-center gap-[5px] flex-wrap">
             <span>{brandName(row.g.b)} · {row.g.campaign}</span>
             <CampaignCode code={codeOf(row.g.campaignId, row.g.campaign)} />
-            <AgePill iso={row.waitingSince} now={now} />
+            <AgePill row={row} now={now} />
           </div>
           {/* Which piece, and which of the two checks is yours. Without
               the second line a Creative Leader could not tell a CI row
@@ -380,7 +401,7 @@ function renderCard(row: ApprovalRow, now: number, deps: {
           <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
             <span>{brandName(row.g.b)} · {row.g.campaign} · {row.g.type}</span>
             <CampaignCode code={codeOf(row.g.campaignId, row.g.campaign)} />
-            <AgePill iso={row.waitingSince} now={now} />
+            <AgePill row={row} now={now} />
           </div>
           <div className="flex items-center justify-between">
             {/* Whose work is waiting on you — the storyboard is the
@@ -402,7 +423,7 @@ function renderCard(row: ApprovalRow, now: number, deps: {
           </div>
           <div className="text-[11.5px] text-faint mb-3 flex items-center gap-[5px] flex-wrap">
             <span>{brandName(row.g.b)} · {row.g.campaign} · {row.g.type}</span>
-            <AgePill iso={row.waitingSince} now={now} />
+            <AgePill row={row} now={now} />
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[11.5px] text-muted truncate">
@@ -590,7 +611,7 @@ function renderRow(row: ApprovalRow, now: number, deps: {
         <span className="block text-[13px] font-bold text-ink truncate">{d.title}</span>
         <span className="block text-[11.5px] text-faint truncate">{d.meta}</span>
       </span>
-      <AgePill iso={row.waitingSince} now={now} />
+      <AgePill row={row} now={now} />
       <MetaColumns row={row} />
       <Cta row={row} action={d.action} />
     </>
@@ -642,7 +663,7 @@ function StoryboardRow({ row, now, me, onOpenGraphic, onGraphicUpdate }: {
         <span className="flex items-center gap-2 flex-wrap">
           <button onClick={() => onOpenGraphic(g.id, GRAPHIC_TAB.storyboard)}
             className="text-[13px] font-bold text-ink hover:text-accent transition truncate">{g.title}</button>
-          <AgePill iso={row.waitingSince} now={now} />
+          <AgePill row={row} now={now} />
         </span>
         <span className="block text-[11.5px] text-faint truncate">
           {brandName(g.b)} · {g.campaign} · {g.type} · โดย {g.storyboardSubmittedBy || g.storyboardOwner || "Creative"}
@@ -718,7 +739,7 @@ function TaskApprovalRow({ row, now, me, onOpenTask, onTaskApproved }: {
       <span className="flex-1 min-w-0">
         <span className="flex items-center gap-2 flex-wrap">
           <button onClick={() => onOpenTask(t.id)} className="text-[13px] font-bold text-ink hover:text-accent transition truncate">{t.title}</button>
-          <AgePill iso={row.waitingSince} now={now} />
+          <AgePill row={row} now={now} />
         </span>
         <span className="block text-[11.5px] text-faint truncate">
           {[t.brand, t.campaign, `ขอโดย ${t.assignee}`].filter(Boolean).join(" · ")}
@@ -784,7 +805,7 @@ function CaptionRow({ row, now, me, onContentUpdate }: {
           <Link href={workLink.post(p.id)} className="text-[13px] font-bold text-ink hover:text-accent transition truncate">
             {p.title}
           </Link>
-          <AgePill iso={row.waitingSince} now={now} />
+          <AgePill row={row} now={now} />
         </span>
         <span className="block text-[11.5px] text-faint truncate">
           {brandName(p.b)} · {p.campaign} · {p.plat}
@@ -896,7 +917,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
             className="text-[13px] font-bold text-ink hover:text-accent transition truncate">
             {row.g.title}
           </button>
-          <AgePill iso={row.waitingSince} now={now} />
+          <AgePill row={row} now={now} />
         </span>
         <span className="block text-[11.5px] text-faint truncate">
           {/* ส่งโดย moved to its own column — see MetaColumns. Below md the
@@ -990,7 +1011,7 @@ function ExpenseRow({ row, budget, now, codeOf, onApprove, onReject }: {
         <span className="text-[11px] font-bold" style={{ color: "#B33A2E" }}>⚠ เกินงบ {baht(Math.abs(budget!.left), { compact: true })}</span>
       )}
       <span className="text-[13.5px] font-extrabold flex-shrink-0" style={{ color: "#B8945A" }}>{baht(r.requested, { compact: true })}</span>
-      <AgePill iso={row.waitingSince} now={now} />
+      <AgePill row={row} now={now} />
       <MetaColumns row={row} />
       {!row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>

@@ -17,6 +17,7 @@
 import {
   buildApprovalRows, selectGraphicApprovals, countByKind, byWaitingLongest, waitingDays,
   expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign, approvalTitle, platformLabel,
+  matchesApprovalSearch, approvalCarriedFrom,
   type ApprovalCtx, type ApprovalRow,
 } from "../src/lib/data/approvals";
 import { emptyDeliverable, type Graphic, type GraphicDeliverable } from "../src/lib/data/graphic";
@@ -392,6 +393,43 @@ console.log("\n— ตัวกรองแบรนด์ / แคมเปญ 
   is("ตัวเลือกไม่ซ้ำ (ไม่สนตัวพิมพ์)", names.length, 2);
   is("ตัวเลือกเรียงตามตัวอักษร", names[0], "Songkran");
   is("ไม่เอาแคมเปญว่างหรือขีด", names.includes("—"), false);
+}
+
+console.log("\n— ช่องค้นหาชื่องาน —");
+{
+  const cap = {
+    kind: "caption", key: "c1", b: "teppen", campaign: "Wagyu Festival", waitingSince: "",
+    mine: false, canAct: false, submittedBy: "", waitingOn: "",
+    post: { title: "Wagyu Set โปรเดือนตุลา", code: "TPN_2610_004-C02" },
+  } as unknown as ApprovalRow;
+  const art = selectGraphicApprovals(
+    [req({ title: "Poster Wagyu", code: "TPN_2610_004-C02-A01", deliverables: [submitted()] })],
+    ctx("CMO", "Gik"),
+  )[0];
+  is("ค้นว่าง = ผ่านหมด", matchesApprovalSearch(cap, "   "), true);
+  is("ค้นชื่อโพสต์ ไม่สนตัวพิมพ์", matchesApprovalSearch(cap, "wagyu set"), true);
+  is("ค้นเลขงานโพสต์", matchesApprovalSearch(cap, "tpn_2610_004-c02"), true);
+  is("ค้นชื่อแคมเปญ", matchesApprovalSearch(cap, "festival"), true);
+  is("คำที่ไม่มี = ไม่ผ่าน", matchesApprovalSearch(cap, "songkran"), false);
+  is("ค้นชื่องานอาร์ตเวิร์ก", matchesApprovalSearch(art, "POSTER"), true);
+  is("ค้นเลขโพสต์ เจออาร์ตเวิร์กของโพสต์นั้นด้วย", matchesApprovalSearch(art, "TPN_2610_004-C02"), true);
+}
+
+console.log("\n— งานค้างยกมาเดือนปัจจุบัน —");
+{
+  const at = (iso: string) => ({
+    kind: "campaign", key: "k", b: "teppen", campaign: "", waitingSince: iso,
+    mine: false, canAct: false, submittedBy: "", waitingOn: "", c: {} as never,
+  } as ApprovalRow);
+  const oct = [new Date(2026, 9, 1).getTime(), new Date(2026, 9, 31, 23, 59, 59).getTime()] as const;
+  const sep = [new Date(2026, 8, 1).getTime(), new Date(2026, 8, 30, 23, 59, 59).getTime()] as const;
+  const today = new Date(2026, 9, 18, 10).getTime();
+  is("งาน ก.ย. ที่ยังค้าง โผล่ตอนดู ต.ค. พร้อมป้ายเดือน", approvalCarriedFrom(at("2026-09-12T03:00:00Z"), oct[0], oct[1], today), "2026-09");
+  is("ข้ามปีก็ยกมา", approvalCarriedFrom(at("2025-12-30T03:00:00Z"), oct[0], oct[1], today), "2025-12");
+  is("งานของเดือนนี้เอง ไม่ใช่งานยกมา", approvalCarriedFrom(at("2026-10-02T03:00:00Z"), oct[0], oct[1], today), null);
+  is("ดูเดือนที่ผ่านไปแล้ว = ไม่ยกอะไรมา", approvalCarriedFrom(at("2026-08-12T03:00:00Z"), sep[0], sep[1], today), null);
+  is("แถวไม่มีวันที่ ไม่ติดป้าย", approvalCarriedFrom(at(""), oct[0], oct[1], today), null);
+  is("ยังไม่รู้เวลาตอนนี้ (now=0) ไม่ยกมา", approvalCarriedFrom(at("2026-09-12T03:00:00Z"), oct[0], oct[1], 0), null);
 }
 
 console.log("\n— ชื่อรายการแบบสั้น (ลิสต์ในกระดิ่ง) —");

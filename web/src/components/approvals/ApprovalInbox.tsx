@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { CampaignCommandBar } from "@/components/campaign/CampaignHeadController";
 import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { GraphicDrawer, GTab } from "@/components/graphic/GraphicDrawer";
@@ -24,11 +24,12 @@ import { useApprovalData } from "@/lib/useApprovalData";
 import { useCreativeLeader } from "@/lib/useCreativeLeader";
 import {
   ApprovalKind, expenseBudgetOf, approvalCampaigns, matchesApprovalBrand, matchesApprovalCampaign,
+  matchesApprovalSearch, approvalCarriedFrom,
 } from "@/lib/data/approvals";
 import { BrandFilterValue } from "@/lib/brands";
 import { useBrandVisibility } from "@/lib/brandVisibility";
 import { SELECT_STYLE } from "@/components/ui/selectStyle";
-import { DateFilterBar, inDateFilter, DateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, inDateFilter, DateFilter, filterWindow, currentMonthFilter } from "@/components/ui/DateFilterBar";
 import { ALL_TIME_FILTER, FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { optimistic } from "@/lib/optimistic";
 import { DEFAULT_APPROVER } from "@/lib/approval";
@@ -66,9 +67,13 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
   const brandOptions = brandVisibility.visibleBrands;
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [campaign, setCampaign] = useState("all");
-  // All time, not this month: a queue exists for the things that have been
-  // waiting, and the oldest of them are exactly what a month view would hide.
-  const [date, setDate] = useState<DateFilter>({ ...ALL_TIME_FILTER });
+  // This month, every time the page opens — not a remembered month, and not
+  // all time. The reason all time used to be the default (a month view hid the
+  // oldest waiting work) is answered by carry-over instead: in the month we are
+  // living in, anything still open from earlier is shown too, labelled with the
+  // month it came from. See approvalCarriedFrom.
+  const [date, setDate] = useState<DateFilter>(() => currentMonthFilter());
+  const [search, setSearch] = useState("");
   useEffect(() => {
     const next = brandVisibility.normalize(brand);
     if (next !== brand) setBrand(next);
@@ -89,14 +94,24 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
     if (campaign !== "all" && !campaignOptions.some((c) => c.toLowerCase() === campaign.toLowerCase())) setCampaign("all");
   }, [campaign, campaignOptions]);
 
-  const outcome = useMemo(() => filterWithReasons(laneRows, [
+  // Carry-over is decided before the period test so a carried row is not
+  // counted as "นอกช่วงเวลา" — it is on screen, with its month on the badge.
+  const datedRows = useMemo(() => {
+    const [ws, we] = filterWindow(date);
+    return laneRows.map((r) => {
+      const from = approvalCarriedFrom(r, ws, we, now);
+      return from ? { ...r, carriedFrom: from } : r;
+    });
+  }, [laneRows, date, now]);
+  const outcome = useMemo(() => filterWithReasons(datedRows, [
     { label: "แบรนด์อื่น", pass: (r) => matchesApprovalBrand(r, brand) },
     { label: "แคมเปญอื่น", pass: (r) => matchesApprovalCampaign(r, campaign) },
-    { label: "นอกช่วงเวลา", pass: (r) => inDateFilter(date, r.waitingSince) },
-  ]), [laneRows, brand, campaign, date]);
+    { label: "นอกช่วงเวลา", pass: (r) => !!r.carriedFrom || inDateFilter(date, r.waitingSince) },
+    { label: "ไม่ตรงคำค้น", pass: (r) => matchesApprovalSearch(r, search) },
+  ]), [datedRows, brand, campaign, date, search]);
   const rows = outcome.rows;
   const clearFilters = useCallback(() => {
-    setBrand("all"); setCampaign("all"); setDate({ ...ALL_TIME_FILTER });
+    setBrand("all"); setCampaign("all"); setDate({ ...ALL_TIME_FILTER }); setSearch("");
   }, []);
   const budgetOf = useMemo(() => expenseBudgetOf(campaigns, expenseReqs), [campaigns, expenseReqs]);
   const approverName = member?.name || user?.email?.split("@")[0] || DEFAULT_APPROVER;
@@ -147,6 +162,15 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
               {campaignOptions.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
             <DateFilterBar value={date} onChange={setDate} />
+            <label className="flex items-center gap-[6px] bg-white border border-line2 rounded-[12px] px-3 py-[7px] min-w-[220px] flex-1 max-w-[340px]">
+              <Search size={13} className="text-faint flex-shrink-0" />
+              <input
+                type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="ค้นหาชื่องาน / ชื่อโพสต์ / เลขงาน"
+                aria-label="ค้นหาชื่องาน"
+                className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-ink placeholder:text-faint"
+              />
+            </label>
           </div>
           <div className="text-[12.5px] text-muted leading-[1.6]">
             {/* Artwork asks two people two different questions — the data check

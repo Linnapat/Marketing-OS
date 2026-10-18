@@ -103,6 +103,10 @@ interface RowBase {
    *  stay in the same panel, under their own heading, and drop off only when
    *  the post is actually published. */
   queued?: boolean;
+  /** Set by the period filter, never by buildApprovalRows: the month (YYYY-MM)
+   *  this still-open row was handed in, when it is shown under a later month
+   *  because it has not been closed. See approvalCarriedFrom. */
+  carriedFrom?: string;
 }
 
 export type ApprovalRow =
@@ -602,6 +606,41 @@ export function matchesApprovalBrand(row: ApprovalRow, brand: BrandFilterValue):
 export function matchesApprovalCampaign(row: ApprovalRow, campaign: string): boolean {
   if (campaign === "all") return true;
   return (row.campaign ?? "").trim().toLowerCase() === campaign.trim().toLowerCase();
+}
+
+/** Does this row survive the search box? Matches the work's name (whatever
+ *  approvalTitle calls it, which for a caption is the post title), its job
+ *  number and its campaign, ignoring case. A blank query matches everything.
+ *  An artwork's number carries its post's (TPN_2609_003-C02-A01), so searching
+ *  a post number finds the artwork made for it too. */
+export function matchesApprovalSearch(row: ApprovalRow, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const code =
+    row.kind === "caption" ? row.post.code
+    : row.kind === "campaign" ? row.c.code
+    : "g" in row ? row.g.code
+    : undefined;
+  const hay = [approvalTitle(row), code, row.campaign];
+  if ("g" in row) hay.push(row.g.title);
+  return hay.some((v) => (v ?? "").toLowerCase().includes(q));
+}
+
+/** The month (YYYY-MM) an open row is carried over from, or null.
+ *
+ *  Every row in this queue is still open — closed work has already dropped out
+ *  in buildApprovalRows, and a `queued` row (approved, not yet published) is not
+ *  closed either. So when the period on screen is the one we are living in, a
+ *  row handed in before it starts is not "another month's work", it is this
+ *  month's backlog, and a month view that hid it would hide exactly what the
+ *  queue exists to show. Past and future periods stay strict: September viewed
+ *  in December means September. */
+export function approvalCarriedFrom(row: ApprovalRow, windowStart: number, windowEnd: number, now: number): string | null {
+  if (!(now >= windowStart && now <= windowEnd)) return null;
+  const t = Date.parse(row.waitingSince ?? "");
+  if (Number.isNaN(t) || t >= windowStart) return null;
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 /** Count per kind, for the chip badges. Every kind is present (as 0) so the
