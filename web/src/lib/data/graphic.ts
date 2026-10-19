@@ -1151,7 +1151,7 @@ export function briefEditBlockedReason(
   opts: { isRequester: boolean; isCmo: boolean },
 ): string {
   if (canEditBriefNow(g, opts)) return "";
-  if (!opts.isRequester && !opts.isCmo) return "แก้บรีฟได้เฉพาะผู้ขอเปิดงาน (หรือ CMO)";
+  if (!opts.isRequester && !opts.isCmo) return "แก้บรีฟได้เฉพาะผู้ขอเปิดงาน เจ้าของแคมเปญ (หรือ CMO)";
   const who = g.acceptedBy?.trim() || "Creative";
   switch (briefUnlockState(g)) {
     case "pending": return `ส่งคำขอเติมบรีฟแล้ว — รอ Creative Leader ปล่อยงานให้แก้`;
