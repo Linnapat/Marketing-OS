@@ -60,7 +60,7 @@ export async function createContent(input: ContentItem): Promise<ContentItem> {
   // she did reached Peach instead (CMO, 2026-10-15: "แคปชั่นทุกคอนเทนต์ขอ
   // มอบหมายให้ Ninew เขียน"). Re-assigning afterwards is still the Creative
   // Leader's call (canAssignCaption); only the starting name is fixed here.
-  const writer = await resolveCaptionWriter(numbered.b);
+  const writer = await resolveCaptionWriter();
   const post: ContentItem = writer && writer !== UNASSIGNED ? { ...numbered, owner: writer } : numbered;
   const { data, error } = await db.from("content_posts").insert({
     title: post.title, brand: post.b, campaign: post.campaign, campaign_id: post.campaignId ?? campById[post.campaign] ?? null,

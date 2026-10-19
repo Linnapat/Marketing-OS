@@ -121,10 +121,6 @@ export function canAssignCaption(role: string): boolean {
  *  Creative), so a picker using this must be scoped to "all" — narrowing by
  *  team first leaves the intersection empty and the dropdown dead. */
 export const CAPTION_WRITER_ROLES = /^(content creator|creative leader)$/i;
-/** The same, on a brand whose own marketer writes its captions
- *  (BRANDS_WRITING_OWN_CAPTIONS) — the Marketing Executive must be pickable,
- *  or a post defaulted to them could never be handed back once moved away. */
-export const OWN_BRAND_CAPTION_WRITER_ROLES = /^(content creator|creative leader|marketing executive)$/i;
 
 /** Who may be named as the storyboard owner on a video job.
  *
