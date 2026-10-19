@@ -149,7 +149,7 @@ async function doSaveCampaignBrief(brief: CampaignBrief): Promise<BriefSaveResul
   let itemIndex = 0;
   // Resolved once for the whole fan-out — a campaign with twelve content items
   // does not need twelve member lookups for one answer.
-  const captionWriter = await resolveCaptionWriter(normalizedBrief.b);
+  const captionWriter = await resolveCaptionWriter();
   for (const ci of normalizedBrief.content) {
     const idx = itemIndex++;
     const plats = ci.platforms.length ? ci.platforms : ["Instagram"];

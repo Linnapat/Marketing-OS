@@ -31,8 +31,7 @@ import { fetchGraphicsForPost, updateGraphic } from "@/lib/db/graphic";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES, OWN_BRAND_CAPTION_WRITER_ROLES } from "@/lib/roleGates";
-import { BRANDS_WRITING_OWN_CAPTIONS } from "@/lib/db/assignments";
+import { canEditContentPlan, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -1022,7 +1021,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                     value={captionOwner(item)}
                     onChange={assignOwner}
                     team="all"
-                    roleMatch={BRANDS_WRITING_OWN_CAPTIONS.includes(item.b) ? OWN_BRAND_CAPTION_WRITER_ROLES : CAPTION_WRITER_ROLES}
+                    roleMatch={CAPTION_WRITER_ROLES}
                     placeholder="ยังไม่มอบหมาย"
                     emptyLabel="ยังไม่มีใครถูกตั้งเป็น Content Creator / Creative Leader — ตั้ง role ที่ Settings › Members ก่อน"
                     className="text-[13px]"

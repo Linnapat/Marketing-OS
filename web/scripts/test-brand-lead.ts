@@ -13,7 +13,7 @@
  * shape of the real team: exactly one MM/BGL, scoped to two brands, and an OMD
  * that is led by a Marketing Executive instead. */
 
-import { resolveBrandLead, pickCaptionWriter } from "../src/lib/db/assignments";
+import { resolveBrandLead } from "../src/lib/db/assignments";
 import type { Member } from "../src/lib/db/settings";
 
 let pass = 0, fail = 0;
@@ -76,15 +76,6 @@ is("a Touka-scoped manager does not lead Omakase Don",
   null);
 is("…and does lead Touka", resolveBrandLead("touka",
   [m("Lin", "a.lin@teppenthailand.co.th", "Marketing Manager / BGL", "Selected brands · Touka")], takaoCfg), "Lin");
-
-console.log("\n— who writes the captions (CMO, 19 Oct 2026) —");
-const WITH_NINEW = [...ROSTER, m("Ninew", "ninew@teppenthailand.co.th", "Content Creator", "All brands")];
-is("an OMD post is written by OMD's own Marketing Executive", pickCaptionWriter(WITH_NINEW, "omakase"), "narawich");
-is("a Teppen post still goes to the Content Creator", pickCaptionWriter(WITH_NINEW, "teppen"), "Ninew");
-is("no brand given → the Content Creator", pickCaptionWriter(WITH_NINEW), "Ninew");
-is("OMD with nobody scoped to it falls back to the Content Creator",
-  pickCaptionWriter(WITH_NINEW.filter((x) => x.name !== "narawich"), "omakase"), "Ninew");
-is("no Content Creator → Creative Leader", pickCaptionWriter(ROSTER, "teppen"), "Pichayaporn");
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

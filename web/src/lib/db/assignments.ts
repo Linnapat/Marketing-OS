@@ -4,7 +4,7 @@
 // › Approval Matrix, mapping the first chain role to a real member.
 // When nothing resolves, returns "Unassigned" so callers can raise Needs Attention.
 
-import { fetchMembers, fetchJsonSetting, fetchBrandConfigs, Member } from "./settings";
+import { fetchMembers, fetchJsonSetting, Member } from "./settings";
 import { fetchApprovalMatrix, ModuleRule } from "./settings";
 import { TEAMS_DATA, APPROVAL_RULES, BrandCfg } from "@/lib/data/settings";
 import { visibleBrandsFromScope } from "@/lib/brandVisibility";
@@ -105,30 +105,8 @@ export async function resolveApprover(moduleName: string): Promise<string> {
  *  can still hand a post on (canAssignCaption). "Unassigned" when Settings
  *  names neither, so the slot reads empty rather than being filled with a
  *  guess. */
-export async function resolveCaptionWriter(brand?: BrandId | null): Promise<string> {
-  const [members, configs] = await Promise.all([
-    fetchMembers().catch(() => [] as Member[]),
-    brand ? fetchBrandConfigs().catch(() => [] as BrandCfg[]) : Promise.resolve([] as BrandCfg[]),
-  ]);
-  return pickCaptionWriter(members, brand, configs.length ? configs : undefined);
-}
-
-/** Brands whose own marketer writes the captions rather than Creative.
- *
- *  Omakase Don has no manager of its own and is run end to end by its
- *  Marketing Executive (narawich), who writes the OMD captions himself (CMO,
- *  2026-10-19: "ในส่วนงาน Campaign OMD ต้องเป็น Narawich"). Defaulting those
- *  posts to the Content Creator put Ninew's name on them, and the one person
- *  doing the work could not take the slot back — only the Creative Leader or
- *  the CMO may re-assign a writer. */
-export const BRANDS_WRITING_OWN_CAPTIONS: readonly BrandId[] = ["omakase"];
-
-/** Pure half of resolveCaptionWriter, so the rule is testable without a DB. */
-export function pickCaptionWriter(members: Member[], brand?: BrandId | null, configs?: BrandCfg[]): string {
-  if (brand && BRANDS_WRITING_OWN_CAPTIONS.includes(brand)) {
-    const own = resolveBrandLead(brand, members, configs);
-    if (own) return own;
-  }
+export async function resolveCaptionWriter(): Promise<string> {
+  const members = await fetchMembers().catch(() => [] as Member[]);
   const active = members.filter((m) => (m.status || "").toLowerCase() === "active");
   const pick = (role: string) => active.find((m) => (m.role || "").trim() === role);
   const writer = pick("Content Creator") ?? pick("Creative Leader");
