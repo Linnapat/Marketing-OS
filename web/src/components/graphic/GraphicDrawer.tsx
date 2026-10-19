@@ -108,7 +108,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // row — one fetch, since the drawer already needed the row anyway.
   const [campaignCode, setCampaignCode] = useState<string | undefined>();
   // Who the hold is on. Same row, so no extra fetch — see campaignHoldReason.
-  const [campaignPeople, setCampaignPeople] = useState<{ planner?: string; approver?: string }>({});
+  const [campaignPeople, setCampaignPeople] = useState<{ planner?: string; approver?: string; owner?: string }>({});
   useEffect(() => {
     let alive = true;
     fetchCampaigns()
@@ -119,7 +119,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
           : rows.find((c) => c.name.trim().toLowerCase() === (g.campaign ?? "").trim().toLowerCase());
         setCampaignStatus(hit?.status ?? "");
         setCampaignCode(hit?.code);
-        setCampaignPeople({ planner: hit?.plannerOwner || hit?.owner, approver: hit?.approver });
+        setCampaignPeople({ planner: hit?.plannerOwner || hit?.owner, approver: hit?.approver, owner: hit?.owner });
       })
       .catch(() => { if (alive) setCampaignStatus(null); });
     return () => { alive = false; };
@@ -249,6 +249,16 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // for the team they are briefing defeats the check the same way
   // self-approval did.
   const canSignOffBrief = !isRequester && (role === "CMO" || isCreativeSideRole(role));
+  // The campaign's owner may complete the brief too — attach the links, add
+  // the key message — under the same top-up rule as the requester. Requests
+  // are raised by whoever happened to open the campaign (often the CMO) while
+  // the brand's own marketer runs it (CMO, 2026-10-19: Narawich owns the OMD
+  // campaigns and must be able to attach brief links). Sign-off is untouched:
+  // that stays with the receiving side.
+  const myKeys = [member?.name, member?.email, user?.email].map((v) => (v ?? "").trim().toLowerCase()).filter(Boolean);
+  const isCampaignOwner = [campaignPeople.owner, campaignPeople.planner]
+    .some((n) => !!n && myKeys.includes(n.trim().toLowerCase()));
+  const canWriteBrief = isRequester || isCampaignOwner;
 
   // Rush sign-off: Creative Leader owns the queue's capacity, CMO covers.
   const canApproveRush = canApproveRushBrief(role);
@@ -360,8 +370,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [askingUnlock, setAskingUnlock] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
   const isCmo = role === "CMO";
-  const canEditBrief = canEditBriefNow(g, { isRequester, isCmo });
-  const briefBlockedReason = briefEditBlockedReason(g, { isRequester, isCmo });
+  const canEditBrief = canEditBriefNow(g, { isRequester: canWriteBrief, isCmo });
+  const briefBlockedReason = briefEditBlockedReason(g, { isRequester: canWriteBrief, isCmo });
   const unlockState = briefUnlockState(g);
   // Creative Leader only — narrower than accepting work on purpose (see
   // canReleaseBriefEdit). Nobody else sees the decision buttons.
@@ -1325,7 +1335,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
 
                 {/* Accepted: the brief is what somebody is working to. A top-up
                     goes through the Creative Leader — ask, wait, then edit. */}
-                {isAccepted(g) && !briefEditing && (isRequester || isCmo) && unlockState !== "granted" && (
+                {isAccepted(g) && !briefEditing && (canWriteBrief || isCmo) && unlockState !== "granted" && (
                   <div className="mt-3 rounded-[12px] px-3 py-[10px]" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
                     <div className="text-[11.5px] text-muted leading-[1.5]">{briefBlockedReason}</div>
                     {unlockState === "pending" ? (
