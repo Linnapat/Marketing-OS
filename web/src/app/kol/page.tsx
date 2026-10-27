@@ -483,7 +483,9 @@ export default function KolPage() {
  *  the header (each row is its own grid). */
 // Visit sits between Campaign and Followers: it is a date the branch has to act
 // on, and at the far right nobody scanning the list would reach it.
-const CREATOR_COLS = "minmax(0,1.9fr) minmax(0,1.3fr) minmax(0,1.15fr) minmax(0,0.8fr) minmax(0,0.85fr) minmax(0,0.85fr) minmax(0,1.3fr)";
+// Brief sits right after Campaign: it is the first thing the KOL owner needs
+// before contacting anyone.
+const CREATOR_COLS = "minmax(0,1.9fr) minmax(0,1.3fr) minmax(0,0.75fr) minmax(0,1.15fr) minmax(0,0.8fr) minmax(0,0.85fr) minmax(0,0.85fr) minmax(0,1.3fr)";
 
 function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
   const pi = platformIcon(kol.plat);
@@ -509,6 +511,11 @@ function CreatorRow({ kol, onOpen }: { kol: Kol; onOpen: (k: Kol) => void }) {
           </div>
         </div>
         <div className="text-[12px] text-muted">{kol.campaign}<div className="text-[10.5px] text-faint">Due {kol.postDueDate}</div></div>
+        <div className="min-w-0 text-[12px]">
+          {kol.briefLink?.trim()
+            ? <a href={kol.briefLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-accent font-semibold hover:underline">📄 Brief ↗</a>
+            : <span className="text-faint">—</span>}
+        </div>
         {/* The visit, as a state rather than a raw date — a booked day that has
             passed with nobody saying what happened is the case worth seeing. */}
         <div className="min-w-0">
@@ -592,7 +599,7 @@ function CreatorList({ list, onOpen }: { list: Kol[]; onOpen: (k: Kol) => void }
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
         style={{ gridTemplateColumns: CREATOR_COLS }}>
-        <div>Creator</div><div>Campaign</div><div title="วันที่ KOL ไปร้าน — คนละวันกับวันโพสต์">Visit</div><div>Followers</div><div>Actual Post</div><div>Fee</div><div>Stage</div>
+        <div>Creator</div><div>Campaign</div><div>Brief</div><div title="วันที่ KOL ไปร้าน — คนละวันกับวันโพสต์">Visit</div><div>Followers</div><div>Actual Post</div><div>Fee</div><div>Stage</div>
       </div>
       {list.map((k) => <CreatorRow key={k.id} kol={k} onOpen={onOpen} />)}
       {list.length === 0 && (

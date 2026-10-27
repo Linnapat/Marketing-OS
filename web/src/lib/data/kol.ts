@@ -72,6 +72,10 @@ export interface Kol {
   saves: string;
   shares: string;
   postLink: string | null;
+  /** The brief the creator works from (a Google Doc/Slide URL). Shown as its
+   *  own column in the request list so whoever runs the deal can open it
+   *  without digging through the notes. */
+  briefLink?: string;
   /* ── เอกสารการจ่ายเงิน ──────────────────────────────────────────────
    *
    * Links, not uploads — the same way every other document in this app is
