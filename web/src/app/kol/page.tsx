@@ -1619,6 +1619,10 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
   // Same KOL-item template as the Campaign Builder's KOL Plan (syncs both ways).
   const [item, setItem] = useState<BriefKolItem>(() => emptyKolItem(nextId));
   const onChange = (patch: Partial<BriefKolItem>) => setItem((it) => ({ ...it, ...patch }));
+  // Optional — a link to the creator brief (Doc/Slide). Copied onto every page
+  // the request fans out to, and shown in the list's Brief column.
+  const [briefLink, setBriefLink] = useState("");
+  const briefLinkInvalid = Boolean(briefLink.trim()) && !/^https?:\/\//i.test(briefLink.trim());
   useEffect(() => {
     let alive = true;
     Promise.all([fetchCampaigns(), fetchBrandConfigs()])
@@ -1652,7 +1656,7 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
   // Posting window is mandatory: without it the specialist cannot negotiate a
   // date with the creator and the brief bounces straight back to the requester.
   const hasWindow = Boolean(item.postingStart && item.postingEnd);
-  const canCreate = count > 0 && hasWindow;
+  const canCreate = count > 0 && hasWindow && !briefLinkInvalid;
   const syncOn = Boolean(campaign.trim());
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -1682,6 +1686,7 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
       owner, approver: assign.approver, requester, branch: item.area, platform: item.platforms[0],
       name: item.name ? (count > 1 ? `${item.name} #${i + 1}` : item.name) : (count > 1 ? `New Request — ${item.kolType} #${i + 1}` : undefined),
       campaignId, sourceKolRequirementId: `${requestItemId}#${i + 1}`,
+      briefLink,
     }));
     onCreate(kols, requestItem, campaign.trim());
   };
@@ -1734,6 +1739,11 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
             <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Requester <span className="text-faint font-normal">· งาน approve จะเด้งเข้า task list ของคนนี้</span></label>
             <input value={requester} readOnly aria-readonly="true" className={`${field} text-ink bg-ivory cursor-not-allowed`} />
           </div>
+          <div className="col-span-2">
+            <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Brief link <span className="text-faint font-normal">· Google Doc / Slide ที่ KOL ใช้ทำงาน (ไม่บังคับ)</span></label>
+            <input value={briefLink} onChange={(e) => setBriefLink(e.target.value)} className={field} inputMode="url" placeholder="https://docs.google.com/…" />
+            {briefLinkInvalid && <div className="mt-[6px] text-[11.5px] font-semibold text-[#B33A2E]">ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://</div>}
+          </div>
         </div>
         <KolItemForm item={item} onChange={onChange} branches={branches} hidePage />
         <div className="mt-5 rounded-[16px] border px-4 py-3" style={{ background: syncOn ? "#EEF8E8" : "#FBF6EC", borderColor: syncOn ? "#CFE4C2" : "#EADBC1" }}>
@@ -1745,7 +1755,7 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
           </div>
         </div>
         <button onClick={submit} disabled={!canCreate || busy} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">
-          {busy ? "Creating…" : !hasWindow ? "ระบุช่วงวันที่ต้องการโพสต์ก่อน" : "Send KOL Request"}
+          {busy ? "Creating…" : !hasWindow ? "ระบุช่วงวันที่ต้องการโพสต์ก่อน" : briefLinkInvalid ? "แก้ Brief link ก่อน" : "Send KOL Request"}
         </button>
       </div>
     </div>

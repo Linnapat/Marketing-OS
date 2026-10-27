@@ -214,6 +214,7 @@ export function buildKol(input: {
   // Real relational links + copied campaign context (all optional).
   campaignId?: string; sourceKolRequirementId?: string;
   objective?: string; target?: string; keyMsg?: string; offer?: string; dueDate?: string;
+  briefLink?: string;
 }): Kol {
   const owner = input.owner?.trim() || "Unassigned";
   const period = input.postingDate && input.postingEnd ? `${input.postingDate} – ${input.postingEnd}` : (input.postingDate || input.postingEnd || "TBD");
@@ -241,6 +242,7 @@ export function buildKol(input: {
     pastCollab: "None",
     objective: or(input.objective), target: or(input.target), keyMsg: or(input.keyMsg), offer: or(input.offer),
     postingPeriod: period, engagement: "—", saves: "—", shares: "—", postLink: null,
+    briefLink: input.briefLink?.trim() || undefined,
     notes: input.notes,
     history: [{ type: "requested", at: new Date().toISOString(), by: input.requester?.trim() || "System", note: input.campaign }],
     stages: [
