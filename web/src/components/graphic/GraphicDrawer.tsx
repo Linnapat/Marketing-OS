@@ -111,6 +111,9 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   const [campaignPeople, setCampaignPeople] = useState<{ planner?: string; approver?: string; owner?: string }>({});
   useEffect(() => {
     let alive = true;
+    // Campaign is optional on a request (POSM, menus, one-off art). With none
+    // there is no CMO sign-off to wait for — null reads as released.
+    if (!g.campaignId && !(g.campaign ?? "").trim()) { setCampaignStatus(null); setCampaignCode(undefined); return; }
     fetchCampaigns()
       .then((rows) => {
         if (!alive) return;

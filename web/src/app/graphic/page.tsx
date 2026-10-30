@@ -248,7 +248,7 @@ function GraphicPageInner() {
       // the decision); this is the nudge that says it just landed.
       if (g.rushStatus === "Pending" && rushDeciders.length) {
         notify("approval", `⚡ งานเร่งด่วนรออนุมัติ: ${g.title}`,
-          `${brandName(g.b)} · ${campaign} · ${g.requester} ขอเร่ง: ${g.rushReason || "ไม่ได้ให้เหตุผล"}`,
+          `${brandName(g.b)} · ${campaign || "ไม่ระบุแคมเปญ"} · ${g.requester} ขอเร่ง: ${g.rushReason || "ไม่ได้ให้เหตุผล"}`,
           workLink.graphic(g.id), { team: graphicTeam(g), to: rushDeciders });
       }
       // The saved copy, which carries the job number — see createGraphic.
@@ -1523,11 +1523,19 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
 
   // Posts to choose from: this campaign's, since a brief belongs to one
   // campaign and picking across them is the mistake the id scoping guards.
+  // Campaign is optional, so with none picked the whole brand is offered.
   const campaignPosts = useMemo(
-    () => posts.filter((p) => p.b === b && (selectedCampaign?.id ? p.campaignId === selectedCampaign.id : p.campaign === campaign)),
+    () => posts.filter((p) => p.b === b && (
+      !campaign.trim() ? true
+        : selectedCampaign?.id ? p.campaignId === selectedCampaign.id : p.campaign === campaign)),
     [posts, b, campaign, selectedCampaign],
   );
   const linkedPost = postLink === "existing" ? (posts.find((p) => p.id === linkedPostId) ?? null) : null;
+  // The campaign the request is filed under: the one picked, else the linked
+  // post's — so linking a post without picking still keeps the two together.
+  // Empty when neither has one; the request then stands on its own.
+  const reqCampaign = campaign.trim() || (linkedPost?.campaign ?? "").trim();
+  const reqCampaignId = selectedCampaign?.id ?? (campaign.trim() ? undefined : linkedPost?.campaignId);
   const postLabel = (p: ContentItem) => `${p.title} · ${p.dateIso ?? `day ${p.day}`}`;
 
   // Arriving from "โพสต์นี้ต้องใช้งานกราฟฟิกใหม่": adopt the post's brand,
@@ -1590,9 +1598,8 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
   // The one thing a rush brief must carry: why it could not wait.
   const rushReasonValid = !isRush || rushReason.trim().length >= 10;
 
-  const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!campaign.trim() && !!item.graphicDueDate && dueOrderValid && postLinkValid && rushReasonValid;
+  const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!item.graphicDueDate && dueOrderValid && postLinkValid && rushReasonValid;
   const missing = [
-    !campaign.trim() ? "campaign" : null,
     !postLinkValid ? "โพสต์ที่จะผูก" : null,
     !item.title.trim() ? "brief title" : null,
     !item.platforms.length ? "platform" : null,
@@ -1610,10 +1617,10 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
     const approverName = approver.trim() || requester;
     const g: Graphic = {
       ...buildGraphic({
-        id: nextId, b, campaign: campaign.trim(), title: item.title.trim(),
+        id: nextId, b, campaign: reqCampaign, title: item.title.trim(),
         type: item.type, due: labelDate(item.graphicDueDate) || "TBD", dueIso: item.graphicDueDate, reviewDueIso: item.reviewDueDate || undefined, designer: "Unassigned",
         requester, approver: approverName, channels: plats,
-        campaignId: selectedCampaign?.id,
+        campaignId: reqCampaignId,
         sourceContentItemId: linkedPost?.sourceContentItemId,
       }),
       stage: "New Request",
@@ -1673,9 +1680,9 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
       const postId = `c${nextId}-gfx`;
       post = {
         id: postId, day, dateIso: iso, time: "10:00", title: item.title.trim(), b, plat: plats[0] ?? "Instagram", platforms: plats,
-        status: "Draft", campaign: campaign.trim(), owner: requester, caption: "", hashtags: "", cta: "",
+        status: "Draft", campaign: reqCampaign, owner: requester, caption: "", hashtags: "", cta: "",
         captionStatus: "Missing", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Draft",
-        campaignId: selectedCampaign?.id,
+        campaignId: reqCampaignId,
         // Both ends, at creation. Linking to an EXISTING post already stamped
         // this (see addGraphic); a post minted here did not, so the link only
         // ever existed on the request — and the Content drawer, which reads the
@@ -1687,7 +1694,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
     // The parent reports its own failure (and keeps the modal open so the brief
     // typed here is not lost); this only has to release the button.
     try {
-      await onCreate(g, post, postLink === "new" ? item : null, campaign.trim(), linkedPost ?? null);
+      await onCreate(g, post, postLink === "new" ? item : null, reqCampaign, linkedPost ?? null);
     } catch {
       setSaving(false);
     }
@@ -1699,7 +1706,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
       <div className="relative bg-surface rounded-cardLg w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-faint hover:text-ink"><X size={18} /></button>
         <div className="text-[16px] font-extrabold mb-1">Send Graphic Brief</div>
-        <div className="text-[12px] text-faint mb-4">คำขอผลิตงานกราฟฟิก · ผูกกับโพสต์ใน Content Plan ด้วย Campaign + Post ID — หรือไม่ผูกเลยก็ได้ถ้าไม่ใช่งานลงโซเชียล</div>
+        <div className="text-[12px] text-faint mb-4">คำขอผลิตงานกราฟฟิก · ผูกกับโพสต์ใน Content Plan ด้วย Post ID — หรือไม่ผูกเลยก็ได้ถ้าไม่ใช่งานลงโซเชียล · ไม่ต้องเลือกแคมเปญก็ส่งได้</div>
         <div className="flex flex-col gap-4">
           {/* Context: brand, campaign, team */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1710,9 +1717,9 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
               </select>
             </div>
             <div>
-              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span style={{ color: "#B33A2E" }}>*</span></label>
+              <label className="block text-[11.5px] font-bold text-faint mb-[6px]">Campaign <span className="font-normal">(ไม่บังคับ)</span></label>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className={field}>
-                <option value="">{!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : brandCampaigns.length ? "Select campaign…" : "แบรนด์นี้ยังไม่มีแคมเปญ"}</option>
+                <option value="">{!campaignsLoaded ? "กำลังโหลดแคมเปญ…" : "— ไม่ระบุแคมเปญ —"}</option>
                 {brandCampaigns.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>
@@ -1754,13 +1761,12 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
                   value={linkedPost ? postLabel(linkedPost) : ""}
                   onChange={(label) => setLinkedPostId(campaignPosts.find((p) => postLabel(p) === label)?.id ?? "")}
                   options={campaignPosts.map(postLabel)}
-                  disabled={!campaign.trim()}
                   inputClassName={field}
-                  placeholder={!campaign.trim() ? "เลือก campaign ก่อน" : campaignPosts.length ? "พิมพ์เพื่อค้นหาโพสต์…" : "campaign นี้ยังไม่มีโพสต์"}
+                  placeholder={campaignPosts.length ? "พิมพ์เพื่อค้นหาโพสต์…" : campaign.trim() ? "campaign นี้ยังไม่มีโพสต์" : "แบรนด์นี้ยังไม่มีโพสต์"}
                   emptyLabel="ไม่พบโพสต์ที่ตรงกับที่พิมพ์"
                 />
-                {!!campaign.trim() && campaignPosts.length === 0 && (
-                  <div className="mt-1 text-[11px] text-[#7D70CC]">ยังไม่มีโพสต์ใน campaign นี้ — เลือก &ldquo;สร้างโพสต์ใหม่ให้ด้วย&rdquo; หรือไปวางแผนโพสต์ที่ Content Plan ก่อน</div>
+                {campaignPosts.length === 0 && (
+                  <div className="mt-1 text-[11px] text-[#7D70CC]">ยังไม่มีโพสต์{campaign.trim() ? "ใน campaign นี้" : "ของแบรนด์นี้"} — เลือก &ldquo;สร้างโพสต์ใหม่ให้ด้วย&rdquo; หรือไปวางแผนโพสต์ที่ Content Plan ก่อน</div>
                 )}
               </>
             )}
