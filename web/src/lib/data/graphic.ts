@@ -1076,6 +1076,36 @@ export interface GraphicNotice {
   seen?: boolean;
 }
 
+/** Creative Leader (or CMO) hands the job to a producer from the drawer.
+ *
+ *  Naming the producer IS the hand-off: the person who runs the queue has
+ *  decided who does it, so the job is accepted on their behalf and leaves
+ *  "New Request". Before this, assigning only wrote the name — nobody was told,
+ *  the producer never pressed รับงาน, and the requester cannot press it on their
+ *  own brief. When the Creative Leader is also the requester (TEPPEN, Nov 2026)
+ *  nobody could: 20 reels with storyboards approved and footage shot sat in
+ *  "New Request" for weeks. Unassigning leaves an earlier acceptance alone —
+ *  releasing is ปล่อยงานคืน's job, not a side effect of clearing a dropdown. */
+export function assignProducer(g: Graphic, name: string, by: string, at: string): Graphic {
+  const assigned = name.trim() || "Unassigned";
+  const real = !/^unassigned$/i.test(assigned);
+  const takeOver = real && !isAccepted(g);
+  return {
+    ...g,
+    designer: assigned,
+    nextAction: real ? `${assigned} กำลังผลิตงาน` : "Assign designer to start work",
+    ...(takeOver ? {
+      acceptedBy: assigned,
+      acceptedAt: at,
+      stage: g.stage === "New Request" ? "In Progress" : g.stage,
+    } : {}),
+    history: [...(g.history ?? []), {
+      type: "assigned", at, by,
+      note: takeOver ? `มอบหมายให้ ${assigned} (รับงานแทน)` : assigned,
+    }],
+  };
+}
+
 /** Has Creative taken this job on? The single question the edit lock asks. */
 export function isAccepted(g: Pick<Graphic, "acceptedAt"> | null | undefined): boolean {
   return !!g?.acceptedAt;

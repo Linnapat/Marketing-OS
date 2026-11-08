@@ -12,7 +12,7 @@
 
 import { todayIso } from "../src/lib/data/brief";
 import { productionSteps, materialState, materialNote, MATERIAL_EXEMPT_TYPES, productionBlockers, feedbackTimeline, Feedback } from "../src/lib/data/graphic";
-import { graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, initialNextAction, Graphic } from "../src/lib/data/graphic";
+import { assignProducer, graphicAssignmentTasks, graphicTaskId, GRAPHIC_TASK_SLOT, shootOutstanding, storyboardOutstanding, underBriefRevision, briefRevisionReviewer, BRIEF_REVISION_BLOCKER, creativeBriefLink, initialNextAction, Graphic } from "../src/lib/data/graphic";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -258,6 +258,25 @@ console.log("\n— ประวัติขอแก้ครบทุกรอ�
   is("ใหม่สุดอยู่บน", t[0].text, "เอาบลัชที่เป็น BG Head ออก ><");
   is("รอบจากฟอร์มยังเป็นแถวเดิม (Resolve ได้)", t[t.length - 1].row?.id, 111);
   is("บอกรอบที่ + ชิ้นงาน", [t[0].round, t[0].piece], [4, "LINE OA · Rich Message 1040×1040"]);
+}
+
+
+console.log("\nassignProducer — assigning is the hand-off");
+{
+  const at = "2026-11-08T03:00:00.000Z";
+  const fresh = req({ stage: "New Request", designer: "Unassigned", requester: "Pichayaporn", acceptedBy: undefined, acceptedAt: undefined });
+  const a = assignProducer(fresh, "GID", "Pichayaporn", at);
+  is("names the producer", a.designer, "GID");
+  is("accepts on their behalf", [a.acceptedBy, a.acceptedAt], ["GID", at]);
+  is("leaves New Request", a.stage, "In Progress");
+  const kept = assignProducer({ ...fresh, stage: "Waiting Feedback" }, "GID", "Pichayaporn", at);
+  is("a later stage is kept", kept.stage, "Waiting Feedback");
+  const taken = assignProducer({ ...fresh, acceptedBy: "Four", acceptedAt: "2026-11-01T00:00:00.000Z", stage: "In Progress" }, "GID", "Pichayaporn", at);
+  is("an earlier acceptance stands", [taken.designer, taken.acceptedBy], ["GID", "Four"]);
+  const cleared = assignProducer({ ...fresh, acceptedBy: "Four", acceptedAt: at }, "", "Pichayaporn", at);
+  is("clearing does not release", [cleared.designer, cleared.acceptedBy], ["Unassigned", "Four"]);
+  const none = assignProducer(fresh, "", "Pichayaporn", at);
+  is("Unassigned accepts nothing", [none.acceptedAt ?? null, none.stage], [null, "New Request"]);
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} graphic-assignment-tasks: ${pass} passed, ${fail} failed`);
