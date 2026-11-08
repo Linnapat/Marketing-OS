@@ -240,7 +240,7 @@ function GraphicPageInner() {
       if (linkedPost) {
         await updateContent({ ...linkedPost, graphicRequestId: String(g.id), assetStatus: "Waiting Design" });
       }
-      if (briefItem && campaign && campaign !== "—") await appendBriefItem(campaign, briefItem);
+      if (briefItem && campaign && campaign !== "—") await appendBriefItem(campaign, briefItem, g.campaignId);
       // A rush brief stops itself until somebody clears it, and until now it
       // told nobody: the card said "รอ Creative Leader หรือ CMO ตัดสิน" while
       // neither of them had any way to learn there was anything to decide.

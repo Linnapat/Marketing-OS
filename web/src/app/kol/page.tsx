@@ -256,7 +256,7 @@ export default function KolPage() {
   const addKol = async (kolsToCreate: Kol[], item: BriefKolItem | null, campaignName: string) => {
     try {
       const results = await Promise.all(kolsToCreate.map((k) => createKolIfNew(k)));
-      if (item && campaignName && campaignName !== "—") await appendBriefKolItem(campaignName, item);
+      if (item && campaignName && campaignName !== "—") await appendBriefKolItem(campaignName, item, kolsToCreate[0]?.campaignId);
       const created = results.filter((r) => r.created).map((r) => r.kol);
       // The event the room existed for and never received: work arriving. One
       // message per submission, not per row — a brief for eight creators is one
@@ -1663,7 +1663,8 @@ function RequestModal({ nextId, onClose, onCreate, budgetOf, spentOf }: {
     // matrix — never a demo user. Campaign id links back relationally.
     const assign = await resolveKolAssignment().catch(() => ({ owner: "Unassigned", approver: "Unassigned" }));
     const owner = (item.owner || "").trim() || assign.owner;
-    const campaignId = campaigns.find((c) => c.name === campaign)?.id;
+    // The picked brand's campaign — another brand may use the same name.
+    const campaignId = brandCampaigns.find((c) => c.name === campaign)?.id;
     const reqStamp = Date.now();
     const requestItemId = `kr-req-${reqStamp}`;
     const requestItem: BriefKolItem = { ...item, id: requestItemId };

@@ -629,10 +629,23 @@ export async function syncBriefKolFromRows(kol: Kol): Promise<void> {
 /** Two-way sync: a New Post created in the Content Calendar (using the same
  *  content-item form as the builder) is written back into its campaign's
  *  Content Plan. No-op when the campaign has no brief or Supabase is unconfigured. */
-export async function appendBriefItem(campaignName: string, item: BriefContentItem): Promise<void> {
+/** The campaign a Graphic/Post/KOL request writes back into. By id when the
+ *  caller has one: two brands can each run a campaign with the same name (OMD
+ *  and TEPPEN both have "Brand Awareness"), and looking it up by name wrote
+ *  TEPPEN's requests into OMD's Content Plan — where the next save fanned them
+ *  out as 46 OMD requests (see supabase/teppen_items_in_omd_plan_1910.sql).
+ *  Without an id, a name only counts when exactly one campaign has it. */
+async function findSyncCampaign(campaignName: string, campaignId?: string) {
+  const all = await fetchCampaigns();
+  if (campaignId) return all.find((c) => c.id === campaignId);
+  const hits = all.filter((c) => c.name === campaignName);
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+export async function appendBriefItem(campaignName: string, item: BriefContentItem, campaignId?: string): Promise<void> {
   const db = supabase();
-  if (!db || !campaignName || campaignName === "—") return;
-  const camp = (await fetchCampaigns()).find((c) => c.name === campaignName);
+  if (!db || ((!campaignName || campaignName === "—") && !campaignId)) return;
+  const camp = await findSyncCampaign(campaignName, campaignId);
   if (!camp) return;
   const brief = await fetchCampaignBrief(camp.id);
   if (!brief) return;
@@ -649,10 +662,10 @@ export async function appendBriefItem(campaignName: string, item: BriefContentIt
 /** Two-way sync for KOL: a "Request KOL" created in the KOL module (using the
  *  same KOL-item form as the Campaign Builder's KOL Plan) is written back into
  *  its campaign's KOL Plan. No-op when the campaign has no brief / Supabase off. */
-export async function appendBriefKolItem(campaignName: string, item: BriefKolItem): Promise<void> {
+export async function appendBriefKolItem(campaignName: string, item: BriefKolItem, campaignId?: string): Promise<void> {
   const db = supabase();
-  if (!db || !campaignName || campaignName === "—") return;
-  const camp = (await fetchCampaigns()).find((c) => c.name === campaignName);
+  if (!db || ((!campaignName || campaignName === "—") && !campaignId)) return;
+  const camp = await findSyncCampaign(campaignName, campaignId);
   if (!camp) return;
   const brief = await fetchCampaignBrief(camp.id);
   if (!brief) {
