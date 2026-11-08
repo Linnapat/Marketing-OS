@@ -13,7 +13,7 @@ import { workLink } from "@/lib/deepLink";
 import { GRAPHIC_OPEN_PARAM,
   Graphic, GraphicDeliverable, FEEDBACK, stageTone, PRIORITY_TONE, briefFields,
   deliverableProgress, stageFromDeliverables, deriveDeliverables, creativeBriefDetails, creativeBriefLink, artworkUnits,
-  isAccepted, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth, materialNote,
+  isAccepted, assignProducer, unseenNotices, productionBlockers, productionSteps, needsStoryboard, workingMonth, materialNote,
   hasShootOnRecord, shootContradiction,
   withNotice, pickBriefPatch, RequesterBriefField, shootingDecision,
   canEditBriefNow, briefEditBlockedReason, briefUnlockState, canReleaseBriefEdit, feedbackOwners, revisionTaskTitle,
@@ -1237,22 +1237,23 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   <div className="text-[13px] text-ink">
                     {g.designer && g.designer !== "Unassigned" ? g.designer : "Unassigned"}
                     <span className="block text-[10.5px] text-faint mt-[1px]">
-                      Creative Leader เป็นคนมอบหมาย — กด “รับงาน” ถ้าจะรับเอง
+                      Creative Leader เป็นคนมอบหมาย (มอบหมายแล้วถือว่ารับงาน) — กด “รับงาน” ถ้าจะรับเอง
                     </span>
                   </div>
                 ) : (
                 <OwnerSelect
                   value={g.designer === "Unassigned" ? "" : g.designer}
                   onChange={(name) => {
-                    const assigned = name || "Unassigned";
-                    const ng: Graphic = {
-                      ...g,
-                      designer: assigned,
-                      nextAction: assigned === "Unassigned" ? "Assign designer to start work" : `${assigned} to start design`,
-                      history: [...(g.history ?? []), { type: "assigned", at: new Date().toISOString(), by: currentUser, note: assigned }],
-                    };
+                    // Assigning is the hand-off — see assignProducer.
+                    const ng = assignProducer(g, name, currentUser, new Date().toISOString());
                     updateGraphic(ng)
-                      .then(() => updateCurrentGraphic(ng))
+                      .then(() => {
+                        updateCurrentGraphic(ng);
+                        if (ng.designer !== "Unassigned" && ng.designer !== g.designer) {
+                          notify("feedback", `🎬 ได้รับมอบหมายงาน: ${g.title}`, `โดย ${currentUser} → ${ng.designer} เริ่มผลิตงานได้เลย`,
+                            workLink.graphic(g.id), { team: graphicTeam(g), to: [ng.designer] });
+                        }
+                      })
                       .catch((error) => toastError(`บันทึก Designer ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
                   }}
                   team="Creative"
