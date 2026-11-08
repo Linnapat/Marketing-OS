@@ -39,6 +39,7 @@ import { SavedViewsBar } from "@/components/ui/SavedViews";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { CampaignCode, WorkCode } from "@/components/ui/CampaignCode";
 import { useCampaignCodes } from "@/lib/useCampaignCodes";
+import { usePostDates, shortPostDate } from "@/lib/usePostDates";
 import { createContent, updateContent, fetchContent } from "@/lib/db/content";
 import { fetchAllBriefs } from "@/lib/db/brief";
 import { fetchBrandConfigs, fetchMembers } from "@/lib/db/settings";
@@ -1402,10 +1403,13 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
  * The space comes from Request, which grew instead: it holds the title, the one
  * thing that says what the job IS, and at 1.9fr it was cutting them to
  * "0901_YOUR NIG…". */
-const LIST_COLS = "minmax(0,2.15fr) minmax(0,1.1fr) minmax(116px,0.8fr) minmax(0,0.65fr) minmax(0,0.75fr) minmax(0,0.5fr) minmax(0,1.05fr)";
+// Post date sits right after Due: designers order the queue by what goes live
+// first, and Due alone (when the artwork is wanted) does not say that.
+const LIST_COLS = "minmax(0,2.05fr) minmax(0,1.05fr) minmax(116px,0.8fr) minmax(0,0.6fr) minmax(0,0.7fr) minmax(0,0.5fr) minmax(0,0.55fr) minmax(0,1.05fr)";
 
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
+  const postDateOf = usePostDates();
   const active = items.filter((g) => !isGraphicFinished(g));
   const finished = items.filter(isGraphicFinished);
   return (
@@ -1418,12 +1422,12 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
         style={{ gridTemplateColumns: LIST_COLS }}>
         {/* หัวตารางแถวเดียวเคยมีไทยแทรกอยู่คำเดียว ("รหัสแคมเปญ") กลางหัวอังกฤษ
             หกคำ — สลับภาษากลางแถวทำให้ต้องอ่านสองรอบ */}
-        <div>Request</div><div>Campaign</div><div>Campaign code</div><div>Type task</div><div>Designer</div><div>Due</div><div>Stage</div>
+        <div>Request</div><div>Campaign</div><div>Campaign code</div><div>Type task</div><div>Designer</div><div>Due</div><div>Post date</div><div>Stage</div>
       </div>
-      {active.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
+      {active.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} postDate={postDateOf(g)} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
       {/* Delivered and approved work, folded under what is still moving. */}
       <FinishedFold count={finished.length} storageKey="mos-graphic-list-finished" label="ส่งงานแล้ว">
-        {finished.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
+        {finished.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} postDate={postDateOf(g)} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
       </FinishedFold>
       {items.length === 0 && (
         <div className="px-5 py-10 text-center">
@@ -1437,7 +1441,7 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
   );
 }
 
-function GraphicListRow({ g, codeOf, onOpen, onQuickApprove }: { g: Graphic; codeOf: (id?: string, name?: string) => string | undefined; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
+function GraphicListRow({ g, codeOf, postDate, onOpen, onQuickApprove }: { g: Graphic; codeOf: (id?: string, name?: string) => string | undefined; postDate: string; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   return (
       <button onClick={() => onOpen(g)} className="w-full grid grid-cols-1 gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-0 hover:bg-ivory/60 md:[grid-template-columns:var(--list-cols)]"
         style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
@@ -1457,6 +1461,9 @@ function GraphicListRow({ g, codeOf, onOpen, onQuickApprove }: { g: Graphic; cod
         <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
         <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
         <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
+        <span className="text-[12px] text-muted whitespace-nowrap" title={postDate ? `โพสต์ ${postDate}` : "ยังไม่มีโพสต์ที่ผูกกับงานนี้"}>
+          <span className="md:hidden text-faint">Post: </span>{shortPostDate(postDate) || "—"}
+        </span>
         <span className="flex items-center gap-1.5 flex-wrap min-w-0">
           <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
           <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
