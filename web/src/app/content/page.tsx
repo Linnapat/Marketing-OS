@@ -354,7 +354,7 @@ function ContentPageInner() {
     setNewOpen(false);
     // Two-way sync: write the full content-item back into its campaign's Content Plan.
     if (campaign && campaign !== "—") {
-      appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId })
+      appendBriefItem(campaign, { ...normalizedBriefItem, id: sourceContentItemId }, campaignId)
         .catch((error) => toastError(`บันทึก Post แล้ว แต่ sync กลับ Campaign Plan ไม่สำเร็จ: ${error?.message || "Unknown error"}`));
     }
     if (askGraphic) router.push(`/graphic?${GRAPHIC_BRIEF_FOR_PARAM}=${encodeURIComponent(created.id)}`);
