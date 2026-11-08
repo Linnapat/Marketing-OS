@@ -28,6 +28,8 @@ import { AssetLinkList } from "@/components/content/AssetLinkList";
 import { assetLinkView, heroPreview } from "@/lib/data/assetLinks";
 import { GRAPHIC_BRIEF_FOR_PARAM, GRAPHIC_OPEN_PARAM, Graphic, WORK_KIND_LABEL, workKind, contentEditLock, withNotice, creativeBriefLink } from "@/lib/data/graphic";
 import { fetchGraphicsForPost, updateGraphic } from "@/lib/db/graphic";
+import { TaskGraphicBrief } from "@/components/graphic/TaskGraphicBrief";
+import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -202,6 +204,8 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // rather than dropped — a caption written against the wrong one of two is the
   // failure this whole block exists to prevent.
   const [extraGraphics, setExtraGraphics] = useState(0);
+  // The request's own drawer, opened over this one — see the job card below.
+  const [graphicOpen, setGraphicOpen] = useState(false);
   // A planner stops once Creative has taken the job on — the brief they are
   // working to must not change under them.
   const lock = contentEditLock(linkedGraphic);
@@ -700,6 +704,16 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                     <div key={w} className="text-[12.5px] text-status-red font-semibold mb-[5px] flex items-center gap-[6px]"><span>⚠</span><span>{w}</span></div>
                   ))}
                 </div>
+              )}
+
+              {/* The job card, where the post owner already is. Whoever planned
+                  the post follows its artwork until it is approved, and that
+                  progress lived only on /graphic — so the Content Plan was
+                  worked with a second tab open beside it. Same card My Tasks
+                  shows (steps, what blocks submission, pieces approved), and
+                  its button opens the full request drawer over this one. */}
+              {linkedGraphic && (
+                <TaskGraphicBrief g={linkedGraphic} onOpenFull={() => setGraphicOpen(true)} />
               )}
 
               {/* Edit post basics */}
@@ -1252,6 +1266,12 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
           )}
         </div>
       </div>
+      {graphicOpen && linkedGraphic && (
+        // Its own stacking context, above this drawer (both are z-50 inside).
+        <div className="relative z-[60]">
+          <GraphicDrawer g={linkedGraphic} onClose={() => setGraphicOpen(false)} onUpdate={(g) => setLinkedGraphic(g)} />
+        </div>
+      )}
     </div>
   );
 }
