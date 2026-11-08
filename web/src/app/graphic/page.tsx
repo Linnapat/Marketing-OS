@@ -1,5 +1,6 @@
 "use client";
 
+import { downloadXlsx } from "@/lib/xlsx";
 import { toastError } from "@/lib/toast";
 import { workLink, OPEN_PARAM } from "@/lib/deepLink";
 import Link from "next/link";
@@ -701,6 +702,20 @@ function ShootSheetPreview({ rows, brandLabel, printedAt, onClose }: {
   }, [onClose]);
 
   const sorted = [...rows].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  // The same sheet as a spreadsheet, for the Monday meeting to go through and
+  // re-date. Two blank columns are left for that, so the file comes back with
+  // the proposed changes beside the dates they replace — the app's dates are
+  // still changed in the app, not by importing this file.
+  const exportExcel = () => {
+    const header = ["Date", "Time", "Brand", "Content", "Location", "Menu", "Cast", "หมายเหตุ", "วันถ่ายใหม่", "ความเห็นที่ประชุม"];
+    const body = sorted.map((r) => [
+      r.date || "", fmtTime(r.time) === "—" ? "" : fmtTime(r.time), r.brand ? brandName(r.brand) : "",
+      r.content, r.location, r.menu, castList(r.cast).join(", "), r.note?.trim() || "", "", "",
+    ]);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const scope = brandLabel ? `-${brandLabel.replace(/[^\w-]+/g, "-")}` : "";
+    downloadXlsx([header, ...body], `shoot-schedule${scope}-${stamp}.xlsx`, "Shoot Schedule");
+  };
   const sh = "text-left text-[9.5px] font-extrabold uppercase tracking-[0.06em] text-white px-[8px] py-[6px]";
   const sd = "px-[8px] py-[7px] text-[11px] text-ink align-top border-b border-line4";
 
@@ -709,6 +724,7 @@ function ShootSheetPreview({ rows, brandLabel, printedAt, onClose }: {
       <div className="w-full max-w-[1100px] flex items-center justify-between gap-2 mb-3 no-print">
         <div className="text-[13px] font-bold text-white">🖨 ตัวอย่างก่อนปริ้น · A4 แนวนอน</div>
         <div className="flex items-center gap-2">
+          <button onClick={exportExcel} className="text-[12px] font-bold text-ink bg-white rounded-[9px] px-4 py-[8px]">⬇ Excel</button>
           <button onClick={() => window.print()} className="text-[12px] font-bold text-white bg-accent rounded-[9px] px-4 py-[8px]">ปริ้นเลย</button>
           <button onClick={onClose} className="text-[12px] font-bold text-muted bg-white rounded-[9px] px-4 py-[8px]">ปิด</button>
         </div>
