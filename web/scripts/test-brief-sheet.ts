@@ -5,7 +5,7 @@
  * Run with:  npm test   (chained after test-brands.ts)
  * Same self-contained assert harness as the other suites — no runner needed. */
 
-import { briefFromSheet, applyBriefPatch, looksLikeTab, looksLikeCollapsedFieldTab, num, sheetDate, sheetMonth, briefFixture } from "../src/lib/data/briefSheet";
+import { briefFromSheet, applyBriefPatch, looksLikeTab, looksLikeCollapsedFieldTab, num, sheetDate, sheetMonth, briefFixture, list } from "../src/lib/data/briefSheet";
 import { budgetSummary, emptyContentItem, emptyKolItem } from "../src/lib/data/brief";
 import { csvUrlByTab } from "../src/lib/googleSheet";
 
@@ -494,6 +494,23 @@ console.log("\n— what must still get through —");
     warnings.some((w) => w.includes("ไม่รู้จัก type") && w.includes("คาเฟ่สายชิล")));
   check("nothing countable was mistaken for a note",
     !warnings.some((w) => w.startsWith("KOL: ข้าม")));
+}
+
+console.log("\n— multi-value cells keep thousands separators —");
+is("plain commas still split", list("Facebook, Instagram,TikTok").join("|"), "Facebook|Instagram|TikTok");
+is("semicolons still split", list("Reach; Visit").join("|"), "Reach|Visit");
+is("1,125 stays one value", list("Sathorn Lunch New Customers เทียบเป้า 1,125").join("|"), "Sathorn Lunch New Customers เทียบเป้า 1,125");
+is("1,250,000 stays one value", list("Reach 1,250,000, Visit").join("|"), "Reach 1,250,000|Visit");
+is("a comma before a 2-digit number splits", list("Top 10,20 more").join("|"), "Top 10|20 more");
+is("a comma before a 4-digit number splits", list("2026,2027").join("|"), "2026|2027");
+{
+  const { warnings } = briefFromSheet({
+    overview: [["Field", "Value"], ["Campaign Name", "X"], ["Success Metrics", "Sathorn Lunch New Customers เทียบเป้า 1,125"]],
+    content: null, kol: null, budget: null,
+  }, resolve);
+  const metricWarnings = warnings.filter((w) => w.startsWith("Success Metrics"));
+  is("a prose metric warns once, not once per comma", metricWarnings.length, 1);
+  check("…and quotes the whole value", metricWarnings[0]?.includes("1,125"));
 }
 
 console.log("\n— append mode (extending an existing campaign) —");
