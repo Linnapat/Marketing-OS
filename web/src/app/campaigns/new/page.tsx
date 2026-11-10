@@ -475,7 +475,7 @@ export default function NewCampaignPage() {
       }
 
       const branchesFor = (brand: BrandId) => brandConfigs.find((c) => c.key === brand)?.branchList ?? [];
-      const { brief: merged, warnings: mergeWarnings } = applyBriefPatch(brief, patch, branchesFor);
+      const { brief: merged, warnings: mergeWarnings } = applyBriefPatch(brief, patch, branchesFor, editingId ? "append" : "replace");
       setBrief(merged);
       seqRef.current = nextSeqFromItems(merged.content, merged.kols);
       setTriedNext(false);
@@ -631,7 +631,7 @@ export default function NewCampaignPage() {
             {/* Sheet import: CMO plus the brand planners (MM/BGL, Marketing
                 Executive) by request — everyone else builds briefs in the form. */}
             {SHEET_IMPORT_ROLES.includes(role) && (
-              <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} />
+              <SheetImport url={sheetUrl} setUrl={setSheetUrl} busy={importing} onImport={runSheetImport} report={importReport} appendMode={!!editingId} />
             )}
             <Overview brief={brief} set={set} setBrief={setBrief} branches={branches} branchOptions={branchOptions} planner={me} errors={ovErrors} brandOptions={brandOptions} brandConfigs={brandConfigs} campaignTypes={campaignTypes} />
           </>
@@ -688,8 +688,8 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
 // ── Google-Sheet import (step 1) ────────────────────────────────────────────
 // Collapsed by default: most campaigns are still built by hand, and the sheet
 // path shouldn't push the actual form below the fold.
-function SheetImport({ url, setUrl, busy, onImport, report }: {
-  url: string; setUrl: (v: string) => void; busy: boolean; onImport: () => void;
+function SheetImport({ url, setUrl, busy, onImport, report, appendMode }: {
+  url: string; setUrl: (v: string) => void; busy: boolean; onImport: () => void; appendMode: boolean;
   report: { counts: { content: number; kols: number }; warnings: string[]; build?: string } | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -703,6 +703,13 @@ function SheetImport({ url, setUrl, busy, onImport, report }: {
         </span>
         <span className="text-[12px] font-semibold text-faint">{open ? "ซ่อน" : "เปิด"}</span>
       </button>
+      {/* Editing an existing campaign: the import adds to it (see applyBriefPatch's
+          "append" mode) — said up front so nobody fears losing the old plan. */}
+      {appendMode && (
+        <div className="mt-2 text-[12px] font-semibold" style={{ color: "#4E7A4E" }}>
+          โหมดเพิ่มต่อ: Content / KOL / งบ จะถูกเพิ่มต่อจากของเดิม ไม่ลบของเดิม
+        </div>
+      )}
       {open && (
         <div className="mt-4">
           <div className="text-[12px] text-faint mb-3">
