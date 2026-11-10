@@ -6,7 +6,7 @@
  * Same self-contained assert harness as the other suites — no runner needed. */
 
 import { briefFromSheet, applyBriefPatch, looksLikeTab, looksLikeCollapsedFieldTab, num, sheetDate, sheetMonth, briefFixture } from "../src/lib/data/briefSheet";
-import { budgetSummary } from "../src/lib/data/brief";
+import { budgetSummary, emptyContentItem, emptyKolItem } from "../src/lib/data/brief";
 import { csvUrlByTab } from "../src/lib/googleSheet";
 
 let pass = 0, fail = 0;
@@ -494,6 +494,104 @@ console.log("\n— what must still get through —");
     warnings.some((w) => w.includes("ไม่รู้จัก type") && w.includes("คาเฟ่สายชิล")));
   check("nothing countable was mistaken for a note",
     !warnings.some((w) => w.startsWith("KOL: ข้าม")));
+}
+
+console.log("\n— append mode (extending an existing campaign) —");
+{
+  // An approved Dec campaign: three content items, one KOL, a 100k budget.
+  const base = briefFixture("CAM-EXT-0001");
+  const existing = {
+    ...base,
+    b: "brand-777" as typeof base.b,
+    name: "Winter Set", code: "TKO-2026-010", status: "Approved" as typeof base.status,
+    plannerOwner: "Planner A", approver: "CMO", startDate: "2026-12-01", endDate: "2026-12-31",
+    branches: ["Silom"], branch: "Silom",
+    content: [1, 2, 3].map((n) => ({ ...emptyContentItem(n), title: `Dec post ${n}` })),
+    kols: [{ ...emptyKolItem(1), name: "@dec.page", budget: 5000 }],
+    budget: {
+      total: 100000, ads: 40000, kol: 20000, graphic: 10000, printing: 5000, crm: 3000, other: 2000, otherNote: "Booth",
+      adsByPlatform: [{ platform: "Facebook / Instagram", amount: 25000 }, { platform: "TikTok", amount: 15000 }],
+      monthly: [{ month: "2026-12", amount: 100000 }],
+    },
+  };
+  const branchesFor = () => ["Silom", "Thonglor"];
+  const snapshot = JSON.stringify(existing);
+
+  const sheet = briefFromSheet({
+    overview: [["Field", "Value"], ["End Date", "2027-01-31"]],
+    content: [["Title", "Type", "Platforms"], ["Jan post A", "", "Facebook"], ["Jan post B", "", "Instagram"]],
+    kol: [["Name", "KOL Type", "Count", "Budget", "Posting Start"], ["@jan.page", "Foodie", "1", "4000", "2027-01-05"]],
+    budget: [["Field", "Value"], ["Total", "52000"], ["Ads", "30000"], ["Ads: Facebook", "20000"], ["Ads: Google", "10000"],
+      ["Other Note", "Jan sampling"], ["Month: 2027-01", "52000"]],
+  }, resolve);
+  const { brief, warnings } = applyBriefPatch(existing, sheet.patch, branchesFor, "append");
+
+  is("content appended to 5 items", brief.content.length, 5);
+  is("content ids are unique", new Set([...brief.content, ...brief.kols].map((i) => i.id)).size, brief.content.length + brief.kols.length);
+  is("existing content untouched", JSON.stringify(brief.content.slice(0, 3)), JSON.stringify(existing.content));
+  is("new content numbered past existing ids", brief.content[3].id, "ci-4");
+  is("new content keeps its title", brief.content[4].title, "Jan post B");
+  is("existing input not mutated", JSON.stringify(existing), snapshot);
+
+  is("KOL appended, not replaced", brief.kols.length, 2);
+  is("existing KOL kept", brief.kols[0].name, "@dec.page");
+  is("new KOL id does not collide", brief.kols[1].id, "kr-6");
+
+  is("total is added", brief.budget.total, 152000);
+  is("ads is added", brief.budget.ads, 70000);
+  is("a bucket the sheet left blank keeps its value", brief.budget.graphic, 10000);
+  is("…and so does KOL", brief.budget.kol, 20000);
+  is("existing ads platform topped up", brief.budget.adsByPlatform.find((r) => r.platform === "Facebook / Instagram")?.amount, 45000);
+  is("untouched ads platform unchanged", brief.budget.adsByPlatform.find((r) => r.platform === "TikTok")?.amount, 15000);
+  is("new ads platform added", brief.budget.adsByPlatform.find((r) => r.platform === "Google")?.amount, 10000);
+  is("Dec month kept", brief.budget.monthly?.find((m) => m.month === "2026-12")?.amount, 100000);
+  is("Jan month added", brief.budget.monthly?.find((m) => m.month === "2027-01")?.amount, 52000);
+  is("other note appended", brief.budget.otherNote, "Booth · Jan sampling");
+
+  is("end date extended", brief.endDate, "2027-01-31");
+  is("start date unchanged", brief.startDate, "2026-12-01");
+  is("status unchanged", brief.status, "Approved");
+  is("code unchanged", brief.code, "TKO-2026-010");
+  check("summary warning reports what was added",
+    warnings.some((w) => w.includes("เพิ่ม Content 2 / KOL 1") && w.includes("100,000 → 152,000")));
+}
+{
+  // No Budget tab: the budget must not move at all.
+  const existing = {
+    ...briefFixture(), b: "brand-777" as ReturnType<typeof briefFixture>["b"], endDate: "2026-12-31",
+    budget: { total: 100000, ads: 40000, kol: 0, graphic: 0, printing: 0, crm: 0, other: 0,
+      adsByPlatform: [{ platform: "Facebook", amount: 40000 }], monthly: [{ month: "2026-12", amount: 100000 }] },
+  };
+  const sheet = briefFromSheet({
+    overview: [["Field", "Value"], ["End Date", "2027-01-31"]],
+    content: [["Title", "Platforms"], ["Jan post", "Facebook"]], kol: null, budget: null,
+  }, resolve);
+  const { brief } = applyBriefPatch(existing, sheet.patch, () => [], "append");
+  is("the content row did import", brief.content.length, 1);
+  is("no Budget tab → budget identical", JSON.stringify(brief.budget), JSON.stringify(existing.budget));
+}
+{
+  // Start Date and Brand identify the campaign — append never moves them.
+  const existing = { ...briefFixture(), b: "brand-777" as ReturnType<typeof briefFixture>["b"], startDate: "2026-12-01", endDate: "2026-12-31" };
+  const sheet = briefFromSheet({
+    overview: [["Field", "Value"], ["Brand", "Touka"], ["Start Date", "2027-01-01"], ["End Date", "2026-12-20"]],
+    content: null, kol: null, budget: null,
+  }, resolve);
+  const { brief, warnings } = applyBriefPatch(existing, sheet.patch, () => [], "append");
+  is("start date kept", brief.startDate, "2026-12-01");
+  is("brand kept", brief.b, "brand-777");
+  check("start date skip is warned", warnings.some((w) => w.startsWith("Start Date:")));
+  check("brand skip is warned", warnings.some((w) => w.startsWith("Brand:")));
+  check("an earlier end date is warned, not blocked",
+    brief.endDate === "2026-12-20" && warnings.some((w) => w.startsWith("End Date:")));
+}
+{
+  // Replace (Create Campaign) still replaces.
+  const existing = { ...briefFixture(), content: [{ ...emptyContentItem(1), title: "old" }] };
+  const sheet = briefFromSheet({ overview: [["Field", "Value"], ["Campaign Name", "New"]], content: [["Title", "Platforms"], ["fresh", "Facebook"]], kol: null, budget: [["Field", "Value"], ["Total", "5000"]] }, resolve);
+  const { brief } = applyBriefPatch(existing, sheet.patch, () => []);
+  is("default mode replaces content", brief.content.map((c) => c.title).join("|"), "fresh");
+  is("default mode replaces budget", brief.budget.total, 5000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

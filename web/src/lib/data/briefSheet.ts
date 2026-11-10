@@ -21,6 +21,7 @@ import {
   OBJECTIVES, CAMPAIGN_TYPES, PRIORITIES, CHANNELS, SUCCESS_METRICS,
   CONTENT_TYPES, CONTENT_PLATFORMS, KOL_TYPES, KOL_PLATFORMS, KOL_CONTENT,
   ADS_PLATFORMS, assetSizesFor, needsAssetSize, AssetTarget, contentBriefLink,
+  nextSeqFromItems,
 } from "@/lib/data/brief";
 
 /** The tab names the template ships with. Addressed by name, not gid, so a
@@ -646,6 +647,18 @@ export interface BriefSheetResponse extends BriefSheetImport {
   build?: string;
 }
 
+/** How an import lands on the brief the form holds.
+ *
+ *  "replace" (Create Campaign): every tab the sheet carries takes over that
+ *  part of the brief.
+ *  "append" (editing an existing campaign — typically extending Dec into Jan):
+ *  the sheet describes ONLY what is being added. Content and KOL rows go after
+ *  the existing ones, budget amounts are added on top, and the fields that
+ *  identify the campaign (Start Date, Brand) are left alone. Replacing here
+ *  would retire every existing content item on save and zero the budget
+ *  buckets the sheet did not mention. */
+export type BriefImportMode = "replace" | "append";
+
 /** Merge an imported patch onto the brief the form currently holds. Keeps the
  *  identity fields the sheet has no business setting (id, code, status, planner,
  *  approver, approval log) and drops branches the brand doesn't actually have. */
@@ -653,11 +666,29 @@ export function applyBriefPatch(
   current: CampaignBrief,
   patch: Partial<CampaignBrief>,
   branchesFor: (brand: BrandId) => string[],
+  mode: BriefImportMode = "replace",
 ): { brief: CampaignBrief; warnings: string[] } {
   const warnings: string[] = [];
+  const append = mode === "append";
+  const incoming: Partial<CampaignBrief> = { ...patch };
+
+  if (append) {
+    if (incoming.startDate !== undefined && incoming.startDate !== current.startDate) {
+      warnings.push(`Start Date: โหมดเพิ่มต่อไม่เปลี่ยนวันเริ่มแคมเปญ — ข้าม “${incoming.startDate}” ใช้ ${current.startDate || "ค่าเดิม"}`);
+    }
+    delete incoming.startDate;
+    if (incoming.b !== undefined && incoming.b !== current.b) {
+      warnings.push(`Brand: โหมดเพิ่มต่อไม่เปลี่ยนแบรนด์ของแคมเปญ — ข้ามค่าจาก sheet`);
+    }
+    delete incoming.b;
+    delete incoming.content;
+    delete incoming.kols;
+    delete incoming.budget;
+  }
+
   const merged: CampaignBrief = {
     ...current,
-    ...patch,
+    ...incoming,
     id: current.id,
     code: current.code,
     status: current.status,
@@ -665,8 +696,28 @@ export function applyBriefPatch(
     approver: current.approver,
     approvalLog: current.approvalLog,
     createdAt: current.createdAt,
-    budget: patch.budget ? { ...emptyBudget(), ...patch.budget } : current.budget,
+    budget: append
+      ? (patch.budget ? addBudget(current.budget, patch.budget) : current.budget)
+      : (patch.budget ? { ...emptyBudget(), ...patch.budget } : current.budget),
   };
+
+  if (append) {
+    // New rows are renumbered past every id already in play — the sheet always
+    // numbers from ci-1 / kr-1, which would collide with the existing items
+    // (two items sharing an id get patched together).
+    let seq = nextSeqFromItems(current.content, current.kols);
+    const addedContent = (patch.content ?? []).map((c) => ({ ...c, id: `ci-${seq++}` }));
+    const addedKols = (patch.kols ?? []).map((k) => ({ ...k, id: `kr-${seq++}` }));
+    merged.content = [...current.content, ...addedContent];
+    merged.kols = [...current.kols, ...addedKols];
+
+    if (current.endDate && merged.endDate && merged.endDate < current.endDate) {
+      warnings.push(`End Date: วันจบใหม่ ${merged.endDate} อยู่ก่อนวันจบเดิม ${current.endDate} — ตรวจว่าตั้งใจย่นแคมเปญจริงหรือไม่`);
+    }
+    const before = current.budget?.total ?? 0;
+    const after = merged.budget?.total ?? 0;
+    warnings.push(`เพิ่ม Content ${addedContent.length} / KOL ${addedKols.length} · งบรวม ${before.toLocaleString()} → ${after.toLocaleString()}`);
+  }
 
   const valid = branchesFor(merged.b);
   if (patch.branches) {
@@ -680,6 +731,40 @@ export function applyBriefPatch(
   }
   merged.branch = merged.branches.join(", ");
   return { brief: merged, warnings };
+}
+
+/** Budget for append mode: the sheet's amounts are what is being ADDED. A
+ *  bucket the sheet left blank reads as 0 and so adds nothing; a platform or
+ *  month already planned is topped up, a new one becomes a new row. Zero-amount
+ *  new rows are not added — readBudget seeds a placeholder ads row when the tab
+ *  names no platform, and appending it would only clutter the plan. */
+function addBudget(base: BriefBudget, add: BriefBudget): BriefBudget {
+  const out: BriefBudget = {
+    ...base,
+    total: (base.total ?? 0) + (add.total ?? 0),
+    ads: (base.ads ?? 0) + (add.ads ?? 0),
+    kol: (base.kol ?? 0) + (add.kol ?? 0),
+    graphic: (base.graphic ?? 0) + (add.graphic ?? 0),
+    printing: (base.printing ?? 0) + (add.printing ?? 0),
+    crm: (base.crm ?? 0) + (add.crm ?? 0),
+    other: (base.other ?? 0) + (add.other ?? 0),
+    adsByPlatform: (base.adsByPlatform ?? []).map((r) => ({ ...r })),
+    monthly: (base.monthly ?? []).map((r) => ({ ...r })),
+  };
+  const note = norm(add.otherNote ?? "");
+  if (note) out.otherNote = base.otherNote ? `${base.otherNote} · ${note}` : note;
+
+  for (const row of add.adsByPlatform ?? []) {
+    const hit = out.adsByPlatform.find((r) => r.platform === row.platform);
+    if (hit) hit.amount = (hit.amount ?? 0) + (row.amount ?? 0);
+    else if (row.amount) out.adsByPlatform.push({ ...row });
+  }
+  for (const row of add.monthly ?? []) {
+    const hit = out.monthly!.find((r) => r.month === row.month);
+    if (hit) hit.amount = (hit.amount ?? 0) + (row.amount ?? 0);
+    else if (row.amount) out.monthly!.push({ ...row });
+  }
+  return out;
 }
 
 /** A blank brief carrying only what a sheet import provides — used by tests. */
