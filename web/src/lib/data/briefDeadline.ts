@@ -14,10 +14,13 @@
  * Pure on purpose: the answer must be identical in the form that warns, the
  * drawer that shows the pending decision, and any report that counts rush work. */
 
+import { thirdFriday } from "@/lib/data/artworkSchedule";
+
+/** On by default. Any non-zero value means "on" — see briefDeadlineFor. */
 export const DEFAULT_BRIEF_CUTOFF_DAY = 25;
 
-/** app_settings key holding the cutoff day. Stored as a plain string so the
- *  existing key/value table serves it; "0" switches the monthly rule off. */
+/** app_settings key for the monthly brief deadline. Named for the day number
+ *  it once held; it is now a switch — "0" is off, anything else is on. */
 export const BRIEF_CUTOFF_SETTING_KEY = "brief_cutoff_day";
 
 export type RushCode = "deadline" | "leadTime" | "dailyCap";
@@ -28,11 +31,17 @@ export interface RushBreach {
   label: string;
 }
 
-/** Last day to brief work that is due in `dueIso`'s month: `cutoffDay` of the
- *  month before. Returns null when the monthly deadline is switched off (0).
+/** Last day to brief work that is due in `dueIso`'s month: the THIRD FRIDAY of
+ *  the month before — the Creative round's Final Brief day (artworkSchedule).
  *
- *  A cutoff past the end of a short month lands on its last day, so 31 never
- *  silently becomes the 3rd of the wrong month. */
+ *  It used to be a day number the CMO typed (the 20th), which only matched the
+ *  round in months whose third Friday happened to fall on it: 20 Nov was right,
+ *  20 Dec would have been two days after the real deadline of the 18th. The
+ *  date now follows the round by itself (CMO, Nov 2026).
+ *
+ *  `cutoffDay` survives as the on/off switch the setting always carried: 0
+ *  turns the monthly rule off and returns null, anything else turns it on. The
+ *  number itself no longer picks the day. */
 export function briefDeadlineFor(dueIso: string, cutoffDay: number): string | null {
   if (!dueIso || !cutoffDay || cutoffDay < 1) return null;
   const [y, m] = dueIso.split("-").map(Number);
@@ -40,9 +49,7 @@ export function briefDeadlineFor(dueIso: string, cutoffDay: number): string | nu
   // Month before the due month, wrapping the year.
   const prevYear = m === 1 ? y - 1 : y;
   const prevMonth = m === 1 ? 12 : m - 1;
-  const lastDay = new Date(prevYear, prevMonth, 0).getDate();
-  const day = Math.min(cutoffDay, lastDay);
-  return `${prevYear}-${String(prevMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return thirdFriday(`${prevYear}-${String(prevMonth).padStart(2, "0")}`) || null;
 }
 
 export interface RushInput {
@@ -50,7 +57,7 @@ export interface RushInput {
   graphicDueIso: string;
   /** Today, as the brief is being written. */
   requestIso: string;
-  /** Day of the previous month briefs are due by; 0 turns the rule off. */
+  /** Monthly brief deadline switch: 0 = off, anything else = on. */
   cutoffDay: number;
   /** Earliest allowed due date for the lead time (minGraphicDueDate). */
   minDueIso: string;

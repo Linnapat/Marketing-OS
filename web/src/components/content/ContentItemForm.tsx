@@ -9,7 +9,7 @@ import {
 } from "@/lib/data/brief";
 import { artworkUnitsOf } from "@/lib/data/graphic";
 import { Combobox } from "@/components/ui/Combobox";
-import { useDeadlines } from "@/lib/useDeadlines";
+import { artworkScheduleFor } from "@/lib/data/artworkSchedule";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
 // Content Plan step and the Content Calendar's New Post modal, so the "template"
@@ -64,19 +64,26 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   // Content work: derived from the publish date and locked. Adhoc work (no
   // publish date): the planner's own choice. See finalArtworkDue for why.
   const needsArtwork = item.requiredGraphic || item.requiredVideo;
-  // The Team Calendar is the team's own deadline policy, so it decides when it
-  // has something to say about the month this post publishes in; the
-  // publish-minus-buffer rule is the fallback for months it does not cover.
-  const deadlines = useDeadlines();
-  const calendarFinalAw = deadlines.forDate("finalAw", item.publishDate || undefined);
-  const finalDue = finalArtworkDue(item.publishDate || undefined, graphicRequestDate, calendarFinalAw?.iso);
+  // The Creative round decides, from the month this post publishes in: first
+  // draft on the third Friday of the month before, finished file on the last
+  // Friday. NOT the Team Calendar's "Final AW" row — the team now uses that row
+  // for the final BRIEF, and reading it stamped January's work as due on the
+  // day its brief closed (see artworkSchedule). Publish-minus-buffer remains
+  // the fallback inside finalArtworkDue.
+  const round = artworkScheduleFor(item.publishDate || undefined);
+  const finalDue = finalArtworkDue(item.publishDate || undefined, graphicRequestDate, round?.finalAw);
   useEffect(() => {
     // Keep the stored value in step with the publish date, so what the Graphic
     // Request is created with is the date shown here — a display-only
     // derivation would have left the request carrying the old typed date.
     if (!showGraphicFields || !needsArtwork || !finalDue.fixed) return;
     if (item.graphicDueDate === finalDue.iso) return;   // settled; no loop
-    onChange({ graphicDueDate: finalDue.iso });
+    // The first-draft date moves with it, but only when there is nothing worth
+    // keeping: an empty field, or a date the new final has overtaken. A date
+    // somebody chose that still fits is theirs.
+    const draft = round && !finalDue.rushed && round.firstDraft <= finalDue.iso ? round.firstDraft : "";
+    const refill = !!draft && (!item.reviewDueDate || item.reviewDueDate > finalDue.iso);
+    onChange(refill ? { graphicDueDate: finalDue.iso, reviewDueDate: draft } : { graphicDueDate: finalDue.iso });
     // onChange is a fresh closure each render; depending on it would re-fire
     // every render. The guard above is what makes this settle.
     // eslint-disable-next-line react-hooks/exhaustive-deps

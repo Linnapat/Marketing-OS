@@ -7,6 +7,9 @@
 import {
   briefDeadlineFor, rushBreaches, rushBlocksProduction, DEFAULT_BRIEF_CUTOFF_DAY, RushCode,
 } from "../src/lib/data/briefDeadline";
+import { thirdFriday, lastFriday, artworkScheduleFor, monthServedByArtworkDue } from "../src/lib/data/artworkSchedule";
+import { finalArtworkDue } from "../src/lib/data/brief";
+import { monthServedByFinalAw } from "../src/lib/data/deadlinePolicy";
 
 let pass = 0, fail = 0;
 function is(name: string, actual: unknown, expected: unknown) {
@@ -16,15 +19,16 @@ function is(name: string, actual: unknown, expected: unknown) {
 }
 const codes = (b: { code: RushCode }[]) => b.map((x) => x.code).sort().join(",");
 
-console.log("\n— เดดไลน์ = วันที่ตัดรอบของ 'เดือนก่อนหน้า' เดือนที่ต้องส่งงาน —");
+console.log("\n— เดดไลน์ = ศุกร์ที่ 3 ของ 'เดือนก่อนหน้า' เดือนที่ต้องส่งงาน —");
 {
-  is("งานส่งเดือน ก.ย. → บรีฟภายใน 25 ส.ค.", briefDeadlineFor("2026-09-10", 25), "2026-08-25");
-  is("ใช้เดือนของวันส่งงาน ไม่ใช่วันไหนของเดือน", briefDeadlineFor("2026-09-30", 25), "2026-08-25");
+  is("งานส่งเดือน ก.ย. → บรีฟภายในศุกร์ที่ 3 ของ ส.ค.", briefDeadlineFor("2026-09-10", 25), "2026-08-21");
+  is("ใช้เดือนของวันส่งงาน ไม่ใช่วันไหนของเดือน", briefDeadlineFor("2026-09-30", 25), "2026-08-21");
   // ข้ามปี
-  is("งานส่งเดือน ม.ค. → บรีฟภายใน ธ.ค. ปีก่อน", briefDeadlineFor("2026-01-05", 25), "2025-12-25");
-  // วันตัดรอบเกินจำนวนวันของเดือนนั้น → เลื่อนมาวันสุดท้าย ไม่ใช่ล้นไปเดือนถัดไป
-  is("ตัดรอบวันที่ 31 แต่เดือนก่อนมี 30 วัน → 30", briefDeadlineFor("2026-07-10", 31), "2026-06-30");
-  is("ตัดรอบวันที่ 30 แต่ ก.พ. มี 28 วัน → 28", briefDeadlineFor("2026-03-10", 30), "2026-02-28");
+  is("งานส่งเดือน ม.ค. → บรีฟภายใน ธ.ค. ปีก่อน", briefDeadlineFor("2026-01-05", 25), "2025-12-19");
+  // ตัวเลขที่เคยตั้งไว้ไม่เลือกวันอีกแล้ว — เป็นแค่สวิตช์เปิด/ปิด
+  is("ค่าเดิม 20 กับ 25 ให้วันเดียวกัน", briefDeadlineFor("2027-01-29", 20), briefDeadlineFor("2027-01-29", 25));
+  is("ธ.ค. 69 = 18 ไม่ใช่ 20", briefDeadlineFor("2027-01-29", 20), "2026-12-18");
+  is("พ.ย. 69 = 20 ตามที่ประกาศ", briefDeadlineFor("2026-12-25", 20), "2026-11-20");
   is("ปิดใช้งาน (0) → ไม่มีเดดไลน์", briefDeadlineFor("2026-09-10", 0), null);
   is("ไม่มีวันส่งงาน → ไม่มีเดดไลน์", briefDeadlineFor("", 25), null);
   is("ค่า default คือ 25", DEFAULT_BRIEF_CUTOFF_DAY, 25);
@@ -43,16 +47,16 @@ const input = (over: Partial<Parameters<typeof rushBreaches>[0]> = {}) => ({
 console.log("\n— บรีฟปกติ ไม่ต้องขออนุญาตใคร —");
 {
   is("ส่งก่อนเดดไลน์ + ทันลีดไทม์ + โควตาว่าง", codes(rushBreaches(input())), "");
-  is("ส่งวันสุดท้ายพอดี ยังไม่ถือว่าเลย", codes(rushBreaches(input({ requestIso: "2026-08-25" }))), "");
-  is("วันส่งงานเท่ากับวันเร็วสุดพอดี ผ่าน", codes(rushBreaches(input({ graphicDueIso: "2026-08-08", minDueIso: "2026-08-08", requestIso: "2026-07-20" }))), "");
+  is("ส่งวันสุดท้ายพอดี ยังไม่ถือว่าเลย", codes(rushBreaches(input({ requestIso: "2026-08-21" }))), "");
+  is("วันส่งงานเท่ากับวันเร็วสุดพอดี ผ่าน", codes(rushBreaches(input({ graphicDueIso: "2026-08-08", minDueIso: "2026-08-08", requestIso: "2026-07-15" }))), "");
   is("ใช้โควตาพอดีเป๊ะ ยังไม่เกิน", codes(rushBreaches(input({ capUsed: 2, capAdding: 1 }))), "");
   is("ไม่มีวันส่งงาน = ยังกรอกไม่เสร็จ ไม่ต้องเตือน", codes(rushBreaches(input({ graphicDueIso: "" }))), "");
 }
 
 console.log("\n— แต่ละกฎที่ผิด ต้องระบุได้ว่าผิดข้อไหน —");
 {
-  is("เลยเดดไลน์รายเดือน", codes(rushBreaches(input({ requestIso: "2026-08-26" }))), "deadline");
-  is("กระชั้นกว่าลีดไทม์", codes(rushBreaches(input({ graphicDueIso: "2026-08-05", minDueIso: "2026-08-08", requestIso: "2026-07-20" }))), "leadTime");
+  is("เลยเดดไลน์รายเดือน", codes(rushBreaches(input({ requestIso: "2026-08-22" }))), "deadline");
+  is("กระชั้นกว่าลีดไทม์", codes(rushBreaches(input({ graphicDueIso: "2026-08-05", minDueIso: "2026-08-08", requestIso: "2026-07-15" }))), "leadTime");
   is("เกินโควตาวันนั้น", codes(rushBreaches(input({ capUsed: 3, capAdding: 1 }))), "dailyCap");
   // ผิดหลายข้อพร้อมกันต้องขึ้นครบ — คนอนุมัติต้องเห็นภาพเต็ม ไม่ใช่ข้อแรกข้อเดียว
   is("ผิดครบสามข้อ", codes(rushBreaches(input({ requestIso: "2026-09-01", graphicDueIso: "2026-09-02", minDueIso: "2026-09-08", capUsed: 3 }))), "dailyCap,deadline,leadTime");
@@ -72,6 +76,41 @@ console.log("\n— งานเร่งด่วนที่ยังไม่�
   is("อนุมัติแล้ว = เริ่มได้", rushBlocksProduction("Approved"), false);
   is("บรีฟปกติ = เริ่มได้", rushBlocksProduction(""), false);
   is("แถวเก่าที่ไม่มีค่านี้ = เริ่มได้", rushBlocksProduction(undefined), false);
+}
+
+console.log("\n— รอบงาน Creative: บรีฟ / draft แรก / ไฟล์ Final คนละวันกัน —");
+{
+  // ตารางที่ Creative Leader ประกาศ พ.ย. 69
+  is("ศุกร์ที่ 3 ของ พ.ย. 69", thirdFriday("2026-11"), "2026-11-20");
+  is("ศุกร์ที่ 3 ของ ธ.ค. 69", thirdFriday("2026-12"), "2026-12-18");
+  is("ศุกร์สุดท้ายของ พ.ย. 69", lastFriday("2026-11"), "2026-11-27");
+  is("ศุกร์สุดท้ายของ ธ.ค. 69", lastFriday("2026-12"), "2026-12-25");
+  // เดือนที่วันที่ 1 เป็นวันศุกร์ / เดือนที่มีศุกร์ 5 ครั้ง
+  is("วันที่ 1 เป็นศุกร์ → ศุกร์ที่ 3 คือ 15", thirdFriday("2027-01"), "2027-01-15");
+  is("เดือนที่มีศุกร์ 5 ครั้ง → เอาครั้งสุดท้าย", lastFriday("2027-01"), "2027-01-29");
+
+  const jan = artworkScheduleFor("2027-01-12");
+  is("งาน ม.ค. → Final Brief 20 พ.ย.", jan?.finalBrief, "2026-11-20");
+  is("งาน ม.ค. → draft แรก 18 ธ.ค.", jan?.firstDraft, "2026-12-18");
+  is("งาน ม.ค. → ไฟล์ Final 25 ธ.ค.", jan?.finalAw, "2026-12-25");
+  const dec = artworkScheduleFor("2026-12");
+  is("งาน ธ.ค. → draft แรก 20 พ.ย.", dec?.firstDraft, "2026-11-20");
+  is("งาน ธ.ค. → ไฟล์ Final 27 พ.ย.", dec?.finalAw, "2026-11-27");
+  is("ไม่มีวันโพสต์ → ไม่มีรอบ", artworkScheduleFor(""), null);
+
+  // บั๊กที่แก้: บรีฟงาน ม.ค. เคยได้วันส่ง artwork = 20 พ.ย. (วันปิดรับบรีฟ)
+  const due = finalArtworkDue("2027-01-12", "2026-11-17", jan?.finalAw);
+  is("ฟอร์มล็อกวันส่ง Final งาน ม.ค. = 25 ธ.ค.", due.iso, "2026-12-25");
+  is("…และไม่นับเป็นงานเร่ง", due.rushed, false);
+  // …ซึ่งทำให้เดดไลน์ส่งบรีฟของงานนั้น = 20 พ.ย. ตรงกับที่ประกาศ
+  is("บรีฟงาน ม.ค. วันที่ 17 พ.ย. ยังไม่เลยเดดไลน์", codes(rushBreaches({
+    graphicDueIso: due.iso, requestIso: "2026-11-17", cutoffDay: 20, minDueIso: "2026-11-24",
+    capLimit: 0, capUsed: 0, capAdding: 1, kindLabel: "Graphic",
+  })), "");
+
+  is("due ศุกร์สุดท้าย ธ.ค. → เป็นงานเดือน ม.ค.", monthServedByArtworkDue("2026-12-25"), "2027-01");
+  is("วันอื่นไม่ใช่วันของรอบ", monthServedByArtworkDue("2026-12-18"), null);
+  is("drawer หาเดือนของงานจากวัน due ได้", monthServedByFinalAw("2026-12-25"), "2027-01");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

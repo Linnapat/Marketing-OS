@@ -23,6 +23,7 @@ import {
   projectMarks, applyOverrides, monthMeta, TEMPLATE_YEAR, TEMPLATE_MONTH,
 } from "@/lib/data/workflow";
 import { CalendarTaskEdit, resolveCalendarSections, templateTaskKey } from "@/lib/data/calendarTasks";
+import { monthServedByArtworkDue } from "@/lib/data/artworkSchedule";
 
 export type MilestoneKey = "campaignBrief" | "contentPlan" | "storyboard" | "finalAw";
 
@@ -317,6 +318,10 @@ export function monthServedByFinalAw(
 ): string | null {
   const due = (dueIso ?? "").slice(0, 10);
   if (!due) return null;
+  // Requests briefed since the Creative round took over carry its last-Friday
+  // date, which the calendar row no longer names.
+  const byRound = monthServedByArtworkDue(due);
+  if (byRound) return byRound;
   const dueMonth = monthKeyOfIso(due);
   for (const ahead of [2, 1, 3, 0]) {
     const candidate = shiftMonthKey(dueMonth, ahead);

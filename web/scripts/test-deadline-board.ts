@@ -132,19 +132,20 @@ console.log("\n— ทุกเดดไลน์ต้องมีปลาย�
   is("Final AW ไม่เข้าห้อง graphic/vdo แล้ว", MILESTONE_ROUTE.finalAw.rooms.length, 0);
 }
 
-console.log("\n— Final Brief มาจากเดดไลน์ส่งบรีฟ (brief_cutoff_day) —");
+console.log("\n— Final Brief = ศุกร์ที่ 3 (เปิด/ปิดด้วย brief_cutoff_day) —");
 {
-  // ค่าจริงบน prod = 16: งานเดือน พ.ย. ต้องบรีฟภายใน 16 ต.ค.
-  const nov = finalBriefDeadline("2026-11", 16);
-  is("งานเดือน พ.ย. → บรีฟภายใน 16 ต.ค.", nov?.iso, "2026-10-16");
-  is("…รู้ว่าเป็นงานเดือนไหน", nov?.forMonth, "2026-11");
-  is("ข้ามปีได้: งาน ม.ค. → ธ.ค. ปีก่อน", finalBriefDeadline("2027-01", 16)?.iso, "2026-12-16");
-  is("วันเกินเดือนสั้น → วันสุดท้ายของเดือน", finalBriefDeadline("2027-03", 31)?.iso, "2027-02-28");
+  // งานเดือน M ส่ง artwork เดือน M−1 จึงต้องบรีฟภายในวันตัดรอบของเดือน M−2
+  // (Creative Leader, พ.ย. 69: 20 พ.ย. = Final Brief ของงานเดือน ม.ค.)
+  const jan = finalBriefDeadline("2027-01", 20);
+  is("งานเดือน ม.ค. → บรีฟภายใน 20 พ.ย.", jan?.iso, "2026-11-20");
+  is("…รู้ว่าเป็นงานเดือนไหน", jan?.forMonth, "2027-01");
+  is("ข้ามปีได้: งาน ก.พ. → ศุกร์ที่ 3 ของ ธ.ค. ปีก่อน", finalBriefDeadline("2027-02", 16)?.iso, "2026-12-18");
+  is("ตัวเลขที่ตั้งไว้ไม่เลือกวันแล้ว", finalBriefDeadline("2027-04", 31)?.iso, "2027-02-19");
   is("ปิดกติกา (0) = ไม่มีเดดไลน์", finalBriefDeadline("2026-11", 0), null);
 
   // ลงบอร์ด/เตือนผ่านทางเดียวกับ milestone อื่น
   const landed = deadlinesLandingIn("2026-10", withFinalBrief(() => [], 16));
-  is("บอร์ดเดือน ต.ค. เห็น Final Brief ของงาน พ.ย. ตัวเดียว", landed.map((d) => `${d.key}:${d.iso}`).join(","), "finalBrief:2026-10-16");
+  is("บอร์ดเดือน ต.ค. เห็น Final Brief ของงาน ธ.ค. ตัวเดียว", landed.map((d) => `${d.key}:${d.iso}:${d.forMonth}`).join(","), "finalBrief:2026-10-16:2026-12");
 
   // ข้อความที่ห้อง graphic/vdo จะได้ เย็นวันที่ 13 ต.ค.
   const row = deadlineBoard(landed, "2026-10-13")[0];
