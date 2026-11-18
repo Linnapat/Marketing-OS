@@ -1,6 +1,6 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { OPEN_PARAM, resolveOpenTarget } from "@/lib/deepLink";
 import { CSSProperties, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +13,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner, isOfflineOnlyPost, withChange } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -30,7 +30,9 @@ import { platformIcon } from "@/lib/platforms";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
-import { canAssignCaption } from "@/lib/roleGates";
+import { canAssignCaption, canEditContentPlan } from "@/lib/roleGates";
+import { contentEditLock, withNotice } from "@/lib/data/graphic";
+import { fetchGraphicsForPost, updateGraphic } from "@/lib/db/graphic";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -193,6 +195,38 @@ function ContentPageInner() {
     const next = { ...c, ...patch };
     setPosts((ps) => ps.map((p) => (p.id === c.id ? next : p)));
     updateContent(next).catch((error) => toastError(`อัปเดตสถานะไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+  };
+
+  // Moving a post's date from the list — the planning side's call, exactly as
+  // in the drawer (canEditContentPlan), and under the same lock: once Creative
+  // has accepted the job the date is asked for, not changed. The lock is read
+  // at the moment of the edit rather than for every row up front, so the list
+  // does not pull the whole request table just to draw a column.
+  const canEditDate = canEditContentPlan(role);
+  const movePostDate = async (c: ContentItem, iso: string) => {
+    if (!canEditDate || !iso || iso === contentDateIso(c)) return;
+    try {
+      const linked = (await fetchGraphicsForPost({ id: c.id, graphicRequestId: c.graphicRequestId }))[0] ?? null;
+      const lock = contentEditLock(linked);
+      if (lock.locked) {
+        toastError(`${lock.reason} — เปิดโพสต์เพื่อส่งคำขอเลื่อนวันแทน`);
+        setOpen(c);
+        return;
+      }
+      const from = contentDateIso(c);
+      const next = withChange(
+        { ...c, dateIso: iso, day: Number(iso.slice(8, 10)) || c.day },
+        me, "แก้กำหนดลง", `${from || "—"} ${c.time} → ${iso} ${c.time}`,
+      );
+      await updateContent(next);
+      setPosts((ps) => ps.map((p) => (p.id === c.id ? next : p)));
+      toastSuccess(`เลื่อนวันโพสต์เป็น ${labelDate(iso)} แล้ว`);
+      // Best-effort, as in the drawer: the notice is a message to Creative, not
+      // part of the record, and must never undo the date that was just saved.
+      if (linked) updateGraphic(withNotice(linked, me, `เลื่อนกำหนดลงโพสต์เป็น ${iso} ${c.time}`)).catch(() => {});
+    } catch (error) {
+      toastError(`เลื่อนวันโพสต์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   };
 
   useEffect(() => {
@@ -568,9 +602,9 @@ function ContentPageInner() {
               which reads as a hit. */}
           {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
           {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
-          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} onDate={canEditDate ? movePostDate : undefined} />}
           {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} onDate={canEditDate ? movePostDate : undefined} />}
         </div>
       )}
 
@@ -850,7 +884,7 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
 
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats, expandable to the post list inside. */
-function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus, onDate }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; onDate?: (c: ContentItem, iso: string) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const codeOf = useCampaignCodes();
   const groups = useMemo(() => {
@@ -864,7 +898,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
       .sort((a, b) => (a[1][0] ? contentDateIso(a[1][0]) : "").localeCompare(b[1][0] ? contentDateIso(b[1][0]) : "")
         || a[0].localeCompare(b[0]));
   }, [items]);
-  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} />;
+  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} onDate={onDate} />;
   const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
     <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
   );
@@ -893,7 +927,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
                 {chip("published", published, "#4E7A4E", "#EEF4EE")}
               </span>
             </button>
-            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} /></div>}
+            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} onDate={onDate} /></div>}
           </div>
         );
       })}
@@ -934,6 +968,28 @@ function StatusCell({ value, opts, canEdit, onChange }: { value: string; opts: s
   );
 }
 
+/** The post date, changeable where it is read.
+ *
+ *  A native date input laid invisibly over the label: the cell keeps the look
+ *  of every other date in the schedule, the browser supplies a picker that
+ *  works on a phone, and there is no popover to clip inside the list's
+ *  overflow-hidden card. Stops row-click so picking never opens the drawer. */
+function DateCell({ iso, onChange }: { iso: string; onChange: (iso: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <span className="relative inline-flex w-fit" onClick={(e) => e.stopPropagation()}>
+      <button type="button" title="แก้วันโพสต์"
+        onClick={() => { try { ref.current?.showPicker(); } catch { ref.current?.focus(); } }}
+        className="text-[11px] font-bold text-faint rounded-[6px] px-[5px] py-[3px] -ml-[5px] border border-transparent hover:border-line2 hover:bg-surface hover:text-ink cursor-pointer whitespace-nowrap">
+        {labelDate(iso) || "ตั้งวัน"}
+      </button>
+      <input ref={ref} type="date" value={iso || ""} aria-label="Post date" tabIndex={-1}
+        onChange={(e) => { if (e.target.value) onChange(e.target.value); }}
+        className="absolute inset-0 w-full h-full opacity-0 pointer-events-none" />
+    </span>
+  );
+}
+
 /** The single downloadable asset of a post, or null when it has none — or more
  *  than one, where picking for the user would be guessing. */
 function assetDownload(c: ContentItem): string | null {
@@ -948,13 +1004,13 @@ function assetDownload(c: ContentItem): string | null {
  *  every row is its own grid, the row then sits out of step with the header. */
 const CONTENT_LIST_COLS = "70px minmax(0,2fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
 
-function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus, onDate }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; onDate?: (c: ContentItem, iso: string) => void }) {
   const active = items.filter((c) => !isPostFinished(c));
   const finished = items.filter(isPostFinished);
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
-        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Publish ในแถวได้</span>}</span>
+        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{(canEditStatus || onDate) && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ {[onDate && "Post date", canEditStatus && "Publish"].filter(Boolean).join(" / ")} ในแถวได้</span>}</span>
         <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
       {/* The same 5px left border the rows carry, transparent here: without it
@@ -963,10 +1019,10 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
         style={{ gridTemplateColumns: CONTENT_LIST_COLS }}>
         <div>Post date</div><div>Content</div><div>Content ID</div><div>Caption status</div><div>Asset</div><div>Publish</div>
       </div>
-      {active.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} />)}
+      {active.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} onDate={onDate} />)}
       {/* Posts that already went out, folded under the work that hasn't. */}
       <FinishedFold count={finished.length} storageKey="mos-content-list-finished" label="โพสต์แล้ว">
-        {finished.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} />)}
+        {finished.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} onDate={onDate} />)}
       </FinishedFold>
       {items.length === 0 && (
         <div className="px-5 py-10 text-center">
@@ -980,11 +1036,13 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
   );
 }
 
-function ContentListRow({ c, onOpen, canEditStatus = false, onStatus }: { c: ContentItem; onOpen: (c: ContentItem) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, onDate }: { c: ContentItem; onOpen: (c: ContentItem) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; onDate?: (c: ContentItem, iso: string) => void }) {
   return (
           <div onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
-            <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
+            {onDate
+              ? <DateCell iso={contentDateIso(c)} onChange={(iso) => onDate(c, iso)} />
+              : <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>}
             <div className="flex items-center gap-2 min-w-0">
               {/* Delivered artwork, right in the plan — no need to open the post
                   to check which asset is attached. */}
