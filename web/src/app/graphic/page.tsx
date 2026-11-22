@@ -28,7 +28,7 @@ import {
   resolveOpenTarget, isGraphicFinished,
   assignedShoots, withShootMoved, withShooterAssigned, type AssignedShoot, approvedAssetNotice,
 } from "@/lib/data/graphic";
-import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY, BRIEF_EXTENSION_SETTING_KEY, parseBriefExtensions, withBriefExtension, currentBriefRound, type BriefExtensions } from "@/lib/data/briefDeadline";
+import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY, BRIEF_EXTENSION_SETTING_KEY, parseBriefExtensions, withBriefExtension, currentBriefRound, openBriefRounds, type BriefExtensions } from "@/lib/data/briefDeadline";
 import { thirdFriday } from "@/lib/data/artworkSchedule";
 import { TEAM_HOLIDAYS_SETTING_KEY, parseTeamHolidays, withTeamHoliday, workingDayOnOrBefore } from "@/lib/data/teamHolidays";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
@@ -69,6 +69,10 @@ import {
 } from "@/components/campaign/CampaignHeadController";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "27 Nov 2026" / "27 Nov" / "Jan 2027" — the app's one date style. */
+const dayMonthYear = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return m ? `${d} ${MON[m - 1]} ${y}` : ""; };
+const dayMonth = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return m ? `${d} ${MON[m - 1]}` : ""; };
+const monthYear = (ym: string) => { const [y, m] = ym.split("-").map(Number); return m ? `${MON[m - 1]} ${y}` : ym; };
 function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
 
 
@@ -171,6 +175,19 @@ function GraphicPageInner() {
       toastError(`บันทึกการขยายเดดไลน์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally { setExtBusy(false); }
   };
+  // One sentence per open round, each naming the month it is for.
+  const openRounds = useMemo(
+    () => openBriefRounds(todayIso(), { cutoffDay, extensions, holidays }),
+    [cutoffDay, extensions, holidays],
+  );
+  // The month the round in the extension control serves (its third Friday is
+  // two months before the work publishes).
+  const roundForMonth = useMemo(() => {
+    const [y, m] = briefRound.split("-").map(Number);
+    if (!y || !m) return "";
+    const at = new Date(Date.UTC(y, m - 1 + 2, 1));
+    return `${at.getUTCFullYear()}-${String(at.getUTCMonth() + 1).padStart(2, "0")}`;
+  }, [briefRound]);
   const saveCutoff = async () => {
     setCutoffBusy(true);
     try {
@@ -476,12 +493,24 @@ function GraphicPageInner() {
                 </span>
               )}
               {cutoffDay !== 0 && nextBriefDeadline && (
-                <span className="text-[11px] text-faint">· รอบถัดไป {labelDate(nextBriefDeadline)}</span>
+                <span className="sr-only">รอบถัดไป {labelDate(nextBriefDeadline)}</span>
               )}
             </label>
             {/* The exception to the rule, for one round: briefs that land up to
                 this day are not a rush. Everyone sees it; only the people who
                 clear rush briefs can grant it. */}
+            {/* The deadline, said once and in full: which month's work, by
+                when, and whether that day was moved. */}
+            {cutoffDay !== 0 && openRounds.length > 0 && (
+              <div className="basis-full text-[12px] text-ink rounded-[11px] px-3 py-[7px]" style={{ background: "#F7F2FF", border: "1px solid #DDD1FF" }}>
+                {openRounds.map((r, i) => (
+                  <span key={r.forMonth} className={i === 0 ? "font-bold" : "text-muted"}>
+                    {i === 0 ? "บรีฟ" : " · รอบถัดไป: "}งานเดือน {monthYear(r.forMonth)}: ส่งภายใน {dayMonthYear(r.iso)}
+                    {r.extendedFrom ? ` (ขยายจาก ${dayMonth(r.extendedFrom)})` : ""}
+                  </span>
+                ))}
+              </div>
+            )}
             {/* The team's own days off. A round date that lands on one moves to
                 the working day before — see teamHolidays. */}
             {(canEditCutoff || upcomingHolidays.length > 0) && (
@@ -505,7 +534,7 @@ function GraphicPageInner() {
             {cutoffDay !== 0 && briefRound && (canEditCutoff || roundExtendedTo) && (
               <div className="flex items-center gap-[6px] rounded-[11px] border border-line2 bg-ivory px-2.5 py-[5px]"
                 title="บรีฟที่เข้ามาภายในวันที่ขยาย จะไม่ถูกนับเป็นงานเร่งเพราะเลยเดดไลน์ส่งบรีฟ (ใช้กับรอบนี้รอบเดียว)">
-                <span className="text-[11px] font-bold text-faint">รอบ {labelDate(briefRound)}</span>
+                <span className="text-[11px] font-bold text-faint">ขยายรอบ {dayMonth(briefRound)}{roundForMonth ? ` (งานเดือน ${monthYear(roundForMonth)})` : ""}</span>
                 {canEditCutoff ? (
                   <>
                     <span className="text-[11px] text-faint">ขยายถึง</span>
@@ -1657,7 +1686,16 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
       .catch(() => {});
     return () => { alive = false; };
   }, []);
-  const [postLink, setPostLink] = useState<"existing" | "new" | "none">(prefillPost ? "existing" : "new");
+  // Nothing pre-selected unless the form was opened FROM a post. "สร้างโพสต์
+  // ใหม่ให้ด้วย" used to be on by default, so a brief for an existing post
+  // quietly minted a second one unless the planner noticed and changed it.
+  const [postLink, setPostLink] = useState<"existing" | "new" | "none" | "">(prefillPost ? "existing" : "");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [linkedPostId, setLinkedPostId] = useState(prefillPost?.id ?? "");
   const [posts, setPosts] = useState<ContentItem[]>([]);
   useEffect(() => {
@@ -1737,7 +1775,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
   // clear (see graphicDueRangeImpossible). The form warns instead of blocking.
   const dueRangeImpossible = graphicDueRangeImpossible(item.publishDate, requestDate);
   const dueOrderValid = dueRangeImpossible || !item.publishDate || !item.graphicDueDate || item.graphicDueDate <= item.publishDate;
-  const postLinkValid = postLink !== "existing" || !!linkedPost;
+  const postLinkValid = postLink !== "" && (postLink !== "existing" || !!linkedPost);
 
   // Late, too soon, or over the day's ceiling: all three used to refuse the
   // form outright, which taught people to nudge the due date until it went
@@ -1761,7 +1799,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
 
   const canCreate = !!item.title.trim() && item.platforms.length > 0 && !!item.graphicDueDate && dueOrderValid && postLinkValid && rushReasonValid;
   const missing = [
-    !postLinkValid ? "โพสต์ที่จะผูก" : null,
+    postLink === "" ? "เลือกว่างานนี้ใช้กับโพสต์ไหน" : !postLinkValid ? "โพสต์ที่จะผูก" : null,
     !item.title.trim() ? "brief title" : null,
     !item.platforms.length ? "platform" : null,
     !item.graphicDueDate ? "graphic due date" : null,
@@ -1899,7 +1937,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
           {/* The link between the two modules — the whole point of splitting
               them. Stored as contentPostId on the request. */}
           <div className="rounded-[14px] border border-[#DDD1FF] bg-[#F7F2FF] px-4 py-3">
-            <div className="text-[11.5px] font-bold text-[#2C2553] mb-2">งานนี้ใช้กับโพสต์ไหน</div>
+            <div className="text-[11.5px] font-bold text-[#2C2553] mb-2">งานนี้ใช้กับโพสต์ไหน <span className="text-status-red">*</span>{postLink === "" && <span className="ml-2 font-semibold text-[#B3641E]">— เลือกหนึ่งข้อ</span>}</div>
             <div className="flex flex-wrap gap-2 mb-2">
               {([
                 ["existing", "ผูกกับโพสต์ที่มีอยู่"],
@@ -1936,7 +1974,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
           </div>
 
           {/* Shared content-item template (title, type, platform × asset size, brief) */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} requestDate={requestDate} showAssignmentFields={false} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={requester} requestDate={requestDate} showAssignmentFields={false} subHeadRequired={false} />
         </div>
         {/* Daily capacity meter for the selected work kind + due date */}
         {dueDay && (
@@ -1984,11 +2022,14 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
             Requester stays fixed to login, and designer will be assigned after the brief comes in.
           </div>
         </div>
+        <div className="mt-4 flex gap-2">
+        <button type="button" onClick={onClose} disabled={saving} className="text-[13px] font-bold rounded-[10px] py-[11px] px-5 border border-line2 bg-surface text-muted disabled:opacity-40">ยกเลิก</button>
         <button onClick={submit} disabled={!canCreate || saving}
-          className={`w-full mt-4 text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40 ${isRush ? "" : "bg-panel"}`}
+          className={`flex-1 text-[13px] font-bold text-white rounded-[10px] py-[11px] disabled:opacity-40 ${isRush ? "" : "bg-panel"}`}
           style={isRush ? { background: "#B3641E" } : undefined}>
           {saving ? "กำลังบันทึก…" : isRush ? "⚡ ส่งบรีฟด่วน (รออนุมัติ)" : "Send Graphic Request"}
         </button>
+        </div>
       </div>
     </div>
   );

@@ -329,6 +329,8 @@ function ContentPageInner() {
   };
   const ymKey = `${gy}-${String(gm + 1).padStart(2, "0")}`;
 
+  const [newSeed, setNewSeed] = useState<{ b: BrandId; campaign: string } | null>(null);
+  const openNewIn = (seed: { b: BrandId; campaign: string }) => { setNewSeed(seed); openNew(); };
   const openNew = (day?: number) => {
     // The buttons are hidden for these roles; this is the same rule for every
     // other way in (the "+" on a calendar day, the list header).
@@ -353,9 +355,14 @@ function ContentPageInner() {
     ]),
     [scoped, date, brand, terms, onlyOverdue, todayIso],
   );
-  // Counted over every month on purpose: the period filter is what hides an
-  // overdue post — it is, by definition, in a month you have moved on from.
-  const overdueCount = useMemo(() => scoped.filter((c) => isPostOverdue(c, todayIso)).length, [scoped, todayIso]);
+  // Counted inside the period, brand and search on screen — the same rows the
+  // chip then narrows. It used to count every month while the page showed
+  // November ("41" above a list of 100), and pressing it rewrote the date
+  // filter to all time with no way back.
+  const overdueCount = useMemo(
+    () => scoped.filter((c) => inDateFilter(date, contentDateIso(c)) && (brand === "all" || c.b === brand) && matchesQuery(c, terms) && isPostOverdue(c, todayIso)).length,
+    [scoped, date, brand, terms, todayIso],
+  );
   const items = outcome.rows;
   // The Week view picks its own seven days, so it is fed everything the brand
   // and search filters allow — not the month-filtered list. A week that
@@ -534,16 +541,11 @@ function ContentPageInner() {
                     that hid something, not just the period. */}
                 {(overdueCount > 0 || onlyOverdue) && (
                   <button
-                    onClick={() => {
-                      const on = !onlyOverdue;
-                      setOnlyOverdue(on);
-                      // Turning it on widens the window and lands on the list:
-                      // the posts it is about are in past months, and a month
-                      // grid can only draw one.
-                      if (on) { setSticky({ ...sticky, date: { ...date, mode: "range", start: "", end: "" }, view: view === "month" || view === "week" || view === "queue" ? "list" : view }); }
-                    }}
+                    // A filter among filters: it narrows what the period already
+                    // shows and touches nothing else.
+                    onClick={() => setOnlyOverdue(!onlyOverdue)}
                     aria-pressed={onlyOverdue}
-                    title="โพสต์ที่วันโพสต์ผ่านไปแล้วแต่ยังไม่ Published (ไม่นับที่ Cancelled) — กดเพื่อดูเฉพาะรายการเหล่านี้ทุกช่วงเวลา"
+                    title="โพสต์ในช่วงเวลาที่เลือก ซึ่งวันโพสต์ผ่านไปแล้วแต่ยังไม่ Published (ไม่นับที่ Cancelled) — กดเพื่อดูเฉพาะรายการเหล่านี้"
                     className="rounded-[10px] border px-[10px] py-[6px] text-[12px] font-bold transition"
                     style={onlyOverdue
                       ? { background: "#B33A2E", borderColor: "#B33A2E", color: "#fff" }
@@ -568,7 +570,10 @@ function ContentPageInner() {
                   </button>
                 )}
               </div>
-              <div className="flex items-center rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px] shadow-[0_8px_22px_rgba(108,92,231,0.08)]">
+              {/* Scrolls inside itself on a phone: five tabs are wider than
+                  390px, and letting them push the page made the whole screen
+                  slide sideways with "Campaign" off the edge. */}
+              <div className="flex items-center max-w-full overflow-x-auto rounded-[16px] border border-[#E4DEFA] bg-[#F4F1FF] p-[4px] shadow-[0_8px_22px_rgba(108,92,231,0.08)]">
                 {[
                   { value: "month", label: "Month" },
                   { value: "week", label: "Week" },
@@ -697,7 +702,7 @@ function ContentPageInner() {
           {view === "week" && <WeekView items={weekItems} onOpen={setOpen} kolPosts={weekKols} startIso={todayIso.startsWith(ymKey) ? todayIso : `${ymKey}-01`} />}
           {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
           {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
+          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} onNewIn={openNewIn} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
         </div>
       )}
 
@@ -750,17 +755,27 @@ function ContentPageInner() {
           }}
         />
       )}
-      {newOpen && <NewPostModal onClose={() => setNewOpen(false)} onCreate={addPost} count={posts.length} initialIso={newIso} />}
+      {newOpen && <NewPostModal onClose={() => { setNewOpen(false); setNewSeed(null); }} onCreate={addPost} count={posts.length} initialIso={newIso} seed={newSeed} />}
     </>
   );
 }
 
-function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId: string | undefined, askGraphic: boolean) => Promise<void>; count: number; initialIso?: string | null }) {
+function NewPostModal({ onClose, onCreate, count: _count, initialIso, seed }: {
+  /** Opened from inside a campaign group: that campaign and its brand, so the
+   *  form does not come up on the first brand in the list with Campaign empty. */
+  seed?: { b: BrandId; campaign: string } | null; onClose: () => void; onCreate: (p: ContentItem, briefItem: BriefContentItem, campaign: string, campaignId: string | undefined, askGraphic: boolean) => Promise<void>; count: number; initialIso?: string | null }) {
   const brandVisibility = useBrandVisibility();
   const brandOptions = brandVisibility.visibleBrands;
-  const [b, setB] = useState<BrandId>(brandOptions[0] ?? "teppen");
-  const [campaign, setCampaign] = useState("");
+  const [b, setB] = useState<BrandId>(seed && brandOptions.includes(seed.b) ? seed.b : (brandOptions[0] ?? "teppen"));
+  const [campaign, setCampaign] = useState(seed?.campaign ?? "");
   const [time, setTime] = useState("10:00");
+  // Esc closes, like every other dialog — unless a save is in flight.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   // Campaigns arrive async. Without this flag an empty list reads the same
   // while loading as when there genuinely are none, and the picker told users
@@ -794,8 +809,11 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   const brandCampaignNames = useMemo(() => Array.from(new Set(brandCampaigns.map((c) => c.name))), [brandCampaigns]);
   const selectedCampaign = useMemo(() => brandCampaigns.find((c) => c.name === campaign), [brandCampaigns, campaign]);
   useEffect(() => {
-    if (campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
-  }, [brandCampaigns, campaign]);
+    // Only once the list is in: before that every campaign "does not exist",
+    // and a campaign handed in by the group this form was opened from would
+    // be cleared on the first render.
+    if (campaignsLoaded && campaign && !brandCampaigns.some((c) => c.name === campaign)) setCampaign("");
+  }, [brandCampaigns, campaign, campaignsLoaded]);
 
   const field = "w-full text-[14px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
   // Graphic due date / asset sizes moved to the brief form, so nothing about
@@ -873,7 +891,7 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
           </div>
           {/* Shared content-item template — post fields only; artwork lives in
               the graphic brief now. */}
-          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} showGraphicFields={false} />
+          <ContentItemForm item={item} onChange={onChange} requesterFallback={me} requestDate={requestDate} publishTime={time} onPublishTimeChange={setTime} showGraphicFields={false} subHeadRequired={false} />
 
           {/* Hand-off to Creative. Ticked, saving continues straight into the
               brief form with this post already linked. */}
@@ -900,7 +918,12 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
             บันทึกไม่สำเร็จ: {saveError}
           </div>
         )}
-        <button onClick={create} disabled={!canCreate || saving} className="w-full mt-4 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{saving ? "Saving…" : "Save to Content Plan"}</button>
+        {/* Cancel beside Save: the only ways out used to be the ✕ in the corner
+            and clicking the backdrop. */}
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onClose} disabled={saving} className="text-[13px] font-bold rounded-[10px] py-[11px] px-5 border border-line2 bg-surface text-muted disabled:opacity-40">ยกเลิก</button>
+          <button onClick={create} disabled={!canCreate || saving} className="flex-1 text-[13px] font-bold text-white bg-panel rounded-[10px] py-[11px] disabled:opacity-40">{saving ? "Saving…" : "Save to Content Plan"}</button>
+        </div>
       </div>
     </div>
   );
@@ -1062,7 +1085,7 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
 
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats, expandable to the post list inside. */
-function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus, canEditPlan = false, onAskDate }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; canEditPlan?: boolean; onAskDate?: (c: ContentItem) => void }) {
+function CampaignView({ items, onOpen, onNew, onNewIn, canEditStatus = false, onStatus, canEditPlan = false, onAskDate }: { onNewIn?: (seed: { b: BrandId; campaign: string }) => void; items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; canEditPlan?: boolean; onAskDate?: (c: ContentItem) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const codeOf = useCampaignCodes();
   const groups = useMemo(() => {
@@ -1104,7 +1127,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus, c
                 {chip("published", published, "#4E7A4E", "#EEF4EE")}
               </span>
             </button>
-            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} /></div>}
+            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={list[0] && onNewIn && campaign !== "—" ? () => onNewIn({ b: list[0].b, campaign }) : onNew} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} /></div>}
           </div>
         );
       })}
@@ -1160,6 +1183,16 @@ function assetDownload(c: ContentItem): string | null {
 // Content ID gets a real floor: at minmax(0, …) the column shrank below the
 // width of a job number and the pill ran under the Caption badge beside it.
 const CONTENT_LIST_COLS = "92px minmax(0,2fr) minmax(138px,1.15fr) minmax(0,0.9fr) minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.2fr)";
+// Between a phone and a wide screen the page is ~740px across once the sidebar
+// is in — seven columns do not fit, and they did not shrink gracefully: Asset
+// was cut to "Waiting Des", Publish sat on top of it and the title was left
+// with a word. So below 1280 the note column steps aside (it is still in the
+// post drawer) and the rest get widths they can actually hold.
+// Content ID has no column of its own at this width — it sits under the
+// title instead, which leaves the title about twice the room.
+const CONTENT_LIST_COLS_MID = "84px minmax(0,1fr) 92px 124px 130px";
+const LIST_GRID_CX = "md:[grid-template-columns:var(--cols-mid)] xl:[grid-template-columns:var(--cols-wide)]";
+const LIST_GRID_VARS = { "--cols-mid": CONTENT_LIST_COLS_MID, "--cols-wide": CONTENT_LIST_COLS } as CSSProperties;
 
 /** The free-text note at the end of the row. Typed in place and saved on blur
  *  or Enter — a note that needed the drawer opened would not get written. */
@@ -1198,9 +1231,9 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus, canEd
       </div>
       {/* The same 5px left border the rows carry, transparent here: without it
           the header sits 5px left of every cell it labels. */}
-      <div className="hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 border-l-[5px] border-l-transparent"
-        style={{ gridTemplateColumns: CONTENT_LIST_COLS }}>
-        <div>Post date</div><div>Content</div><div>Content ID</div><div>Caption status</div><div>Asset</div><div>Publish</div><div>หมายเหตุ</div>
+      <div className={`hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 border-l-[5px] border-l-transparent ${LIST_GRID_CX}`}
+        style={LIST_GRID_VARS}>
+        <div>Post date</div><div>Content</div><div className="hidden xl:block">Content ID</div><div>Caption</div><div>Asset</div><div>Publish</div><div className="hidden xl:block">หมายเหตุ</div>
       </div>
       {active.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} />)}
       {/* Posts that already went out, folded under the work that hasn't. */}
@@ -1228,7 +1261,7 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
   const overdue = isPostOverdue(c, today);
   const readyToPost = isReadyToPost(c);
   return (
-          <div onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
+          <div onClick={() => onOpen(c)} className={`w-full grid grid-cols-1 ${LIST_GRID_CX} gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer`} style={{ borderLeftColor: campaignAccent(c.campaign), ...LIST_GRID_VARS }}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
             <div className="flex flex-col items-start gap-[3px] min-w-0">
               <span className="flex items-center gap-[5px]">
@@ -1259,16 +1292,23 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
               <AssetThumb assets={c.assets} mediaLink={c.mediaLink} />
               <PlatBadges item={c} size={18} />
               <div className="min-w-0">
-                <div className={`text-[13px] font-semibold truncate ${cancelled ? "line-through text-faint" : ""}`}>{c.title}</div>
+                {/* Two lines: a narrow column left "Which Price …" of a title that
+                    only differs from its neighbours in the words after that. */}
+                <div className={`text-[13px] font-semibold leading-[1.3] break-words ${cancelled ? "line-through text-faint" : ""}`} title={c.title}
+                  style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{c.title}</div>
                 <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{captionOwner(c) || "ยังไม่มอบหมาย"}</div>
+                {/* Below 1280 the job number lives here rather than in a column. */}
+                <div className="xl:hidden mt-[2px] min-w-0 overflow-hidden"><WorkCode code={c.code} full /></div>
               </div>
             </div>
             {/* Content ID: the post's job number, in FULL. The campaign column is
                 gone from this view, so a bare "C01" would name nothing — the full
                 code carries its campaign inside it and stays unique on its own. */}
-            <span className="min-w-0 overflow-hidden" title={c.code}><WorkCode code={c.code} full /></span>
-            <StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge>
-            <div className="flex items-center gap-[6px] min-w-0">
+            <span className="hidden xl:block min-w-0 overflow-hidden" title={c.code}><WorkCode code={c.code} full /></span>
+            {/* Each badge clipped inside its own cell — a status must never
+                run under the column beside it. */}
+            <span className="min-w-0 overflow-hidden"><StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge></span>
+            <div className="flex items-center gap-[6px] min-w-0 overflow-hidden">
               <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
               {/* Grab the delivered file without opening the post. Multi-asset
                   posts open the drawer instead — that is where the whole set,
@@ -1278,7 +1318,7 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
                   title="ดาวน์โหลด asset" className="text-[11.5px] font-bold text-status-green flex-shrink-0">⬇</a>
               )}
             </div>
-            <span className="min-w-0" title={c.publishStatusReason ? `เหตุผล: ${c.publishStatusReason}` : undefined}>
+            <span className="min-w-0 overflow-hidden flex items-center flex-wrap gap-y-[3px]" title={c.publishStatusReason ? `เหตุผล: ${c.publishStatusReason}` : undefined}>
               <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
               {/* Caption and artwork both approved, Publish still Draft. */}
               {readyToPost && (
@@ -1287,7 +1327,10 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
                   title="Caption และ Asset อนุมัติครบแล้ว แต่ Publish ยังเป็น Draft">✓ พร้อมลง</span>
               )}
             </span>
-            <RemarkCell value={c.remark ?? ""} canEdit={(canEditStatus || canEditPlan) && !!onStatus} onSave={(v) => onStatus?.(c, { remark: v })} />
+            {/* Wide screens only; the note is also in the post drawer. */}
+            <div className="hidden xl:block min-w-0">
+              <RemarkCell value={c.remark ?? ""} canEdit={(canEditStatus || canEditPlan) && !!onStatus} onSave={(v) => onStatus?.(c, { remark: v })} />
+            </div>
           </div>
   );
 }

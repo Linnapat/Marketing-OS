@@ -19,7 +19,11 @@ import { useTeamHolidays } from "@/lib/useTeamHolidays";
 const field = "w-full text-[13.5px] px-[13px] py-[10px] rounded-[10px] border border-line2 bg-ivory outline-none";
 const label = "block text-[11.5px] font-bold text-faint mb-[6px]";
 
-export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, showGraphicFields = true, requestDate, publishTime, onPublishTimeChange }: {
+export function ContentItemForm({ item, onChange, outOfRange, requesterFallback, showAssignmentFields, showGraphicFields = true, requestDate, publishTime, onPublishTimeChange, subHeadRequired = true }: {
+  /** Whether Sub Head is a required field in THIS form. The Campaign Builder
+   *  requires it; Plan Post and Send Brief do not, and showing the star there
+   *  contradicted the "before saving, add…" line under the form. */
+  subHeadRequired?: boolean;
   item: BriefContentItem;
   onChange: (patch: Partial<BriefContentItem>) => void;
   outOfRange?: (iso: string) => boolean;
@@ -98,11 +102,11 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   const reviewLate = !!item.reviewDueDate && !!reviewCap && item.reviewDueDate > reviewCap;
   const reviewDueField = showGraphicFields && needsArtwork ? (
     <div>
-      <label className={label}>เดดไลน์ส่งตรวจงาน <span className="text-faint font-normal">· ส่งถึง designer</span></label>
+      <label className={label}>วันขอดูงานรอบแรก</label>
       <DatePicker value={item.reviewDueDate || null} onChange={(v) => onChange({ reviewDueDate: v })}
         max={reviewCap} invalid={reviewLate} />
       <div className="mt-1 text-[11px]" style={{ color: reviewLate ? "#B33A2E" : "#9A9387" }}>
-        {reviewLate ? "ต้องไม่เกินวันส่ง Final / วันโพสต์" : "วันที่อยากเห็นงานรอบแรก · ไม่ใส่ = ใช้วันส่ง Final"}
+        {reviewLate ? "ต้องไม่เกินวันส่งงานจริง / วันโพสต์" : "วันที่อยากเห็นงานรอบแรก · ไม่ใส่ = ใช้วันส่งงานจริง"}
       </div>
     </div>
   ) : null;
@@ -110,7 +114,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   const graphicDueField = showGraphicFields && item.requiredGraphic ? (
     <div>
       <label className={label}>
-        วันส่ง Final Artwork <span className="text-status-red">*</span>
+        วันส่งงานจริง <span className="text-status-red">*</span>
         {finalDue.fixed && <span className="text-faint font-normal"> · 🔒 ล็อกจากวันโพสต์</span>}
       </label>
       {finalDue.fixed ? (
@@ -167,7 +171,7 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
         </div>
       )}
       <div><label className={label}>Content Title <span className="text-status-red">*</span></label><input value={item.title} onChange={(e) => onChange({ title: e.target.value })} className={field} placeholder="เช่น Wagyu plating reel" /></div>
-      <div><label className={label}>Sub Head <span className="text-status-red">*</span></label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
+      <div><label className={label}>Sub Head {subHeadRequired && <span className="text-status-red">*</span>}</label><input value={item.subHead} onChange={(e) => onChange({ subHead: e.target.value })} className={field} placeholder="หัวข้อรอง" /></div>
       {/* Sixteen content types, so a type-to-search box beats scrolling a
           native select — "vdo" lands on VDO shooting in one keystroke run. */}
       <div><label className={label}>Content Type</label><Combobox value={item.type} onChange={(v) => onChange({ type: v })} options={[...CONTENT_TYPES]} inputClassName={field} placeholder="พิมพ์เพื่อค้นหา เช่น Reel, Poster…" emptyLabel="ไม่พบ content type ที่ตรงกับที่พิมพ์" /></div>

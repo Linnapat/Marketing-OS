@@ -140,6 +140,25 @@ export function briefRoundFor(forMonth: string, settings: BriefRoundSettings): B
     : { forMonth: month, ruleIso, iso: plain };
 }
 
+/** The brief rounds still open today, soonest first — each one says which
+ *  month's work it is for, which is the thing the Graphic page never said: it
+ *  showed "รอบถัดไป Dec 18", "รอบ Nov 20 ขยายถึง Nov 27" and a calendar banner
+ *  side by side, three dates and no month on any of them. */
+export function openBriefRounds(todayIso: string, settings: BriefRoundSettings, count = 2): BriefRound[] {
+  const hit = /^(\d{4})-(\d{2})/.exec(todayIso ?? "");
+  if (!hit) return [];
+  const base = Number(hit[1]) * 12 + (Number(hit[2]) - 1);
+  const out: BriefRound[] = [];
+  // Work publishing next month was briefed a month ago; start there and walk
+  // forward until `count` rounds are still ahead (or today).
+  for (let n = 1; n <= 8 && out.length < count; n++) {
+    const zero = base + n;
+    const round = briefRoundFor(`${Math.floor(zero / 12)}-${String((zero % 12) + 1).padStart(2, "0")}`, settings);
+    if (round && round.iso >= todayIso.slice(0, 10)) out.push(round);
+  }
+  return out;
+}
+
 export interface RushInput {
   /** When Creative must deliver. */
   graphicDueIso: string;
