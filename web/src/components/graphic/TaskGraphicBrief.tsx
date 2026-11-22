@@ -51,7 +51,9 @@ export function TaskGraphicBrief({ g, onOpenFull }: { g: Graphic; onOpenFull: ()
       <div className="flex items-center justify-between gap-2 px-[14px] py-[11px]" style={{ background: "#FBF1E9" }}>
         <div className="min-w-0">
           <div className="text-[10px] tracking-[0.08em] uppercase font-bold" style={{ color: "#C2691E" }}>
-            🎨 Graphic Brief · #{g.id}
+            {/* The job number people use (C24-A01), not the database id — a
+                sixteen-digit number beside a short code read as two requests. */}
+            🎨 Graphic Brief · {g.code ? g.code.slice(g.code.indexOf("-") + 1) : `#${g.id}`}
           </div>
           <div className="text-[12.5px] font-bold text-ink truncate mt-[2px]">{g.title}</div>
         </div>

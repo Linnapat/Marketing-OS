@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, captionBadge, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer, requestDateChange, decideDateChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
-import { stamp, DATE_LOCALE } from "@/lib/format";
+import { stamp, fmtDateTime, fmtDate, distinctLabels } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -53,13 +53,14 @@ function TemplateChips({ values, bg, fg, onPick, onRemove }: {
 }) {
   return (
     <>
-      {values.map((v) => (
+      {values.map((v, i) => (
         <span key={v} className="inline-flex items-center gap-[5px] rounded-pill px-[10px] py-1 text-[11px] font-bold" style={{ background: bg, color: fg }}>
           {/* Saved sets are multi-line now that Footer/CTA are. A newline inside
               a pill collapses to nothing visible, so the label flattens the
               breaks to " · " — picking it still restores the real text, and the
               tooltip shows it as it will actually be written. */}
-          <button onClick={() => onPick(v)} title={v} className="max-w-[170px] truncate">{v.replace(/\s*\n+\s*/g, " · ")}</button>
+          {/* The part that tells this set from the others — see distinctLabels. */}
+          <button onClick={() => onPick(v)} title={v} className="max-w-[200px] truncate">{distinctLabels(values)[i]}</button>
           <button onClick={() => onRemove(v)} aria-label={`ลบชุดนี้: ${v}`} title="ลบชุดนี้" className="opacity-45 hover:opacity-100">
             <X size={11} />
           </button>
@@ -700,7 +701,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                   the list rows, where the job number is shown short ("C04") and
                   the two are complementary rather than overlapping. */}
               {/* Real publish date from dateIso — falls back to day-of-month only when undated. */}
-              <span className="text-faint">·</span><span>{item.dateIso ? `${MONTHS[Number(item.dateIso.slice(5, 7)) - 1]} ${Number(item.dateIso.slice(8, 10))}` : `Day ${item.day}`}, {item.time}</span>
+              <span className="text-faint">·</span><span>{item.dateIso ? fmtDate(item.dateIso) : `Day ${item.day}`}, {item.time}</span>
             </div>
           </div>
           <button onClick={onClose} className="text-faint hover:text-ink flex-shrink-0"><X size={18} /></button>
@@ -890,7 +891,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                       {[...(item.changeLog ?? [])].reverse().slice(0, 6).map((h, i) => (
                         <li key={`${h.at}-${i}`} className="text-[11px] text-muted">
                           <span className="font-bold">{h.action}</span>{h.detail ? ` · ${h.detail}` : ""}
-                          <span className="text-faint"> — {h.by} · {new Date(h.at).toLocaleString(DATE_LOCALE, { dateStyle: "short", timeStyle: "short" })}</span>
+                          <span className="text-faint"> — {h.by} · {fmtDateTime(new Date(h.at))}</span>
                         </li>
                       ))}
                     </ul>
@@ -1180,7 +1181,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                     <div key={f.round} className="rounded-[11px] px-[13px] py-[10px] border-[1.5px]" style={{ borderColor: "#F0D9C0", background: "#FCF6EE" }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[11.5px] font-bold text-status-orange">Round {f.round}</span>
-                        <span className="text-[11px] text-faint">{f.by} · {new Date(f.at).toLocaleDateString(DATE_LOCALE, { dateStyle: "medium" })}</span>
+                        <span className="text-[11px] text-faint">{f.by} · {fmtDate(new Date(f.at))}</span>
                       </div>
                       <div className="text-[12.5px] text-ink">{f.reason}</div>
                     </div>
@@ -1310,7 +1311,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
               {item.publishStatus === "Published" ? (
                 <div className="rounded-[11px] px-[14px] py-3 text-center" style={{ background: "#EFF7EF", border: "1px solid #BFE0C4" }}>
                   <div className="text-[13px] font-bold text-status-green">✓ Published{item.publishedBy ? ` · ${item.publishedBy}` : ""}</div>
-                  {item.publishedAt && <div className="text-[11px] text-faint mt-[2px]">{new Date(item.publishedAt).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}</div>}
+                  {item.publishedAt && <div className="text-[11px] text-faint mt-[2px]">{fmtDateTime(new Date(item.publishedAt))}</div>}
                   <div className="text-[11.5px] text-faint mt-[3px]">โพสต์ด้วยมือแล้ว — บันทึกสถานะไว้ในระบบ</div>
                 </div>
               ) : (

@@ -7,16 +7,13 @@
 // own answer for a month, so the deadline you read in Content Plan is the one
 // on the wall — and moving it on the wall moves it here.
 
+import { fmtDate, fmtMonth } from "@/lib/format";
 import { MilestoneKey, inProcessOrder, outOfSequence } from "@/lib/data/deadlinePolicy";
 import { useDeadlines } from "@/lib/useDeadlines";
 import { useBriefRound } from "@/lib/useBriefRound";
 import { withRoundExtension } from "@/lib/data/deadlineBoard";
 
-const fmt = (iso: string) => {
-  const [, m, d] = iso.split("-");
-  const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-  return `${Number(d)} ${months[Number(m) - 1] ?? m}`;
-};
+const fmt = (iso: string) => fmtDate(iso);
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -45,7 +42,7 @@ export function DeadlineStrip({ forMonth, only, note }: {
     <div className="rounded-cardLg border px-4 py-[10px]" style={{ background: "#F7F2FF", borderColor: "#DDD1FF" }}>
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11.5px] font-extrabold" style={{ color: "#2C2553" }}>
-          🗓 เดดไลน์จากปฏิทินทีม · งานของเดือน {forMonth}
+          🗓 เดดไลน์จากปฏิทินทีม · งานของเดือน {fmtMonth(forMonth) || forMonth}
         </span>
         {items.map((d) => {
           // Past its date is not a warning about the future — it has already

@@ -1,5 +1,6 @@
 "use client";
 
+import { fmtDate, fmtRange } from "@/lib/format";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { notify } from "@/lib/notify";
 import { workLink } from "@/lib/deepLink";
@@ -137,7 +138,8 @@ type SavedContentView = { name: string; view: View; brand: BrandFilterValue; dat
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const labelDate = (iso: string) => { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; };
+// "27 Nov 2026" — with the year, like every other date in the app.
+const labelDate = (iso: string) => fmtDate(iso);
 const uniqueNewPostId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const isTemplateContentId = (id?: string) => !id || /^ci-\d+$/.test(id);
 const CAMPAIGN_COLORS = ["#6C5CE7", "#4BA06B", "#F59E0B", "#D85C9A", "#35A7FF", "#B33A2E", "#8B5CF6", "#14B8A6"];
@@ -871,7 +873,7 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso, seed }: {
           </div>
           <div className="rounded-[12px] border border-[#DDD1FF] bg-[#F7F2FF] px-3 py-2 text-right">
             <div className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#7D70CC]">Request date</div>
-            <div className="text-[12px] font-extrabold text-[#2C2553]">{requestDate}</div>
+            <div className="text-[12px] font-extrabold text-[#2C2553]">{fmtDate(requestDate)}</div>
           </div>
         </div>
         <div className="flex flex-col gap-4">
@@ -1036,7 +1038,7 @@ function WeekView({ items, onOpen, kolPosts = [], startIso }: { items: ContentIt
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={() => setWeekStart(shiftDays(weekStart, -7))} className={nav} aria-label="สัปดาห์ก่อนหน้า">‹</button>
-        <span className="text-[13px] font-bold">{labelDate(days[0])} – {labelDate(days[6])} {days[6].slice(0, 4)}</span>
+        <span className="text-[13px] font-bold">{fmtRange(days[0], days[6])}</span>
         <button onClick={() => setWeekStart(shiftDays(weekStart, 7))} className={nav} aria-label="สัปดาห์ถัดไป">›</button>
         {weekStartOf(today) !== weekStart && <button onClick={() => setWeekStart(weekStartOf(today))} className={nav}>สัปดาห์นี้</button>}
         <span className="text-[11.5px] text-faint">{inWeek.length} โพสต์ในสัปดาห์นี้</span>
@@ -1192,7 +1194,7 @@ function assetDownload(c: ContentItem): string | null {
  *  every row is its own grid, the row then sits out of step with the header. */
 // Content ID gets a real floor: at minmax(0, …) the column shrank below the
 // width of a job number and the pill ran under the Caption badge beside it.
-const CONTENT_LIST_COLS = "92px minmax(0,2fr) minmax(138px,1.15fr) minmax(0,0.9fr) minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.2fr)";
+const CONTENT_LIST_COLS = "104px minmax(0,2fr) minmax(138px,1.15fr) minmax(0,0.9fr) minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.2fr)";
 // Between a phone and a wide screen the page is ~740px across once the sidebar
 // is in — seven columns do not fit, and they did not shrink gracefully: Asset
 // was cut to "Waiting Des", Publish sat on top of it and the title was left
@@ -1200,7 +1202,7 @@ const CONTENT_LIST_COLS = "92px minmax(0,2fr) minmax(138px,1.15fr) minmax(0,0.9f
 // post drawer) and the rest get widths they can actually hold.
 // Content ID has no column of its own at this width — it sits under the
 // title instead, which leaves the title about twice the room.
-const CONTENT_LIST_COLS_MID = "84px minmax(0,1fr) 92px 124px 130px";
+const CONTENT_LIST_COLS_MID = "98px minmax(0,1fr) 92px 124px 130px";
 const LIST_GRID_CX = "md:[grid-template-columns:var(--cols-mid)] xl:[grid-template-columns:var(--cols-wide)]";
 const LIST_GRID_VARS = { "--cols-mid": CONTENT_LIST_COLS_MID, "--cols-wide": CONTENT_LIST_COLS } as CSSProperties;
 

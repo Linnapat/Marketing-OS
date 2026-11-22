@@ -2,6 +2,7 @@
  * Run with:  npx tsx --tsconfig tsconfig.json scripts/test-flows.ts
  * No test runner is configured; this is a self-contained assert harness. */
 
+import { fmtDate } from "../src/lib/format";
 import { Kol, KOLS } from "../src/lib/data/kol";
 import { assertMockUniqueId, releaseMockId, seedMockIds, resetMockGuard } from "../src/lib/db/mockGuard";
 import {
@@ -836,7 +837,8 @@ console.log("Artwork counting — by pixels, platform collapsed");
   check("adhoc ไม่ล็อกวัน", adhoc.fixed === false);
   check("adhoc ไม่มีวันให้", adhoc.iso === "");
   check("adhoc ไม่นับเป็นงานเร่ง", adhoc.rushed === false);
-  check("adhoc บอกวันเร็วสุด", adhoc.reason.includes(minGraphicDueDate(REQ)));
+  // Printed in the app's one date style ("27 Nov 2026"), not as a raw ISO date.
+  check("adhoc บอกวันเร็วสุด", adhoc.reason.includes(fmtDate(minGraphicDueDate(REQ))));
 
   // งานคอนเทนต์ที่มีเวลาพอ — ล็อกเป็น publish − buffer
   const roomy = finalArtworkDue("2026-09-30", REQ);

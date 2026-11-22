@@ -1,6 +1,6 @@
 "use client";
 
-import { DATE_LOCALE } from "@/lib/format";
+import { fmtDate } from "@/lib/format";
 import { isTestAccount } from "@/lib/data/testAccounts";
 import { hasNoDue, graphicFilterDate, dueNotBeforePost, byDue } from "@/lib/data/graphic";
 import { downloadXlsx } from "@/lib/xlsx";
@@ -73,7 +73,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const dayMonthYear = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return m ? `${d} ${MON[m - 1]} ${y}` : ""; };
 const dayMonth = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return m ? `${d} ${MON[m - 1]}` : ""; };
 const monthYear = (ym: string) => { const [y, m] = ym.split("-").map(Number); return m ? `${MON[m - 1]} ${y}` : ym; };
-function labelDate(iso: string): string { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return m ? `${MON[m - 1]} ${d}` : ""; }
+function labelDate(iso: string): string { return fmtDate(iso); }
 
 
 type GraphicView = "board" | "list" | "campaign" | "shoot";
@@ -833,8 +833,6 @@ const tint = (hex: string, alpha: number): string => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 };
 
-const fmtDate = (iso: string) =>
-  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(DATE_LOCALE, { day: "2-digit", month: "short", year: "2-digit" }) : "—";
 const fmtTime = (t: string) => (t ? t.split("-").filter(Boolean).join(" – ") : "—");
 
 /** Brand chip — the colour cue that carries through the table and the print sheet. */
@@ -1157,7 +1155,7 @@ function ShootCalendar({ me, requests, pageBrand, period, onPatchRequest, onOpen
 
   const cell = `${cellBase} text-ink placeholder:text-faint`;
   const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-muted px-[10px] py-2 border-b border-line";
-  const printedAt = new Date().toLocaleDateString(DATE_LOCALE, { day: "2-digit", month: "long", year: "numeric" });
+  const printedAt = fmtDate(new Date());
 
   return (
     <div>
@@ -1420,7 +1418,7 @@ function QuickApproveBtn({ g, onQuickApprove }: { g: Graphic; onQuickApprove?: (
           onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onQuickApprove(g, lens); } }}
           title={mine.length === 1 && lensesFor(g).length === 1
             ? "อนุมัติทุกชิ้นที่รอรีวิวของงานนี้"
-            : `ผ่านด้าน${LENS_META[lens].short}ให้ทุกชิ้นที่รอรีวิวของงานนี้ — อีกด้านยังต้องมีคนตรวจ`}
+            : `${lens === "ci" ? "CI = Visual CI: ตรวจว่างานตรงแบรนด์ (โลโก้ สี ฟอนต์ สไตล์ภาพ) · " : "ข้อมูล: ตรวจว่าเนื้อหา ราคา วันที่ ถูกต้อง · "}ผ่านด้าน${LENS_META[lens].short}ให้ทุกชิ้นที่รอรีวิวของงานนี้ — อีกด้านยังต้องมีคนตรวจ`}
           className="inline-flex items-center text-[11px] font-bold text-white rounded-[8px] px-2.5 py-[4px] cursor-pointer whitespace-nowrap"
           style={{ background: lens === "ci" ? "#6C5CE7" : "#4E7A4E" }}
         >✓ {lensesFor(g).length === 1 ? "อนุมัติ" : LENS_META[lens].short}</span>
@@ -1566,7 +1564,10 @@ function CampaignGroupView({ items, onOpen, onQuickApprove }: { items: Graphic[]
  * "0901_YOUR NIG…". */
 // Post date sits right after Due: designers order the queue by what goes live
 // first, and Due alone (when the artwork is wanted) does not say that.
-const LIST_COLS = "minmax(0,2.05fr) minmax(0,1.05fr) minmax(116px,0.8fr) minmax(0,0.6fr) minmax(0,0.7fr) minmax(0,0.5fr) minmax(0,0.55fr) minmax(0,1.05fr)";
+// Stage has a floor wide enough for "Waiting Feedback" plus a quick-approve
+// button; at a bare fr the badge ran past the right edge of the table. Due and
+// Post date carry a year now, so they get a little more too.
+const LIST_COLS = "minmax(0,1.9fr) minmax(0,0.95fr) minmax(116px,0.75fr) minmax(0,0.55fr) minmax(0,0.65fr) minmax(88px,0.6fr) minmax(88px,0.6fr) minmax(150px,1.05fr)";
 
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
@@ -1633,7 +1634,7 @@ function GraphicListRow({ g, codeOf, postDate, onOpen, onQuickApprove }: { g: Gr
         <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
         <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
         <span className="text-[12px] whitespace-nowrap flex items-center gap-[4px]" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>
-          {hasNoDue(g) ? <span className="text-[10.5px] font-bold rounded-pill px-[7px] py-[2px]" style={{ color: "#8A6D1E", background: "#FBF6EC", border: "1px solid #EADBC1" }} title="ใบงานนี้ยังไม่ได้กำหนดวัน Due — แสดงตามวันโพสต์แทน">ยังไม่กำหนด Due</span> : g.due}
+          {hasNoDue(g) ? <span className="text-[10.5px] font-bold rounded-pill px-[7px] py-[2px]" style={{ color: "#8A6D1E", background: "#FBF6EC", border: "1px solid #EADBC1" }} title="ใบงานนี้ยังไม่ได้กำหนดวัน Due — แสดงตามวันโพสต์แทน">ยังไม่กำหนด Due</span> : (fmtDate(g.dueIso) || g.due)}
           {dueNotBeforePost(g, postDate) && (
             <span title={`Due (${g.dueIso}) อยู่วันเดียวกับหรือหลังวันโพสต์ (${postDate}) — ไม่เหลือเวลาตรวจงานก่อนลง`} style={{ color: "#B3641E" }} aria-label="Due ไม่ก่อนวันโพสต์">⚠</span>
           )}

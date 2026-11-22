@@ -1,5 +1,6 @@
 "use client";
 
+import { fmtDate } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 
 // One date picker for the whole app. Displays DD/MM/YYYY, stores ISO YYYY-MM-DD,
@@ -11,10 +12,8 @@ const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /** ISO (YYYY-MM-DD) → DD/MM/YYYY for display. */
 export function fmtDisplay(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return "";
-  return `${d}/${m}/${y}`;
+  // The app's one date style ("27 Nov 2026"), not dd/mm/yyyy.
+  return fmtDate(iso);
 }
 
 const SHORT_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

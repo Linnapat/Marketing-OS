@@ -1,6 +1,6 @@
 "use client";
 
-import { DATE_LOCALE } from "@/lib/format";
+import { fmtDateTime } from "@/lib/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { X, ChevronDown } from "lucide-react";
@@ -101,7 +101,7 @@ export function NotificationBell({ collapsed, tone = "dark", hideApprovals = fal
   };
 
   const when = (iso: string) =>
-    new Date(iso).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" });
+    fmtDateTime(new Date(iso));
 
   return (
     <>

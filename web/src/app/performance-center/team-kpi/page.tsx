@@ -33,7 +33,7 @@ import { withAutoRoster,
 import { KpiSignals, boardDesigners, kpiSignals, signalsFor, totalSignals } from "@/lib/data/teamKpiSignals";
 import { KolKpiRow, KolKpiSignals, kolKpiSignals, kolTeamSignals, kolSignalsFor } from "@/lib/data/kolKpiSignals";
 import { fetchKolKpiRows } from "@/lib/db/kolScorecard";
-import { baht, DATE_LOCALE } from "@/lib/format";
+import { baht, fmtDateTime } from "@/lib/format";
 import { AutoValue, autoInputs, isOverridden, mergeInputs } from "@/lib/data/teamKpiAuto";
 import { fetchTeamKpiMonth, saveTeamKpiMonth } from "@/lib/db/teamKpi";
 import { fetchGraphics } from "@/lib/db/graphic";
@@ -281,7 +281,7 @@ export default function TeamKpiPage() {
           </div>
           <div className="text-[11.5px] font-semibold text-[#0B7F7A]">
             {shared ? "ข้อมูลใช้ร่วมกันทั้งทีม" : "ยังเก็บในเครื่องนี้ (ยังไม่ได้รัน migration)"}
-            {review.updatedAt ? ` · แก้ล่าสุด ${new Date(review.updatedAt).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}` : ""}
+            {review.updatedAt ? ` · แก้ล่าสุด ${fmtDateTime(new Date(review.updatedAt))}` : ""}
           </div>
         </div>
 
