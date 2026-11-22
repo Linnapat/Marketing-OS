@@ -80,6 +80,14 @@ export function canPlanPost(role: string): boolean {
   return canEditContentPlan(r) || r === "Content Creator" || r === "Creative Leader";
 }
 
+/** The role the app is drawn for: the previewed one when this person may
+ *  preview and has picked another role, otherwise their own. Pure, so the one
+ *  rule that decides it can be tested without a provider. */
+export function effectiveRole<R extends string>(realRole: R, previewRole: R | null | undefined, authRequired: boolean): R {
+  if (!previewRole || previewRole === realRole) return realRole;
+  return canViewAsOtherRole(realRole, authRequired) ? previewRole : realRole;
+}
+
 /** May this role ASK to move a post's publish date?
  *
  *  The Content Creator is the one who knows the piece will not be ready, or

@@ -1,5 +1,6 @@
 "use client";
 
+import { canViewAsOtherRole, effectiveRole } from "@/lib/roleGates";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
@@ -12,7 +13,23 @@ export const AUTH_REQUIRED = process.env.NEXT_PUBLIC_REQUIRE_AUTH === "true" && 
 interface AuthCtx {
   user: User | null;
   member: Member | null;
+  /** The role the app is being drawn for. The signed-in person's own role —
+   *  unless they are the CMO previewing another one, in which case it is the
+   *  previewed role (see previewRole). Every gate in the app reads this, which
+   *  is the point: a preview that only some pages honoured showed the CMO a
+   *  designer's Content Plan next to a CMO's Graphic Request. */
   role: Role;
+  /** Who is actually signed in. The database goes by this, always. Use it for
+   *  anything that must not follow a preview: routing a real agency account to
+   *  its portal, deciding who may preview at all. */
+  realRole: Role;
+  /** True while the screen is drawn as another role. */
+  previewing: boolean;
+  /** May this person preview other roles? */
+  canPreview: boolean;
+  /** Draw the app as `r`; null (or their own role) goes back. Ignored for
+   *  anyone who may not preview. */
+  setPreviewRole: (r: Role | null) => void;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -98,10 +115,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // back to the least-privileged role instead; AppShell's AuthGate already
   // blocks rendering entirely in this state, but the auth layer itself should
   // not hand out admin access just because identity hasn't been confirmed.
-  const role: Role = !AUTH_REQUIRED ? "CMO" : user ? memberRole(member) : "Content Creator";
+  const realRole: Role = !AUTH_REQUIRED ? "CMO" : user ? memberRole(member) : "Content Creator";
+
+  // ── Role preview ("Viewing as") ─────────────────────────────────────────
+  // Lives here, at the source every gate reads, rather than in the sidebar's
+  // own context: about a dozen pages take their role from useAuth() and never
+  // saw the switcher, so the CMO previewing a Content Creator still got the
+  // CMO's Graphic Request, Approval Center and campaign pages.
+  //
+  // What it is: this browser draws the buttons that role would see, and the
+  // ones the CMO presses really do save — that is what lets them work a screen
+  // the way that role would. What it is not: a change of identity. Supabase
+  // still has the CMO's session, so the database applies the CMO's rights and
+  // every write carries the CMO's name. Held in memory only — a reload, or a
+  // different account signing in, is back to the real role.
+  const [previewRole, setPreviewState] = useState<Role | null>(null);
+  const canPreview = canViewAsOtherRole(realRole, AUTH_REQUIRED);
+  useEffect(() => { setPreviewState(null); }, [realRole, user?.id]);
+  const setPreviewRole = (r: Role | null) => { if (canPreview) setPreviewState(r && r !== realRole ? r : null); };
+  const role: Role = effectiveRole(realRole, previewRole, AUTH_REQUIRED);
+  const previewing = role !== realRole;
 
   return (
-    <Ctx.Provider value={{ user, member, role, loading, signOut }}>
+    <Ctx.Provider value={{ user, member, role, realRole, previewing, canPreview, setPreviewRole, loading, signOut }}>
       {children}
     </Ctx.Provider>
   );
@@ -111,6 +147,6 @@ export function useAuth(): AuthCtx {
   const ctx = useContext(Ctx);
   // Called outside AuthProvider (misuse/bug) — fail safe with the
   // least-privileged role rather than handing out CMO access.
-  if (!ctx) return { user: null, member: null, role: "Content Creator", loading: false, signOut: async () => {} };
+  if (!ctx) return { user: null, member: null, role: "Content Creator", realRole: "Content Creator", previewing: false, canPreview: false, setPreviewRole: () => {}, loading: false, signOut: async () => {} };
   return ctx;
 }

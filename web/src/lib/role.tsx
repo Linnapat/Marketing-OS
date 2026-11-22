@@ -1,8 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
-import { canViewAsOtherRole } from "@/lib/roleGates";
+import { useAuth } from "@/lib/auth";
 import { fetchPermissions } from "@/lib/db/settings";
 import { canSeeModule, hasModuleLevel, type PermMatrix } from "@/lib/permissions";
 
@@ -43,17 +42,15 @@ const RoleContext = createContext<RoleCtx | null>(null);
 /** App-wide "viewing as" role. Drives role-based visibility across modules
  *  (the sidebar RoleSwitcher writes here; feature gates read from here). */
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const { role: authRole, user } = useAuth();
-  const [role, setRoleState] = useState<Role>(authRole);
-  const canViewAs = canViewAsOtherRole(authRole, AUTH_REQUIRED);
-  // The gate is here, not only on the button: hiding the switcher from a role
-  // that may not use it is not the same as refusing the switch.
-  const setRole = (r: Role) => { if (canViewAs || r === authRole) setRoleState(r); };
+  // The preview itself lives in the auth layer now (see AuthProvider), so this
+  // context and every page that reads useAuth() agree on the role being drawn.
+  // This is a thin view of it, kept so the many callers of useRole() need not
+  // change.
+  const { role, realRole: authRole, previewing, canPreview: canViewAs, setPreviewRole, user } = useAuth();
+  const setRole = (r: Role) => setPreviewRole(r);
   // Permission matrix: bundled defaults first (null), overlaid with the saved
   // matrix from Settings when it loads — so gating reflects admin edits.
   const [matrix, setMatrix] = useState<PermMatrix | null>(null);
-  // When the signed-in user resolves, default the "viewing as" role to theirs.
-  useEffect(() => { setRoleState(authRole); }, [authRole]);
   // Re-fetch whenever the signed-in user changes. A matrix read while logged out
   // or locked out comes back empty under RLS; without this it was cached past
   // login (fetched once on mount), so after a client-side login the nav kept
@@ -69,7 +66,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   }, [user?.id]);
   const can = (module: string) => canSeeModule(matrix, role, module);
   const atLeast = (module: string, min: "View" | "Edit" | "Approve" | "Admin") => hasModuleLevel(matrix, role, module, min);
-  return <RoleContext.Provider value={{ role, setRole, can, atLeast, authRole, viewingAs: role !== authRole, canViewAs }}>{children}</RoleContext.Provider>;
+  return <RoleContext.Provider value={{ role, setRole, can, atLeast, authRole, viewingAs: previewing, canViewAs }}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {
