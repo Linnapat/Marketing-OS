@@ -2,7 +2,7 @@
 
 import { DATE_LOCALE } from "@/lib/format";
 import { isTestAccount } from "@/lib/data/testAccounts";
-import { hasNoDue, graphicFilterDate, dueNotBeforePost } from "@/lib/data/graphic";
+import { hasNoDue, graphicFilterDate, dueNotBeforePost, byDue } from "@/lib/data/graphic";
 import { downloadXlsx } from "@/lib/xlsx";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { notifyBriefRoundChanged } from "@/lib/useBriefRound";
@@ -96,6 +96,11 @@ function GraphicPageInner() {
   const [view, setView] = useState<GraphicView>("campaign");
   const [brand, setBrand] = useState<BrandFilterValue>("all");
   const [designer, setDesigner] = useState<string>("all");
+  // "งานของฉัน" — on from the start for a designer, whose first question on
+  // this page is what is theirs; off for everyone who looks at the whole queue.
+  // A filter, not a permission: one click shows the rest.
+  const [mineOnly, setMineOnly] = useState(false);
+  const mineDefaulted = useRef(false);
   const [drawer, setDrawer] = useState<{ g: Graphic; tab: "overview" | "feedback" } | null>(null);
   const [reqOpen, setReqOpen] = useState(false);
   // Monthly brief cutoff — read by everyone, moved by the people who also
@@ -103,6 +108,11 @@ function GraphicPageInner() {
   // not the "viewing as" switcher, so the gate cannot be flipped from the rail.
   const { role: authRole, member: authMember, user: authUser } = useAuth();
   const canEditCutoff = canApproveRushBrief(authRole);
+  useEffect(() => {
+    if (mineDefaulted.current || !authRole) return;
+    mineDefaulted.current = true;
+    if (authRole === "Senior Graphic Designer") setMineOnly(true);
+  }, [authRole]);
   // Read from auth, not the "viewing as" switcher, for the same reason as the
   // cutoff: a gate that the rail can flip is not a gate.
   const canBrief = canSendGraphicBrief(authRole);
@@ -403,10 +413,11 @@ function GraphicPageInner() {
       { label: "นอกช่วงเวลา", pass: (g) => inDateFilter(date, graphicFilterDate(g, pagePostDateOf(g))) },
       { label: "คนละแบรนด์", pass: (g) => brand === "all" || g.b === brand },
       { label: "คนละดีไซเนอร์", pass: (g) => designer === "all" || g.designer === designer },
+      ...(mineOnly ? [{ label: "ไม่ใช่งานของฉัน", pass: (g: Graphic) => isOwnQueueJob(g, myName) }] : []),
     ],
   );
   const items = outcome.rows;
-  const clearFilters = () => { setDate({ ...ALL_TIME_FILTER }); setBrand("all"); setDesigner("all"); };
+  const clearFilters = () => { setDate({ ...ALL_TIME_FILTER }); setBrand("all"); setDesigner("all"); setMineOnly(false); };
   const kpi = graphicKpis(items);
 
   const KPIS: { label: string; value: number; tone?: string; dark?: boolean }[] = [
@@ -456,6 +467,12 @@ function GraphicPageInner() {
               {designerOpts.map((d) => <option key={d} value={d}>{d}</option>)}
               <option value="Unassigned">Unassigned</option>
             </select>
+            <button type="button" onClick={() => setMineOnly(!mineOnly)} aria-pressed={mineOnly}
+              title="แสดงเฉพาะงานที่คุณเป็นผู้ถือ (designer / storyboard / ถ่าย / รีทัช / คนรับงาน)"
+              className="rounded-[11px] border px-3 py-[7px] text-[12.5px] font-bold"
+              style={mineOnly ? { background: "#2C2553", borderColor: "#2C2553", color: "#fff" } : { background: "#fff", borderColor: "#E3DED4", color: "#6b6258" }}>
+              {mineOnly ? "✓ งานของฉัน" : "งานของฉัน"}
+            </button>
             <DateFilterBar value={date} onChange={setDate} />
             {/* The brief cutoff lives here, not in Settings: Creative
                 Leader owns the queue's capacity but has no Settings access
@@ -1554,8 +1571,11 @@ const LIST_COLS = "minmax(0,2.05fr) minmax(0,1.05fr) minmax(116px,0.8fr) minmax(
 function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen: (g: Graphic) => void; onQuickApprove?: (g: Graphic, lens: ReviewLens) => void }) {
   const codeOf = useCampaignCodes();
   const postDateOf = usePostDates();
-  const active = items.filter((g) => !isGraphicFinished(g));
-  const finished = items.filter(isGraphicFinished);
+  // Nearest deadline first by default — the list is a work queue, and it used
+  // to come out in whatever order the rows were fetched.
+  const [dueDir, setDueDir] = useState<"asc" | "desc">("asc");
+  const active = items.filter((g) => !isGraphicFinished(g)).sort((a, b) => byDue(a, b, dueDir));
+  const finished = items.filter(isGraphicFinished).sort((a, b) => byDue(a, b, dueDir));
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       {/* No "Pending" column: it printed `pendingApprover`, which is set once when
@@ -1566,7 +1586,11 @@ function ListView({ items, onOpen, onQuickApprove }: { items: Graphic[]; onOpen:
         style={{ gridTemplateColumns: LIST_COLS }}>
         {/* หัวตารางแถวเดียวเคยมีไทยแทรกอยู่คำเดียว ("รหัสแคมเปญ") กลางหัวอังกฤษ
             หกคำ — สลับภาษากลางแถวทำให้ต้องอ่านสองรอบ */}
-        <div>Request</div><div>Campaign</div><div>Campaign code</div><div>Type task</div><div>Designer</div><div>Due</div><div>Post date</div><div>Stage</div>
+        <div>Request</div><div>Campaign</div><div>Campaign code</div><div>Type task</div><div>Designer</div>
+        <button type="button" onClick={() => setDueDir(dueDir === "asc" ? "desc" : "asc")}
+          title={dueDir === "asc" ? "เรียงจาก Due ใกล้สุดก่อน — กดเพื่อกลับลำดับ" : "เรียงจาก Due ไกลสุดก่อน — กดเพื่อกลับลำดับ"}
+          className="text-left uppercase tracking-[0.05em] font-bold text-accent">Due {dueDir === "asc" ? "▲" : "▼"}</button>
+        <div>Post date</div><div>Stage</div>
       </div>
       {active.map((g) => <GraphicListRow key={g.id} g={g} codeOf={codeOf} postDate={postDateOf(g)} onOpen={onOpen} onQuickApprove={onQuickApprove} />)}
       {/* Delivered and approved work, folded under what is still moving. */}

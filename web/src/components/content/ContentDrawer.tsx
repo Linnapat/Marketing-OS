@@ -4,7 +4,7 @@ import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
-import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer, requestDateChange, decideDateChange } from "@/lib/data/content";
+import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, captionBadge, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer, requestDateChange, decideDateChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
 import { stamp, DATE_LOCALE } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -351,6 +351,8 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
   // Two ways to be an asker: a planner whose post Creative has locked, or the
   // Content Creator, who never edits the date directly and so always asks.
   const canAskMove = !pendingMove && ((lock.locked && canEditPlan) || canRequestPostDateChange(role));
+  // Can ask, cannot edit: the planning fields below are not theirs at all.
+  const askOnly = !canEditPlan && canRequestPostDateChange(role);
   // The row's free-text note, editable here too — same people as in the list.
   const [remark, setRemark] = useState(item.remark ?? "");
   const canEditRemark = canEditPlan || CAPTION_WRITER_ROLES.test(role || "");
@@ -537,7 +539,12 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
 
   // Save caption/hashtags/cta; "Mark Ready" flips captionStatus and, if the post
   // is now fully ready, advanceApprovalState pushes it into My Approval.
-  const saveCaption = () => persist(advanceApprovalState({ ...item, caption, hashtags, cta, footer }));
+  // A saved draft stops being "Missing": the status follows the text from the
+  // first save, not only from Mark Ready.
+  const saveCaption = () => persist(advanceApprovalState({
+    ...item, caption, hashtags, cta, footer,
+    ...(item.captionStatus === "Missing" && caption.trim() ? { captionStatus: "Draft" } : {}),
+  }));
   // Handing the words over is a handoff like any other, and it was the one with
   // no message attached: the writer pressed Mark Ready and the person who has
   // to accept it found out by opening the drawer. Addressed to the requester of
@@ -773,7 +780,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
               {/* Edit post basics */}
               <div ref={editCardRef} className="rounded-[14px] border border-line2 bg-ivory p-4"
                 style={focus === "date" ? { boxShadow: "0 0 0 2px #B8945A" } : undefined}>
-                <div className="text-[11.5px] font-bold text-muted mb-3">✏️ Edit post</div>
+                <div className="text-[11.5px] font-bold text-muted mb-3">{askOnly ? "📅 ขอเลื่อนวันโพสต์" : "✏️ Edit post"}</div>
 
                 {/* Why the fields below are dead, when they are. Two different
                     reasons, and telling them apart matters: "not your job" is
@@ -819,13 +826,16 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                       className="text-[12px] font-bold text-white rounded-[8px] py-[7px] bg-panel disabled:opacity-40">ส่งขออนุมัติ</button>
                   </div>
                 )}
-                {!canEditPlan && (
+                {!canEditPlan && !askOnly && (
                   <div className="mb-3 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#F0EDE6", border: "1px solid #E5DECF", color: "#6b6258" }}>
                     ตารางลงโพสต์แก้ได้โดยฝั่ง Marketing — {canRequestPostDateChange(role) ? "ถ้าต้องเลื่อนวัน ส่งขออนุมัติจากฟอร์มด้านบน" : "ดูได้อย่างเดียว"}
                   </div>
                 )}
 
-                <fieldset disabled={!canChangePost} className="flex flex-col gap-3 disabled:opacity-60">
+                {/* A role that can only ASK (Content Creator) gets the request
+                    and nothing else: the greyed-out Title / Time / Save / move
+                    campaign block under it read as a second, broken form. */}
+                <fieldset disabled={!canChangePost} className={`flex-col gap-3 disabled:opacity-60 ${askOnly ? "hidden" : "flex"}`}>
                   <div>
                     <label className="block text-[11px] font-bold text-faint mb-[5px]">Title</label>
                     <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className={field} />
@@ -1006,7 +1016,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
               <div>
                 <div className="flex items-center justify-between mb-[6px]">
                   <label className="text-[11.5px] font-bold text-muted">Caption</label>
-                  <StatusBadge tone={contentTone(item.captionStatus)}>{item.captionStatus}</StatusBadge>
+                  <StatusBadge tone={captionBadge(item).tone}>{captionBadge(item).label}</StatusBadge>
                 </div>
                 {/* The brief travels with the caption into the expanded view:
                     writing one FROM the other is the whole job, and a pop-out

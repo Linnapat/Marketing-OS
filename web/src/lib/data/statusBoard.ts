@@ -32,6 +32,23 @@ export const HEALTH_META: Record<Health, { label: string; tone: Tone }> = {
   done: { label: "เสร็จ", tone: "green" },
 };
 
+/** A campaign's items in the order a reviewer needs them: what is late first,
+ *  then what is stuck, waiting, not started, in progress — and everything
+ *  finished set apart, to be folded away.
+ *
+ *  They used to come out in fetch order, so opening a campaign with 106
+ *  finished tasks meant scrolling past all of them to find the four that were
+ *  blocked. */
+export function orderForReview<T extends { health: Health; urgency: Urgency; dueIso?: string }>(items: readonly T[]): { open: T[]; done: T[] } {
+  const rank = (h: Health) => HEALTH_ORDER.indexOf(h);
+  const late = (u: Urgency) => (u === "overdue" ? 0 : u === "dueSoon" ? 1 : 2);
+  const open = items.filter((i) => i.health !== "done").slice().sort((a, b) =>
+    late(a.urgency) - late(b.urgency)
+    || rank(a.health) - rank(b.health)
+    || (a.dueIso || "9999").localeCompare(b.dueIso || "9999"));
+  return { open, done: items.filter((i) => i.health === "done") };
+}
+
 /** Campaign id used for work whose campaign can't be resolved. Deliberately
  *  visible on the board — silently dropping the rows is how work goes missing
  *  after a campaign is renamed. */

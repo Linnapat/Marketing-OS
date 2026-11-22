@@ -1,5 +1,7 @@
 "use client";
 
+import { FinishedFold } from "@/components/ui/FinishedFold";
+import { orderForReview } from "@/lib/data/statusBoard";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -68,6 +70,8 @@ export default function StatusDashboardPage() {
   }, [allowedModules]);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  // The board is on screen but tasks / KOL / expenses are still arriving.
+  const [loadingRest, setLoadingRest] = useState(false);
   const [groups, setGroups] = useState<CampaignGroup[]>([]);
   // "post" คือมุมที่ตอบว่า "โพสต์นี้ อาร์ตเวิร์ก/วิดีโอถึงไหนแล้ว" — สองมุมแรก
   // ตอบไม่ได้เพราะวาง Content กับ Graphic ไว้คนละแถว ไม่มีอะไรผูกกันบนจอ
@@ -111,17 +115,21 @@ export default function StatusDashboardPage() {
     let alive = true;
     const want = new Set(moduleKey.split(",") as ModuleKey[]);
     const none = <T,>(v: T) => Promise.resolve(v);
-    Promise.all([
-      fetchCampaigns(),
-      want.has("content") ? fetchContent() : none([]),
-      // One fetch feeds four lanes — artwork, video edits and the two steps all
-      // live on the same rows.
-      (want.has("graphic") || want.has("vdo") || want.has("storyboard") || want.has("shooting")) ? fetchGraphics() : none([]),
-      want.has("kol") ? fetchKols() : none([]),
-      want.has("task") ? fetchTasks() : none({ tasks: [], doneIds: [] }),
-      want.has("expense") ? fetchExpenseRequests() : none([]),
-    ]).then(([campaigns, content, graphics, kols, taskData, expenses]) => {
-      if (!alive) return;
+    // Everything is requested at once, but the screen does not wait for the
+    // slowest table. Campaigns, posts and graphic requests draw the board as
+    // soon as they land; tasks (the largest read by far), KOL and expenses are
+    // merged in when they arrive. The numbers are marked as still filling in
+    // until then, so a first figure is never mistaken for the final one.
+    const pCampaigns = fetchCampaigns();
+    const pContent = want.has("content") ? fetchContent() : none([] as Awaited<ReturnType<typeof fetchContent>>);
+    const pGraphics = (want.has("graphic") || want.has("vdo") || want.has("storyboard") || want.has("shooting")) ? fetchGraphics() : none([] as Awaited<ReturnType<typeof fetchGraphics>>);
+    const pKols = want.has("kol") ? fetchKols() : none([] as Awaited<ReturnType<typeof fetchKols>>);
+    const pTasks = want.has("task") ? fetchTasks() : none({ tasks: [], doneIds: [] } as Awaited<ReturnType<typeof fetchTasks>>);
+    const pExpenses = want.has("expense") ? fetchExpenseRequests() : none([] as Awaited<ReturnType<typeof fetchExpenseRequests>>);
+    const draw = (
+      campaigns: Awaited<typeof pCampaigns>, content: Awaited<typeof pContent>, graphics: Awaited<typeof pGraphics>,
+      kols: Awaited<typeof pKols>, taskData: Awaited<typeof pTasks>, expenses: Awaited<typeof pExpenses>,
+    ) => {
       const today = new Date().toISOString().slice(0, 10);
       const items: WorkItem[] = [
         ...(want.has("content") ? contentItems(content.filter((p) => !isOfflineOnlyPost(p))) : []),
@@ -152,8 +160,20 @@ export default function StatusDashboardPage() {
       // โพสต์ทุกเดือน แล้วค่อยกรองเดือนตอนแสดง ถ้ากรองก่อน ใบงานที่ผูกกับโพสต์
       // เดือนอื่นจะจับคู่ไม่เจอ แล้วไปโผล่เป็นใบลอยทั้งที่มีโพสต์อยู่
       setTracker(want.has("content") ? buildTracker(seeds, content, graphics, today) : []);
+    };
+    const slowWanted = want.has("kol") || want.has("task") || want.has("expense");
+    setLoadingRest(slowWanted);
+    Promise.all([pCampaigns, pContent, pGraphics]).then(([campaigns, content, graphics]) => {
+      if (!alive) return;
+      draw(campaigns, content, graphics, [], { tasks: [], doneIds: [] }, []);
       setLoading(false);
-    }).catch(() => { if (alive) setLoading(false); });
+      if (!slowWanted) return;
+      return Promise.all([pKols, pTasks, pExpenses]).then(([kols, taskData, expenses]) => {
+        if (!alive) return;
+        draw(campaigns, content, graphics, kols, taskData, expenses);
+        setLoadingRest(false);
+      });
+    }).catch(() => { if (alive) { setLoading(false); setLoadingRest(false); } });
     return () => { alive = false; };
   }, [moduleKey, calendarReady]);
 
@@ -222,7 +242,7 @@ export default function StatusDashboardPage() {
         eyebrow="QA"
         title="Status Board"
         subtitle="ทุกงานในระบบ — Content, Graphic, VDO ตัดต่อ, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว · ดูตามแคมเปญ ตามคน หรือตามโพสต์ว่างานผลิตถึงไหนแล้ว"
-        right={loading ? "กำลังโหลด…"
+        right={loading ? "กำลังโหลด…" : loadingRest ? "กำลังโหลดงาน Task / KOL / Expense… ตัวเลขยังไม่ครบ"
           : groupBy === "post" ? `${trackerSummary.posts} โพสต์ · ${trackerSummary.jobs} ใบงาน`
             : `${totalItems} งาน · ${visible.length} แคมเปญ`}
       />
@@ -460,11 +480,13 @@ function CampaignRow({ group, open, onToggle }: { group: CampaignGroup; open: bo
           {HEALTH_ORDER.filter((h) => group.counts[h] > 0).map((h) => (
             <span
               key={h}
-              title={HEALTH_META[h].label}
-              className="rounded-pill px-[8px] py-[2px] text-[11px] font-bold"
+              title={`${HEALTH_META[h].label} ${group.counts[h]} งาน`}
+              className="rounded-pill px-[8px] py-[2px] text-[11px] font-bold whitespace-nowrap"
               style={{ background: toneBg(h), color: toneFg(h) }}
             >
-              {group.counts[h]}
+              {/* The word with the number from 1280 up; below that the colour
+                  and the tooltip carry it, so the row does not wrap. */}
+              {group.counts[h]}<span className="hidden xl:inline font-semibold"> {HEALTH_META[h].label}</span>
             </span>
           ))}
         </div>
@@ -475,9 +497,9 @@ function CampaignRow({ group, open, onToggle }: { group: CampaignGroup; open: bo
         </div>
       </button>
 
-      {open && group.items.length > 0 && (
-        <div className="border-t border-line3">
-          {group.items.map((i) => (
+      {open && group.items.length > 0 && (() => {
+        const ordered = orderForReview(group.items);
+        const row = (i: (typeof group.items)[number]) => (
             // Phone keeps only the title and its badge on the main line; module,
             // status and owner fold into a second line. Laying them out as
             // fixed-width columns at 375px left the title about 40px — one
@@ -501,9 +523,17 @@ function CampaignRow({ group, open, onToggle }: { group: CampaignGroup; open: bo
                 <StatusBadge tone={HEALTH_META[i.health].tone}>{HEALTH_META[i.health].label}</StatusBadge>
               </span>
             </div>
-          ))}
-        </div>
-      )}
+        );
+        return (
+          <div className="border-t border-line3">
+            {ordered.open.map(row)}
+            {/* Finished work, folded under what still needs somebody. */}
+            <FinishedFold count={ordered.done.length} storageKey="mos-status-done" label="เสร็จแล้ว">
+              {ordered.done.map(row)}
+            </FinishedFold>
+          </div>
+        );
+      })()}
     </div>
   );
 }

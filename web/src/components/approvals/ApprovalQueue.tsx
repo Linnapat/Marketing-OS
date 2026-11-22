@@ -21,6 +21,7 @@
 // Rendering is per-kind (an artwork card and an expense card are not the same
 // card), but the ORDER is global — see buildApprovalRows.
 
+import { AssetThumb } from "@/components/content/AssetLinkList";
 import { FinishedFold } from "@/components/ui/FinishedFold";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -966,8 +967,13 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           the link they belong to stays up beside the title. */}
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
       {asset ? (
-        <a href={asset} target="_blank" rel="noopener noreferrer"
-          className="text-[11.5px] font-bold text-accent hover:underline flex-shrink-0">
+        <a href={asset} target="_blank" rel="noopener noreferrer" title="เปิดไฟล์เต็ม"
+          className="text-[11.5px] font-bold text-accent hover:underline flex-shrink-0 flex items-center gap-[7px]">
+          {/* The picture itself, where there is one to show — an artwork queue
+              where every row needs a click to see the artwork is a queue of
+              links. Nothing is drawn when the file has no preview (video,
+              folders), so the link reads as before. */}
+          <AssetThumb assets={[{ link: asset }]} size={44} />
           เปิดไฟล์ ↗
         </a>
       ) : (
