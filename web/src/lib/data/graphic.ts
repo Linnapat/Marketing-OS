@@ -2603,6 +2603,33 @@ function graphicDue(g: Graphic): Date | null {
   return dueDateFromLabel(g.due);
 }
 
+/** No due date at all: nothing in dueIso, and a label ("TBD", "—") that is not
+ *  a date. */
+export function hasNoDue(g: Pick<Graphic, "due" | "dueIso">): boolean {
+  return !(g.dueIso ?? "").trim() && !dueDateFromLabel(g.due);
+}
+
+/** The date a request is placed by in a period filter.
+ *
+ *  Its due date — and when it has none, the day its post goes out. A request
+ *  with due "TBD" used to pass EVERY month filter (an unreadable date was let
+ *  through), so "08_Otsukaresama — Reel" sat in the August, November and
+ *  January lists alike. Placed by its post, it shows where its work actually
+ *  is. Only a request with neither date is returned as "" and stays visible
+ *  everywhere — there is nothing to place it by, and hiding it would lose it. */
+export function graphicFilterDate(g: Pick<Graphic, "due" | "dueIso">, postDateIso?: string): string {
+  if ((g.dueIso ?? "").trim()) return g.dueIso!.slice(0, 10);
+  if (dueDateFromLabel(g.due)) return g.due;
+  return (postDateIso ?? "").slice(0, 10);
+}
+
+/** Artwork due on or after the day its post goes out — no room left to review
+ *  it, or it is simply late by construction. */
+export function dueNotBeforePost(g: Pick<Graphic, "dueIso">, postDateIso?: string): boolean {
+  const due = (g.dueIso ?? "").slice(0, 10), post = (postDateIso ?? "").slice(0, 10);
+  return !!due && !!post && due >= post;
+}
+
 /** Live overdue — computed against today, never trusted from the stored flag:
  *  past due AND not yet finished (Approved/Delivered stop the clock). */
 export function computeGraphicOverdue(g: Graphic, now: Date = new Date()): boolean {

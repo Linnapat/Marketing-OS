@@ -17,7 +17,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostOnHold, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, publishStatusNotice, withChange, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostOnHold, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, publishStatusNotice, withChange, isPostOverdue, isReadyToPost, planWaitingCounts, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -312,6 +312,9 @@ function ContentPageInner() {
   const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
 
   const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  // "เลยวันโพสต์" — not sticky: a saved view that silently still hides
+  // everything on time would explain away an empty calendar later.
+  const [onlyOverdue, setOnlyOverdue] = useState(false);
   // Brand scope is permission, not a filter: those posts stay out of the counts
   // because no button on this page can bring them back.
   const scoped = useMemo(
@@ -323,9 +326,13 @@ function ContentPageInner() {
       { label: "นอกช่วงเวลา", pass: (c) => inDateFilter(date, contentDateIso(c)) },
       { label: "คนละแบรนด์", pass: (c) => brand === "all" || c.b === brand },
       { label: "ไม่ตรงคำค้น", pass: (c) => matchesQuery(c, terms) },
+      ...(onlyOverdue ? [{ label: "ไม่ได้เลยวันโพสต์", pass: (c: ContentItem) => isPostOverdue(c, todayIso) }] : []),
     ]),
-    [scoped, date, brand, terms],
+    [scoped, date, brand, terms, onlyOverdue, todayIso],
   );
+  // Counted over every month on purpose: the period filter is what hides an
+  // overdue post — it is, by definition, in a month you have moved on from.
+  const overdueCount = useMemo(() => scoped.filter((c) => isPostOverdue(c, todayIso)).length, [scoped, todayIso]);
   const items = outcome.rows;
   // The Week view picks its own seven days, so it is fed everything the brand
   // and search filters allow — not the month-filtered list. A week that
@@ -348,7 +355,7 @@ function ContentPageInner() {
   // What ล้างตัวกรอง does here: everything searchEverywhere does, plus the two
   // other filters that can hide a post. Same reason for the view switch — a
   // month grid draws one month however wide the window is.
-  const showEverything = () => { setBrand("all"); setQuery(""); searchEverywhere(); };
+  const showEverything = () => { setOnlyOverdue(false); setQuery(""); setSticky({ ...sticky, brand: "all", date: { ...date, mode: "range", start: "", end: "" }, view: view === "month" ? "list" : view }); };
   // The KOL layer obeys the same brand scope and date filter as the content it
   // sits beside — a hidden brand must not leak in through a different module.
   // The search box is the same argument: a KOL chip left on the calendar while
@@ -395,8 +402,9 @@ function ContentPageInner() {
   // them made "posts in view" and the waiting cards overstate the month.
   const summary = useMemo(() => { const live = items.filter((c) => !isPostCancelled(c)); return ({
     posts: live.length,
-    waitingApproval: live.filter((c) => c.approvalStatus === "Waiting Approval").length,
-    waitingAsset: live.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length,
+    // Open posts only — a published post is not waiting on anyone.
+    waitingApproval: planWaitingCounts(live).waitingApproval,
+    waitingAsset: planWaitingCounts(live).waitingAsset,
     scheduled: items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)).length,
   }); }, [items]);
 
@@ -501,6 +509,25 @@ function ContentPageInner() {
                 {/* The count and the way out now live in <FilterSummary> below,
                     next to the list they describe — and it reports every filter
                     that hid something, not just the period. */}
+                {(overdueCount > 0 || onlyOverdue) && (
+                  <button
+                    onClick={() => {
+                      const on = !onlyOverdue;
+                      setOnlyOverdue(on);
+                      // Turning it on widens the window and lands on the list:
+                      // the posts it is about are in past months, and a month
+                      // grid can only draw one.
+                      if (on) { setSticky({ ...sticky, date: { ...date, mode: "range", start: "", end: "" }, view: view === "month" || view === "week" || view === "queue" ? "list" : view }); }
+                    }}
+                    aria-pressed={onlyOverdue}
+                    title="โพสต์ที่วันโพสต์ผ่านไปแล้วแต่ยังไม่ Published (ไม่นับที่ Cancelled) — กดเพื่อดูเฉพาะรายการเหล่านี้ทุกช่วงเวลา"
+                    className="rounded-[10px] border px-[10px] py-[6px] text-[12px] font-bold transition"
+                    style={onlyOverdue
+                      ? { background: "#B33A2E", borderColor: "#B33A2E", color: "#fff" }
+                      : { background: "#FFF5F4", borderColor: "#F5C8C4", color: "#B33A2E" }}>
+                    ⏰ เลยวันโพสต์ {overdueCount}{onlyOverdue ? " ✕" : ""}
+                  </button>
+                )}
                 {(view === "month" || view === "week") && (
                   <button
                     onClick={() => setShowKol(!showKol)}
@@ -1020,8 +1047,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus, c
     <div className="flex flex-col gap-3">
       {groups.map(([campaign, list]) => {
         const isOpen = openGroups[campaign] ?? true;
-        const waitingApproval = list.filter((c) => c.approvalStatus === "Waiting Approval").length;
-        const waitingAsset = list.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length;
+        const { waitingApproval, waitingAsset } = planWaitingCounts(list);
         const scheduled = list.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)).length;
         const published = list.filter((c) => c.publishStatus === "Published").length;
         return (
@@ -1159,6 +1185,9 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
   const pendingMove = c.dateChangeRequest;
   // Nothing to reschedule once it is out or dropped.
   const canAskDate = canEditPlan && !isPostClosed(c) && !!onAskDate;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = isPostOverdue(c, today);
+  const readyToPost = isReadyToPost(c);
   return (
           <div onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
@@ -1171,6 +1200,11 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
                     className="text-[11px] leading-none text-accent border border-line2 rounded-[6px] px-[5px] py-[3px] hover:bg-surface">✎</button>
                 )}
               </span>
+              {overdue && (
+                <span className="text-[10px] font-bold rounded-pill px-[7px] py-[2px] whitespace-nowrap"
+                  style={{ color: "#B33A2E", background: "#FFF5F4", border: "1px solid #F5C8C4" }}
+                  title="วันโพสต์ผ่านไปแล้ว แต่สถานะ Publish ยังไม่ใช่ Published">⏰ เลยวันโพสต์</span>
+              )}
               {/* An ask already waiting: say where it wants to go, and open
                   the drawer on it — that is where it is approved or withdrawn. */}
               {pendingMove && (
@@ -1207,6 +1241,12 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
             </div>
             <span className="min-w-0" title={c.publishStatusReason ? `เหตุผล: ${c.publishStatusReason}` : undefined}>
               <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
+              {/* Caption and artwork both approved, Publish still Draft. */}
+              {readyToPost && (
+                <span className="ml-[5px] text-[10px] font-bold rounded-pill px-[7px] py-[2px] whitespace-nowrap"
+                  style={{ color: "#4E7A4E", background: "#EEF4EE", border: "1px solid #CFE3CF" }}
+                  title="Caption และ Asset อนุมัติครบแล้ว แต่ Publish ยังเป็น Draft">✓ พร้อมลง</span>
+              )}
             </span>
             <RemarkCell value={c.remark ?? ""} canEdit={(canEditStatus || canEditPlan) && !!onStatus} onSave={(v) => onStatus?.(c, { remark: v })} />
           </div>

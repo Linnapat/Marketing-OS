@@ -1,5 +1,6 @@
 "use client";
 
+import { isTestAccount } from "@/lib/data/testAccounts";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Member } from "@/lib/db/settings";
@@ -125,7 +126,9 @@ export function OwnerSelect({
     return () => { alive = false; };
   }, []);
 
-  const active = members.filter(isAssignable);
+  // Test accounts are never offered as an assignee (see testAccounts) — except
+  // to themselves, so a QA run can still put a task on its own name.
+  const active = members.filter(isAssignable).filter((m) => !isTestAccount(m) || m.name === self?.name);
   const configured = teamMembers(team, active, teams);
   const fallback = active.filter((m) => team === "all" || memberTeam(m.role) === team);
   // UNION, not either/or: a half-filled Settings → Teams used to SHADOW the
