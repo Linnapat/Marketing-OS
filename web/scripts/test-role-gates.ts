@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe, campaignHoldReason } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, isOwnQueueJob, hasShootOnRecord, shootContradiction, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canRequestPostDateChange, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -64,6 +64,9 @@ is("CMO แก้ได้", canEditContentPlan("CMO"), true);
 is("Marketing Manager / BGL แก้ได้", canEditContentPlan("Marketing Manager / BGL"), true);
 is("Marketing Executive แก้ได้", canEditContentPlan("Marketing Executive"), true);
 is("Co-ordinator แก้ได้", canEditContentPlan("Co-ordinator"), true);
+is("Content Creator ขอเลื่อนวันโพสต์ได้", canRequestPostDateChange("Content Creator"), true);
+is("…แต่แก้ตารางเองไม่ได้", canEditContentPlan("Content Creator"), false);
+is("Graphic Designer ขอเลื่อนไม่ได้", canRequestPostDateChange("Graphic Designer"), false);
 // ฝั่งผลิตอ่านแผน ไม่ใช่คนเลื่อนแผน
 is("Creative Leader แก้ไม่ได้", canEditContentPlan("Creative Leader"), false);
 is("Senior Graphic Designer แก้ไม่ได้", canEditContentPlan("Senior Graphic Designer"), false);

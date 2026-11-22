@@ -1,7 +1,7 @@
 "use client";
 
 import { toastError, toastSuccess } from "@/lib/toast";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer, requestDateChange, decideDateChange } from "@/lib/data/content";
@@ -33,7 +33,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
+import { canEditContentPlan, canRequestPostDateChange, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -144,8 +144,11 @@ function CaptionBriefGuide({ item, graphic, extraGraphics = 0 }: { item: Content
   );
 }
 
-export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete }: {
+export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, onDelete }: {
   item: ContentItem;
+  /** Opened from the Content Plan's post-date button: land on the block that
+   *  moves the date instead of the top of the drawer. */
+  focus?: "date";
   /** Everything else on the calendar — for the same-day clash warning. */
   allPosts?: ContentItem[];
   onClose: () => void;
@@ -210,6 +213,14 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   // working to must not change under them.
   const lock = contentEditLock(linkedGraphic);
   const canChangePost = canEditPlan && !lock.locked;
+  // Wait for the graphic lookup: it decides whether this block shows the date
+  // field or the ask-for-approval form, and the artwork card above it changes
+  // the height — scrolling before then lands on the wrong thing.
+  const editCardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus !== "date" || graphicLookup === "loading") return;
+    editCardRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [focus, graphicLookup]);
   const metaChannels = useMemo(() => itemPlatforms(item).filter((p) => /facebook|instagram|reel/i.test(p)), [item]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>(metaChannels);
   const metaConnected = hasMetaAccount(metaAccount);
@@ -336,7 +347,9 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
   const askedByMe = !!pendingMove && pendingMove.by === reviewer;
   // Real role, not "Viewing as" — this is an approval, like the rush decision.
   const canDecideMove = canApproveRushBrief(authRole) && !askedByMe;
-  const canAskMove = lock.locked && canEditPlan && !pendingMove;
+  // Two ways to be an asker: a planner whose post Creative has locked, or the
+  // Content Creator, who never edits the date directly and so always asks.
+  const canAskMove = !pendingMove && ((lock.locked && canEditPlan) || canRequestPostDateChange(role));
   const [moveDate, setMoveDate] = useState<string | null>(null);
   const [moveTime, setMoveTime] = useState(item.time || "10:00");
   const [moveReason, setMoveReason] = useState("");
@@ -717,7 +730,8 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
               )}
 
               {/* Edit post basics */}
-              <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+              <div ref={editCardRef} className="rounded-[14px] border border-line2 bg-ivory p-4"
+                style={focus === "date" ? { boxShadow: "0 0 0 2px #B8945A" } : undefined}>
                 <div className="text-[11.5px] font-bold text-muted mb-3">✏️ Edit post</div>
 
                 {/* Why the fields below are dead, when they are. Two different
@@ -763,7 +777,7 @@ export function ContentDrawer({ item, allPosts = [], onClose, onUpdate, onDelete
                 )}
                 {!canEditPlan && (
                   <div className="mb-3 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold" style={{ background: "#F0EDE6", border: "1px solid #E5DECF", color: "#6b6258" }}>
-                    ตารางลงโพสต์แก้ได้โดยฝั่ง Marketing — ดูได้อย่างเดียว
+                    ตารางลงโพสต์แก้ได้โดยฝั่ง Marketing — {canRequestPostDateChange(role) ? "ถ้าต้องเลื่อนวัน ส่งขออนุมัติจากฟอร์มด้านบน" : "ดูได้อย่างเดียว"}
                   </div>
                 )}
 

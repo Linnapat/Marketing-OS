@@ -64,8 +64,13 @@ export function num(value: string): number {
 /** Yes / TRUE / ✓ / 1 → true. Anything else (incl. blank) → false. */
 const bool = (value: string) => ["yes", "y", "true", "1", "✓", "x", "ใช่"].includes(key(value));
 
-/** Split a multi-value cell: "Facebook, Instagram" or "Facebook; Instagram". */
-const list = (value: string) => norm(value).split(/[,;\n]/).map(norm).filter(Boolean);
+/** Split a multi-value cell: "Facebook, Instagram" or "Facebook; Instagram".
+ *  A comma used as a thousands separator ("เทียบเป้า 1,125") is not a
+ *  delimiter: splitting there turned one value into "…เป้า 1" and "125", two
+ *  warnings about values nobody wrote. A comma splits unless it sits between a
+ *  digit and exactly three more digits. */
+const LIST_SPLIT = /[;\n]|(?<!\d),|,(?!\d{3}(?!\d))/;
+export const list = (value: string) => norm(value).split(LIST_SPLIT).map(norm).filter(Boolean);
 
 /** Match a loose label against a fixed option set. Exact-ish first, then a
  *  prefix match so "Online" finds "Online Only" only when nothing else fits. */

@@ -16,6 +16,25 @@ export function isPostFinished(c: Pick<ContentItem, "publishStatus" | "status">)
   return c.publishStatus === "Published" || c.status === "Published";
 }
 
+/** Publish states that take a post out of the line without it going out.
+ *
+ *  Hold is a pause: the work stays where it is and nothing queues it behind the
+ *  team's back. Cancelled is the end — the post will not run, so it stops being
+ *  anybody's open work, but the row stays on the plan as the record of what was
+ *  dropped (deleting it would also lose the caption and artwork link). */
+export const PUBLISH_HOLD = "Hold";
+export const PUBLISH_CANCELLED = "Cancelled";
+export function isPostOnHold(c: Pick<ContentItem, "publishStatus">): boolean {
+  return (c.publishStatus ?? "").trim() === PUBLISH_HOLD;
+}
+export function isPostCancelled(c: Pick<ContentItem, "publishStatus">): boolean {
+  return (c.publishStatus ?? "").trim() === PUBLISH_CANCELLED;
+}
+/** Nothing left to do on it: it went out, or it never will. */
+export function isPostClosed(c: Pick<ContentItem, "publishStatus" | "status">): boolean {
+  return isPostFinished(c) || isPostCancelled(c);
+}
+
 export interface ContentItem {
   id: string;
   day: number;
@@ -104,6 +123,9 @@ export interface ContentItem {
   /** A pending ask to move the publish date of a post Creative has already
    *  taken on (see dateChangeRequest below). Cleared on decision. */
   dateChangeRequest?: DateChangeRequest;
+  /** Free-text note typed straight into the Content Plan row — whatever the
+   *  team needs to tell each other about this post that no status says. */
+  remark?: string;
 }
 
 export interface DateChangeRequest {
@@ -205,6 +227,7 @@ export const CONTENT_STATUS_TONE: Record<string, Tone> = {
   Missing: "red", Ready: "blue", Approved: "green", Final: "green", "No Asset": "red",
   "Waiting Feedback": "gold", "Scheduled in OS": "blue", Queued: "blue", "Scheduled to Meta": "blue", Publishing: "blue",
   "Revision Requested": "orange",
+  Hold: "gold", Cancelled: "red",
 };
 
 export function contentTone(status: string): Tone {
@@ -490,6 +513,8 @@ export function canPublish(c: ContentItem): { ok: boolean; reasons: string[] } {
   if (!["Approved", "Final", "No Asset"].includes(c.assetStatus)) reasons.push("Asset ยังไม่พร้อม — รอทีมกราฟฟิกส่ง & อนุมัติครบ");
   if (c.approvalStatus !== "Approved") reasons.push("Content ยังไม่ถูกอนุมัติ");
   if (["Published", "Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)) reasons.push("โพสต์นี้ publish/queue ไปแล้ว");
+  if (isPostOnHold(c)) reasons.push("โพสต์นี้ถูก Hold ไว้ — เปลี่ยนสถานะ Publish กลับก่อน");
+  if (isPostCancelled(c)) reasons.push("โพสต์นี้ถูก Cancel แล้ว");
   return { ok: reasons.length === 0, reasons };
 }
 
@@ -520,6 +545,9 @@ export function readyToQueue(c: Pick<ContentItem, "captionStatus" | "assetStatus
 export function withPublishQueue(c: ContentItem): ContentItem {
   if (!readyToQueue(c)) return c;
   if (c.publishStatus === "Published" || c.publishStatus === "Queued") return c;
+  // Held or cancelled by a person on purpose — a sign-off landing afterwards
+  // must not put it back in the line.
+  if (isPostOnHold(c) || isPostCancelled(c)) return c;
   return { ...c, publishStatus: "Queued" };
 }
 

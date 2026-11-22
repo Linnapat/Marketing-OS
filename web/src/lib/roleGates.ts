@@ -29,6 +29,16 @@ export function canEditContentPlan(role: string): boolean {
   return PLANNER_ROLES.includes((role || "").trim());
 }
 
+/** May this role ASK to move a post's publish date?
+ *
+ *  The Content Creator is the one who knows the piece will not be ready, or
+ *  that the slot is wrong, but the schedule is not theirs to edit — so they
+ *  ask, and Creative Leader / CMO decide (CMO, 2026-11-22: "ครีเอทีฟ Content
+ *  creative จะเป็นคนขอเลื่อนวัน"). Asking only: this grants no direct edit. */
+export function canRequestPostDateChange(role: string): boolean {
+  return (role || "").trim() === "Content Creator";
+}
+
 // ── Graphic deliverables: who signs off a submitted artwork ────────────────
 // The Approve button on a deliverable row had no gate at all: any role that
 // could open the Assets tab and saw a row in "Waiting review" could approve it,

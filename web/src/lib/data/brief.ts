@@ -541,9 +541,9 @@ export interface FinalArtworkDue {
 export function finalArtworkDue(
   publishIso?: string,
   requestIso?: string,
-  /** What the Team Calendar says the Final AW deadline is for this month.
-   *  When it speaks, it wins — it IS the team's policy, and a constant in code
-   *  that disagrees with the calendar on the wall is just a second answer. */
+  /** The Creative round's final-file date for this month's work (the last
+   *  Friday of the month before — see artworkSchedule). When there is one it
+   *  wins: it IS the team's policy, and publish-minus-buffer is the fallback. */
   calendarIso?: string,
 ): FinalArtworkDue {
   const floor = minGraphicDueDate(requestIso);
@@ -556,14 +556,14 @@ export function finalArtworkDue(
         iso: calendarIso,
         fixed: true,
         rushed: false,
-        reason: `ตามปฏิทินทีม · Final AW ของงานเดือนนี้กำหนดไว้ ${calendarIso}`,
+        reason: `ตามรอบงาน Creative · ส่งไฟล์ Final ของงานเดือนนี้ภายใน ${calendarIso} (ศุกร์สุดท้ายของเดือนก่อนโพสต์)`,
       };
     }
     return {
       iso: floor,
       fixed: true,
       rushed: true,
-      reason: `เลยเดดไลน์ปฏิทินทีมแล้ว (${calendarIso}) — เร็วสุดที่ทำได้คือ ${floor} จึงนับเป็นงานเร่ง`,
+      reason: `เลยรอบส่งไฟล์ Final แล้ว (${calendarIso}) — เร็วสุดที่ทำได้คือ ${floor} จึงนับเป็นงานเร่ง`,
     };
   }
   if (!publishIso) {

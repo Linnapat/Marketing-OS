@@ -105,12 +105,17 @@ export function deadlinesLandingIn(
 
 /** The last day to brief Graphic / VDO for `forMonth`'s work.
  *
- *  Not a calendar row: it is the monthly cutoff the CMO sets on the Graphic
- *  page (`brief_cutoff_day`), the same rule the brief form enforces through
- *  rushBreaches — so the reminder and the form cannot name different days.
+ *  Not a calendar row: it is the third Friday the brief form enforces through
+ *  rushBreaches (switched on or off on the Graphic page, `brief_cutoff_day`)
+ *  — so the reminder and the form cannot name different days.
+ *
+ *  Two months ahead, not one: the artwork for `forMonth` is due the month
+ *  before it publishes (artworkSchedule), and the cutoff is the month before
+ *  THAT — January's work is briefed by the cutoff in November. Keyed off the
+ *  publish month it announced November's cutoff as December's.
  *  null when the rule is switched off (0). */
 export function finalBriefDeadline(forMonth: string, cutoffDay: number): BoardDeadline | null {
-  const iso = briefDeadlineFor(`${forMonth}-01`, cutoffDay);
+  const iso = briefDeadlineFor(`${shiftMonth(forMonth, -1)}-01`, cutoffDay);
   if (!iso) return null;
   return {
     key: "finalBrief",

@@ -24,6 +24,7 @@ import {
   assignedShoots, withShootMoved, withShooterAssigned, type AssignedShoot, approvedAssetNotice,
 } from "@/lib/data/graphic";
 import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
+import { thirdFriday } from "@/lib/data/artworkSchedule";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { Combobox } from "@/components/ui/Combobox";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
@@ -106,6 +107,14 @@ function GraphicPageInner() {
       .then((v) => { if (alive && v !== null && v !== "") setCutoffDay(Number(v) || 0); })
       .catch(() => {});
     return () => { alive = false; };
+  }, []);
+  // The next Final Brief day still ahead — so "third Friday" reads as a date.
+  const nextBriefDeadline = useMemo(() => {
+    const today = todayIso();
+    const thisMonth = thirdFriday(today.slice(0, 7));
+    if (thisMonth >= today) return thisMonth;
+    const [y, m] = today.split("-").map(Number);
+    return thirdFriday(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`);
   }, []);
   const saveCutoff = async () => {
     setCutoffBusy(true);
@@ -381,16 +390,20 @@ function GraphicPageInner() {
                 can move it. Kept visually apart from the filters beside it:
                 it changes the queue for everyone, it does not filter a view. */}
             <label className="flex items-center gap-[6px] rounded-[11px] border border-line2 bg-ivory px-2.5 py-[5px]"
-              title="งานที่ส่งมอบเดือนถัดไป ต้องบรีฟเข้ามาภายในวันที่นี้ของเดือนก่อนหน้า">
-              <span className="text-[11px] font-bold text-faint">ปิดรับบรีฟ</span>
+              title="งานที่ส่งมอบเดือนถัดไป ต้องบรีฟเข้ามาภายในวันศุกร์ที่ 3 ของเดือนก่อนหน้า (วัน Final Brief ของรอบงาน Creative)">
+              <span className="text-[11px] font-bold text-faint">เดดไลน์บรีฟ</span>
               {canEditCutoff ? (
                 <>
-                  <input
-                    type="number" min={0} max={28} value={cutoffDay}
-                    onChange={(e) => { setCutoffDay(Math.max(0, Math.min(28, Number(e.target.value) || 0))); setCutoffDirty(true); }}
-                    className="w-[46px] text-[12px] px-[7px] py-[3px] rounded-[8px] border border-line2 bg-white outline-none"
-                  />
-                  <span className="text-[11px] text-faint">ของทุกเดือน</span>
+                  {/* The day is the round's, not a number to type: only whether
+                      the monthly rule applies is a choice. */}
+                  <select
+                    value={cutoffDay === 0 ? "off" : "on"}
+                    onChange={(e) => { setCutoffDay(e.target.value === "off" ? 0 : DEFAULT_BRIEF_CUTOFF_DAY); setCutoffDirty(true); }}
+                    className="text-[12px] px-[7px] py-[3px] rounded-[8px] border border-line2 bg-white outline-none"
+                  >
+                    <option value="on">ศุกร์ที่ 3 ของทุกเดือน</option>
+                    <option value="off">ไม่กำหนด</option>
+                  </select>
                   {cutoffDirty && (
                     <button onClick={saveCutoff} disabled={cutoffBusy}
                       className="text-[11px] font-bold text-white bg-panel rounded-[8px] px-[9px] py-[4px] disabled:opacity-40">
@@ -400,8 +413,11 @@ function GraphicPageInner() {
                 </>
               ) : (
                 <span className="text-[11.5px] font-semibold text-muted">
-                  {cutoffDay === 0 ? "ไม่กำหนด" : `วันที่ ${cutoffDay} ของทุกเดือน`}
+                  {cutoffDay === 0 ? "ไม่กำหนด" : "ศุกร์ที่ 3 ของทุกเดือน"}
                 </span>
+              )}
+              {cutoffDay !== 0 && nextBriefDeadline && (
+                <span className="text-[11px] text-faint">· รอบถัดไป {labelDate(nextBriefDeadline)}</span>
               )}
             </label>
             <div className="ml-auto flex items-center gap-2 flex-wrap">
@@ -1512,7 +1528,7 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
   // re-ran the whole thing with the SAME id, and the duplicate insert came
   // back 409 — "บันทึกไม่สำเร็จ" over a request that HAD just been saved.
   const [saving, setSaving] = useState(false);
-  // Monthly brief cutoff, set by the CMO in Settings; 0 turns the rule off.
+  // Monthly brief deadline (third Friday) — on unless switched off; 0 = off.
   const [cutoffDay, setCutoffDay] = useState(DEFAULT_BRIEF_CUTOFF_DAY);
   useEffect(() => {
     let alive = true;
