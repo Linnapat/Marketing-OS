@@ -14,6 +14,7 @@
  * is a row spent on silence.
  */
 
+import { DATE_LOCALE } from "@/lib/format";
 import Link from "next/link";
 import { useNotifications } from "@/lib/useNotifications";
 import { notifMeta } from "@/lib/db/notifications";
@@ -42,7 +43,7 @@ export function UnreadPanel({ limit = 8 }: { limit?: number }) {
                 <div className="text-[12.5px] font-bold text-ink">{n.title}</div>
                 {n.detail && <div className="text-[11.5px] text-muted leading-[1.45]">{n.detail}</div>}
                 <div className="text-[10.5px] text-faint mt-[2px]">
-                  {meta.label}{n.actor ? ` · โดย ${n.actor}` : ""} · {new Date(n.createdAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
+                  {meta.label}{n.actor ? ` · โดย ${n.actor}` : ""} · {new Date(n.createdAt).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">

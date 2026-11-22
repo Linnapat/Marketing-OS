@@ -57,9 +57,12 @@ is("ค่าที่อ่านไม่ออก → ว่าง (ไม่
 {
   // Mid-day UTC so no timezone the team runs in can push it across a year.
   const out = stamp("2026-08-24T07:32:00.000Z");
-  is("ปีเป็น พ.ศ.", out.includes("2569"), true);
+  // One date format across the app since the 22 Nov 2026 audit (round 4):
+  // Gregorian year and English short month, the same as every filter and
+  // column. This used to pin the Thai / Buddhist-year form ("24 ส.ค. 2569").
+  is("ปีเป็น ค.ศ. (ไม่ปน พ.ศ.)", out.includes("2026") && !out.includes("2569"), true);
   is("มีเวลาแบบ ชั่วโมง:นาที", /\d{1,2}:\d{2}/.test(out), true);
-  is("เดือนเป็นตัวย่อภาษาไทย", out.includes("ส.ค."), true);
+  is("เดือนเป็นตัวย่อแบบเดียวกับตัวกรอง (Aug)", out.includes("Aug"), true);
   is("เรียกซ้ำได้ผลเดิม", stamp("2026-08-24T07:32:00.000Z"), out);
 }
 

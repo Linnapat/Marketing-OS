@@ -1088,7 +1088,9 @@ function QueuedBlock({ kind, count, view, children }: {
         aria-label={`${collapsed ? "เปิด" : "ยุบ"} รายการที่อนุมัติแล้ว`}
         className="w-full flex items-center gap-2 px-1 pt-3 pb-2 border-t border-line4 text-left">
         <span className="text-[11.5px] font-extrabold tracking-[0.04em] uppercase" style={{ color: "#4E7A4E" }}>
-          ✓ Queued
+          {/* Not "Queued": that is a Publish status in Content Plan. Here it
+              means signed off and waiting to go out — a different thing. */}
+          ✓ อนุมัติแล้ว · รอลง
         </span>
         <span className="text-[11px] font-bold px-[8px] py-[1px] rounded-pill" style={{ background: "#EEF4EE", color: "#4E7A4E" }}>
           {count}
@@ -1143,7 +1145,7 @@ function KindPanel({ kind, rows, queuedCount = 0, now, forceOpen, view, children
         <span className="flex-1" />
         {queuedCount > 0 && (
           <span className="text-[11px] font-bold flex-shrink-0" style={{ color: "#4E7A4E" }}>
-            · Queued {queuedCount}
+            · อนุมัติแล้วรอลง {queuedCount}
           </span>
         )}
         {empty

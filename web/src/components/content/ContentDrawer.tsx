@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 import { workLink } from "@/lib/deepLink";
 import { ContentItem, contentTone, platIcon, itemPlatforms, contentWarnings, preflight, canPublish, contentApproveBlockers, advanceApprovalState, captionStatusAfterRevision, sameDayWarning, moveToCampaign, withChange, captionAwaitsApproval, captionApproved, captionOwner, realName, captionReviewer, requestDateChange, decideDateChange } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
-import { stamp } from "@/lib/format";
+import { stamp, DATE_LOCALE } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OwnerSelect } from "@/components/ui/OwnerSelect";
 import { updateContent, deleteContent, approveContent, publishContent, scheduleContentToMeta, publishContentToMeta } from "@/lib/db/content";
@@ -880,7 +880,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                       {[...(item.changeLog ?? [])].reverse().slice(0, 6).map((h, i) => (
                         <li key={`${h.at}-${i}`} className="text-[11px] text-muted">
                           <span className="font-bold">{h.action}</span>{h.detail ? ` · ${h.detail}` : ""}
-                          <span className="text-faint"> — {h.by} · {new Date(h.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span>
+                          <span className="text-faint"> — {h.by} · {new Date(h.at).toLocaleString(DATE_LOCALE, { dateStyle: "short", timeStyle: "short" })}</span>
                         </li>
                       ))}
                     </ul>
@@ -1170,7 +1170,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                     <div key={f.round} className="rounded-[11px] px-[13px] py-[10px] border-[1.5px]" style={{ borderColor: "#F0D9C0", background: "#FCF6EE" }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[11.5px] font-bold text-status-orange">Round {f.round}</span>
-                        <span className="text-[11px] text-faint">{f.by} · {new Date(f.at).toLocaleDateString()}</span>
+                        <span className="text-[11px] text-faint">{f.by} · {new Date(f.at).toLocaleDateString(DATE_LOCALE, { dateStyle: "medium" })}</span>
                       </div>
                       <div className="text-[12.5px] text-ink">{f.reason}</div>
                     </div>
@@ -1300,7 +1300,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
               {item.publishStatus === "Published" ? (
                 <div className="rounded-[11px] px-[14px] py-3 text-center" style={{ background: "#EFF7EF", border: "1px solid #BFE0C4" }}>
                   <div className="text-[13px] font-bold text-status-green">✓ Published{item.publishedBy ? ` · ${item.publishedBy}` : ""}</div>
-                  {item.publishedAt && <div className="text-[11px] text-faint mt-[2px]">{new Date(item.publishedAt).toLocaleString()}</div>}
+                  {item.publishedAt && <div className="text-[11px] text-faint mt-[2px]">{new Date(item.publishedAt).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}</div>}
                   <div className="text-[11.5px] text-faint mt-[3px]">โพสต์ด้วยมือแล้ว — บันทึกสถานะไว้ในระบบ</div>
                 </div>
               ) : (

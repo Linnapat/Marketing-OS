@@ -101,6 +101,13 @@ export default function StatusDashboardPage() {
   deadlinesRef.current = deadlines;
   const calendarReady = deadlines.ready;
   useEffect(() => {
+    // Wait for the Team Calendar before reading anything. This effect depends
+    // on calendarReady so storyboard deadlines resolve against the saved
+    // calendar — but it also used to run BEFORE the calendar landed, so every
+    // visit loaded all six tables twice (some 3,900 rows each time) and threw
+    // the first set away. `ready` turns true on failure too, so this cannot
+    // hang: a calendar that cannot be read falls back to the template.
+    if (!calendarReady) return;
     let alive = true;
     const want = new Set(moduleKey.split(",") as ModuleKey[]);
     const none = <T,>(v: T) => Promise.resolve(v);
@@ -213,7 +220,7 @@ export default function StatusDashboardPage() {
     <>
       <PageHeader
         eyebrow="QA"
-        title="Status Dashboard"
+        title="Status Board"
         subtitle="ทุกงานในระบบ — Content, Graphic, VDO ตัดต่อ, Story board, Shooting, KOL, Task และ Expense อยู่ในหน้าเดียว · ดูตามแคมเปญ ตามคน หรือตามโพสต์ว่างานผลิตถึงไหนแล้ว"
         right={loading ? "กำลังโหลด…"
           : groupBy === "post" ? `${trackerSummary.posts} โพสต์ · ${trackerSummary.jobs} ใบงาน`

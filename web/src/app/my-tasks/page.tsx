@@ -342,7 +342,12 @@ function MyTasksPageInner() {
   const { data: approvalData } = useApprovalData(true);
   const approvalRows = useApprovalRows({ ...approvalData, viewAs: approvalMe });
   const waitingOnMe = useMemo(() => approvalRows.filter((r) => r.mine).length, [approvalRows]);
-  const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
+  // Nothing left for today is its own message. The progress ladder tops out at
+  // "Nearly done — just a few more", which sat under a big 0 with "6 / 6 done
+  // today" beneath it.
+  const bentoMsg = todayFocusCount === 0
+    ? (todayTotal > 0 ? "เคลียร์งานวันนี้ครบแล้ว 🎉" : "วันนี้ยังไม่มีงานถึงกำหนด")
+    : BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
 
 
   const matchScope = (t: Task) => {

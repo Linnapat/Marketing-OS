@@ -28,7 +28,7 @@ import { fetchAllBriefs } from "@/lib/db/brief";
 import { CampaignBrief, budgetSummary } from "@/lib/data/brief";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { BudgetSheetRow } from "@/lib/db/budgetSheet";
-import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter as PeriodFilter, inDateFilter, filterMonthKeys, monthKeyOf, MONTHS } from "@/components/ui/DateFilterBar";
+import { DateFilterBar, DEFAULT_DATE_FILTER, DateFilter as PeriodFilter, inDateFilter, filterMonthKeys, focusMonthKey, monthKeyOf, MONTHS } from "@/components/ui/DateFilterBar";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { getSavedSignature, saveSignature, clearSignature } from "@/lib/signature";
 import { CampaignCommandBar, CampaignPageHeaderSection } from "@/components/campaign/CampaignHeadController";
@@ -213,7 +213,7 @@ export default function FinancePage() {
         </CampaignCommandBar>
 
         {/* ประกาศเดดไลน์ — อ่านจากปฏิทินทีมที่เดียวกับทุกโมดูล */}
-        <DeadlineStrip forMonth={monthKeyOf(period)} />
+        <DeadlineStrip forMonth={focusMonthKey(period)} />
       </div>
 
       {/* Tabs */}

@@ -34,7 +34,7 @@ import Link from "next/link";
 import { fetchContentById } from "@/lib/db/content";
 import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
-import { stamp } from "@/lib/format";
+import { stamp, DATE_LOCALE } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, graphicLacksPost, createPostForGraphic } from "@/lib/db/graphic";
@@ -936,7 +936,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   </div>
                   <ul className="mt-2 list-disc pl-5 text-[11.5px]" style={{ color: "#8A5418" }}>
                     {unseenNotices(g).map((n, i) => (
-                      <li key={`${n.at}-${i}`}>{n.text} <span className="opacity-70">— {n.by} · {new Date(n.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span></li>
+                      <li key={`${n.at}-${i}`}>{n.text} <span className="opacity-70">— {n.by} · {new Date(n.at).toLocaleString(DATE_LOCALE, { dateStyle: "short", timeStyle: "short" })}</span></li>
                     ))}
                   </ul>
                 </div>
@@ -1347,7 +1347,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                     <div className="text-[11.5px] text-muted leading-[1.5]">{briefBlockedReason}</div>
                     {unlockState === "pending" ? (
                       <div className="mt-2 text-[11.5px] font-bold" style={{ color: "#8A6D1E" }}>
-                        ⏳ ขอไว้เมื่อ {new Date(g.briefUnlock!.requestedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
+                        ⏳ ขอไว้เมื่อ {new Date(g.briefUnlock!.requestedAt).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}
                         {g.briefUnlock?.reason ? ` · “${g.briefUnlock.reason}”` : ""}
                       </div>
                     ) : (
