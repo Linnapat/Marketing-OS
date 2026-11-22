@@ -558,5 +558,38 @@ console.log("\n— แถวต้องบอกชื่อคนที่ก�
   is("ยังไม่รู้ชื่อ → ใช้ชื่อตำแหน่งเหมือนเดิม", anon?.waitingOn, "Creative Leader");
 }
 
+console.log("\n— โพสต์ลงไปแล้ว = ปิดอัตโนมัติ ไม่ใช่งานรออนุมัติ (Audit 22 พ.ย. ข้อ 2.1 วิธี A) —");
+{
+  const who = ctx("Marketing Executive", "narawich");
+  const post = (over: Record<string, unknown> = {}) => ({
+    id: "c1", title: "T", b: "teppen", campaign: "W", plat: "Facebook", owner: "Pupay",
+    caption: "x", captionStatus: "Ready", assetStatus: "—", approvalStatus: "—", publishStatus: "Draft", status: "Draft",
+    createdAt: "2026-08-15T00:00:00Z", ...over,
+  }) as never;
+  const stale = buildApprovalRows({ ...empty, captions: [post({ publishStatus: "Published", status: "Published" })] }, who);
+  is("Caption ของโพสต์ที่ลงแล้วยังมีแถวให้ย้อนดู", stale.length, 1);
+  is("…ถูกปิดอัตโนมัติ", stale[0]?.autoClosed, true);
+  is("…ไม่เป็นของใคร", stale[0]?.mine, false);
+  is("…ไม่มีปุ่มให้กด", stale[0]?.canAct, false);
+  is("…ไม่นับในตัวเลขรออนุมัติ", countByKind(stale).caption, 0);
+  is("โพสต์ที่ยกเลิกแล้วก็ปิดเหมือนกัน",
+    buildApprovalRows({ ...empty, captions: [post({ publishStatus: "Cancelled" })] }, who)[0]?.autoClosed, true);
+  const live = buildApprovalRows({ ...empty, captions: [post()] }, who);
+  is("โพสต์ที่ยังไม่ลง: ยังเป็นงานรออนุมัติตามเดิม", live[0]?.autoClosed, undefined);
+  is("…และยังนับ", countByKind(live).caption, 1);
+
+  // อาร์ตเวิร์ก / VDO ที่รอตรวจ แต่โพสต์ของมันลงไปแล้ว
+  const g = req();
+  const out = [{ id: "p1", campaignId: g.campaignId, sourceContentItemId: g.sourceContentItemId,
+    graphicRequestId: String(g.id), publishStatus: "Published", status: "Published" }];
+  const rows = selectGraphicApprovals([g], ctx("Creative Leader", "Boss L."), out as never);
+  is("อาร์ตเวิร์กรอตรวจของโพสต์ที่ลงแล้ว ยังมีแถว", rows.length > 0, true);
+  is("…ทุกแถวถูกปิดอัตโนมัติ", rows.every((r) => r.autoClosed), true);
+  is("…ไม่มีแถวไหนเป็นของใคร", mineOf(rows), 0);
+  is("ไม่ผูกโพสต์ = ยังรอตรวจตามเดิม", selectGraphicApprovals([g], ctx("Creative Leader", "Boss L.")).some((r) => r.autoClosed), false);
+  const notOut = [{ ...out[0], publishStatus: "Queued", status: "Scheduled" }];
+  is("โพสต์ยังไม่ลง = ยังรอตรวจตามเดิม", selectGraphicApprovals([g], ctx("Creative Leader", "Boss L."), notOut as never).some((r) => r.autoClosed), false);
+}
+
 console.log(`\n${fail === 0 ? "✓" : "✗"} approval inbox: ${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

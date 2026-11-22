@@ -1,5 +1,7 @@
 "use client";
 
+import { isTestAccount } from "@/lib/data/testAccounts";
+import { hasNoDue, graphicFilterDate, dueNotBeforePost } from "@/lib/data/graphic";
 import { downloadXlsx } from "@/lib/xlsx";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { notifyBriefRoundChanged } from "@/lib/useBriefRound";
@@ -253,7 +255,7 @@ function GraphicPageInner() {
     fetchMembers().then((ms) => {
       if (!alive) return;
       setDesignerOpts(
-        ms.filter((m) => (m.status || "").toLowerCase() === "active" && memberTeam(m.role || "") === "Creative")
+        ms.filter((m) => (m.status || "").toLowerCase() === "active" && memberTeam(m.role || "") === "Creative" && !isTestAccount(m))
           .map((m) => m.name)
           .sort(),
       );
@@ -371,13 +373,16 @@ function GraphicPageInner() {
   // The rule itself lives in isOwnQueueJob — it has to answer for the shooter
   // and whoever accepted the job too, not just the designer.
   const inMyQueue = (g: Graphic) => !ownQueueOnly || isOwnQueueJob(g, myName);
+  const pagePostDateOf = usePostDates();
   // Outside the counted filters: brand scope and the own-queue rule are both
   // fixed by the viewer's role, and no button on this page can undo either — a
   // "ล้างตัวกรอง" that promised to bring those rows back would be lying.
   const outcome = filterWithReasons(
     graphics.filter((g) => brandVisibility.visibleBrands.includes(g.b) && inMyQueue(g)),
     [
-      { label: "นอกช่วงเวลา", pass: (g) => inDateFilter(date, g.due) },
+      // By due date; a request with no due is placed by its post instead of
+      // passing every month (see graphicFilterDate).
+      { label: "นอกช่วงเวลา", pass: (g) => inDateFilter(date, graphicFilterDate(g, pagePostDateOf(g))) },
       { label: "คนละแบรนด์", pass: (g) => brand === "all" || g.b === brand },
       { label: "คนละดีไซเนอร์", pass: (g) => designer === "all" || g.designer === designer },
     ],
@@ -1569,7 +1574,12 @@ function GraphicListRow({ g, codeOf, postDate, onOpen, onQuickApprove }: { g: Gr
         <span className="min-w-0 overflow-hidden"><CampaignCode code={codeOf(g.campaignId, g.campaign)} /></span>
         <span className="text-[12px] text-muted truncate min-w-0">{g.type}</span>
         <span className="text-[12px] text-muted truncate min-w-0">{g.designer}</span>
-        <span className="text-[12px] whitespace-nowrap" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>{g.due}</span>
+        <span className="text-[12px] whitespace-nowrap flex items-center gap-[4px]" style={{ color: g.isOverdue ? "#B33A2E" : "#6b6258", fontWeight: g.isOverdue ? 700 : 400 }}>
+          {hasNoDue(g) ? <span className="text-[10.5px] font-bold rounded-pill px-[7px] py-[2px]" style={{ color: "#8A6D1E", background: "#FBF6EC", border: "1px solid #EADBC1" }} title="ใบงานนี้ยังไม่ได้กำหนดวัน Due — แสดงตามวันโพสต์แทน">ยังไม่กำหนด Due</span> : g.due}
+          {dueNotBeforePost(g, postDate) && (
+            <span title={`Due (${g.dueIso}) อยู่วันเดียวกับหรือหลังวันโพสต์ (${postDate}) — ไม่เหลือเวลาตรวจงานก่อนลง`} style={{ color: "#B3641E" }} aria-label="Due ไม่ก่อนวันโพสต์">⚠</span>
+          )}
+        </span>
         <span className="text-[12px] text-muted whitespace-nowrap" title={postDate ? `โพสต์ ${postDate}` : "ยังไม่มีโพสต์ที่ผูกกับงานนี้"}>
           <span className="md:hidden text-faint">Post: </span>{shortPostDate(postDate) || "—"}
         </span>

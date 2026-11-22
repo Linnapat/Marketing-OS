@@ -47,6 +47,43 @@ export function publishStatusNotice(prev: string, next: string, reason = ""): { 
   return null;
 }
 
+/** Past its post date and still not out.
+ *
+ *  Closed posts are excluded: a published one is done and a cancelled one will
+ *  never run. Held posts ARE included — a hold that has outlived its date is
+ *  exactly the thing somebody needs to decide about. */
+export function isPostOverdue(c: ContentItem, todayIso: string): boolean {
+  if (isPostClosed(c)) return false;
+  const date = contentDateIso(c);
+  return !!date && !!todayIso && date < todayIso;
+}
+
+/** Words and artwork both signed off, and nobody has moved it on: the post is
+ *  ready to go out but still sits in Draft, looking like one nobody started.
+ *
+ *  withPublishQueue queues a post at the moment a sign-off lands; this is for
+ *  the ones that missed that moment (signed off before the rule existed, or
+ *  moved back to Draft by hand). A label, never a status change — the row says
+ *  "พร้อมลง" and a person decides. */
+export function isReadyToPost(c: Pick<ContentItem, "captionStatus" | "assetStatus" | "publishStatus">): boolean {
+  return readyToQueue(c) && (c.publishStatus ?? "").trim() === "Draft";
+}
+
+/** The Content Plan's "waiting" counts, over open posts only.
+ *
+ *  A post that has gone out is not waiting for anything, whatever its Approval
+ *  or Asset field was left saying — and those fields are routinely left stale
+ *  (see postHealth). Counting them made a campaign whose three posts were all
+ *  published read "3 waiting approval". */
+export function planWaitingCounts(list: readonly ContentItem[]): { open: number; waitingApproval: number; waitingAsset: number } {
+  const open = list.filter((c) => !isPostClosed(c));
+  return {
+    open: open.length,
+    waitingApproval: open.filter((c) => c.approvalStatus === "Waiting Approval").length,
+    waitingAsset: open.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length,
+  };
+}
+
 /** Nothing left to do on it: it went out, or it never will. */
 export function isPostClosed(c: Pick<ContentItem, "publishStatus" | "status">): boolean {
   return isPostFinished(c) || isPostCancelled(c);

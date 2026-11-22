@@ -21,6 +21,7 @@
 // Rendering is per-kind (an artwork card and an expense card are not the same
 // card), but the ORDER is global — see buildApprovalRows.
 
+import { FinishedFold } from "@/components/ui/FinishedFold";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -169,7 +170,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only }: {
+export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -198,6 +199,14 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
   only?: ApprovalKind | null;
 }) {
   const codeOf = useCampaignCodes();
+  // Rows whose post already went out are a record, not a queue: they are taken
+  // out before anything is counted, scoped or grouped, and drawn once, folded,
+  // at the very end (see RowBase.autoClosed).
+  const rows = useMemo(() => allRows.filter((r) => !r.autoClosed), [allRows]);
+  const closedRows = useMemo(
+    () => allRows.filter((r) => r.autoClosed && (!only || r.kind === only)),
+    [allRows, only],
+  );
   // Yours by default. The team view is the answer to "why is this late", not
   // the daily working set — opening onto forty rows, thirty-six of which you
   // cannot act on, is how a queue stops being read at all.
@@ -306,6 +315,19 @@ export function ApprovalQueue({ rows, now, budgetOf, me, creativeLeader, onOpenT
           </KindPanel>
         );
       })}
+
+      {closedRows.length > 0 && (
+        <div className="mt-4 rounded-[14px] overflow-hidden" style={{ border: "1px solid #E7DFD1", background: "#fff" }}>
+          <div className="px-4 py-[9px] text-[11.5px]" style={{ background: "#FBF9F4", borderBottom: "1px solid #EFE6D8", color: "#6b6258" }}>
+            <b className="text-ink">ปิดอัตโนมัติ — โพสต์ลงแล้ว</b> · รายการที่ยังไม่มีใครกดอนุมัติ แต่โพสต์ถูก Published (หรือยกเลิก) ไปแล้ว จึงไม่นับเป็นงานรออนุมัติ เก็บไว้ให้ย้อนดูได้
+          </div>
+          <FinishedFold count={closedRows.length} storageKey="mos-approval-autoclosed" label="ปิดอัตโนมัติ">
+            {closedRows.map((row) => (view === "list"
+              ? renderRow(row, now, { codeOf, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
+              : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject })))}
+          </FinishedFold>
+        </div>
+      )}
     </div>
   );
 }
