@@ -29,6 +29,21 @@ export function canEditContentPlan(role: string): boolean {
   return PLANNER_ROLES.includes((role || "").trim());
 }
 
+/** May this person preview the app as another role ("Viewing as")?
+ *
+ *  The CMO only, once real sign-in is on. It is how a permission question gets
+ *  answered without borrowing somebody's account: switch, look, switch back.
+ *  A preview, not a transfer — it changes which buttons this browser draws and
+ *  nothing else: the database still knows the signed-in person, and anything
+ *  pressed is saved under their own name and their own rights. Every other
+ *  role is refused, because for them the same switch would be an upgrade.
+ *
+ *  Demo mode (no sign-in enforced) keeps the switcher for everyone, as it
+ *  always has — there is no real account to protect there. */
+export function canViewAsOtherRole(authRole: string, authRequired: boolean): boolean {
+  return !authRequired || (authRole || "").trim() === "CMO";
+}
+
 /** May this role ASK to move a post's publish date?
  *
  *  The Content Creator is the one who knows the piece will not be ready, or

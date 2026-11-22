@@ -1,5 +1,6 @@
 // Data access for Settings → Users & Roles (the members table).
 
+import { permChangeLabel, type PermChange } from "@/lib/data/permDiff";
 import { supabase } from "@/lib/supabase";
 import { BRANDS_DATA, BrandCfg, ORG_FIELDS, USERS_DATA } from "@/lib/data/settings";
 import { CAMPAIGN_TYPES } from "@/lib/data/brief";
@@ -244,12 +245,17 @@ export async function fetchPermissions(): Promise<Record<string, Record<string, 
   return map;
 }
 
-export async function savePermissions(rows: PermRow[]): Promise<void> {
+export async function savePermissions(rows: PermRow[], changes: PermChange[] = []): Promise<void> {
   const db = supabase();
   if (!db) return;
   const { error } = await db.from("permissions").upsert(rows.map((r) => ({ role: r.role, descr: r.descr, perms: r.perms })));
   assertDbOk(error, "Could not save permissions");
-  logAudit("แก้ไข Permissions matrix", "Settings", { after: `${rows.length} role(s) updated` });
+  // One line per cell that actually changed, with the level before and after —
+  // "N role(s) updated" said that something happened and never what.
+  if (!changes.length) { logAudit("แก้ไข Permissions matrix", "Settings", { after: `${rows.length} role(s) saved, no level changed` }); return; }
+  for (const c of changes) {
+    logAudit(`แก้ไขสิทธิ์ ${permChangeLabel(c)}`, "Settings", { before: c.from, after: c.to, meta: { role: c.role, module: c.module, widens: c.widens } });
+  }
 }
 
 /* ── Notification toggles (channels + triggers) ─────────────────────── */

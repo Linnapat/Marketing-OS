@@ -52,7 +52,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
   const pathname = usePathname();
   const myTaskCount = useMyTaskCount();
   const { user, member, role, signOut } = useAuth();
-  const { can } = useRole();
+  const { can, canViewAs } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
   // Signed-in user without a members row must NOT be labeled CMO — that
   // default is only for demo mode (no auth). Their real role lives in
@@ -243,9 +243,10 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
 
       {/* Footer: role switcher + user */}
       <div className="px-3 pb-4 pt-3 border-t border-white/[0.08] bg-white/[0.02]">
-        {/* Role preview is a demo aid — hide it once real logins are enforced,
-            so a signed-in user can't escalate their "viewing as" role. */}
-        {!AUTH_REQUIRED && !collapsed && <RoleSwitcher />}
+        {/* Role preview: everyone in demo mode, the CMO only once real logins
+            are enforced — for any other signed-in role it would be a way to
+            draw themselves more buttons (see canViewAsOtherRole). */}
+        {canViewAs && !collapsed && <RoleSwitcher />}
         {collapsed ? (
           <div className="flex flex-col items-center gap-2 pt-1" title={`${displayName} · ${displayRole}`}>
             <Avatar name={displayName} avatarUrl={member?.avatarUrl} />

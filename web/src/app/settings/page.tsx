@@ -1,5 +1,6 @@
 "use client";
 
+import { permissionChanges } from "@/lib/data/permDiff";
 import { toast, toastError } from "@/lib/toast";
 import { authHeaders } from "@/lib/supabase";
 import { useEffect, useState } from "react";
@@ -560,16 +561,29 @@ export default function SettingsPage() {
   // Editable permission matrix (role × module) as level indices.
   const [perm, setPerm] = useState<number[][]>(() => PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l))));
   const [permDirty, setPermDirty] = useState(false);
+  // What is saved right now — the baseline a save is compared against, so the
+  // confirm step can list exactly which cells are about to change.
+  const [permSaved, setPermSaved] = useState<number[][]>(() => PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l))));
+  const [permConfirm, setPermConfirm] = useState(false);
+  const [permSaving, setPermSaving] = useState(false);
+  const labelsOf = (m: number[][]) => m.map((row) => row.map((v) => PERM_LEVELS[v].l));
+  const pendingPermChanges = permissionChanges(PERM_ROLES.map((r) => r.role), PERM_MODULES, labelsOf(permSaved), labelsOf(perm));
   const cyclePerm = (ri: number, mi: number) => {
     if (!canEdit) return;
     setPerm((m) => m.map((row, r) => (r === ri ? row.map((v, c) => (c === mi ? (v + 1) % PERM_LEVELS.length : v)) : row)));
     setPermDirty(true);
   };
+  // "Save changes" only opens the confirm step; this runs once it is accepted.
   const persistPermissions = () => {
+    if (!canEdit || permSaving) return;
+    setPermSaving(true);
     savePermissions(PERM_ROLES.map((r, ri) => ({
       role: r.role, descr: r.desc,
       perms: PERM_MODULES.map((m, mi) => ({ module: m, level: PERM_LEVELS[perm[ri][mi]].l })),
-    }))).then(() => setPermDirty(false)).catch(reportSaveError("บันทึก Permissions"));
+    })), pendingPermChanges)
+      .then(() => { setPermSaved(perm); setPermDirty(false); setPermConfirm(false); })
+      .catch(reportSaveError("บันทึก Permissions"))
+      .finally(() => setPermSaving(false));
   };
   // Editable organization fields
   const [orgEdit, setOrgEdit] = useState(false);
@@ -686,10 +700,12 @@ export default function SettingsPage() {
     let alive = true;
     fetchPermissions().then((map) => {
       if (!alive || !map) return;
-      setPerm(PERM_ROLES.map((r) => r.perms.map((p, mi) => {
+      const loaded = PERM_ROLES.map((r) => r.perms.map((p, mi) => {
         const lvl = map[r.role]?.[PERM_MODULES[mi]];
         return lvl ? levelIndex(lvl) : levelIndex(p.l);
-      })));
+      }));
+      setPerm(loaded);
+      setPermSaved(loaded);
     }).catch(() => {});
     fetchOrg().then((f) => { if (alive && f && f.length) setOrg(f); }).catch(() => {});
     fetchApprovalMatrix().then((m) => {
@@ -1092,6 +1108,29 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {section === "perms" && permConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/45" onClick={() => !permSaving && setPermConfirm(false)} />
+            <div className="relative w-full max-w-[520px] bg-surface rounded-cardLg border border-line shadow-2xl p-5 flex flex-col gap-3">
+              <div className="text-[14px] font-extrabold">ยืนยันการแก้สิทธิ์ {pendingPermChanges.length} ช่อง</div>
+              <div className="text-[12px] text-muted">มีผลทันทีกับทุกคนใน role นั้น และทุกช่องจะถูกบันทึกลง Audit Log พร้อมค่าก่อนและหลัง</div>
+              <div className="max-h-[300px] overflow-y-auto rounded-[10px] border border-line2">
+                {pendingPermChanges.map((c) => (
+                  <div key={`${c.role}:${c.module}`} className="flex items-center gap-2 px-3 py-[8px] text-[12.5px] border-b border-line4 last:border-b-0">
+                    <span className="font-bold flex-1 min-w-0 truncate">{c.role} · {c.module}</span>
+                    <span className="text-faint">{c.from}</span><span>→</span><span className="font-bold">{c.to}</span>
+                    {c.widens && <span className="text-[10.5px] font-bold rounded-pill px-[7px] py-[2px]" style={{ color: "#B3641E", background: "#FFF7ED", border: "1px solid #F0C89B" }}>สิทธิ์กว้างขึ้น</span>}
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setPermConfirm(false)} disabled={permSaving} className="text-[12.5px] font-bold rounded-[9px] px-3 py-[7px] border border-line2 bg-surface disabled:opacity-40">กลับไปแก้</button>
+                <button onClick={persistPermissions} disabled={permSaving} className="text-[12.5px] font-bold text-white rounded-[9px] px-3 py-[7px] bg-status-green disabled:opacity-40">{permSaving ? "กำลังบันทึก…" : "ยืนยันและบันทึก"}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {section === "perms" && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1101,8 +1140,12 @@ export default function SettingsPage() {
               </div>
               {canEdit && permDirty && (
                 <div className="flex items-center gap-2">
-                  <button onClick={() => { setPerm(PERM_ROLES.map((r) => r.perms.map((p) => levelIndex(p.l)))); setPermDirty(false); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[6px]">Reset</button>
-                  <button onClick={persistPermissions} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[6px]">Save changes</button>
+                  {/* Back to what is saved — not to the bundled defaults, which
+                      "Reset" used to load: one more click and Save would have
+                      overwritten the live matrix with them. */}
+                  <button onClick={() => { setPerm(permSaved); setPermDirty(false); }} className="text-[12px] font-semibold text-muted border border-line2 rounded-[8px] px-3 py-[6px]">ยกเลิกที่แก้</button>
+                  <span className="text-[11.5px] font-bold" style={{ color: "#B3641E" }}>ยังไม่ได้บันทึก {pendingPermChanges.length} ช่อง</span>
+                  <button onClick={() => setPermConfirm(true)} disabled={pendingPermChanges.length === 0} className="text-[12px] font-bold text-white bg-status-green rounded-[8px] px-3 py-[6px] disabled:opacity-40">ตรวจและบันทึก…</button>
                 </div>
               )}
             </div>
