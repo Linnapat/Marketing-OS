@@ -10,6 +10,7 @@ import {
 import { artworkUnitsOf } from "@/lib/data/graphic";
 import { Combobox } from "@/components/ui/Combobox";
 import { artworkScheduleFor } from "@/lib/data/artworkSchedule";
+import { useTeamHolidays } from "@/lib/useTeamHolidays";
 
 // One shared editor for a Content Plan item — used by both the Campaign Builder's
 // Content Plan step and the Content Calendar's New Post modal, so the "template"
@@ -70,7 +71,8 @@ export function ContentItemForm({ item, onChange, outOfRange, requesterFallback,
   // for the final BRIEF, and reading it stamped January's work as due on the
   // day its brief closed (see artworkSchedule). Publish-minus-buffer remains
   // the fallback inside finalArtworkDue.
-  const round = artworkScheduleFor(item.publishDate || undefined);
+  const holidays = useTeamHolidays();
+  const round = artworkScheduleFor(item.publishDate || undefined, holidays);
   const finalDue = finalArtworkDue(item.publishDate || undefined, graphicRequestDate, round?.finalAw);
   useEffect(() => {
     // Keep the stored value in step with the publish date, so what the Graphic

@@ -30,6 +30,23 @@ export function isPostOnHold(c: Pick<ContentItem, "publishStatus">): boolean {
 export function isPostCancelled(c: Pick<ContentItem, "publishStatus">): boolean {
   return (c.publishStatus ?? "").trim() === PUBLISH_CANCELLED;
 }
+/** What to tell the people producing for a post when its publish status moves
+ *  into or out of Hold / Cancelled — null for every other change.
+ *
+ *  A designer mid-way through artwork for a post that was just cancelled has
+ *  no other way to find out: the request they work from does not change, and
+ *  the Content Plan is not a page they watch. */
+export function publishStatusNotice(prev: string, next: string, reason = ""): { action: string; text: string; stop: boolean } | null {
+  const was = (prev ?? "").trim(), now = (next ?? "").trim();
+  if (was === now) return null;
+  const why = reason.trim() ? ` · เหตุผล: ${reason.trim()}` : "";
+  if (now === PUBLISH_CANCELLED) return { action: "ยกเลิกโพสต์", text: `โพสต์นี้ถูกยกเลิกแล้ว — หยุดงานชิ้นนี้ก่อน แล้วเช็คกับเจ้าของโพสต์${why}`, stop: true };
+  if (now === PUBLISH_HOLD) return { action: "Hold โพสต์", text: `โพสต์นี้ถูก Hold ไว้ — พักงานชิ้นนี้ก่อนจนกว่าจะปลด Hold${why}`, stop: true };
+  if (was === PUBLISH_CANCELLED) return { action: "เปิดโพสต์กลับมา", text: `โพสต์นี้ถูกเปิดกลับมาแล้ว (สถานะ ${now || "Draft"}) — ทำงานต่อได้`, stop: false };
+  if (was === PUBLISH_HOLD) return { action: "ปลด Hold", text: `โพสต์นี้ปลด Hold แล้ว (สถานะ ${now || "Draft"}) — ทำงานต่อได้`, stop: false };
+  return null;
+}
+
 /** Nothing left to do on it: it went out, or it never will. */
 export function isPostClosed(c: Pick<ContentItem, "publishStatus" | "status">): boolean {
   return isPostFinished(c) || isPostCancelled(c);
@@ -126,6 +143,9 @@ export interface ContentItem {
   /** Free-text note typed straight into the Content Plan row — whatever the
    *  team needs to tell each other about this post that no status says. */
   remark?: string;
+  /** Why the post is on Hold / Cancelled — asked for at the moment it is set,
+   *  cleared when it leaves either state. */
+  publishStatusReason?: string;
 }
 
 export interface DateChangeRequest {

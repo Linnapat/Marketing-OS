@@ -1,5 +1,7 @@
 "use client";
 
+import { useTeamHolidays } from "@/lib/useTeamHolidays";
+import { monthServedByArtworkDue } from "@/lib/data/artworkSchedule";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { useEffect, useRef, useState } from "react";
 import { fetchMembers, fetchJsonSetting, fetchBrandConfigs, Member } from "@/lib/db/settings";
@@ -528,7 +530,8 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
   // Which month's work this request serves — derived from its Final AW date, so
   // the storyboard deadline resolves against the same month the artwork does.
   const deadlines = useDeadlines();
-  const servedMonth = monthServedByFinalAw(g.dueIso);
+  const teamHolidays = useTeamHolidays();
+  const servedMonth = monthServedByArtworkDue(g.dueIso, teamHolidays) ?? monthServedByFinalAw(g.dueIso);
   const sbDeadline = servedMonth ? deadlines.milestone("storyboard", servedMonth) : null;
 
   const [sbLink, setSbLink] = useState(g.storyboardLink ?? "");

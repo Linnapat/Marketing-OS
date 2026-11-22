@@ -6,9 +6,11 @@
 
 import {
   briefDeadlineFor, rushBreaches, rushBlocksProduction, DEFAULT_BRIEF_CUTOFF_DAY, RushCode,
+  parseBriefExtensions, withBriefExtension, currentBriefRound,
 } from "../src/lib/data/briefDeadline";
 import { thirdFriday, lastFriday, artworkScheduleFor, monthServedByArtworkDue } from "../src/lib/data/artworkSchedule";
 import { finalArtworkDue } from "../src/lib/data/brief";
+import { parseTeamHolidays, withTeamHoliday, workingDayOnOrBefore } from "../src/lib/data/teamHolidays";
 import { monthServedByFinalAw } from "../src/lib/data/deadlinePolicy";
 
 let pass = 0, fail = 0;
@@ -111,6 +113,43 @@ console.log("\n— รอบงาน Creative: บรีฟ / draft แรก /
   is("due ศุกร์สุดท้าย ธ.ค. → เป็นงานเดือน ม.ค.", monthServedByArtworkDue("2026-12-25"), "2027-01");
   is("วันอื่นไม่ใช่วันของรอบ", monthServedByArtworkDue("2026-12-18"), null);
   is("drawer หาเดือนของงานจากวัน due ได้", monthServedByFinalAw("2026-12-25"), "2027-01");
+}
+
+console.log("\n— ขยายเดดไลน์บรีฟเฉพาะรอบ —");
+{
+  const ext = { "2026-11-20": "2026-11-27" };
+  const rush = (requestIso: string, due: string, extensions?: Record<string, string>) => rushBreaches({
+    graphicDueIso: due, requestIso, cutoffDay: 25, extensions, minDueIso: "2026-11-01",
+    capLimit: 0, capUsed: 0, capAdding: 1, kindLabel: "Graphic",
+  }).map((b) => b.code).join(",");
+  is("ไม่ขยาย: บรีฟ 22 พ.ย. งานเดือน ม.ค. = งานเร่ง", rush("2026-11-22", "2026-12-25"), "deadline");
+  is("ขยายถึง 27 พ.ย.: บรีฟ 22 พ.ย. ผ่าน", rush("2026-11-22", "2026-12-25", ext), "");
+  is("…วันสุดท้ายที่ขยายยังผ่าน", rush("2026-11-27", "2026-12-25", ext), "");
+  is("…เลยวันที่ขยาย = งานเร่งเหมือนเดิม", rush("2026-11-28", "2026-12-25", ext), "deadline");
+  is("ไม่รั่วไปรอบอื่น (งานเดือน ก.พ. ยังเป็น 18 ธ.ค.)", briefDeadlineFor("2027-01-29", 25, ext), "2026-12-18");
+  is("ปิดกฎรายเดือน = ไม่มีเดดไลน์ แม้มีการขยาย", briefDeadlineFor("2026-12-25", 0, ext), null);
+  is("ค่าที่ย้อนให้เร็วขึ้นถูกทิ้ง", Object.keys(parseBriefExtensions('{"2026-11-20":"2026-11-10"}')).length, 0);
+  is("ค่าที่อ่านไม่ได้ = ไม่มีการขยาย", Object.keys(parseBriefExtensions("not json")).length, 0);
+  is("อ่านค่าที่ถูกต้องได้", parseBriefExtensions('{"2026-11-20":"2026-11-27"}')["2026-11-20"], "2026-11-27");
+  is("ล้างการขยาย", Object.keys(withBriefExtension(ext, "2026-11-20", "")).length, 0);
+  is("รอบของวันนี้ (22 พ.ย.) คือ 20 พ.ย.", currentBriefRound("2026-11-22"), "2026-11-20");
+}
+
+console.log("\n— วันหยุดทีม: เดดไลน์ของรอบขยับมาวันทำงานก่อนหน้า —");
+{
+  const xmas = ["2026-12-25"];
+  is("ไม่มีวันหยุด: Final งาน ม.ค. = 25 ธ.ค.", artworkScheduleFor("2027-01")?.finalAw, "2026-12-25");
+  is("หยุด 25 ธ.ค.: Final ขยับเป็นพฤหัส 24", artworkScheduleFor("2027-01", xmas)?.finalAw, "2026-12-24");
+  is("…1st draft ไม่โดน (18 ธ.ค.)", artworkScheduleFor("2027-01", xmas)?.firstDraft, "2026-12-18");
+  is("หยุดติดกัน 24–25: ถอยไปพุธ 23", artworkScheduleFor("2027-01", ["2026-12-24", "2026-12-25"])?.finalAw, "2026-12-23");
+  is("ไม่ถอยไปตกเสาร์อาทิตย์", workingDayOnOrBefore("2026-12-28", ["2026-12-28"]), "2026-12-25");
+  is("วันทำงานปกติไม่ขยับ", workingDayOnOrBefore("2026-12-18", xmas), "2026-12-18");
+  is("เดดไลน์บรีฟตรงวันหยุดก็ขยับ", briefDeadlineFor("2026-12-25", 25, undefined, ["2026-11-20"]), "2026-11-19");
+  is("…แต่วันที่ขยายเองไม่ถูกขยับ", briefDeadlineFor("2026-12-25", 25, { "2026-11-20": "2026-11-27" }, ["2026-11-27"]), "2026-11-27");
+  is("วัน due ที่ขยับแล้วยังรู้ว่าเป็นงานเดือน ม.ค.", monthServedByArtworkDue("2026-12-24", xmas), "2027-01");
+  is("ค่าที่อ่านไม่ได้ = ไม่มีวันหยุด", parseTeamHolidays("oops").length, 0);
+  is("เก็บเฉพาะวันที่ถูกรูปแบบ ไม่ซ้ำ เรียงวัน", parseTeamHolidays('["2026-12-31","x","2026-12-25","2026-12-25"]').join(","), "2026-12-25,2026-12-31");
+  is("เพิ่ม/ลบวันหยุด", withTeamHoliday(withTeamHoliday([], "2026-12-25", true), "2026-12-25", false).length, 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

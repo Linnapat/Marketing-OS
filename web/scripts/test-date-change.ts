@@ -1,5 +1,5 @@
 // node --import tsx scripts/test-date-change.ts
-import { requestDateChange, decideDateChange, withPublishQueue, canPublish, isPostClosed, contentTone, type ContentItem } from "../src/lib/data/content";
+import { requestDateChange, decideDateChange, withPublishQueue, canPublish, publishStatusNotice, isPostClosed, contentTone, type ContentItem } from "../src/lib/data/content";
 import { isPostOpenWork } from "../src/lib/data/derive";
 import { contentHealth } from "../src/lib/data/statusBoard";
 
@@ -37,6 +37,15 @@ is("cancelled is nobody's backlog; hold still is", [isPostOpenWork({ publishStat
 is("cancelled reads done on the board, not blocked", contentHealth({ ...ready, captionStatus: "Missing", publishStatus: "Cancelled" }).health, "done");
 is("hold reads waiting", contentHealth({ ...ready, publishStatus: "Hold" }).health, "waiting");
 is("tones", [contentTone("Hold"), contentTone("Cancelled")], ["gold", "red"]);
+
+// What the people producing for the post are told.
+is("cancel tells producers to stop", publishStatusNotice("Queued", "Cancelled")?.stop, true);
+is("hold tells producers to stop", publishStatusNotice("Draft", "Hold")?.stop, true);
+is("un-hold tells them to carry on", publishStatusNotice("Hold", "Draft")?.stop, false);
+is("re-opening a cancelled post is news too", publishStatusNotice("Cancelled", "Queued")?.stop, false);
+is("the reason travels with the notice", publishStatusNotice("Draft", "Hold", "รอราคาใหม่")?.text.includes("รอราคาใหม่"), true);
+is("ordinary moves are not news", publishStatusNotice("Draft", "Queued"), null);
+is("no change is not news", publishStatusNotice("Hold", "Hold"), null);
 
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
