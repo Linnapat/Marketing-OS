@@ -25,6 +25,21 @@ import {
 import { CalendarTaskEdit, resolveCalendarSections, templateTaskKey } from "@/lib/data/calendarTasks";
 import { monthServedByArtworkDue } from "@/lib/data/artworkSchedule";
 
+/** A row name as typed on the Team Calendar, with orphaned Thai marks removed.
+ *
+ *  Typing English with the Thai layout still on leaves a stray vowel or tone
+ *  mark with nothing under it — the calendar's "Final AW ฺBrief" carries a
+ *  phinthu (U+0E3A) after a space. It is in the saved row, not in code, and
+ *  every page that prints the milestone printed it. Cleaned on the way out, so
+ *  the row itself is left exactly as the team typed it. A mark that follows a
+ *  Thai letter is real spelling and is kept. */
+export function tidyLabel(text?: string | null): string {
+  return (text ?? "")
+    .replace(/(^|[^\u0E01-\u0E2E\u0E30-\u0E3A\u0E40-\u0E4E])[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]+/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export type MilestoneKey = "campaignBrief" | "contentPlan" | "storyboard" | "finalAw";
 
 interface MilestoneDef {
@@ -249,7 +264,7 @@ export function resolveMilestone(
   // LAST of them — the window closes, it does not open.
   hits.sort((a, b) => a.iso.localeCompare(b.iso));
   const last = hits[hits.length - 1];
-  return { key, label: row.en || def.label, governs: def.governs, ...last, forMonth };
+  return { key, label: tidyLabel(row.en) || def.label, governs: def.governs, ...last, forMonth };
 }
 
 /** Whole months from one "YYYY-MM" to another. */

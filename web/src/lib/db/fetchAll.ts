@@ -16,15 +16,33 @@ type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null
 
 /** `build(from, to)` must return the query for rows from..to (inclusive),
  *  ordered by a unique column. Returns every row, or the first error. */
+/** Pages read at once after the first. Two: enough to stop a big table being a
+ *  chain of round trips, small enough that a table that ends on the first page
+ *  costs nothing extra. */
+const PARALLEL = 2;
+
 export async function fetchAllRows<T>(
   build: (from: number, to: number) => Page<T>,
 ): Promise<{ data: T[] | null; error: { message: string } | null }> {
-  const out: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await build(from, from + PAGE - 1);
-    if (error) return { data: null, error };
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE) return { data: out, error: null };
+  // The first page alone: most tables end here, and it must not cost them a
+  // second request.
+  const first = await build(0, PAGE - 1);
+  if (first.error) return { data: null, error: first.error };
+  const out: T[] = [...(first.data ?? [])];
+  if ((first.data ?? []).length < PAGE) return { data: out, error: null };
+  // Past 1,000 rows the pages used to be read one after another — tasks is
+  // three of them, on every page that lists work. They are independent reads
+  // (ordered by a unique column), so they go out together and are appended in
+  // order; a short page anywhere in a batch is the end of the table.
+  for (let from = PAGE; ; from += PAGE * PARALLEL) {
+    const batch = await Promise.all(
+      Array.from({ length: PARALLEL }, (_, i) => build(from + i * PAGE, from + (i + 1) * PAGE - 1)),
+    );
+    for (const page of batch) {
+      if (page.error) return { data: null, error: page.error };
+      const rows = page.data ?? [];
+      out.push(...rows);
+      if (rows.length < PAGE) return { data: out, error: null };
+    }
   }
 }

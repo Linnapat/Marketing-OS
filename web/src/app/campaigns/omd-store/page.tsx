@@ -1,5 +1,6 @@
 "use client";
 
+import { DATE_LOCALE } from "@/lib/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronsLeftRight, ChevronsRightLeft, Download, Minimize2, Pencil, Plus, Printer, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
@@ -69,7 +70,7 @@ const PRINT_TEMPLATES: Record<PrintTemplate, { label: string; helper: string }> 
 
 function formatDate(value?: string) {
   if (!value) return "ไม่ระบุ";
-  return new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+  return new Intl.DateTimeFormat(DATE_LOCALE, { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }
 
 /** printedStatus against today. A thin wrapper so every call site reads the

@@ -34,7 +34,17 @@ export function barWidth(value: number): string {
 
 export { THIN };
 
-/** When a decision was made, in Thai — "24 ส.ค. 2569 14:32".
+/** The one locale dates are printed in: day, English short month, Gregorian
+ *  year — "19 Nov 2026".
+ *
+ *  The app printed dates two ways. Filters, columns and pickers said "Nov 2026";
+ *  timestamps went through "th-TH" and came out "19 พ.ย. 2569", Buddhist year
+ *  and all — so one screen could show 2026 and 2569 for the same week. One
+ *  constant, used by every date this app formats, so the choice is made (and
+ *  can be changed) in exactly one place. */
+export const DATE_LOCALE = "en-GB";
+
+/** When a decision was made — "24 Aug 2026, 14:32".
  *
  *  Every sign-off in the app used to read "อนุมัติโดย Gik" and stop there: the
  *  name without the moment. That is fine while the decision is fresh and
@@ -49,5 +59,5 @@ export { THIN };
 export function stamp(iso?: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" });
 }

@@ -5,6 +5,7 @@
  * แยกจาก status/page.tsx เพราะหน้านั้นยาวพอแล้วกับสองมุมเดิม และเพราะการ์ดพวกนี้
  * เป็นของที่เอาไปวางที่อื่นได้ (เช่นในหน้าแคมเปญ) โดยไม่ต้องลากตัวโหลดข้อมูลไปด้วย */
 
+import { DATE_LOCALE } from "@/lib/format";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -91,7 +92,7 @@ const DAY = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 function thaiDate(iso: string) {
   const d = new Date(`${iso}T00:00:00Z`);
   if (isNaN(+d)) return iso;
-  return `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${d.toLocaleDateString("th-TH", { month: "short", timeZone: "UTC" })}`;
+  return `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${d.toLocaleDateString(DATE_LOCALE, { month: "short", timeZone: "UTC" })}`;
 }
 
 export function PostCard({ post, showJobs }: { post: TrackerPost; showJobs: boolean }) {

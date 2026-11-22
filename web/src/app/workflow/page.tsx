@@ -161,7 +161,7 @@ export default function WorkCalendarPage() {
         ...meta.days.map((d) => t.marks[d] ?? ""),
       ]),
     );
-    return [[`Work Calendar — ${monthLabel}`], [], header, ...body];
+    return [[`Team Calendar — ${monthLabel}`], [], header, ...body];
   };
 
   const exportXlsx = () => {
@@ -244,7 +244,7 @@ export default function WorkCalendarPage() {
     <>
       <CampaignPageHeaderSection
         eyebrow="TEAM CALENDAR"
-        title="Work Calendar"
+        title="Team Calendar"
         description={`${monthLabel} · team timeline & deliverable reminders${isTemplate ? "" : " · auto-generated"}`}
       />
 
@@ -279,9 +279,12 @@ export default function WorkCalendarPage() {
               <button onClick={() => shiftMonth(1)} aria-label="Next month" className="w-8 h-8 rounded-[9px] border border-line2 bg-white flex items-center justify-center text-muted hover:bg-ivory">
                 <ChevronRight size={16} />
               </button>
-              <button onClick={() => { setEdit(false); setYm({ y: TEMPLATE_YEAR, m: TEMPLATE_MONTH }); }}
+              {/* "This month", not "Jul 2026": the button used to jump to the month
+                  the calendar template was written for, which read as a bug
+                  from August onwards. */}
+              <button onClick={() => { const now = new Date(); setEdit(false); setYm({ y: now.getFullYear(), m: now.getMonth() }); }}
                 className="text-[12px] font-semibold text-muted border border-line2 rounded-[12px] px-3 py-[8px] bg-white hover:bg-ivory">
-                Jul 2026
+                This month
               </button>
             </div>
 
@@ -420,7 +423,7 @@ export default function WorkCalendarPage() {
       {/* print-calendar-root marks what the PDF export prints; the heading is
           re-stated inside it because the page header above is outside. */}
       <div className="print-calendar-root">
-        <div className="hidden print:block text-[14px] font-extrabold mb-2">Work Calendar — {monthLabel}</div>
+        <div className="hidden print:block text-[14px] font-extrabold mb-2">Team Calendar — {monthLabel}</div>
         {view === "grid" ? (
           <GridView sections={sections} meta={meta} today={todayDay} done={done} setDone={setDone} onPickDay={onPickDay}
             monthKey={monthKey} edit={edit && canEdit} onCell={onCell} overrides={overrides} />

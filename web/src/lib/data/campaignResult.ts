@@ -6,6 +6,7 @@
 // Shaped so a Supabase `campaign_results` table can replace the mock later — see
 // lib/db/campaignResult.ts for the data access (mock fallback / Supabase blob).
 
+import { DATE_LOCALE } from "@/lib/format";
 import { Tone } from "@/lib/status";
 import { CampaignBrief } from "@/lib/data/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
@@ -175,7 +176,7 @@ export function fmtUpdated(iso?: string): string {
   if (min < 60) return `${min} นาทีที่แล้ว`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr} ชม.ที่แล้ว`;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(DATE_LOCALE, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 /** The most recent update stamp across a set of rows (campaign roll-up). */

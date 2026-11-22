@@ -18,7 +18,7 @@ import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
   CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostOnHold, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, publishStatusNotice, withChange, isPostOverdue, isReadyToPost, planWaitingCounts, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
-import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, focusMonthKey } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
 import { useRole } from "@/lib/role";
@@ -308,8 +308,25 @@ function ContentPageInner() {
   // The month the grid shows: the filter month, or the range's starting month.
   // Fallback to today (never a hardcoded year) when a range has no start date.
   const todayIso = new Date().toISOString().slice(0, 10);
-  const gy = date.mode === "month" ? date.year : Number((date.start || todayIso).slice(0, 4));
-  const gm = date.mode === "month" ? date.month : Number((date.start || todayIso).slice(5, 7)) - 1;
+  // On Month the grid is the filter's month. On Year / Range the filter names
+  // no single month, so the grid keeps one of its own (gridMonth) and steps
+  // through it — it used to read the range's stale start date, so with the
+  // period set to Year 2027 the grid drew October 2026 and looked empty.
+  const [gridMonth, setGridMonth] = useState<{ y: number; m: number } | null>(null);
+  const gridFallback = (() => {
+    const focus = focusMonthKey(date, todayIso);
+    return { y: Number(focus.slice(0, 4)), m: Number(focus.slice(5, 7)) - 1 };
+  })();
+  const gridHeld = gridMonth && (date.mode !== "year" || gridMonth.y === date.year) ? gridMonth : gridFallback;
+  const gy = date.mode === "month" ? date.year : gridHeld.y;
+  const gm = date.mode === "month" ? date.month : gridHeld.m;
+  const shiftGridMonth = (n: number) => {
+    const at = new Date(gy, gm + n, 1);
+    // Inside a Year filter the grid stays in that year — the posts outside it
+    // are filtered away, so stepping past December would draw an empty month.
+    if (date.mode === "year" && at.getFullYear() !== date.year) return;
+    setGridMonth({ y: at.getFullYear(), m: at.getMonth() });
+  };
   const ymKey = `${gy}-${String(gm + 1).padStart(2, "0")}`;
 
   const openNew = (day?: number) => {
@@ -676,7 +693,7 @@ function ContentPageInner() {
           {/* The KOL layer is filtered by the same words — leaving it unfiltered
               put unrelated KOL posts on a calendar the search had just emptied,
               which reads as a hit. */}
-          {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
+          {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} onShift={date.mode === "month" ? undefined : shiftGridMonth} />}
           {view === "week" && <WeekView items={weekItems} onOpen={setOpen} kolPosts={weekKols} startIso={todayIso.startsWith(ymKey) ? todayIso : `${ymKey}-01`} />}
           {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
           {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
@@ -889,7 +906,10 @@ function NewPostModal({ onClose, onCreate, count: _count, initialIso }: { onClos
   );
 }
 
-function MonthView({ items, year, month, onOpen, onNew, kolPosts = [] }: { items: ContentItem[]; year: number; month: number; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; kolPosts?: KolCalendarPost[] }) {
+function MonthView({ items, year, month, onOpen, onNew, kolPosts = [], onShift }: { items: ContentItem[]; year: number; month: number; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; kolPosts?: KolCalendarPost[];
+  /** Given when the period filter is not a single month: the grid then shows
+   *  which month it is on and lets you step through. */
+  onShift?: (n: number) => void }) {
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const ymKey = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -899,6 +919,14 @@ function MonthView({ items, year, month, onOpen, onNew, kolPosts = [] }: { items
   ];
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
+      {onShift && (
+        <div className="flex items-center gap-2 px-4 py-[9px] border-b border-line4" style={{ background: "#FBF9F4" }}>
+          <button onClick={() => onShift(-1)} aria-label="เดือนก่อนหน้า" className="text-[12px] font-bold border border-line2 rounded-[8px] px-[9px] py-[3px] bg-surface hover:bg-ivory">‹</button>
+          <span className="text-[13px] font-bold">{MON[month]} {year}</span>
+          <button onClick={() => onShift(1)} aria-label="เดือนถัดไป" className="text-[12px] font-bold border border-line2 rounded-[8px] px-[9px] py-[3px] bg-surface hover:bg-ivory">›</button>
+          <span className="text-[11px] text-faint">ปฏิทินแสดงทีละเดือน — ช่วงเวลาที่เลือกกว้างกว่านี้</span>
+        </div>
+      )}
       <div className="grid grid-cols-7 border-b border-line4">
         {DOW.map((d) => <div key={d} className="text-[10.5px] font-bold text-faint uppercase tracking-[0.05em] px-2 py-2 text-center">{d}</div>)}
       </div>
@@ -920,15 +948,18 @@ function MonthView({ items, year, month, onOpen, onNew, kolPosts = [] }: { items
                   <button
                     key={c.id}
                     onClick={() => onOpen(c)}
-                    className={`w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition border-l-[4px] ${isPostCancelled(c) ? "opacity-50" : ""}`}
+                    className={`w-full text-left flex items-start gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition border-l-[4px] ${isPostCancelled(c) ? "opacity-50" : ""}`}
                     style={{ background: isPostOnHold(c) ? "#FFF3D7" : "#FAF8F4", borderColor: "#F0EBE0", borderLeftColor: campaignAccent(c.campaign) }}
-                    title={`${c.campaign} · ${c.title}${isPostOnHold(c) || isPostCancelled(c) ? ` · ${c.publishStatus}${c.publishStatusReason ? `: ${c.publishStatusReason}` : ""}` : ""}`}
+                    title={`${c.title} · ${c.campaign}${isPostOnHold(c) || isPostCancelled(c) ? ` · ${c.publishStatus}${c.publishStatusReason ? `: ${c.publishStatusReason}` : ""}` : ""}`}
                   >
                     <PlatBadges item={c} />
                     {/* A held or dropped post must not read as a live one on
                         the calendar — that is the view people plan around. */}
                     {isPostOnHold(c) && <span className="text-[9px] flex-shrink-0" aria-label="Hold">⏸</span>}
-                    <span className={`text-[10.5px] font-semibold truncate flex-1 ${isPostCancelled(c) ? "line-through text-faint" : ""}`}>{c.title}</span>
+                    {/* Two lines, not one: a cell is ~120px wide and three channel
+                        badges left room for "11 …". The full title is on hover. */}
+                    <span className={`text-[10.5px] font-semibold flex-1 min-w-0 leading-[1.25] break-words ${isPostCancelled(c) ? "line-through text-faint" : ""}`}
+                      style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{c.title}</span>
                   </button>
                 ))}
                 {dayKols.map((k) => <KolChip key={k.collab_id} k={k} />)}
@@ -1126,7 +1157,9 @@ function assetDownload(c: ContentItem): string | null {
  *  `2fr`: a bare fr is minmax(auto, 2fr), so a long post title or a work-code
  *  pill sets a min-content floor that widens that row's column only — and since
  *  every row is its own grid, the row then sits out of step with the header. */
-const CONTENT_LIST_COLS = "92px minmax(0,2fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr)";
+// Content ID gets a real floor: at minmax(0, …) the column shrank below the
+// width of a job number and the pill ran under the Caption badge beside it.
+const CONTENT_LIST_COLS = "92px minmax(0,2fr) minmax(138px,1.15fr) minmax(0,0.9fr) minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.2fr)";
 
 /** The free-text note at the end of the row. Typed in place and saved on blur
  *  or Enter — a note that needed the drawer opened would not get written. */
@@ -1233,7 +1266,7 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
             {/* Content ID: the post's job number, in FULL. The campaign column is
                 gone from this view, so a bare "C01" would name nothing — the full
                 code carries its campaign inside it and stays unique on its own. */}
-            <span className="min-w-0"><WorkCode code={c.code} full /></span>
+            <span className="min-w-0 overflow-hidden" title={c.code}><WorkCode code={c.code} full /></span>
             <StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge>
             <div className="flex items-center gap-[6px] min-w-0">
               <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>

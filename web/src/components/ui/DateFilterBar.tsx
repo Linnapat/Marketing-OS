@@ -160,6 +160,23 @@ export function rangeOverlapFraction(f: DateFilter, range?: RowPeriod): number {
 /** The one month a period speaks about — the first it covers, or its own
  *  month/year when the range has no ends to read (the all-time filter). For
  *  anything that shows a per-month fact beside a filter that may span several. */
+/** The ONE month a period filter is "about", for things that can only speak
+ *  of a single month (the deadline strip).
+ *
+ *  monthKeyOf answers with the first month the period covers — right for
+ *  budgets, wrong here: on Year it said January, and on an open range it fell
+ *  back to whatever month the filter last held, so the strip announced
+ *  deadlines for a month nobody had selected. A single month is itself; a
+ *  period containing today is this month; any other year is its January. */
+export function focusMonthKey(f: DateFilter, todayIso: string = new Date().toISOString().slice(0, 10)): string {
+  const thisMonth = todayIso.slice(0, 7);
+  if (f.mode === "month") return `${f.year}-${String(f.month + 1).padStart(2, "0")}`;
+  if (f.mode === "year") return String(f.year) === thisMonth.slice(0, 4) ? thisMonth : `${f.year}-01`;
+  const start = (f.start || "").slice(0, 10), end = (f.end || "").slice(0, 10);
+  if ((!start || start <= todayIso) && (!end || end >= todayIso)) return thisMonth;
+  return (start || end).slice(0, 7);
+}
+
 export function monthKeyOf(f: DateFilter): string {
   return filterMonthKeys(f)[0] ?? `${f.year}-${String(f.month + 1).padStart(2, "0")}`;
 }

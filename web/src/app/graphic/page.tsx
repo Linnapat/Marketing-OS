@@ -1,5 +1,6 @@
 "use client";
 
+import { DATE_LOCALE } from "@/lib/format";
 import { isTestAccount } from "@/lib/data/testAccounts";
 import { hasNoDue, graphicFilterDate, dueNotBeforePost } from "@/lib/data/graphic";
 import { downloadXlsx } from "@/lib/xlsx";
@@ -37,7 +38,7 @@ import { fetchGraphics, createGraphic, buildGraphic, updateGraphic, syncApproved
 import { fileApprovedAsset } from "@/lib/db/assets";
 import { notify } from "@/lib/notify";
 import { graphicTeam } from "@/lib/notifyRouting";
-import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, monthKeyOf } from "@/components/ui/DateFilterBar";
+import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, focusMonthKey, monthKeyOf } from "@/components/ui/DateFilterBar";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { mintId } from "@/lib/data/ids";
 import { FilterSummary, filterWithReasons, ALL_TIME_FILTER } from "@/components/ui/FilterSummary";
@@ -531,7 +532,7 @@ function GraphicPageInner() {
         </CampaignCommandBar>
 
         {/* ประกาศเดดไลน์ — อ่านจากปฏิทินทีมที่เดียวกับทุกโมดูล */}
-        <DeadlineStrip forMonth={monthKeyOf(date)} />
+        <DeadlineStrip forMonth={focusMonthKey(date)} />
 
         <FilterSummary outcome={outcome} onClear={clearFilters} noun="ใบงาน" />
 
@@ -787,7 +788,7 @@ const tint = (hex: string, alpha: number): string => {
 };
 
 const fmtDate = (iso: string) =>
-  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(DATE_LOCALE, { day: "2-digit", month: "short", year: "2-digit" }) : "—";
 const fmtTime = (t: string) => (t ? t.split("-").filter(Boolean).join(" – ") : "—");
 
 /** Brand chip — the colour cue that carries through the table and the print sheet. */
@@ -1110,7 +1111,7 @@ function ShootCalendar({ me, requests, pageBrand, period, onPatchRequest, onOpen
 
   const cell = `${cellBase} text-ink placeholder:text-faint`;
   const th = "text-left text-[10px] font-extrabold uppercase tracking-[0.05em] text-muted px-[10px] py-2 border-b border-line";
-  const printedAt = new Date().toLocaleDateString("th-TH", { day: "2-digit", month: "long", year: "numeric" });
+  const printedAt = new Date().toLocaleDateString(DATE_LOCALE, { day: "2-digit", month: "long", year: "numeric" });
 
   return (
     <div>
@@ -1561,7 +1562,11 @@ function GraphicListRow({ g, codeOf, postDate, onOpen, onQuickApprove }: { g: Gr
         style={{ "--list-cols": LIST_COLS } as React.CSSProperties}>
         <div className="min-w-0">
           <div className="text-[13px] font-bold text-ink flex items-center gap-[6px] min-w-0">
-            <span className="truncate">{g.title}</span>
+            {/* Two lines with the full title on hover — one truncated line cut
+                "0127_ShinnenkaiPartyCourse — START THE YE…" at the part that
+                tells two requests apart. */}
+            <span className="min-w-0 leading-[1.3] break-words" title={g.title}
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{g.title}</span>
             <WorkCode code={g.code} />
           </div>
           {/* The type used to sit here; it has a column now, so this names the

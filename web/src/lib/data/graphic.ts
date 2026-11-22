@@ -11,7 +11,7 @@ import { todayIso, onlinePlatforms } from "@/lib/data/brief";
 import type { ContentItem } from "@/lib/data/content";
 import { OPEN_PARAM, resolveOpenTarget as resolveOpen } from "@/lib/deepLink";
 import { sameName } from "@/lib/identity";
-import { stamp } from "@/lib/format";
+import { stamp, DATE_LOCALE } from "@/lib/format";
 
 export interface GraphicEvent {
   type: "requested" | "assigned" | "submitted" | "revision_requested" | "approved" | "delivered"
@@ -1257,7 +1257,7 @@ export function consumeBriefUnlock(g: Graphic): Graphic {
 export function contentEditLock(g: Graphic | null | undefined): { locked: boolean; reason: string } {
   if (!isAccepted(g)) return { locked: false, reason: "" };
   const who = g?.acceptedBy?.trim() || "Creative";
-  const when = g?.acceptedAt ? new Date(g.acceptedAt).toLocaleDateString("th-TH", { dateStyle: "medium" }) : "";
+  const when = g?.acceptedAt ? new Date(g.acceptedAt).toLocaleDateString(DATE_LOCALE, { dateStyle: "medium" }) : "";
   return {
     locked: true,
     reason: `${who} รับงานนี้แล้ว${when ? ` (${when})` : ""} — แก้ไข/ย้ายแคมเปญไม่ได้ ต้องแจ้ง Creative ให้ปล่อยงานคืนก่อน`,
@@ -2484,7 +2484,7 @@ export function feedbackTimeline(
       seen.add(id);
       out.push({
         key: `dl-${d.platform}-${d.size}-${i}`, who: fb.by, atIso: fb.at,
-        atLabel: fb.at ? new Date(fb.at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "—",
+        atLabel: fb.at ? new Date(fb.at).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "—",
         text: fb.reason, lens: fb.lens, piece: [d.platform, d.size].filter(Boolean).join(" · "), round: i + 1,
       });
     });
