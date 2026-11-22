@@ -18,7 +18,8 @@ import { postDM } from "@/lib/slackBot";
 import { DEFAULT_APPROVER } from "@/lib/approval";
 import { milestonesFor } from "@/lib/data/deadlinePolicy";
 import { deadlineBoard, deadlinesLandingIn, dueReminders, reminderText, withFinalBrief, MILESTONE_ROUTE } from "@/lib/data/deadlineBoard";
-import { BRIEF_CUTOFF_SETTING_KEY, DEFAULT_BRIEF_CUTOFF_DAY } from "@/lib/data/briefDeadline";
+import { BRIEF_CUTOFF_SETTING_KEY, BRIEF_EXTENSION_SETTING_KEY, DEFAULT_BRIEF_CUTOFF_DAY, parseBriefExtensions } from "@/lib/data/briefDeadline";
+import { TEAM_HOLIDAYS_SETTING_KEY, parseTeamHolidays } from "@/lib/data/teamHolidays";
 import type { CalendarTaskEdit } from "@/lib/data/calendarTasks";
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -138,10 +139,17 @@ async function remindDeadlines(db: NonNullable<ReturnType<typeof supabaseAdmin>>
 
   // The final brief cutoff lives in app_settings, set on the Graphic page —
   // read the same way the brief form does (missing/blank = default, "0" = off).
-  const { data: cutoffRow } = await db.from("app_settings")
-    .select("value").eq("key", BRIEF_CUTOFF_SETTING_KEY).maybeSingle();
-  const rawCutoff = (cutoffRow as { value?: string } | null)?.value;
-  const cutoffDay = rawCutoff ? Number(rawCutoff) || 0 : DEFAULT_BRIEF_CUTOFF_DAY;
+  // Extensions and team holidays come with it: a reminder for a round that was
+  // pushed back must count down to the new day, not nag about the old one.
+  const { data: settingRows } = await db.from("app_settings")
+    .select("key, value").in("key", [BRIEF_CUTOFF_SETTING_KEY, BRIEF_EXTENSION_SETTING_KEY, TEAM_HOLIDAYS_SETTING_KEY]);
+  const setting = (key: string) => ((settingRows ?? []) as { key: string; value?: string }[]).find((r) => r.key === key)?.value;
+  const rawCutoff = setting(BRIEF_CUTOFF_SETTING_KEY);
+  const briefRound = {
+    cutoffDay: rawCutoff ? Number(rawCutoff) || 0 : DEFAULT_BRIEF_CUTOFF_DAY,
+    extensions: parseBriefExtensions(setting(BRIEF_EXTENSION_SETTING_KEY)),
+    holidays: parseTeamHolidays(setting(TEAM_HOLIDAYS_SETTING_KEY)),
+  };
 
   const todayIso = bangkokIso(now);
   const forMonth = todayIso.slice(0, 7);
@@ -149,7 +157,7 @@ async function remindDeadlines(db: NonNullable<ReturnType<typeof supabaseAdmin>>
   // reminder is about a date arriving, and those dates sit months before the
   // work they serve.
   const rows = deadlineBoard(
-    deadlinesLandingIn(forMonth, withFinalBrief((m) => milestonesFor(m, row.overrides ?? {}, row.tasks ?? []), cutoffDay)),
+    deadlinesLandingIn(forMonth, withFinalBrief((m) => milestonesFor(m, row.overrides ?? {}, row.tasks ?? []), briefRound)),
     todayIso,
   );
   const due = dueReminders(rows);

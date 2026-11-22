@@ -2,6 +2,7 @@
 
 import { downloadXlsx } from "@/lib/xlsx";
 import { toastError, toastSuccess } from "@/lib/toast";
+import { notifyBriefRoundChanged } from "@/lib/useBriefRound";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { workLink, OPEN_PARAM } from "@/lib/deepLink";
 import Link from "next/link";
@@ -126,6 +127,7 @@ function GraphicPageInner() {
     setHolidays(next);
     try {
       await setAppSetting(TEAM_HOLIDAYS_SETTING_KEY, JSON.stringify(next));
+      notifyBriefRoundChanged();
       toastSuccess(on ? `เพิ่มวันหยุดทีม ${labelDate(iso)} แล้ว — เดดไลน์ของรอบที่ตรงวันนี้จะขยับมาวันทำงานก่อนหน้า` : `ลบวันหยุดทีม ${labelDate(iso)} แล้ว`);
     } catch (error) {
       setHolidays(prev);
@@ -159,6 +161,7 @@ function GraphicPageInner() {
     setExtBusy(true);
     try {
       await setAppSetting(BRIEF_EXTENSION_SETTING_KEY, JSON.stringify(next));
+      notifyBriefRoundChanged();
       toastSuccess(until ? `ขยายเดดไลน์บรีฟรอบ ${labelDate(briefRound)} ถึง ${labelDate(until)} แล้ว` : `ยกเลิกการขยายรอบ ${labelDate(briefRound)} แล้ว`);
     } catch (error) {
       setExtensions(prev);
@@ -169,6 +172,7 @@ function GraphicPageInner() {
     setCutoffBusy(true);
     try {
       await setAppSetting(BRIEF_CUTOFF_SETTING_KEY, String(cutoffDay));
+      notifyBriefRoundChanged();
       setCutoffDirty(false);
     } catch (error) {
       toastError(`บันทึกเดดไลน์ส่งบรีฟไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);

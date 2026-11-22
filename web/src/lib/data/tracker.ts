@@ -134,9 +134,18 @@ function assetAxis(jobs: TrackerJob[]): Health {
 }
 
 export function postHealth(
-  c: Pick<ContentItem, "captionStatus" | "approvalStatus" | "publishStatus">,
+  c: Pick<ContentItem, "captionStatus" | "approvalStatus" | "publishStatus"> & { status?: string },
   jobs: TrackerJob[],
 ): { health: Health; decidedBy: string } {
+  // โพสต์ที่ลงไปแล้วคือ "เสร็จ" — จบที่ตรงนี้ ไม่ต้องไปถามแกนอื่นอีก
+  //
+  // เดิมเอาแกนที่แย่ที่สุดมาตอบ โพสต์ที่ Published แล้วแต่ช่อง Approval ยังค้าง
+  // "Draft" (ไม่มีใครย้อนไปกดหลังโพสต์ลง) หรือไม่มีใบงานกราฟิกผูกอยู่ จึงขึ้น
+  // "ยังไม่เริ่ม" และถูกนับเป็น "โพสต์เลยวันลง" ทั้งที่ลงไปแล้ว — พ.ย. 2026
+  // Content Plan มี Published 62 โพสต์ แต่หน้านี้ขึ้น "เสร็จ" แค่ 8 (คือ 8 โพสต์
+  // ที่ Approval เป็น Approved พอดี) กติกาเดียวกับ isPostFinished ที่ Content
+  // Plan ใช้พับโพสต์ลงกลุ่ม "โพสต์แล้ว"
+  if (isPostFinished({ publishStatus: c.publishStatus, status: c.status ?? "" })) return { health: "done", decidedBy: "Publish" };
   // โพสต์ที่ยกเลิกแล้วคืองานปิด ไม่ใช่งานติด — ไม่มีแกนไหนรอใครอีก
   if ((c.publishStatus ?? "").trim() === "Cancelled") return { health: "done", decidedBy: "Publish" };
   const axes: [string, Health][] = [

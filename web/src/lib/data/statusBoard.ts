@@ -199,7 +199,13 @@ export function graphicRowStatus(g: Pick<Graphic, "deliverables" | "stage">): st
  *  status, so the post reports its weakest stage — a finished caption with no
  *  artwork reads as blocked on Asset, not as half done. `stage` names which
  *  axis decided it, so the board can say why without opening the post. */
-export function contentHealth(c: Pick<ContentItem, "captionStatus" | "assetStatus" | "approvalStatus" | "publishStatus">): { health: Health; stage: string } {
+export function contentHealth(c: Pick<ContentItem, "captionStatus" | "assetStatus" | "approvalStatus" | "publishStatus"> & { status?: string }): { health: Health; stage: string } {
+  // Out the door is done, whatever the other axes were left saying. Nobody
+  // goes back to tick "Approved" on a post that already ran, so scoring a
+  // published post by its weakest axis reported finished work as not started
+  // (Nov 2026: 62 published in Content Plan, 8 "done" here). Same rule as
+  // isPostFinished, which is what Content Plan folds under "โพสต์แล้ว".
+  if (norm(c.publishStatus) === "published" || norm(c.status) === "published") return { health: "done", stage: "Publish" };
   // A cancelled post is closed, not blocked: no axis of it is waiting on anyone.
   if (norm(c.publishStatus) === "cancelled") return { health: "done", stage: "Publish" };
   const axes: [string, string][] = [

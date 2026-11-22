@@ -1,5 +1,9 @@
 "use client";
 
+import { openTasksOf } from "@/lib/data/myTaskCount";
+import { useApprovalData } from "@/lib/useApprovalData";
+import { useApprovalRows } from "@/lib/useApprovalRows";
+import { useMe } from "@/lib/useMe";
 import { toastError } from "@/lib/toast";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -325,6 +329,19 @@ function MyTasksPageInner() {
   const myStuck = myTasks.filter((t) => getStatus(t) === "Stuck").length;
   const myApprovals = myTasks.filter((t) => getStatus(t) === "Need Approval").length;
   const myWaiting = myTasks.filter((t) => getStatus(t) === "Waiting").length;
+  // Everything still on me, whatever month it is due in — the number on the
+  // sidebar. Shown beside the period's own count so the two can be reconciled
+  // on the page instead of looking like a bug (see myTaskCount).
+  const allOpen = useMemo(() => openTasksOf(tasks, (a) => isSamePerson(a, myKeys), doneIds), [tasks, myKeys, doneIds]);
+  const openInPeriod = myTasks.filter((t) => getStatus(t) !== "Done").length;
+  const openOutsidePeriod = allOpen.filter((t) => !myTasks.some((m) => m.id === t.id)).length;
+  // What is waiting on MY decision — the Approval Center's own rows, not a
+  // count of my tasks that happen to be in "Need Approval" (those are waiting
+  // on somebody else). Same hooks the queue and the bell render from.
+  const approvalMe = useMe();
+  const { data: approvalData } = useApprovalData(true);
+  const approvalRows = useApprovalRows({ ...approvalData, viewAs: approvalMe });
+  const waitingOnMe = useMemo(() => approvalRows.filter((r) => r.mine).length, [approvalRows]);
   const bentoMsg = BENTO_MESSAGES[myTasks.length ? Math.min(4, Math.floor((myDone / myTasks.length) * 5)) : 0];
 
 
@@ -412,8 +429,22 @@ function MyTasksPageInner() {
               <div className="grid grid-cols-2 gap-2">
                 <StatMini label="Done ✓" val={myDone} fg="#4E7A4E" bg="#EEF4EE" />
                 <StatMini label="Stuck ⚠" val={myStuck} fg="#B33A2E" bg="#FFF5F4" />
-                <StatMini label="Approval ✅" val={myApprovals} fg="#4E7A4E" bg="#F0F7F0" />
+                {/* Two different things that used to share one word. */}
+                <button type="button" onClick={() => setView("approval")} className="text-left" title="รายการที่รอคุณตัดสินใจ — นับจาก Approval Center ชุดเดียวกัน กดเพื่อเปิดคิว">
+                  <StatMini label="รอฉันอนุมัติ →" val={waitingOnMe} fg="#B3641E" bg="#FFF7ED" />
+                </button>
+                <StatMini label="รอคนอื่นอนุมัติ" val={myApprovals} fg="#4E7A4E" bg="#F0F7F0" />
                 <StatMini label="Waiting" val={myWaiting} fg="#C68A1E" bg="#FBF8EE" />
+              </div>
+              {/* The sidebar's number, reconciled with this page's period. */}
+              <div className="rounded-[12px] px-3 py-[9px] text-[11.5px]" style={{ background: "#FBF9F4", border: "1px solid #E7DFD1", color: "#6b6258" }}>
+                งานค้างทั้งหมดของคุณ <b className="text-ink">{allOpen.length}</b> งาน (เลขเดียวกับบนเมนู) · ในช่วงเวลาที่เลือก <b className="text-ink">{openInPeriod}</b>
+                {openOutsidePeriod > 0 && (
+                  <>
+                    {" "}· นอกช่วงเวลานี้ <b style={{ color: "#B33A2E" }}>{openOutsidePeriod}</b>{" "}
+                    <button type="button" onClick={() => setDate({ ...date, mode: "range", start: "", end: "" })} className="font-bold text-accent underline">ดูทุกช่วงเวลา</button>
+                  </>
+                )}
               </div>
             </div>
           </div>

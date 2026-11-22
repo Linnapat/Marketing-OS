@@ -21,6 +21,7 @@ import { useAuth, AUTH_REQUIRED } from "@/lib/auth";
 import { fetchTasks } from "@/lib/db/tasks";
 import { fetchMembers } from "@/lib/db/settings";
 import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
+import { openTasksOf } from "@/lib/data/myTaskCount";
 
 let cache: number | null = null;
 const listeners = new Set<(n: number) => void>();
@@ -60,7 +61,9 @@ export function useMyTaskCount(): number {
         // Still nobody = no badge, rather than a count of everyone's work.
         if (!keys.size) { publish(0); return; }
         const done = new Set(doneIds);
-        publish(tasks.filter((t) => isSamePerson(t.assignee, keys) && !done.has(t.id) && t.status !== "Done").length);
+        // openTasksOf is the same rule the My Tasks page prints as "งานค้าง
+        // ทั้งหมด" — the two numbers are one count, not two that should agree.
+        publish(openTasksOf(tasks, (a) => isSamePerson(a, keys), done).length);
       })
       .catch(() => {})
       .finally(() => { inFlight = null; });

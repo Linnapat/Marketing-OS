@@ -135,7 +135,8 @@ is(
 is(
   "ครบทุกแกน → เสร็จ",
   contentHealth(c("Approved", "Final", "Approved", "Published")),
-  { health: "done", stage: "Caption" },
+  // Publish decides now: a post that has gone out is done because it went out.
+  { health: "done", stage: "Publish" },
 );
 is(
   "โดนขอแก้ → ติดปัญหา และบอกว่าแกนไหน",
@@ -361,6 +362,13 @@ console.log("\n— ตัวเลขหัวแคมเปญต้องต�
   // groupByCampaign ต้องใช้ตัวเดียวกัน ไม่งั้นสองที่นับไม่ตรงกัน
   const grouped = groupByCampaign([{ id: "CAM-1", name: "C1" }], all)[0];
   is("groupByCampaign ใช้ recount ตัวเดียวกัน", [grouped.counts, grouped.health, grouped.openCount], [full.counts, full.health, full.openCount]);
+}
+
+console.log("\n— Published = done บน Status Board (Audit 22 พ.ย. ข้อ 1.1) —");
+{
+  const out = { captionStatus: "Approved", assetStatus: "Waiting Design", approvalStatus: "Draft", publishStatus: "Published" };
+  is("Published ที่ Approval ค้าง Draft = done", contentHealth(out).health, "done");
+  is("ยังไม่ Published = ยังไม่ done", contentHealth({ ...out, publishStatus: "Queued" }).health === "done", false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

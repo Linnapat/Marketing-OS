@@ -241,5 +241,18 @@ console.log("\n— 11. summary: ตัวเลขหัวหน้าต้อ
   is("นับโพสต์ที่ยังไม่มีใบงาน", s.noJob, 1);
 }
 
+console.log("\n— โพสต์ที่ลงแล้วคือเสร็จ ไม่ว่าแกนอื่นจะค้างอะไร (Audit 22 พ.ย. ข้อ 1.1) —");
+{
+  // แบบเดียวกับข้อมูลจริง: Published แต่ Approval ค้าง "Draft" และไม่มีใบงานผูก
+  const out = { captionStatus: "Approved", approvalStatus: "Draft", publishStatus: "Published", status: "Published" };
+  is("Published + Approval Draft + ไม่มีใบงาน = done", postHealth(out, []).health, "done");
+  is("…ตัดสินที่แกน Publish", postHealth(out, []).decidedBy, "Publish");
+  is("Published + Caption Missing = done", postHealth({ ...out, captionStatus: "Missing" }, []).health, "done");
+  is("status เก่าเป็น Published ก็นับ", postHealth({ captionStatus: "Missing", approvalStatus: "Draft", publishStatus: "Draft", status: "Published" }, []).health, "done");
+  is("ยังไม่ลง: ยังอ่านแกนที่แย่ที่สุดเหมือนเดิม", postHealth({ ...out, publishStatus: "Queued", status: "Scheduled" }, []).health, "notStarted");
+  const post = toPost({ id: "p1", day: 3, dateIso: "2026-11-03", time: "10:00", title: "T", b: "teppen", plat: "Facebook", campaign: "C", owner: "A", caption: "", hashtags: "", cta: "", assetStatus: "Waiting Design", ...out } as ContentItem, [], "2026-11-22");
+  is("โพสต์ที่ลงแล้วไม่ถูกนับว่าเลยวันลง", post.urgency, "none");
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

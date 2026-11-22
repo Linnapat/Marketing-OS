@@ -4,8 +4,10 @@
 import {
   deadlineBoard, dueReminders, countdownLabel, daysBetween, stateOf, reminderText,
   SOON_DAYS, REMIND_BEFORE, deadlinesLandingIn, shiftMonth, MILESTONE_ROUTE,
-  finalBriefDeadline, withFinalBrief, BOARD_ONLY,
+  finalBriefDeadline, withFinalBrief, BOARD_ONLY, withRoundExtension,
 } from "../src/lib/data/deadlineBoard";
+import { briefRoundFor, briefDeadlineFor } from "../src/lib/data/briefDeadline";
+import { openTasksOf } from "../src/lib/data/myTaskCount";
 import { MILESTONES, type MilestoneDeadline } from "../src/lib/data/deadlinePolicy";
 
 let pass = 0, fail = 0;
@@ -151,6 +153,52 @@ console.log("\n— Final Brief = ศุกร์ที่ 3 (เปิด/ปิ
   const row = deadlineBoard(landed, "2026-10-13")[0];
   is("ข้อความเตือนห้อง graphic/vdo", reminderText(row), "⏰ อีก 3 วัน: Final Brief — ส่ง Final Brief งาน Graphic / VDO ให้ Creative (กำหนด 16/10)");
   is("…และอยู่ในรอบที่ต้องเตือน", dueReminders([row]).length, 1);
+}
+
+console.log("\n— ขยายเดดไลน์รอบ: ทุกหน้าต้องเห็นวันเดียวกัน (Audit 22 พ.ย. ข้อ 1.2) —");
+{
+  const plain = { cutoffDay: 25, extensions: {}, holidays: [] };
+  const ext = { cutoffDay: 25, extensions: { "2026-11-20": "2026-11-27" }, holidays: [] };
+  is("ไม่ขยาย: Final Brief งาน ม.ค. = 20 พ.ย.", briefRoundFor("2027-01", plain)?.iso, "2026-11-20");
+  is("ขยาย: Final Brief งาน ม.ค. = 27 พ.ย.", briefRoundFor("2027-01", ext)?.iso, "2026-11-27");
+  is("…และบอกว่าขยายจากวันไหน", briefRoundFor("2027-01", ext)?.extendedFrom, "2026-11-20");
+  is("รอบอื่นไม่โดน (งาน ก.พ. = 18 ธ.ค.)", briefRoundFor("2027-02", ext)?.iso, "2026-12-18");
+  is("ปิดกฎ = ไม่มีเดดไลน์", briefRoundFor("2027-01", { ...ext, cutoffDay: 0 }), null);
+  is("ตรงกับที่ฟอร์มบรีฟใช้ตัดสินงานเร่ง", briefRoundFor("2027-01", ext)?.iso, briefDeadlineFor("2026-12-25", 25, ext.extensions));
+
+  const brief = finalBriefDeadline("2027-01", ext);
+  is("การ์ดบนบอร์ดใช้วันที่ขยาย", brief?.iso, "2026-11-27");
+  is("…พร้อมวันเดิม", brief?.extendedFrom, "2026-11-20");
+  const row22 = deadlineBoard([brief!], "2026-11-22")[0];
+  is("22 พ.ย. ไม่ขึ้นว่าเลยกำหนด", row22.state === "overdue", false);
+  is("…นับถอยหลังถึงวันที่ขยาย", row22.daysLeft, 5);
+  is("28 พ.ย. จึงเลยกำหนด", deadlineBoard([brief!], "2026-11-28")[0].state, "overdue");
+  is("ตัวเลขเดิมยังใช้ได้ (สวิตช์อย่างเดียว)", finalBriefDeadline("2027-01", 25)?.iso, "2026-11-20");
+
+  // แถวของปฏิทินทีมที่ตรงวันเดิมของรอบ คือเดดไลน์เดียวกัน ต้องขยับตาม
+  const cal = (iso: string): MilestoneDeadline => ({ key: "finalAw", label: "Final AW Brief", governs: "x", iso, day: Number(iso.slice(8, 10)), fromMonth: iso.slice(0, 7), forMonth: "2027-01" });
+  const moved = withRoundExtension([cal("2026-11-20"), cal("2026-11-06")], "2027-01", ext);
+  is("แถวปฏิทินที่ตรงวันรอบ ขยับเป็นวันที่ขยาย", moved[0].iso, "2026-11-27");
+  is("…จำวันเดิมไว้แสดง", moved[0].extendedFrom, "2026-11-20");
+  is("แถวปฏิทินวันอื่นไม่ถูกแตะ", moved[1].iso, "2026-11-06");
+  is("ไม่มีการขยาย = ไม่แตะอะไรเลย", withRoundExtension([cal("2026-11-20")], "2027-01", plain)[0].iso, "2026-11-20");
+
+  const landing = deadlinesLandingIn("2026-11", withFinalBrief(() => [], ext));
+  is("บอร์ดเดือน พ.ย. มี Final Brief วันที่ 27", landing.find((d) => d.key === "finalBrief" && d.forMonth === "2027-01")?.iso, "2026-11-27");
+  is("ข้อความเตือนบอกว่าขยายจากวันไหน", reminderText({ ...row22, daysLeft: 1 }).includes("ขยายจาก 20/11"), true);
+}
+
+console.log("\n— งานค้างของฉัน: เมนูกับหน้านับด้วยกติกาเดียว (Audit 22 พ.ย. ข้อ 1.4) —");
+{
+  const tasks = [
+    { id: 1, assignee: "Gik", status: "Todo" }, { id: 2, assignee: "Gik", status: "Done" },
+    { id: 3, assignee: "Gik", status: "Stuck" }, { id: 4, assignee: "Peach", status: "Todo" },
+    { id: 5, assignee: "Gik", status: "Todo" },
+  ];
+  const mine = (a: string) => a === "Gik";
+  is("นับเฉพาะของฉันที่ยังไม่เสร็จ", openTasksOf(tasks, mine, new Set()).length, 3);
+  is("งานที่ติ๊กเสร็จแล้ว (doneIds) ไม่นับ", openTasksOf(tasks, mine, new Set([5])).length, 2);
+  is("ไม่มีเงื่อนไขวันที่ — งานเดือนอื่นยังนับ", openTasksOf([{ id: 9, assignee: "Gik", status: "Todo" }], mine, new Set()).length, 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

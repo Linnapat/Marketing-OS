@@ -16,7 +16,7 @@
  */
 
 import { MilestoneDeadline, MilestoneKey } from "@/lib/data/deadlinePolicy";
-import { briefDeadlineFor } from "@/lib/data/briefDeadline";
+import { briefRoundFor, type BriefRoundSettings } from "@/lib/data/briefDeadline";
 
 export type DeadlineState = "overdue" | "today" | "soon" | "ahead";
 
@@ -25,7 +25,17 @@ export type DeadlineState = "overdue" | "today" | "soon" | "ahead";
 export type DeadlineKey = MilestoneKey | "finalBrief";
 
 /** A deadline as the board holds it — a calendar milestone or the brief cutoff. */
-export type BoardDeadline = Omit<MilestoneDeadline, "key"> & { key: DeadlineKey };
+export type BoardDeadline = Omit<MilestoneDeadline, "key"> & {
+  key: DeadlineKey;
+  /** Set when this round's brief deadline was pushed back: the date it moved
+   *  FROM. `iso` is then the extended date — the one to count down to. */
+  extendedFrom?: string;
+};
+
+/** A bare number is the old "cutoff day" switch on its own — no extensions, no
+ *  holidays. Kept so a caller that only knows the switch still works. */
+const asSettings = (s: number | BriefRoundSettings): BriefRoundSettings =>
+  typeof s === "number" ? { cutoffDay: s, extensions: {}, holidays: [] } : s;
 
 export interface DeadlineRow extends BoardDeadline {
   /** Whole days from today to the deadline. Negative once it has passed. */
@@ -114,29 +124,49 @@ export function deadlinesLandingIn(
  *  THAT — January's work is briefed by the cutoff in November. Keyed off the
  *  publish month it announced November's cutoff as December's.
  *  null when the rule is switched off (0). */
-export function finalBriefDeadline(forMonth: string, cutoffDay: number): BoardDeadline | null {
-  const iso = briefDeadlineFor(`${shiftMonth(forMonth, -1)}-01`, cutoffDay);
-  if (!iso) return null;
+export function finalBriefDeadline(forMonth: string, settings: number | BriefRoundSettings): BoardDeadline | null {
+  const round = briefRoundFor(forMonth, asSettings(settings));
+  if (!round) return null;
   return {
     key: "finalBrief",
     label: "Final Brief",
     governs: "ส่ง Final Brief งาน Graphic / VDO ให้ Creative",
-    iso,
-    day: Number(iso.slice(8, 10)),
-    fromMonth: iso.slice(0, 7),
+    iso: round.iso,
+    day: Number(round.iso.slice(8, 10)),
+    fromMonth: round.iso.slice(0, 7),
     forMonth,
+    ...(round.extendedFrom ? { extendedFrom: round.extendedFrom } : {}),
   };
+}
+
+/** Carry a round's extension onto the CALENDAR's own rows for that month.
+ *
+ *  The team marks the Final Brief day on the Team Calendar too (the row once
+ *  called "Final AW"), so the same deadline is on screen twice — once from the
+ *  rule, once from the grid. Extending the round moved the first and left the
+ *  second announcing the old date as overdue. Any calendar row for this month
+ *  that sits on the round's original day is that same deadline, and moves with
+ *  it. Rows on any other day are other deadlines and are left alone. */
+export function withRoundExtension<T extends BoardDeadline | MilestoneDeadline>(
+  rows: T[], forMonth: string, settings: number | BriefRoundSettings,
+): (T & { extendedFrom?: string })[] {
+  const round = briefRoundFor(forMonth, asSettings(settings));
+  if (!round?.extendedFrom) return rows;
+  return rows.map((d) => (d.iso === round.ruleIso || d.iso === round.extendedFrom
+    ? { ...d, iso: round.iso, day: Number(round.iso.slice(8, 10)), extendedFrom: d.iso }
+    : d));
 }
 
 /** The calendar's milestones for a month plus its final brief cutoff — what
  *  both the board and the nightly reminder resolve. */
 export function withFinalBrief(
   resolve: (forMonth: string) => MilestoneDeadline[],
-  cutoffDay: number,
+  settings: number | BriefRoundSettings,
 ): (forMonth: string) => BoardDeadline[] {
   return (forMonth) => {
-    const brief = finalBriefDeadline(forMonth, cutoffDay);
-    return brief ? [...resolve(forMonth), brief] : resolve(forMonth);
+    const brief = finalBriefDeadline(forMonth, settings);
+    const calendar = withRoundExtension(resolve(forMonth) as BoardDeadline[], forMonth, settings);
+    return brief ? [...calendar, brief] : calendar;
   };
 }
 
@@ -207,5 +237,6 @@ export const BOARD_ONLY: DeadlineKey[] = ["finalAw"];
 /** One reminder line, in the words the team uses for the milestone. */
 export function reminderText(row: DeadlineRow): string {
   const when = row.daysLeft === 0 ? "วันนี้" : row.daysLeft === 1 ? "พรุ่งนี้" : `อีก ${row.daysLeft} วัน`;
-  return `⏰ ${when}: ${row.label} — ${row.governs} (กำหนด ${row.iso.slice(8, 10)}/${row.iso.slice(5, 7)})`;
+  const moved = row.extendedFrom ? ` · ขยายจาก ${row.extendedFrom.slice(8, 10)}/${row.extendedFrom.slice(5, 7)}` : "";
+  return `⏰ ${when}: ${row.label} — ${row.governs} (กำหนด ${row.iso.slice(8, 10)}/${row.iso.slice(5, 7)}${moved})`;
 }
