@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe, campaignHoldReason } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, isOwnQueueJob, hasShootOnRecord, shootContradiction, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canRequestPostDateChange, canViewAsOtherRole, canSetPublishStatus, canPublishPost, canPlanPost, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canRequestPostDateChange, canViewAsOtherRole, effectiveRole, canSetPublishStatus, canPublishPost, canPlanPost, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -75,6 +75,13 @@ is("Content Creator สลับไม่ได้", canViewAsOtherRole("Content
 is("role ที่ไม่รู้จัก = สลับไม่ได้ (fail closed)", canViewAsOtherRole("", true), false);
 is("โหมด demo ยังสลับได้ทุกคนเหมือนเดิม", canViewAsOtherRole("Content Creator", false), true);
 // Audit 22 พ.ย. ข้อ 3.2 — ปุ่มที่เคยไม่มีตัวกัน role
+// มุมมองของตำแหน่งอื่น — ใช้กับทุกหน้า เพราะตัดสินที่ชั้น auth
+is("CMO เลือกดูแบบ Content Creator → ทั้งแอปวาดเป็น Content Creator", effectiveRole("CMO", "Content Creator", true), "Content Creator");
+is("CMO ไม่ได้เลือก → เป็น CMO", effectiveRole("CMO", null, true), "CMO");
+is("เลือก role ตัวเอง = ไม่ได้ดูแบบคนอื่น", effectiveRole("CMO", "CMO", true), "CMO");
+is("Content Creator พยายามดูแบบ CMO → ยังเป็น Content Creator", effectiveRole("Content Creator", "CMO", true), "Content Creator");
+is("Marketing Manager พยายามดูแบบ CMO → ไม่ได้", effectiveRole("Marketing Manager / BGL", "CMO", true), "Marketing Manager / BGL");
+is("โหมด demo ดูแบบใดก็ได้เหมือนเดิม", effectiveRole("CMO", "Agency (External)", false), "Agency (External)");
 const PRODUCERS = ["Senior Graphic Designer", "VDO Editor", "KOL Specialist", "Agency (External)"];
 is("คนผลิตงานกด Publish ไม่ได้", PRODUCERS.map(canPublishPost).some(Boolean), false);
 is("คนผลิตงานเพิ่มโพสต์ไม่ได้", PRODUCERS.map(canPlanPost).some(Boolean), false);

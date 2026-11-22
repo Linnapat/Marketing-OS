@@ -56,10 +56,10 @@ export function useApprovalRows(input: ApprovalInput): ApprovalRow[] {
   // queue is open to the whole team, amounts are not. Same gate the Spending
   // Log uses (Finance ≥ View).
   const canSeeSpending = useCanSeeAllSpending();
-  // From useAuth, NOT useRole: useRole is the sidebar's "Viewing as" switcher,
-  // which anyone can set to CMO. The Approve button on the campaign page reads
-  // useAuth().role, so trusting the switcher here would hand a designer buttons
-  // the page behind them refuses — and the database refuses too.
+  // useAuth().role is the role the app is drawn for. It follows a role preview
+  // — which only the CMO can start (canViewAsOtherRole), so it can never hand
+  // a designer the CMO's buttons; the database goes by the real account
+  // regardless.
   const { member, user, role: authRole } = useAuth();
   const myKeys = useMemo(() => {
     const keys = personKeys(memberRef(member), user);

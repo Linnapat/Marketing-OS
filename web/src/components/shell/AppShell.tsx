@@ -25,11 +25,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 /** Redirects unauthenticated users to /login when auth is enforced. Renders the
  *  login route full-bleed (no sidebar). */
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, loading, role } = useAuth();
+  // realRole, not role: this redirect is about who is signed in. A CMO
+  // previewing the Agency role must not be bounced into the portal and kept
+  // there — ModuleGate shows them what an agency would see instead.
+  const { user, loading, realRole } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const onLogin = pathname === "/login";
-  const isAgency = role === "Agency (External)";
+  const isAgency = realRole === "Agency (External)";
 
   useEffect(() => {
     if (!AUTH_REQUIRED || loading) return;
@@ -120,12 +123,36 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main className={collapsed ? "lg:pl-[78px] transition-[padding] duration-200" : "lg:pl-[248px] transition-[padding] duration-200"}>
         <div className="max-w-content mx-auto px-5 sm:px-6 lg:px-8 pt-5 pb-16">
           <DemoModeBanner />
+          <RolePreviewBanner />
           {brandsReady
             ? <ModuleGate>{children}</ModuleGate>
             : <PageSkeleton />}
         </div>
       </main>
       <Toaster />
+    </div>
+  );
+}
+
+/** On every page while the CMO is previewing another role.
+ *
+ *  The switcher sits in the sidebar, which can be collapsed and is a drawer on
+ *  a phone — a preview must never be something you can lose the way out of, or
+ *  forget is on. Sticky, so it is still there after scrolling a long list. */
+function RolePreviewBanner() {
+  const { role, realRole, previewing, setPreviewRole } = useAuth();
+  if (!previewing) return null;
+  return (
+    <div className="sticky top-2 z-20 mb-3 flex items-center gap-3 flex-wrap rounded-[14px] px-4 py-[10px] shadow-soft"
+      style={{ background: "#FFF3D7", border: "1px solid #E7B93C", color: "#5C4708" }} role="status">
+      <span className="text-[13px] font-extrabold">👁 กำลังดูในมุมของ {role}</span>
+      <span className="text-[12px] flex-1 min-w-[220px]">
+        หน้าจอแสดงปุ่มและเมนูตามสิทธิ์ของตำแหน่งนี้ · สิ่งที่กดจะบันทึกจริงในชื่อคุณ ({realRole})
+      </span>
+      <button onClick={() => setPreviewRole(null)}
+        className="text-[12px] font-bold text-white rounded-[9px] px-3 py-[6px]" style={{ background: "#5C4708" }}>
+        ↩ กลับเป็น {realRole}
+      </button>
     </div>
   );
 }
