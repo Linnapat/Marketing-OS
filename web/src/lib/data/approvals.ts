@@ -104,6 +104,17 @@ interface RowBase {
    *  stay in the same panel, under their own heading, and drop off only when
    *  the post is actually published. */
   queued?: boolean;
+  /** The post this decision was for has already gone out (or was cancelled),
+   *  so nobody is going to make it.
+   *
+   *  A caption left in "Ready" entered the queue with no look at its post: on
+   *  22 Nov 2026, 44 of the 46 captions waiting for approval belonged to posts
+   *  that had been published, the oldest 127 days earlier. They are not
+   *  decisions any more. The row is kept — it is the record that something
+   *  went out without its sign-off — but it is nobody's, offers no buttons, is
+   *  not counted, and is drawn in its own folded group (CMO, 22 Nov 2026:
+   *  option A). Nothing is written back to the post or the request. */
+  autoClosed?: boolean;
   /** Set by the period filter, never by buildApprovalRows: the month (YYYY-MM)
    *  this still-open row was handed in, when it is shown under a later month
    *  because it has not been closed. See approvalCarriedFrom. */
@@ -238,6 +249,10 @@ export function selectGraphicApprovals(
     // ten rows and findLinkedPost walks the whole Content Plan each time.
     const linked = posts.length ? findLinkedPost(g, posts) : null;
     const postDate = linked ? contentDateIso(linked as ContentItem) : undefined;
+    // The post is out (or cancelled): whatever was still waiting on this
+    // request is closed by that, not by a verdict — see RowBase.autoClosed.
+    const postOut = !!linked && isPostClosed(linked as ContentItem);
+    const first = out.length;
 
     if (awaitsStoryboardDecision(g)) {
       out.push({
@@ -319,6 +334,8 @@ export function selectGraphicApprovals(
         });
       }
     }
+
+    if (postOut) for (let i = first; i < out.length; i++) out[i] = autoClose(out[i]);
 
     // Signed off, not out yet. One row per artwork (same normSize grouping as
     // the decisions above), so a Reel that went to three platforms is one line
@@ -443,7 +460,7 @@ export function buildApprovalRows(input: {
     const reviewerWroteIt = !!reviewer
       && reviewer.trim().toLowerCase() === captionOwner(post).trim().toLowerCase();
     const isReviewer = !!reviewer && !reviewerWroteIt && isSamePerson(reviewer, ctx.myKeys);
-    rows.push({
+    const captionRow: ApprovalRow = {
       kind: "caption", key: `c:${post.id}`, b: post.b, campaign: post.campaign ?? "", post,
       waitingSince: post.createdAt || "",
       // Addressed, or nobody's. An unaddressed caption (legacy rows, posts
@@ -461,7 +478,9 @@ export function buildApprovalRows(input: {
       submittedBy: captionOwner(post),
       postDate: contentDateIso(post),
       waitingOn: firstName(reviewerWroteIt ? null : reviewer, "ฝ่ายวางแผน"),
-    });
+    };
+    // Written, never accepted, and the post has gone out anyway.
+    rows.push(isPostClosed(post) ? autoClose(captionRow) : captionRow);
   }
 
   rows.push(...selectGraphicApprovals(input.graphics, ctx, input.captions));
@@ -653,11 +672,18 @@ export function approvalCarriedFrom(row: ApprovalRow, windowStart: number, windo
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Stamp a row as closed by its post going out. One place, so every kind of
+ *  row is closed the same way: nobody's, no buttons, and saying why. */
+export function autoClose<T extends RowBase>(row: T): T {
+  return { ...row, autoClosed: true, mine: false, canAct: false, waitingOn: "โพสต์ลงแล้ว" };
+}
+
 /** Count per kind, for the chip badges. Every kind is present (as 0) so the
  *  chip row does not reflow as items are cleared. */
 export function countByKind(rows: ApprovalRow[]): Record<ApprovalKind, number> {
   const counts = Object.fromEntries(APPROVAL_KIND_ORDER.map((k) => [k, 0])) as Record<ApprovalKind, number>;
-  for (const r of rows) counts[r.kind] += 1;
+  // Auto-closed rows are a record, not work waiting on anyone.
+  for (const r of rows) if (!r.autoClosed) counts[r.kind] += 1;
   return counts;
 }
 

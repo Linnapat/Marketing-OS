@@ -82,7 +82,15 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
   // Counted within the lane on screen, not across every lane: "แสดง 3 จาก 10"
   // above a Caption panel holding one row is a sentence about a list nobody is
   // looking at. ApprovalQueue filters by `only` the same way (r.kind === only).
-  const laneRows = useMemo(() => (only ? allRows.filter((r) => r.kind === only) : allRows), [allRows, only]);
+  // Open decisions only. Rows closed by their post going out are not "รายการ
+  // รออนุมัติ" and must not be counted as shown or as hidden by a filter; they
+  // rejoin the list below, for the queue's folded group.
+  const laneRows = useMemo(() => allRows.filter((r) => !r.autoClosed && (!only || r.kind === only)), [allRows, only]);
+  const closedRows = useMemo(
+    () => allRows.filter((r) => r.autoClosed && (!only || r.kind === only)
+      && matchesApprovalBrand(r, brand) && matchesApprovalCampaign(r, campaign) && matchesApprovalSearch(r, search)),
+    [allRows, only, brand, campaign, search],
+  );
 
   // Offered campaigns follow the brand chip, so picking a brand cannot leave a
   // campaign selected that has nothing under it.
@@ -109,7 +117,9 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
     { label: "นอกช่วงเวลา", pass: (r) => !!r.carriedFrom || inDateFilter(date, r.waitingSince) },
     { label: "ไม่ตรงคำค้น", pass: (r) => matchesApprovalSearch(r, search) },
   ]), [datedRows, brand, campaign, date, search]);
-  const rows = outcome.rows;
+  // Not filtered by period: they are a record, and the period filter reads
+  // "waiting since", which for these is months ago by definition.
+  const rows = useMemo(() => [...outcome.rows, ...closedRows], [outcome.rows, closedRows]);
   const clearFilters = useCallback(() => {
     setBrand("all"); setCampaign("all"); setDate({ ...ALL_TIME_FILTER }); setSearch("");
   }, []);
