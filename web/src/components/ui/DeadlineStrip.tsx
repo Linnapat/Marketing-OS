@@ -9,6 +9,8 @@
 
 import { MilestoneKey, inProcessOrder, outOfSequence } from "@/lib/data/deadlinePolicy";
 import { useDeadlines } from "@/lib/useDeadlines";
+import { useBriefRound } from "@/lib/useBriefRound";
+import { withRoundExtension } from "@/lib/data/deadlineBoard";
 
 const fmt = (iso: string) => {
   const [, m, d] = iso.split("-");
@@ -26,11 +28,15 @@ export function DeadlineStrip({ forMonth, only, note }: {
   note?: string;
 }) {
   const deadlines = useDeadlines();
+  const round = useBriefRound();
   if (!forMonth) return null;
   // Read in PROCESS order (brief → plan → storyboard → artwork), not date
   // order: that is the order the work happens in, and showing it by date hides
   // it when the calendar has them the wrong way round.
-  const items = inProcessOrder(deadlines.all(forMonth)).filter((d) => !only || only.includes(d.key));
+  // A round whose brief deadline was pushed back moves here too: the calendar
+  // row sitting on the round's original day is that same deadline.
+  const items = withRoundExtension(inProcessOrder(deadlines.all(forMonth)), forMonth, round)
+    .filter((d) => !only || only.includes(d.key));
   if (!items.length) return null;
   const today = todayIso();
   const broken = outOfSequence(items);
@@ -51,7 +57,7 @@ export function DeadlineStrip({ forMonth, only, note }: {
                 ? { background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }
                 : { background: "#fff", color: "#6C5CE7", border: "1px solid #DDD1FF" }}
               title={`${d.governs} · อ่านจากปฏิทินเดือน ${d.fromMonth}`}>
-              {d.label} {fmt(d.iso)}{late ? " · เลยกำหนด" : ""}
+              {d.label} {fmt(d.iso)}{d.extendedFrom ? ` · ขยายจาก ${fmt(d.extendedFrom)}` : ""}{late ? " · เลยกำหนด" : ""}
             </span>
           );
         })}

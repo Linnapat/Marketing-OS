@@ -100,6 +100,46 @@ export function briefDeadlineFor(dueIso: string, cutoffDay: number, extensions?:
   return extended && extended > round ? extended : workingDayOnOrBefore(round, holidays);
 }
 
+/** Everything that decides a round's brief deadline. Read once (useBriefRound
+ *  on the client, app_settings in the digest) and handed to whoever needs a
+ *  date — no page works one out for itself. */
+export interface BriefRoundSettings {
+  /** Monthly switch: 0 = off, anything else = on. */
+  cutoffDay: number;
+  extensions: BriefExtensions;
+  holidays: readonly string[];
+}
+
+export interface BriefRound {
+  /** The month the work publishes in ("YYYY-MM"). */
+  forMonth: string;
+  /** The round's own third Friday, untouched — what an extension is keyed by. */
+  ruleIso: string;
+  /** The last day briefs are taken: the rule, stepped off a team holiday, or
+   *  the extension when one was granted. */
+  iso: string;
+  /** Set when the deadline was pushed back: the date it was moved FROM. */
+  extendedFrom?: string;
+}
+
+/** THE brief deadline for work publishing in `forMonth`. One function, so the
+ *  form that flags a rush, the board that counts the days and the strip on
+ *  each module cannot name different dates. null when the rule is off. */
+export function briefRoundFor(forMonth: string, settings: BriefRoundSettings): BriefRound | null {
+  const hit = /^(\d{4})-(\d{2})/.exec(forMonth ?? "");
+  if (!hit || !settings.cutoffDay || settings.cutoffDay < 1) return null;
+  // Work publishing in M is delivered in M−1 and briefed by the third Friday of M−2.
+  const zero = Number(hit[1]) * 12 + (Number(hit[2]) - 1) - 2;
+  const ruleIso = thirdFriday(`${Math.floor(zero / 12)}-${String((zero % 12) + 1).padStart(2, "0")}`);
+  if (!ruleIso) return null;
+  const month = `${hit[1]}-${hit[2]}`;
+  const plain = workingDayOnOrBefore(ruleIso, settings.holidays);
+  const extended = settings.extensions?.[ruleIso];
+  return extended && extended > ruleIso
+    ? { forMonth: month, ruleIso, iso: extended, extendedFrom: plain }
+    : { forMonth: month, ruleIso, iso: plain };
+}
+
 export interface RushInput {
   /** When Creative must deliver. */
   graphicDueIso: string;

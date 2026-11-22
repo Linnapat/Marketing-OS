@@ -327,6 +327,13 @@ function ContentPageInner() {
     [scoped, date, brand, terms],
   );
   const items = outcome.rows;
+  // The Week view picks its own seven days, so it is fed everything the brand
+  // and search filters allow — not the month-filtered list. A week that
+  // straddles two months would otherwise be drawn with half its days empty.
+  const weekItems = useMemo(
+    () => scoped.filter((c) => (brand === "all" || c.b === brand) && matchesQuery(c, terms)),
+    [scoped, brand, terms],
+  );
   // Posts the period filter hides. This used to be counted only while a search
   // was running, so browsing — the common case — still hid work in silence.
   const hiddenByDate = outcome.hidden.find((r) => r.label === "นอกช่วงเวลา")?.count ?? 0;
@@ -363,6 +370,13 @@ function ContentPageInner() {
   // fix. It is a separate banner rather than a fifth summary card for the same
   // reason — the cards all count "in view", and mixing denominators in one row
   // is how a screen ends up lying quietly.
+  const weekKols = useMemo(
+    () => (showKol
+      ? kolPosts.filter((k) => (!k.brand || brandVisibility.visibleBrands.includes(k.brand as BrandId))
+          && (brand === "all" || k.brand === brand) && matchesKolQuery(k, terms))
+      : []),
+    [kolPosts, showKol, brand, brandVisibility, terms],
+  );
   const captionQueue = useMemo(
     () => assignmentQueue(
       posts.filter((p) => p.captionStatus !== "Approved" && !isPostClosed(p)),
@@ -630,7 +644,7 @@ function ContentPageInner() {
               put unrelated KOL posts on a calendar the search had just emptied,
               which reads as a hit. */}
           {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
-          {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
+          {view === "week" && <WeekView items={weekItems} onOpen={setOpen} kolPosts={weekKols} startIso={todayIso.startsWith(ymKey) ? todayIso : `${ymKey}-01`} />}
           {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
           {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
           {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
@@ -894,20 +908,60 @@ function MonthView({ items, year, month, onOpen, onNew, kolPosts = [] }: { items
   );
 }
 
-function WeekView({ items, monthName, onOpen, kolPosts = [] }: { items: ContentItem[]; monthName: string; onOpen: (c: ContentItem) => void; kolPosts?: KolCalendarPost[] }) {
-  // Days come from both layers, so a day with only KOL activity still shows up.
-  const byDate = [...new Set([...items.map((c) => contentDateIso(c)), ...kolPosts.map((k) => k.date)])].filter(Boolean).sort();
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** The Sunday that starts the week `iso` is in — the calendar's own week. */
+function weekStartOf(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const at = new Date(y, (m || 1) - 1, d || 1);
+  at.setDate(at.getDate() - at.getDay());
+  return isoOf(at);
+}
+function shiftDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return isoOf(new Date(y, m - 1, d + n));
+}
+
+/** One week at a time.
+ *
+ *  It used to list every day of the selected MONTH — a second List view under
+ *  a different name. It now draws seven days and steps week by week, starting
+ *  on the week of `startIso` (today, when the month on screen is this one). */
+function WeekView({ items, onOpen, kolPosts = [], startIso }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; kolPosts?: KolCalendarPost[]; startIso: string }) {
+  const [weekStart, setWeekStart] = useState(() => weekStartOf(startIso));
+  // Follow the period filter when it moves to another month.
+  useEffect(() => { setWeekStart(weekStartOf(startIso)); }, [startIso]);
+  const days = Array.from({ length: 7 }, (_, i) => shiftDays(weekStart, i));
+  const today = isoOf(new Date());
+  const inWeek = items.filter((c) => { const d = contentDateIso(c); return d >= days[0] && d <= days[6]; });
+  const kolsInWeek = kolPosts.filter((k) => k.date >= days[0] && k.date <= days[6]);
+  const nav = "text-[12px] font-bold border border-line2 rounded-[8px] px-[10px] py-[5px] bg-surface hover:bg-ivory";
   return (
     <div className="flex flex-col gap-3">
-      {byDate.map((iso) => (
-        <div key={iso} className="bg-surface border border-line rounded-cardLg overflow-hidden">
-          <div className="px-5 py-2 text-[12px] font-bold border-b border-line4">{labelDate(iso) || `${monthName} ${Number(iso.slice(8, 10))}`}</div>
-          {items.filter((c) => contentDateIso(c) === iso).sort((a, b) => a.time.localeCompare(b.time)).map((c) => <Row key={c.id} c={c} onOpen={onOpen} />)}
-          {kolPosts.filter((k) => k.date === iso).map((k) => (
-            <div key={k.collab_id} className="px-5 py-2 border-b border-line4 last:border-b-0"><KolChip k={k} /></div>
-          ))}
-        </div>
-      ))}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setWeekStart(shiftDays(weekStart, -7))} className={nav} aria-label="สัปดาห์ก่อนหน้า">‹</button>
+        <span className="text-[13px] font-bold">{labelDate(days[0])} – {labelDate(days[6])} {days[6].slice(0, 4)}</span>
+        <button onClick={() => setWeekStart(shiftDays(weekStart, 7))} className={nav} aria-label="สัปดาห์ถัดไป">›</button>
+        {weekStartOf(today) !== weekStart && <button onClick={() => setWeekStart(weekStartOf(today))} className={nav}>สัปดาห์นี้</button>}
+        <span className="text-[11.5px] text-faint">{inWeek.length} โพสต์ในสัปดาห์นี้</span>
+      </div>
+      {days.map((iso) => {
+        const dayItems = inWeek.filter((c) => contentDateIso(c) === iso).sort((a, b) => a.time.localeCompare(b.time));
+        const dayKols = kolsInWeek.filter((k) => k.date === iso);
+        return (
+          <div key={iso} className="bg-surface border border-line rounded-cardLg overflow-hidden">
+            <div className="px-5 py-2 text-[12px] font-bold border-b border-line4 flex items-center gap-2">
+              <span className="text-faint w-[30px]">{DOW[new Date(`${iso}T00:00:00`).getDay()]}</span>
+              <span>{labelDate(iso)}</span>
+              {iso === today && <span className="text-[10px] font-bold text-white bg-panel rounded-pill px-[7px] py-[1px]">วันนี้</span>}
+            </div>
+            {dayItems.map((c) => <Row key={c.id} c={c} onOpen={onOpen} />)}
+            {dayKols.map((k) => (
+              <div key={k.collab_id} className="px-5 py-2 border-b border-line4 last:border-b-0"><KolChip k={k} /></div>
+            ))}
+            {dayItems.length === 0 && dayKols.length === 0 && <div className="px-5 py-[9px] text-[11.5px] text-faint">ไม่มีโพสต์</div>}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -933,9 +987,10 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
           </div>
         </div>
       </div>
-      {isPostOnHold(c) || isPostCancelled(c)
-        ? <StatusBadge tone={contentTone(c.publishStatus)}>{c.publishStatus}</StatusBadge>
-        : <StatusBadge tone={contentTone(c.status)}>{c.status}</StatusBadge>}
+      {/* The Publish status — the same words List and Queue use. This row
+          used to print the post's older `status` field, which nothing keeps in
+          step after planning: a post that had gone out still read "Planned". */}
+      <StatusBadge tone={contentTone(c.publishStatus)}>{c.publishStatus}</StatusBadge>
     </button>
   );
 }
