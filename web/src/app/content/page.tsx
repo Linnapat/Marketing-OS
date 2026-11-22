@@ -17,7 +17,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostOnHold, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, publishStatusNotice, withChange, isPostOverdue, isReadyToPost, planWaitingCounts, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostOnHold, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, publishStatusNotice, withChange, isPostOverdue, isReadyToPost, planWaitingCounts, captionBadge, captionStage, CAPTION_STAGE_LABEL, type CaptionStage, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter, focusMonthKey } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -340,6 +340,8 @@ function ContentPageInner() {
   // "เลยวันโพสต์" — not sticky: a saved view that silently still hides
   // everything on time would explain away an empty calendar later.
   const [onlyOverdue, setOnlyOverdue] = useState(false);
+  // Caption status — the question a writer and their lead ask of this page.
+  const [captionFilter, setCaptionFilter] = useState<CaptionStage | "all">("all");
   // Brand scope is permission, not a filter: those posts stay out of the counts
   // because no button on this page can bring them back.
   const scoped = useMemo(
@@ -352,8 +354,9 @@ function ContentPageInner() {
       { label: "คนละแบรนด์", pass: (c) => brand === "all" || c.b === brand },
       { label: "ไม่ตรงคำค้น", pass: (c) => matchesQuery(c, terms) },
       ...(onlyOverdue ? [{ label: "ไม่ได้เลยวันโพสต์", pass: (c: ContentItem) => isPostOverdue(c, todayIso) }] : []),
+      ...(captionFilter !== "all" ? [{ label: "Caption สถานะอื่น", pass: (c: ContentItem) => captionStage(c) === captionFilter }] : []),
     ]),
-    [scoped, date, brand, terms, onlyOverdue, todayIso],
+    [scoped, date, brand, terms, onlyOverdue, todayIso, captionFilter],
   );
   // Counted inside the period, brand and search on screen — the same rows the
   // chip then narrows. It used to count every month while the page showed
@@ -385,7 +388,7 @@ function ContentPageInner() {
   // What ล้างตัวกรอง does here: everything searchEverywhere does, plus the two
   // other filters that can hide a post. Same reason for the view switch — a
   // month grid draws one month however wide the window is.
-  const showEverything = () => { setOnlyOverdue(false); setQuery(""); setSticky({ ...sticky, brand: "all", date: { ...date, mode: "range", start: "", end: "" }, view: view === "month" ? "list" : view }); };
+  const showEverything = () => { setOnlyOverdue(false); setCaptionFilter("all"); setQuery(""); setSticky({ ...sticky, brand: "all", date: { ...date, mode: "range", start: "", end: "" }, view: view === "month" ? "list" : view }); };
   // The KOL layer obeys the same brand scope and date filter as the content it
   // sits beside — a hidden brand must not leak in through a different module.
   // The search box is the same argument: a KOL chip left on the calendar while
@@ -509,6 +512,13 @@ function ContentPageInner() {
                   )}
                 </div>
                 <BrandFilter value={brand} onChange={setBrand} label="" />
+                <select value={captionFilter} onChange={(e) => setCaptionFilter(e.target.value as CaptionStage | "all")}
+                  aria-label="กรองตามสถานะ Caption" title="กรองตามสถานะ Caption"
+                  className="text-[12.5px] font-semibold rounded-pill border border-line2 bg-white px-3 py-[8px] outline-none"
+                  style={captionFilter !== "all" ? { borderColor: "#6C5CE7", color: "#6C5CE7" } : undefined}>
+                  <option value="all">Caption: ทั้งหมด</option>
+                  {(["none", "draft", "ready", "approved"] as const).map((k) => <option key={k} value={k}>Caption: {CAPTION_STAGE_LABEL[k]}</option>)}
+                </select>
                 <select
                   value=""
                   onChange={(e) => {
@@ -1307,7 +1317,7 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
             <span className="hidden xl:block min-w-0 overflow-hidden" title={c.code}><WorkCode code={c.code} full /></span>
             {/* Each badge clipped inside its own cell — a status must never
                 run under the column beside it. */}
-            <span className="min-w-0 overflow-hidden"><StatusBadge tone={contentTone(c.captionStatus)}>{c.captionStatus}</StatusBadge></span>
+            <span className="min-w-0 overflow-hidden"><StatusBadge tone={captionBadge(c).tone}>{captionBadge(c).label}</StatusBadge></span>
             <div className="flex items-center gap-[6px] min-w-0 overflow-hidden">
               <StatusBadge tone={contentTone(c.assetStatus)}>{c.assetStatus}</StatusBadge>
               {/* Grab the delivered file without opening the post. Multi-asset

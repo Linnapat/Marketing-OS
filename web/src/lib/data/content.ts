@@ -436,6 +436,32 @@ export function captionStatusAfterRevision(c: Pick<ContentItem, "caption">): str
  * than the person who wrote it.
  */
 
+/** Where the caption really is, for the badge and the filter.
+ *
+ *  The stored status says "Missing" until somebody presses Mark Ready — Save
+ *  Caption never touched it — so a post with 191 characters of caption sitting
+ *  in the box still read "Missing", the same word as one nobody had opened.
+ *  Two different states: nothing written, and a draft not yet handed over.
+ *  Read from the text itself, so rows saved before this still say the truth. */
+export type CaptionStage = "none" | "draft" | "ready" | "approved" | "other";
+export function captionStage(c: Pick<ContentItem, "captionStatus" | "caption">): CaptionStage {
+  const s = (c.captionStatus ?? "").trim();
+  if (s === "Approved") return "approved";
+  if (s === "Ready") return "ready";
+  if (s === "Missing" || s === "Draft" || s === "") return (c.caption ?? "").trim() ? "draft" : "none";
+  return "other";
+}
+export const CAPTION_STAGE_LABEL: Record<CaptionStage, string> = {
+  none: "ยังไม่มี", draft: "มีร่าง ยังไม่ส่ง", ready: "Ready", approved: "Approved", other: "",
+};
+/** The words and colour for a caption badge. */
+export function captionBadge(c: Pick<ContentItem, "captionStatus" | "caption">): { label: string; tone: Tone } {
+  const stage = captionStage(c);
+  if (stage === "none") return { label: CAPTION_STAGE_LABEL.none, tone: "red" };
+  if (stage === "draft") return { label: CAPTION_STAGE_LABEL.draft, tone: "gold" };
+  return { label: c.captionStatus, tone: contentTone(c.captionStatus) };
+}
+
 /** Is the caption written and waiting for someone to accept it? */
 export function captionAwaitsApproval(c: Pick<ContentItem, "captionStatus">): boolean {
   return c.captionStatus === "Ready";

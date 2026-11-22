@@ -46,7 +46,9 @@ const ACTION_STATUSES: readonly string[] = BRIEF_STATUSES;
 // makes that select wide. Given only a share of the row, the cell would run out
 // of room and drop Delete onto a second line, leaving the column two rows tall.
 // The floor keeps all three on one line; the fr only decides how it grows.
-const COLS = "1.9fr 1.05fr 0.9fr 0.8fr 0.7fr 0.55fr minmax(292px, 2fr)";
+// Ready has a floor of its own so "⚠️ ขาดของ" stays on one line, and Actions
+// is a touch narrower now that Delete lives in the "…" menu.
+const COLS = "1.9fr 1.05fr 0.9fr 0.8fr 0.7fr minmax(86px, 0.6fr) minmax(262px, 2fr)";
 
 type GroupBy = "status" | "brand";
 
@@ -218,8 +220,15 @@ export default function CampaignsPage() {
   };
 
   const onStatusChange = async (id: string, nextStatus: string) => {
-    setBusyCampaignId(id);
     const previous = campaigns.find((row) => row.id === id);
+    // A dropdown in a table row saves on a slip of the wheel or a stray click,
+    // and a campaign's status is not a small thing to change by accident —
+    // approving one creates its posts, requests and tasks. Asked first; saying
+    // no leaves the select on the status it had.
+    if (previous && previous.status !== nextStatus && !window.confirm(
+      `เปลี่ยนสถานะแคมเปญ "${previous.name}"\n\nจาก: ${previous.status}\nเป็น: ${nextStatus}\n\nยืนยันการเปลี่ยนสถานะ?`,
+    )) return;
+    setBusyCampaignId(id);
     setCampaigns((rows) => rows.map((row) => (
       row.id === id ? { ...row, status: nextStatus, nextApproval: nextStatus.includes("Waiting") ? DEFAULT_APPROVER : "None" } : row
     )));
@@ -254,6 +263,8 @@ export default function CampaignsPage() {
     }
   };
 
+  // Which row's "…" menu is open.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const onDelete = async (campaign: CampaignRow) => {
     if (!window.confirm(
       `ย้ายแคมเปญ "${campaign.name}" ลงถังขยะ?\n\n`
@@ -376,7 +387,7 @@ export default function CampaignsPage() {
                   {/* header row (desktop) */}
                   <div className="hidden md:grid px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4"
                     style={{ gridTemplateColumns: COLS }}>
-                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center" title="พร้อมเริ่มไหม — ✅ พร้อม · ⚠️ ยังขาดของ · ⛔ ติดปัญหา">Ready</div><div>Actions</div>
+                    <div>Campaign</div><div>Brand · Branch</div><div>Owner</div><div>Budget</div><div>Visit</div><div className="text-center" title="พร้อมเริ่มไหม — ✅ พร้อม · ⚠️ ยังขาดของ · ⛔ ติดปัญหา">Ready</div><div className="pl-3">Actions</div>
                   </div>
                   {g.rows.map((c) => (
                     <div
@@ -428,13 +439,13 @@ export default function CampaignsPage() {
                           <span className="text-[15px] leading-none">
                             {c.readiness === "ready" ? "✅" : c.readiness === "blocked" ? "⛔" : "⚠️"}
                           </span>
-                          <span className="text-[10.5px] font-semibold text-faint md:hidden lg:inline">
+                          <span className="text-[11.5px] font-semibold text-muted whitespace-nowrap md:hidden lg:inline">
                             {c.readiness === "ready" ? "พร้อม" : c.readiness === "blocked" ? "ติด" : "ขาดของ"}
                           </span>
                         </span>
                       </div>
                       {/* Actions — status + edit + delete, always on one row */}
-                      <div className="flex items-center gap-2 flex-nowrap">
+                      <div className="flex items-center gap-2 flex-nowrap pl-3 relative">
                         {canChangeStatus ? (() => {
                           const statusOptions = ACTION_STATUSES.includes(c.status) ? ACTION_STATUSES : [c.status, ...ACTION_STATUSES];
                           return (
@@ -476,16 +487,28 @@ export default function CampaignsPage() {
                             </Link>
                           )
                         )}
+                        {/* Delete is behind "…": it used to sit beside Edit, one
+                            mis-aim away. It still asks before doing anything, and
+                            the campaign goes to Trash, not away. */}
                         {canDeleteCampaign && (
-                          <button
-                            type="button"
-                            onClick={() => onDelete(c)}
-                            disabled={busyCampaignId === c.id}
-                            title="ลบแคมเปญนี้"
-                            className="text-[11.5px] font-semibold rounded-[10px] px-3 py-[7px] border border-transparent bg-transparent text-faint hover:text-[#C74B4B] hover:border-[#F2CACA] hover:bg-white disabled:opacity-50 shrink-0 whitespace-nowrap transition"
-                          >
-                            Delete
-                          </button>
+                          <>
+                            <button type="button" aria-label={`เมนูเพิ่มเติมของ ${c.name}`} aria-expanded={menuFor === c.id}
+                              onClick={() => setMenuFor(menuFor === c.id ? null : c.id)}
+                              className="text-[14px] font-bold leading-none rounded-[10px] px-[9px] py-[7px] border bg-white text-faint hover:text-ink shrink-0"
+                              style={{ borderColor: "#ECEAF2" }}>…</button>
+                            {menuFor === c.id && (
+                              <>
+                                <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                                <div className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[168px] rounded-[12px] border border-line2 bg-surface shadow-xl py-1">
+                                  <button type="button" disabled={busyCampaignId === c.id}
+                                    onClick={() => { setMenuFor(null); void onDelete(c); }}
+                                    className="w-full text-left px-3 py-[8px] text-[12.5px] font-semibold text-[#C74B4B] hover:bg-[#FFF5F5] disabled:opacity-40">
+                                    🗑 ย้ายลงถังขยะ…
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

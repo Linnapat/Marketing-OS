@@ -1,5 +1,6 @@
 "use client";
 
+import { useMyApprovalCounts } from "@/lib/useMyApprovalCounts";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -51,6 +52,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
 }) {
   const pathname = usePathname();
   const myTaskCount = useMyTaskCount();
+  const approvalCounts = useMyApprovalCounts();
   const { user, member, role, signOut } = useAuth();
   const { can, canViewAs } = useRole();
   const displayName = member?.name ?? user?.email ?? "Linnapat D.";
@@ -186,7 +188,12 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
               // A live count wins over the static one in lib/nav. Zero shows
               // nothing at all: "0" is a thing to read and dismiss on every
               // page, and the absence already says the same.
-              const badge = item.href === "/my-tasks" && !item.tab ? myTaskCount || undefined : item.badge;
+              // The approval lanes carry what is waiting on YOU in that lane —
+              // the Approval Center's own count, not a second tally.
+              const laneCount = item.href === "/approval-center" && item.tab
+                ? approvalCounts[item.tab as keyof typeof approvalCounts] : undefined;
+              const badge = item.href === "/my-tasks" && !item.tab ? myTaskCount || undefined
+                : laneCount ? laneCount : item.badge;
               return (
                 <Link
                   key={item.tab ? `${item.href}?${item.tab}` : item.href}
@@ -226,7 +233,7 @@ export function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse
                   {!collapsed && badge ? (
                     <span
                       className="text-[10.5px] font-bold px-[7px] py-[1px] rounded-pill bg-white/95 text-[#5B4FD8]"
-                      title={item.href === "/my-tasks" ? `${badge} งานที่ยังไม่เสร็จของคุณ` : undefined}
+                      title={item.href === "/my-tasks" ? `${badge} งานที่ยังไม่เสร็จของคุณ` : item.href === "/approval-center" ? `${badge} รายการรอคุณตัดสินใจ` : undefined}
                     >
                       {badge}
                     </span>

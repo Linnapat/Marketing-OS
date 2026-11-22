@@ -2618,6 +2618,18 @@ function graphicDue(g: Graphic): Date | null {
   return dueDateFromLabel(g.due);
 }
 
+/** Order for a work list: nearest due date first, anything without one last.
+ *  `dir` flips the dated rows; the undated ones stay at the bottom either way —
+ *  "no date" is not the furthest date. */
+export function byDue(a: Pick<Graphic, "due" | "dueIso">, b: Pick<Graphic, "due" | "dueIso">, dir: "asc" | "desc" = "asc"): number {
+  const at = (g: Pick<Graphic, "due" | "dueIso">) => graphicDue(g as Graphic)?.getTime() ?? null;
+  const x = at(a), y = at(b);
+  if (x === null && y === null) return 0;
+  if (x === null) return 1;
+  if (y === null) return -1;
+  return dir === "asc" ? x - y : y - x;
+}
+
 /** No due date at all: nothing in dueIso, and a label ("TBD", "—") that is not
  *  a date. */
 export function hasNoDue(g: Pick<Graphic, "due" | "dueIso">): boolean {
