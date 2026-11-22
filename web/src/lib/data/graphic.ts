@@ -854,7 +854,22 @@ export function jobHolder(
   g: Pick<Graphic, "acceptedBy" | "designer" | "deliverables">,
 ): string | null {
   const submitters = (g.deliverables ?? []).map((d) => d.submittedBy);
-  return firstRealName(...submitters, g.acceptedBy, g.designer);
+  // A named designer comes before whoever pressed "รับงาน". The Creative
+  // Leader accepts a job and then assigns it, so on those requests acceptedBy
+  // is the leader and `designer` is the person doing the work — reading
+  // acceptedBy first printed the leader's name on the production step while the
+  // table and the section heading beside it named the designer (one request,
+  // two holders). acceptedBy still answers when no designer has been named,
+  // which is the case this function was written for.
+  return firstRealName(...submitters, g.designer, g.acceptedBy);
+}
+
+/** Who pressed "รับงาน", when that is somebody other than the person holding
+ *  the job — worth saying separately, never in place of the holder. */
+export function acceptedByOther(g: Pick<Graphic, "acceptedBy" | "designer" | "deliverables">): string | null {
+  const by = firstRealName(g.acceptedBy);
+  const holder = jobHolder(g);
+  return by && holder && !sameName(by, holder) ? by : null;
 }
 
 /** Who handed this job to whoever is doing it.

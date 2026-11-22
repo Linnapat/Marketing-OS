@@ -1,5 +1,6 @@
 "use client";
 
+import { jobHolder, acceptedByOther } from "@/lib/data/graphic";
 import { useTeamHolidays } from "@/lib/useTeamHolidays";
 import { monthServedByArtworkDue } from "@/lib/data/artworkSchedule";
 import { toastError, toastSuccess } from "@/lib/toast";
@@ -949,8 +950,12 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                 {isAccepted(g) ? (
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[12.5px] font-extrabold" style={{ color: "#4E7A4E" }}>✓ รับงานแล้ว</span>
+                    {/* The holder first, in the same words as the table and the
+                        production step; who pressed the button is a second
+                        fact, said as one. */}
                     <span className="text-[11.5px] font-semibold" style={{ color: "#4E7A4E" }}>
-                      โดย {g.acceptedBy || "—"} · {stamp(g.acceptedAt)}
+                      ผู้ถืองาน {jobHolder(g) || "—"}
+                      {acceptedByOther(g) ? ` · กดรับงานโดย ${acceptedByOther(g)}` : ""} · {stamp(g.acceptedAt)}
                     </span>
                     {canAcceptWork && (
                       <button onClick={releaseWork} className="ml-auto text-[11.5px] font-bold rounded-[9px] px-3 py-[6px] border border-line2 bg-surface text-muted">
