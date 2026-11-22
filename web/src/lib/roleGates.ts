@@ -44,6 +44,42 @@ export function canViewAsOtherRole(authRole: string, authRequired: boolean): boo
   return !authRequired || (authRole || "").trim() === "CMO";
 }
 
+// ── Content Plan: who may move a post along, and who may add one ───────────
+// Audit 22 Nov 2026 (3.2): "Graphic Designer แก้ตารางโพสต์และสถานะ Publish
+// ไม่ได้" held in the list — the dropdown and the date fields were gated — but
+// two buttons had no gate at all: "Mark as Published manually" in the post
+// drawer and "+ Plan Post". Any role that could open the page could press
+// them. Named lists, not "everyone but designers", so a role added later gets
+// neither by accident.
+
+/** The creative team owns the Publish column in the list. */
+const PUBLISH_STATUS_ROLES = ["Content Creator", "Creative Leader", "CMO"];
+
+/** May this role change a post's Publish status inline (Draft / Queued /
+ *  Published / Hold / Cancelled)? */
+export function canSetPublishStatus(role: string): boolean {
+  return PUBLISH_STATUS_ROLES.includes((role || "").trim());
+}
+
+/** May this role mark a post as published from its drawer?
+ *
+ *  The creative team, plus the planning side — the marketer who planned a post
+ *  is routinely the one who puts it out. Designers, video editors, the KOL
+ *  specialist and agencies produce for the plan; they do not close it. */
+export function canPublishPost(role: string): boolean {
+  return canSetPublishStatus(role) || canEditContentPlan(role);
+}
+
+/** May this role add a post to the Content Plan?
+ *
+ *  Planning side, and the two creative roles that plan content of their own
+ *  (Content Creator, Creative Leader). Everyone else works from posts that
+ *  already exist. */
+export function canPlanPost(role: string): boolean {
+  const r = (role || "").trim();
+  return canEditContentPlan(r) || r === "Content Creator" || r === "Creative Leader";
+}
+
 /** May this role ASK to move a post's publish date?
  *
  *  The Content Creator is the one who knows the piece will not be ready, or

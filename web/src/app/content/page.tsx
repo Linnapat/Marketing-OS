@@ -34,7 +34,7 @@ import { platformIcon } from "@/lib/platforms";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
-import { canAssignCaption, canEditContentPlan, canRequestPostDateChange } from "@/lib/roleGates";
+import { canAssignCaption, canEditContentPlan, canRequestPostDateChange, canSetPublishStatus, canPlanPost } from "@/lib/roleGates";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -193,7 +193,10 @@ function ContentPageInner() {
   // Only the creative team (Content Creator / Creative Leader; CMO as admin)
   // may change Approval / Publish status inline from the list.
   const { role } = useRole();
-  const canEditStatus = ["Content Creator", "Creative Leader", "CMO"].includes(role);
+  const canEditStatus = canSetPublishStatus(role);
+  // Adding a post is planning: not offered to roles that only produce for the
+  // plan (designers, video editors, KOL, agency).
+  const mayPlan = canPlanPost(role);
   // The planning side owns the date. The row's button takes them to the same
   // place in the drawer that moves it — directly while the post is still
   // theirs, as a request to the Creative Leader once Creative has taken it on.
@@ -309,7 +312,10 @@ function ContentPageInner() {
   const gm = date.mode === "month" ? date.month : Number((date.start || todayIso).slice(5, 7)) - 1;
   const ymKey = `${gy}-${String(gm + 1).padStart(2, "0")}`;
 
-  const openNew = (day?: number) => { setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
+  const openNew = (day?: number) => {
+    // The buttons are hidden for these roles; this is the same rule for every
+    // other way in (the "+" on a calendar day, the list header).
+    if (!canPlanPost(role)) { toastError("role ของคุณเพิ่มโพสต์ใน Content Plan ไม่ได้ — แจ้งฝั่ง Marketing ให้เปิดโพสต์ให้"); return; } setNewIso(day ? `${ymKey}-${String(day).padStart(2, "0")}` : null); setNewOpen(true); };
 
   const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
   // "เลยวันโพสต์" — not sticky: a saved view that silently still hides
@@ -455,7 +461,7 @@ function ContentPageInner() {
 
       <div className="mt-5 flex flex-col gap-5">
         <CampaignCommandBar
-          action={<button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Plan Post</button>}
+          action={mayPlan ? <button onClick={() => openNew()} className="text-[13px] font-bold text-white bg-panel rounded-[12px] px-4 py-[10px] shadow-soft">+ Plan Post</button> : undefined}
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
