@@ -170,6 +170,23 @@ console.log("\n— ชิ้นที่ยังไม่ส่งไม่เ�
     graphicRequestId: String(done.id), publishStatus: "Published", status: "Published" }];
   is("โพสต์ลงแล้ว → หลุดออกจาก Queued",
     selectGraphicApprovals([done], ctx("Creative Leader", "Boss L."), published as never).length, 0);
+
+  // งาน In-store / งานพิมพ์ ไม่มีโพสต์ให้ publish — เดิมค้างใน Queued ของทุกคนเป็นเดือน
+  const posm = req({ platform: "In-store", deliverables: [
+    { ...submitted({ status: "Approved" }), platform: "In-store", size: "A3 Poster" },
+    { ...submitted({ status: "Approved" }), platform: "In-store", size: "A4 Poster" },
+  ] });
+  is("In-store อนุมัติแล้ว → ไม่เข้า Queued", selectGraphicApprovals([posm], ctx("CMO", "Gik")).length, 0);
+  const posmWaiting = req({ platform: "In-store", deliverables: [{ ...submitted(), platform: "In-store", size: "A3 Poster" }] });
+  is("…แต่ In-store ที่ยังรอตรวจ ยังอยู่ในคิวตัดสินใจ",
+    selectGraphicApprovals([posmWaiting], ctx("Creative Leader", "Boss L.")).filter((r) => !r.queued).length, 2);
+  const mixed = req({ platform: "Instagram, In-store", deliverables: [
+    { ...submitted({ status: "Approved" }), platform: "Instagram", size: "1:1 (1080×1080)" },
+    { ...submitted({ status: "Approved" }), platform: "In-store", size: "A3 Poster" },
+  ] });
+  const mixedRows = selectGraphicApprovals([mixed], ctx("CMO", "Gik"));
+  is("งานผสม → เหลือเฉพาะชิ้นออนไลน์ใน Queued", mixedRows.length, 1);
+  is("…คือชิ้น Instagram", mixedRows[0]?.kind !== "caption" && "platforms" in mixedRows[0] ? mixedRows[0].platforms[0] : "", "Instagram");
 }
 
 console.log("\n— แคปชั่นต้องไม่ค้างโดยไม่มีใครกดได้ —");

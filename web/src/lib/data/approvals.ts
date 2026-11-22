@@ -38,6 +38,7 @@ import {
   LENS_META, normSize, lensAskWho, lensesFor, REVIEW_LENSES, awaitsBriefUnlockDecision, awaitsStoryboardDecision, findLinkedPost, type LinkablePost,
   canPassLens, canReleaseBriefEdit, workKind,
 } from "@/lib/data/graphic";
+import { onlinePlatforms } from "@/lib/data/brief";
 import { captionAwaitsApproval, captionApproved, captionOwner, captionReviewer, contentDateIso } from "@/lib/data/content";
 import { isSamePerson } from "@/lib/identity";
 import { DEFAULT_APPROVER } from "@/lib/approval";
@@ -321,9 +322,12 @@ export function selectGraphicApprovals(
 
     // Signed off, not out yet. One row per artwork (same normSize grouping as
     // the decisions above), so a Reel that went to three platforms is one line
-    // here too. It leaves when its post is published — a piece with no post of
-    // its own (POSM, print) has no publish step to wait for, so it stays until
-    // somebody files it, which is the honest state.
+    // here too. It leaves when its post is published.
+    //
+    // Offline work (In-store POSM, print, Delivery banners) is never queued:
+    // it has no Content Plan post, so nothing would ever take the row off, and
+    // "waiting to publish" is not true of a poster. Those rows used to pile up
+    // in everybody's list for months — see the offlineOnly check below.
     const approved = (g.deliverables ?? [])
       .map((d, index) => ({ d, index }))
       .filter(({ d }) => d.status === "Approved");
@@ -342,7 +346,13 @@ export function selectGraphicApprovals(
         if (at > group.at) group.at = at;
         qGroups.set(key, group);
       }
+      // Where the row names no platform, the request's own list answers.
+      const requestPlatforms = (g.platform || "").split(",").map((p) => p.trim()).filter((p) => p && p !== "—");
       for (const [sizeKey, group] of qGroups) {
+        const platforms = group.platforms.length ? group.platforms : requestPlatforms;
+        const offlineOnly = platforms.length > 0 && onlinePlatforms(platforms).length === 0;
+        // A post explicitly linked to it still gives it a publish step.
+        if (offlineOnly && !linked) continue;
         out.push({
           kind, key: `g${g.id}:${sizeKey}:queued`, b: g.b, campaign: g.campaign ?? "", g,
           deliverable: group.first.d, index: group.first.index, lens: jobLenses[jobLenses.length - 1],
