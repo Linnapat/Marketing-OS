@@ -236,7 +236,9 @@ export const POSTS_PER_DAY = 10;
 /** Is this post still work for its owner? Anything not actually out the door,
  *  including Failed — a failed publish is work, not history. */
 export function isPostOpenWork(p: Pick<ContentItem, "publishStatus">): boolean {
-  return (p.publishStatus ?? "").trim() !== "Published";
+  const s = (p.publishStatus ?? "").trim();
+  // Cancelled will never go out, so it is nobody's backlog either.
+  return s !== "Published" && s !== "Cancelled";
 }
 
 /** Backlog past this many days of work is more than a week's runway: that is

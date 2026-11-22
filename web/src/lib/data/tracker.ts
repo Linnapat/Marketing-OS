@@ -137,6 +137,8 @@ export function postHealth(
   c: Pick<ContentItem, "captionStatus" | "approvalStatus" | "publishStatus">,
   jobs: TrackerJob[],
 ): { health: Health; decidedBy: string } {
+  // โพสต์ที่ยกเลิกแล้วคืองานปิด ไม่ใช่งานติด — ไม่มีแกนไหนรอใครอีก
+  if ((c.publishStatus ?? "").trim() === "Cancelled") return { health: "done", decidedBy: "Publish" };
   const axes: [string, Health][] = [
     ["Caption", commonHealth(c.captionStatus) ?? "active"],
     ["Asset", assetAxis(jobs)],
@@ -169,7 +171,7 @@ export function toPost(c: ContentItem, jobs: TrackerJob[], todayIso: string): Tr
   const lead = leadJob(jobs);
   // ถ้าโพสต์ลงไปแล้ว ไม่ต้องบอกว่ารอใคร — งานจบแล้ว การขึ้นว่ารอ designer
   // บนโพสต์ที่โพสต์ไปเมื่อวานคือเสียงรบกวน
-  const step = isPostFinished(c) ? undefined : lead?.current;
+  const step = isPostFinished(c) || (c.publishStatus ?? "").trim() === "Cancelled" ? undefined : lead?.current;
   return {
     id: c.id,
     code: c.code,

@@ -29,7 +29,7 @@
 import type { BrandId, BrandFilterValue } from "@/lib/brands";
 import type { CampaignRow } from "@/lib/data/campaigns";
 import type { ContentItem } from "@/lib/data/content";
-import { isPostFinished } from "@/lib/data/content";
+import { isPostClosed } from "@/lib/data/content";
 import type { RequestRow } from "@/lib/data/requests";
 import type { Task } from "@/lib/data/tasks";
 import type { ExpenseReq } from "@/lib/db/finance";
@@ -332,7 +332,7 @@ export function selectGraphicApprovals(
       .map((d, index) => ({ d, index }))
       .filter(({ d }) => d.status === "Approved");
     // Published means done — the row has served its purpose and drops off.
-    const alreadyOut = !!linked && isPostFinished(linked as ContentItem);
+    const alreadyOut = !!linked && isPostClosed(linked as ContentItem);
     if (approved.length && !alreadyOut) {
       const qGroups = new Map<string, { first: { d: GraphicDeliverable; index: number }; platforms: string[]; at: string }>();
       for (const item of approved) {
@@ -416,7 +416,7 @@ export function buildApprovalRows(input: {
     // Approved, not out yet — the caption keeps its place in the lane instead of
     // vanishing on the click, the same way artwork does. It drops off when the
     // post is published; nothing to decide, so nobody's queue grows.
-    if (captionApproved(post) && !isPostFinished(post)) {
+    if (captionApproved(post) && !isPostClosed(post)) {
       rows.push({
         kind: "caption", key: `c:${post.id}:queued`, b: post.b, campaign: post.campaign ?? "", post,
         waitingSince: post.captionApprovedAt || post.createdAt || "",

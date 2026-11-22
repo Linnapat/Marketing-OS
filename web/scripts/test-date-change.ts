@@ -1,5 +1,7 @@
 // node --import tsx scripts/test-date-change.ts
-import { requestDateChange, decideDateChange, type ContentItem } from "../src/lib/data/content";
+import { requestDateChange, decideDateChange, withPublishQueue, canPublish, isPostClosed, contentTone, type ContentItem } from "../src/lib/data/content";
+import { isPostOpenWork } from "../src/lib/data/derive";
+import { contentHealth } from "../src/lib/data/statusBoard";
 
 let pass = 0, fail = 0;
 const is = (name: string, got: unknown, want: unknown) => {
@@ -22,6 +24,19 @@ is("reject keeps date", [no.dateIso, no.dateChangeRequest], ["2026-09-30", undef
 is("reject logged", no.changeLog?.at(-1)?.action, "ไม่อนุมัติเลื่อนวันโพสต์");
 is("withdraw clears", decideDateChange(asked, "withdraw", "Pupay")!.dateChangeRequest, undefined);
 is("nothing pending", decideDateChange(post, "approve", "x"), null);
+
+// Hold / Cancelled — set by hand in the Publish column.
+const ready = { ...post, captionStatus: "Approved", assetStatus: "Approved", approvalStatus: "Approved", publishStatus: "Draft", status: "Draft" } as ContentItem;
+is("signed-off draft still queues", withPublishQueue(ready).publishStatus, "Queued");
+is("a held post is not re-queued", withPublishQueue({ ...ready, publishStatus: "Hold" }).publishStatus, "Hold");
+is("a cancelled post is not re-queued", withPublishQueue({ ...ready, publishStatus: "Cancelled" }).publishStatus, "Cancelled");
+is("held post cannot be published", canPublish({ ...ready, publishStatus: "Hold" }).ok, false);
+is("cancelled post cannot be published", canPublish({ ...ready, publishStatus: "Cancelled" }).ok, false);
+is("cancelled is closed, hold is not", [isPostClosed({ ...ready, publishStatus: "Cancelled" }), isPostClosed({ ...ready, publishStatus: "Hold" })], [true, false]);
+is("cancelled is nobody's backlog; hold still is", [isPostOpenWork({ publishStatus: "Cancelled" }), isPostOpenWork({ publishStatus: "Hold" })], [false, true]);
+is("cancelled reads done on the board, not blocked", contentHealth({ ...ready, captionStatus: "Missing", publishStatus: "Cancelled" }).health, "done");
+is("hold reads waiting", contentHealth({ ...ready, publishStatus: "Hold" }).health, "waiting");
+is("tones", [contentTone("Hold"), contentTone("Cancelled")], ["gold", "red"]);
 
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

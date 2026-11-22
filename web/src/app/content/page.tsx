@@ -13,7 +13,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -30,7 +30,7 @@ import { platformIcon } from "@/lib/platforms";
 import { GRAPHIC_BRIEF_FOR_PARAM } from "@/lib/data/graphic";
 import { CampaignRow } from "@/lib/data/campaigns";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
-import { canAssignCaption } from "@/lib/roleGates";
+import { canAssignCaption, canEditContentPlan, canRequestPostDateChange } from "@/lib/roleGates";
 import {
   CampaignCommandBar,
   CampaignPageHeaderSection,
@@ -188,6 +188,14 @@ function ContentPageInner() {
   // may change Approval / Publish status inline from the list.
   const { role } = useRole();
   const canEditStatus = ["Content Creator", "Creative Leader", "CMO"].includes(role);
+  // The planning side owns the date. The row's button takes them to the same
+  // place in the drawer that moves it — directly while the post is still
+  // theirs, as a request to the Creative Leader once Creative has taken it on.
+  // The Content Creator gets the button too: they cannot edit the date, but
+  // they are the one who asks for it to move.
+  const canEditPlan = canEditContentPlan(role) || canRequestPostDateChange(role);
+  const [openFocus, setOpenFocus] = useState<"date" | undefined>(undefined);
+  const askDate = (c: ContentItem) => { setOpenFocus("date"); setOpen(c); };
   // Inline status update — persist + patch local state, no drawer needed.
   const setStatus = (c: ContentItem, patch: Partial<ContentItem>) => {
     const next = { ...c, ...patch };
@@ -304,7 +312,7 @@ function ContentPageInner() {
   // is how a screen ends up lying quietly.
   const captionQueue = useMemo(
     () => assignmentQueue(
-      posts.filter((p) => p.captionStatus !== "Approved" && p.publishStatus !== "Published"),
+      posts.filter((p) => p.captionStatus !== "Approved" && !isPostClosed(p)),
       // The planner holds the caption until Creative takes it — a post nobody
       // has been assigned is their queue, not an ownerless pile.
       (p) => captionOwner(p),
@@ -568,9 +576,9 @@ function ContentPageInner() {
               which reads as a hit. */}
           {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
           {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
-          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
           {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} />}
+          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
         </div>
       )}
 
@@ -587,7 +595,8 @@ function ContentPageInner() {
           // Every post the drawer can compare against — used to flag another
           // post of the same brand already planned for the same day.
           allPosts={posts}
-          onClose={() => setOpen(null)}
+          focus={openFocus}
+          onClose={() => { setOpen(null); setOpenFocus(undefined); }}
           onUpdate={(next) => {
             setOpen(next);
             setPosts((ps) => ps.map((p) => (p.id === next.id ? next : p)));
@@ -850,7 +859,7 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
 
 /** Campaign view — Platform-Performance-style collapsible groups: one row per
  *  campaign with summary stats, expandable to the post list inside. */
-function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus, canEditPlan = false, onAskDate }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; canEditPlan?: boolean; onAskDate?: (c: ContentItem) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const codeOf = useCampaignCodes();
   const groups = useMemo(() => {
@@ -864,7 +873,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
       .sort((a, b) => (a[1][0] ? contentDateIso(a[1][0]) : "").localeCompare(b[1][0] ? contentDateIso(b[1][0]) : "")
         || a[0].localeCompare(b[0]));
   }, [items]);
-  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} />;
+  if (groups.length === 0) return <ListView items={items} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} />;
   const chip = (label: string, value: number, fg: string, bg: string) => value > 0 && (
     <span key={label} className="rounded-pill px-2.5 py-[3px] text-[10.5px] font-bold" style={{ color: fg, background: bg }}>{value} {label}</span>
   );
@@ -893,7 +902,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
                 {chip("published", published, "#4E7A4E", "#EEF4EE")}
               </span>
             </button>
-            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} /></div>}
+            {isOpen && <div className="border-t border-line4"><ListView items={list} onOpen={onOpen} onNew={onNew} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} /></div>}
           </div>
         );
       })}
@@ -901,7 +910,7 @@ function CampaignView({ items, onOpen, onNew, canEditStatus = false, onStatus }:
   );
 }
 
-const PUBLISH_OPTS = ["Draft", "Scheduled in OS", "Queued", "Published"];
+const PUBLISH_OPTS = ["Draft", "Scheduled in OS", "Queued", "Published", PUBLISH_HOLD, PUBLISH_CANCELLED];
 
 /** Inline status cell: an editable dropdown for the creative team, a read-only
  *  badge for everyone else. Stops row-click so editing never opens the drawer. */
@@ -946,27 +955,53 @@ function assetDownload(c: ContentItem): string | null {
  *  `2fr`: a bare fr is minmax(auto, 2fr), so a long post title or a work-code
  *  pill sets a min-content floor that widens that row's column only — and since
  *  every row is its own grid, the row then sits out of step with the header. */
-const CONTENT_LIST_COLS = "70px minmax(0,2fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
+const CONTENT_LIST_COLS = "92px minmax(0,2fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr)";
 
-function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+/** The free-text note at the end of the row. Typed in place and saved on blur
+ *  or Enter — a note that needed the drawer opened would not get written. */
+function RemarkCell({ value, canEdit, onSave }: { value: string; canEdit: boolean; onSave: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  // Follow the row when it changes underneath (another save, a refetch).
+  useEffect(() => { setText(value); }, [value]);
+  if (!canEdit) return <span className="text-[11.5px] text-muted truncate min-w-0" title={value}>{value || "—"}</span>;
+  const commit = () => { const next = text.trim(); if (next !== value.trim()) onSave(next); };
+  return (
+    <input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { setText(value); e.currentTarget.blur(); }
+      }}
+      placeholder="หมายเหตุ…"
+      title={text}
+      aria-label="หมายเหตุ"
+      className="min-w-0 w-full text-[11.5px] text-ink bg-transparent border border-transparent hover:border-line2 focus:border-accent focus:bg-surface rounded-[7px] px-[7px] py-[4px] outline-none placeholder:text-faint"
+    />
+  );
+}
+
+function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus, canEditPlan = false, onAskDate }: { items: ContentItem[]; onOpen: (c: ContentItem) => void; onNew: (day?: number) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; canEditPlan?: boolean; onAskDate?: (c: ContentItem) => void }) {
   const active = items.filter((c) => !isPostFinished(c));
   const finished = items.filter(isPostFinished);
   return (
     <div className="bg-surface border border-line rounded-cardLg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-[10px] border-b border-line4" style={{ background: "#FBF9F4" }}>
-        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Publish ในแถวได้</span>}</span>
+        <span className="text-[11px] uppercase tracking-[0.05em] text-faint font-bold">Content schedule{canEditStatus && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· แก้ Publish ในแถวได้</span>}{canEditPlan && <span className="ml-2 normal-case font-semibold text-[10px] text-accent">· กด ✎ ที่วันโพสต์เพื่อขอเลื่อนวัน</span>}</span>
         <button onClick={() => onNew()} className="text-[12px] font-bold text-white bg-panel rounded-[8px] px-3 py-[6px]">+ Plan Post</button>
       </div>
       {/* The same 5px left border the rows carry, transparent here: without it
           the header sits 5px left of every cell it labels. */}
       <div className="hidden md:grid gap-x-2 px-5 py-2 text-[10px] uppercase tracking-[0.05em] text-faint font-bold border-b border-line4 border-l-[5px] border-l-transparent"
         style={{ gridTemplateColumns: CONTENT_LIST_COLS }}>
-        <div>Post date</div><div>Content</div><div>Content ID</div><div>Caption status</div><div>Asset</div><div>Publish</div>
+        <div>Post date</div><div>Content</div><div>Content ID</div><div>Caption status</div><div>Asset</div><div>Publish</div><div>หมายเหตุ</div>
       </div>
-      {active.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} />)}
+      {active.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} />)}
       {/* Posts that already went out, folded under the work that hasn't. */}
       <FinishedFold count={finished.length} storageKey="mos-content-list-finished" label="โพสต์แล้ว">
-        {finished.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} />)}
+        {finished.sort(bySchedule).map((c) => <ContentListRow key={c.id} c={c} onOpen={onOpen} canEditStatus={canEditStatus} onStatus={onStatus} canEditPlan={canEditPlan} onAskDate={onAskDate} />)}
       </FinishedFold>
       {items.length === 0 && (
         <div className="px-5 py-10 text-center">
@@ -980,18 +1015,39 @@ function ListView({ items, onOpen, onNew, canEditStatus = false, onStatus }: { i
   );
 }
 
-function ContentListRow({ c, onOpen, canEditStatus = false, onStatus }: { c: ContentItem; onOpen: (c: ContentItem) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void }) {
+function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPlan = false, onAskDate }: { c: ContentItem; onOpen: (c: ContentItem) => void; canEditStatus?: boolean; onStatus?: (c: ContentItem, patch: Partial<ContentItem>) => void; canEditPlan?: boolean; onAskDate?: (c: ContentItem) => void }) {
+  const cancelled = isPostCancelled(c);
+  const pendingMove = c.dateChangeRequest;
+  // Nothing to reschedule once it is out or dropped.
+  const canAskDate = canEditPlan && !isPostClosed(c) && !!onAskDate;
   return (
           <div onClick={() => onOpen(c)} className="w-full grid grid-cols-1 md:[grid-template-columns:var(--content-cols)] gap-x-2 gap-y-1 items-center px-5 py-3 text-left border-b border-line4 last:border-b-0 hover:bg-ivory/60 border-l-[5px] cursor-pointer" style={{ borderLeftColor: campaignAccent(c.campaign), "--content-cols": CONTENT_LIST_COLS } as CSSProperties}>
             {/* Real publish date from dateIso — never a hardcoded month. */}
-            <span className="text-[11px] font-bold text-faint">{labelDate(contentDateIso(c))}</span>
+            <div className="flex flex-col items-start gap-[3px] min-w-0">
+              <span className="flex items-center gap-[5px]">
+                <span className={`text-[11px] font-bold text-faint ${cancelled ? "line-through" : ""}`}>{labelDate(contentDateIso(c))}</span>
+                {canAskDate && !pendingMove && (
+                  <button onClick={(e) => { e.stopPropagation(); onAskDate?.(c); }}
+                    title="แก้ / ขออนุมัติเลื่อนวันโพสต์" aria-label="ขออนุมัติเลื่อนวันโพสต์"
+                    className="text-[11px] leading-none text-accent border border-line2 rounded-[6px] px-[5px] py-[3px] hover:bg-surface">✎</button>
+                )}
+              </span>
+              {/* An ask already waiting: say where it wants to go, and open
+                  the drawer on it — that is where it is approved or withdrawn. */}
+              {pendingMove && (
+                <button onClick={(e) => { e.stopPropagation(); (onAskDate ?? onOpen)(c); }}
+                  title={`${pendingMove.by} ขอเลื่อนเป็น ${pendingMove.toDate} ${pendingMove.toTime} · ${pendingMove.reason} · รอ ${pendingMove.approver || "Creative Leader / CMO"} อนุมัติ`}
+                  className="text-[10px] font-bold rounded-pill px-[7px] py-[2px] whitespace-nowrap"
+                  style={{ color: "#4B3F99", background: "#F7F2FF", border: "1px solid #DCD3F5" }}>⏳ → {labelDate(pendingMove.toDate)}</button>
+              )}
+            </div>
             <div className="flex items-center gap-2 min-w-0">
               {/* Delivered artwork, right in the plan — no need to open the post
                   to check which asset is attached. */}
               <AssetThumb assets={c.assets} mediaLink={c.mediaLink} />
               <PlatBadges item={c} size={18} />
               <div className="min-w-0">
-                <div className="text-[13px] font-semibold truncate">{c.title}</div>
+                <div className={`text-[13px] font-semibold truncate ${cancelled ? "line-through text-faint" : ""}`}>{c.title}</div>
                 <div className="text-[11px] text-faint flex items-center gap-[5px]"><BrandDot brand={c.b} size={6} />{captionOwner(c) || "ยังไม่มอบหมาย"}</div>
               </div>
             </div>
@@ -1011,6 +1067,7 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus }: { c: Con
               )}
             </div>
             <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
+            <RemarkCell value={c.remark ?? ""} canEdit={(canEditStatus || canEditPlan) && !!onStatus} onSave={(v) => onStatus?.(c, { remark: v })} />
           </div>
   );
 }

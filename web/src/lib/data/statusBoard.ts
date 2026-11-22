@@ -142,7 +142,7 @@ export function commonHealth(status: string): Health | null {
   // scored separately and drags the roll-up back down.
   if (["done", "completed", "complete", "published", "posted", "paid", "final", "approved", "approved to post"].includes(s)) return "done";
   if (["stuck", "blocked", "rejected", "cancelled", "canceled", "revision", "need revision", "revision requested", "unpaid"].includes(s)) return "blocked";
-  if (["waiting approval", "waiting for approval", "need approval", "waiting review", "waiting feedback", "in review", "ready for review", "pending", "draft submitted"].includes(s)) return "waiting";
+  if (["waiting approval", "waiting for approval", "need approval", "waiting review", "waiting feedback", "in review", "ready for review", "pending", "draft submitted", "hold", "on hold"].includes(s)) return "waiting";
   if (["in progress", "active", "producing", "content creating", "publishing", "scheduled", "scheduled in os", "queued", "waiting", "working"].includes(s)) return "active";
   // "request" / "new request" are the opening state of a KOL row and a graphic
   // request, not work in flight — status.ts already tones them neutral.
@@ -200,6 +200,8 @@ export function graphicRowStatus(g: Pick<Graphic, "deliverables" | "stage">): st
  *  artwork reads as blocked on Asset, not as half done. `stage` names which
  *  axis decided it, so the board can say why without opening the post. */
 export function contentHealth(c: Pick<ContentItem, "captionStatus" | "assetStatus" | "approvalStatus" | "publishStatus">): { health: Health; stage: string } {
+  // A cancelled post is closed, not blocked: no axis of it is waiting on anyone.
+  if (norm(c.publishStatus) === "cancelled") return { health: "done", stage: "Publish" };
   const axes: [string, string][] = [
     ["Caption", c.captionStatus],
     ["Asset", c.assetStatus],
@@ -395,7 +397,7 @@ export function contentItems(rows: ContentItem[]): WorkItem[] {
     return {
       id: `content:${c.id}`, module: "content" as const, title: c.title,
       campaignId: c.campaignId ?? "", brand: c.b, health,
-      rawStatus: health === "done" ? "Published" : `${stage}: ${statusOfStage(c, stage)}`,
+      rawStatus: health === "done" ? (norm(c.publishStatus) === "cancelled" ? "Cancelled" : "Published") : `${stage}: ${statusOfStage(c, stage)}`,
       // The content planner while no writer has been assigned — an unwritten
       // caption on an approved campaign has an owner, and the board saying
       // "ยังไม่มีเจ้าของ" is what let 40 of them sit unread.
