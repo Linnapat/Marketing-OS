@@ -33,7 +33,7 @@ import { GraphicDrawer } from "@/components/graphic/GraphicDrawer";
 import { fetchCampaigns } from "@/lib/db/campaigns";
 import { detachBriefContentItem } from "@/lib/db/brief";
 import { CampaignRow } from "@/lib/data/campaigns";
-import { canEditContentPlan, canRequestPostDateChange, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
+import { canEditContentPlan, canRequestPostDateChange, canPublishPost, canApproveRushBrief, canAssignCaption, canMarkMediaReleased, canDecideCaption, CAPTION_WRITER_ROLES } from "@/lib/roleGates";
 import { TRASH_RETENTION_DAYS } from "@/lib/db/trash";
 
 const TABS = [["overview", "Overview"], ["caption", "Caption"], ["approval", "Approval"], ["publish", "Publish"]] as const;
@@ -619,7 +619,10 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
   };
 
   const gate = canPublish(item);
+  // Marking a post as out is not for roles that only produce for the plan.
+  const mayPublish = canPublishPost(role);
   const publish = async () => {
+    if (!mayPublish) return;
     setBusy(true);
     try {
       const res = await publishContent(item, reviewer);
@@ -631,6 +634,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
     } finally { setBusy(false); }
   };
   const scheduleMeta = async () => {
+    if (!mayPublish) return;
     // Fallback when neither a picked date nor the item's ISO date exists: use the
     // current year/month with the post's day-of-month (never a hardcoded year).
     const now = new Date();
@@ -1301,11 +1305,14 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                 </div>
               ) : (
                 <>
-                  <button onClick={publish} disabled={!gate.ok || busy}
+                  <button onClick={publish} disabled={!gate.ok || busy || !mayPublish}
                     className="text-[13.5px] font-bold py-3 rounded-[11px] text-white disabled:cursor-not-allowed"
-                    style={{ background: gate.ok ? "#211F1C" : "#E8E2D6", color: gate.ok ? "#fff" : "#9A9387" }}>
-                    {busy ? "Publishing…" : gate.ok ? "✓ Mark as Published manually" : "🔒 Publish locked"}
+                    style={{ background: gate.ok && mayPublish ? "#211F1C" : "#E8E2D6", color: gate.ok && mayPublish ? "#fff" : "#9A9387" }}>
+                    {busy ? "Publishing…" : !mayPublish ? "🔒 role ของคุณกด Publish ไม่ได้" : gate.ok ? "✓ Mark as Published manually" : "🔒 Publish locked"}
                   </button>
+                  {!mayPublish && (
+                    <div className="text-[11.5px] text-faint text-center">การบันทึกว่าโพสต์ลงแล้วทำได้โดยทีม Content / Creative Leader และฝั่ง Marketing</div>
+                  )}
                   {!gate.ok && (
                     <div className="rounded-[10px] px-[13px] py-[10px]" style={{ background: "#FBF3F1", border: "1px solid #E8C5BC" }}>
                       <div className="text-[11px] font-bold text-status-red mb-1">ยังกด Publish ไม่ได้ — ต้องผ่าน:</div>

@@ -7,7 +7,7 @@
 
 import { campaignReleasedForWork, campaignAwaitsMe, campaignHoldReason } from "../src/lib/data/campaigns";
 import { canEditBriefNow, canReleaseBriefEdit, consumeBriefUnlock, briefUnlockState, releaseBriefForRevision, revisionAssignee, isOwnQueueJob, hasShootOnRecord, shootContradiction, type Graphic } from "../src/lib/data/graphic";
-import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canRequestPostDateChange, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
+import { canCreateCampaign, canSeePlatformPerformance, isCreativeSideRole, seedPermMatrix, campaignPermLevel, canEditContentPlan, canRequestPostDateChange, canViewAsOtherRole, canSetPublishStatus, canPublishPost, canPlanPost, canApproveExpense, canSeeAllSpending, canMarkPaid, canAssignCaption, canApproveCampaign, canDecideCaption, canMakeApprovedPlan, type PermMatrix, roleHolders, RUSH_DECIDER_ROLES, leadFirst, creativeTeamLeadEmail, canEditCampaignBrief, worksOwnQueueOnly} from "../src/lib/roleGates";
 
 import { captionReviewer } from "../src/lib/data/content";
 import { readFileSync } from "node:fs";
@@ -67,6 +67,23 @@ is("Co-ordinator แก้ได้", canEditContentPlan("Co-ordinator"), true);
 is("Content Creator ขอเลื่อนวันโพสต์ได้", canRequestPostDateChange("Content Creator"), true);
 is("…แต่แก้ตารางเองไม่ได้", canEditContentPlan("Content Creator"), false);
 is("Graphic Designer ขอเลื่อนไม่ได้", canRequestPostDateChange("Graphic Designer"), false);
+// Viewing as (Audit 22 พ.ย. ข้อ 3.1) — ดูหน้าจอของ role อื่น เฉพาะ CMO
+is("CMO สลับ Viewing as ได้เมื่อบังคับ login", canViewAsOtherRole("CMO", true), true);
+is("Marketing Manager สลับไม่ได้", canViewAsOtherRole("Marketing Manager / BGL", true), false);
+is("Creative Leader สลับไม่ได้", canViewAsOtherRole("Creative Leader", true), false);
+is("Content Creator สลับไม่ได้", canViewAsOtherRole("Content Creator", true), false);
+is("role ที่ไม่รู้จัก = สลับไม่ได้ (fail closed)", canViewAsOtherRole("", true), false);
+is("โหมด demo ยังสลับได้ทุกคนเหมือนเดิม", canViewAsOtherRole("Content Creator", false), true);
+// Audit 22 พ.ย. ข้อ 3.2 — ปุ่มที่เคยไม่มีตัวกัน role
+const PRODUCERS = ["Senior Graphic Designer", "VDO Editor", "KOL Specialist", "Agency (External)"];
+is("คนผลิตงานกด Publish ไม่ได้", PRODUCERS.map(canPublishPost).some(Boolean), false);
+is("คนผลิตงานเพิ่มโพสต์ไม่ได้", PRODUCERS.map(canPlanPost).some(Boolean), false);
+is("คนผลิตงานแก้สถานะ Publish ในตารางไม่ได้", PRODUCERS.map(canSetPublishStatus).some(Boolean), false);
+is("ทีม Content / Creative Leader / CMO แก้สถานะ Publish ได้", ["Content Creator", "Creative Leader", "CMO"].map(canSetPublishStatus).every(Boolean), true);
+is("ฝั่ง Marketing กด Publish ในหน้าโพสต์ได้", ["Marketing Manager / BGL", "Marketing Executive", "Co-ordinator"].map(canPublishPost).every(Boolean), true);
+is("…แต่ไม่ได้ dropdown ในตาราง (ของทีม Creative)", canSetPublishStatus("Marketing Executive"), false);
+is("ฝั่งวางแผน + Content Creator + Creative Leader เพิ่มโพสต์ได้", ["CMO", "Marketing Executive", "Co-ordinator", "Content Creator", "Creative Leader"].map(canPlanPost).every(Boolean), true);
+is("role ว่าง = ทำไม่ได้ทั้งสองอย่าง (fail closed)", canPublishPost("") || canPlanPost(""), false);
 // ฝั่งผลิตอ่านแผน ไม่ใช่คนเลื่อนแผน
 is("Creative Leader แก้ไม่ได้", canEditContentPlan("Creative Leader"), false);
 is("Senior Graphic Designer แก้ไม่ได้", canEditContentPlan("Senior Graphic Designer"), false);
