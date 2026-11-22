@@ -342,6 +342,7 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
   // The lock stays (the brief must not shift under Creative), but the owner
   // can ASK, and Creative Leader / CMO decide. See requestDateChange.
   const creativeLeader = useCreativeLeader();
+  const todayStr = new Date().toISOString().slice(0, 10);
   const { role: authRole } = useAuth();
   const pendingMove = item.dateChangeRequest;
   const askedByMe = !!pendingMove && pendingMove.by === reviewer;
@@ -350,6 +351,14 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
   // Two ways to be an asker: a planner whose post Creative has locked, or the
   // Content Creator, who never edits the date directly and so always asks.
   const canAskMove = !pendingMove && ((lock.locked && canEditPlan) || canRequestPostDateChange(role));
+  // The row's free-text note, editable here too — same people as in the list.
+  const [remark, setRemark] = useState(item.remark ?? "");
+  const canEditRemark = canEditPlan || CAPTION_WRITER_ROLES.test(role || "");
+  const saveRemark = () => {
+    const next = remark.trim();
+    if (next === (item.remark ?? "").trim()) return;
+    void persist({ ...item, remark: next }, "บันทึกหมายเหตุแล้ว");
+  };
   const [moveDate, setMoveDate] = useState<string | null>(null);
   const [moveTime, setMoveTime] = useState(item.time || "10:00");
   const [moveReason, setMoveReason] = useState("");
@@ -365,7 +374,9 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
     noticeCreative(`${reviewer} ขอเลื่อนวันโพสต์ ${item.dateIso ?? "—"} → ${req.toDate} ${req.toTime} · ${req.reason} — รอ ${moveApprover} อนุมัติ`);
     notify("approval", `📅 ขอเลื่อนวันโพสต์: ${item.title}`,
       `${item.dateIso ?? "—"} → ${req.toDate} ${req.toTime} · ${req.reason} · โดย ${reviewer}`,
-      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [creativeLeader], inform: [linkedGraphic?.acceptedBy] });
+      // The post's planner is told too: the asker is now usually Creative,
+      // and a date must not start moving without the person who planned it.
+      workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [creativeLeader], inform: [linkedGraphic?.acceptedBy, item.requester] });
     if (creativeLeader) {
       createTaskDb({
         id: taskId, title: `อนุมัติเลื่อนวันโพสต์ — ${item.title}`,
@@ -398,7 +409,11 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
       notify(decision === "approve" ? "approved" : "rejected",
         `${decision === "approve" ? "✅ อนุมัติ" : "✖ ไม่อนุมัติ"}เลื่อนวันโพสต์: ${item.title}`,
         `${pendingMove.toDate} ${pendingMove.toTime}${decision === "reject" ? ` · ${rejectNote.trim()}` : ""} · โดย ${reviewer}`,
-        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM, to: [pendingMove.by], inform: decision === "approve" ? [linkedGraphic?.acceptedBy] : [] });
+        // On approval the date really moves, so the planner is a recipient,
+        // not a bystander — it is their schedule that just changed.
+        workLink.post(item.id), { team: CAPTION_NOTIFY_TEAM,
+          to: decision === "approve" ? [pendingMove.by, item.requester] : [pendingMove.by],
+          inform: decision === "approve" ? [linkedGraphic?.acceptedBy] : [item.requester] });
     }
     if (pendingMove.taskId) updateTaskDb(pendingMove.taskId, { status: "Done" }).catch(() => {});
     setRejectNote("");
@@ -729,6 +744,28 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                 <TaskGraphicBrief g={linkedGraphic} onOpenFull={() => setGraphicOpen(true)} />
               )}
 
+              {/* Why it is stopped, where it cannot be missed. */}
+              {(item.publishStatus === "Hold" || item.publishStatus === "Cancelled") && (
+                <div className="rounded-[12px] px-[14px] py-3 text-[12.5px]" style={item.publishStatus === "Hold"
+                  ? { background: "#FFF3D7", border: "1px solid #EADBC1", color: "#8A6D1E" }
+                  : { background: "#FFF0F0", border: "1px solid #F5C8C4", color: "#B33A2E" }}>
+                  <b>{item.publishStatus === "Hold" ? "⏸ โพสต์นี้ถูก Hold ไว้" : "✖ โพสต์นี้ถูกยกเลิกแล้ว"}</b>
+                  {item.publishStatusReason ? ` — ${item.publishStatusReason}` : ""}
+                </div>
+              )}
+
+              {(canEditRemark || item.remark) && (
+                <div className="rounded-[14px] border border-line2 bg-ivory p-4">
+                  <div className="text-[11.5px] font-bold text-muted mb-2">📝 หมายเหตุ</div>
+                  {canEditRemark ? (
+                    <textarea value={remark} onChange={(e) => setRemark(e.target.value)} onBlur={saveRemark} rows={2}
+                      placeholder="หมายเหตุของโพสต์นี้ — แสดงในคอลัมน์ขวาสุดของ Content Plan" className={field} />
+                  ) : (
+                    <div className="text-[12.5px] text-ink whitespace-pre-wrap">{item.remark}</div>
+                  )}
+                </div>
+              )}
+
               {/* Edit post basics */}
               <div ref={editCardRef} className="rounded-[14px] border border-line2 bg-ivory p-4"
                 style={focus === "date" ? { boxShadow: "0 0 0 2px #B8945A" } : undefined}>
@@ -767,7 +804,10 @@ export function ContentDrawer({ item, allPosts = [], focus, onClose, onUpdate, o
                   <div className="mb-3 rounded-[10px] px-3 py-3 flex flex-col gap-2" style={{ background: "#FBF9F4", border: "1px solid #E5DECF" }}>
                     <div className="text-[11.5px] font-bold text-ink">📅 ขอเลื่อนวันโพสต์ <span className="font-normal text-faint">· ส่งถึง {moveApprover} อนุมัติ</span></div>
                     <div className="grid grid-cols-2 gap-2">
-                      <DatePicker value={moveDate} onChange={(v) => setMoveDate(v)} />
+                      {/* Not into the past, and opening on the month the post is in —
+                          that is the date being moved, not today's. */}
+                      <DatePicker value={moveDate} onChange={(v) => setMoveDate(v)} min={todayStr}
+                        openAt={item.dateIso && item.dateIso > todayStr ? item.dateIso : todayStr} />
                       <input type="time" value={moveTime} onChange={(e) => setMoveTime(e.target.value)} className={field} />
                     </div>
                     <input value={moveReason} onChange={(e) => setMoveReason(e.target.value)} placeholder="เหตุผล เช่น อีเวนต์/แคมเปญเลื่อน" className={field} />

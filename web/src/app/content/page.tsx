@@ -1,6 +1,10 @@
 "use client";
 
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
+import { notify } from "@/lib/notify";
+import { workLink } from "@/lib/deepLink";
+import { fetchGraphicsForPost, updateGraphic } from "@/lib/db/graphic";
+import { withNotice } from "@/lib/data/graphic";
 import { OPEN_PARAM, resolveOpenTarget } from "@/lib/deepLink";
 import { CSSProperties, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +17,7 @@ import { ContentDrawer } from "@/components/content/ContentDrawer";
 import { DeadlineStrip } from "@/components/ui/DeadlineStrip";
 import { BrandFilterValue, brandName, BRANDS, BrandId } from "@/lib/brands";
 import {
-  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
+  CONTENT, ContentItem, contentTone, platIcon, itemPlatforms, contentDateIso, bySchedule, isPostFinished, isPostCancelled, isPostOnHold, isPostClosed, PUBLISH_HOLD, PUBLISH_CANCELLED, publishStatusNotice, withChange, captionOwner, isOfflineOnlyPost } from "@/lib/data/content";
 import { DateFilter, DateFilterBar, DEFAULT_DATE_FILTER, inDateFilter } from "@/components/ui/DateFilterBar";
 import { FilterSummary, filterWithReasons } from "@/components/ui/FilterSummary";
 import { fetchContent, createContent, updateContent } from "@/lib/db/content";
@@ -104,6 +108,8 @@ function PlatBadges({ item, size = 15 }: { item: ContentItem; size?: number }) {
 const searchText = (c: ContentItem) => [
   c.title, c.campaign, c.code, c.caption, c.hashtags, c.cta,
   c.subHead, c.mainMessage, c.productHighlight,
+  // The note typed in the row — "รอรูปจากสาขา" is exactly what gets searched.
+  c.remark, c.publishStatusReason,
   c.owner, c.requester, c.designer, c.approver,
   // Both the stored channel name and the two-letter badge the row actually
   // shows: the calendar prints FB / IG / TK, so that is what gets typed, and
@@ -198,9 +204,56 @@ function ContentPageInner() {
   const askDate = (c: ContentItem) => { setOpenFocus("date"); setOpen(c); };
   // Inline status update — persist + patch local state, no drawer needed.
   const setStatus = (c: ContentItem, patch: Partial<ContentItem>) => {
-    const next = { ...c, ...patch };
+    // Hold / Cancelled (and coming back from them) is news for other people,
+    // so it is logged on the post with a name, and passed on below.
+    const reason = (patch.publishStatusReason ?? "").trim();
+    const news = patch.publishStatus !== undefined ? publishStatusNotice(c.publishStatus, patch.publishStatus, reason) : null;
+    // The reason belongs to the Hold / Cancel it was given for: any other
+    // publish status drops it rather than carrying a stale explanation.
+    const merged: ContentItem = patch.publishStatus !== undefined
+      ? { ...c, ...patch, publishStatusReason: news?.stop ? reason : undefined }
+      : { ...c, ...patch };
+    const next = news ? withChange(merged, me, news.action, `${c.publishStatus} → ${patch.publishStatus}${reason ? ` · ${reason}` : ""}`) : merged;
     setPosts((ps) => ps.map((p) => (p.id === c.id ? next : p)));
-    updateContent(next).catch((error) => toastError(`อัปเดตสถานะไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+    updateContent(next)
+      .then(() => { if (news) void tellProducers(next, news); })
+      .catch((error) => toastError(`อัปเดตสถานะไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`));
+  };
+  // Hold and Cancel stop other people's work, so they are not one click: the
+  // row's dropdown asks why first, and the answer travels with the notice.
+  const [statusAsk, setStatusAsk] = useState<{ c: ContentItem; status: string } | null>(null);
+  const [statusReason, setStatusReason] = useState("");
+  const requestStatus = (c: ContentItem, patch: Partial<ContentItem>) => {
+    const to = patch.publishStatus;
+    if ((to === PUBLISH_HOLD || to === PUBLISH_CANCELLED) && to !== c.publishStatus) { setStatusReason(""); setStatusAsk({ c, status: to }); return; }
+    setStatus(c, patch);
+  };
+  const confirmStatus = () => {
+    if (!statusAsk || !statusReason.trim()) return;
+    setStatus(statusAsk.c, { publishStatus: statusAsk.status, publishStatusReason: statusReason.trim() });
+    setStatusAsk(null);
+  };
+  /** Pass a Hold / Cancel on to whoever is producing for the post: a banner on
+   *  each linked graphic request, and a notification to the designer and the
+   *  post's planner. Best-effort — the status itself is already saved, and a
+   *  message that fails must not undo it. */
+  const tellProducers = async (post: ContentItem, news: { action: string; text: string; stop: boolean }) => {
+    const title = `${news.stop ? "⏸" : "▶️"} ${news.action}: ${post.title}`;
+    const detail = `${news.text} · โดย ${me}`;
+    let told = 0;
+    try {
+      const linked = await fetchGraphicsForPost({ id: post.id, graphicRequestId: post.graphicRequestId });
+      for (const g of linked) {
+        await updateGraphic(withNotice(g, me, news.text)).catch(() => {});
+        notify(news.stop ? "rejected" : "approved", title, detail, workLink.graphic(g.id),
+          { team: "graphic", to: [g.designer, g.acceptedBy], inform: [post.requester, captionOwner(post)] });
+        told++;
+      }
+    } catch { /* fall through to the post-only notice */ }
+    // No artwork in production: the planner and caption writer still need to know.
+    if (!told) notify(news.stop ? "rejected" : "approved", title, detail, workLink.post(post.id),
+      { team: "content", to: [post.requester, captionOwner(post)] });
+    toastSuccess(told ? `${news.action} แล้ว — แจ้งทีมกราฟิก ${told} ใบงาน` : `${news.action} แล้ว — แจ้งเจ้าของโพสต์`);
   };
 
   useEffect(() => {
@@ -324,12 +377,14 @@ function ContentPageInner() {
   const [queueOpen, setQueueOpen] = useState(false);
   const canAssign = canAssignCaption(role);
 
-  const summary = useMemo(() => ({
-    posts: items.length,
-    waitingApproval: items.filter((c) => c.approvalStatus === "Waiting Approval").length,
-    waitingAsset: items.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length,
+  // Cancelled posts stay on the plan as a record but are not work: counting
+  // them made "posts in view" and the waiting cards overstate the month.
+  const summary = useMemo(() => { const live = items.filter((c) => !isPostCancelled(c)); return ({
+    posts: live.length,
+    waitingApproval: live.filter((c) => c.approvalStatus === "Waiting Approval").length,
+    waitingAsset: live.filter((c) => c.assetStatus === "Waiting Design" || c.assetStatus === "Missing").length,
     scheduled: items.filter((c) => ["Scheduled in OS", "Queued", "Scheduled to Meta", "Publishing"].includes(c.publishStatus)).length,
-  }), [items]);
+  }); }, [items]);
 
   // Planning a post no longer raises a graphic request as a side effect. The
   // two are separate records linked by campaign + post id: what the artwork is,
@@ -576,9 +631,33 @@ function ContentPageInner() {
               which reads as a hit. */}
           {view === "month" && <MonthView items={items} year={gy} month={gm} onOpen={setOpen} onNew={openNew} kolPosts={kolLayer} />}
           {view === "week" && <WeekView items={items} monthName={MON[gm]} onOpen={setOpen} kolPosts={kolLayer} />}
-          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
+          {view === "list" && <ListView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
           {view === "queue" && <QueueView items={items} onOpen={setOpen} />}
-          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={setStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
+          {view === "campaign" && <CampaignView items={items} onOpen={setOpen} onNew={openNew} canEditStatus={canEditStatus} onStatus={requestStatus} canEditPlan={canEditPlan} onAskDate={askDate} />}
+        </div>
+      )}
+
+      {statusAsk && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/45" onClick={() => setStatusAsk(null)} />
+          <div className="relative w-full max-w-[420px] bg-surface rounded-cardLg border border-line shadow-2xl p-5 flex flex-col gap-3">
+            <div className="text-[14px] font-extrabold">{statusAsk.status === PUBLISH_CANCELLED ? "ยกเลิกโพสต์นี้?" : "Hold โพสต์นี้?"}</div>
+            <div className="text-[12.5px] text-muted">
+              <b className="text-ink">{statusAsk.c.title}</b> — ทีมกราฟิกและเจ้าของโพสต์จะได้รับแจ้งพร้อมเหตุผลนี้
+              {statusAsk.status === PUBLISH_CANCELLED ? " และโพสต์จะไม่นับเป็นงานค้างอีก" : " และระบบจะไม่ดันโพสต์เข้าคิวจนกว่าจะปลด Hold"}
+            </div>
+            <textarea value={statusReason} onChange={(e) => setStatusReason(e.target.value)} rows={3} autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) confirmStatus(); }}
+              placeholder="เหตุผล เช่น แคมเปญเลื่อน / รอราคาใหม่ / ลูกค้าขอยกเลิก"
+              className="w-full text-[13px] px-3 py-2 rounded-[10px] border border-line2 bg-ivory outline-none focus:border-accent" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setStatusAsk(null)} className="text-[12.5px] font-bold rounded-[9px] px-3 py-[7px] border border-line2 bg-surface">ไม่เปลี่ยน</button>
+              <button onClick={confirmStatus} disabled={!statusReason.trim()}
+                className="text-[12.5px] font-bold text-white rounded-[9px] px-3 py-[7px] bg-panel disabled:opacity-40">
+                ยืนยัน {statusAsk.status === PUBLISH_CANCELLED ? "Cancel" : "Hold"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -794,12 +873,15 @@ function MonthView({ items, year, month, onOpen, onNew, kolPosts = [] }: { items
                   <button
                     key={c.id}
                     onClick={() => onOpen(c)}
-                    className="w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition border-l-[4px]"
-                    style={{ background: "#FAF8F4", borderColor: "#F0EBE0", borderLeftColor: campaignAccent(c.campaign) }}
-                    title={`${c.campaign} · ${c.title}`}
+                    className={`w-full text-left flex items-center gap-[5px] rounded-[6px] px-[5px] py-[3px] hover:bg-ivory transition border-l-[4px] ${isPostCancelled(c) ? "opacity-50" : ""}`}
+                    style={{ background: isPostOnHold(c) ? "#FFF3D7" : "#FAF8F4", borderColor: "#F0EBE0", borderLeftColor: campaignAccent(c.campaign) }}
+                    title={`${c.campaign} · ${c.title}${isPostOnHold(c) || isPostCancelled(c) ? ` · ${c.publishStatus}${c.publishStatusReason ? `: ${c.publishStatusReason}` : ""}` : ""}`}
                   >
                     <PlatBadges item={c} />
-                    <span className="text-[10.5px] font-semibold truncate flex-1">{c.title}</span>
+                    {/* A held or dropped post must not read as a live one on
+                        the calendar — that is the view people plan around. */}
+                    {isPostOnHold(c) && <span className="text-[9px] flex-shrink-0" aria-label="Hold">⏸</span>}
+                    <span className={`text-[10.5px] font-semibold truncate flex-1 ${isPostCancelled(c) ? "line-through text-faint" : ""}`}>{c.title}</span>
                   </button>
                 ))}
                 {dayKols.map((k) => <KolChip key={k.collab_id} k={k} />)}
@@ -842,7 +924,7 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
         <PlatBadges item={c} size={18} />
         <div className="min-w-0">
           <div className="text-[13px] font-semibold truncate flex items-center gap-[6px]">
-            <span className="truncate">{c.title}</span>
+            <span className={`truncate ${isPostCancelled(c) ? "line-through text-faint" : ""}`}>{c.title}</span>
             <WorkCode code={c.code} />
           </div>
           <div className="text-[11px] text-faint flex items-center gap-[5px]">
@@ -851,7 +933,9 @@ function Row({ c, onOpen }: { c: ContentItem; onOpen: (c: ContentItem) => void }
           </div>
         </div>
       </div>
-      <StatusBadge tone={contentTone(c.status)}>{c.status}</StatusBadge>
+      {isPostOnHold(c) || isPostCancelled(c)
+        ? <StatusBadge tone={contentTone(c.publishStatus)}>{c.publishStatus}</StatusBadge>
+        : <StatusBadge tone={contentTone(c.status)}>{c.status}</StatusBadge>}
     </button>
   );
 }
@@ -1066,7 +1150,9 @@ function ContentListRow({ c, onOpen, canEditStatus = false, onStatus, canEditPla
                   title="ดาวน์โหลด asset" className="text-[11.5px] font-bold text-status-green flex-shrink-0">⬇</a>
               )}
             </div>
-            <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
+            <span className="min-w-0" title={c.publishStatusReason ? `เหตุผล: ${c.publishStatusReason}` : undefined}>
+              <StatusCell value={c.publishStatus} opts={PUBLISH_OPTS} canEdit={canEditStatus} onChange={(v) => onStatus?.(c, { publishStatus: v })} />
+            </span>
             <RemarkCell value={c.remark ?? ""} canEdit={(canEditStatus || canEditPlan) && !!onStatus} onSave={(v) => onStatus?.(c, { remark: v })} />
           </div>
   );

@@ -1,7 +1,8 @@
 "use client";
 
 import { downloadXlsx } from "@/lib/xlsx";
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { workLink, OPEN_PARAM } from "@/lib/deepLink";
 import Link from "next/link";
 import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -23,8 +24,9 @@ import {
   resolveOpenTarget, isGraphicFinished,
   assignedShoots, withShootMoved, withShooterAssigned, type AssignedShoot, approvedAssetNotice,
 } from "@/lib/data/graphic";
-import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY } from "@/lib/data/briefDeadline";
+import { rushBreaches, DEFAULT_BRIEF_CUTOFF_DAY, BRIEF_CUTOFF_SETTING_KEY, BRIEF_EXTENSION_SETTING_KEY, parseBriefExtensions, withBriefExtension, currentBriefRound, type BriefExtensions } from "@/lib/data/briefDeadline";
 import { thirdFriday } from "@/lib/data/artworkSchedule";
+import { TEAM_HOLIDAYS_SETTING_KEY, parseTeamHolidays, withTeamHoliday, workingDayOnOrBefore } from "@/lib/data/teamHolidays";
 import { getAppSetting, setAppSetting } from "@/lib/db/appSettings";
 import { Combobox } from "@/components/ui/Combobox";
 import { assignmentQueue, queueSummary, AGE_META, ASSIGN_STUCK_DAYS } from "@/lib/data/ageing";
@@ -109,13 +111,60 @@ function GraphicPageInner() {
     return () => { alive = false; };
   }, []);
   // The next Final Brief day still ahead — so "third Friday" reads as a date.
+  // Days the team has off — round dates that land on one step back a day.
+  const [holidays, setHolidays] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(TEAM_HOLIDAYS_SETTING_KEY)
+      .then((v) => { if (alive) setHolidays(parseTeamHolidays(v)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const saveHoliday = async (iso: string, on: boolean) => {
+    const prev = holidays;
+    const next = withTeamHoliday(holidays, iso, on);
+    setHolidays(next);
+    try {
+      await setAppSetting(TEAM_HOLIDAYS_SETTING_KEY, JSON.stringify(next));
+      toastSuccess(on ? `เพิ่มวันหยุดทีม ${labelDate(iso)} แล้ว — เดดไลน์ของรอบที่ตรงวันนี้จะขยับมาวันทำงานก่อนหน้า` : `ลบวันหยุดทีม ${labelDate(iso)} แล้ว`);
+    } catch (error) {
+      setHolidays(prev);
+      toastError(`บันทึกวันหยุดทีมไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+  const upcomingHolidays = useMemo(() => { const t = todayIso(); return holidays.filter((d) => d >= t); }, [holidays]);
   const nextBriefDeadline = useMemo(() => {
     const today = todayIso();
-    const thisMonth = thirdFriday(today.slice(0, 7));
+    const thisMonth = workingDayOnOrBefore(thirdFriday(today.slice(0, 7)), holidays);
     if (thisMonth >= today) return thisMonth;
     const [y, m] = today.split("-").map(Number);
-    return thirdFriday(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`);
+    return workingDayOnOrBefore(thirdFriday(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`), holidays);
+  }, [holidays]);
+  // One round's deadline pushed back — the exception to the third Friday.
+  const [extensions, setExtensions] = useState<BriefExtensions>({});
+  const [extBusy, setExtBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(BRIEF_EXTENSION_SETTING_KEY)
+      .then((v) => { if (alive) setExtensions(parseBriefExtensions(v)); })
+      .catch(() => {});
+    return () => { alive = false; };
   }, []);
+  const briefRound = useMemo(() => currentBriefRound(todayIso()), []);
+  const roundExtendedTo = extensions[briefRound] ?? "";
+  const saveExtension = async (until: string) => {
+    const prev = extensions;
+    const next = withBriefExtension(extensions, briefRound, until);
+    setExtensions(next);
+    setExtBusy(true);
+    try {
+      await setAppSetting(BRIEF_EXTENSION_SETTING_KEY, JSON.stringify(next));
+      toastSuccess(until ? `ขยายเดดไลน์บรีฟรอบ ${labelDate(briefRound)} ถึง ${labelDate(until)} แล้ว` : `ยกเลิกการขยายรอบ ${labelDate(briefRound)} แล้ว`);
+    } catch (error) {
+      setExtensions(prev);
+      toastError(`บันทึกการขยายเดดไลน์ไม่สำเร็จ: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally { setExtBusy(false); }
+  };
   const saveCutoff = async () => {
     setCutoffBusy(true);
     try {
@@ -420,6 +469,46 @@ function GraphicPageInner() {
                 <span className="text-[11px] text-faint">· รอบถัดไป {labelDate(nextBriefDeadline)}</span>
               )}
             </label>
+            {/* The exception to the rule, for one round: briefs that land up to
+                this day are not a rush. Everyone sees it; only the people who
+                clear rush briefs can grant it. */}
+            {/* The team's own days off. A round date that lands on one moves to
+                the working day before — see teamHolidays. */}
+            {(canEditCutoff || upcomingHolidays.length > 0) && (
+              <div className="flex items-center gap-[6px] flex-wrap rounded-[11px] border border-line2 bg-ivory px-2.5 py-[5px]"
+                title="เดดไลน์ของรอบงาน (Final Brief / 1st draft / Final) ที่ตรงกับวันหยุดทีม จะขยับมาเป็นวันทำงานก่อนหน้า · มีผลกับบรีฟที่สร้างหลังจากนี้">
+                <span className="text-[11px] font-bold text-faint">วันหยุดทีม</span>
+                {upcomingHolidays.length === 0 && <span className="text-[11px] text-faint">ยังไม่ได้ใส่</span>}
+                {upcomingHolidays.map((d) => (
+                  <span key={d} className="text-[11px] font-semibold text-muted bg-white border border-line2 rounded-pill px-[8px] py-[2px] flex items-center gap-[5px]">
+                    {labelDate(d)}
+                    {canEditCutoff && <button onClick={() => { void saveHoliday(d, false); }} aria-label={`ลบวันหยุด ${d}`} className="text-faint hover:text-status-red leading-none">×</button>}
+                  </span>
+                ))}
+                {canEditCutoff && (
+                  <div className="w-[128px]">
+                    <DatePicker value={null} min={todayIso()} placeholder="+ เพิ่มวัน" onChange={(v) => { if (v) void saveHoliday(v, true); }} />
+                  </div>
+                )}
+              </div>
+            )}
+            {cutoffDay !== 0 && briefRound && (canEditCutoff || roundExtendedTo) && (
+              <div className="flex items-center gap-[6px] rounded-[11px] border border-line2 bg-ivory px-2.5 py-[5px]"
+                title="บรีฟที่เข้ามาภายในวันที่ขยาย จะไม่ถูกนับเป็นงานเร่งเพราะเลยเดดไลน์ส่งบรีฟ (ใช้กับรอบนี้รอบเดียว)">
+                <span className="text-[11px] font-bold text-faint">รอบ {labelDate(briefRound)}</span>
+                {canEditCutoff ? (
+                  <>
+                    <span className="text-[11px] text-faint">ขยายถึง</span>
+                    <div className="w-[140px]">
+                      <DatePicker value={roundExtendedTo || null} min={briefRound} disabled={extBusy}
+                        placeholder="ไม่ขยาย" onChange={(v) => { void saveExtension(v && v > briefRound ? v : ""); }} />
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-[11.5px] font-semibold text-muted">ขยายถึง {labelDate(roundExtendedTo)}</span>
+                )}
+              </div>
+            )}
             <div className="ml-auto flex items-center gap-2 flex-wrap">
               <span className="text-[11.5px] font-semibold text-faint">{items.length} requests in view</span>
               <SavedViewsBar<GraphicSavedView>
@@ -1537,6 +1626,18 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  const [extensions, setExtensions] = useState<BriefExtensions>({});
+  const [holidays, setHolidays] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getAppSetting(BRIEF_EXTENSION_SETTING_KEY)
+      .then((v) => { if (alive) setExtensions(parseBriefExtensions(v)); })
+      .catch(() => {});
+    getAppSetting(TEAM_HOLIDAYS_SETTING_KEY)
+      .then((v) => { if (alive) setHolidays(parseTeamHolidays(v)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [postLink, setPostLink] = useState<"existing" | "new" | "none">(prefillPost ? "existing" : "new");
   const [linkedPostId, setLinkedPostId] = useState(prefillPost?.id ?? "");
   const [posts, setPosts] = useState<ContentItem[]>([]);
@@ -1627,6 +1728,8 @@ function RequestModal({ nextId, graphics, prefillPost, rushDeciders, onClose, on
     graphicDueIso: dueDay,
     requestIso: requestDate,
     cutoffDay,
+    extensions,
+    holidays,
     minDueIso: minGraphicDueDate(requestDate),
     capLimit: DAILY_WORK_CAP,
     capUsed: usedToday,

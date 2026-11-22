@@ -36,12 +36,15 @@ const toIso = (y: number, m: number, d: number) =>
   `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
 export function DatePicker({
-  value, onChange, min, max, placeholder = "Select date", disabled, invalid, className,
+  value, onChange, min, max, openAt, placeholder = "Select date", disabled, invalid, className,
 }: {
   value: string | null;
   onChange: (iso: string) => void;
   min?: string | null;
   max?: string | null;
+  /** Month to show when opened with no value yet — the date being moved, say,
+   *  rather than today. */
+  openAt?: string | null;
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
@@ -56,7 +59,8 @@ export function DatePicker({
   });
 
   useEffect(() => {
-    if (open && sel) setView({ y: sel.y, m: sel.m - 1 });
+    const at = sel ?? (open ? parseIso(openAt ?? null) : null);
+    if (open && at) setView({ y: at.y, m: at.m - 1 });
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
