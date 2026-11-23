@@ -17,7 +17,7 @@
 // scope, timing, KOL, goals. Caption and copy edits are logged on the campaign
 // and never queued; queueing those is what made the old rule unusable.
 
-import { DATE_LOCALE } from "@/lib/format";
+import { fmtDateTime } from "@/lib/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CheckCheck, RefreshCw, Undo2, ExternalLink } from "lucide-react";
@@ -42,7 +42,7 @@ import {
 
 const fmtWhen = (iso: string) => {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" });
+  return Number.isNaN(d.getTime()) ? "—" : fmtDateTime(d);
 };
 
 /** How long an edit has been running unreviewed. The number that says whether

@@ -12,7 +12,7 @@ import { campaignTone } from "@/lib/status";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BrandDot } from "@/components/ui/BrandDot";
 import { Progress } from "@/components/ui/Progress";
-import { baht, num, pct, DATE_LOCALE } from "@/lib/format";
+import { baht, num, pct, fmtDateTime } from "@/lib/format";
 import { CampaignResultRow, deriveResultRow, cpr, emptyResultRow, mergeBudgetAllocationRows } from "@/lib/data/campaignResult";
 import { fetchResults, saveResults } from "@/lib/db/campaignResult";
 import { fetchAllBriefs } from "@/lib/db/brief";
@@ -1050,7 +1050,7 @@ function ApprovalTab({ detail, brief, onBriefChange }: { detail: CampaignDetail;
                 <div className="flex-1 min-w-0">
                   <div className="text-[12.5px] font-bold text-ink">{e.action}{e.from && e.to ? <span className="text-faint font-normal"> · {e.from} → {e.to}</span> : null}</div>
                   {e.comment && <div className="text-[12px] text-muted mt-[1px]">“{e.comment}”</div>}
-                  <div className="text-[11px] text-faint mt-[1px]">{e.by} · {new Date(e.at).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}</div>
+                  <div className="text-[11px] text-faint mt-[1px]">{e.by} · {fmtDateTime(new Date(e.at))}</div>
                 </div>
               </div>
             ))}

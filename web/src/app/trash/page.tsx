@@ -10,7 +10,7 @@
 // list is filtered again by the Permissions matrix — restoring a Content post
 // is a Content-module action, so a role without Content never sees one here.
 
-import { DATE_LOCALE } from "@/lib/format";
+import { fmtDateTime } from "@/lib/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RotateCcw, Trash2, RefreshCw } from "lucide-react";
 import {
@@ -40,7 +40,7 @@ const KIND_ICON: Record<TrashKind, string> = {
 
 const fmtWhen = (iso: string) => {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" });
+  return Number.isNaN(d.getTime()) ? "—" : fmtDateTime(d);
 };
 
 export default function TrashPage() {

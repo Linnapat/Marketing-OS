@@ -13,6 +13,7 @@
  * the only reason a board like this can be trusted a month from now.
  */
 
+import { fmtDate, fmtMonth } from "@/lib/format";
 import { useBriefRound } from "@/lib/useBriefRound";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -97,15 +98,13 @@ const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.�
 /** Which month's work this deadline is for — the fact that makes a date three
  *  months early read as planning rather than as a mistake. */
 function forWorkLabel(row: DeadlineRow): string {
-  const m = Number(row.forMonth.slice(5, 7));
-  return TH_MONTHS[m - 1] ? `งานเดือน ${TH_MONTHS[m - 1]}` : row.forMonth;
+  return `งานเดือน ${fmtMonth(row.forMonth) || row.forMonth}`;
 }
 
 /** "ขยายถึง 27 พ.ย. (เดิม 20 พ.ย.)" — the row already counts down to the new
  *  date; this says that it IS a moved date, and from where. */
 function extendedLabel(row: DeadlineRow): string {
-  const th = (iso: string) => `${Number(iso.slice(8, 10))} ${TH_MONTHS[Number(iso.slice(5, 7)) - 1] ?? ""}`;
-  return `ขยายถึง ${th(row.iso)} (เดิม ${th(row.extendedFrom ?? "")})`;
+  return `ขยายถึง ${fmtDate(row.iso)} (เดิม ${fmtDate(row.extendedFrom)})`;
 }
 
 function Card({ row }: { row: DeadlineRow }) {
@@ -115,7 +114,7 @@ function Card({ row }: { row: DeadlineRow }) {
       <div className="text-[11px] font-bold" style={{ color: tone.fg }}>{countdownLabel(row.daysLeft)}</div>
       <div className="text-[13.5px] font-bold text-ink leading-[1.35] mt-[3px]">{row.label}</div>
       <div className="text-[11.5px] text-muted leading-[1.45] mt-[2px]">{row.governs}</div>
-      <div className="text-[11px] text-faint mt-[6px]">{fmtShort(row.iso) || row.iso} · {forWorkLabel(row)}</div>
+      <div className="text-[11px] text-faint mt-[6px]">{fmtDate(row.iso) || row.iso} · {forWorkLabel(row)}</div>
       {row.extendedFrom && <div className="text-[11px] font-bold mt-[2px]" style={{ color: "#4B3F99" }}>{extendedLabel(row)}</div>}
     </div>
   );
@@ -130,7 +129,7 @@ function CompactRow({ row }: { row: DeadlineRow }) {
       <span className="text-[13px] font-bold text-ink">{row.label}</span>
       <span className="text-[11.5px] text-muted flex-1 min-w-[140px] truncate">{row.governs}</span>
       <span className="text-[11px] text-faint whitespace-nowrap">{forWorkLabel(row)}</span>
-      <span className="text-[11.5px] text-faint whitespace-nowrap">{fmtShort(row.iso) || row.iso}</span>
+      <span className="text-[11.5px] text-faint whitespace-nowrap">{fmtDate(row.iso) || row.iso}</span>
       {row.extendedFrom && (
         <span className="text-[10.5px] font-bold px-[8px] py-[2px] rounded-pill whitespace-nowrap" style={{ background: "#F7F2FF", color: "#4B3F99", border: "1px solid #DCD3F5" }}>{extendedLabel(row)}</span>
       )}

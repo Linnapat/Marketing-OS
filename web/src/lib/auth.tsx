@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "@/lib/toast";
 import { canViewAsOtherRole, effectiveRole } from "@/lib/roleGates";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
@@ -53,6 +54,8 @@ function memberRole(m: Member | null): Role {
   if (/marketing executive|planner|campaign/i.test(m.role)) return "Marketing Executive";
   return "Marketing Executive";
 }
+
+const PREVIEW_FLAG = "mos-role-preview";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -132,7 +135,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [previewRole, setPreviewState] = useState<Role | null>(null);
   const canPreview = canViewAsOtherRole(realRole, AUTH_REQUIRED);
   useEffect(() => { setPreviewState(null); }, [realRole, user?.id]);
-  const setPreviewRole = (r: Role | null) => { if (canPreview) setPreviewState(r && r !== realRole ? r : null); };
+  const setPreviewRole = (r: Role | null) => {
+    if (!canPreview) return;
+    const next = r && r !== realRole ? r : null;
+    setPreviewState(next);
+    // Remembered only so a reload can SAY the preview ended — it is never
+    // restored from here.
+    try { if (next) sessionStorage.setItem(PREVIEW_FLAG, next); else sessionStorage.removeItem(PREVIEW_FLAG); } catch { /* no-op */ }
+  };
+  // A reload drops the preview on purpose. Without a word about it the screen
+  // simply changed back, which read as the preview having broken.
+  useEffect(() => {
+    try {
+      const was = sessionStorage.getItem(PREVIEW_FLAG);
+      if (!was) return;
+      sessionStorage.removeItem(PREVIEW_FLAG);
+      toast(`รีเฟรชหน้าแล้ว — ออกจากมุมมอง ${was} กลับเป็นสิทธิ์ของคุณเอง`);
+    } catch { /* no-op */ }
+  }, []);
   const role: Role = effectiveRole(realRole, previewRole, AUTH_REQUIRED);
   const previewing = role !== realRole;
 

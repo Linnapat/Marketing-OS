@@ -10,6 +10,7 @@
 // needs the same lookup. Matching a request to its post is findLinkedPost's
 // job (pure, tested) — this hook only owns the fetch and the cache.
 
+import { fmtDate } from "@/lib/format";
 import { useEffect, useState } from "react";
 import { fetchContent } from "@/lib/db/content";
 import { findLinkedPost, type Graphic } from "@/lib/data/graphic";
@@ -31,7 +32,7 @@ async function loadPosts(): Promise<ContentItem[]> {
 /** "Oct 26" — the same shape the Due column prints. */
 export function shortPostDate(iso: string | undefined): string {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return fmtDate(iso);
 }
 
 /** `postDateOf(g)` → the linked post's date as ISO, or "" when the request has

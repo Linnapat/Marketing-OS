@@ -143,14 +143,16 @@ function RolePreviewBanner() {
   const { role, realRole, previewing, setPreviewRole } = useAuth();
   if (!previewing) return null;
   return (
-    <div className="sticky top-2 z-20 mb-3 flex items-center gap-3 flex-wrap rounded-[14px] px-4 py-[10px] shadow-soft"
+    // One line, and it scrolls away with the page: as a sticky bar it sat on
+    // top of the Controls header of every list. The way back is also the
+    // ringed "Viewing as" button in the sidebar, which never scrolls.
+    <div className="mb-3 flex items-center gap-2 rounded-[10px] px-3 py-[6px] min-w-0"
       style={{ background: "#FFF3D7", border: "1px solid #E7B93C", color: "#5C4708" }} role="status">
-      <span className="text-[13px] font-extrabold">👁 กำลังดูในมุมของ {role}</span>
-      <span className="text-[12px] flex-1 min-w-[220px]">
-        หน้าจอแสดงปุ่มและเมนูตามสิทธิ์ของตำแหน่งนี้ · สิ่งที่กดจะบันทึกจริงในชื่อคุณ ({realRole})
+      <span className="text-[12px] font-bold truncate min-w-0 flex-1">
+        👁 กำลังดูในมุมของ {role} <span className="font-normal">· สิ่งที่กดบันทึกจริงในชื่อคุณ ({realRole})</span>
       </span>
       <button onClick={() => setPreviewRole(null)}
-        className="text-[12px] font-bold text-white rounded-[9px] px-3 py-[6px]" style={{ background: "#5C4708" }}>
+        className="text-[11.5px] font-bold text-white rounded-[8px] px-[10px] py-[4px] whitespace-nowrap flex-shrink-0" style={{ background: "#5C4708" }}>
         ↩ กลับเป็น {realRole}
       </button>
     </div>

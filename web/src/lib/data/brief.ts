@@ -3,6 +3,7 @@
 // drive auto-generated graphics and tasks. Submit enforces a required-field set;
 // Save Draft does not.
 
+import { fmtDate } from "@/lib/format";
 import { BrandId, brandCode } from "@/lib/brands";
 
 // ── Option sets ───────────────────────────────────────────────────────────
@@ -556,14 +557,14 @@ export function finalArtworkDue(
         iso: calendarIso,
         fixed: true,
         rushed: false,
-        reason: `ตามรอบงาน Creative · ส่งไฟล์ Final ของงานเดือนนี้ภายใน ${calendarIso} (ศุกร์สุดท้ายของเดือนก่อนโพสต์)`,
+        reason: `ตามรอบงาน Creative · ส่งไฟล์ Final ของงานเดือนนี้ภายใน ${fmtDate(calendarIso)} (ศุกร์สุดท้ายของเดือนก่อนโพสต์)`,
       };
     }
     return {
       iso: floor,
       fixed: true,
       rushed: true,
-      reason: `เลยรอบส่งไฟล์ Final แล้ว (${calendarIso}) — เร็วสุดที่ทำได้คือ ${floor} จึงนับเป็นงานเร่ง`,
+      reason: `เลยรอบส่งไฟล์ Final แล้ว (${fmtDate(calendarIso)}) — เร็วสุดที่ทำได้คือ ${fmtDate(floor)} จึงนับเป็นงานเร่ง`,
     };
   }
   if (!publishIso) {
@@ -571,7 +572,7 @@ export function finalArtworkDue(
       iso: "",
       fixed: false,
       rushed: false,
-      reason: `งาน adhoc — ยังไม่มีวันโพสต์ กำหนดวันส่งงานเอง (เร็วสุด ${floor} · ${GRAPHIC_MIN_BUSINESS_DAYS} วันทำการ)`,
+      reason: `งาน adhoc — ยังไม่มีวันโพสต์ กำหนดวันส่งงานเอง (เร็วสุด ${fmtDate(floor)} · ${GRAPHIC_MIN_BUSINESS_DAYS} วันทำการ)`,
     };
   }
   const target = subtractBusinessDays(publishIso, FINAL_AW_BUFFER_DAYS);
@@ -596,7 +597,7 @@ export function finalArtworkDue(
     iso: floor,
     fixed: true,
     rushed: true,
-    reason: `โพสต์ลงวันที่ ${publishIso} แต่งานเร็วสุดคือ ${floor} — artwork จะเสร็จหลังวันโพสต์ ถ้าไม่ต้องการแบบนั้นให้เลื่อนวันโพสต์`,
+    reason: `โพสต์ลงวันที่ ${fmtDate(publishIso)} แต่งานเร็วสุดคือ ${fmtDate(floor)} — artwork จะเสร็จหลังวันโพสต์ ถ้าไม่ต้องการแบบนั้นให้เลื่อนวันโพสต์`,
   };
 }
 

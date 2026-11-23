@@ -19,16 +19,26 @@ function keyFor(scope: string, label: string) {
  *  Exported because Approval Center's per-kind panels are the same object as
  *  the summary cards here — a section you fold away and find folded tomorrow —
  *  and a second implementation would remember it in a second place. */
-export function usePanelCollapsed(scope: string, label: string) {
+export function usePanelCollapsed(scope: string, label: string, opts: {
+  /** Start folded on screens narrower than this many px — but only until the
+   *  person chooses for themselves; a remembered choice always wins. */
+  collapsedBelow?: number;
+} = {}) {
   const key = keyFor(scope, label);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     try {
-      setCollapsed(localStorage.getItem(key) === "1");
+      const saved = localStorage.getItem(key);
+      // On a phone the Controls box was most of the first screen (filters,
+      // deadline settings, saved views) before a single row of work. Folded by
+      // default there; one tap opens it and the choice is remembered.
+      if (saved === null && opts.collapsedBelow && window.innerWidth < opts.collapsedBelow) { setCollapsed(true); return; }
+      setCollapsed(saved === "1");
     } catch {
       /* no-op */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const toggle = () => {
@@ -105,7 +115,7 @@ export function CampaignCommandBar({
   children: ReactNode;
   action?: ReactNode;
 }) {
-  const { collapsed, toggle } = usePanelCollapsed("command-bar", "controls");
+  const { collapsed, toggle } = usePanelCollapsed("command-bar", "controls", { collapsedBelow: 640 });
 
   return (
     <section className="px-3 py-2.5 md:px-4" style={shellStyle}>

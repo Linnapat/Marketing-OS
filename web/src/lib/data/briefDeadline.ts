@@ -14,6 +14,7 @@
  * Pure on purpose: the answer must be identical in the form that warns, the
  * drawer that shows the pending decision, and any report that counts rush work. */
 
+import { fmtDate, fmtMonth } from "@/lib/format";
 import { thirdFriday } from "@/lib/data/artworkSchedule";
 import { workingDayOnOrBefore } from "@/lib/data/teamHolidays";
 
@@ -189,21 +190,21 @@ export function rushBreaches(input: RushInput): RushBreach[] {
   if (deadline && requestIso > deadline) {
     out.push({
       code: "deadline",
-      label: `เลยเดดไลน์ส่งบรีฟ — งานที่ส่งมอบเดือน ${graphicDueIso.slice(0, 7)} ต้องบรีฟภายใน ${deadline}`,
+      label: `เลยเดดไลน์ส่งบรีฟ — งานที่ส่งมอบเดือน ${fmtMonth(graphicDueIso)} ต้องบรีฟภายใน ${fmtDate(deadline)}`,
     });
   }
 
   if (minDueIso && graphicDueIso < minDueIso) {
     out.push({
       code: "leadTime",
-      label: `กระชั้นกว่าที่ตกลงกัน — วันส่งงานเร็วสุดคือ ${minDueIso}`,
+      label: `กระชั้นกว่าที่ตกลงกัน — วันส่งงานเร็วสุดคือ ${fmtDate(minDueIso)}`,
     });
   }
 
   if (capLimit > 0 && capUsed + capAdding > capLimit) {
     out.push({
       code: "dailyCap",
-      label: `เกินโควตา ${kindLabel} วันที่ ${graphicDueIso} — ใช้แล้ว ${capUsed} + งานนี้ ${capAdding} จากโควตา ${capLimit}`,
+      label: `เกินโควตา ${kindLabel} วันที่ ${fmtDate(graphicDueIso)} — ใช้แล้ว ${capUsed} + งานนี้ ${capAdding} จากโควตา ${capLimit}`,
     });
   }
 

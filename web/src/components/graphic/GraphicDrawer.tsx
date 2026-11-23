@@ -35,7 +35,7 @@ import Link from "next/link";
 import { fetchContentById } from "@/lib/db/content";
 import { ContentItem, captionApproved } from "@/lib/data/content";
 import { brandName, brandColor } from "@/lib/brands";
-import { stamp, DATE_LOCALE } from "@/lib/format";
+import { stamp, fmtDateTime, fmtMonth } from "@/lib/format";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Progress } from "@/components/ui/Progress";
 import { updateGraphic, patchGraphicBrief, graphicLacksPost, createPostForGraphic } from "@/lib/db/graphic";
@@ -937,7 +937,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   </div>
                   <ul className="mt-2 list-disc pl-5 text-[11.5px]" style={{ color: "#8A5418" }}>
                     {unseenNotices(g).map((n, i) => (
-                      <li key={`${n.at}-${i}`}>{n.text} <span className="opacity-70">— {n.by} · {new Date(n.at).toLocaleString(DATE_LOCALE, { dateStyle: "short", timeStyle: "short" })}</span></li>
+                      <li key={`${n.at}-${i}`}>{n.text} <span className="opacity-70">— {n.by} · {fmtDateTime(new Date(n.at))}</span></li>
                     ))}
                   </ul>
                 </div>
@@ -1016,7 +1016,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                   {workingMonth(g) && (
                     <span className="ml-auto text-[11px] font-bold rounded-pill px-2.5 py-[3px]" style={{ background: "#F2EEFF", color: "#6C5CE7" }}
                       title="เดือนที่งานนี้ลงจริง — ย้ายตามวันถ่ายเมื่อมีการเลื่อน (ไม่ใช่เดือนที่ออกบิล ซึ่งนับตอนอนุมัติงาน)">
-                      เดือนที่ทำงานจริง {workingMonth(g)}
+                      เดือนที่ทำงานจริง {fmtMonth(workingMonth(g)) || workingMonth(g)}
                     </span>
                   )}
                 </div>
@@ -1352,7 +1352,7 @@ export function GraphicDrawer({ g: initialGraphic, initialTab = "overview", hide
                     <div className="text-[11.5px] text-muted leading-[1.5]">{briefBlockedReason}</div>
                     {unlockState === "pending" ? (
                       <div className="mt-2 text-[11.5px] font-bold" style={{ color: "#8A6D1E" }}>
-                        ⏳ ขอไว้เมื่อ {new Date(g.briefUnlock!.requestedAt).toLocaleString(DATE_LOCALE, { dateStyle: "medium", timeStyle: "short" })}
+                        ⏳ ขอไว้เมื่อ {fmtDateTime(new Date(g.briefUnlock!.requestedAt))}
                         {g.briefUnlock?.reason ? ` · “${g.briefUnlock.reason}”` : ""}
                       </div>
                     ) : (

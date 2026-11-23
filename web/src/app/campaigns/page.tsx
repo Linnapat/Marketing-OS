@@ -13,7 +13,7 @@ import { canEditCampaignBrief } from "@/lib/roleGates";
 import { personKeys, isSamePerson, memberRef } from "@/lib/identity";
 import { useAuth } from "@/lib/auth";
 import { useCanCreateCampaign } from "@/lib/usePermGates";
-import { baht, num } from "@/lib/format";
+import { baht, num, fmtRange } from "@/lib/format";
 import { campaignTone } from "@/lib/status";
 import {
   STATUS_ORDER, READINESS_META, CampaignRow, campaignPeriod,
@@ -414,7 +414,7 @@ export default function CampaignsPage() {
                         </Link>
                         <div className="text-[11px] text-faint mt-[1px] flex items-center gap-[6px] flex-wrap">
                           <CampaignCode code={c.code} />
-                          <span>{c.campType} · {c.dates}</span>
+                          <span>{c.campType} · {fmtRange(c.startDate, c.endDate) || c.dates}</span>
                         </div>
                         {c.taskTotal > 0 && (
                           <div className="flex items-center gap-2 mt-[5px] max-w-[200px]">
