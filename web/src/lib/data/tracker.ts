@@ -80,7 +80,8 @@ export function toJob(g: Graphic, todayIso: string): TrackerJob {
     holder: jobHolder(g) ?? undefined,
     health,
     dueIso: g.dueIso,
-    urgency: urgencyOf(g.dueIso, health, todayIso),
+    // งานที่ถูก Hold ไม่นับว่าเลยกำหนด — นาฬิกาหยุดไว้ตั้งใจ
+    urgency: g.approvalHold ? "none" : urgencyOf(g.dueIso, health, todayIso),
     steps,
     current: steps.find((s) => s.state !== "done" && s.state !== "skipped"),
     progress: { approved, total },
@@ -198,7 +199,7 @@ export function toPost(c: ContentItem, jobs: TrackerJob[], todayIso: string): Tr
     noJob: jobs.length === 0,
     health,
     decidedBy,
-    urgency: urgencyOf(dateIso, health, todayIso),
+    urgency: (c.publishStatus ?? "").trim() === "Hold" ? "none" : urgencyOf(dateIso, health, todayIso),
     jobsOverdue: jobs.filter((j) => j.urgency === "overdue").length,
     waitingOn: step ? { who: step.owner, what: step.label, role: step.role } : undefined,
   };

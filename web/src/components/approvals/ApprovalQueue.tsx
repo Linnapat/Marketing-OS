@@ -21,6 +21,10 @@
 // Rendering is per-kind (an artwork card and an expense card are not the same
 // card), but the ORDER is global — see buildApprovalRows.
 
+import { useAuth } from "@/lib/auth";
+import { canHoldOrDelete } from "@/lib/data/approvalHold";
+import { canHoldRow, type QueueActionResult } from "@/lib/approvalActions";
+import { RowActionsMenu, HeldGroup } from "@/components/approvals/HoldDeleteMenu";
 import { AssetThumb } from "@/components/content/AssetLinkList";
 import { FinishedFold } from "@/components/ui/FinishedFold";
 import { useEffect, useMemo, useState } from "react";
@@ -171,7 +175,7 @@ function KindBadge({ kind, note }: { kind: ApprovalKind; note?: string }) {
 
 const cardCx = "bg-surface border border-line rounded-card p-4 hover:border-accent transition block text-left w-full";
 
-export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only }: {
+export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved, only, onRemoved }: {
   rows: ApprovalRow[];
   /** Passed in rather than read here so every age on the page is measured from
    *  the same instant — and so tests can pin it. */
@@ -191,6 +195,8 @@ export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader
   onGraphicUpdate?: (g: Graphic) => void;
   /** Same, for a post whose caption was just decided. */
   onContentUpdate?: (c: ContentItem) => void;
+  /** Something left the queue for good (moved to Trash) — re-read the list. */
+  onRemoved?: () => void;
   /** A task-shaped approval (KOL proposal, budget revision) just went through. */
   onTaskApproved?: (t: Task) => void;
   /** Render just this one lane — the rail's Caption / Artwork / VDO entries.
@@ -203,9 +209,21 @@ export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader
   // Rows whose post already went out are a record, not a queue: they are taken
   // out before anything is counted, scoped or grouped, and drawn once, folded,
   // at the very end (see RowBase.autoClosed).
-  const rows = useMemo(() => allRows.filter((r) => !r.autoClosed), [allRows]);
+  const rows = useMemo(() => allRows.filter((r) => !r.autoClosed && !r.held), [allRows]);
+  // On hold: out of the queue and its counts, drawn in their own group below.
+  const heldRows = useMemo(() => allRows.filter((r) => r.held && (!only || r.kind === only)), [allRows, only]);
+  // Hold / delete are for the two roles that run the queue.
+  const { role: actingRole, member: actingMember, user: actingUser } = useAuth();
+  const mayHold = canHoldOrDelete(actingRole);
+  const actingName = actingMember?.name || actingUser?.email?.split("@")[0] || me || "";
+  const applyQueueAction = (result: QueueActionResult) => {
+    for (const g of result.graphics) onGraphicUpdate?.(g);
+    for (const p of result.posts) onContentUpdate?.(p);
+    // A request moved to Trash has to leave the list, which a patch cannot do.
+    if (result.removedGraphicIds.length) onRemoved?.();
+  };
   const closedRows = useMemo(
-    () => allRows.filter((r) => r.autoClosed && (!only || r.kind === only)),
+    () => allRows.filter((r) => r.autoClosed && !r.held && (!only || r.kind === only)),
     [allRows, only],
   );
   // Yours by default. The team view is the answer to "why is this late", not
@@ -302,9 +320,19 @@ export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader
         // now it moves down into Queued and stays until the post goes out.
         const pending = kindRows.filter((r) => !r.queued);
         const queued = kindRows.filter((r) => r.queued);
-        const draw = (row: ApprovalRow) => (view === "list"
+        const drawBare = (row: ApprovalRow) => (view === "list"
           ? renderRow(row, now, { codeOf, budgetOf, me, creativeLeader, onOpenTask, onOpenGraphic, onApprove, onReject, onGraphicUpdate, onContentUpdate, onTaskApproved })
           : renderCard(row, now, { codeOf, budgetOf, onOpenTask, onOpenGraphic, onApprove, onReject }));
+        // The "…" menu sits at the far end of an open decision — past ขอแก้,
+        // never beside ผ่าน. Rows already signed off have nothing to hold.
+        const draw = (row: ApprovalRow) => (mayHold && canHoldRow(row) && !row.queued
+          ? (
+            <div key={row.key} className="flex items-start gap-[6px]">
+              <div className="flex-1 min-w-0">{drawBare(row)}</div>
+              <span className="pt-[8px] pr-[6px]"><RowActionsMenu row={row} by={actingName} onDone={applyQueueAction} /></span>
+            </div>
+          )
+          : drawBare(row));
         return (
           <KindPanel key={kind} kind={kind} rows={pending} queuedCount={queued.length} now={now} forceOpen={!!only} view={view}>
             {pending.map(draw)}
@@ -316,6 +344,8 @@ export function ApprovalQueue({ rows: allRows, now, budgetOf, me, creativeLeader
           </KindPanel>
         );
       })}
+
+      <HeldGroup rows={heldRows} canAct={mayHold} by={actingName} onDone={applyQueueAction} />
 
       {closedRows.length > 0 && (
         <div className="mt-4 rounded-[14px] overflow-hidden" style={{ border: "1px solid #E7DFD1", background: "#fff" }}>

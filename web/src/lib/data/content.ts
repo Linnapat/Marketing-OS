@@ -54,6 +54,9 @@ export function publishStatusNotice(prev: string, next: string, reason = ""): { 
  *  exactly the thing somebody needs to decide about. */
 export function isPostOverdue(c: ContentItem, todayIso: string): boolean {
   if (isPostClosed(c)) return false;
+  // On hold is a decision to wait, not lateness — it is not counted against
+  // anybody until it comes back (CMO, UX/UI round 4).
+  if (isPostOnHold(c)) return false;
   const date = contentDateIso(c);
   return !!date && !!todayIso && date < todayIso;
 }
@@ -183,6 +186,8 @@ export interface ContentItem {
   /** Why the post is on Hold / Cancelled — asked for at the moment it is set,
    *  cleared when it leaves either state. */
   publishStatusReason?: string;
+  /** Set aside from the approval queue, with a reason — see data/approvalHold. */
+  approvalHold?: { reason: string; by: string; at: string; prevPublishStatus?: string };
 }
 
 export interface DateChangeRequest {

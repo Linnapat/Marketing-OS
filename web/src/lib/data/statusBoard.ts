@@ -427,7 +427,8 @@ export function contentItems(rows: ContentItem[]): WorkItem[] {
       owner: captionOwner(c),
       // The publish date IS the deadline for a post: artwork or caption still
       // missing the day before it goes out is late, whatever the asset says.
-      dueIso: contentDateIso(c),
+      // A held post has no deadline to miss until it comes back.
+      dueIso: norm(c.publishStatus) === "hold" ? undefined : contentDateIso(c),
       urgency: "none",
     };
   });
@@ -447,9 +448,12 @@ function statusOfStage(c: ContentItem, stage: string): string {
 export function graphicItems(rows: Graphic[]): WorkItem[] {
   return rows.map((g) => ({
     id: `graphic:${g.id}`, module: isVideoWork(g) ? ("vdo" as const) : ("graphic" as const), title: g.title,
-    campaignId: g.campaignId ?? "", brand: g.b, health: graphicHealth(g),
-    rawStatus: graphicRowStatus(g), owner: jobHolder(g) ?? g.designer,
-    dueIso: g.dueIso, urgency: "none",
+    campaignId: g.campaignId ?? "", brand: g.b,
+    // On hold (from the approval queue): waiting, says so, and carries no due
+    // date — a held request is never counted as late.
+    health: g.approvalHold ? ("waiting" as Health) : graphicHealth(g),
+    rawStatus: g.approvalHold ? `Hold · ${g.approvalHold.reason}` : graphicRowStatus(g), owner: jobHolder(g) ?? g.designer,
+    dueIso: g.approvalHold ? undefined : g.dueIso, urgency: "none",
   }));
 }
 
