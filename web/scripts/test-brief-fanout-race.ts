@@ -73,6 +73,9 @@ function valueOf(row: Row, field: string): unknown {
   return row[field] ?? null;
 }
 
+const unsupportedOps: string[] = [];
+class UnsupportedOp extends Error { constructor(op: string) { super(`fake PostgREST: unsupported operator ${op}`); } }
+
 function applyFilters(rows: Row[], params: URLSearchParams): Row[] {
   let out = rows;
   for (const [key, raw] of params.entries()) {
@@ -81,7 +84,19 @@ function applyFilters(rows: Row[], params: URLSearchParams): Row[] {
     const val = rest.join(".");
     if (op === "eq") out = out.filter((r) => String(valueOf(r, key) ?? "") === val);
     else if (op === "is") out = out.filter((r) => (val === "null" ? valueOf(r, key) === null : valueOf(r, key) === (val === "true")));
-    else throw new Error(`fake PostgREST: unsupported operator ${op}`);
+    // `in.(a,b)` — org_settings is read this way (fetchApprovalMatrix). It used
+    // to fall through to the throw below, and a fetch that THROWS is retried
+    // by the Supabase client after 1s, 2s and 4s: seven idle seconds on every
+    // save, which turned this file from a sub-second test into a 57-second one
+    // that looked hung inside `npm test`.
+    else if (op === "in") {
+      const wanted = new Set(val.replace(/^\(|\)$/g, "").split(",").map((v) => v.trim().replace(/^"|"$/g, "")));
+      out = out.filter((r) => wanted.has(String(valueOf(r, key) ?? "")));
+    }
+    // An operator this stand-in does not know is a gap in the TEST. Recorded
+    // and answered like PostgREST would (400), never thrown — a throw is what
+    // the client retries — and the run fails at the end if any were hit.
+    else { unsupportedOps.push(`${op} (${key})`); throw new UnsupportedOp(op); }
   }
   return out;
 }
@@ -115,7 +130,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
 
   if (method === "GET") {
     if (failNextSelect === table) { failNextSelect = null; return json({ message: "permission denied", code: "42501" }, 403); }
-    let rows = applyFilters(db[table], url.searchParams);
+    let rows: Row[];
+    try { rows = applyFilters(db[table], url.searchParams); }
+    catch (e) { if (e instanceof UnsupportedOp) return json({ message: e.message, code: "PGRST100" }, 400); throw e; }
     const limit = url.searchParams.get("limit");
     if (limit) rows = rows.slice(0, Number(limit));
     if (wantsObject) {
@@ -280,6 +297,9 @@ console.log("\nwhen the idempotency read itself fails");
 }
 
 main().then(() => {
+  // A filter the stand-in cannot answer means some read came back wrong (or
+  // slow) without anything above noticing.
+  is("fake PostgREST was asked nothing it cannot answer", unsupportedOps, []);
   console.log(`\n${pass} passed, ${fail} failed\n`);
   process.exit(fail ? 1 : 0);
 }).catch((e) => { console.error(e); process.exit(1); });
