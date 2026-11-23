@@ -180,6 +180,9 @@ export interface Graphic {
    *  In Progress) because the lock has to be something a person chose and can
    *  be pointed at — "the stage changed" is not an answer to "who locked this?" */
   acceptedBy?: string;
+  /** Set aside from the approval queue, with a reason — see data/approvalHold.
+   *  The stage is untouched; a held request is simply not waiting on anyone. */
+  approvalHold?: { reason: string; by: string; at: string };
   acceptedAt?: string;
   /** Permission to top up the brief AFTER Creative has taken the job on.
    *  See briefUnlockState / canEditBriefNow below for the rule. */
@@ -2661,6 +2664,8 @@ export function dueNotBeforePost(g: Pick<Graphic, "dueIso">, postDateIso?: strin
  *  past due AND not yet finished (Approved/Delivered stop the clock). */
 export function computeGraphicOverdue(g: Graphic, now: Date = new Date()): boolean {
   if (["Approved", "Delivered"].includes(g.stage)) return false;
+  // Held work is not late: the clock is stopped on purpose.
+  if (g.approvalHold) return false;
   const due = graphicDue(g);
   return !!due && due.getTime() < now.getTime();
 }

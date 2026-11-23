@@ -33,7 +33,8 @@ console.log("\n— 2.3 เลยวันโพสต์ / พร้อมลง
   is("วันนี้ยังไม่ถือว่าเลย", isPostOverdue(post({ dateIso: TODAY }), TODAY), false);
   is("Published แล้วไม่เลย", isPostOverdue(post({ publishStatus: "Published" }), TODAY), false);
   is("Cancelled ไม่เลย", isPostOverdue(post({ publishStatus: "Cancelled" }), TODAY), false);
-  is("Hold ที่เลยวันยังเตือน", isPostOverdue(post({ publishStatus: "Hold" }), TODAY), true);
+  // Changed in UX/UI round 4: a held post is waiting on purpose, not late.
+  is("Hold ไม่นับว่าเลยวัน", isPostOverdue(post({ publishStatus: "Hold" }), TODAY), false);
   is("Caption + Asset Approved, Publish Draft = พร้อมลง", isReadyToPost(post({ captionStatus: "Approved", assetStatus: "Approved" })), true);
   is("Asset Final ก็นับ", isReadyToPost(post({ captionStatus: "Approved", assetStatus: "Final" })), true);
   is("Caption ยังไม่ Approved = ยังไม่พร้อม", isReadyToPost(post({ captionStatus: "Ready", assetStatus: "Approved" })), false);

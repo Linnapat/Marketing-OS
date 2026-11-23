@@ -115,6 +115,11 @@ interface RowBase {
    *  not counted, and is drawn in its own folded group (CMO, 22 Nov 2026:
    *  option A). Nothing is written back to the post or the request. */
   autoClosed?: boolean;
+  /** Set aside with "⏸ Hold" from this queue (data/approvalHold). Like an
+   *  auto-closed row it is nobody's, has no verdict buttons and is not counted
+   *  — but it is drawn in its own group, with the reason, and can be brought
+   *  back. */
+  held?: { reason: string; by: string; at: string };
   /** Set by the period filter, never by buildApprovalRows: the month (YYYY-MM)
    *  this still-open row was handed in, when it is shown under a later month
    *  because it has not been closed. See approvalCarriedFrom. */
@@ -336,6 +341,9 @@ export function selectGraphicApprovals(
     }
 
     if (postOut) for (let i = first; i < out.length; i++) out[i] = autoClose(out[i]);
+    // On hold: the open decisions of this request leave the queue together.
+    // (A request whose post already went out is closed, not held.)
+    else if (g.approvalHold) for (let i = first; i < out.length; i++) out[i] = holdRow(out[i], g.approvalHold);
 
     // Signed off, not out yet. One row per artwork (same normSize grouping as
     // the decisions above), so a Reel that went to three platforms is one line
@@ -480,7 +488,7 @@ export function buildApprovalRows(input: {
       waitingOn: firstName(reviewerWroteIt ? null : reviewer, "ฝ่ายวางแผน"),
     };
     // Written, never accepted, and the post has gone out anyway.
-    rows.push(isPostClosed(post) ? autoClose(captionRow) : captionRow);
+    rows.push(isPostClosed(post) ? autoClose(captionRow) : post.approvalHold ? holdRow(captionRow, post.approvalHold) : captionRow);
   }
 
   rows.push(...selectGraphicApprovals(input.graphics, ctx, input.captions));
@@ -678,12 +686,17 @@ export function autoClose<T extends RowBase>(row: T): T {
   return { ...row, autoClosed: true, mine: false, canAct: false, waitingOn: "โพสต์ลงแล้ว" };
 }
 
+/** Stamp a row as on hold. */
+export function holdRow<T extends RowBase>(row: T, held: { reason: string; by: string; at: string }): T {
+  return { ...row, held: { reason: held.reason, by: held.by, at: held.at }, mine: false, canAct: false, waitingOn: "Hold" };
+}
+
 /** Count per kind, for the chip badges. Every kind is present (as 0) so the
  *  chip row does not reflow as items are cleared. */
 export function countByKind(rows: ApprovalRow[]): Record<ApprovalKind, number> {
   const counts = Object.fromEntries(APPROVAL_KIND_ORDER.map((k) => [k, 0])) as Record<ApprovalKind, number>;
   // Auto-closed rows are a record, not work waiting on anyone.
-  for (const r of rows) if (!r.autoClosed) counts[r.kind] += 1;
+  for (const r of rows) if (!r.autoClosed && !r.held) counts[r.kind] += 1;
   return counts;
 }
 

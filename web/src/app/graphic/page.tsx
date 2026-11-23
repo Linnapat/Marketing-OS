@@ -1644,6 +1644,13 @@ function GraphicListRow({ g, codeOf, postDate, onOpen, onQuickApprove }: { g: Gr
         </span>
         <span className="flex items-center gap-1.5 flex-wrap min-w-0">
           <StatusBadge tone={stageTone(g.stage)}>{g.stage}</StatusBadge>
+          {/* Held from the approval queue: the stage is unchanged, so the row
+              says it separately. */}
+          {g.approvalHold && (
+            <span className="text-[10.5px] font-bold rounded-pill px-[7px] py-[2px] whitespace-nowrap"
+              style={{ color: "#6B5310", background: "#FFF3D7", border: "1px solid #E7B93C" }}
+              title={`Hold โดย ${g.approvalHold.by} · ${g.approvalHold.reason}`}>⏸ Hold</span>
+          )}
           <QuickApproveBtn g={g} onQuickApprove={onQuickApprove} />
         </span>
       </button>

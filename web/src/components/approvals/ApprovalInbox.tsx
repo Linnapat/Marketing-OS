@@ -85,9 +85,9 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
   // Open decisions only. Rows closed by their post going out are not "รายการ
   // รออนุมัติ" and must not be counted as shown or as hidden by a filter; they
   // rejoin the list below, for the queue's folded group.
-  const laneRows = useMemo(() => allRows.filter((r) => !r.autoClosed && (!only || r.kind === only)), [allRows, only]);
+  const laneRows = useMemo(() => allRows.filter((r) => !r.autoClosed && !r.held && (!only || r.kind === only)), [allRows, only]);
   const closedRows = useMemo(
-    () => allRows.filter((r) => r.autoClosed && (!only || r.kind === only)
+    () => allRows.filter((r) => (r.autoClosed || r.held) && (!only || r.kind === only)
       && matchesApprovalBrand(r, brand) && matchesApprovalCampaign(r, campaign) && matchesApprovalSearch(r, search)),
     [allRows, only, brand, campaign, search],
   );
@@ -207,6 +207,7 @@ export function ApprovalInbox({ only = null }: { only?: ApprovalKind | null }) {
           onApprove={approveExpense} onReject={rejectExpense}
           onGraphicUpdate={patchGraphic}
           onContentUpdate={patchPost}
+          onRemoved={() => { void reload(); }}
           onTaskApproved={(t) => markTaskDone(t.id)}
           only={only}
         />
