@@ -516,12 +516,16 @@ console.log("\n— ไฟล์เดียวหลาย platform = แถว�
   is("แถวเดียวบอกครบทุกแพลตฟอร์ม",
     info && info.kind === "artwork" ? info.platforms.join(",") : "—", "Facebook,Instagram,TikTok");
 
-  // คนละไซซ์ = คนละไฟล์ = คนละงาน ต้องไม่ถูกยุบรวม
+  // คนละไซซ์ = คนละไฟล์ แต่งานเดียวกันรวมเป็นแถวเดียวต่อ lens (CMO 25 พ.ย. 2026)
+  // โดยยังแยกไซซ์ไว้ใน pieces เพื่อส่งกลับแก้ทีละไซซ์ได้
   const twoSizes = req({ deliverables: [
     submitted({ platform: "Facebook", size: "9:16 (1080×1920)" }),
     submitted({ platform: "Facebook", size: "1:1 (1080×1080)" }),
   ] });
-  is("คนละไซซ์ยังแยกแถว", selectGraphicApprovals([twoSizes], ctx("Creative Leader", "Boss L.")).length, 4);
+  const twoRows = selectGraphicApprovals([twoSizes], ctx("Creative Leader", "Boss L."));
+  is("คนละไซซ์รวมเป็นแถวเดียวต่อ lens", twoRows.length, 2);
+  is("…แต่ยังรู้ว่ามีสองไซซ์",
+    twoRows.every((r) => r.kind === "artwork" && r.pieces?.length === 2), true);
 
   // แถวที่เคยถูกเซ็นไว้ก่อนมีการ fan ต้องไม่ลากงานที่ยังค้างของพี่น้องหายไปด้วย
   const halfSettled = req({ deliverables: [

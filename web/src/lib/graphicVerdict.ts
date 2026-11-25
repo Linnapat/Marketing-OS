@@ -76,10 +76,13 @@ export function persistGraphicDeliverables(
  *  Callers pass the deliverables they are holding: the drawer edits a local
  *  copy before saving, and handing `g.deliverables` in from a list would throw
  *  that away. */
-export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, note, creativeLeader, cmoName, ciBackup, productionOwners, onUpdate }: {
+export function giveLensVerdict({ g, deliverables, index, alsoIndexes, lens, verdict, me, note, creativeLeader, cmoName, ciBackup, productionOwners, onUpdate }: {
   g: Graphic;
   deliverables: GraphicDeliverable[];
   index: number;
+  /** Further sizes of the same request given the same verdict in the same
+   *  write — one save and one notice, not one per size. */
+  alsoIndexes?: number[];
   lens: ReviewLens;
   verdict: "pass" | "revise";
   me: string;
@@ -100,8 +103,12 @@ export function giveLensVerdict({ g, deliverables, index, lens, verdict, me, not
   onUpdate?: (g: Graphic) => void;
 }): Graphic | null {
   const before = deliverables[index];
-  const ng = applyLensVerdict({ ...g, deliverables }, index, lens, verdict, me, note);
+  let ng = applyLensVerdict({ ...g, deliverables }, index, lens, verdict, me, note);
   if (!ng) return null;
+  for (const i of alsoIndexes ?? []) {
+    const more = applyLensVerdict(ng, i, lens, verdict, me, note);
+    if (more) ng = more;
+  }
   const after = ng.deliverables![index];
   const saved = persistGraphicDeliverables(ng, { previous: g, onUpdate });
 

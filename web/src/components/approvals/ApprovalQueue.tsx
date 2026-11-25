@@ -935,17 +935,27 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
   const oneLens = lensesFor(row.g).length === 1;
   const d = row.deliverable;
   const asset = (d.assetLink || "").trim();
+  // Every size still owing this verdict. More than one is the merged row: the
+  // buttons below act on all of them, and each size keeps its own file link and
+  // its own send-back underneath.
+  const pieces = row.pieces ?? [{ d, index: row.index, canPass: row.canAct }];
+  const multi = pieces.length > 1;
+  const passable = pieces.filter((p) => p.canPass);
+  const [reviseIdx, setReviseIdx] = useState<number | null>(null);
   // Who could take it when the request names nobody — same fallback the drawer
   // uses, so a verdict given from the list tells the same people.
   const productionOwners = useProductionOwners();
   const cmoName = useCmoName();
   const ciBackup = useCiBackup();
 
-  const decide = (verdict: "pass" | "revise", note?: string) => {
+  const decide = (verdict: "pass" | "revise", note?: string, only?: number) => {
     if (acted) return;
     setActed(true);
+    // Pass covers every size this person may decide; a send-back is for the one
+    // size named, with its own reason.
+    const targets = only !== undefined ? [only] : (passable.length ? passable : pieces).map((p) => p.index);
     const ng = giveLensVerdict({
-      g: row.g, deliverables: row.g.deliverables ?? [], index: row.index,
+      g: row.g, deliverables: row.g.deliverables ?? [], index: targets[0], alsoIndexes: targets.slice(1),
       lens: row.lens, verdict, me, note, creativeLeader, cmoName, ciBackup,
       productionOwners: productionOwners(workKind(row.g.type, row.g.requiredVideo)),
       onUpdate: onGraphicUpdate,
@@ -957,7 +967,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
     }
     onGraphicUpdate?.(ng);
     toastSuccess(verdict === "pass"
-      ? `${oneLens ? "อนุมัติ" : `ผ่าน ${lens.short}`}: ${row.g.title}`
+      ? `${oneLens ? "อนุมัติ" : `ผ่าน ${lens.short}`}${multi ? ` ${passable.length} ไซซ์` : ""}: ${row.g.title}`
       : `ส่งกลับแก้: ${row.g.title}`);
   };
 
@@ -976,7 +986,9 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           {/* ส่งโดย moved to its own column — see MetaColumns. Below md the
               columns are hidden, so it comes back into this line there. */}
           {[`${brandName(row.g.b)} · ${row.g.campaign}`, codeOf(row.g.campaignId, row.g.campaign),
-            `${platformLabel(row.platforms, d.platform)} · ${d.size}${d.version ? ` · v${d.version}` : ""}`].filter(Boolean).join(" · ")}
+            multi
+              ? `${pieces.length} ไซซ์ · ${platformLabel(row.platforms, d.platform)}`
+              : `${platformLabel(row.platforms, d.platform)} · ${d.size}${d.version ? ` · v${d.version}` : ""}`].filter(Boolean).join(" · ")}
           <span className="md:hidden"> · ส่งโดย {row.submittedBy || "—"}</span>
         </span>
         {/* A queued row has nothing left to check — say who cleared it and when
@@ -996,7 +1008,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           one cluster, rather than the buttons dropping to their own line while
           the link they belong to stays up beside the title. */}
       <span className="flex items-center gap-3 flex-shrink-0 ml-auto">
-      {asset ? (
+      {multi ? null : asset ? (
         <a href={asset} target="_blank" rel="noopener noreferrer" title="เปิดไฟล์เต็ม"
           className="text-[11.5px] font-bold text-accent hover:underline flex-shrink-0 flex items-center gap-[7px]">
           {/* The picture itself, where there is one to show — an artwork queue
@@ -1009,7 +1021,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
       ) : (
         <span className="text-[11.5px] text-faint flex-shrink-0">ไม่มีลิงก์ไฟล์</span>
       )}
-      {(d.refLink || "").trim() && (
+      {!multi && (d.refLink || "").trim() && (
         <a href={d.refLink} target="_blank" rel="noopener noreferrer"
           className="text-[11.5px] text-muted hover:underline flex-shrink-0">อ้างอิง ↗</a>
       )}
@@ -1019,7 +1031,7 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
           style={{ background: "#EEF4EE", color: "#4E7A4E" }}>✓ อนุมัติแล้ว · รอ publish</span>
       ) : !row.canAct ? (
         <span className="text-[11.5px] font-semibold flex-shrink-0" style={{ color: "#8A8175" }}>รอ {row.waitingOn}</span>
-      ) : revising ? (
+      ) : revising && !multi ? (
         <span className="flex items-center gap-2 flex-shrink-0">
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`สิ่งที่ต้องแก้ (${lens.short})`} autoFocus
             className="text-[12px] px-[9px] py-[6px] rounded-[8px] border border-line2 bg-ivory outline-none w-[200px]" />
@@ -1031,14 +1043,49 @@ function LensRow({ row, now, codeOf, me, creativeLeader, onOpenGraphic, onGraphi
         <span className="flex items-center gap-2 flex-shrink-0">
           <button onClick={() => decide("pass")} disabled={acted}
             className="text-[11.5px] font-bold text-white rounded-[8px] px-[11px] py-[6px] disabled:opacity-50" style={{ background: "#4E7A4E" }}>
-            {acted ? "…" : oneLens ? "✓ Approve" : `✓ ผ่าน ${lens.short}`}
+            {acted ? "…" : multi
+              ? `✓ ผ่านทั้งหมด ${passable.length} ไซซ์${oneLens ? "" : ` · ${lens.short}`}`
+              : oneLens ? "✓ Approve" : `✓ ผ่าน ${lens.short}`}
           </button>
-          <button onClick={() => setRevising(true)} disabled={acted}
+          {!multi && <button onClick={() => setRevising(true)} disabled={acted}
             className="text-[11.5px] font-bold px-[9px] py-[6px] rounded-[8px] disabled:opacity-50"
-            style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>↩ ขอแก้</button>
+            style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>↩ ขอแก้</button>}
         </span>
       )}
       </span>
+
+      {/* The merged row's sizes, one line each: look at the file, and send back
+          just that size when it is the only one that is wrong. */}
+      {multi && !row.queued && (
+        <div className="basis-full flex flex-col gap-[5px] pl-[2px] pt-[6px] mt-[4px] border-t border-line">
+          {pieces.map((p) => {
+            const link = (p.d.assetLink || "").trim();
+            const open = reviseIdx === p.index;
+            return (
+              <div key={p.index} className="flex items-center gap-3 flex-wrap text-[11.5px]">
+                <span className="font-semibold text-ink min-w-[160px]">{p.d.size}{p.d.version ? <span className="text-faint font-normal"> · v{p.d.version}</span> : null}</span>
+                {link
+                  ? <a href={link} target="_blank" rel="noopener noreferrer" className="font-bold text-accent hover:underline">เปิดไฟล์ ↗</a>
+                  : <span className="text-faint">ไม่มีลิงก์ไฟล์</span>}
+                {(p.d.refLink || "").trim() && <a href={p.d.refLink} target="_blank" rel="noopener noreferrer" className="text-muted hover:underline">อ้างอิง ↗</a>}
+                {row.canAct && p.canPass && (open ? (
+                  <span className="flex items-center gap-2 ml-auto">
+                    <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`สิ่งที่ต้องแก้ (${lens.short})`} autoFocus
+                      className="text-[12px] px-[9px] py-[5px] rounded-[8px] border border-line2 bg-ivory outline-none w-[200px]" />
+                    <button onClick={() => { if (reason.trim()) decide("revise", reason.trim(), p.index); }} disabled={!reason.trim() || acted}
+                      className="text-[11.5px] font-bold text-white rounded-[8px] px-[10px] py-[5px] disabled:opacity-40" style={{ background: "#B33A2E" }}>ส่งกลับแก้</button>
+                    <button onClick={() => setReviseIdx(null)} className="text-[11.5px] font-semibold px-[8px] py-[5px] rounded-[8px] border border-line2 text-muted bg-white">Cancel</button>
+                  </span>
+                ) : (
+                  <button onClick={() => { setReason(""); setReviseIdx(p.index); }} disabled={acted}
+                    className="ml-auto text-[11px] font-bold px-[8px] py-[3px] rounded-[8px] disabled:opacity-50"
+                    style={{ background: "#FFF5F4", color: "#B33A2E", border: "1px solid #F5C8C4" }}>↩ ขอแก้ไซซ์นี้</button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -134,6 +134,10 @@ export type ApprovalRow =
       /** Every platform this one file is delivered to. The row is the artwork,
        *  not the platform row it was read from. */
       platforms: string[];
+      /** Every size still owing this lens's verdict, each with whether the
+       *  current person may decide it. Absent on queued rows. One entry is the
+       *  old one-size row. */
+      pieces?: { d: GraphicDeliverable; index: number; canPass: boolean }[];
     })
   // Split rather than one member with a two-value kind, so that
   // Extract<ApprovalRow, { kind: "storyboard" }> resolves to the row instead of
@@ -304,40 +308,59 @@ export function selectGraphicApprovals(
     const jobLenses = lensesFor(g);
     const jobKind = workKind(g.type, g.requiredVideo);
     const cmoOnly = jobKind !== "graphic" && !!ctx.vdoCmoOnly?.(g.b);
-    for (const [sizeKey, group] of groups) {
-      for (const lens of jobLenses) {
+    /* One row per REQUEST per lens, listing every size still owing that
+     * verdict. Reviewers asked for this (CMO, 25 Nov 2026): a five-size
+     * request was ten rows, one per size per lens, to say the same yes.
+     * Sizes stay separate in `pieces` so a single one can still be sent back
+     * with its own reason; "pass" is the one that covers them all. */
+    for (const lens of jobLenses) {
+      const pieces: { d: GraphicDeliverable; index: number; platforms: string[]; canPass: boolean }[] = [];
+      for (const [, group] of groups) {
         // Members that still owe this verdict. Normally all or none — the fan
         // keeps them in step — but a row settled before the fan existed must
         // not take its siblings' open decision off the board with it.
         const pending = group.members.filter((m) => !m.d.review?.[lens]);
         if (!pending.length) continue;
         const { d, index } = pending[0];
-        const canPass = canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d, kind: jobKind, vdoCmoOnly: cmoOnly });
-        out.push({
-          kind, key: `g${g.id}:${sizeKey}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
-          platforms: group.platforms,
-          waitingSince: d.submittedAt || g.submittedAt || g.createdAt || "",
-          // Whose check this is — the requester's for the data, the Creative
-          // Leader's for CI. Everyone else who MAY give it (Marketing Manager,
-          // CMO) is covering, and covering is not owning: they keep the buttons
-          // through canAct without the row landing in their own queue.
-          // On a brand whose video is the CMO's alone, the CI lane IS theirs —
-          // leaving it as the Creative Leader's would file the row in the queue
-          // of the one person who cannot act on it.
-          mine: canPass && (lens === "info" ? isRequester : ctx.role === (cmoOnly ? "CMO" : "Creative Leader")),
-          canAct: canPass,
-          submittedBy: firstName(d.submittedBy, g.designer),
-          postDate,
-          // Whoever can actually give it — the lens owner unless the rules bar
-          // them from their own lens (they submitted it, or they signed the
-          // other one), in which case the person covering. A queue that names
-          // somebody who may not press the button is a queue that does not move.
-          waitingOn: firstName(
-            lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup, kind: jobKind, vdoCmoOnly: cmoOnly }).name,
-            lens === "info" ? "สาย Marketing" : cmoOnly ? "CMO" : "Creative Leader",
-          ),
+        pieces.push({
+          d, index, platforms: group.platforms,
+          canPass: canPassLens(lens, { role: ctx.role, isRequester, me: ctx.me, deliverable: d, kind: jobKind, vdoCmoOnly: cmoOnly }),
         });
       }
+      if (!pieces.length) continue;
+      // The row stands on a piece this person may actually decide, if any, so
+      // the rules that look at the piece (who submitted it, who signed the
+      // other lens) are answered by the one they apply to.
+      const lead = pieces.find((p) => p.canPass) ?? pieces[0];
+      const { d, index } = lead;
+      const canPass = pieces.some((p) => p.canPass);
+      const platforms: string[] = [];
+      for (const p of pieces) for (const pl of p.platforms) if (!platforms.includes(pl)) platforms.push(pl);
+      out.push({
+        kind, key: `g${g.id}:${lens}`, b: g.b, campaign: g.campaign ?? "", g, deliverable: d, index, lens,
+        platforms,
+        pieces: pieces.map(({ d: pd, index: pi, canPass: pc }) => ({ d: pd, index: pi, canPass: pc })),
+        waitingSince: d.submittedAt || g.submittedAt || g.createdAt || "",
+        // Whose check this is — the requester's for the data, the Creative
+        // Leader's for CI. Everyone else who MAY give it (Marketing Manager,
+        // CMO) is covering, and covering is not owning: they keep the buttons
+        // through canAct without the row landing in their own queue.
+        // On a brand whose video is the CMO's alone, the CI lane IS theirs —
+        // leaving it as the Creative Leader's would file the row in the queue
+        // of the one person who cannot act on it.
+        mine: canPass && (lens === "info" ? isRequester : ctx.role === (cmoOnly ? "CMO" : "Creative Leader")),
+        canAct: canPass,
+        submittedBy: firstName(d.submittedBy, g.designer),
+        postDate,
+        // Whoever can actually give it — the lens owner unless the rules bar
+        // them from their own lens (they submitted it, or they signed the
+        // other one), in which case the person covering. A queue that names
+        // somebody who may not press the button is a queue that does not move.
+        waitingOn: firstName(
+          lensAskWho(lens, d, { requester: g.requester, creativeLeader: ctx.creativeLeader, cmo: ctx.cmoName, ciBackup: ctx.ciBackup, kind: jobKind, vdoCmoOnly: cmoOnly }).name,
+          lens === "info" ? "สาย Marketing" : cmoOnly ? "CMO" : "Creative Leader",
+        ),
+      });
     }
 
     if (postOut) for (let i = first; i < out.length; i++) out[i] = autoClose(out[i]);
